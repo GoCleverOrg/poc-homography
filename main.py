@@ -1,5 +1,6 @@
 # main.py
 
+import datetime
 import cv2
 import numpy as np
 from pathlib import Path
@@ -8,9 +9,36 @@ import time
 import math # Needed for camera_geometry
 # Import the new classes
 from camera_geometry import CameraGeometry
-from coordinates_converter import CoordinatesConverter 
+from coordinates_converter import CoordinatesConverter
+from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ 
 
 # -----------------------------------------------------------
+
+# Camera configurations
+CAMERAS = [
+    {"ip": "10.207.99.178", "name": "Valte", "lat": "39°38'25.7\"N", "lon": "0°13'48.7\"W"},
+    {"ip": "10.237.100.15", "name": "Setram", "lat": "41°19'46.8\"N", "lon": "2°08'31.3\"E"},
+]
+
+def get_camera_by_name(camera_name: str, camera_list: list) -> dict | None:
+    """
+    Finds a camera dictionary in a list by its 'name' value.
+
+    Args:
+        camera_name: The name of the camera to search for.
+        camera_list: The list of camera dictionaries.
+
+    Returns:
+        The camera dictionary if found, otherwise None.
+    """
+    # Use a generator expression inside next().
+    # It searches for the first dictionary 'camera' where its 'name' key 
+    # matches the provided 'camera_name'.
+    # If no match is found, 'None' (the second argument to next()) is returned.
+    return next((camera for camera in camera_list if camera.get("name") == camera_name), None)
+
+USERNAME = "admin"
+PASSWORD = "CameraLab01*"
 
 class VideoAnnotator:
     """
@@ -229,12 +257,77 @@ class VideoAnnotator:
         # Create side panel for this frame (copy template)
         side_panel = self.side_panel_template.copy()
 
-        # Plot tracked points if provided
+        # Draw camera location on the side panel at the bottom-center
+        try:
+            h_sp, w_sp = side_panel.shape[:2]
+
+            # Place camera marker at bottom center with a small margin
+            cam_px = w_sp // 2
+            cam_py = h_sp - 30
+
+            # Draw filled red circle for camera
+            cv2.circle(side_panel, (cam_px, cam_py), 8, (0, 0, 255), -1)
+
+            # Draw centered label 'cam' slightly above the marker
+            (label_w, label_h), _ = cv2.getTextSize("cam", cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            label_x = cam_px - (label_w // 2)
+            label_y = cam_py - 12
+            cv2.putText(side_panel, "cam", (label_x, label_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        except Exception:
+            # Fail silently if mapping/drawing fails for any reason
+            pass
+        # Plot tracked points if provided — position them relative to the camera and zoom to fit
         if tracked_points:
-            for point in tracked_points:
-                cv2.circle(side_panel, point, 5, (0, 0, 255), -1)
-                # Add ring
-                cv2.circle(side_panel, point, 8, (255, 255, 255), 1)
+            try:
+                h_sp, w_sp = side_panel.shape[:2]
+                desired_cam_px = w_sp // 2
+                desired_cam_py = h_sp - 30
+
+                # Compute original camera position in side-panel pixels (if available)
+                if self.geo and getattr(self.geo, 'w_pos', None) is not None:
+                    cam_orig_px, cam_orig_py = self.geo.world_to_map(
+                        float(self.geo.w_pos[0]), float(self.geo.w_pos[1]),
+                        sw=self.side_panel_width, sh=self.frame_height
+                    )
+                else:
+                    # If geometry is not available, assume camera was at bottom-center originally
+                    cam_orig_px, cam_orig_py = desired_cam_px, desired_cam_py
+
+                # Compute deltas from camera original position
+                deltas = []
+                max_dx = 0.0
+                max_dy = 0.0
+                map_center_x = self.side_panel_width // 2
+                map_bottom_y = self.frame_height
+
+                for px, py in tracked_points:
+                    dx = px - cam_orig_px
+                    dy = py - cam_orig_py
+                    deltas.append((dx, dy))
+                    max_dx = max(max_dx, abs(dx))
+                    max_dy = max(max_dy, abs(dy))
+
+                # Determine scale to fit points inside side-panel (zoom out if needed)
+                margin = 40
+                half_width_available = (w_sp // 2) - margin
+                top_available = desired_cam_py - margin
+
+                sx = (half_width_available / max_dx) if max_dx > 0 else float('inf')
+                sy = (top_available / max_dy) if max_dy > 0 else float('inf')
+                scale = min(1.0, sx, sy)
+
+                # Draw transformed points
+                for dx, dy in deltas:
+                    new_x = int(desired_cam_px + dx * scale)
+                    new_y = int(desired_cam_py + dy * scale)
+                    cv2.circle(side_panel, (new_x, new_y), 5, (0, 0, 255), -1)
+                    cv2.circle(side_panel, (new_x, new_y), 8, (255, 255, 255), 1)
+            except Exception:
+                # Fallback: draw points directly if anything goes wrong
+                for point in tracked_points:
+                    cv2.circle(side_panel, point, 5, (0, 0, 255), -1)
+                    cv2.circle(side_panel, point, 8, (255, 255, 255), 1)
 
         # Concatenate horizontally: video on left, side panel on right
         expanded = np.hstack([annotated_frame, side_panel])
@@ -544,21 +637,38 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
     annotator.process_stream(rtsp_url, duration)
 
 
-def usage_example_stream():
+def usage_example_stream(cam_name:str, duration: float):
     """Demonstrates how to use the stream annotation functionality."""
-    # SETRAM
-    RTSP_URL = "rtsp://admin:CameraLab01*@10.237.100.15:554/Streaming/Channels/101" 
-    # VALTE 
-    # RTSP_URL = "rtsp://admin:CameraLab01*@10.207.99.178:554/Streaming/Channels/101" 
-    OUTPUT_PATH = "output_stream_annotated.mp4"
+
+   # 1. Successful lookup
+    cam_info = get_camera_by_name(cam_name, CAMERAS)
+
+    RTSP_URL = f"rtsp://{USERNAME}:{PASSWORD}@{cam_info['ip']}:554/Streaming/Channels/101"
+       
+    BASE_FILENAME = "output_stream_annotated"
+    FILE_EXTENSION = "mp4"
+
+    # The format YYYYMMDD_HHMMSS is good for sorting and uniqueness
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # The resulting string will look like "output_stream_annotated_20251121_182207.mp4"
+    OUTPUT_PATH = f"{cam_name}_{BASE_FILENAME}_{timestamp}.{FILE_EXTENSION}"
     SIDE_PANEL_WIDTH = 640
     SIDE_PANEL_IMAGE = None
-    CAPTURE_DURATION_SECONDS = 5.0 # Captures 5 seconds of video
+    CAPTURE_DURATION_SECONDS = duration
+
+    # get camera status
+    camera = HikvisionPTZ(
+            ip=cam_info["ip"],
+            username=USERNAME,
+            password=PASSWORD,
+            name=cam_info["name"]
+    )
+
+    status = camera.get_status()
+    print(f"Camera '{cam_name}' Status: {status}")  
 
     # NEW GEOMETRY PARAMETERS
-    ZOOM_FACTOR = 1.0     # 1x zoom
-    PAN_ANGLE_DEG = 10.0  # 10 degrees yaw
-    TILT_ANGLE_DEG = -50.0 # -50 degrees pitch (looking down)
     CAMERA_HEIGHT_M = 5.0 # 5 meters height
 
     print("\n--- Running Stream Annotation Example ---")
@@ -574,21 +684,17 @@ def usage_example_stream():
         output_path=OUTPUT_PATH,
         side_panel_width=SIDE_PANEL_WIDTH,
         side_panel_image=SIDE_PANEL_IMAGE,
-        zoom=ZOOM_FACTOR,
-        pan=PAN_ANGLE_DEG,
-        tilt=TILT_ANGLE_DEG,
+        zoom=status["zoom"],
+        pan=status["pan"],
+        tilt=status["tilt"],
         height=CAMERA_HEIGHT_M
     )
 
 def main():
     # Only run the stream example here
-    usage_example_stream()
+    usage_example_stream("Valte", 10.0)  # Capture for 10 seconds
+    usage_example_stream("Setram", 10.0)  # Capture for 10 seconds
 
 
 if __name__ == "__main__":
     main()
-
-# SETRAM
-# RTSP_URL = "rtsp://admin:CameraLab01*@10.237.100.15:554/Streaming/Channels/101" 
-# VALTE 
-# RTSP_URL = "rtsp://admin:CameraLab01*@10.207.99.178:554/Streaming/Channels/101" 
