@@ -33,11 +33,13 @@ from homography_interface import (
     HomographyResult,
     WorldPoint,
     MapCoordinate,
-    HomographyApproach
+    HomographyApproach,
+    validate_homography_matrix,
+    GPSPositionMixin
 )
 
 
-class FeatureMatchHomography(HomographyProviderExtended):
+class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
     """
     Placeholder for feature matching-based homography computation.
 
@@ -148,28 +150,6 @@ class FeatureMatchHomography(HomographyProviderExtended):
         # GPS reference point for WorldPoint conversion (to be set)
         self._camera_gps_lat: Optional[float] = None
         self._camera_gps_lon: Optional[float] = None
-
-    def set_camera_gps_position(self, lat: float, lon: float) -> None:
-        """
-        Set camera GPS position for WorldPoint conversion.
-
-        This establishes the reference point for converting local metric
-        coordinates to GPS coordinates.
-
-        Args:
-            lat: Camera latitude in decimal degrees [-90, 90]
-            lon: Camera longitude in decimal degrees [-180, 180]
-
-        Raises:
-            ValueError: If latitude or longitude out of valid range
-        """
-        if not -90 <= lat <= 90:
-            raise ValueError(f"Latitude must be in range [-90, 90], got {lat}")
-        if not -180 <= lon <= 180:
-            raise ValueError(f"Longitude must be in range [-180, 180], got {lon}")
-
-        self._camera_gps_lat = lat
-        self._camera_gps_lon = lon
 
     # =========================================================================
     # HomographyProvider Interface Implementation (Stubs)
@@ -329,20 +309,11 @@ class FeatureMatchHomography(HomographyProviderExtended):
             Always check this before calling project_point() or project_points()
             to avoid runtime errors.
         """
-        # Check if homography has been computed (not identity matrix)
-        if self._homography_matrix is None or np.allclose(self._homography_matrix, np.eye(3)):
-            return False
-
-        # Check if homography is not singular
-        det_H = np.linalg.det(self._homography_matrix)
-        if abs(det_H) < 1e-10:
-            return False
-
-        # Check confidence threshold (if confidence is tracked)
-        if self._confidence < self.confidence_threshold:
-            return False
-
-        return True
+        return validate_homography_matrix(
+            self._homography_matrix,
+            self._confidence,
+            self.confidence_threshold
+        )
 
     # =========================================================================
     # HomographyProviderExtended Interface Implementation (Stubs)

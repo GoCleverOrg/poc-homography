@@ -214,16 +214,27 @@ class HomographyConfig:
         """Save configuration to YAML file.
 
         Args:
-            path: Path where configuration file should be written
+            path: Path where configuration file should be written.
+                Should be a relative path within the project directory
+                or an absolute path to a trusted location.
 
         Raises:
             IOError: If file cannot be written
+            ValueError: If path contains suspicious patterns
 
         Example:
             >>> config = get_default_config()
             >>> config.save_to_yaml('my_config.yaml')
         """
         config_path = Path(path)
+
+        # Basic path validation to prevent directory traversal
+        path_str = str(config_path)
+        if '..' in path_str:
+            raise ValueError(
+                f"Path contains suspicious pattern '..': {path}\n"
+                f"Use an absolute path or a path without parent directory references."
+            )
 
         # Create parent directories if needed
         config_path.parent.mkdir(parents=True, exist_ok=True)

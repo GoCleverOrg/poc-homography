@@ -24,13 +24,14 @@ from homography_interface import (
     HomographyResult,
     WorldPoint,
     MapCoordinate,
-    HomographyApproach
+    HomographyApproach,
+    GPSPositionMixin
 )
 
 logger = logging.getLogger(__name__)
 
 
-class IntrinsicExtrinsicHomography(HomographyProviderExtended):
+class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended):
     """
     Homography provider using camera intrinsic/extrinsic parameters.
 
@@ -57,8 +58,8 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         map_width: Width of map visualization in pixels
         map_height: Height of map visualization in pixels
         pixels_per_meter: Scale factor for map visualization (default: 100)
-        camera_gps_lat: Camera GPS latitude for WorldPoint conversion
-        camera_gps_lon: Camera GPS longitude for WorldPoint conversion
+        _camera_gps_lat: Camera GPS latitude for WorldPoint conversion
+        _camera_gps_lon: Camera GPS longitude for WorldPoint conversion
     """
 
     # Earth radius for GPS conversion (meters) - approximate for equirectangular projection
@@ -106,8 +107,8 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         self.map_height = 640
 
         # GPS reference point for WorldPoint conversion
-        self.camera_gps_lat: Optional[float] = None
-        self.camera_gps_lon: Optional[float] = None
+        self._camera_gps_lat: Optional[float] = None
+        self._camera_gps_lon: Optional[float] = None
 
         # Last used camera parameters (for metadata)
         self._last_camera_matrix: Optional[np.ndarray] = None
@@ -166,28 +167,6 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
             [0.0, 0.0, 1.0]
         ])
         return K
-
-    def set_camera_gps_position(self, lat: float, lon: float) -> None:
-        """
-        Set camera GPS position for WorldPoint conversion.
-
-        This establishes the reference point for converting local metric
-        coordinates (X, Y in meters) to GPS coordinates (latitude, longitude).
-
-        Args:
-            lat: Camera latitude in decimal degrees [-90, 90]
-            lon: Camera longitude in decimal degrees [-180, 180]
-
-        Raises:
-            ValueError: If latitude or longitude out of valid range
-        """
-        if not -90 <= lat <= 90:
-            raise ValueError(f"Latitude must be in range [-90, 90], got {lat}")
-        if not -180 <= lon <= 180:
-            raise ValueError(f"Longitude must be in range [-180, 180], got {lon}")
-
-        self.camera_gps_lat = lat
-        self.camera_gps_lon = lon
 
     def _get_rotation_matrix(self, pan_deg: float, tilt_deg: float) -> np.ndarray:
         """
@@ -381,7 +360,7 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         Raises:
             RuntimeError: If camera GPS position not set
         """
-        if self.camera_gps_lat is None or self.camera_gps_lon is None:
+        if self._camera_gps_lat is None or self._camera_gps_lon is None:
             raise RuntimeError(
                 "Camera GPS position not set. Call set_camera_gps_position() first."
             )
@@ -392,12 +371,12 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         lat_deg = y_meters / 111111.0
 
         # Adjust longitude for latitude
-        lat_rad = math.radians(self.camera_gps_lat)
+        lat_rad = math.radians(self._camera_gps_lat)
         lon_deg = x_meters / (111111.0 * math.cos(lat_rad))
 
         # Add to camera position
-        latitude = self.camera_gps_lat + lat_deg
-        longitude = self.camera_gps_lon + lon_deg
+        latitude = self._camera_gps_lat + lat_deg
+        longitude = self._camera_gps_lon + lon_deg
 
         # Clamp to valid ranges
         latitude = max(-90.0, min(90.0, latitude))
@@ -817,3 +796,12 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
             sh = self.map_height
 
         return self._world_to_map_pixels(Xw, Yw, sw, sh)
+
+    def get_camera_position(self) -> Optional[np.ndarray]:
+        """
+        Get the last used camera position in world coordinates.
+
+        Returns:
+            Camera position as [X, Y, Z] in meters, or None if not set.
+        """
+        return self._last_camera_position

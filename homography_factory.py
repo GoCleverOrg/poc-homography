@@ -9,7 +9,7 @@ from configuration. It supports:
 - Fallback chain handling for robustness
 """
 
-from typing import Optional, Type, Dict, Any
+from typing import Optional, Type, Dict, Any, List
 import logging
 
 from homography_interface import HomographyProvider, HomographyApproach
@@ -316,7 +316,7 @@ class HomographyFactory:
         )
 
     @classmethod
-    def get_registered_approaches(cls) -> list[HomographyApproach]:
+    def get_registered_approaches(cls) -> List[HomographyApproach]:
         """Get list of registered approaches.
 
         Returns:

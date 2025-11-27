@@ -121,6 +121,39 @@ class HomographyResult:
             raise ValueError(f"Confidence must be in range [0.0, 1.0], got {self.confidence}")
 
 
+class GPSPositionMixin:
+    """
+    Mixin class providing GPS position storage and validation.
+
+    Classes using this mixin must initialize _camera_gps_lat and _camera_gps_lon
+    attributes (typically to None) in their __init__.
+    """
+    _camera_gps_lat: Optional[float]
+    _camera_gps_lon: Optional[float]
+
+    def set_camera_gps_position(self, lat: float, lon: float) -> None:
+        """
+        Set camera GPS position for WorldPoint conversion.
+
+        This establishes the reference point for converting local metric
+        coordinates to GPS coordinates.
+
+        Args:
+            lat: Camera latitude in decimal degrees [-90, 90]
+            lon: Camera longitude in decimal degrees [-180, 180]
+
+        Raises:
+            ValueError: If latitude or longitude out of valid range
+        """
+        if not -90 <= lat <= 90:
+            raise ValueError(f"Latitude must be in range [-90, 90], got {lat}")
+        if not -180 <= lon <= 180:
+            raise ValueError(f"Longitude must be in range [-180, 180], got {lon}")
+
+        self._camera_gps_lat = lat
+        self._camera_gps_lon = lon
+
+
 class HomographyProvider(ABC):
     """Abstract base class for homography computation and coordinate projection.
 
@@ -255,9 +288,7 @@ class HomographyProvider(ABC):
                 - 0.0 = no confidence, homography should not be used
 
         Note:
-            0.0 if no homography has been computed yet.
-
-        Note:
+            Returns 0.0 if no homography has been computed yet.
             Confidence interpretation is approach-specific. Check metadata
             from compute_homography() for detailed quality metrics.
         """
@@ -329,3 +360,44 @@ class HomographyProviderExtended(HomographyProvider):
             RuntimeError: If no valid homography has been computed yet
         """
         pass
+
+
+def validate_homography_matrix(
+    matrix: Optional[np.ndarray],
+    confidence: float,
+    confidence_threshold: float,
+    min_det_threshold: float = 1e-10
+) -> bool:
+    """
+    Validate a homography matrix for use in projections.
+
+    This helper function provides common validation logic for homography matrices,
+    checking for None, identity, singularity, and confidence threshold.
+
+    Args:
+        matrix: The homography matrix to validate, or None
+        confidence: Current confidence score
+        confidence_threshold: Minimum confidence for validity
+        min_det_threshold: Minimum determinant magnitude for non-singular check
+
+    Returns:
+        True if the matrix is valid for projections, False otherwise
+    """
+    # Check if matrix exists
+    if matrix is None:
+        return False
+
+    # Check if it's just an identity matrix (not computed)
+    if np.allclose(matrix, np.eye(3)):
+        return False
+
+    # Check if matrix is not singular
+    det_H = np.linalg.det(matrix)
+    if abs(det_H) < min_det_threshold:
+        return False
+
+    # Check confidence threshold
+    if confidence < confidence_threshold:
+        return False
+
+    return True

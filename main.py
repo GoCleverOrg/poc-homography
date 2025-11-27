@@ -286,7 +286,7 @@ class VideoAnnotator:
 
                 # Override if geometry provides camera position
                 if self.geo and hasattr(self.geo, 'world_to_map'):
-                    camera_pos = getattr(self.geo, '_last_camera_position', None)
+                    camera_pos = self.geo.get_camera_position() if hasattr(self.geo, 'get_camera_position') else None
                     if camera_pos is not None:
                         cam_orig_px, cam_orig_py = self.geo.world_to_map(
                             float(camera_pos[0]), float(camera_pos[1]),
