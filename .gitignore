@@ -147,5 +147,9 @@ cython_debug/
 
 # End of https://mrkandreev.name/snippets/gitignore-generator/#Python,OpenCV
 
-# Videos 
+# Videos
 *.mp4
+
+# Output folder (but keep README)
+output/*
+!output/README.md

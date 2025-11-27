@@ -9,36 +9,11 @@ import time
 import math # Needed for camera_geometry
 # Import the new classes
 from camera_geometry import CameraGeometry
-from coordinates_converter import CoordinatesConverter
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ 
+from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
+# Import camera configuration
+from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
 
 # -----------------------------------------------------------
-
-# Camera configurations
-CAMERAS = [
-    {"ip": "10.207.99.178", "name": "Valte", "lat": "39°38'25.7\"N", "lon": "0°13'48.7\"W"},
-    {"ip": "10.237.100.15", "name": "Setram", "lat": "41°19'46.8\"N", "lon": "2°08'31.3\"E"},
-]
-
-def get_camera_by_name(camera_name: str, camera_list: list) -> dict | None:
-    """
-    Finds a camera dictionary in a list by its 'name' value.
-
-    Args:
-        camera_name: The name of the camera to search for.
-        camera_list: The list of camera dictionaries.
-
-    Returns:
-        The camera dictionary if found, otherwise None.
-    """
-    # Use a generator expression inside next().
-    # It searches for the first dictionary 'camera' where its 'name' key 
-    # matches the provided 'camera_name'.
-    # If no match is found, 'None' (the second argument to next()) is returned.
-    return next((camera for camera in camera_list if camera.get("name") == camera_name), None)
-
-USERNAME = "admin"
-PASSWORD = "CameraLab01*"
 
 class VideoAnnotator:
     """
@@ -581,7 +556,20 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
                               side_panel_image: Optional[str] = None,
                               # New geometry arguments
                               zoom: float = 1.0, pan: float = 0.0, tilt: float = -45.0, height: float = 5.0):
-    """Main entry point for stream-based processing."""
+    """
+    Main entry point for stream-based processing with homography.
+
+    Args:
+        rtsp_url: RTSP stream URL
+        duration: Recording duration in seconds
+        output_path: Path to save output video
+        side_panel_width: Width of side panel in pixels
+        side_panel_image: Optional path to side panel image
+        zoom: Camera zoom factor (e.g., 1.0 = no zoom)
+        pan: Camera pan angle in degrees (positive = right)
+        tilt: Camera tilt angle in degrees (negative = down)
+        height: Camera height above ground in meters
+    """
     
     annotator = VideoAnnotator(
         video_path=None, 
@@ -598,38 +586,35 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
     if annotator.geo:
         # A. Calculate Intrinsics (K)
         K = annotator.geo.get_intrinsics(zoom_factor=zoom, W_px=annotator.frame_width, H_px=annotator.frame_height)
-        
-        # B. Convert Geographic W_pos to Local World Coordinates (X, Y, Z meters)
-        
-        # Convert lat/lon to Decimal Degrees first
-        lat_str = "41°19'46.8\"N"
-        lon_str = "2°08'31.3\"E"
-        lat_dd = CoordinatesConverter.dms_to_dd(lat_str)
-        lon_dd = CoordinatesConverter.dms_to_dd(lon_str)
-        
-        # ASSUMPTION: Convert geographic coordinates (lat/lon) to a local meter-based
-        # coordinate system (Xw, Yw) using a simplified projection (e.g., small area flat Earth).
-        # For this example, we arbitrarily define the camera's X, Y location as 
-        # a meter offset from a fictional origin, keeping the relative height (Z) correct.
-        
-        # Let's use 10 meters per 0.0001 DD change for a rough local projection.
-        # This is a DUMMY CONVERSION for demonstration.
-        X_meter = (lon_dd - 2.0) * 100000.0 * 0.01  
-        Y_meter = (lat_dd - 41.0) * 100000.0 * 0.01 
-        
-        # World Position Vector (X, Y, Z meters). Z is the height.
-        w_pos = np.array([X_meter, Y_meter, height])
-        
-        print(f"Geometric World Position (Xw, Yw, Zw): {w_pos}")
+
+        # B. World Position Setup
+        # SIMPLIFIED APPROACH: Use camera as the origin of the world coordinate system.
+        # This is sufficient for homography - we only need the camera HEIGHT, not absolute position.
+        # The ground plane is at Z=0, and the camera is at [0, 0, height].
+        #
+        # Note: Geographic coordinates (lat/lon from cam_info) are NOT needed for homography.
+        # They would only be needed if you want to:
+        #   1. Geo-reference the projected points (convert back to lat/lon)
+        #   2. Merge views from multiple cameras with different geographic positions
+        #
+        # For single-camera homography, this simplified approach is mathematically correct.
+
+        w_pos = np.array([0.0, 0.0, height])  # Camera at origin, height meters above ground
+
+        print(f"Camera World Position (Xw, Yw, Zw): {w_pos} meters")
+        print(f"  (Using camera as world origin - sufficient for homography)")
         print(f"Intrinsic Matrix K:\n{K}")
-        
+
         # C. Set parameters and calculate Homography H
+        # IMPORTANT: Hikvision cameras use inverted tilt convention
+        # Positive tilt = pointing down (not up as in standard convention)
+        # So we negate the tilt angle for correct homography
         annotator.geo.set_camera_parameters(
-            K=K, 
-            w_pos=w_pos, 
-            pan_deg=pan, 
-            tilt_deg=tilt, 
-            map_width=side_panel_width, 
+            K=K,
+            w_pos=w_pos,
+            pan_deg=pan,
+            tilt_deg=-tilt,  # Negate tilt for Hikvision convention
+            map_width=side_panel_width,
             map_height=annotator.frame_height
         )
 
@@ -640,19 +625,26 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
 def usage_example_stream(cam_name:str, duration: float):
     """Demonstrates how to use the stream annotation functionality."""
 
-   # 1. Successful lookup
-    cam_info = get_camera_by_name(cam_name, CAMERAS)
+   # 1. Get camera configuration
+    cam_info = get_camera_by_name(cam_name)
+    if not cam_info:
+        print(f"Error: Camera '{cam_name}' not found in configuration")
+        return
 
-    RTSP_URL = f"rtsp://{USERNAME}:{PASSWORD}@{cam_info['ip']}:554/Streaming/Channels/101"
-       
+    RTSP_URL = get_rtsp_url(cam_name)
+
+    # Create output directory if it doesn't exist
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+
     BASE_FILENAME = "output_stream_annotated"
     FILE_EXTENSION = "mp4"
 
     # The format YYYYMMDD_HHMMSS is good for sorting and uniqueness
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # The resulting string will look like "output_stream_annotated_20251121_182207.mp4"
-    OUTPUT_PATH = f"{cam_name}_{BASE_FILENAME}_{timestamp}.{FILE_EXTENSION}"
+    # The resulting string will look like "output/Valte_output_stream_annotated_20251121_182207.mp4"
+    OUTPUT_PATH = str(output_dir / f"{cam_name}_{BASE_FILENAME}_{timestamp}.{FILE_EXTENSION}")
     SIDE_PANEL_WIDTH = 640
     SIDE_PANEL_IMAGE = None
     CAPTURE_DURATION_SECONDS = duration
@@ -666,14 +658,17 @@ def usage_example_stream(cam_name:str, duration: float):
     )
 
     status = camera.get_status()
-    print(f"Camera '{cam_name}' Status: {status}")  
+    print(f"Camera '{cam_name}' Status: {status}")
 
-    # NEW GEOMETRY PARAMETERS
-    CAMERA_HEIGHT_M = 5.0 # 5 meters height
+    # Get height from config (with fallback to default)
+    CAMERA_HEIGHT_M = cam_info.get('height_m', 5.0)
 
     print("\n--- Running Stream Annotation Example ---")
+    print(f"Camera: {cam_name}")
     print(f"Capture Duration: {CAPTURE_DURATION_SECONDS} seconds. The process will auto-stop.")
-    
+    print(f"Output: {OUTPUT_PATH}")
+    print(f"        {OUTPUT_PATH.replace('.mp4', '_expanded.mp4')}")
+
     if "192.168.1.100" in RTSP_URL:
         print("\nWARNING: Placeholder IP detected. Please update RTSP_URL with your camera's actual address to run this example.")
         return

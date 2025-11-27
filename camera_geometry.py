@@ -6,8 +6,48 @@ from typing import List, Tuple, Union
 
 class CameraGeometry:
     """
-    Handles all spatial and projection calculations for a fixed camera setup.
+    Handles all spatial and projection calculations for a PTZ camera.
     Calculates the homography matrix H to map image points to the world ground plane.
+
+    COORDINATE SYSTEM CONVENTIONS:
+    ===============================
+    World Frame (Right-Handed):
+      - Origin: Arbitrary reference point (typically camera location or scene center)
+      - X-axis: East (positive = East, negative = West)
+      - Y-axis: North (positive = North, negative = South)
+      - Z-axis: Up (positive = Up, height above ground)
+      - Ground plane: Z = 0
+
+    Camera Frame (Right-Handed, standard computer vision):
+      - Origin: Camera optical center
+      - X-axis: Right (in image)
+      - Y-axis: Down (in image)
+      - Z-axis: Forward (along optical axis, into the scene)
+
+    Image Frame:
+      - Origin: Top-left corner
+      - u-axis: Right (width)
+      - v-axis: Down (height)
+      - Units: Pixels
+
+    HOMOGRAPHY:
+    ===========
+    The homography H maps world ground plane points (Z=0) to image pixels:
+      [u]       [X_world]
+      [v]  ∝ H  [Y_world]
+      [1]       [1      ]
+
+    For inverse (image to world):
+      [X_world]           [u]
+      [Y_world]  ∝ H^-1  [v]
+      [1      ]           [1]
+
+    CAMERA PARAMETERS:
+    ==================
+    - K: 3x3 intrinsic matrix (focal length, principal point)
+    - w_pos: Camera position [X, Y, Z] in world coordinates (meters)
+    - pan_deg: Horizontal rotation (degrees, positive = right/clockwise from above)
+    - tilt_deg: Vertical rotation (degrees, negative = down)
     """
 
     def __init__(self, w: int, h: int):
@@ -68,19 +108,45 @@ class CameraGeometry:
                               map_width: int, map_height: int):
         """
         Sets all required parameters and calculates the Homography matrix H.
+
+        Args:
+            K: 3x3 intrinsic matrix
+            w_pos: Camera position in world coordinates [X, Y, Z] (meters)
+            pan_deg: Pan angle in degrees (positive = right)
+            tilt_deg: Tilt angle in degrees (negative = down)
+            map_width: Width of output map in pixels
+            map_height: Height of output map in pixels
         """
+        # Validation
+        if K.shape != (3, 3):
+            raise ValueError(f"K must be 3x3, got shape {K.shape}")
+        if len(w_pos) != 3:
+            raise ValueError(f"w_pos must have 3 elements [X, Y, Z], got {len(w_pos)}")
+        if w_pos[2] <= 0:
+            print(f"Warning: Camera height (Z={w_pos[2]}) should be positive for ground plane homography.")
+
         self.K = K
         self.w_pos = w_pos
-        self.height_m = w_pos[2]  # Assumes height is the Z component
+        self.height_m = w_pos[2]  # Z component is height
         self.pan_deg = pan_deg
         self.tilt_deg = tilt_deg
         self.map_width = map_width
         self.map_height = map_height
 
         self.H = self._calculate_ground_homography()
-        self.H_inv = np.linalg.inv(self.H)
+
+        # Validate and invert homography
+        det_H = np.linalg.det(self.H)
+        if abs(det_H) < 1e-10:
+            print(f"Warning: Homography is singular (det={det_H:.2e}). Inverse may be unstable.")
+            self.H_inv = np.eye(3)
+        else:
+            self.H_inv = np.linalg.inv(self.H)
 
         print("Geometry setup complete. Homography matrix H calculated.")
+        print(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
+        print(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
+        print(f"  Homography det(H): {det_H:.2e}")
 
     # --- Core Geometry Methods (Unchanged from previous output) ---
 
@@ -88,31 +154,52 @@ class CameraGeometry:
         """
         Calculates the 3x3 rotation matrix R from world to camera coordinates
         based on pan (Yaw) and tilt (Pitch). Assumes zero roll.
-        Rotation order: Yaw (Z-axis, Pan) then Pitch (X-axis, Tilt).
+
+        Coordinate System Convention:
+        - World: X=East, Y=North, Z=Up
+        - Camera: X=Right, Y=Down, Z=Forward (optical axis)
+
+        Rotation order: Pan first (around Z-axis), then Tilt (around rotated X-axis).
+        This matches standard PTZ camera behavior.
         """
         pan_rad = math.radians(self.pan_deg)
         tilt_rad = math.radians(self.tilt_deg)
 
         # 1. Yaw (Rotation around World Z-axis - Pan)
+        # Positive pan rotates camera to the right (clockwise from above)
         Rz = np.array([
             [math.cos(pan_rad), -math.sin(pan_rad), 0],
             [math.sin(pan_rad), math.cos(pan_rad), 0],
             [0, 0, 1]
         ])
 
-        # 2. Pitch (Rotation around World X-axis - Tilt)
+        # 2. Pitch (Rotation around X-axis - Tilt)
+        # Negative tilt points camera downward
         Rx = np.array([
             [1, 0, 0],
             [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
             [0, math.sin(tilt_rad), math.cos(tilt_rad)]
         ])
 
-        R = Rx @ Rz
+        # Apply Pan first, then Tilt
+        R = Rz @ Rx
         return R
 
     def _calculate_ground_homography(self) -> np.ndarray:
         """
-        Calculates the Homography matrix H = K * [r1, r2, t].
+        Calculates the Homography matrix H that maps world ground plane (Z=0) to image pixels.
+
+        Mathematical derivation:
+        - Camera position in world: C = w_pos = [Xw, Yw, Zw]
+        - Rotation from world to camera: R (3x3)
+        - Translation: t = -R @ C (position of world origin in camera frame)
+        - For ground plane (Z=0): P_world = [X, Y, 0]
+        - Projection: p_image = K @ [R @ P_world + t]
+        - Since Z=0, homography becomes: H = K @ [r1, r2, t]
+          where r1, r2 are first two columns of R
+
+        Returns:
+            H (3x3): Homography matrix mapping [X_world, Y_world, 1] -> [u, v, 1] (image coords)
         """
 
         if self.K is None:
@@ -121,16 +208,25 @@ class CameraGeometry:
 
         R = self._get_rotation_matrix()
 
-        # t is the position of the World origin in the Camera frame: t = -R @ w_pos
-        t = -R @ self.w_pos
+        # Camera position C in world coordinates
+        C = self.w_pos  # [Xw, Yw, Zw]
 
-        # H = K * [r1, r2, t]
+        # Translation from camera to world origin: t = -R @ C
+        t = -R @ C
+
+        # Build homography: H = K @ [r1, r2, t]
+        # r1, r2 are the first two columns of R (corresponding to X and Y axes)
         r1 = R[:, 0]
         r2 = R[:, 1]
 
-        H_extrinsic = np.hstack([r1[:, np.newaxis], r2[:, np.newaxis], t[:, np.newaxis]])
+        H_extrinsic = np.column_stack([r1, r2, t])
 
         H = self.K @ H_extrinsic
+
+        # Normalize so H[2, 2] = 1
+        if abs(H[2, 2]) < 1e-10:
+            print("Warning: Homography normalization failed (H[2,2] near zero). Returning identity.")
+            return np.eye(3)
 
         H /= H[2, 2]
 
