@@ -1,8 +1,9 @@
 # camera_geometry.py
 
 import numpy as np
+import cv2
 import math
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 class CameraGeometry:
     """
@@ -73,6 +74,7 @@ class CameraGeometry:
         self.height_m = 5.0  # Camera Height (m)
         self.pan_deg = 0.0  # Camera Pan (Yaw)
         self.tilt_deg = 0.0  # Camera Tilt (Pitch)
+        self.distortion_coeffs = None  # Lens distortion coefficients [k1, k2, p1, p2, k3]
 
     @staticmethod
     def get_intrinsics(zoom_factor: float, W_px: int = 2560, H_px: int = 1440, sensor_width_mm: float = 7.18) -> np.ndarray:
@@ -105,7 +107,8 @@ class CameraGeometry:
 
     def set_camera_parameters(self, K: np.ndarray, w_pos: np.ndarray,
                               pan_deg: float, tilt_deg: float,
-                              map_width: int, map_height: int):
+                              map_width: int, map_height: int,
+                              distortion_coeffs: Optional[np.ndarray] = None):
         """
         Sets all required parameters and calculates the Homography matrix H.
 
@@ -116,6 +119,8 @@ class CameraGeometry:
             tilt_deg: Tilt angle in degrees (negative = down)
             map_width: Width of output map in pixels
             map_height: Height of output map in pixels
+            distortion_coeffs: Optional lens distortion coefficients [k1, k2, p1, p2, k3].
+                              If None, no distortion correction is applied.
         """
         # Validation
         if K.shape != (3, 3):
@@ -132,6 +137,7 @@ class CameraGeometry:
         self.tilt_deg = tilt_deg
         self.map_width = map_width
         self.map_height = map_height
+        self.distortion_coeffs = distortion_coeffs
 
         self.H = self._calculate_ground_homography()
 
@@ -232,14 +238,54 @@ class CameraGeometry:
 
         return H
 
+    def _undistort_points(self, pts: np.ndarray) -> np.ndarray:
+        """
+        Undistorts image points using lens distortion coefficients.
+
+        Args:
+            pts: Points in image coordinates as Nx2 numpy array or list of (u, v) tuples
+
+        Returns:
+            Undistorted points in image coordinates (same shape as input)
+            If distortion_coeffs is None, returns points unchanged.
+        """
+        # If no distortion coefficients, return points unchanged
+        if self.distortion_coeffs is None:
+            return pts
+
+        # Convert to numpy array if needed
+        pts_array = np.array(pts, dtype=np.float32)
+
+        # Ensure correct shape for cv2.undistortPoints (needs Nx1x2 or Nx2)
+        if pts_array.ndim == 1:
+            pts_array = pts_array.reshape(1, -1)
+
+        # cv2.undistortPoints expects shape (N, 1, 2) or (N, 2)
+        # It returns normalized coordinates by default, so we pass P=K to get pixel coordinates back
+        pts_undistorted = cv2.undistortPoints(
+            pts_array.reshape(-1, 1, 2),
+            self.K,
+            self.distortion_coeffs,
+            P=self.K
+        )
+
+        # Reshape back to Nx2
+        pts_undistorted = pts_undistorted.reshape(-1, 2)
+
+        return pts_undistorted
+
     def project_image_to_map(self, pts: List[Tuple[int, int]], sw: int, sh: int) -> List[Tuple[int, int]]:
         """
         Projects image coordinates (pixels) to the world ground plane (meters).
+        Applies lens distortion correction before projection if distortion coefficients are set.
         """
         if self.H_inv is None or np.all(self.H_inv == np.eye(3)):
             return [(int(x / 2), int(y / 2)) for x, y in pts]
 
-        pts_homogeneous = np.array(pts, dtype=np.float64).T
+        # Apply lens distortion correction before projection
+        pts_undistorted = self._undistort_points(pts)
+
+        pts_homogeneous = np.array(pts_undistorted, dtype=np.float64).T
         pts_homogeneous = np.vstack([pts_homogeneous, np.ones(pts_homogeneous.shape[1])])
 
         # Project from Image to World Ground Plane (Xw, Yw, 1)

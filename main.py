@@ -11,7 +11,7 @@ import math # Needed for camera_geometry
 from camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 # Import camera configuration
-from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
+from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url, get_camera_distortion
 
 # -----------------------------------------------------------
 
@@ -555,7 +555,8 @@ class VideoAnnotator:
 def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, side_panel_width: int = 640,
                               side_panel_image: Optional[str] = None,
                               # New geometry arguments
-                              zoom: float = 1.0, pan: float = 0.0, tilt: float = -45.0, height: float = 5.0):
+                              zoom: float = 1.0, pan: float = 0.0, tilt: float = -45.0, height: float = 5.0,
+                              distortion_coeffs: Optional[np.ndarray] = None):
     """
     Main entry point for stream-based processing with homography.
 
@@ -569,6 +570,8 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
         pan: Camera pan angle in degrees (positive = right)
         tilt: Camera tilt angle in degrees (negative = down)
         height: Camera height above ground in meters
+        distortion_coeffs: Optional lens distortion coefficients [k1, k2, p1, p2, k3].
+                          If None, no distortion correction is applied (backward compatible).
     """
     
     annotator = VideoAnnotator(
@@ -615,7 +618,8 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
             pan_deg=pan,
             tilt_deg=-tilt,  # Negate tilt for Hikvision convention
             map_width=side_panel_width,
-            map_height=annotator.frame_height
+            map_height=annotator.frame_height,
+            distortion_coeffs=distortion_coeffs  # Pass distortion coefficients (None = no correction)
         )
 
     # 3. Process the stream
@@ -663,6 +667,15 @@ def usage_example_stream(cam_name:str, duration: float):
     # Get height from config (with fallback to default)
     CAMERA_HEIGHT_M = cam_info.get('height_m', 5.0)
 
+    # Get distortion coefficients from config (returns None if uncalibrated)
+    distortion_coeffs = get_camera_distortion(cam_name)
+
+    if distortion_coeffs is not None:
+        print(f"\n Lens distortion correction enabled for '{cam_name}'")
+        print(f"  Distortion coefficients: {distortion_coeffs}")
+    else:
+        print(f"\n No distortion correction for '{cam_name}' (uncalibrated camera)")
+
     print("\n--- Running Stream Annotation Example ---")
     print(f"Camera: {cam_name}")
     print(f"Capture Duration: {CAPTURE_DURATION_SECONDS} seconds. The process will auto-stop.")
@@ -682,7 +695,8 @@ def usage_example_stream(cam_name:str, duration: float):
         zoom=status["zoom"],
         pan=status["pan"],
         tilt=status["tilt"],
-        height=CAMERA_HEIGHT_M
+        height=CAMERA_HEIGHT_M,
+        distortion_coeffs=distortion_coeffs  # Pass distortion coefficients (None if uncalibrated)
     )
 
 def main():
