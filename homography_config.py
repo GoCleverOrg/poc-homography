@@ -76,6 +76,28 @@ class HomographyConfig:
 
         return cls.from_dict(homography_config)
 
+    @staticmethod
+    def _parse_approach(approach_str: str) -> HomographyApproach:
+        """Parse an approach string into HomographyApproach enum.
+
+        Args:
+            approach_str: String representation of the approach
+
+        Returns:
+            HomographyApproach enum value
+
+        Raises:
+            ValueError: If approach_str is not a valid approach
+        """
+        try:
+            return HomographyApproach(approach_str)
+        except ValueError:
+            valid_approaches = [a.value for a in HomographyApproach]
+            raise ValueError(
+                f"Invalid approach '{approach_str}'. "
+                f"Must be one of: {', '.join(valid_approaches)}"
+            ) from None
+
     @classmethod
     def from_dict(cls, config: dict) -> 'HomographyConfig':
         """Create configuration from dictionary.
@@ -111,14 +133,7 @@ class HomographyConfig:
             )
 
         approach_str = config['approach']
-        try:
-            approach = HomographyApproach(approach_str)
-        except ValueError:
-            valid_approaches = [a.value for a in HomographyApproach]
-            raise ValueError(
-                f"Invalid approach '{approach_str}'. "
-                f"Must be one of: {', '.join(valid_approaches)}"
-            ) from None
+        approach = cls._parse_approach(approach_str)
 
         # Parse fallback approaches
         fallback_approaches = []
@@ -130,15 +145,8 @@ class HomographyConfig:
                 )
 
             for fallback_str in fallback_list:
-                try:
-                    fallback_approach = HomographyApproach(fallback_str)
-                    fallback_approaches.append(fallback_approach)
-                except ValueError:
-                    valid_approaches = [a.value for a in HomographyApproach]
-                    raise ValueError(
-                        f"Invalid fallback approach '{fallback_str}'. "
-                        f"Must be one of: {', '.join(valid_approaches)}"
-                    ) from None
+                fallback_approach = cls._parse_approach(fallback_str)
+                fallback_approaches.append(fallback_approach)
 
         # Extract approach-specific configuration
         approach_specific_config = {}

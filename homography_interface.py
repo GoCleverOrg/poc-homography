@@ -254,7 +254,7 @@ class HomographyProvider(ABC):
                 - 0.5 = moderate confidence, usable but with caution
                 - 0.0 = no confidence, homography should not be used
 
-        Returns:
+        Note:
             0.0 if no homography has been computed yet.
 
         Note:

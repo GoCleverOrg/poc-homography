@@ -339,7 +339,7 @@ class FeatureMatchHomography(HomographyProviderExtended):
             return False
 
         # Check confidence threshold (if confidence is tracked)
-        if self._confidence < 0.3:  # Minimum confidence threshold
+        if self._confidence < self.confidence_threshold:
             return False
 
         return True

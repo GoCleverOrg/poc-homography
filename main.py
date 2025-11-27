@@ -281,21 +281,17 @@ class VideoAnnotator:
                 desired_cam_py = h_sp - 30
 
                 # Compute original camera position in side-panel pixels (if available)
-                # Check if provider has world_to_map method (legacy compatibility)
+                # Default to desired position
+                cam_orig_px, cam_orig_py = desired_cam_px, desired_cam_py
+
+                # Override if geometry provides camera position
                 if self.geo and hasattr(self.geo, 'world_to_map'):
-                    # Try to get camera position (for IntrinsicExtrinsicHomography)
                     camera_pos = getattr(self.geo, '_last_camera_position', None)
                     if camera_pos is not None:
                         cam_orig_px, cam_orig_py = self.geo.world_to_map(
                             float(camera_pos[0]), float(camera_pos[1]),
                             sw=self.side_panel_width, sh=self.frame_height
                         )
-                    else:
-                        # If geometry is not available, assume camera was at bottom-center originally
-                        cam_orig_px, cam_orig_py = desired_cam_px, desired_cam_py
-                else:
-                    # If geometry is not available, assume camera was at bottom-center originally
-                    cam_orig_px, cam_orig_py = desired_cam_px, desired_cam_py
 
                 # Compute deltas from camera original position
                 deltas = []
@@ -556,10 +552,12 @@ class VideoAnnotator:
                 # Use new extended interface for batch projection
                 map_coords = self.geo.project_points_to_map(feet_points)
                 # Convert MapCoordinate objects to pixel coordinates
+                # Get pixels_per_meter from provider, default to 100.0 if not available
+                pixels_per_meter = getattr(self.geo, 'pixels_per_meter', 100.0)
                 map_points = []
                 for coord in map_coords:
-                    x_px = int((coord.x * 100.0) + (self.side_panel_width // 2))  # pixels_per_meter = 100
-                    y_px = int(self.frame_height - (coord.y * 100.0))
+                    x_px = int((coord.x * pixels_per_meter) + (self.side_panel_width // 2))
+                    y_px = int(self.frame_height - (coord.y * pixels_per_meter))
                     map_points.append((x_px, y_px))
                 return map_points
             elif hasattr(self.geo, 'project_image_to_map'):

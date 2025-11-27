@@ -16,6 +16,7 @@ Coordinate Systems:
 
 import numpy as np
 import math
+import logging
 from typing import List, Tuple, Dict, Any, Optional
 
 from homography_interface import (
@@ -25,6 +26,8 @@ from homography_interface import (
     MapCoordinate,
     HomographyApproach
 )
+
+logger = logging.getLogger(__name__)
 
 
 class IntrinsicExtrinsicHomography(HomographyProviderExtended):
@@ -519,9 +522,9 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
             )
 
         if camera_position[2] <= 0:
-            print(
-                f"Warning: Camera height (Z={camera_position[2]}) should be positive "
-                f"for ground plane homography."
+            logger.warning(
+                "Camera height (Z=%s) should be positive for ground plane homography.",
+                camera_position[2]
             )
 
         # Store map dimensions
@@ -534,9 +537,9 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         # Calculate inverse homography
         det_H = np.linalg.det(self.H)
         if abs(det_H) < self.MIN_DET_THRESHOLD:
-            print(
-                f"Warning: Homography is singular (det={det_H:.2e}). "
-                f"Inverse may be unstable."
+            logger.warning(
+                "Homography is singular (det=%.2e). Inverse may be unstable.",
+                det_H
             )
             self.H_inv = np.eye(3)
             self.confidence = 0.0
@@ -584,10 +587,10 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
         u, v = image_point
-        if not (0 <= u <= self.width) or not (0 <= v <= self.height):
+        if not (0 <= u < self.width) or not (0 <= v < self.height):
             raise ValueError(
                 f"Image point ({u}, {v}) outside valid bounds "
-                f"[0, {self.width}] x [0, {self.height}]"
+                f"[0, {self.width}) x [0, {self.height})"
             )
 
         # Project to world coordinates (meters)
@@ -625,7 +628,7 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
-        # Vectorized implementation for efficiency
+        # Iterate over points
         world_points = []
 
         for image_point in image_points:
@@ -689,10 +692,10 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
         u, v = image_point
-        if not (0 <= u <= self.width) or not (0 <= v <= self.height):
+        if not (0 <= u < self.width) or not (0 <= v < self.height):
             raise ValueError(
                 f"Image point ({u}, {v}) outside valid bounds "
-                f"[0, {self.width}] x [0, {self.height}]"
+                f"[0, {self.width}) x [0, {self.height})"
             )
 
         # Project to world coordinates (meters)
@@ -728,7 +731,7 @@ class IntrinsicExtrinsicHomography(HomographyProviderExtended):
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
-        # Vectorized implementation for efficiency
+        # Iterate over points
         map_coords = []
 
         for image_point in image_points:
