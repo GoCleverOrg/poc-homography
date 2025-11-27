@@ -153,3 +153,7 @@ cython_debug/
 # Output folder (but keep README)
 output/*
 !output/README.md
+
+# Calibration data (machine-specific, should not be committed)
+calibrations/*
+!calibrations/README.md
