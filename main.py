@@ -673,13 +673,19 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
             camera_gps_lon = None
             gps_available = False
             if cam_info and 'lat' in cam_info and 'lon' in cam_info:
-                try:
-                    camera_gps_lat = dms_to_dd(cam_info['lat'])
-                    camera_gps_lon = dms_to_dd(cam_info['lon'])
-                    print(f"Camera GPS Position: {camera_gps_lat:.6f}°, {camera_gps_lon:.6f}°")
-                except ValueError as e:
-                    logger.warning(f"Failed to parse GPS coordinates: {e}")
-                    print(f"Warning: Invalid GPS coordinate format - geo-referencing disabled")
+                # Validate that lat/lon values are strings before parsing
+                if not isinstance(cam_info['lat'], str) or not isinstance(cam_info['lon'], str):
+                    logger.warning("GPS coordinates must be strings in DMS format, got lat=%s, lon=%s",
+                                   type(cam_info['lat']).__name__, type(cam_info['lon']).__name__)
+                    print("Warning: Invalid GPS coordinate type - geo-referencing disabled")
+                else:
+                    try:
+                        camera_gps_lat = dms_to_dd(cam_info['lat'])
+                        camera_gps_lon = dms_to_dd(cam_info['lon'])
+                        print(f"Camera GPS Position: {camera_gps_lat:.6f}°, {camera_gps_lon:.6f}°")
+                    except ValueError as e:
+                        logger.warning(f"Failed to parse GPS coordinates: {e}")
+                        print(f"Warning: Invalid GPS coordinate format - geo-referencing disabled")
 
             print(f"Camera World Position (Xw, Yw, Zw): {camera_position} meters")
             print(f"Intrinsic Matrix K:\n{K}")

@@ -14,6 +14,13 @@ import sys
 import os
 import math
 
+# pytest is optional - only needed when running with pytest runner
+try:
+    import pytest
+    HAS_PYTEST = True
+except ImportError:
+    HAS_PYTEST = False
+
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -142,34 +149,48 @@ class TestGPSPositionSetting:
         homography = IntrinsicExtrinsicHomography(2560, 1440)
 
         # Latitude out of range [-90, 90]
-        try:
-            homography.set_camera_gps_position(91.0, 0.0)
-            assert False, "Should have raised ValueError for latitude > 90"
-        except ValueError as e:
-            assert "Latitude must be in range" in str(e)
+        if HAS_PYTEST:
+            with pytest.raises(ValueError, match="Latitude must be in range"):
+                homography.set_camera_gps_position(91.0, 0.0)
 
-        try:
-            homography.set_camera_gps_position(-91.0, 0.0)
-            assert False, "Should have raised ValueError for latitude < -90"
-        except ValueError as e:
-            assert "Latitude must be in range" in str(e)
+            with pytest.raises(ValueError, match="Latitude must be in range"):
+                homography.set_camera_gps_position(-91.0, 0.0)
+        else:
+            try:
+                homography.set_camera_gps_position(91.0, 0.0)
+                assert False, "Should have raised ValueError for latitude > 90"
+            except ValueError as e:
+                assert "Latitude must be in range" in str(e)
+
+            try:
+                homography.set_camera_gps_position(-91.0, 0.0)
+                assert False, "Should have raised ValueError for latitude < -90"
+            except ValueError as e:
+                assert "Latitude must be in range" in str(e)
 
     def test_set_camera_gps_position_invalid_longitude(self):
         """Test that invalid longitude raises ValueError."""
         homography = IntrinsicExtrinsicHomography(2560, 1440)
 
         # Longitude out of range [-180, 180]
-        try:
-            homography.set_camera_gps_position(0.0, 181.0)
-            assert False, "Should have raised ValueError for longitude > 180"
-        except ValueError as e:
-            assert "Longitude must be in range" in str(e)
+        if HAS_PYTEST:
+            with pytest.raises(ValueError, match="Longitude must be in range"):
+                homography.set_camera_gps_position(0.0, 181.0)
 
-        try:
-            homography.set_camera_gps_position(0.0, -181.0)
-            assert False, "Should have raised ValueError for longitude < -180"
-        except ValueError as e:
-            assert "Longitude must be in range" in str(e)
+            with pytest.raises(ValueError, match="Longitude must be in range"):
+                homography.set_camera_gps_position(0.0, -181.0)
+        else:
+            try:
+                homography.set_camera_gps_position(0.0, 181.0)
+                assert False, "Should have raised ValueError for longitude > 180"
+            except ValueError as e:
+                assert "Longitude must be in range" in str(e)
+
+            try:
+                homography.set_camera_gps_position(0.0, -181.0)
+                assert False, "Should have raised ValueError for longitude < -180"
+            except ValueError as e:
+                assert "Longitude must be in range" in str(e)
 
     def test_project_point_without_gps_position_fails(self):
         """Test that project_point() fails if GPS position not set."""
@@ -188,11 +209,15 @@ class TestGPSPositionSetting:
         homography.compute_homography(np.zeros((1440, 2560, 3)), reference)
 
         # Should raise RuntimeError since GPS position not set
-        try:
-            homography.project_point((1280, 1200))
-            assert False, "Should have raised RuntimeError"
-        except RuntimeError as e:
-            assert "Camera GPS position must be set" in str(e)
+        if HAS_PYTEST:
+            with pytest.raises(RuntimeError, match="Camera GPS position must be set"):
+                homography.project_point((1280, 1200))
+        else:
+            try:
+                homography.project_point((1280, 1200))
+                assert False, "Should have raised RuntimeError"
+            except RuntimeError as e:
+                assert "Camera GPS position must be set" in str(e)
 
 
 class TestProjectPointGPSFlow:

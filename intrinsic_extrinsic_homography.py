@@ -95,6 +95,16 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     CONFIDENCE_PENALTY_BAD_TILT = 0.8    # Applied when tilt outside [-90, 90]
     CONFIDENCE_LARGE_DET = 0.7           # Confidence for very large determinant
 
+    # Gimbal lock threshold - angles within this range of ±90° cause numerical instability
+    GIMBAL_LOCK_THRESHOLD_DEG = 0.1      # Degrees from ±90° considered gimbal lock zone
+    CONFIDENCE_PENALTY_GIMBAL_LOCK = 0.3 # Severe penalty for near-gimbal-lock configuration
+
+    # Edge factor constants for point confidence calculation
+    EDGE_FACTOR_CENTER = 1.0             # Confidence factor at image center
+    EDGE_FACTOR_EDGE = 0.7               # Confidence factor at image edges
+    EDGE_FACTOR_CORNER_DECAY = 0.2       # Decay rate beyond edge radius
+    EDGE_FACTOR_MIN = 0.3                # Minimum edge factor
+
     def __init__(
         self,
         width: int,
@@ -402,6 +412,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         if tilt_deg is not None:
             if tilt_deg < -90.0 or tilt_deg > 90.0:
                 confidence *= self.CONFIDENCE_PENALTY_BAD_TILT
+            # Check for gimbal lock near ±90° (cos(90°) = 0 causes singularity)
+            elif abs(abs(tilt_deg) - 90.0) < self.GIMBAL_LOCK_THRESHOLD_DEG:
+                confidence *= self.CONFIDENCE_PENALTY_GIMBAL_LOCK
 
         return confidence
 
@@ -439,13 +452,15 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         dist_from_center = math.sqrt(dx * dx + dy * dy)
 
         # Reduce confidence for points far from center
-        # Linear falloff: 1.0 at center, 0.7 at edges, 0.5 at corners
+        # Linear falloff: CENTER at center, EDGE at edges, decays toward corners
         if dist_from_center < 1.0:
-            edge_factor = 1.0 - 0.3 * dist_from_center
+            # Interpolate from CENTER (1.0) to EDGE (0.7) within the image boundary
+            edge_factor = self.EDGE_FACTOR_CENTER - (self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE) * dist_from_center
         else:
-            edge_factor = 0.7 - 0.2 * (dist_from_center - 1.0)
+            # Beyond edge, decay further toward minimum
+            edge_factor = self.EDGE_FACTOR_EDGE - self.EDGE_FACTOR_CORNER_DECAY * (dist_from_center - 1.0)
 
-        edge_factor = max(0.3, min(1.0, edge_factor))
+        edge_factor = max(self.EDGE_FACTOR_MIN, min(self.EDGE_FACTOR_CENTER, edge_factor))
 
         return base_confidence * edge_factor
 
@@ -631,6 +646,14 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 tilt_deg
             )
             tilt_deg = max(-90.0, min(90.0, tilt_deg))
+
+        # Warn about gimbal lock near ±90° (cos(90°) = 0 causes degenerate homography)
+        if abs(abs(tilt_deg) - 90.0) < self.GIMBAL_LOCK_THRESHOLD_DEG:
+            logger.warning(
+                "Tilt angle (%.2f degrees) is near ±90° gimbal lock zone. "
+                "Homography may be numerically unstable.",
+                tilt_deg
+            )
 
         # Store map dimensions
         self.map_width = map_width
@@ -886,9 +909,20 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # Project from image to world ground plane
         pts_world_homogeneous = self.H_inv @ pts_homogeneous
 
-        # Normalize
-        Xw = pts_world_homogeneous[0, :] / pts_world_homogeneous[2, :]
-        Yw = pts_world_homogeneous[1, :] / pts_world_homogeneous[2, :]
+        # Normalize with protection against division by zero (points on/near horizon)
+        w_coords = pts_world_homogeneous[2, :]
+        # Replace near-zero values with a small epsilon to avoid division by zero
+        # Points with |w| < threshold are on or near the horizon line
+        horizon_mask = np.abs(w_coords) < 1e-10
+        w_safe = np.where(horizon_mask, np.sign(w_coords + 1e-20) * 1e-10, w_coords)
+
+        Xw = pts_world_homogeneous[0, :] / w_safe
+        Yw = pts_world_homogeneous[1, :] / w_safe
+
+        # Clamp extreme values for horizon points to avoid overflow in pixel conversion
+        max_coord = 1e6  # Maximum reasonable world coordinate in meters
+        Xw = np.clip(Xw, -max_coord, max_coord)
+        Yw = np.clip(Yw, -max_coord, max_coord)
 
         # Convert world coordinates to map pixels
         map_center_x = sw // 2

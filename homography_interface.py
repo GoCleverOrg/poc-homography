@@ -164,6 +164,22 @@ class GPSPositionMixin:
 
     Classes using this mixin must initialize _camera_gps_lat and _camera_gps_lon
     attributes (typically to None) in their __init__.
+
+    IMPORTANT: Temporal Coupling Requirement
+    ----------------------------------------
+    When using GPS-based geo-referencing with homography providers:
+
+    1. Call set_camera_gps_position() BEFORE compute_homography()
+    2. GPS position must be set before calling project_point() or project_points()
+       that return WorldPoint with GPS coordinates
+
+    If GPS position is not set, project_point() will raise RuntimeError.
+
+    Example usage:
+        provider = IntrinsicExtrinsicHomography(2560, 1440)
+        provider.set_camera_gps_position(39.640, -0.230)  # Set GPS first
+        provider.compute_homography(frame, reference)      # Then compute homography
+        world_point = provider.project_point((1280, 720)) # Now projection works
     """
     _camera_gps_lat: Optional[float]
     _camera_gps_lon: Optional[float]
@@ -174,6 +190,10 @@ class GPSPositionMixin:
 
         This establishes the reference point for converting local metric
         coordinates to GPS coordinates.
+
+        Note:
+            Must be called BEFORE compute_homography() if GPS geo-referencing
+            is needed. See class docstring for temporal coupling requirements.
 
         Args:
             lat: Camera latitude in decimal degrees [-90, 90]
