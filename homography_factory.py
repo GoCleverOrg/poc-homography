@@ -208,7 +208,7 @@ class HomographyFactory:
             logger.info(f"Successfully created {primary_approach.value} provider")
             return provider
 
-        except Exception as e:
+        except (ValueError, RuntimeError, TypeError) as e:
             logger.warning(
                 f"Failed to create {primary_approach.value} provider: {e}"
             )
@@ -240,7 +240,7 @@ class HomographyFactory:
                     )
                     return provider
 
-                except Exception as fallback_error:
+                except (ValueError, RuntimeError, TypeError) as fallback_error:
                     logger.warning(
                         f"Fallback approach {fallback_approach.value} also failed: "
                         f"{fallback_error}"

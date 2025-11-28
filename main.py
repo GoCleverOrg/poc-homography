@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import time
 import math # Needed for camera_geometry
+import logging
 # Import unified homography interface
 from homography_interface import HomographyProvider, HomographyProviderExtended, HomographyApproach
 from homography_config import HomographyConfig, get_default_config
@@ -17,6 +18,9 @@ from camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 # Import camera configuration
 from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------
 
@@ -79,6 +83,10 @@ class VideoAnnotator:
 
         # Get video properties
         self.fps = int(self.cap.get(cv2.CAP_PROP_FPS))
+        if self.fps <= 0:
+            logger.warning(f"Invalid FPS {self.fps}, defaulting to 30")
+            self.fps = 30
+
         self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -270,9 +278,8 @@ class VideoAnnotator:
             label_y = cam_py - 12
             cv2.putText(side_panel, "cam", (label_x, label_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        except Exception:
-            # Fail silently if mapping/drawing fails for any reason
-            pass
+        except (RuntimeError, ValueError) as e:
+            logger.warning(f"Failed to draw camera marker: {e}")
         # Plot tracked points if provided — position them relative to the camera and zoom to fit
         if tracked_points:
             try:
@@ -322,7 +329,8 @@ class VideoAnnotator:
                     new_y = int(desired_cam_py + dy * scale)
                     cv2.circle(side_panel, (new_x, new_y), 5, (0, 0, 255), -1)
                     cv2.circle(side_panel, (new_x, new_y), 8, (255, 255, 255), 1)
-            except Exception:
+            except (RuntimeError, ValueError) as e:
+                logger.warning(f"Failed to project tracked points: {e}")
                 # Fallback: draw points directly if anything goes wrong
                 for point in tracked_points:
                     cv2.circle(side_panel, point, 5, (0, 0, 255), -1)
@@ -372,8 +380,11 @@ class VideoAnnotator:
 
             # Progress indicator
             if frame_number % 30 == 0:
-                progress = (frame_number / self.total_frames) * 100
-                print(f"Progress: {progress:.1f}% (frame {frame_number}/{self.total_frames})")
+                if self.total_frames > 0:
+                    progress = (frame_number / self.total_frames) * 100
+                    print(f"Progress: {progress:.1f}% (frame {frame_number}/{self.total_frames})")
+                else:
+                    print(f"Processing frame {frame_number}")
 
             frame_number += 1
 
@@ -487,8 +498,11 @@ class VideoAnnotator:
                 if frame_number % self.fps == 0 or frame_number == target_frames - 1:
                     current_time = time.time()
                     elapsed = current_time - start_time
-                    progress_percent = (frame_number / target_frames) * 100
-                    print(f"Progress: {progress_percent:.1f}% | Frames: {frame_number}/{target_frames} | Elapsed Time: {elapsed:.1f}s", end='\r')
+                    if target_frames > 0:
+                        progress_percent = (frame_number / target_frames) * 100
+                        print(f"Progress: {progress_percent:.1f}% | Frames: {frame_number}/{target_frames} | Elapsed Time: {elapsed:.1f}s", end='\r')
+                    else:
+                        print(f"Processing frame {frame_number} | Elapsed Time: {elapsed:.1f}s", end='\r')
             else:
                 if frame_number % (self.fps * 10) == 0: 
                     current_time = time.time()

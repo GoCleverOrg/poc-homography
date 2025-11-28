@@ -91,6 +91,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             base_focal_length_mm: Base focal length at 1x zoom in mm (default: 5.9)
             **kwargs: Additional parameters (ignored, for forward compatibility)
         """
+        # Validate image dimensions
+        if width <= 0 or height <= 0:
+            raise ValueError(f"Image dimensions must be positive, got width={width}, height={height}")
+
         self.width = width
         self.height = height
         self.pixels_per_meter = pixels_per_meter
@@ -151,6 +155,14 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
              [   0.     2106.27...  720.  ]
              [   0.        0.        1.  ]]
         """
+        # Validate inputs
+        if zoom_factor <= 0:
+            raise ValueError(f"zoom_factor must be positive, got {zoom_factor}")
+        if width_px <= 0 or height_px <= 0:
+            raise ValueError("Image dimensions must be positive")
+        if sensor_width_mm <= 0:
+            raise ValueError("sensor_width_mm must be positive")
+
         # Linear mapping based on camera datasheet: 1x zoom = 5.9mm focal length
         f_mm = 5.9 * zoom_factor
 
@@ -258,7 +270,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Normalize so H[2, 2] = 1
         if abs(H[2, 2]) < self.MIN_DET_THRESHOLD:
-            # Return identity if normalization fails
+            logger.warning(
+                f"Homography normalization failed (H[2,2]={H[2,2]:.2e}). Returning identity."
+            )
             return np.eye(3)
 
         H = H / H[2, 2]
@@ -323,6 +337,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         u, v = image_point
 
         # Calculate distance from image center (normalized)
+        # Protect against division by zero
+        if self.width <= 0 or self.height <= 0:
+            return base_confidence
+
         center_u = self.width / 2.0
         center_v = self.height / 2.0
 
@@ -372,7 +390,13 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Adjust longitude for latitude
         lat_rad = math.radians(self._camera_gps_lat)
-        lon_deg = x_meters / (111111.0 * math.cos(lat_rad))
+        cos_lat = math.cos(lat_rad)
+
+        # Check for division by zero at poles
+        if abs(cos_lat) < 1e-6:  # Near poles
+            raise ValueError("Camera latitude too close to poles for GPS projection")
+
+        lon_deg = x_meters / (111111.0 * cos_lat)
 
         # Add to camera position
         latitude = self._camera_gps_lat + lat_deg
@@ -404,6 +428,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Project to world using inverse homography
         world_homogeneous = self.H_inv @ pt_homogeneous
+
+        # Check for division by zero (point at infinity/horizon)
+        if abs(world_homogeneous[2]) < 1e-10:
+            raise ValueError("Point projects to infinity (on horizon line)")
 
         # Normalize
         x_world = world_homogeneous[0] / world_homogeneous[2]
