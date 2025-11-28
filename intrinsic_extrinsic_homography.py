@@ -82,6 +82,19 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     DET_THRESHOLD_LOW = 1e-3        # Below this: low confidence
     DET_THRESHOLD_HIGH = 1e3        # Above this: possible numerical issues
 
+    # Condition number thresholds for numerical stability assessment
+    # High condition numbers indicate the matrix is sensitive to small input changes
+    COND_THRESHOLD_DEGENERATE = 1e10  # Matrix is numerically degenerate
+    COND_THRESHOLD_UNSTABLE = 1e6     # Matrix is numerically unstable
+    COND_THRESHOLD_MARGINAL = 1e3     # Matrix is marginally stable
+
+    # Confidence penalty multipliers for various conditions
+    CONFIDENCE_PENALTY_UNSTABLE = 0.5    # Applied when condition number > COND_THRESHOLD_UNSTABLE
+    CONFIDENCE_PENALTY_MARGINAL = 0.9    # Applied when condition number > COND_THRESHOLD_MARGINAL
+    CONFIDENCE_PENALTY_BAD_HEIGHT = 0.5  # Applied when camera height <= 0
+    CONFIDENCE_PENALTY_BAD_TILT = 0.8    # Applied when tilt outside [-90, 90]
+    CONFIDENCE_LARGE_DET = 0.7           # Confidence for very large determinant
+
     def __init__(
         self,
         width: int,
@@ -137,8 +150,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     def get_intrinsics(
         self,
         zoom_factor: float,
-        width_px: int = 2560,
-        height_px: int = 1440,
+        width_px: Optional[int] = None,
+        height_px: Optional[int] = None,
         sensor_width_mm: Optional[float] = None
     ) -> np.ndarray:
         """
@@ -151,8 +164,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         Args:
             zoom_factor: Digital or optical zoom multiplier (1.0 = no zoom)
-            width_px: Image width in pixels (default: 2560)
-            height_px: Image height in pixels (default: 1440)
+            width_px: Image width in pixels (default: uses instance's width)
+            height_px: Image height in pixels (default: uses instance's height)
             sensor_width_mm: Physical sensor width in millimeters
                 (default: uses instance's sensor_width_mm)
 
@@ -172,6 +185,12 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
              [   0.     2106.27...  720.  ]
              [   0.        0.        1.  ]]
         """
+        # Use instance dimensions if not provided
+        if width_px is None:
+            width_px = self.width
+        if height_px is None:
+            height_px = self.height
+
         # Validate inputs
         if zoom_factor <= 0:
             raise ValueError(f"zoom_factor must be positive, got {zoom_factor}")
@@ -320,25 +339,18 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         """
         Calculate confidence score for the homography matrix.
 
-        Confidence scoring methodology:
-        1. Determinant-based checks:
-           - |det| < 1e-6: confidence = 0 (degenerate)
-           - |det| < 1e-3: confidence = 0.5 (low quality)
-           - |det| < 1e3: confidence = 1.0 (good)
-           - |det| >= 1e3: confidence = 0.7 (poorly scaled)
+        Confidence is computed using class constants for thresholds and penalties:
 
-        2. Condition number checks (applied as penalties):
-           - cond > 1e10: confidence = 0 (degenerate matrix)
-           - cond > 1e6: confidence *= 0.5 (unstable matrix)
-           - cond > 1e3: confidence *= 0.9 (marginal matrix)
+        1. Determinant-based checks (DET_THRESHOLD_* constants):
+           - Degenerate, low quality, good, or poorly scaled based on |det|
 
-        3. Camera parameter validity (applied as penalties):
-           - height <= 0: confidence *= 0.5
-           - tilt outside [-90, 90]: confidence *= 0.8
+        2. Condition number checks (COND_THRESHOLD_* constants):
+           - Penalties applied via CONFIDENCE_PENALTY_* multipliers
 
-        The condition number measures how sensitive the matrix is to numerical
-        errors. A high condition number indicates the matrix is ill-conditioned
-        and small changes in input lead to large changes in output.
+        3. Camera parameter validity:
+           - Height and tilt range violations apply penalties
+
+        See class constants for specific threshold and penalty values.
 
         Args:
             H: 3x3 homography matrix
@@ -368,28 +380,28 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         elif det_abs < self.DET_THRESHOLD_HIGH:
             confidence = 1.0
         else:
-            confidence = 0.7  # Very large determinant, might be poorly scaled
+            confidence = self.CONFIDENCE_LARGE_DET
 
         # Apply condition number checks (measures numerical stability)
         cond_H = np.linalg.cond(H)
-        if cond_H > 1e10:
-            confidence = 0.0  # Degenerate matrix
-        elif cond_H > 1e6:
-            confidence *= 0.5  # Unstable matrix
-        elif cond_H > 1e3:
-            confidence *= 0.9  # Marginal matrix
+        if cond_H > self.COND_THRESHOLD_DEGENERATE:
+            confidence = 0.0
+        elif cond_H > self.COND_THRESHOLD_UNSTABLE:
+            confidence *= self.CONFIDENCE_PENALTY_UNSTABLE
+        elif cond_H > self.COND_THRESHOLD_MARGINAL:
+            confidence *= self.CONFIDENCE_PENALTY_MARGINAL
 
         # Factor in camera parameter validity
         # Check camera height (should be positive)
         if camera_position is not None:
             camera_height = camera_position[2]
             if camera_height <= 0:
-                confidence *= 0.5  # Invalid height reduces confidence
+                confidence *= self.CONFIDENCE_PENALTY_BAD_HEIGHT
 
         # Check tilt angle (should be in [-90, 90] range)
         if tilt_deg is not None:
             if tilt_deg < -90.0 or tilt_deg > 90.0:
-                confidence *= 0.8  # Out-of-range tilt reduces confidence
+                confidence *= self.CONFIDENCE_PENALTY_BAD_TILT
 
         return confidence
 

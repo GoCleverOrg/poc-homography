@@ -165,15 +165,13 @@ class CameraGeometry:
         Tilt Convention:
         - Positive tilt_deg = camera pointing downward (Hikvision convention)
         - Negative tilt_deg = camera pointing upward
-        - Camera coordinate system has Y=Down, Z=Forward
-        - Due to this inverted Y-axis, the standard pitch rotation matrix is modified
-        - Hikvision tilt is measured as elevation angle from horizon (90° - depression)
-          so we convert: depression_angle = 90° - tilt_deg
+        - The sign is negated when converting to radians because the standard
+          Rx rotation matrix rotates in the opposite direction to achieve
+          downward tilt in a Y=Down camera coordinate system.
         """
         pan_rad = math.radians(self.pan_deg)
-        # Hikvision convention: positive tilt = camera pointing down
-        # For our geometry: we need positive angle to tilt down
-        # Use negative sign because of how Rx rotation works with Y=Down coordinate system
+        # Negate tilt: positive tilt_deg means "point down", but standard Rx
+        # rotation needs negative angle to rotate the optical axis downward
         tilt_rad = math.radians(-self.tilt_deg)
 
         # 1. Yaw (Rotation around World Z-axis - Pan)

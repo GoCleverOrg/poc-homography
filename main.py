@@ -626,7 +626,7 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
         side_panel_image: Optional path to side panel image
         zoom: Camera zoom factor (e.g., 1.0 = no zoom)
         pan: Camera pan angle in degrees (positive = right)
-        tilt: Camera tilt angle in degrees (negative = down)
+        tilt: Camera tilt angle in degrees (positive = down, Hikvision convention)
         height: Camera height above ground in meters
         homography_config: Optional configuration for homography approach (uses default if not provided)
         cam_info: Optional camera configuration dict containing GPS coordinates (lat, lon in DMS format)
@@ -656,57 +656,30 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
             )
 
             # B. World Position Setup
-            # The coordinate system mode determines how we set the camera position:
-            #
-            # Mode: ORIGIN_AT_CAMERA (default)
-            # - Camera position is [0, 0, height] - camera is at the origin
-            # - World coordinate system origin is directly below the camera
-            # - GPS coordinates (if available) are used only for geo-referencing projected points
-            # - This is mathematically sufficient for single-camera homography
-            # - Projected points are measured as offsets from camera position
-            #
-            # Mode: GPS_BASED_ORIGIN
-            # - Camera position X,Y are derived from GPS coordinates
-            # - World coordinate system origin is at a reference GPS location
-            # - Useful for multi-camera systems requiring a shared world coordinate frame
-            # - For single-camera use, this may still result in [0, 0, height] if GPS
-            #   reference is set to camera location
-            #
-            # Note: Geographic coordinates (lat/lon from cam_info) are NOT needed for homography
-            # computation itself. They are only needed for:
-            #   1. Geo-referencing projected points (converting back to lat/lon)
-            #   2. Merging views from multiple cameras with different geographic positions
+            # Camera is placed at world origin [0, 0, height].
+            # GPS coordinates (if available) are used for geo-referencing projected points.
+            camera_position = np.array([0.0, 0.0, height])
 
-            # Get coordinate system mode from configuration
+            # Warn if GPS_BASED_ORIGIN mode was requested (not yet implemented)
             coord_mode = homography_config.coordinate_system_mode if homography_config else CoordinateSystemMode.ORIGIN_AT_CAMERA
-
-            # Set camera position based on coordinate system mode
             if coord_mode == CoordinateSystemMode.GPS_BASED_ORIGIN:
-                # GPS-based mode: derive camera position from GPS coordinates
-                # For now, this still uses [0, 0, height] as we need a GPS reference point
-                # In a multi-camera system, you would convert GPS to metric coordinates here
-                # TODO: Implement GPS-to-metric conversion when GPS reference point is defined
-                camera_position = np.array([0.0, 0.0, height])
-                print(f"Coordinate System Mode: GPS_BASED_ORIGIN")
-                print(f"  Note: GPS-to-metric conversion not yet implemented")
-                print(f"  Using camera as temporary origin: [0, 0, {height}] meters")
-            else:
-                # Origin at camera mode (default): camera is at the world origin
-                camera_position = np.array([0.0, 0.0, height])
-                print(f"Coordinate System Mode: ORIGIN_AT_CAMERA (default)")
+                logger.warning(
+                    "GPS_BASED_ORIGIN mode is not yet implemented. "
+                    "Using ORIGIN_AT_CAMERA mode instead."
+                )
 
             # Parse GPS coordinates from cam_info if available
             camera_gps_lat = None
             camera_gps_lon = None
+            gps_available = False
             if cam_info and 'lat' in cam_info and 'lon' in cam_info:
                 try:
                     camera_gps_lat = dms_to_dd(cam_info['lat'])
                     camera_gps_lon = dms_to_dd(cam_info['lon'])
                     print(f"Camera GPS Position: {camera_gps_lat:.6f}°, {camera_gps_lon:.6f}°")
-                    print(f"  (Parsed from DMS: {cam_info['lat']}, {cam_info['lon']})")
-                except Exception as e:
-                    print(f"Warning: Failed to parse GPS coordinates: {e}")
-                    print(f"  GPS coordinates will not be available for geo-referencing")
+                except ValueError as e:
+                    logger.warning(f"Failed to parse GPS coordinates: {e}")
+                    print(f"Warning: Invalid GPS coordinate format - geo-referencing disabled")
 
             print(f"Camera World Position (Xw, Yw, Zw): {camera_position} meters")
             print(f"Intrinsic Matrix K:\n{K}")
@@ -715,13 +688,13 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
             if camera_gps_lat is not None and camera_gps_lon is not None:
                 try:
                     annotator.geo.set_camera_gps_position(camera_gps_lat, camera_gps_lon)
-                    print(f"  GPS position set successfully for geo-referencing")
+                    gps_available = True
+                    print(f"  GPS geo-referencing: enabled")
                 except ValueError as e:
                     logger.warning(f"Failed to set GPS position: {e}")
-                    print(f"  Warning: GPS coordinates out of valid range - geo-referencing disabled")
+                    print(f"  GPS geo-referencing: disabled (coordinates out of valid range)")
             else:
-                logger.info("GPS coordinates not available - geo-referencing will not be available")
-                print(f"  GPS coordinates not available - project_point() will raise RuntimeError")
+                print(f"  GPS geo-referencing: disabled (no coordinates provided)")
 
             # D. Compute homography using the new interface
             # NOTE: The tilt value from Hikvision cameras uses the convention where
