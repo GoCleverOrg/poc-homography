@@ -7,11 +7,20 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import time
 import math # Needed for camera_geometry
-# Import the new classes
+import logging
+# Import unified homography interface
+from homography_interface import HomographyProvider, HomographyProviderExtended, HomographyApproach
+from homography_config import HomographyConfig, get_default_config
+from homography_factory import HomographyFactory
+from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+# Import camera_geometry for backward compatibility
 from camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 # Import camera configuration
 from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------
 
@@ -21,8 +30,9 @@ class VideoAnnotator:
     Supports both video files and live RTSP streams.
     """
 
-    def __init__(self, video_path: Optional[str] = None, output_path: str = "output_annotated.mp4", 
-                 side_panel_width: int = 640, side_panel_image: Optional[str] = None):
+    def __init__(self, video_path: Optional[str] = None, output_path: str = "output_annotated.mp4",
+                 side_panel_width: int = 640, side_panel_image: Optional[str] = None,
+                 homography_config: Optional[HomographyConfig] = None):
         """
         Initialize video annotator.
 
@@ -31,6 +41,7 @@ class VideoAnnotator:
             output_path: Path for output annotated video
             side_panel_width: Width of side panel in pixels (for top-down view)
             side_panel_image: Optional path to image for side panel (e.g., floor plan)
+            homography_config: Optional configuration for homography approach (uses default if not provided)
         """
         self.video_path = video_path
         self.output_path = output_path
@@ -50,9 +61,13 @@ class VideoAnnotator:
 
         # Side panel image
         self.side_panel_template = None
-        
+
+        # Homography configuration and provider
+        self.homography_config = homography_config or get_default_config()
+
         # Geometry Engine: Initialized after frame size is known
-        self.geo: Optional[CameraGeometry] = None
+        # Uses HomographyProvider interface (can be any implementation)
+        self.geo: Optional[HomographyProvider] = None
 
     def load_video(self) -> bool:
         """Load video from file and extract properties."""
@@ -68,6 +83,10 @@ class VideoAnnotator:
 
         # Get video properties
         self.fps = int(self.cap.get(cv2.CAP_PROP_FPS))
+        if self.fps <= 0:
+            logger.warning(f"Invalid FPS {self.fps}, defaulting to 30")
+            self.fps = 30
+
         self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -76,9 +95,14 @@ class VideoAnnotator:
         print(f"  Resolution: {self.frame_width}x{self.frame_height}")
         print(f"  FPS: {self.fps}")
         print(f"  Total frames: {self.total_frames}")
-        
-        # Initialize Geometry Engine
-        self.geo = CameraGeometry(self.frame_width, self.frame_height)
+
+        # Initialize Geometry Engine using factory
+        self.geo = HomographyFactory.create(
+            self.homography_config.approach,
+            width=self.frame_width,
+            height=self.frame_height,
+            **self.homography_config.get_approach_config(self.homography_config.approach)
+        )
         
         # Load side panel
         if self.side_panel_image_path:
@@ -113,9 +137,14 @@ class VideoAnnotator:
         print(f"RTSP stream loaded successfully:")
         print(f"  Resolution: {self.frame_width}x{self.frame_height}")
         print(f"  Recording FPS: {self.fps} (Actual stream speed varies)")
-        
-        # Initialize Geometry Engine
-        self.geo = CameraGeometry(self.frame_width, self.frame_height)
+
+        # Initialize Geometry Engine using factory
+        self.geo = HomographyFactory.create(
+            self.homography_config.approach,
+            width=self.frame_width,
+            height=self.frame_height,
+            **self.homography_config.get_approach_config(self.homography_config.approach)
+        )
 
         # Load side panel
         if self.side_panel_image_path:
@@ -249,9 +278,8 @@ class VideoAnnotator:
             label_y = cam_py - 12
             cv2.putText(side_panel, "cam", (label_x, label_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        except Exception:
-            # Fail silently if mapping/drawing fails for any reason
-            pass
+        except (RuntimeError, ValueError) as e:
+            logger.warning(f"Failed to draw camera marker: {e}")
         # Plot tracked points if provided — position them relative to the camera and zoom to fit
         if tracked_points:
             try:
@@ -260,14 +288,17 @@ class VideoAnnotator:
                 desired_cam_py = h_sp - 30
 
                 # Compute original camera position in side-panel pixels (if available)
-                if self.geo and getattr(self.geo, 'w_pos', None) is not None:
-                    cam_orig_px, cam_orig_py = self.geo.world_to_map(
-                        float(self.geo.w_pos[0]), float(self.geo.w_pos[1]),
-                        sw=self.side_panel_width, sh=self.frame_height
-                    )
-                else:
-                    # If geometry is not available, assume camera was at bottom-center originally
-                    cam_orig_px, cam_orig_py = desired_cam_px, desired_cam_py
+                # Default to desired position
+                cam_orig_px, cam_orig_py = desired_cam_px, desired_cam_py
+
+                # Override if geometry provides camera position
+                if self.geo and hasattr(self.geo, 'world_to_map'):
+                    camera_pos = self.geo.get_camera_position() if hasattr(self.geo, 'get_camera_position') else None
+                    if camera_pos is not None:
+                        cam_orig_px, cam_orig_py = self.geo.world_to_map(
+                            float(camera_pos[0]), float(camera_pos[1]),
+                            sw=self.side_panel_width, sh=self.frame_height
+                        )
 
                 # Compute deltas from camera original position
                 deltas = []
@@ -298,7 +329,8 @@ class VideoAnnotator:
                     new_y = int(desired_cam_py + dy * scale)
                     cv2.circle(side_panel, (new_x, new_y), 5, (0, 0, 255), -1)
                     cv2.circle(side_panel, (new_x, new_y), 8, (255, 255, 255), 1)
-            except Exception:
+            except (RuntimeError, ValueError) as e:
+                logger.warning(f"Failed to project tracked points: {e}")
                 # Fallback: draw points directly if anything goes wrong
                 for point in tracked_points:
                     cv2.circle(side_panel, point, 5, (0, 0, 255), -1)
@@ -348,8 +380,11 @@ class VideoAnnotator:
 
             # Progress indicator
             if frame_number % 30 == 0:
-                progress = (frame_number / self.total_frames) * 100
-                print(f"Progress: {progress:.1f}% (frame {frame_number}/{self.total_frames})")
+                if self.total_frames > 0:
+                    progress = (frame_number / self.total_frames) * 100
+                    print(f"Progress: {progress:.1f}% (frame {frame_number}/{self.total_frames})")
+                else:
+                    print(f"Processing frame {frame_number}")
 
             frame_number += 1
 
@@ -463,8 +498,11 @@ class VideoAnnotator:
                 if frame_number % self.fps == 0 or frame_number == target_frames - 1:
                     current_time = time.time()
                     elapsed = current_time - start_time
-                    progress_percent = (frame_number / target_frames) * 100
-                    print(f"Progress: {progress_percent:.1f}% | Frames: {frame_number}/{target_frames} | Elapsed Time: {elapsed:.1f}s", end='\r')
+                    if target_frames > 0:
+                        progress_percent = (frame_number / target_frames) * 100
+                        print(f"Progress: {progress_percent:.1f}% | Frames: {frame_number}/{target_frames} | Elapsed Time: {elapsed:.1f}s", end='\r')
+                    else:
+                        print(f"Processing frame {frame_number} | Elapsed Time: {elapsed:.1f}s", end='\r')
             else:
                 if frame_number % (self.fps * 10) == 0: 
                     current_time = time.time()
@@ -513,21 +551,36 @@ class VideoAnnotator:
         if not boxes:
             return []
 
-        if self.geo and self.geo.H is not None and not np.all(self.geo.H == np.eye(3)):
+        # Check if provider is valid and ready for projection
+        if self.geo and self.geo.is_valid():
             # Extract "Feet" points (bottom center of box)
             feet_points = []
             for box in boxes:
                 x1, y1, x2, y2 = box
                 feet_x = int((x1 + x2) / 2)
-                feet_y = y2 
+                feet_y = y2
                 feet_points.append((feet_x, feet_y))
-            
-            # Project using Geometry
-            return self.geo.project_image_to_map(feet_points, 
-                                         self.side_panel_width, 
-                                         self.frame_height)
-        
-        # Fallback
+
+            # Check if provider has extended interface with project_points_to_map
+            if isinstance(self.geo, HomographyProviderExtended):
+                # Use new extended interface for batch projection
+                map_coords = self.geo.project_points_to_map(feet_points)
+                # Convert MapCoordinate objects to pixel coordinates
+                # Get pixels_per_meter from provider, default to 100.0 if not available
+                pixels_per_meter = getattr(self.geo, 'pixels_per_meter', 100.0)
+                map_points = []
+                for coord in map_coords:
+                    x_px = int((coord.x * pixels_per_meter) + (self.side_panel_width // 2))
+                    y_px = int(self.frame_height - (coord.y * pixels_per_meter))
+                    map_points.append((x_px, y_px))
+                return map_points
+            elif hasattr(self.geo, 'project_image_to_map'):
+                # Fall back to legacy method if available (for CameraGeometry compatibility)
+                return self.geo.project_image_to_map(feet_points,
+                                             self.side_panel_width,
+                                             self.frame_height)
+
+        # Fallback: simple scaling if homography not available
         points = []
         for box in boxes:
             x1, y1, x2, y2 = box
@@ -555,7 +608,9 @@ class VideoAnnotator:
 def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, side_panel_width: int = 640,
                               side_panel_image: Optional[str] = None,
                               # New geometry arguments
-                              zoom: float = 1.0, pan: float = 0.0, tilt: float = -45.0, height: float = 5.0):
+                              zoom: float = 1.0, pan: float = 0.0, tilt: float = -45.0, height: float = 5.0,
+                              # Homography configuration
+                              homography_config: Optional[HomographyConfig] = None):
     """
     Main entry point for stream-based processing with homography.
 
@@ -569,54 +624,76 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
         pan: Camera pan angle in degrees (positive = right)
         tilt: Camera tilt angle in degrees (negative = down)
         height: Camera height above ground in meters
+        homography_config: Optional configuration for homography approach (uses default if not provided)
     """
-    
+
     annotator = VideoAnnotator(
-        video_path=None, 
+        video_path=None,
         output_path=output_path,
         side_panel_width=side_panel_width,
-        side_panel_image=side_panel_image
+        side_panel_image=side_panel_image,
+        homography_config=homography_config
     )
-    
+
     # 1. Load the stream to set dimensions (W and H) in annotator.geo
     if not annotator.load_stream(rtsp_url):
         return
 
     # 2. Geometry Setup (Requires initialized annotator.geo)
     if annotator.geo:
-        # A. Calculate Intrinsics (K)
-        K = annotator.geo.get_intrinsics(zoom_factor=zoom, W_px=annotator.frame_width, H_px=annotator.frame_height)
+        # Check if this is an IntrinsicExtrinsicHomography provider
+        if isinstance(annotator.geo, IntrinsicExtrinsicHomography):
+            # A. Calculate Intrinsics (K)
+            K = IntrinsicExtrinsicHomography.get_intrinsics(
+                zoom_factor=zoom,
+                width_px=annotator.frame_width,
+                height_px=annotator.frame_height
+            )
 
-        # B. World Position Setup
-        # SIMPLIFIED APPROACH: Use camera as the origin of the world coordinate system.
-        # This is sufficient for homography - we only need the camera HEIGHT, not absolute position.
-        # The ground plane is at Z=0, and the camera is at [0, 0, height].
-        #
-        # Note: Geographic coordinates (lat/lon from cam_info) are NOT needed for homography.
-        # They would only be needed if you want to:
-        #   1. Geo-reference the projected points (convert back to lat/lon)
-        #   2. Merge views from multiple cameras with different geographic positions
-        #
-        # For single-camera homography, this simplified approach is mathematically correct.
+            # B. World Position Setup
+            # SIMPLIFIED APPROACH: Use camera as the origin of the world coordinate system.
+            # This is sufficient for homography - we only need the camera HEIGHT, not absolute position.
+            # The ground plane is at Z=0, and the camera is at [0, 0, height].
+            #
+            # Note: Geographic coordinates (lat/lon from cam_info) are NOT needed for homography.
+            # They would only be needed if you want to:
+            #   1. Geo-reference the projected points (convert back to lat/lon)
+            #   2. Merge views from multiple cameras with different geographic positions
+            #
+            # For single-camera homography, this simplified approach is mathematically correct.
 
-        w_pos = np.array([0.0, 0.0, height])  # Camera at origin, height meters above ground
+            camera_position = np.array([0.0, 0.0, height])  # Camera at origin, height meters above ground
 
-        print(f"Camera World Position (Xw, Yw, Zw): {w_pos} meters")
-        print(f"  (Using camera as world origin - sufficient for homography)")
-        print(f"Intrinsic Matrix K:\n{K}")
+            print(f"Camera World Position (Xw, Yw, Zw): {camera_position} meters")
+            print(f"  (Using camera as world origin - sufficient for homography)")
+            print(f"Intrinsic Matrix K:\n{K}")
 
-        # C. Set parameters and calculate Homography H
-        # IMPORTANT: Hikvision cameras use inverted tilt convention
-        # Positive tilt = pointing down (not up as in standard convention)
-        # So we negate the tilt angle for correct homography
-        annotator.geo.set_camera_parameters(
-            K=K,
-            w_pos=w_pos,
-            pan_deg=pan,
-            tilt_deg=-tilt,  # Negate tilt for Hikvision convention
-            map_width=side_panel_width,
-            map_height=annotator.frame_height
-        )
+            # C. Compute homography using the new interface
+            # IMPORTANT: Hikvision cameras use inverted tilt convention
+            # Positive tilt = pointing down (not up as in standard convention)
+            # So we negate the tilt angle for correct homography
+            reference = {
+                'camera_matrix': K,
+                'camera_position': camera_position,
+                'pan_deg': pan,
+                'tilt_deg': -tilt,  # Negate tilt for Hikvision convention
+                'map_width': side_panel_width,
+                'map_height': annotator.frame_height
+            }
+
+            # Compute homography (frame not needed for intrinsic/extrinsic approach)
+            result = annotator.geo.compute_homography(
+                frame=np.zeros((annotator.frame_height, annotator.frame_width, 3), dtype=np.uint8),
+                reference=reference
+            )
+
+            print(f"Homography computed successfully (confidence: {result.confidence:.2f})")
+            print(f"  Approach: {result.metadata.get('approach', 'unknown')}")
+            print(f"  Determinant: {result.metadata.get('determinant', 'N/A')}")
+        else:
+            # For other homography providers, they may have different setup requirements
+            print(f"Using homography provider: {type(annotator.geo).__name__}")
+            print("Note: Camera parameters setup may vary for different homography approaches")
 
     # 3. Process the stream
     annotator.process_stream(rtsp_url, duration)

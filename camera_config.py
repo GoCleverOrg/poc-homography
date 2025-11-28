@@ -3,9 +3,18 @@ Camera configuration file.
 Central location for all camera settings and credentials.
 """
 
-# Camera credentials
-USERNAME = "admin"
-PASSWORD = "CameraLab01*"
+import os
+
+# Camera credentials - loaded from environment variables
+USERNAME = os.getenv("CAMERA_USERNAME")
+PASSWORD = os.getenv("CAMERA_PASSWORD")
+
+# Validate that credentials are set
+if not USERNAME or not PASSWORD:
+    raise ValueError(
+        "Camera credentials not set. Please set CAMERA_USERNAME and CAMERA_PASSWORD "
+        "environment variables. See .env.example for template."
+    )
 
 # Camera configurations
 CAMERAS = [
