@@ -51,7 +51,17 @@ class HikvisionPTZ:
             return -1, str(e)
 
     def get_status(self) -> Optional[Dict[str, float]]:
-        """Get current PTZ status (pan, tilt, zoom)"""
+        """Get current PTZ status (pan, tilt, zoom)
+
+        Returns PTZ values in Hikvision's native convention:
+        - pan: degrees (positive = right, negative = left)
+        - tilt: degrees (positive = down, negative = up) - Hikvision native convention
+        - zoom: zoom factor
+
+        Note: Hikvision cameras report positive tilt for camera pointing down.
+        This matches the convention used by our homography geometry code, so no
+        normalization/negation is performed.
+        """
         endpoint = "/ISAPI/PTZCtrl/channels/1/status"
         status_code, response = self._make_request("GET", endpoint)
 
@@ -74,9 +84,15 @@ class HikvisionPTZ:
                 if abs_zoom is None:
                     abs_zoom = root.find('.//absoluteZoom')
 
+                # Parse tilt value from camera
+                # Hikvision reports positive tilt for camera pointing down
+                # Our geometry code uses the same convention (positive = down)
+                # so no normalization/negation is needed
+                tilt = float(elevation.text) / 10 if elevation is not None else None
+
                 result = {
                     'pan': float(azimuth.text) / 10 if azimuth is not None else None,
-                    'tilt': float(elevation.text) / 10 if elevation is not None else None,
+                    'tilt': tilt,
                     'zoom': float(abs_zoom.text) / 10 if abs_zoom is not None else None,
                     'raw_xml': response
                 }

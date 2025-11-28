@@ -47,7 +47,7 @@ class CameraGeometry:
     - K: 3x3 intrinsic matrix (focal length, principal point)
     - w_pos: Camera position [X, Y, Z] in world coordinates (meters)
     - pan_deg: Horizontal rotation (degrees, positive = right/clockwise from above)
-    - tilt_deg: Vertical rotation (degrees, negative = down)
+    - tilt_deg: Vertical rotation (degrees, positive = down, Hikvision convention)
     """
 
     def __init__(self, w: int, h: int):
@@ -113,7 +113,7 @@ class CameraGeometry:
             K: 3x3 intrinsic matrix
             w_pos: Camera position in world coordinates [X, Y, Z] (meters)
             pan_deg: Pan angle in degrees (positive = right)
-            tilt_deg: Tilt angle in degrees (negative = down)
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
             map_width: Width of output map in pixels
             map_height: Height of output map in pixels
         """
@@ -161,9 +161,18 @@ class CameraGeometry:
 
         Rotation order: Pan first (around Z-axis), then Tilt (around rotated X-axis).
         This matches standard PTZ camera behavior.
+
+        Tilt Convention:
+        - Positive tilt_deg = camera pointing downward (Hikvision convention)
+        - Negative tilt_deg = camera pointing upward
+        - The sign is negated when converting to radians because the standard
+          Rx rotation matrix rotates in the opposite direction to achieve
+          downward tilt in a Y=Down camera coordinate system.
         """
         pan_rad = math.radians(self.pan_deg)
-        tilt_rad = math.radians(self.tilt_deg)
+        # Negate tilt: positive tilt_deg means "point down", but standard Rx
+        # rotation needs negative angle to rotate the optical axis downward
+        tilt_rad = math.radians(-self.tilt_deg)
 
         # 1. Yaw (Rotation around World Z-axis - Pan)
         # Positive pan rotates camera to the right (clockwise from above)
@@ -174,7 +183,7 @@ class CameraGeometry:
         ])
 
         # 2. Pitch (Rotation around X-axis - Tilt)
-        # Negative tilt points camera downward
+        # Standard rotation matrix (Camera Y=Down requires careful angle interpretation)
         Rx = np.array([
             [1, 0, 0],
             [0, math.cos(tilt_rad), -math.sin(tilt_rad)],

@@ -6,6 +6,9 @@ Calculate ground distance between GPS coordinates using Haversine formula.
 import math
 import numpy as np
 
+# Earth's mean radius in meters (WGS84 approximation)
+EARTH_RADIUS_M = 6371000.0
+
 
 def dms_to_dd(dms_str: str) -> float:
     """
@@ -47,8 +50,7 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     Returns:
         Distance in meters
     """
-    # Earth radius in meters
-    R = 6371000.0
+    R = EARTH_RADIUS_M
 
     # Convert to radians
     lat1_rad = math.radians(lat1)
@@ -106,8 +108,7 @@ def gps_to_local_xy(lat_camera: float, lon_camera: float,
             X = East-West (positive = East)
             Y = North-South (positive = North)
     """
-    # Earth radius in meters
-    R = 6371000.0
+    R = EARTH_RADIUS_M
 
     # Convert to radians
     lat_cam_rad = math.radians(lat_camera)
@@ -137,8 +138,7 @@ def local_xy_to_gps(lat_camera: float, lon_camera: float,
     Returns:
         (lat_degrees, lon_degrees) in decimal degrees
     """
-    # Earth radius in meters
-    R = 6371000.0
+    R = EARTH_RADIUS_M
 
     # Convert camera position to radians
     lat_cam_rad = math.radians(lat_camera)

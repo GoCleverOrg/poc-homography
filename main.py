@@ -9,7 +9,7 @@ import time
 import math # Needed for camera_geometry
 import logging
 # Import unified homography interface
-from homography_interface import HomographyProvider, HomographyProviderExtended, HomographyApproach
+from homography_interface import HomographyProvider, HomographyProviderExtended, HomographyApproach, CoordinateSystemMode
 from homography_config import HomographyConfig, get_default_config
 from homography_factory import HomographyFactory
 from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
@@ -18,6 +18,8 @@ from camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 # Import camera configuration
 from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
+# Import GPS utilities
+from gps_distance_calculator import dms_to_dd
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -610,7 +612,9 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
                               # New geometry arguments
                               zoom: float = 1.0, pan: float = 0.0, tilt: float = -45.0, height: float = 5.0,
                               # Homography configuration
-                              homography_config: Optional[HomographyConfig] = None):
+                              homography_config: Optional[HomographyConfig] = None,
+                              # Camera info for GPS coordinates
+                              cam_info: Optional[dict] = None):
     """
     Main entry point for stream-based processing with homography.
 
@@ -622,9 +626,10 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
         side_panel_image: Optional path to side panel image
         zoom: Camera zoom factor (e.g., 1.0 = no zoom)
         pan: Camera pan angle in degrees (positive = right)
-        tilt: Camera tilt angle in degrees (negative = down)
+        tilt: Camera tilt angle in degrees (positive = down, Hikvision convention)
         height: Camera height above ground in meters
         homography_config: Optional configuration for homography approach (uses default if not provided)
+        cam_info: Optional camera configuration dict containing GPS coordinates (lat, lon in DMS format)
     """
 
     annotator = VideoAnnotator(
@@ -644,39 +649,68 @@ def annotate_stream_with_args(rtsp_url: str, duration: float, output_path: str, 
         # Check if this is an IntrinsicExtrinsicHomography provider
         if isinstance(annotator.geo, IntrinsicExtrinsicHomography):
             # A. Calculate Intrinsics (K)
-            K = IntrinsicExtrinsicHomography.get_intrinsics(
+            K = annotator.geo.get_intrinsics(
                 zoom_factor=zoom,
                 width_px=annotator.frame_width,
                 height_px=annotator.frame_height
             )
 
             # B. World Position Setup
-            # SIMPLIFIED APPROACH: Use camera as the origin of the world coordinate system.
-            # This is sufficient for homography - we only need the camera HEIGHT, not absolute position.
-            # The ground plane is at Z=0, and the camera is at [0, 0, height].
-            #
-            # Note: Geographic coordinates (lat/lon from cam_info) are NOT needed for homography.
-            # They would only be needed if you want to:
-            #   1. Geo-reference the projected points (convert back to lat/lon)
-            #   2. Merge views from multiple cameras with different geographic positions
-            #
-            # For single-camera homography, this simplified approach is mathematically correct.
+            # Camera is placed at world origin [0, 0, height].
+            # GPS coordinates (if available) are used for geo-referencing projected points.
+            camera_position = np.array([0.0, 0.0, height])
 
-            camera_position = np.array([0.0, 0.0, height])  # Camera at origin, height meters above ground
+            # Warn if GPS_BASED_ORIGIN mode was requested (not yet implemented)
+            coord_mode = homography_config.coordinate_system_mode if homography_config else CoordinateSystemMode.ORIGIN_AT_CAMERA
+            if coord_mode == CoordinateSystemMode.GPS_BASED_ORIGIN:
+                logger.warning(
+                    "GPS_BASED_ORIGIN mode is not yet implemented. "
+                    "Using ORIGIN_AT_CAMERA mode instead."
+                )
+
+            # Parse GPS coordinates from cam_info if available
+            camera_gps_lat = None
+            camera_gps_lon = None
+            gps_available = False
+            if cam_info and 'lat' in cam_info and 'lon' in cam_info:
+                # Validate that lat/lon values are strings before parsing
+                if not isinstance(cam_info['lat'], str) or not isinstance(cam_info['lon'], str):
+                    logger.warning("GPS coordinates must be strings in DMS format, got lat=%s, lon=%s",
+                                   type(cam_info['lat']).__name__, type(cam_info['lon']).__name__)
+                    print("Warning: Invalid GPS coordinate type - geo-referencing disabled")
+                else:
+                    try:
+                        camera_gps_lat = dms_to_dd(cam_info['lat'])
+                        camera_gps_lon = dms_to_dd(cam_info['lon'])
+                        print(f"Camera GPS Position: {camera_gps_lat:.6f}°, {camera_gps_lon:.6f}°")
+                    except ValueError as e:
+                        logger.warning(f"Failed to parse GPS coordinates: {e}")
+                        print(f"Warning: Invalid GPS coordinate format - geo-referencing disabled")
 
             print(f"Camera World Position (Xw, Yw, Zw): {camera_position} meters")
-            print(f"  (Using camera as world origin - sufficient for homography)")
             print(f"Intrinsic Matrix K:\n{K}")
 
-            # C. Compute homography using the new interface
-            # IMPORTANT: Hikvision cameras use inverted tilt convention
-            # Positive tilt = pointing down (not up as in standard convention)
-            # So we negate the tilt angle for correct homography
+            # C. Set GPS position BEFORE compute_homography (required for geo-referencing)
+            if camera_gps_lat is not None and camera_gps_lon is not None:
+                try:
+                    annotator.geo.set_camera_gps_position(camera_gps_lat, camera_gps_lon)
+                    gps_available = True
+                    print(f"  GPS geo-referencing: enabled")
+                except ValueError as e:
+                    logger.warning(f"Failed to set GPS position: {e}")
+                    print(f"  GPS geo-referencing: disabled (coordinates out of valid range)")
+            else:
+                print(f"  GPS geo-referencing: disabled (no coordinates provided)")
+
+            # D. Compute homography using the new interface
+            # NOTE: The tilt value from Hikvision cameras uses the convention where
+            # positive = camera pointing down, which matches our geometry code expectations.
+            # No normalization is needed.
             reference = {
                 'camera_matrix': K,
                 'camera_position': camera_position,
                 'pan_deg': pan,
-                'tilt_deg': -tilt,  # Negate tilt for Hikvision convention
+                'tilt_deg': tilt,  # Hikvision convention: positive = down
                 'map_width': side_panel_width,
                 'map_height': annotator.frame_height
             }
@@ -759,7 +793,8 @@ def usage_example_stream(cam_name:str, duration: float):
         zoom=status["zoom"],
         pan=status["pan"],
         tilt=status["tilt"],
-        height=CAMERA_HEIGHT_M
+        height=CAMERA_HEIGHT_M,
+        cam_info=cam_info
     )
 
 def main():

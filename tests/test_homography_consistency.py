@@ -26,7 +26,7 @@ def test_forward_backward_consistency():
         K=K,
         w_pos=w_pos,
         pan_deg=0.0,
-        tilt_deg=-45.0,
+        tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
         map_width=640,
         map_height=480
     )
@@ -75,7 +75,7 @@ def test_principal_point_projection():
     K = geo.get_intrinsics(zoom_factor=1.0, W_px=2560, H_px=1440)
     w_pos = np.array([0.0, 0.0, 5.0])
 
-    for tilt in [-30, -45, -60]:
+    for tilt in [30, 45, 60]:  # Positive = pointing down (Hikvision convention)
         geo.set_camera_parameters(
             K=K,
             w_pos=w_pos,
@@ -94,9 +94,11 @@ def test_principal_point_projection():
         Yw = pt_world[1, 0] / pt_world[2, 0]
         distance = np.sqrt(Xw**2 + Yw**2)
 
-        # For downward tilt, center should project ahead (positive Y)
-        # Distance should increase with steeper tilt
-        expected_distance = 5.0 / np.tan(np.radians(-tilt))  # h/tan(theta)
+        # For downward tilt: Hikvision tilt is ELEVATION angle (from horizon looking up)
+        # So depression angle = 90° - tilt
+        # Distance should INCREASE with larger tilt (because depression decreases)
+        depression = 90.0 - tilt
+        expected_distance = 5.0 / np.tan(np.radians(depression))  # h/tan(depression_angle)
 
         error = abs(distance - expected_distance)
         status = "✓ PASS" if error < 0.5 else "✗ FAIL"
@@ -118,7 +120,7 @@ def test_horizon_behavior():
         K=K,
         w_pos=w_pos,
         pan_deg=0.0,
-        tilt_deg=-45.0,
+        tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
         map_width=640,
         map_height=480
     )
@@ -160,7 +162,7 @@ def test_pan_rotation():
             K=K,
             w_pos=w_pos,
             pan_deg=pan,
-            tilt_deg=-45.0,
+            tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
             map_width=640,
             map_height=480
         )
@@ -196,7 +198,7 @@ def test_zoom_effect():
             K=K,
             w_pos=w_pos,
             pan_deg=0.0,
-            tilt_deg=-45.0,
+            tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
             map_width=640,
             map_height=480
         )

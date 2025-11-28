@@ -38,6 +38,43 @@ class HomographyApproach(Enum):
     homography directly from image data."""
 
 
+class CoordinateSystemMode(Enum):
+    """Enumeration of coordinate system origin modes for camera positioning.
+
+    This defines where the origin (0, 0, 0) of the world coordinate system is placed
+    when computing homography transformations.
+    """
+
+    ORIGIN_AT_CAMERA = "origin_at_camera"
+    """Origin at camera position (Mode B - current default).
+
+    In this mode:
+    - Camera position is set to [0, 0, height] where height is camera elevation
+    - World coordinate system origin is directly below the camera on the ground plane
+    - GPS coordinates (if available) are used only for geo-referencing projected points
+    - This is mathematically sufficient for single-camera homography
+    - Projected points are measured as offsets from the camera position
+
+    This is the default and recommended mode for single-camera applications.
+    """
+
+    GPS_BASED_ORIGIN = "gps_based_origin"
+    """GPS-based world coordinates (Mode A).
+
+    In this mode:
+    - Camera position X,Y components are derived from GPS coordinates
+    - Camera position becomes [X_gps, Y_gps, height] in metric coordinates
+    - World coordinate system origin is at a reference GPS location (e.g., 0°, 0°)
+    - This mode is useful for multi-camera systems where cameras need a shared
+      world coordinate frame
+    - Projected points are in absolute metric coordinates relative to GPS origin
+
+    Note: For single-camera use, this mode may still result in [0, 0, height]
+    if the GPS reference point is set to the camera's GPS location. The key
+    difference is that the infrastructure is in place for multi-camera fusion.
+    """
+
+
 @dataclass
 class WorldPoint:
     """Represents a point in world coordinates with confidence score.
@@ -127,6 +164,22 @@ class GPSPositionMixin:
 
     Classes using this mixin must initialize _camera_gps_lat and _camera_gps_lon
     attributes (typically to None) in their __init__.
+
+    IMPORTANT: Temporal Coupling Requirement
+    ----------------------------------------
+    When using GPS-based geo-referencing with homography providers:
+
+    1. Call set_camera_gps_position() BEFORE compute_homography()
+    2. GPS position must be set before calling project_point() or project_points()
+       that return WorldPoint with GPS coordinates
+
+    If GPS position is not set, project_point() will raise RuntimeError.
+
+    Example usage:
+        provider = IntrinsicExtrinsicHomography(2560, 1440)
+        provider.set_camera_gps_position(39.640, -0.230)  # Set GPS first
+        provider.compute_homography(frame, reference)      # Then compute homography
+        world_point = provider.project_point((1280, 720)) # Now projection works
     """
     _camera_gps_lat: Optional[float]
     _camera_gps_lon: Optional[float]
@@ -137,6 +190,10 @@ class GPSPositionMixin:
 
         This establishes the reference point for converting local metric
         coordinates to GPS coordinates.
+
+        Note:
+            Must be called BEFORE compute_homography() if GPS geo-referencing
+            is needed. See class docstring for temporal coupling requirements.
 
         Args:
             lat: Camera latitude in decimal degrees [-90, 90]
