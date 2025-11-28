@@ -100,10 +100,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             pixels_per_meter: Scale factor for map visualization (default: 100)
             sensor_width_mm: Physical sensor width in millimeters (default: 7.18)
             base_focal_length_mm: Base focal length at 1x zoom in mm (default: 5.9).
-                Note: This parameter is stored for reference but not currently used
-                in instance methods. The static method get_intrinsics() uses a
-                hardcoded default of 5.9mm. This parameter is kept for forward
-                compatibility and potential future use.
+                This value is used by get_intrinsics() to calculate the camera
+                intrinsic matrix. It represents the physical focal length when
+                zoom_factor=1.0, and scales linearly with zoom.
             **kwargs: Additional parameters (ignored, for forward compatibility)
         """
         # Validate image dimensions
@@ -135,25 +134,27 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self._last_pan_deg: Optional[float] = None
         self._last_tilt_deg: Optional[float] = None
 
-    @staticmethod
     def get_intrinsics(
+        self,
         zoom_factor: float,
         width_px: int = 2560,
         height_px: int = 1440,
-        sensor_width_mm: float = 7.18
+        sensor_width_mm: Optional[float] = None
     ) -> np.ndarray:
         """
         Calculate camera intrinsic matrix K from zoom factor and sensor specs.
 
         This is a convenience method for computing the camera matrix based on
         physical camera specifications. The focal length is computed as a linear
-        function of zoom factor based on typical PTZ camera characteristics.
+        function of zoom factor based on the base focal length configured for
+        this instance.
 
         Args:
             zoom_factor: Digital or optical zoom multiplier (1.0 = no zoom)
             width_px: Image width in pixels (default: 2560)
             height_px: Image height in pixels (default: 1440)
-            sensor_width_mm: Physical sensor width in millimeters (default: 7.18)
+            sensor_width_mm: Physical sensor width in millimeters
+                (default: uses instance's sensor_width_mm)
 
         Returns:
             K: 3x3 camera intrinsic matrix with:
@@ -164,7 +165,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 the principal point (typically image center).
 
         Example:
-            >>> K = IntrinsicExtrinsicHomography.get_intrinsics(zoom_factor=5.0)
+            >>> homography = IntrinsicExtrinsicHomography(2560, 1440)
+            >>> K = homography.get_intrinsics(zoom_factor=5.0)
             >>> print(K)
             [[2106.27...    0.     1280.  ]
              [   0.     2106.27...  720.  ]
@@ -175,11 +177,17 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             raise ValueError(f"zoom_factor must be positive, got {zoom_factor}")
         if width_px <= 0 or height_px <= 0:
             raise ValueError("Image dimensions must be positive")
+
+        # Use instance sensor_width_mm if not provided
+        if sensor_width_mm is None:
+            sensor_width_mm = self.sensor_width_mm
+
         if sensor_width_mm <= 0:
             raise ValueError("sensor_width_mm must be positive")
 
-        # Linear mapping based on camera datasheet: 1x zoom = 5.9mm focal length
-        f_mm = 5.9 * zoom_factor
+        # Linear mapping based on instance's base focal length
+        # Uses base_focal_length_mm at 1x zoom, scales linearly with zoom_factor
+        f_mm = self.base_focal_length_mm * zoom_factor
 
         # Convert focal length from millimeters to pixels
         f_px = f_mm * (width_px / sensor_width_mm)
@@ -207,15 +215,24 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             - World: X=East, Y=North, Z=Up
             - Camera: X=Right, Y=Down, Z=Forward (optical axis)
 
+        Tilt Convention:
+            - Positive tilt_deg = camera pointing downward (Hikvision convention)
+            - Negative tilt_deg = camera pointing upward
+            - Camera coordinate system has Y=Down, Z=Forward
+            - Due to this inverted Y-axis, the standard pitch rotation matrix is modified
+
         Args:
             pan_deg: Pan angle in degrees (positive = right/clockwise from above)
-            tilt_deg: Tilt angle in degrees (negative = down)
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
 
         Returns:
             R: 3x3 rotation matrix transforming world coordinates to camera frame
         """
         pan_rad = math.radians(pan_deg)
-        tilt_rad = math.radians(tilt_deg)
+        # Hikvision convention: positive tilt = camera pointing down
+        # For our geometry: we need positive angle to tilt down
+        # Use negative sign because of how Rx rotation works with Y=Down coordinate system
+        tilt_rad = math.radians(-tilt_deg)
 
         # Yaw rotation around World Z-axis (Pan)
         # Positive pan rotates camera to the right (clockwise from above)
@@ -226,7 +243,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         ])
 
         # Pitch rotation around X-axis (Tilt)
-        # Negative tilt points camera downward
+        # Standard rotation matrix (Camera Y=Down requires careful angle interpretation)
         Rx = np.array([
             [1.0, 0.0, 0.0],
             [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
@@ -294,15 +311,39 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         return H
 
-    def _calculate_confidence(self, H: np.ndarray) -> float:
+    def _calculate_confidence(
+        self,
+        H: np.ndarray,
+        camera_position: Optional[np.ndarray] = None,
+        tilt_deg: Optional[float] = None
+    ) -> float:
         """
         Calculate confidence score for the homography matrix.
 
-        Confidence is based on the determinant of the homography matrix.
-        A well-conditioned homography has a non-zero determinant.
+        Confidence scoring methodology:
+        1. Determinant-based checks:
+           - |det| < 1e-6: confidence = 0 (degenerate)
+           - |det| < 1e-3: confidence = 0.5 (low quality)
+           - |det| < 1e3: confidence = 1.0 (good)
+           - |det| >= 1e3: confidence = 0.7 (poorly scaled)
+
+        2. Condition number checks (applied as penalties):
+           - cond > 1e10: confidence = 0 (degenerate matrix)
+           - cond > 1e6: confidence *= 0.5 (unstable matrix)
+           - cond > 1e3: confidence *= 0.9 (marginal matrix)
+
+        3. Camera parameter validity (applied as penalties):
+           - height <= 0: confidence *= 0.5
+           - tilt outside [-90, 90]: confidence *= 0.8
+
+        The condition number measures how sensitive the matrix is to numerical
+        errors. A high condition number indicates the matrix is ill-conditioned
+        and small changes in input lead to large changes in output.
 
         Args:
             H: 3x3 homography matrix
+            camera_position: Camera position [X, Y, Z] in meters (optional)
+            tilt_deg: Tilt angle in degrees (optional)
 
         Returns:
             float: Confidence score in range [0.0, 1.0]
@@ -328,6 +369,27 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             confidence = 1.0
         else:
             confidence = 0.7  # Very large determinant, might be poorly scaled
+
+        # Apply condition number checks (measures numerical stability)
+        cond_H = np.linalg.cond(H)
+        if cond_H > 1e10:
+            confidence = 0.0  # Degenerate matrix
+        elif cond_H > 1e6:
+            confidence *= 0.5  # Unstable matrix
+        elif cond_H > 1e3:
+            confidence *= 0.9  # Marginal matrix
+
+        # Factor in camera parameter validity
+        # Check camera height (should be positive)
+        if camera_position is not None:
+            camera_height = camera_position[2]
+            if camera_height <= 0:
+                confidence *= 0.5  # Invalid height reduces confidence
+
+        # Check tilt angle (should be in [-90, 90] range)
+        if tilt_deg is not None:
+            if tilt_deg < -90.0 or tilt_deg > 90.0:
+                confidence *= 0.8  # Out-of-range tilt reduces confidence
 
         return confidence
 
@@ -549,6 +611,15 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 camera_position[2]
             )
 
+        # Validate and clamp tilt angle to valid range [-90, 90] degrees
+        if tilt_deg < -90.0 or tilt_deg > 90.0:
+            logger.warning(
+                "Tilt angle (%.2f degrees) is outside valid range [-90, 90]. "
+                "Clamping to valid range.",
+                tilt_deg
+            )
+            tilt_deg = max(-90.0, min(90.0, tilt_deg))
+
         # Store map dimensions
         self.map_width = map_width
         self.map_height = map_height
@@ -567,7 +638,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             self.confidence = 0.0
         else:
             self.H_inv = np.linalg.inv(self.H)
-            self.confidence = self._calculate_confidence(self.H)
+            self.confidence = self._calculate_confidence(self.H, camera_position, tilt_deg)
 
         # Store parameters for metadata
         self._last_camera_matrix = K.copy()

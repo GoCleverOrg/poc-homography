@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import yaml
 
-from homography_interface import HomographyApproach
+from homography_interface import HomographyApproach, CoordinateSystemMode
 
 
 @dataclass
@@ -20,10 +20,15 @@ class HomographyConfig:
         approach: Primary homography approach to use
         fallback_approaches: Ordered list of fallback approaches if primary fails
         approach_specific_config: Dict of approach-specific configuration
+        coordinate_system_mode: Mode for setting world coordinate system origin.
+            Controls whether camera position is at origin (ORIGIN_AT_CAMERA)
+            or derived from GPS coordinates (GPS_BASED_ORIGIN). Default is
+            ORIGIN_AT_CAMERA for backward compatibility and single-camera use.
     """
     approach: HomographyApproach = HomographyApproach.INTRINSIC_EXTRINSIC
     fallback_approaches: List[HomographyApproach] = field(default_factory=list)
     approach_specific_config: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    coordinate_system_mode: CoordinateSystemMode = CoordinateSystemMode.ORIGIN_AT_CAMERA
 
     @classmethod
     def from_yaml(cls, path: str) -> 'HomographyConfig':
@@ -98,6 +103,28 @@ class HomographyConfig:
                 f"Must be one of: {', '.join(valid_approaches)}"
             ) from None
 
+    @staticmethod
+    def _parse_coordinate_system_mode(mode_str: str) -> CoordinateSystemMode:
+        """Parse a coordinate system mode string into CoordinateSystemMode enum.
+
+        Args:
+            mode_str: String representation of the coordinate system mode
+
+        Returns:
+            CoordinateSystemMode enum value
+
+        Raises:
+            ValueError: If mode_str is not a valid coordinate system mode
+        """
+        try:
+            return CoordinateSystemMode(mode_str)
+        except ValueError:
+            valid_modes = [m.value for m in CoordinateSystemMode]
+            raise ValueError(
+                f"Invalid coordinate_system_mode '{mode_str}'. "
+                f"Must be one of: {', '.join(valid_modes)}"
+            ) from None
+
     @classmethod
     def from_dict(cls, config: dict) -> 'HomographyConfig':
         """Create configuration from dictionary.
@@ -148,6 +175,12 @@ class HomographyConfig:
                 fallback_approach = cls._parse_approach(fallback_str)
                 fallback_approaches.append(fallback_approach)
 
+        # Parse coordinate system mode (optional, defaults to ORIGIN_AT_CAMERA)
+        coordinate_system_mode = CoordinateSystemMode.ORIGIN_AT_CAMERA
+        if 'coordinate_system_mode' in config:
+            mode_str = config['coordinate_system_mode']
+            coordinate_system_mode = cls._parse_coordinate_system_mode(mode_str)
+
         # Extract approach-specific configuration
         approach_specific_config = {}
 
@@ -160,7 +193,8 @@ class HomographyConfig:
         return cls(
             approach=approach,
             fallback_approaches=fallback_approaches,
-            approach_specific_config=approach_specific_config
+            approach_specific_config=approach_specific_config,
+            coordinate_system_mode=coordinate_system_mode
         )
 
     def to_dict(self) -> dict:
@@ -177,6 +211,7 @@ class HomographyConfig:
         """
         result = {
             'approach': self.approach.value,
+            'coordinate_system_mode': self.coordinate_system_mode.value,
         }
 
         if self.fallback_approaches:

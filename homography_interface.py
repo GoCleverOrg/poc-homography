@@ -38,6 +38,43 @@ class HomographyApproach(Enum):
     homography directly from image data."""
 
 
+class CoordinateSystemMode(Enum):
+    """Enumeration of coordinate system origin modes for camera positioning.
+
+    This defines where the origin (0, 0, 0) of the world coordinate system is placed
+    when computing homography transformations.
+    """
+
+    ORIGIN_AT_CAMERA = "origin_at_camera"
+    """Origin at camera position (Mode B - current default).
+
+    In this mode:
+    - Camera position is set to [0, 0, height] where height is camera elevation
+    - World coordinate system origin is directly below the camera on the ground plane
+    - GPS coordinates (if available) are used only for geo-referencing projected points
+    - This is mathematically sufficient for single-camera homography
+    - Projected points are measured as offsets from the camera position
+
+    This is the default and recommended mode for single-camera applications.
+    """
+
+    GPS_BASED_ORIGIN = "gps_based_origin"
+    """GPS-based world coordinates (Mode A).
+
+    In this mode:
+    - Camera position X,Y components are derived from GPS coordinates
+    - Camera position becomes [X_gps, Y_gps, height] in metric coordinates
+    - World coordinate system origin is at a reference GPS location (e.g., 0°, 0°)
+    - This mode is useful for multi-camera systems where cameras need a shared
+      world coordinate frame
+    - Projected points are in absolute metric coordinates relative to GPS origin
+
+    Note: For single-camera use, this mode may still result in [0, 0, height]
+    if the GPS reference point is set to the camera's GPS location. The key
+    difference is that the infrastructure is in place for multi-camera fusion.
+    """
+
+
 @dataclass
 class WorldPoint:
     """Represents a point in world coordinates with confidence score.
