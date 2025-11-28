@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """Test the status endpoint with the fixed namespace handling"""
 
+import os
+import sys
 import requests
 from requests.auth import HTTPDigestAuth
 import xml.etree.ElementTree as ET
 
+# Load credentials from environment variables
+USERNAME = os.environ.get("CAMERA_USERNAME")
+PASSWORD = os.environ.get("CAMERA_PASSWORD")
+
+if not USERNAME or not PASSWORD:
+    print("ERROR: Camera credentials not configured!", file=sys.stderr)
+    print("Please set CAMERA_USERNAME and CAMERA_PASSWORD environment variables", file=sys.stderr)
+    sys.exit(1)
+
 ip = "10.207.99.178"
 url = f"http://{ip}/ISAPI/PTZCtrl/channels/1/status"
 
-response = requests.get(url, auth=HTTPDigestAuth("admin", "CameraLab01*"), timeout=5)
+response = requests.get(url, auth=HTTPDigestAuth(USERNAME, PASSWORD), timeout=5)
 print(f"Status code: {response.status_code}")
 
 if response.status_code == 200:

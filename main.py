@@ -2,13 +2,21 @@
 
 import datetime
 import cv2
+import logging
 import numpy as np
 from pathlib import Path
 from typing import List, Tuple, Optional
 import time
 import math # Needed for camera_geometry
-# Import the new classes
+
+logger = logging.getLogger(__name__)
+
+# NOTE: CameraGeometry is the legacy geometry class currently used by VideoAnnotator.
+# The new unified interface (HomographyProviderExtended) is being introduced but
+# this code has not yet been migrated. Both are kept during the transition period.
+# TODO: Migrate VideoAnnotator to use IntrinsicExtrinsicHomography instead of CameraGeometry
 from camera_geometry import CameraGeometry
+
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 # Import camera configuration
 from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
@@ -249,9 +257,9 @@ class VideoAnnotator:
             label_y = cam_py - 12
             cv2.putText(side_panel, "cam", (label_x, label_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        except Exception:
-            # Fail silently if mapping/drawing fails for any reason
-            pass
+        except Exception as e:
+            # Log camera marker drawing failure for debugging
+            logger.debug("Failed to draw camera marker on side panel: %s", e, exc_info=True)
         # Plot tracked points if provided — position them relative to the camera and zoom to fit
         if tracked_points:
             try:
@@ -298,7 +306,9 @@ class VideoAnnotator:
                     new_y = int(desired_cam_py + dy * scale)
                     cv2.circle(side_panel, (new_x, new_y), 5, (0, 0, 255), -1)
                     cv2.circle(side_panel, (new_x, new_y), 8, (255, 255, 255), 1)
-            except Exception:
+            except Exception as e:
+                # Log tracked points transformation failure and use fallback
+                logger.debug("Failed to transform tracked points for side panel, using direct mapping fallback: %s", e, exc_info=True)
                 # Fallback: draw points directly if anything goes wrong
                 for point in tracked_points:
                     cv2.circle(side_panel, point, 5, (0, 0, 255), -1)

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Quick test to check basic connectivity to Hikvision cameras"""
 
+import os
+import sys
 import requests
 from requests.auth import HTTPDigestAuth
 import xml.etree.ElementTree as ET
@@ -10,8 +12,14 @@ CAMERAS = [
     {"ip": "10.237.100.15", "name": "Camera 2"}
 ]
 
-USERNAME = "admin"
-PASSWORD = "CameraLab01*"
+# Load credentials from environment variables
+USERNAME = os.environ.get("CAMERA_USERNAME")
+PASSWORD = os.environ.get("CAMERA_PASSWORD")
+
+if not USERNAME or not PASSWORD:
+    print("ERROR: Camera credentials not configured!", file=sys.stderr)
+    print("Please set CAMERA_USERNAME and CAMERA_PASSWORD environment variables", file=sys.stderr)
+    sys.exit(1)
 
 for cam in CAMERAS:
     print(f"\n{'='*60}")
