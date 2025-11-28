@@ -35,6 +35,7 @@ Potential Model Architectures:
 
 from typing import List, Tuple, Dict, Any, Optional
 import numpy as np
+import logging
 
 from homography_interface import (
     HomographyProviderExtended,
@@ -45,6 +46,8 @@ from homography_interface import (
     validate_homography_matrix,
     GPSPositionMixin
 )
+
+logger = logging.getLogger(__name__)
 
 
 class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
@@ -196,6 +199,12 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             RuntimeError: If model loading fails
             NotImplementedError: Currently not implemented (issue #14)
         """
+        logger.warning(
+            "Learned homography model loading not implemented. "
+            "Model path: %s, model type: %s",
+            model_path or self.model_path,
+            self.model_type
+        )
         raise NotImplementedError(
             "Model loading not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -248,6 +257,13 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             This method will update the provider's internal state. Subsequent
             calls to project_point() will use this computed homography.
         """
+        logger.warning(
+            "Learned homography computation not implemented. "
+            "Frame shape: %s, model type: %s, device: %s",
+            frame.shape if hasattr(frame, 'shape') else 'unknown',
+            self.model_type,
+            self.device
+        )
         raise NotImplementedError(
             "Learned homography computation not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -282,6 +298,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         Note:
             Call is_valid() first to ensure homography is ready for projection.
         """
+        logger.warning(
+            "Learned homography point projection not implemented. "
+            "Image point: %s",
+            image_point
+        )
         raise NotImplementedError(
             "Point projection not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -315,6 +336,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             Batch projection will be optimized using numpy vectorized operations.
             May incorporate per-point uncertainty from model predictions.
         """
+        logger.warning(
+            "Learned homography batch projection not implemented. "
+            "Number of points: %d",
+            len(image_points)
+        )
         raise NotImplementedError(
             "Batch point projection not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -341,6 +367,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         Note:
             Returns 0.0 if no homography has been computed yet.
         """
+        logger.warning("Learned homography confidence computation not implemented")
         raise NotImplementedError(
             "Confidence computation not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -398,6 +425,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             RuntimeError: If no valid homography has been computed yet
             NotImplementedError: Currently not implemented (issue #14)
         """
+        logger.warning(
+            "Learned homography map projection not implemented. "
+            "Image point: %s",
+            image_point
+        )
         raise NotImplementedError(
             "Map projection not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -425,6 +457,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             RuntimeError: If no valid homography has been computed yet
             NotImplementedError: Currently not implemented (issue #14)
         """
+        logger.warning(
+            "Learned homography batch map projection not implemented. "
+            "Number of points: %d",
+            len(image_points)
+        )
         raise NotImplementedError(
             "Batch map projection not yet implemented. "
             "See issue #14 for implementation tracking. "

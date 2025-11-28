@@ -27,6 +27,7 @@ When implemented, this approach will be suitable for scenarios where:
 
 from typing import List, Tuple, Dict, Any, Optional
 import numpy as np
+import logging
 
 from homography_interface import (
     HomographyProviderExtended,
@@ -37,6 +38,8 @@ from homography_interface import (
     validate_homography_matrix,
     GPSPositionMixin
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
@@ -194,6 +197,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             This method will update the provider's internal state. Subsequent
             calls to project_point() will use this computed homography.
         """
+        logger.warning(
+            "Feature matching homography not implemented. "
+            "Frame shape: %s, detector: %s",
+            frame.shape if hasattr(frame, 'shape') else 'unknown',
+            self.detector
+        )
         raise NotImplementedError(
             "Feature matching homography computation not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -227,6 +236,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         Note:
             Call is_valid() first to ensure homography is ready for projection.
         """
+        logger.warning(
+            "Feature matching point projection not implemented. "
+            "Image point: %s",
+            image_point
+        )
         raise NotImplementedError(
             "Point projection not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -259,6 +273,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         Note:
             Batch projection will be optimized using numpy vectorized operations.
         """
+        logger.warning(
+            "Feature matching batch projection not implemented. "
+            "Number of points: %d",
+            len(image_points)
+        )
         raise NotImplementedError(
             "Batch point projection not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -284,6 +303,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         Note:
             Returns 0.0 if no homography has been computed yet.
         """
+        logger.warning("Feature matching confidence computation not implemented")
         raise NotImplementedError(
             "Confidence computation not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -340,6 +360,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             RuntimeError: If no valid homography has been computed yet
             NotImplementedError: Currently not implemented (issue #14)
         """
+        logger.warning(
+            "Feature matching map projection not implemented. "
+            "Image point: %s",
+            image_point
+        )
         raise NotImplementedError(
             "Map projection not yet implemented. "
             "See issue #14 for implementation tracking. "
@@ -366,6 +391,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             RuntimeError: If no valid homography has been computed yet
             NotImplementedError: Currently not implemented (issue #14)
         """
+        logger.warning(
+            "Feature matching batch map projection not implemented. "
+            "Number of points: %d",
+            len(image_points)
+        )
         raise NotImplementedError(
             "Batch map projection not yet implemented. "
             "See issue #14 for implementation tracking. "

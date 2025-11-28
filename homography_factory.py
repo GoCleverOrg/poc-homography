@@ -64,6 +64,20 @@ class HomographyFactory:
     }
 
     @classmethod
+    def _format_available_approaches(cls) -> str:
+        """Format available approaches for error messages.
+
+        Returns:
+            Comma-separated string of available approach values
+
+        Example:
+            >>> formatted = HomographyFactory._format_available_approaches()
+            >>> print(formatted)
+            'intrinsic_extrinsic, feature_match, learned'
+        """
+        return ', '.join(a.value for a in cls._registry.keys())
+
+    @classmethod
     def create(
         cls,
         approach: HomographyApproach,
@@ -83,6 +97,8 @@ class HomographyFactory:
             **kwargs: Additional provider-specific parameters:
                 For IntrinsicExtrinsicHomography:
                     - pixels_per_meter: Scale for map visualization (default: 100.0)
+                    - sensor_width_mm: Physical sensor width in mm (default: 7.18)
+                    - base_focal_length_mm: Base focal length in mm (default: 5.9)
                 For FeatureMatchHomography:
                     - detector: Feature detector ('sift', 'orb', 'loftr')
                     - min_matches: Minimum matches required (default: 10)
@@ -91,6 +107,11 @@ class HomographyFactory:
                     - model_path: Path to trained model
                     - model_type: Model architecture ('homography_net', etc.)
                     - device: Compute device ('cpu', 'cuda', 'mps')
+
+                Note: Invalid kwargs will be passed to the provider constructor and
+                may cause a TypeError if the provider doesn't accept them. Each
+                provider may accept or ignore additional kwargs based on its
+                implementation.
 
         Returns:
             HomographyProvider instance ready for use
@@ -118,10 +139,9 @@ class HomographyFactory:
             ... )
         """
         if approach not in cls._registry:
-            registered = ', '.join(a.value for a in cls._registry.keys())
             raise ValueError(
                 f"Approach '{approach.value}' not registered. "
-                f"Available approaches: {registered}"
+                f"Available approaches: {cls._format_available_approaches()}"
             )
 
         provider_class = cls._registry[approach]
@@ -350,10 +370,9 @@ class HomographyFactory:
             'IntrinsicExtrinsicHomography'
         """
         if approach not in cls._registry:
-            registered = ', '.join(a.value for a in cls._registry.keys())
             raise ValueError(
                 f"Approach '{approach.value}' not registered. "
-                f"Available approaches: {registered}"
+                f"Available approaches: {cls._format_available_approaches()}"
             )
 
         return cls._registry[approach]

@@ -60,6 +60,11 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         pixels_per_meter: Scale factor for map visualization (default: 100)
         _camera_gps_lat: Camera GPS latitude for WorldPoint conversion
         _camera_gps_lon: Camera GPS longitude for WorldPoint conversion
+
+    Note:
+        GPS coordinates (_camera_gps_lat, _camera_gps_lon) default to None.
+        Call set_camera_gps_position(lat, lon) before using project_point()
+        to get WorldPoint results with GPS coordinates.
     """
 
     # Earth radius for GPS conversion (meters) - approximate for equirectangular projection
@@ -70,6 +75,12 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
     # Minimum confidence threshold for validity
     MIN_CONFIDENCE_THRESHOLD = 0.3
+
+    # Confidence thresholds based on homography matrix determinant
+    # These values are empirically determined from typical camera configurations
+    DET_THRESHOLD_INVALID = 1e-6    # Below this: homography is degenerate
+    DET_THRESHOLD_LOW = 1e-3        # Below this: low confidence
+    DET_THRESHOLD_HIGH = 1e3        # Above this: possible numerical issues
 
     def __init__(
         self,
@@ -88,7 +99,11 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             height: Image height in pixels
             pixels_per_meter: Scale factor for map visualization (default: 100)
             sensor_width_mm: Physical sensor width in millimeters (default: 7.18)
-            base_focal_length_mm: Base focal length at 1x zoom in mm (default: 5.9)
+            base_focal_length_mm: Base focal length at 1x zoom in mm (default: 5.9).
+                Note: This parameter is stored for reference but not currently used
+                in instance methods. The static method get_intrinsics() uses a
+                hardcoded default of 5.9mm. This parameter is kept for forward
+                compatibility and potential future use.
             **kwargs: Additional parameters (ignored, for forward compatibility)
         """
         # Validate image dimensions
@@ -300,16 +315,16 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Base confidence on determinant magnitude
         # Normalized determinant should be around 1.0 for well-conditioned matrices
-        # We use a sigmoid-like function to map determinant to [0, 1]
+        # We use threshold-based scoring to map determinant to [0, 1]
         det_abs = abs(det_H)
 
-        # Very rough heuristic: good homographies have |det| in reasonable range
+        # Threshold-based heuristic: good homographies have |det| in reasonable range
         # Too small -> singular, too large -> poorly scaled
-        if det_abs < 1e-6:
+        if det_abs < self.DET_THRESHOLD_INVALID:
             confidence = 0.0
-        elif det_abs < 1e-3:
+        elif det_abs < self.DET_THRESHOLD_LOW:
             confidence = 0.5
-        elif det_abs < 1e3:
+        elif det_abs < self.DET_THRESHOLD_HIGH:
             confidence = 1.0
         else:
             confidence = 0.7  # Very large determinant, might be poorly scaled
@@ -590,6 +605,12 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             RuntimeError: If no valid homography computed or GPS position not set
             ValueError: If image_point is outside valid bounds
         """
+        if self._camera_gps_lat is None or self._camera_gps_lon is None:
+            raise RuntimeError(
+                "Camera GPS position must be set before projecting to WorldPoint. "
+                "Call set_camera_gps_position(lat, lon) first."
+            )
+
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 

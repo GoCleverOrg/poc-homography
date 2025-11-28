@@ -220,21 +220,23 @@ class HomographyConfig:
 
         Raises:
             IOError: If file cannot be written
-            ValueError: If path contains suspicious patterns
+            ValueError: If path contains suspicious patterns or escapes project directory
 
         Example:
             >>> config = get_default_config()
             >>> config.save_to_yaml('my_config.yaml')
         """
-        config_path = Path(path)
+        config_path = Path(path).resolve()
 
-        # Basic path validation to prevent directory traversal
-        path_str = str(config_path)
-        if '..' in path_str:
+        # Ensure path doesn't escape current directory or project root
+        # This prevents directory traversal attacks
+        try:
+            config_path.relative_to(Path.cwd())
+        except ValueError:
             raise ValueError(
-                f"Path contains suspicious pattern '..': {path}\n"
-                f"Use an absolute path or a path without parent directory references."
-            )
+                f"Path '{path}' must be within the project directory. "
+                f"Resolved path: {config_path}, Current directory: {Path.cwd()}"
+            ) from None
 
         # Create parent directories if needed
         config_path.parent.mkdir(parents=True, exist_ok=True)
