@@ -1,11 +1,35 @@
 """
 Camera configuration file.
 Central location for all camera settings and credentials.
+
+Credentials are loaded from environment variables:
+- CAMERA_USERNAME: Camera login username (required)
+- CAMERA_PASSWORD: Camera login password (required)
+
+Set these in your environment or use a .env file (see .env.example for template).
 """
 
-# Camera credentials
-USERNAME = "admin"
-PASSWORD = "CameraLab01*"
+import os
+import sys
+
+# Camera credentials - Load from environment variables
+USERNAME = os.environ.get("CAMERA_USERNAME")
+PASSWORD = os.environ.get("CAMERA_PASSWORD")
+
+# Validate that credentials are set
+if not USERNAME or not PASSWORD:
+    print("ERROR: Camera credentials not configured!", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Please set the following environment variables:", file=sys.stderr)
+    print("  - CAMERA_USERNAME: Camera login username", file=sys.stderr)
+    print("  - CAMERA_PASSWORD: Camera login password", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("You can set them in your shell:", file=sys.stderr)
+    print("  export CAMERA_USERNAME=your_username", file=sys.stderr)
+    print("  export CAMERA_PASSWORD=your_password", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Or create a .env file (see .env.example for template)", file=sys.stderr)
+    sys.exit(1)
 
 # Camera configurations
 CAMERAS = [

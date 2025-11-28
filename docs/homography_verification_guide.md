@@ -230,10 +230,11 @@ python verify_homography.py Valte
 # Test with different heights
 python verify_homography.py Valte 6.5  # 6.5m height
 
-# Check camera status
+# Check camera status (requires CAMERA_USERNAME and CAMERA_PASSWORD to be set)
 python -c "
+import os
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
-cam = HikvisionPTZ('10.207.99.178', 'admin', 'CameraLab01*', 'Valte')
+cam = HikvisionPTZ('10.207.99.178', os.environ['CAMERA_USERNAME'], os.environ['CAMERA_PASSWORD'], 'Valte')
 print(cam.get_status())
 "
 ```

@@ -4,8 +4,14 @@ Hikvision PTZ Camera Discovery and Control Script
 
 This script discovers and tests Hikvision ISAPI endpoints for PTZ control.
 It queries camera status and tests movement commands.
+
+Credentials are loaded from environment variables:
+- CAMERA_USERNAME: Camera login username (required)
+- CAMERA_PASSWORD: Camera login password (required)
 """
 
+import os
+import sys
 import requests
 from requests.auth import HTTPDigestAuth
 import xml.etree.ElementTree as ET
@@ -19,8 +25,15 @@ CAMERAS = [
     {"ip": "10.237.100.15", "name": "Camera 2"}
 ]
 
-USERNAME = "admin"
-PASSWORD = "CameraLab01*"
+# Load credentials from environment variables
+USERNAME = os.environ.get("CAMERA_USERNAME")
+PASSWORD = os.environ.get("CAMERA_PASSWORD")
+
+if not USERNAME or not PASSWORD:
+    print("ERROR: Camera credentials not configured!", file=sys.stderr)
+    print("Please set CAMERA_USERNAME and CAMERA_PASSWORD environment variables", file=sys.stderr)
+    print("See .env.example for template", file=sys.stderr)
+    sys.exit(1)
 
 
 class HikvisionPTZ:

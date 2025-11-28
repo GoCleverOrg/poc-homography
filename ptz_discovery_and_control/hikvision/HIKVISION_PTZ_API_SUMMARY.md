@@ -5,7 +5,7 @@
 Tested on two Hikvision PTZ cameras:
 - **Camera 1**: 10.207.99.178
 - **Camera 2**: 10.237.100.15
-- **Credentials**: admin / CameraLab01*
+- **Credentials**: Loaded from environment variables (CAMERA_USERNAME / CAMERA_PASSWORD)
 
 ## ISAPI Endpoints Discovered
 
@@ -141,7 +141,7 @@ python ptz_discovery_and_control/hikvision/test_new_commands.py
 </PTZData>'''
 
 response = requests.put(url,
-                       auth=HTTPDigestAuth("admin", "CameraLab01*"),
+                       auth=HTTPDigestAuth(USERNAME, PASSWORD),
                        data=xml_data,
                        headers={'Content-Type': 'application/xml'})
 ```
@@ -344,7 +344,12 @@ class HikvisionPTZ:
         return response.status_code == 200
 
 # Usage
-camera = HikvisionPTZ("10.207.99.178", "admin", "CameraLab01*")
+# Load credentials from environment variables first
+import os
+USERNAME = os.environ.get("CAMERA_USERNAME")
+PASSWORD = os.environ.get("CAMERA_PASSWORD")
+
+camera = HikvisionPTZ("10.207.99.178", USERNAME, PASSWORD)
 
 # Get current position
 status = camera.get_status()
@@ -387,10 +392,20 @@ camera.move(pan=0, tilt=0, zoom=0)
 ## Authentication
 
 All endpoints require HTTP Digest Authentication:
-- Username: `admin`
-- Password: `CameraLab01*`
+- Username: Set via `CAMERA_USERNAME` environment variable
+- Password: Set via `CAMERA_PASSWORD` environment variable
 
 Use the `HTTPDigestAuth` class from Python's `requests` library.
+
+Example:
+```python
+import os
+from requests.auth import HTTPDigestAuth
+
+USERNAME = os.environ.get("CAMERA_USERNAME")
+PASSWORD = os.environ.get("CAMERA_PASSWORD")
+auth = HTTPDigestAuth(USERNAME, PASSWORD)
+```
 
 ---
 

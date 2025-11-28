@@ -2,7 +2,11 @@
 
 import numpy as np
 import math
+import logging
 from typing import List, Tuple, Union
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 class CameraGeometry:
     """
@@ -232,9 +236,62 @@ class CameraGeometry:
 
         return H
 
+    def _project_image_point_to_world(self, u: float, v: float) -> Tuple[float, float]:
+        """
+        Projects a single image coordinate (pixels) to world ground plane coordinates (meters).
+
+        This is the scalar version of project_image_to_map, useful for single-point operations.
+
+        Args:
+            u: Horizontal pixel coordinate (x-axis in image)
+            v: Vertical pixel coordinate (y-axis in image)
+
+        Returns:
+            (x_world, y_world): World coordinates in meters on the ground plane (Z=0)
+
+        Raises:
+            ValueError: If the point projects to infinity (w-coordinate near zero).
+                       This typically occurs when the point lies on or near the horizon line.
+        """
+        if self.H_inv is None or np.all(self.H_inv == np.eye(3)):
+            # Fallback for uninitialized homography
+            return (u / 2.0, v / 2.0)
+
+        # Convert image point to homogeneous coordinates
+        pt_homogeneous = np.array([u, v, 1.0], dtype=np.float64).reshape(3, 1)
+
+        # Project to world ground plane
+        world_homogeneous = self.H_inv @ pt_homogeneous
+
+        # Check for near-zero w-coordinate (homogeneous coordinate)
+        # Points with w~0 project to infinity and cannot be normalized
+        w = world_homogeneous[2, 0]
+        epsilon = 1e-10
+
+        if abs(w) < epsilon:
+            logger.warning(
+                f"Division by zero protection triggered: Point ({u}, {v}) has w-coordinate = {w:.2e} "
+                f"(threshold = {epsilon:.2e}). Point projects to infinity and cannot be normalized."
+            )
+            raise ValueError(
+                f"Homography projection failed: Point ({u}, {v}) projects to infinity "
+                f"(w-coordinate = {w:.2e}, threshold = {epsilon:.2e}). "
+                f"This typically occurs when the point lies on or near the horizon line. "
+                f"Cannot compute valid world coordinates for this point."
+            )
+
+        # Normalize to get world coordinates
+        x_world = world_homogeneous[0, 0] / w
+        y_world = world_homogeneous[1, 0] / w
+
+        return (x_world, y_world)
+
     def project_image_to_map(self, pts: List[Tuple[int, int]], sw: int, sh: int) -> List[Tuple[int, int]]:
         """
         Projects image coordinates (pixels) to the world ground plane (meters).
+
+        Raises:
+            ValueError: If any point projects to infinity (w-coordinate near zero)
         """
         if self.H_inv is None or np.all(self.H_inv == np.eye(3)):
             return [(int(x / 2), int(y / 2)) for x, y in pts]
@@ -245,9 +302,33 @@ class CameraGeometry:
         # Project from Image to World Ground Plane (Xw, Yw, 1)
         pts_world_homogeneous = self.H_inv @ pts_homogeneous
 
+        # Check for near-zero w-coordinates (homogeneous coordinate)
+        # Points with w~0 project to infinity and cannot be normalized
+        w_coords = pts_world_homogeneous[2, :]
+        epsilon = 1e-10
+
+        near_zero_mask = np.abs(w_coords) < epsilon
+        if np.any(near_zero_mask):
+            # Find indices of invalid points for error message
+            invalid_indices = np.where(near_zero_mask)[0]
+            invalid_pts = [pts[i] for i in invalid_indices]
+            invalid_w_coords = w_coords[invalid_indices]
+
+            logger.warning(
+                f"Division by zero protection triggered: {len(invalid_indices)} point(s) have "
+                f"w-coordinates near zero (threshold = {epsilon:.2e}). "
+                f"Invalid points: {invalid_pts}, w-coordinates: {invalid_w_coords}"
+            )
+
+            raise ValueError(
+                f"Homography projection failed: {len(invalid_indices)} point(s) project to infinity "
+                f"(w-coordinate near zero). This typically occurs when points lie on or near the "
+                f"horizon line. Invalid points: {invalid_pts}"
+            )
+
         # Normalize world coordinates (convert [Xw, Yw, W] to [Xw/W, Yw/W, 1])
-        Xw = pts_world_homogeneous[0, :] / pts_world_homogeneous[2, :]
-        Yw = pts_world_homogeneous[1, :] / pts_world_homogeneous[2, :]
+        Xw = pts_world_homogeneous[0, :] / w_coords
+        Yw = pts_world_homogeneous[1, :] / w_coords
 
         # --- Mapping Policy (uses self.PPM pixels per meter) ---
         map_center_x = sw // 2
