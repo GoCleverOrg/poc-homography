@@ -9,25 +9,29 @@ duplicate detection, and overall GCP configuration.
 import unittest
 import sys
 import os
+import math
 from pathlib import Path
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from homography_config import (
+from gcp_validation import (
     validate_gcp_gps_coordinates,
     validate_gcp_elevation,
     validate_gcp_pixel_coordinates,
     detect_duplicate_gcps,
     validate_ground_control_points,
-    HomographyConfig,
+    _is_valid_finite_number,
+    _validate_image_dimension,
     MIN_LATITUDE,
     MAX_LATITUDE,
     MIN_LONGITUDE,
     MAX_LONGITUDE,
     MIN_ELEVATION,
     MAX_ELEVATION,
+    MAX_GCP_COUNT,
 )
+from homography_config import HomographyConfig
 
 
 class TestValidateGCPGPSCoordinates(unittest.TestCase):
@@ -858,6 +862,378 @@ class TestHomographyConfigIntegration(unittest.TestCase):
                 HomographyConfig.from_yaml(temp_path)
         finally:
             os.unlink(temp_path)
+
+
+class TestIsValidFiniteNumber(unittest.TestCase):
+    """Test the _is_valid_finite_number helper function."""
+
+    def test_valid_integers(self):
+        """Test that integers are valid."""
+        self.assertTrue(_is_valid_finite_number(0))
+        self.assertTrue(_is_valid_finite_number(42))
+        self.assertTrue(_is_valid_finite_number(-100))
+
+    def test_valid_floats(self):
+        """Test that finite floats are valid."""
+        self.assertTrue(_is_valid_finite_number(0.0))
+        self.assertTrue(_is_valid_finite_number(3.14159))
+        self.assertTrue(_is_valid_finite_number(-273.15))
+
+    def test_nan_is_invalid(self):
+        """Test that NaN is rejected."""
+        self.assertFalse(_is_valid_finite_number(float('nan')))
+
+    def test_infinity_is_invalid(self):
+        """Test that infinity is rejected."""
+        self.assertFalse(_is_valid_finite_number(float('inf')))
+        self.assertFalse(_is_valid_finite_number(float('-inf')))
+
+    def test_strings_are_invalid(self):
+        """Test that strings are rejected."""
+        self.assertFalse(_is_valid_finite_number("42"))
+        self.assertFalse(_is_valid_finite_number("3.14"))
+
+    def test_none_is_invalid(self):
+        """Test that None is rejected."""
+        self.assertFalse(_is_valid_finite_number(None))
+
+    def test_complex_numbers_are_invalid(self):
+        """Test that complex numbers are rejected."""
+        self.assertFalse(_is_valid_finite_number(complex(1, 2)))
+
+
+class TestNaNInfinityValidation(unittest.TestCase):
+    """Test that NaN and Infinity values are properly rejected."""
+
+    def test_nan_latitude_raises_value_error(self):
+        """Test that NaN latitude raises ValueError."""
+        gcp = {
+            'gps': {
+                'latitude': float('nan'),
+                'longitude': 0.0
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_gps_coordinates(gcp, 0)
+
+    def test_infinity_latitude_raises_value_error(self):
+        """Test that infinite latitude raises ValueError."""
+        gcp = {
+            'gps': {
+                'latitude': float('inf'),
+                'longitude': 0.0
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_gps_coordinates(gcp, 0)
+
+    def test_nan_longitude_raises_value_error(self):
+        """Test that NaN longitude raises ValueError."""
+        gcp = {
+            'gps': {
+                'latitude': 0.0,
+                'longitude': float('nan')
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_gps_coordinates(gcp, 0)
+
+    def test_nan_elevation_raises_value_error(self):
+        """Test that NaN elevation raises ValueError."""
+        gcp = {
+            'gps': {
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'elevation': float('nan')
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_elevation(gcp, 0)
+
+    def test_infinity_elevation_raises_value_error(self):
+        """Test that infinite elevation raises ValueError."""
+        gcp = {
+            'gps': {
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'elevation': float('inf')
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_elevation(gcp, 0)
+
+    def test_nan_u_coordinate_raises_value_error(self):
+        """Test that NaN u coordinate raises ValueError."""
+        gcp = {
+            'image': {
+                'u': float('nan'),
+                'v': 100.0
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_pixel_coordinates(gcp, 0)
+
+    def test_nan_v_coordinate_raises_value_error(self):
+        """Test that NaN v coordinate raises ValueError."""
+        gcp = {
+            'image': {
+                'u': 100.0,
+                'v': float('nan')
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_pixel_coordinates(gcp, 0)
+
+
+class TestImageDimensionValidation(unittest.TestCase):
+    """Test image dimension parameter validation."""
+
+    def test_valid_dimensions(self):
+        """Test that valid dimensions are accepted."""
+        self.assertEqual(_validate_image_dimension(1920, 'image_width'), 1920)
+        self.assertEqual(_validate_image_dimension(1080, 'image_height'), 1080)
+
+    def test_none_dimension_returns_none(self):
+        """Test that None dimension returns None."""
+        self.assertIsNone(_validate_image_dimension(None, 'image_width'))
+
+    def test_zero_dimension_raises_value_error(self):
+        """Test that zero dimension raises ValueError."""
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            _validate_image_dimension(0, 'image_width')
+
+    def test_negative_dimension_raises_value_error(self):
+        """Test that negative dimension raises ValueError."""
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            _validate_image_dimension(-100, 'image_height')
+
+    def test_nan_dimension_raises_value_error(self):
+        """Test that NaN dimension raises ValueError."""
+        with self.assertRaisesRegex(ValueError, "must be a finite positive integer"):
+            _validate_image_dimension(float('nan'), 'image_width')
+
+    def test_infinity_dimension_raises_value_error(self):
+        """Test that infinite dimension raises ValueError."""
+        with self.assertRaisesRegex(ValueError, "must be a finite positive integer"):
+            _validate_image_dimension(float('inf'), 'image_height')
+
+    def test_string_dimension_raises_value_error(self):
+        """Test that string dimension raises ValueError."""
+        with self.assertRaisesRegex(ValueError, "must be a positive integer"):
+            _validate_image_dimension("1920", 'image_width')
+
+    def test_excessively_large_dimension_raises_value_error(self):
+        """Test that excessively large dimension raises ValueError."""
+        with self.assertRaisesRegex(ValueError, "exceeds maximum allowed"):
+            _validate_image_dimension(100001, 'image_width')
+
+
+class TestIndependentPixelBoundsValidation(unittest.TestCase):
+    """Test that pixel bounds are validated independently when only one dimension is provided."""
+
+    def test_only_width_provided_validates_u(self):
+        """Test that u is validated when only width is provided."""
+        gcp = {
+            'image': {
+                'u': 3000.0,  # Out of bounds for width 2000
+                'v': 500.0
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "u coordinate 3000.0 outside image width"):
+            validate_gcp_pixel_coordinates(gcp, 0, image_width=2000, image_height=None)
+
+    def test_only_height_provided_validates_v(self):
+        """Test that v is validated when only height is provided."""
+        gcp = {
+            'image': {
+                'u': 500.0,
+                'v': 2000.0  # Out of bounds for height 1000
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "v coordinate 2000.0 outside image height"):
+            validate_gcp_pixel_coordinates(gcp, 0, image_width=None, image_height=1000)
+
+    def test_only_width_provided_allows_any_v(self):
+        """Test that v is not validated when only width is provided."""
+        gcp = {
+            'image': {
+                'u': 500.0,
+                'v': 999999.0  # Would be out of bounds if height were checked
+            }
+        }
+        # Should not raise - v is not validated when height not provided
+        validate_gcp_pixel_coordinates(gcp, 0, image_width=1000, image_height=None)
+
+    def test_only_height_provided_allows_any_u(self):
+        """Test that u is not validated when only height is provided."""
+        gcp = {
+            'image': {
+                'u': 999999.0,  # Would be out of bounds if width were checked
+                'v': 500.0
+            }
+        }
+        # Should not raise - u is not validated when width not provided
+        validate_gcp_pixel_coordinates(gcp, 0, image_width=None, image_height=1000)
+
+
+class TestMaxGCPCount(unittest.TestCase):
+    """Test maximum GCP count limit."""
+
+    def test_max_gcp_count_constant_exists(self):
+        """Test that MAX_GCP_COUNT constant is defined."""
+        self.assertEqual(MAX_GCP_COUNT, 1000)
+
+    def test_exceeding_max_gcp_count_raises_value_error(self):
+        """Test that exceeding MAX_GCP_COUNT raises ValueError."""
+        # Create a list with too many GCPs
+        gcps = [
+            {
+                'gps': {'latitude': 0.0 + i * 0.01, 'longitude': 0.0 + i * 0.01},
+                'image': {'u': float(i), 'v': float(i)}
+            }
+            for i in range(MAX_GCP_COUNT + 1)
+        ]
+        with self.assertRaisesRegex(ValueError, "Too many GCPs provided"):
+            validate_ground_control_points(gcps)
+
+    def test_max_gcp_count_exactly_is_allowed(self):
+        """Test that exactly MAX_GCP_COUNT GCPs is allowed."""
+        # Create a list with exactly max GCPs
+        gcps = [
+            {
+                'gps': {'latitude': 0.0 + i * 0.01, 'longitude': 0.0 + i * 0.01},
+                'image': {'u': float(i * 10), 'v': float(i * 10)}
+            }
+            for i in range(MAX_GCP_COUNT)
+        ]
+        # Should not raise
+        result = validate_ground_control_points(gcps, min_gcp_count=0)
+        self.assertEqual(len(result), MAX_GCP_COUNT)
+
+
+class TestDescriptionSanitization(unittest.TestCase):
+    """Test that description field is properly sanitized in error messages."""
+
+    def test_long_description_is_truncated(self):
+        """Test that very long descriptions are truncated."""
+        long_desc = "A" * 500  # 500 characters
+        gcp = {
+            'gps': {
+                'latitude': 91.0,  # Invalid to trigger error
+                'longitude': 0.0
+            },
+            'metadata': {
+                'description': long_desc
+            }
+        }
+        try:
+            validate_gcp_gps_coordinates(gcp, 0)
+            self.fail("Expected ValueError")
+        except ValueError as e:
+            error_msg = str(e)
+            # Description should be truncated with "..."
+            self.assertIn("...", error_msg)
+            # Error message shouldn't contain the full 500 character description
+            self.assertLess(len(error_msg), 400)
+
+    def test_control_characters_are_removed(self):
+        """Test that control characters are removed from description."""
+        bad_desc = "Point\x00with\nnewline\rand\ttab"
+        gcp = {
+            'gps': {
+                'latitude': 91.0,  # Invalid to trigger error
+                'longitude': 0.0
+            },
+            'metadata': {
+                'description': bad_desc
+            }
+        }
+        try:
+            validate_gcp_gps_coordinates(gcp, 0)
+            self.fail("Expected ValueError")
+        except ValueError as e:
+            error_msg = str(e)
+            # Null byte should be removed
+            self.assertNotIn("\x00", error_msg)
+
+
+class TestNumpyTypeSupport(unittest.TestCase):
+    """Test that numpy types are properly handled (if numpy is available)."""
+
+    def setUp(self):
+        """Check if numpy is available."""
+        try:
+            import numpy as np
+            self.np = np
+            self.numpy_available = True
+        except ImportError:
+            self.numpy_available = False
+
+    def test_numpy_float64_is_valid(self):
+        """Test that numpy.float64 is accepted."""
+        if not self.numpy_available:
+            self.skipTest("numpy not available")
+
+        gcp = {
+            'gps': {
+                'latitude': self.np.float64(39.640583),
+                'longitude': self.np.float64(-0.230194)
+            },
+            'image': {
+                'u': self.np.float64(1250.5),
+                'v': self.np.float64(680.0)
+            }
+        }
+        # Should not raise
+        validate_gcp_gps_coordinates(gcp, 0)
+        validate_gcp_pixel_coordinates(gcp, 0)
+
+    def test_numpy_int64_is_valid(self):
+        """Test that numpy.int64 is accepted."""
+        if not self.numpy_available:
+            self.skipTest("numpy not available")
+
+        gcp = {
+            'gps': {
+                'latitude': self.np.int64(39),
+                'longitude': self.np.int64(0)
+            },
+            'image': {
+                'u': self.np.int64(1250),
+                'v': self.np.int64(680)
+            }
+        }
+        # Should not raise
+        validate_gcp_gps_coordinates(gcp, 0)
+        validate_gcp_pixel_coordinates(gcp, 0)
+
+    def test_numpy_nan_is_rejected(self):
+        """Test that numpy.nan is rejected."""
+        if not self.numpy_available:
+            self.skipTest("numpy not available")
+
+        gcp = {
+            'gps': {
+                'latitude': self.np.nan,
+                'longitude': 0.0
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_gps_coordinates(gcp, 0)
+
+    def test_numpy_infinity_is_rejected(self):
+        """Test that numpy.inf is rejected."""
+        if not self.numpy_available:
+            self.skipTest("numpy not available")
+
+        gcp = {
+            'gps': {
+                'latitude': self.np.inf,
+                'longitude': 0.0
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "must be a finite number"):
+            validate_gcp_gps_coordinates(gcp, 0)
 
 
 def main():
