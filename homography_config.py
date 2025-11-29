@@ -8,8 +8,29 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import yaml
+import logging
 
 from homography_interface import HomographyApproach, CoordinateSystemMode
+
+# Import GCP validation from dedicated module
+from gcp_validation import (
+    validate_ground_control_points,
+    validate_gcp_gps_coordinates,
+    validate_gcp_elevation,
+    validate_gcp_pixel_coordinates,
+    detect_duplicate_gcps,
+    GPS_EPSILON,
+    PIXEL_EPSILON,
+    MIN_LATITUDE,
+    MAX_LATITUDE,
+    MIN_LONGITUDE,
+    MAX_LONGITUDE,
+    MIN_ELEVATION,
+    MAX_ELEVATION,
+    MAX_GCP_COUNT,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -189,6 +210,35 @@ class HomographyConfig:
         for key in config.keys():
             if key in approach_keys and isinstance(config[key], dict):
                 approach_specific_config[key] = config[key]
+
+        # Validate ground control points if present in feature_match config
+        if 'feature_match' in approach_specific_config:
+            feature_match_config = approach_specific_config['feature_match']
+
+            if 'ground_control_points' in feature_match_config:
+                gcps = feature_match_config['ground_control_points']
+
+                # Extract optional image dimensions for pixel validation
+                image_width = feature_match_config.get('image_width')
+                image_height = feature_match_config.get('image_height')
+
+                # Extract optional minimum GCP count
+                min_gcp_count = feature_match_config.get('min_gcp_count', 6)
+
+                # Validate and normalize GCPs
+                try:
+                    validated_gcps = validate_ground_control_points(
+                        gcps,
+                        image_width=image_width,
+                        image_height=image_height,
+                        min_gcp_count=min_gcp_count
+                    )
+                    # Update config with validated GCPs (normalized to list format)
+                    feature_match_config['ground_control_points'] = validated_gcps
+                except ValueError as e:
+                    raise ValueError(
+                        f"Ground control points validation failed: {e}"
+                    ) from e
 
         return cls(
             approach=approach,
