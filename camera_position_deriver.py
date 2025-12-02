@@ -204,6 +204,10 @@ class CameraPositionDeriver:
     MAX_REPROJECTION_ERROR = 5.0  # pixels
     MIN_INLIER_RATIO = 0.6  # 60% of GCPs must be inliers
 
+    # Gimbal lock detection threshold: cos(tilt) < this value means tilt ≈ ±90°
+    # Value of 1e-6 corresponds to |tilt| > 89.9999° which provides numerical stability
+    GIMBAL_LOCK_COS_THRESHOLD = 1e-6
+
     def __init__(
         self,
         K: np.ndarray,
@@ -214,6 +218,8 @@ class CameraPositionDeriver:
         ransac_reprojection_threshold: Optional[float] = None,
         ransac_confidence: Optional[float] = None,
         solver_method: int = cv2.SOLVEPNP_ITERATIVE,
+        max_reprojection_error: Optional[float] = None,
+        min_inlier_ratio: Optional[float] = None,
     ):
         """
         Initialize camera position deriver.
@@ -227,6 +233,8 @@ class CameraPositionDeriver:
             ransac_reprojection_threshold: Override RANSAC reprojection threshold in pixels
             ransac_confidence: Override RANSAC confidence level (0.0-1.0)
             solver_method: OpenCV PnP solver method (default: cv2.SOLVEPNP_ITERATIVE)
+            max_reprojection_error: Override max reprojection error threshold for validation (pixels)
+            min_inlier_ratio: Override minimum inlier ratio threshold for validation (0.0-1.0)
 
         Raises:
             ValueError: If K matrix is invalid or reference coordinates are out of range
@@ -250,15 +258,20 @@ class CameraPositionDeriver:
         # Get default RANSAC config for accuracy level
         default_config = self.RANSAC_CONFIG[accuracy]
 
-        # Apply overrides or use defaults
+        # Apply overrides or use defaults for RANSAC parameters
         self.ransac_iterations = ransac_iterations if ransac_iterations is not None else default_config['iterations']
         self.ransac_reprojection_threshold = ransac_reprojection_threshold if ransac_reprojection_threshold is not None else default_config['reprojection_threshold']
         self.ransac_confidence = ransac_confidence if ransac_confidence is not None else default_config['confidence']
 
+        # Apply overrides or use defaults for validation thresholds
+        self.max_reprojection_error = max_reprojection_error if max_reprojection_error is not None else self.MAX_REPROJECTION_ERROR
+        self.min_inlier_ratio = min_inlier_ratio if min_inlier_ratio is not None else self.MIN_INLIER_RATIO
+
         logger.debug(
             f"CameraPositionDeriver initialized: accuracy={accuracy.value}, "
             f"iterations={self.ransac_iterations}, threshold={self.ransac_reprojection_threshold}px, "
-            f"confidence={self.ransac_confidence}"
+            f"confidence={self.ransac_confidence}, "
+            f"max_reproj_error={self.max_reprojection_error}px, min_inlier_ratio={self.min_inlier_ratio:.0%}"
         )
 
     def _convert_gcps_to_world_coords(
@@ -349,7 +362,7 @@ class CameraPositionDeriver:
 
         # Check for gimbal lock (tilt near ±90°)
         cos_tilt = math.cos(tilt_rad_internal)
-        if abs(cos_tilt) < 1e-6:
+        if abs(cos_tilt) < self.GIMBAL_LOCK_COS_THRESHOLD:
             # Near gimbal lock - pan is mathematically ambiguous
             # At gimbal lock, pan and roll are coupled (only their sum/difference is defined)
             # We set pan to 0 and let the rotation be absorbed into the ambiguous state
@@ -511,6 +524,11 @@ class CameraPositionDeriver:
             # The rotation matrix needs to be adjusted for the flipped coordinate
             # This is equivalent to applying a reflection across the XY plane
             R = R @ np.diag([1.0, 1.0, -1.0])
+            # Note: rvec/tvec are NOT updated here. The original OpenCV solution
+            # is mathematically correct for reprojection - we only flip the
+            # interpretation of camera_position and R for the output values.
+            # The planar PnP ambiguity means both solutions have identical
+            # reprojection errors.
 
         # Extract pan/tilt angles from rotation matrix
         pan_deg, tilt_deg = self._extract_pan_tilt_from_rotation(R)
@@ -520,17 +538,17 @@ class CameraPositionDeriver:
             object_points, image_points, rvec, tvec, inliers_mask
         )
 
-        # Validate result quality
+        # Validate result quality using instance thresholds (configurable)
         is_valid = (
-            mean_error <= self.MAX_REPROJECTION_ERROR and
-            inlier_ratio >= self.MIN_INLIER_RATIO
+            mean_error <= self.max_reprojection_error and
+            inlier_ratio >= self.min_inlier_ratio
         )
 
         if not is_valid:
             logger.warning(
                 f"PnP result quality below threshold: "
-                f"reprojection_error={mean_error:.2f}px (max {self.MAX_REPROJECTION_ERROR}), "
-                f"inlier_ratio={inlier_ratio:.2%} (min {self.MIN_INLIER_RATIO:.0%})"
+                f"reprojection_error={mean_error:.2f}px (max {self.max_reprojection_error}), "
+                f"inlier_ratio={inlier_ratio:.2%} (min {self.min_inlier_ratio:.0%})"
             )
 
         logger.info(

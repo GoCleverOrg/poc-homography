@@ -32,6 +32,39 @@ from camera_position_deriver import (
 from gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
 
 
+def create_ptz_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:
+    """
+    Create rotation matrix matching PTZ camera convention.
+
+    This is the shared helper function for creating rotation matrices
+    in tests. It matches the convention used by IntrinsicExtrinsicHomography
+    and CameraPositionDeriver.
+
+    Args:
+        pan_deg: Pan angle in degrees (positive = right/clockwise from above)
+        tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+
+    Returns:
+        3x3 rotation matrix R = Rz(pan) @ Rx(-tilt)
+    """
+    pan_rad = math.radians(pan_deg)
+    tilt_rad = math.radians(-tilt_deg)  # Negate for Y-down camera convention
+
+    Rz = np.array([
+        [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
+        [math.sin(pan_rad), math.cos(pan_rad), 0.0],
+        [0.0, 0.0, 1.0]
+    ])
+
+    Rx = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+        [0.0, math.sin(tilt_rad), math.cos(tilt_rad)]
+    ])
+
+    return Rz @ Rx
+
+
 class TestGroundControlPoint(unittest.TestCase):
     """Test GroundControlPoint dataclass validation."""
 
@@ -372,23 +405,8 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
 
         object_points = np.array(object_points, dtype=np.float64)
 
-        # Create rotation matrix using same convention as CameraPositionDeriver expects
-        pan_rad = math.radians(self.pan_deg)
-        tilt_rad = math.radians(-self.tilt_deg)
-
-        Rz = np.array([
-            [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
-            [math.sin(pan_rad), math.cos(pan_rad), 0.0],
-            [0.0, 0.0, 1.0]
-        ])
-
-        Rx = np.array([
-            [1.0, 0.0, 0.0],
-            [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
-            [0.0, math.sin(tilt_rad), math.cos(tilt_rad)]
-        ])
-
-        R = Rz @ Rx
+        # Create rotation matrix using shared helper
+        R = create_ptz_rotation_matrix(self.pan_deg, self.tilt_deg)
 
         # Translation: t = -R @ C
         t = -R @ self.true_position
@@ -430,9 +448,10 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         """Test position derivation with perfect (noise-free) synthetic GCPs."""
         gcps = self._generate_synthetic_gcps_opencv_style(num_points=12, noise_pixels=0.0)
 
-        # Skip if not enough valid GCPs generated
-        if len(gcps) < 6:
-            self.skipTest("Not enough valid GCPs generated for this camera configuration")
+        # Ensure we have enough valid GCPs - if not, it's a test configuration problem
+        self.assertGreaterEqual(len(gcps), 6,
+            f"GCP generation produced only {len(gcps)} valid points. "
+            "Check camera pan/tilt configuration produces visible ground plane points.")
 
         deriver = CameraPositionDeriver(
             K=self.K,
@@ -464,8 +483,9 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         """Test position derivation with noisy synthetic GCPs."""
         gcps = self._generate_synthetic_gcps_opencv_style(num_points=15, noise_pixels=2.0)
 
-        if len(gcps) < 6:
-            self.skipTest("Not enough valid GCPs generated")
+        # Ensure we have enough valid GCPs
+        self.assertGreaterEqual(len(gcps), 6,
+            f"GCP generation produced only {len(gcps)} valid points.")
 
         deriver = CameraPositionDeriver(
             K=self.K,
@@ -501,49 +521,30 @@ class TestPanTiltAngleExtraction(unittest.TestCase):
             reference_lon=-0.230194
         )
 
-    def _create_rotation_matrix(self, pan_deg: float, tilt_deg: float) -> np.ndarray:
-        """Create rotation matrix matching IntrinsicExtrinsicHomography convention."""
-        pan_rad = math.radians(pan_deg)
-        tilt_rad = math.radians(-tilt_deg)
-
-        Rz = np.array([
-            [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
-            [math.sin(pan_rad), math.cos(pan_rad), 0.0],
-            [0.0, 0.0, 1.0]
-        ])
-
-        Rx = np.array([
-            [1.0, 0.0, 0.0],
-            [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
-            [0.0, math.sin(tilt_rad), math.cos(tilt_rad)]
-        ])
-
-        return Rz @ Rx
-
     def test_angle_extraction_pan_0_tilt_0(self):
         """Test angle extraction for pan=0, tilt=0."""
-        R = self._create_rotation_matrix(0.0, 0.0)
+        R = create_ptz_rotation_matrix(0.0, 0.0)
         pan, tilt = self.deriver._extract_pan_tilt_from_rotation(R)
         self.assertAlmostEqual(pan, 0.0, places=2)
         self.assertAlmostEqual(tilt, 0.0, places=2)
 
     def test_angle_extraction_pan_45_tilt_30(self):
         """Test angle extraction for pan=45, tilt=30."""
-        R = self._create_rotation_matrix(45.0, 30.0)
+        R = create_ptz_rotation_matrix(45.0, 30.0)
         pan, tilt = self.deriver._extract_pan_tilt_from_rotation(R)
         self.assertAlmostEqual(pan, 45.0, places=1)
         self.assertAlmostEqual(tilt, 30.0, places=1)
 
     def test_angle_extraction_pan_negative_90_tilt_45(self):
         """Test angle extraction for pan=-90, tilt=45."""
-        R = self._create_rotation_matrix(-90.0, 45.0)
+        R = create_ptz_rotation_matrix(-90.0, 45.0)
         pan, tilt = self.deriver._extract_pan_tilt_from_rotation(R)
         self.assertAlmostEqual(pan, -90.0, places=1)
         self.assertAlmostEqual(tilt, 45.0, places=1)
 
     def test_angle_extraction_pan_180_tilt_60(self):
         """Test angle extraction for pan=180, tilt=60."""
-        R = self._create_rotation_matrix(180.0, 60.0)
+        R = create_ptz_rotation_matrix(180.0, 60.0)
         pan, tilt = self.deriver._extract_pan_tilt_from_rotation(R)
         # pan=180 may be extracted as -180 (equivalent)
         self.assertTrue(
@@ -554,7 +555,7 @@ class TestPanTiltAngleExtraction(unittest.TestCase):
 
     def test_angle_extraction_negative_tilt(self):
         """Test angle extraction for negative tilt (looking up)."""
-        R = self._create_rotation_matrix(30.0, -15.0)
+        R = create_ptz_rotation_matrix(30.0, -15.0)
         pan, tilt = self.deriver._extract_pan_tilt_from_rotation(R)
         self.assertAlmostEqual(pan, 30.0, places=1)
         self.assertAlmostEqual(tilt, -15.0, places=1)
@@ -572,7 +573,7 @@ class TestPanTiltAngleExtraction(unittest.TestCase):
 
         for pan_in, tilt_in in test_cases:
             with self.subTest(pan=pan_in, tilt=tilt_in):
-                R = self._create_rotation_matrix(pan_in, tilt_in)
+                R = create_ptz_rotation_matrix(pan_in, tilt_in)
                 pan_out, tilt_out = self.deriver._extract_pan_tilt_from_rotation(R)
 
                 # Handle pan wrap-around at ±180°
@@ -609,23 +610,8 @@ class TestRANSACOutlierRejection(unittest.TestCase):
         gcps = []
         np.random.seed(123)
 
-        # Create rotation matrix
-        pan_rad = math.radians(self.pan_deg)
-        tilt_rad = math.radians(-self.tilt_deg)
-
-        Rz = np.array([
-            [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
-            [math.sin(pan_rad), math.cos(pan_rad), 0.0],
-            [0.0, 0.0, 1.0]
-        ])
-
-        Rx = np.array([
-            [1.0, 0.0, 0.0],
-            [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
-            [0.0, math.sin(tilt_rad), math.cos(tilt_rad)]
-        ])
-
-        R = Rz @ Rx
+        # Create rotation matrix using shared helper
+        R = create_ptz_rotation_matrix(self.pan_deg, self.tilt_deg)
         t = -R @ self.true_position
         rvec, _ = cv2.Rodrigues(R)
         tvec = t.reshape(3, 1)
@@ -678,8 +664,9 @@ class TestRANSACOutlierRejection(unittest.TestCase):
         # 10 good GCPs, 4 outliers (28% contamination)
         gcps = self._generate_gcps_with_outliers(num_inliers=10, num_outliers=4)
 
-        if len(gcps) < 6:
-            self.skipTest("Not enough valid GCPs generated")
+        # Ensure we have enough valid GCPs (inliers + outliers)
+        self.assertGreaterEqual(len(gcps), 6,
+            f"GCP generation produced only {len(gcps)} valid points.")
 
         deriver = CameraPositionDeriver(
             K=self.K,
