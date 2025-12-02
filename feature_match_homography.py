@@ -1,33 +1,25 @@
 """
-Feature Matching-based Homography Provider (Placeholder).
+GCP-based Homography Provider Implementation.
 
-This module will implement the HomographyProviderExtended interface using
-feature detection and matching techniques (SIFT, ORB, or LoFTR) to compute
-homography transformations.
+This module implements the HomographyProviderExtended interface using Ground
+Control Points (GCPs) - known correspondences between image coordinates and
+GPS coordinates.
 
-CURRENT STATUS: Stub/Placeholder implementation
-TRACKING: Issue #14 - Feature matching homography implementation
-
-The homography will be computed by:
-1. Detecting keypoints in the current frame using SIFT, ORB, or LoFTR
-2. Matching keypoints with reference image or known ground control points
-3. Estimating homography using RANSAC for robust outlier rejection
-4. Filtering matches based on reprojection error and confidence thresholds
+The homography is computed directly from these point correspondences using
+cv2.findHomography with RANSAC for robust outlier rejection.
 
 Coordinate Systems:
     - Image coordinates: (u, v) in pixels, origin at top-left
     - World coordinates: (latitude, longitude) in decimal degrees (WGS84)
-    - Map coordinates: (x, y) in meters from camera position on ground plane
-
-When implemented, this approach will be suitable for scenarios where:
-    - Reference images with known ground control points are available
-    - Camera calibration parameters are unknown or unreliable
-    - Scene features are distinctive and stable over time
+    - Local metric coordinates: (x, y) in meters using equirectangular projection
+    - Map coordinates: (x, y) in meters from reference point on ground plane
 """
 
-from typing import List, Tuple, Dict, Any, Optional
 import numpy as np
+import cv2
+import math
 import logging
+from typing import List, Tuple, Dict, Any, Optional
 
 from homography_interface import (
     HomographyProviderExtended,
@@ -44,73 +36,64 @@ logger = logging.getLogger(__name__)
 
 class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
     """
-    Placeholder for feature matching-based homography computation.
+    GCP-based homography computation provider.
 
-    Future implementation will use computer vision techniques to detect and match
-    features between frames and known reference points, then compute homography
-    via RANSAC-based robust estimation.
+    This implementation computes homography using Ground Control Points (GCPs),
+    which are known correspondences between image pixel coordinates and GPS
+    world coordinates. The homography maps between image space and local metric
+    space (derived from GPS coordinates).
 
-    This class currently raises NotImplementedError for all methods. Full
-    implementation is tracked in issue #14.
-
-    Intended Features (when implemented):
-        - Support for multiple feature detectors: SIFT, ORB, LoFTR
-        - Configurable RANSAC parameters for robust homography estimation
-        - Minimum match threshold to ensure reliable homography
-        - Confidence scoring based on inlier ratio and reprojection error
-        - Optional reference image or explicit ground control points
-        - Adaptive feature matching with descriptor-based or learned matching
-
-    Example Usage (future):
-        >>> provider = FeatureMatchHomography(
-        ...     width=2560,
-        ...     height=1440,
-        ...     detector='sift',
-        ...     min_matches=10,
-        ...     ransac_threshold=3.0
-        ... )
-        >>> result = provider.compute_homography(
-        ...     frame=current_image,
-        ...     reference={
-        ...         'reference_image': ref_img,
-        ...         'ground_control_points': [(lat, lon, u, v), ...]
-        ...     }
-        ... )
-        >>> if provider.is_valid():
-        ...     world_pt = provider.project_point((1280, 720))
-        ...     print(f"GPS: {world_pt.latitude}, {world_pt.longitude}")
+    The computation process:
+    1. Extract GCPs from reference data (pixel coords + GPS coords)
+    2. Convert GPS coordinates to local metric coordinates using equirectangular projection
+    3. Compute homography using cv2.findHomography with RANSAC
+    4. Store homography matrix and inverse for bidirectional projection
+    5. Calculate confidence based on inlier ratio and reprojection error
 
     Attributes:
         width: Image width in pixels
         height: Image height in pixels
-        detector: Feature detector type ('sift', 'orb', 'loftr')
-        min_matches: Minimum number of feature matches required for valid homography
+        detector: Feature detector type (kept for API compatibility, not used)
+        min_matches: Minimum number of GCP matches required for valid homography
         ransac_threshold: Maximum reprojection error (pixels) for RANSAC inlier
         confidence_threshold: Minimum confidence score to consider homography valid
+        H: Current homography matrix (3x3) mapping local metric to image
+        H_inv: Inverse homography matrix mapping image to local metric
+        _confidence: Current homography confidence score [0.0, 1.0]
+        _camera_gps_lat: Reference GPS latitude for local metric conversion
+        _camera_gps_lon: Reference GPS longitude for local metric conversion
     """
+
+    # Minimum determinant threshold for valid homography
+    MIN_DET_THRESHOLD = 1e-10
+
+    # Confidence calculation parameters
+    MIN_INLIER_RATIO = 0.5  # Minimum ratio of inliers to total points
+    CONFIDENCE_PENALTY_LOW_INLIERS = 0.7  # Penalty for low inlier ratio
+
+    # Edge factor constants for point confidence calculation
+    EDGE_FACTOR_CENTER = 1.0
+    EDGE_FACTOR_EDGE = 0.7
+    EDGE_FACTOR_MIN = 0.3
 
     def __init__(
         self,
         width: int,
         height: int,
-        detector: str = 'sift',
-        min_matches: int = 10,
+        detector: str = 'gcp',  # Not used, kept for API compatibility
+        min_matches: int = 4,
         ransac_threshold: float = 3.0,
         confidence_threshold: float = 0.5
     ):
         """
-        Initialize feature matching homography provider.
+        Initialize GCP-based homography provider.
 
         Args:
             width: Image width in pixels (e.g., 2560)
             height: Image height in pixels (e.g., 1440)
-            detector: Feature detector to use, one of:
-                - 'sift': Scale-Invariant Feature Transform (robust, patented)
-                - 'orb': Oriented FAST and Rotated BRIEF (fast, free)
-                - 'loftr': Learned feature matcher (deep learning-based)
-            min_matches: Minimum number of feature matches required for computing
+            detector: Detector type (kept for API compatibility, not used for GCP)
+            min_matches: Minimum number of GCP matches required for computing
                 homography. Must be at least 4 (minimum for homography estimation).
-                Higher values (10-20) recommended for robustness.
             ransac_threshold: RANSAC inlier threshold in pixels. Points with
                 reprojection error below this are considered inliers.
                 Typical values: 1.0-5.0 pixels.
@@ -127,11 +110,6 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 f"got {min_matches}"
             )
 
-        if detector not in ['sift', 'orb', 'loftr']:
-            raise ValueError(
-                f"detector must be 'sift', 'orb', or 'loftr', got '{detector}'"
-            )
-
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError(
                 f"confidence_threshold must be in range [0.0, 1.0], "
@@ -145,17 +123,231 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         self.ransac_threshold = ransac_threshold
         self.confidence_threshold = confidence_threshold
 
-        # Homography state (to be computed)
-        self._homography_matrix: Optional[np.ndarray] = None
+        # Homography state
+        self.H = np.eye(3)  # Maps local metric to image
+        self.H_inv = np.eye(3)  # Maps image to local metric
         self._confidence: float = 0.0
         self._last_metadata: Dict[str, Any] = {}
 
-        # GPS reference point for WorldPoint conversion (to be set)
+        # GPS reference point for local metric to GPS conversion
+        # This will be set from the first GCP or can be set explicitly
         self._camera_gps_lat: Optional[float] = None
         self._camera_gps_lon: Optional[float] = None
+        self._reference_lat: Optional[float] = None
+        self._reference_lon: Optional[float] = None
+
+    def _gps_to_local(self, lat: float, lon: float) -> Tuple[float, float]:
+        """
+        Convert GPS coordinates to local metric coordinates.
+
+        Uses equirectangular projection with the reference point as origin.
+        This approximation is accurate for small areas (< 10 km).
+
+        Formula:
+            x = (lon - ref_lon) * 111111 * cos(ref_lat_radians)
+            y = (lat - ref_lat) * 111111
+
+        Args:
+            lat: Latitude in decimal degrees
+            lon: Longitude in decimal degrees
+
+        Returns:
+            (x, y): Local metric coordinates in meters (East, North)
+
+        Raises:
+            RuntimeError: If reference GPS position not set
+        """
+        if self._reference_lat is None or self._reference_lon is None:
+            raise RuntimeError(
+                "Reference GPS position not set. This should be initialized "
+                "during compute_homography() from GCPs."
+            )
+
+        # Convert to meters using equirectangular projection
+        lat_rad = math.radians(self._reference_lat)
+        cos_lat = math.cos(lat_rad)
+
+        # Check for division by zero at poles
+        if abs(cos_lat) < 1e-6:
+            raise ValueError("Reference latitude too close to poles for GPS projection")
+
+        # Calculate offsets in meters
+        x = (lon - self._reference_lon) * 111111.0 * cos_lat
+        y = (lat - self._reference_lat) * 111111.0
+
+        return x, y
+
+    def _local_to_gps(self, x_meters: float, y_meters: float) -> Tuple[float, float]:
+        """
+        Convert local metric coordinates to GPS coordinates.
+
+        Uses equirectangular projection approximation, which is accurate enough
+        for small areas (< 10 km).
+
+        Args:
+            x_meters: X coordinate in meters (East)
+            y_meters: Y coordinate in meters (North)
+
+        Returns:
+            (latitude, longitude): GPS coordinates in decimal degrees
+
+        Raises:
+            RuntimeError: If reference GPS position not set
+        """
+        if self._reference_lat is None or self._reference_lon is None:
+            raise RuntimeError(
+                "Reference GPS position not set. Call compute_homography() first "
+                "to initialize from GCPs."
+            )
+
+        # Convert meters to degrees
+        lat_deg = y_meters / 111111.0
+
+        # Adjust longitude for latitude
+        lat_rad = math.radians(self._reference_lat)
+        cos_lat = math.cos(lat_rad)
+
+        # Check for division by zero at poles
+        if abs(cos_lat) < 1e-6:
+            raise ValueError("Reference latitude too close to poles for GPS projection")
+
+        lon_deg = x_meters / (111111.0 * cos_lat)
+
+        # Add to reference position
+        latitude = self._reference_lat + lat_deg
+        longitude = self._reference_lon + lon_deg
+
+        # Clamp to valid ranges
+        latitude = max(-90.0, min(90.0, latitude))
+        longitude = max(-180.0, min(180.0, longitude))
+
+        return latitude, longitude
+
+    def _calculate_confidence(
+        self,
+        num_inliers: int,
+        total_points: int,
+        reprojection_errors: np.ndarray
+    ) -> float:
+        """
+        Calculate confidence score for the homography.
+
+        Confidence is based on:
+        1. Inlier ratio: Higher ratio = higher confidence
+        2. Reprojection error: Lower mean error = higher confidence
+
+        Args:
+            num_inliers: Number of inlier points from RANSAC
+            total_points: Total number of GCP correspondences
+            reprojection_errors: Array of reprojection errors for inliers (pixels)
+
+        Returns:
+            float: Confidence score in range [0.0, 1.0]
+        """
+        if total_points == 0:
+            return 0.0
+
+        # Calculate inlier ratio
+        inlier_ratio = num_inliers / total_points
+
+        # Base confidence on inlier ratio
+        if inlier_ratio < self.MIN_INLIER_RATIO:
+            confidence = inlier_ratio * self.CONFIDENCE_PENALTY_LOW_INLIERS
+        else:
+            confidence = inlier_ratio
+
+        # Factor in reprojection error
+        if len(reprojection_errors) > 0:
+            mean_error = np.mean(reprojection_errors)
+            # Penalize based on error relative to RANSAC threshold
+            # Error = 0 -> multiplier = 1.0
+            # Error = ransac_threshold -> multiplier = 0.5
+            # Error > ransac_threshold -> multiplier < 0.5
+            error_factor = max(0.3, 1.0 - (mean_error / (2 * self.ransac_threshold)))
+            confidence *= error_factor
+
+        return min(1.0, confidence)
+
+    def _calculate_point_confidence(
+        self,
+        image_point: Tuple[float, float],
+        base_confidence: float
+    ) -> float:
+        """
+        Calculate per-point confidence based on distance from image center.
+
+        Points near the image edges are less reliable due to lens distortion
+        and perspective effects.
+
+        Args:
+            image_point: (u, v) pixel coordinates
+            base_confidence: Base confidence from homography quality
+
+        Returns:
+            float: Adjusted confidence score in range [0.0, 1.0]
+        """
+        u, v = image_point
+
+        # Calculate distance from image center (normalized)
+        if self.width <= 0 or self.height <= 0:
+            return base_confidence
+
+        center_u = self.width / 2.0
+        center_v = self.height / 2.0
+
+        dx = (u - center_u) / (self.width / 2.0)
+        dy = (v - center_v) / (self.height / 2.0)
+
+        dist_from_center = math.sqrt(dx * dx + dy * dy)
+
+        # Reduce confidence for points far from center
+        if dist_from_center < 1.0:
+            edge_factor = self.EDGE_FACTOR_CENTER - (
+                self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE
+            ) * dist_from_center
+        else:
+            edge_factor = self.EDGE_FACTOR_EDGE * (2.0 - dist_from_center)
+
+        edge_factor = max(self.EDGE_FACTOR_MIN, min(self.EDGE_FACTOR_CENTER, edge_factor))
+
+        return base_confidence * edge_factor
+
+    def _project_image_point_to_local(
+        self,
+        image_point: Tuple[float, float]
+    ) -> Tuple[float, float]:
+        """
+        Project image point to local metric coordinates.
+
+        Args:
+            image_point: (u, v) pixel coordinates
+
+        Returns:
+            (x_local, y_local): Local metric coordinates in meters
+
+        Raises:
+            ValueError: If point projects to infinity (on horizon)
+        """
+        u, v = image_point
+
+        # Convert to homogeneous coordinates
+        pt_homogeneous = np.array([u, v, 1.0])
+
+        # Project to local metric using inverse homography
+        local_homogeneous = self.H_inv @ pt_homogeneous
+
+        # Check for division by zero (point at infinity/horizon)
+        if abs(local_homogeneous[2]) < 1e-10:
+            raise ValueError("Point projects to infinity (on horizon line)")
+
+        # Normalize
+        x_local = local_homogeneous[0] / local_homogeneous[2]
+        y_local = local_homogeneous[1] / local_homogeneous[2]
+
+        return x_local, y_local
 
     # =========================================================================
-    # HomographyProvider Interface Implementation (Stubs)
+    # HomographyProvider Interface Implementation
     # =========================================================================
 
     def compute_homography(
@@ -164,88 +356,207 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         reference: Dict[str, Any]
     ) -> HomographyResult:
         """
-        Compute homography from feature matching.
-
-        Future implementation will:
-        1. Detect features in the input frame using configured detector
-        2. Match features with reference image or ground control points
-        3. Estimate homography using RANSAC for robustness
-        4. Calculate confidence based on inlier ratio and reprojection error
+        Compute homography from Ground Control Points.
 
         Args:
-            frame: Input image frame as numpy array (height, width, channels).
-                Should be BGR or RGB, typically uint8.
-            reference: Reference data dictionary with one of:
-                - 'reference_image': Reference image with known ground truth
-                - 'ground_control_points': List of (lat, lon, u, v) tuples
-                    mapping GPS coordinates to image pixel locations
-                - 'reference_features': Pre-computed features and descriptors
+            frame: Image frame (not used for GCP approach, but required by interface)
+            reference: Dictionary with required key:
+                - 'ground_control_points': List of GCP dictionaries, each with:
+                    - 'gps': {'latitude': float, 'longitude': float}
+                    - 'image': {'u': float, 'v': float}
 
         Returns:
-            HomographyResult containing:
-                - homography_matrix: 3x3 transformation matrix
-                - confidence: Quality score based on inlier ratio [0.0, 1.0]
-                - metadata: Including 'num_matches', 'num_inliers',
-                    'reprojection_error', 'detector_type'
+            HomographyResult with computed homography matrix and confidence
 
         Raises:
-            ValueError: If inputs are invalid or malformed
-            RuntimeError: If feature matching or homography computation fails
-            NotImplementedError: Currently not implemented (issue #14)
-
-        Note:
-            This method will update the provider's internal state. Subsequent
-            calls to project_point() will use this computed homography.
+            ValueError: If required reference data is missing or invalid
+            RuntimeError: If homography computation fails
         """
-        logger.warning(
-            "Feature matching homography not implemented. "
-            "Frame shape: %s, detector: %s",
-            frame.shape if hasattr(frame, 'shape') else 'unknown',
-            self.detector
+        # Validate reference data
+        if 'ground_control_points' not in reference:
+            raise ValueError("Missing required reference key: 'ground_control_points'")
+
+        gcps = reference['ground_control_points']
+
+        if not isinstance(gcps, list) or len(gcps) < self.min_matches:
+            raise ValueError(
+                f"Need at least {self.min_matches} ground control points, got {len(gcps)}"
+            )
+
+        # Extract GCP data
+        image_points = []
+        gps_points = []
+
+        for gcp in gcps:
+            if 'gps' not in gcp or 'image' not in gcp:
+                raise ValueError("Each GCP must have 'gps' and 'image' keys")
+
+            gps = gcp['gps']
+            img = gcp['image']
+
+            if 'latitude' not in gps or 'longitude' not in gps:
+                raise ValueError("GPS must have 'latitude' and 'longitude' keys")
+
+            if 'u' not in img or 'v' not in img:
+                raise ValueError("Image must have 'u' and 'v' keys")
+
+            image_points.append([img['u'], img['v']])
+            gps_points.append([gps['latitude'], gps['longitude']])
+
+        # Convert to numpy arrays
+        image_points = np.array(image_points, dtype=np.float32)
+        gps_points = np.array(gps_points, dtype=np.float64)
+
+        # Set reference point (use first GCP or compute centroid)
+        self._reference_lat = gps_points[0, 0]
+        self._reference_lon = gps_points[0, 1]
+
+        # Also set camera GPS position for WorldPoint conversion
+        # (using reference point as camera position approximation)
+        self._camera_gps_lat = self._reference_lat
+        self._camera_gps_lon = self._reference_lon
+
+        logger.info(
+            "Set reference GPS position: lat=%.6f, lon=%.6f",
+            self._reference_lat,
+            self._reference_lon
         )
-        raise NotImplementedError(
-            "Feature matching homography computation not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will use feature detection (SIFT/ORB/LoFTR) "
-            "and RANSAC-based homography estimation."
+
+        # Convert GPS points to local metric coordinates
+        local_points = []
+        for lat, lon in gps_points:
+            x, y = self._gps_to_local(lat, lon)
+            local_points.append([x, y])
+
+        local_points = np.array(local_points, dtype=np.float32)
+
+        logger.info(
+            "Computing homography from %d GCPs (image -> local metric)",
+            len(image_points)
+        )
+
+        # Compute homography using RANSAC
+        # H maps local metric coordinates to image coordinates
+        H, mask = cv2.findHomography(
+            local_points,  # Source points (world)
+            image_points,  # Destination points (image)
+            cv2.RANSAC,
+            self.ransac_threshold
+        )
+
+        if H is None:
+            logger.error("Failed to compute homography from GCPs")
+            self.H = np.eye(3)
+            self.H_inv = np.eye(3)
+            self._confidence = 0.0
+            raise RuntimeError(
+                "Failed to compute homography. Check GCP quality and distribution."
+            )
+
+        # Store homography (local metric -> image)
+        self.H = H
+
+        # Compute inverse (image -> local metric)
+        det_H = np.linalg.det(self.H)
+        if abs(det_H) < self.MIN_DET_THRESHOLD:
+            logger.warning(
+                "Homography is singular (det=%.2e). Inverse may be unstable.",
+                det_H
+            )
+            self.H_inv = np.eye(3)
+            self._confidence = 0.0
+        else:
+            self.H_inv = np.linalg.inv(self.H)
+
+            # Calculate confidence based on inliers
+            num_inliers = int(np.sum(mask))
+            total_points = len(image_points)
+
+            # Calculate reprojection errors for inliers
+            if num_inliers > 0:
+                inlier_local = local_points[mask.ravel() == 1]
+                inlier_image = image_points[mask.ravel() == 1]
+
+                # Project local points to image using homography
+                projected = cv2.perspectiveTransform(
+                    inlier_local.reshape(-1, 1, 2),
+                    self.H
+                ).reshape(-1, 2)
+
+                # Calculate reprojection errors
+                errors = np.linalg.norm(projected - inlier_image, axis=1)
+                self._confidence = self._calculate_confidence(
+                    num_inliers, total_points, errors
+                )
+            else:
+                self._confidence = 0.0
+
+        # Build metadata
+        metadata = {
+            'approach': HomographyApproach.FEATURE_MATCH.value,
+            'method': 'gcp_based',
+            'num_gcps': len(image_points),
+            'num_inliers': int(np.sum(mask)) if mask is not None else 0,
+            'inlier_ratio': float(np.sum(mask)) / len(image_points) if mask is not None else 0.0,
+            'determinant': det_H,
+            'reference_gps': {
+                'latitude': self._reference_lat,
+                'longitude': self._reference_lon
+            }
+        }
+
+        self._last_metadata = metadata
+
+        logger.info(
+            "Homography computed: %d/%d inliers, confidence=%.3f",
+            metadata['num_inliers'],
+            metadata['num_gcps'],
+            self._confidence
+        )
+
+        return HomographyResult(
+            homography_matrix=self.H.copy(),
+            confidence=self._confidence,
+            metadata=metadata
         )
 
     def project_point(self, image_point: Tuple[float, float]) -> WorldPoint:
         """
-        Project single image coordinate to world coordinate (GPS).
-
-        Future implementation will transform image points to GPS coordinates
-        using the homography computed from feature matching.
+        Project image point to GPS world coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates in image space
-                u: horizontal pixel coordinate (0 = left edge)
-                v: vertical pixel coordinate (0 = top edge)
+            image_point: (u, v) pixel coordinates
 
         Returns:
-            WorldPoint with:
-                - latitude: Projected latitude in decimal degrees
-                - longitude: Projected longitude in decimal degrees
-                - confidence: Point-specific confidence score [0.0, 1.0]
+            WorldPoint with GPS latitude/longitude and confidence
 
         Raises:
-            RuntimeError: If no valid homography has been computed yet
-            ValueError: If image_point is outside valid image bounds
-            NotImplementedError: Currently not implemented (issue #14)
-
-        Note:
-            Call is_valid() first to ensure homography is ready for projection.
+            RuntimeError: If no valid homography computed or GPS position not set
+            ValueError: If image_point is outside valid bounds
         """
-        logger.warning(
-            "Feature matching point projection not implemented. "
-            "Image point: %s",
-            image_point
-        )
-        raise NotImplementedError(
-            "Point projection not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will use computed homography matrix to "
-            "transform image coordinates to GPS via ground plane projection."
+        if not self.is_valid():
+            raise RuntimeError("No valid homography available. Call compute_homography() first.")
+
+        u, v = image_point
+        if not (0 <= u < self.width) or not (0 <= v < self.height):
+            raise ValueError(
+                f"Image point ({u}, {v}) outside valid bounds "
+                f"[0, {self.width}) x [0, {self.height})"
+            )
+
+        # Project to local metric coordinates
+        x_local, y_local = self._project_image_point_to_local(image_point)
+
+        # Convert to GPS
+        latitude, longitude = self._local_to_gps(x_local, y_local)
+
+        # Calculate point-specific confidence
+        point_confidence = self._calculate_point_confidence(image_point, self._confidence)
+
+        return WorldPoint(
+            latitude=latitude,
+            longitude=longitude,
+            confidence=point_confidence
         )
 
     def project_points(
@@ -253,90 +564,52 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         image_points: List[Tuple[float, float]]
     ) -> List[WorldPoint]:
         """
-        Project multiple image points to world coordinates (GPS).
-
-        Future implementation will batch-project points using vectorized
-        operations for efficiency.
+        Project multiple image points to GPS world coordinates.
 
         Args:
-            image_points: List of (u, v) pixel coordinates to project
+            image_points: List of (u, v) pixel coordinates
 
         Returns:
-            List of WorldPoint objects, one per input point, in same order.
-            Each WorldPoint contains lat/lon and per-point confidence score.
+            List of WorldPoint objects with GPS coordinates
 
         Raises:
-            RuntimeError: If no valid homography has been computed yet
-            ValueError: If any image_point is outside valid image bounds
-            NotImplementedError: Currently not implemented (issue #14)
-
-        Note:
-            Batch projection will be optimized using numpy vectorized operations.
+            RuntimeError: If no valid homography computed
+            ValueError: If any image_point is outside valid bounds
         """
-        logger.warning(
-            "Feature matching batch projection not implemented. "
-            "Number of points: %d",
-            len(image_points)
-        )
-        raise NotImplementedError(
-            "Batch point projection not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will vectorize projection for performance."
-        )
+        if not self.is_valid():
+            raise RuntimeError("No valid homography available. Call compute_homography() first.")
+
+        world_points = []
+        for image_point in image_points:
+            world_point = self.project_point(image_point)
+            world_points.append(world_point)
+
+        return world_points
 
     def get_confidence(self) -> float:
         """
         Return confidence score of current homography.
 
-        Future implementation will base confidence on:
-        - Inlier ratio (num_inliers / num_matches)
-        - Mean reprojection error of inliers
-        - Distribution of matched features across image
-        - Geometric validity of homography (conditioning, determinant)
-
         Returns:
-            float: Confidence score in range [0.0, 1.0] where:
-                - 1.0 = excellent match quality, high inlier ratio
-                - 0.5 = moderate quality, usable with caution
-                - 0.0 = poor quality or no homography computed
-
-        Note:
-            Returns 0.0 if no homography has been computed yet.
+            float: Confidence in range [0.0, 1.0]
         """
-        logger.warning("Feature matching confidence computation not implemented")
-        raise NotImplementedError(
-            "Confidence computation not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will compute confidence from inlier ratio "
-            "and reprojection error statistics."
-        )
+        return self._confidence
 
     def is_valid(self) -> bool:
         """
         Check if homography is valid and ready for projection.
 
-        Validates:
-        - Homography has been computed successfully
-        - Minimum number of matches/inliers met
-        - Confidence score above threshold
-        - Homography matrix is well-conditioned (not singular)
-
         Returns:
-            bool: True if homography is valid and projections can be performed,
-                False otherwise.
-
-        Note:
-            Always check this before calling project_point() or project_points()
-            to avoid runtime errors.
+            bool: True if homography is valid for projection
         """
         return validate_homography_matrix(
-            self._homography_matrix,
+            self.H_inv,  # Check inverse since that's what we use for projection
             self._confidence,
             self.confidence_threshold
         )
 
     # =========================================================================
-    # HomographyProviderExtended Interface Implementation (Stubs)
+    # HomographyProviderExtended Interface Implementation
     # =========================================================================
 
     def project_point_to_map(
@@ -344,31 +617,39 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         image_point: Tuple[float, float]
     ) -> MapCoordinate:
         """
-        Project image coordinate to local map coordinate system.
-
-        Future implementation will transform image points to local metric
-        coordinates (meters from camera position).
+        Project image point to local map coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates in image space
+            image_point: (u, v) pixel coordinates
 
         Returns:
-            MapCoordinate with x, y in meters from camera position,
-            and confidence score.
+            MapCoordinate with x, y in meters from reference point
 
         Raises:
-            RuntimeError: If no valid homography has been computed yet
-            NotImplementedError: Currently not implemented (issue #14)
+            RuntimeError: If no valid homography computed
+            ValueError: If image_point is outside valid bounds
         """
-        logger.warning(
-            "Feature matching map projection not implemented. "
-            "Image point: %s",
-            image_point
-        )
-        raise NotImplementedError(
-            "Map projection not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will project to local metric coordinates."
+        if not self.is_valid():
+            raise RuntimeError("No valid homography available. Call compute_homography() first.")
+
+        u, v = image_point
+        if not (0 <= u < self.width) or not (0 <= v < self.height):
+            raise ValueError(
+                f"Image point ({u}, {v}) outside valid bounds "
+                f"[0, {self.width}) x [0, {self.height})"
+            )
+
+        # Project to local metric coordinates
+        x_local, y_local = self._project_image_point_to_local(image_point)
+
+        # Calculate point-specific confidence
+        point_confidence = self._calculate_point_confidence(image_point, self._confidence)
+
+        return MapCoordinate(
+            x=x_local,
+            y=y_local,
+            confidence=point_confidence,
+            elevation=0.0  # Ground plane assumption
         )
 
     def project_points_to_map(
@@ -378,9 +659,6 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         """
         Project multiple image points to local map coordinates.
 
-        Future implementation will batch-project points to local metric
-        coordinate system for efficiency.
-
         Args:
             image_points: List of (u, v) pixel coordinates
 
@@ -388,16 +666,15 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             List of MapCoordinate objects with x, y in meters
 
         Raises:
-            RuntimeError: If no valid homography has been computed yet
-            NotImplementedError: Currently not implemented (issue #14)
+            RuntimeError: If no valid homography computed
+            ValueError: If any image_point is outside valid bounds
         """
-        logger.warning(
-            "Feature matching batch map projection not implemented. "
-            "Number of points: %d",
-            len(image_points)
-        )
-        raise NotImplementedError(
-            "Batch map projection not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will vectorize projection for performance."
-        )
+        if not self.is_valid():
+            raise RuntimeError("No valid homography available. Call compute_homography() first.")
+
+        map_coords = []
+        for image_point in image_points:
+            map_coord = self.project_point_to_map(image_point)
+            map_coords.append(map_coord)
+
+        return map_coords
