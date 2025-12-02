@@ -350,12 +350,17 @@ class CameraPositionDeriver:
         # Check for gimbal lock (tilt near ±90°)
         cos_tilt = math.cos(tilt_rad_internal)
         if abs(cos_tilt) < 1e-6:
-            # Near gimbal lock - pan is ambiguous, estimate from available elements
+            # Near gimbal lock - pan is mathematically ambiguous
+            # At gimbal lock, pan and roll are coupled (only their sum/difference is defined)
+            # We set pan to 0 and let the rotation be absorbed into the ambiguous state
             logger.warning(
-                f"Near gimbal lock (tilt={tilt_deg:.1f}°), pan angle may be inaccurate"
+                f"Near gimbal lock (tilt={tilt_deg:.1f}°), pan angle is mathematically "
+                f"ambiguous. Setting pan=0.0° (pan and roll are coupled at gimbal lock)."
             )
-            # When tilt ≈ 90°, use R[0,0] and R[1,0] which still contain pan info
-            pan_rad = math.atan2(R[1, 0], R[0, 0])
+            # At tilt = ±90°, R[0,0] = cos(pan±roll), R[1,0] = sin(pan±roll)
+            # Without additional constraints, we cannot separate pan from roll
+            # Convention: set pan to 0 at gimbal lock
+            pan_rad = 0.0
         else:
             # Normal case: extract pan from R[0,0], R[1,0]
             # R[0,0] = cos(pan), R[1,0] = sin(pan)
