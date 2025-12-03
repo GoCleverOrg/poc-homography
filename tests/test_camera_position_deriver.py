@@ -23,13 +23,13 @@ from pathlib import Path
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from camera_position_deriver import (
+from poc_homography.camera_position_deriver import (
     CameraPositionDeriver,
     GroundControlPoint,
     PnPResult,
     AccuracyLevel,
 )
-from gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
+from poc_homography.gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
 
 
 def create_ptz_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:

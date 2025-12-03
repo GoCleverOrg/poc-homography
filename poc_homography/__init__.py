@@ -59,7 +59,7 @@ Available Classes:
 """
 
 # Core interface and data structures
-from homography_interface import (
+from poc_homography.homography_interface import (
     HomographyProvider,
     HomographyProviderExtended,
     HomographyApproach,
@@ -69,13 +69,13 @@ from homography_interface import (
 )
 
 # Homography provider implementations
-from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
-from feature_match_homography import FeatureMatchHomography
-from learned_homography import LearnedHomography
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.feature_match_homography import FeatureMatchHomography
+from poc_homography.learned_homography import LearnedHomography
 
 # Configuration and factory
-from homography_config import HomographyConfig, get_default_config
-from homography_factory import HomographyFactory
+from poc_homography.homography_config import HomographyConfig, get_default_config
+from poc_homography.homography_factory import HomographyFactory
 
 # Define public API
 __all__ = [

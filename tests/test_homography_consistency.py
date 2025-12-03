@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from camera_geometry import CameraGeometry
+from poc_homography.camera_geometry import CameraGeometry
 
 
 def test_forward_backward_consistency():

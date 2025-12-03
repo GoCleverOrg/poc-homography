@@ -24,15 +24,15 @@ except ImportError:
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from gps_distance_calculator import (
+from poc_homography.gps_distance_calculator import (
     dms_to_dd,
     dd_to_dms,
     local_xy_to_gps,
     gps_to_local_xy,
     haversine_distance
 )
-from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
-from homography_interface import WorldPoint
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.homography_interface import WorldPoint
 
 
 class TestDMSParsing:

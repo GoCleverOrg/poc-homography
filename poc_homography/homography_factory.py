@@ -12,11 +12,11 @@ from configuration. It supports:
 from typing import Optional, Type, Dict, Any, List
 import logging
 
-from homography_interface import HomographyProvider, HomographyApproach
-from homography_config import HomographyConfig
-from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
-from feature_match_homography import FeatureMatchHomography
-from learned_homography import LearnedHomography
+from poc_homography.homography_interface import HomographyProvider, HomographyApproach
+from poc_homography.homography_config import HomographyConfig
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.feature_match_homography import FeatureMatchHomography
+from poc_homography.learned_homography import LearnedHomography
 
 
 # Configure logging

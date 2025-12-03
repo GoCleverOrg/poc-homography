@@ -7,10 +7,10 @@ Click points, enter their GPS coordinates, and compare with homography.
 import sys
 import cv2
 import numpy as np
-from camera_config import get_camera_by_name, get_camera_gps, get_rtsp_url, USERNAME, PASSWORD
-from camera_geometry import CameraGeometry
+from poc_homography.camera_config import get_camera_by_name, get_camera_gps, get_rtsp_url, USERNAME, PASSWORD
+from poc_homography.camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
-from gps_distance_calculator import (dms_to_dd, haversine_distance, bearing_between_points,
+from poc_homography.gps_distance_calculator import (dms_to_dd, haversine_distance, bearing_between_points,
                                       compare_distances, local_xy_to_gps, dd_to_dms)
 
 

@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from gcp_validation import (
+from poc_homography.gcp_validation import (
     validate_gcp_gps_coordinates,
     validate_gcp_elevation,
     validate_gcp_pixel_coordinates,
@@ -31,7 +31,7 @@ from gcp_validation import (
     MAX_ELEVATION,
     MAX_GCP_COUNT,
 )
-from homography_config import HomographyConfig
+from poc_homography.homography_config import HomographyConfig
 
 
 class TestValidateGCPGPSCoordinates(unittest.TestCase):

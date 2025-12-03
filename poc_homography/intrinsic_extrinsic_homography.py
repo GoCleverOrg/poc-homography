@@ -19,7 +19,7 @@ import math
 import logging
 from typing import List, Tuple, Dict, Any, Optional
 
-from homography_interface import (
+from poc_homography.homography_interface import (
     HomographyProviderExtended,
     HomographyResult,
     WorldPoint,

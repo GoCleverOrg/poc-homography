@@ -153,3 +153,13 @@ cython_debug/
 # Output folder (but keep README)
 output/*
 !output/README.md
+
+# Data folder (for large test files)
+data/*
+!data/.gitkeep
+
+# Worktrees
+.worktrees
+
+# PTZ test results (generated)
+ptz_discovery_and_control/hikvision/ptz_test_results_*.json

@@ -5,7 +5,7 @@ Test if inverting tilt sign fixes the homography.
 
 import sys
 import numpy as np
-from camera_geometry import CameraGeometry
+from poc_homography.camera_geometry import CameraGeometry
 
 def test_tilt_inversion(pan_deg, tilt_deg, height=5.0):
     """Test homography with normal and inverted tilt."""

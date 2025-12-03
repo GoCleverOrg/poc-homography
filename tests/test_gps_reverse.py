@@ -3,7 +3,7 @@
 Test reverse GPS calculation (homography X,Y -> GPS coordinates).
 """
 
-from gps_distance_calculator import dms_to_dd, local_xy_to_gps, dd_to_dms, haversine_distance
+from poc_homography.gps_distance_calculator import dms_to_dd, local_xy_to_gps, dd_to_dms, haversine_distance
 
 # Your data
 camera_gps = {"lat": "39°38'25.7\"N", "lon": "0°13'48.7\"W"}
@@ -50,7 +50,7 @@ actual_distance = haversine_distance(cam_lat_dd, cam_lon_dd, pt_lat_dd, pt_lon_d
 print(f"\nActual GPS distance: {actual_distance:.2f}m")
 
 # The bearing to the point
-from gps_distance_calculator import bearing_between_points, gps_to_local_xy
+from poc_homography.gps_distance_calculator import bearing_between_points, gps_to_local_xy
 bearing = bearing_between_points(cam_lat_dd, cam_lon_dd, pt_lat_dd, pt_lon_dd)
 print(f"Bearing: {bearing:.1f}°")
 

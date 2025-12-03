@@ -10,10 +10,10 @@ from pathlib import Path
 import yaml
 import logging
 
-from homography_interface import HomographyApproach, CoordinateSystemMode
+from poc_homography.homography_interface import HomographyApproach, CoordinateSystemMode
 
 # Import GCP validation from dedicated module
-from gcp_validation import (
+from poc_homography.gcp_validation import (
     validate_ground_control_points,
     validate_gcp_gps_coordinates,
     validate_gcp_elevation,

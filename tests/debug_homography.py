@@ -5,9 +5,9 @@ Debug homography calculations with detailed output.
 
 import sys
 import numpy as np
-from camera_geometry import CameraGeometry
+from poc_homography.camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
-from camera_config import get_camera_by_name, USERNAME, PASSWORD
+from poc_homography.camera_config import get_camera_by_name, USERNAME, PASSWORD, CAMERAS
 
 
 def debug_homography(camera_name: str, height: float = 5.0):

@@ -9,17 +9,17 @@ import time
 import math # Needed for camera_geometry
 import logging
 # Import unified homography interface
-from homography_interface import HomographyProvider, HomographyProviderExtended, HomographyApproach, CoordinateSystemMode
-from homography_config import HomographyConfig, get_default_config
-from homography_factory import HomographyFactory
-from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.homography_interface import HomographyProvider, HomographyProviderExtended, HomographyApproach, CoordinateSystemMode
+from poc_homography.homography_config import HomographyConfig, get_default_config
+from poc_homography.homography_factory import HomographyFactory
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 # Import camera_geometry for backward compatibility
-from camera_geometry import CameraGeometry
+from poc_homography.camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 # Import camera configuration
-from camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
+from poc_homography.camera_config import CAMERAS, USERNAME, PASSWORD, get_camera_by_name, get_rtsp_url
 # Import GPS utilities
-from gps_distance_calculator import dms_to_dd
+from poc_homography.gps_distance_calculator import dms_to_dd
 
 # Configure logging
 logger = logging.getLogger(__name__)

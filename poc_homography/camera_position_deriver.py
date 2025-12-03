@@ -38,7 +38,7 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any, Optional, Union
 
-from gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
+from poc_homography.gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
 
 logger = logging.getLogger(__name__)
 

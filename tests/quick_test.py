@@ -5,7 +5,7 @@ Tests the math without needing physical markers or camera access.
 """
 
 import numpy as np
-from camera_geometry import CameraGeometry
+from poc_homography.camera_geometry import CameraGeometry
 
 
 def quick_test():
