@@ -1236,6 +1236,96 @@ class TestNumpyTypeSupport(unittest.TestCase):
             validate_gcp_gps_coordinates(gcp, 0)
 
 
+class TestConfigGCPPixelBoundsCI(unittest.TestCase):
+    """CI test to verify GCPs in config/homography_config.yaml are within image bounds.
+
+    This test ensures that all GCP pixel coordinates in the production config file
+    are valid with respect to the image dimensions specified in camera_capture_context.
+    This prevents issues where invalid GCPs cause incorrect homography computation.
+    """
+
+    def test_config_gcps_within_image_bounds(self):
+        """Test that all GCPs in homography_config.yaml have valid pixel coordinates.
+
+        This test:
+        1. Loads the production config file
+        2. Extracts image dimensions from camera_capture_context
+        3. Validates all GCPs have u < image_width and v < image_height
+
+        If this test fails, the config contains GCPs that would cause RANSAC to fit
+        invalid points, resulting in incorrect homography matrices.
+        """
+        # Get the path to the config file
+        test_dir = Path(__file__).parent
+        config_path = test_dir.parent / 'config' / 'homography_config.yaml'
+
+        # Skip test if config file doesn't exist
+        if not config_path.exists():
+            self.skipTest(f"Config file not found at {config_path}")
+
+        # Load config
+        config = HomographyConfig.from_yaml(str(config_path))
+
+        # Get feature_match config
+        feature_match_config = config.approach_specific_config.get('feature_match', {})
+
+        # Get camera capture context for image dimensions
+        camera_context = feature_match_config.get('camera_capture_context', {})
+        image_width = camera_context.get('image_width')
+        image_height = camera_context.get('image_height')
+
+        self.assertIsNotNone(image_width, "Config missing image_width in camera_capture_context")
+        self.assertIsNotNone(image_height, "Config missing image_height in camera_capture_context")
+
+        # Get GCPs
+        gcps = feature_match_config.get('ground_control_points', [])
+        self.assertGreater(len(gcps), 0, "Config should have at least one GCP")
+
+        # Validate each GCP's pixel coordinates are within bounds
+        errors = []
+        for i, gcp in enumerate(gcps):
+            u = gcp['image']['u']
+            v = gcp['image']['v']
+            desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+
+            if u < 0 or u >= image_width:
+                errors.append(f"{desc}: u={u} outside [0, {image_width})")
+            if v < 0 or v >= image_height:
+                errors.append(f"{desc}: v={v} outside [0, {image_height})")
+
+        if errors:
+            self.fail(
+                f"GCPs with invalid pixel coordinates found in config:\n"
+                f"  Image dimensions: {image_width} x {image_height}\n"
+                f"  Invalid GCPs:\n    " + "\n    ".join(errors)
+            )
+
+    def test_all_gcps_have_positive_coordinates(self):
+        """Test that all GCPs have non-negative pixel coordinates."""
+        # Get the path to the config file
+        test_dir = Path(__file__).parent
+        config_path = test_dir.parent / 'config' / 'homography_config.yaml'
+
+        # Skip test if config file doesn't exist
+        if not config_path.exists():
+            self.skipTest(f"Config file not found at {config_path}")
+
+        # Load config
+        config = HomographyConfig.from_yaml(str(config_path))
+
+        # Get GCPs
+        feature_match_config = config.approach_specific_config.get('feature_match', {})
+        gcps = feature_match_config.get('ground_control_points', [])
+
+        for i, gcp in enumerate(gcps):
+            u = gcp['image']['u']
+            v = gcp['image']['v']
+            desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+
+            self.assertGreaterEqual(u, 0, f"{desc}: u coordinate must be >= 0, got {u}")
+            self.assertGreaterEqual(v, 0, f"{desc}: v coordinate must be >= 0, got {v}")
+
+
 def main():
     """Run all tests."""
     # Run tests with unittest's test runner

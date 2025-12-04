@@ -159,7 +159,7 @@ homography:
           elevation: 11.2
         image:
           u: 1180.0
-          v: 1820.3
+          v: 1365.2
         metadata:
           description: "Road intersection SW"
           accuracy: medium
@@ -172,7 +172,7 @@ homography:
           elevation: 11.9
         image:
           u: 2520.8
-          v: 1865.0
+          v: 1398.8
         metadata:
           description: "Building corner SE"
           accuracy: high
@@ -198,7 +198,7 @@ homography:
           elevation: 12.0
         image:
           u: 1920.3
-          v: 1450.7
+          v: 1088.0
         metadata:
           description: "Parking lot marker"
           accuracy: high
