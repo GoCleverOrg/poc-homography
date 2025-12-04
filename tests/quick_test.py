@@ -26,11 +26,13 @@ def quick_test():
     K = geo.get_intrinsics(zoom_factor=1.0, W_px=2560, H_px=1440)
     w_pos = np.array([0.0, 0.0, 5.0])
 
+    # Pass tilt directly - positive = camera pointing down (Hikvision convention)
+    # The internal _get_rotation_matrix() handles the conversion
     geo.set_camera_parameters(
         K=K,
         w_pos=w_pos,
         pan_deg=0.0,
-        tilt_deg=-45.0,
+        tilt_deg=45.0,  # 45 degrees down
         map_width=640,
         map_height=480
     )

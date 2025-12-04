@@ -74,12 +74,13 @@ class GPSHomographyVerifier:
 
         w_pos = np.array([0.0, 0.0, height])
 
-        # IMPORTANT: Negate tilt for Hikvision convention
+        # Pass tilt directly - the internal _get_rotation_matrix() handles
+        # the Hikvision convention (positive = down) conversion
         self.geo.set_camera_parameters(
             K=K,
             w_pos=w_pos,
             pan_deg=self.status["pan"],
-            tilt_deg=-self.status["tilt"],
+            tilt_deg=self.status["tilt"],
             map_width=640,
             map_height=h
         )

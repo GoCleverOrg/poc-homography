@@ -55,12 +55,13 @@ def debug_homography(camera_name: str, height: float = 5.0):
     print(f"   w_pos = {w_pos} meters")
 
     # Set parameters
-    # IMPORTANT: Hikvision uses inverted tilt (positive = down)
+    # Pass tilt directly - the internal _get_rotation_matrix() handles
+    # the Hikvision convention (positive = down) conversion
     geo.set_camera_parameters(
         K=K,
         w_pos=w_pos,
         pan_deg=status['pan'],
-        tilt_deg=-status['tilt'],  # Negate for correct convention
+        tilt_deg=status['tilt'],
         map_width=640,
         map_height=480
     )

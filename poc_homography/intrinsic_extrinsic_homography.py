@@ -250,9 +250,22 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             - Camera coordinate system has Y=Down, Z=Forward
             - Due to this inverted Y-axis, the standard pitch rotation matrix is modified
 
+        IMPORTANT - Caller Convention:
+            Callers should pass tilt values DIRECTLY from the camera API without
+            any sign modification. This method handles the Hikvision convention
+            internally by negating the tilt angle. DO NOT negate tilt externally
+            as this will cause double negation and inverted projections.
+
+            Example (correct):
+                tilt_deg=status['tilt']  # Pass raw value from camera
+
+            Example (WRONG - causes double negation):
+                tilt_deg=-status['tilt']  # DO NOT negate externally
+
         Args:
             pan_deg: Pan angle in degrees (positive = right/clockwise from above)
-            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention).
+                      Pass raw camera value - internal conversion is handled here.
 
         Returns:
             R: 3x3 rotation matrix transforming world coordinates to camera frame

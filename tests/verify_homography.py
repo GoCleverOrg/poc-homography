@@ -66,13 +66,13 @@ class HomographyVerifier:
 
         w_pos = np.array([0.0, 0.0, height])
 
-        # IMPORTANT: Hikvision cameras use inverted tilt convention
-        # Positive tilt = pointing down, so we negate it
+        # Pass tilt directly - the internal _get_rotation_matrix() handles
+        # the Hikvision convention (positive = down) conversion
         self.geo.set_camera_parameters(
             K=K,
             w_pos=w_pos,
             pan_deg=self.status["pan"],
-            tilt_deg=-self.status["tilt"],  # Negate tilt for Hikvision
+            tilt_deg=self.status["tilt"],
             map_width=w,
             map_height=h
         )
