@@ -1,0 +1,259 @@
+# GCP Configuration
+# Generated: 2025-12-04T16:36:04.045911
+# Camera: Valte
+# GCPs captured: 19
+
+homography:
+  approach: feature_match
+
+  feature_match:
+    detector: sift
+    min_matches: 4
+    ransac_threshold: 5.0
+
+    # Camera Capture Context
+    camera_capture_context:
+      camera_name: "Valte"
+      image_width: 1920
+      image_height: 1080
+      ptz_position:
+        pan: 93.2
+        tilt: 6.7
+        zoom: 1.0
+      intrinsics:
+        focal_length_px: 1577.72
+        principal_point:
+          cx: 960.0
+          cy: 540.0
+      capture_timestamp: "2025-12-04T15:29:26.999673"
+      notes: ""
+
+    # Ground Control Points
+    ground_control_points:
+      # GCP 1: P#00 - bottom of #3
+      - gps:
+          latitude: 39.640406
+          longitude: -0.230055
+        image:
+          u: 398.0
+          v: 979.0
+        metadata:
+          description: "P#00 - bottom of #3"
+          accuracy: medium
+          timestamp: "2025-12-04T15:30:27.042238"
+
+      # GCP 2: P#01 - bottom of #0
+      - gps:
+          latitude: 39.640409
+          longitude: -0.230062
+        image:
+          u: 408.0
+          v: 1008.0
+        metadata:
+          description: "P#01 - bottom of #0"
+          accuracy: medium
+          timestamp: "2025-12-04T15:31:11.222854"
+
+      # GCP 3: P#02 - br corner on zebra cross that intersects road line
+      - gps:
+          latitude: 39.640308
+          longitude: -0.230064
+        image:
+          u: 1204.0
+          v: 734.0
+        metadata:
+          description: "P#02 - br corner on zebra cross that intersects road line"
+          accuracy: medium
+          timestamp: "2025-12-04T15:34:03.571950"
+
+      # GCP 4: P#03 - br corner of furthest zebra cross strip
+      - gps:
+          latitude: 39.640266
+          longitude: -0.229973
+        image:
+          u: 915.0
+          v: 620.0
+        metadata:
+          description: "P#03 - br corner of furthest zebra cross strip"
+          accuracy: low
+          timestamp: "2025-12-04T15:35:42.904083"
+
+      # GCP 5: P#04 - tip of the furthest arrow
+      - gps:
+          latitude: 39.640061
+          longitude: -0.229891
+        image:
+          u: 1194.0
+          v: 503.0
+        metadata:
+          description: "P#04 - tip of the furthest arrow"
+          accuracy: low
+          timestamp: "2025-12-04T15:37:18.289512"
+
+      # GCP 6: P#05 - tip of the closest arrow
+      - gps:
+          latitude: 39.640108
+          longitude: -0.229989
+        image:
+          u: 1405.0
+          v: 541.0
+        metadata:
+          description: "P#05 - tip of the closest arrow"
+          accuracy: medium
+          timestamp: "2025-12-04T15:38:17.582072"
+
+      # GCP 7: P#06 - br 1st parking spot
+      - gps:
+          latitude: 39.640159
+          longitude: -0.230016
+        image:
+          u: 1406.0
+          v: 572.0
+        metadata:
+          description: "P#06 - br 1st parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:21:39.268126"
+
+      # GCP 8: P#07 - br 2nd parking spot
+      - gps:
+          latitude: 39.640189
+          longitude: -0.229992
+        image:
+          u: 1252.0
+          v: 578.0
+        metadata:
+          description: "P#07 - br 2nd parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:22:33.902108"
+
+      # GCP 9: P#08 - br 3rd parking spot
+      - gps:
+          latitude: 39.64022
+          longitude: -0.229966
+        image:
+          u: 1070.0
+          v: 587.0
+        metadata:
+          description: "P#08 - br 3rd parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:24:13.251959"
+
+      # GCP 10: P#09 - br 4th parking spot
+      - gps:
+          latitude: 39.640251
+          longitude: -0.229945
+        image:
+          u: 859.0
+          v: 593.0
+        metadata:
+          description: "P#09 - br 4th parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:26:02.465425"
+
+      # GCP 11: P#10 - br 5th parking spot
+      - gps:
+          latitude: 39.640281
+          longitude: -0.22992
+        image:
+          u: 633.0
+          v: 604.0
+        metadata:
+          description: "P#10 - br 5th parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:26:33.862854"
+
+      # GCP 12: P#11 - br 6th parking spot
+      - gps:
+          latitude: 39.640312
+          longitude: -0.229896
+        image:
+          u: 386.0
+          v: 614.0
+        metadata:
+          description: "P#11 - br 6th parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:27:09.695315"
+
+      # GCP 13: P#12 - br 7th parking spot
+      - gps:
+          latitude: 39.640343
+          longitude: -0.229871
+        image:
+          u: 122.0
+          v: 621.0
+        metadata:
+          description: "P#12 - br 7th parking spot"
+          accuracy: medium
+          timestamp: "2025-12-04T16:30:09.610360"
+
+      # GCP 14: P#13 - tr 1st parking spot
+      - gps:
+          latitude: 39.640096
+          longitude: -0.229792
+        image:
+          u: 878.0
+          v: 491.0
+        metadata:
+          description: "P#13 - tr 1st parking spot"
+          accuracy: low
+          timestamp: "2025-12-04T16:31:01.361549"
+
+      # GCP 15: P#14 - tr 2nd parking spot
+      - gps:
+          latitude: 39.640127
+          longitude: -0.22977
+        image:
+          u: 753.0
+          v: 493.0
+        metadata:
+          description: "P#14 - tr 2nd parking spot"
+          accuracy: low
+          timestamp: "2025-12-04T16:31:41.113826"
+
+      # GCP 16: P#15 - tr 3rd parking spot
+      - gps:
+          latitude: 39.640158
+          longitude: -0.229746
+        image:
+          u: 597.0
+          v: 497.0
+        metadata:
+          description: "P#15 - tr 3rd parking spot"
+          accuracy: low
+          timestamp: "2025-12-04T16:32:38.452122"
+
+      # GCP 17: P#16 - tr 6th parking spot
+      - gps:
+          latitude: 39.64025
+          longitude: -0.22967
+        image:
+          u: 139.0
+          v: 503.0
+        metadata:
+          description: "P#16 - tr 6th parking spot"
+          accuracy: low
+          timestamp: "2025-12-04T16:33:50.275697"
+
+      # GCP 18: P#17 - tr zebra cross next to arrow
+      - gps:
+          latitude: 39.64032
+          longitude: -0.230134
+        image:
+          u: 1717.0
+          v: 845.0
+        metadata:
+          description: "P#17 - tr zebra cross next to arrow"
+          accuracy: medium
+          timestamp: "2025-12-04T16:35:19.245381"
+
+      # GCP 19: P#18 - yellow arrow bottom
+      - gps:
+          latitude: 39.640306
+          longitude: -0.230138
+        image:
+          u: 1803.0
+          v: 816.0
+        metadata:
+          description: "P#18 - yellow arrow bottom"
+          accuracy: medium
+          timestamp: "2025-12-04T16:35:54.465594"

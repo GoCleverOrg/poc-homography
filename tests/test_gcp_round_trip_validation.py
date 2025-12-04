@@ -104,7 +104,8 @@ def run_round_trip_validation(
     height: int = 1440,
     tolerance_meters: float = 5.0,
     verbose: bool = True,
-    inliers_only: bool = True
+    inliers_only: bool = True,
+    confidence_threshold: float = 0.5
 ) -> dict:
     """
     Run round-trip validation test on GCPs.
@@ -116,6 +117,7 @@ def run_round_trip_validation(
         tolerance_meters: Maximum acceptable error in meters
         verbose: Print detailed output
         inliers_only: Only count inliers for pass/fail (outliers reported but not counted)
+        confidence_threshold: Minimum confidence for homography to be valid (default 0.5)
 
     Returns:
         Dictionary with test results
@@ -127,6 +129,7 @@ def run_round_trip_validation(
         print(f"\nImage dimensions: {width} x {height}")
         print(f"Number of GCPs: {len(gcps)}")
         print(f"Tolerance: {tolerance_meters}m")
+        print(f"Confidence threshold: {confidence_threshold}")
         print()
 
     # Create provider
@@ -134,7 +137,8 @@ def run_round_trip_validation(
         width=width,
         height=height,
         min_matches=4,
-        ransac_threshold=5.0
+        ransac_threshold=5.0,
+        confidence_threshold=confidence_threshold
     )
 
     # Compute homography
@@ -158,6 +162,9 @@ def run_round_trip_validation(
     # Get inlier mask if available
     inlier_mask = result.metadata.get('inlier_mask', None)
 
+    # Get the homography matrix to compute pixel reprojection errors
+    H = provider.H  # local metric -> image
+
     if verbose:
         print(f"Homography computed successfully!")
         print(f"  Confidence: {result.confidence:.3f}")
@@ -180,6 +187,16 @@ def run_round_trip_validation(
         original_lon = gcp['gps']['longitude']
         u = gcp['image']['u']
         v = gcp['image']['v']
+
+        # Calculate pixel reprojection error (GPS -> local -> image vs original image)
+        # Convert GPS to local metric coordinates
+        x_local, y_local = provider._gps_to_local(original_lat, original_lon)
+        # Project local to image using H
+        pt_h = np.array([x_local, y_local, 1.0])
+        proj_h = H @ pt_h
+        proj_u = proj_h[0] / proj_h[2]
+        proj_v = proj_h[1] / proj_h[2]
+        pixel_error = math.sqrt((proj_u - u)**2 + (proj_v - v)**2)
 
         # Project image point to GPS
         try:
@@ -209,7 +226,9 @@ def run_round_trip_validation(
                 'projected_gps': (projected_lat, projected_lon),
                 'image_point': (u, v),
                 'error_meters': error_m,
-                'passed': passed
+                'pixel_error': pixel_error,
+                'passed': passed,
+                'is_inlier': is_inlier  # RANSAC inlier status
             }
             results_detail.append(result_detail)
 
@@ -218,9 +237,10 @@ def run_round_trip_validation(
                 inlier_str = " (INLIER)" if is_inlier else " (OUTLIER)" if is_inlier is not None else ""
                 print(f"  [{status}] {desc}{inlier_str}")
                 print(f"       Image point: ({u:.1f}, {v:.1f})")
+                print(f"       Pixel reproj error: {pixel_error:.2f} px")
                 print(f"       Original GPS:  ({original_lat:.6f}, {original_lon:.6f})")
-                print(f"       Projected GPS: ({projected_lat:.6f}, {projected_lon:.6f})")
-                print(f"       Error: {error_m:.2f}m")
+                print(f"       Estimated GPS: ({projected_lat:.6f}, {projected_lon:.6f})")
+                print(f"       GPS error: {error_m:.2f}m")
                 print()
 
         except Exception as e:
@@ -470,16 +490,14 @@ def visualize_gcps_on_frame(
     """
     display = frame.copy()
 
-    # Get inlier mask if available
+    # Get RANSAC inlier mask from results
     inlier_mask = None
     if results and 'details' in results:
-        # Build mask from details
+        # Use the actual RANSAC inlier status, not GPS error
         inlier_mask = []
         for detail in results['details']:
-            # Check if this point passed (inliers should have ~0 error)
-            passed = detail.get('passed', False)
-            error = detail.get('error_meters', float('inf'))
-            inlier_mask.append(error < 1.0)  # Very low error = inlier
+            is_inlier = detail.get('is_inlier', None)
+            inlier_mask.append(is_inlier)
 
     # Draw GCP points
     for i, gcp in enumerate(gcps):
@@ -487,7 +505,13 @@ def visualize_gcps_on_frame(
         v = int(gcp['image']['v'])
         lat = gcp['gps']['latitude']
         lon = gcp['gps']['longitude']
-        desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+        full_desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+
+        # Extract just the P#XX part for the image label if present
+        if full_desc.startswith('P#'):
+            short_desc = full_desc.split(' - ')[0]
+        else:
+            short_desc = full_desc
 
         # Determine color based on inlier status
         if inlier_mask and i < len(inlier_mask):
@@ -501,8 +525,8 @@ def visualize_gcps_on_frame(
         # Draw circle
         cv2.circle(display, (u, v), 10, color, 2)
 
-        # Draw label with GPS coordinates
-        label = f"{desc}: ({lat:.6f}, {lon:.6f})"
+        # Draw label with short description only
+        label = short_desc
 
         # Calculate label position (offset to avoid overlap)
         label_x = u + 15
@@ -607,6 +631,12 @@ def main():
         '--quiet', '-q',
         action='store_true',
         help='Suppress detailed output'
+    )
+    parser.add_argument(
+        '--confidence', '-C',
+        type=float,
+        default=0.5,
+        help='Minimum confidence threshold for valid homography (default: 0.5)'
     )
     parser.add_argument(
         '--no-visual',
@@ -760,7 +790,8 @@ def main():
         width=image_width,
         height=image_height,
         tolerance_meters=args.tolerance,
-        verbose=not args.quiet
+        verbose=not args.quiet,
+        confidence_threshold=args.confidence
     )
 
     # Show results visualization (if we have a frame)

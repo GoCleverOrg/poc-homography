@@ -30,7 +30,7 @@ homography:
 
     # Ground Control Points
     ground_control_points:
-      # GCP 1: 3rd pillar below 30
+      # GCP 1: P#00 - 3rd pillar below 30
       - gps:
           latitude: 39.640457
           longitude: -0.230096
@@ -38,11 +38,11 @@ homography:
           u: 74.0
           v: 865.0
         metadata:
-          description: "3rd pillar below 30"
+          description: "P#00 - 3rd pillar below 30"
           accuracy: medium
           timestamp: "2025-12-04T12:47:06.809809"
 
-      # GCP 2: 2nd pillar below 30
+      # GCP 2: P#01 - 2nd pillar below 30
       - gps:
           latitude: 39.640445
           longitude: -0.230106
@@ -50,11 +50,11 @@ homography:
           u: 412.0
           v: 865.0
         metadata:
-          description: "2nd pillar below 30"
+          description: "P#01 - 2nd pillar below 30"
           accuracy: medium
           timestamp: "2025-12-04T12:47:41.643067"
 
-      # GCP 3: 1st pillar below 30
+      # GCP 3: P#02 - 1st pillar below 30
       - gps:
           latitude: 39.640431
           longitude: -0.230115
@@ -62,11 +62,11 @@ homography:
           u: 788.0
           v: 860.0
         metadata:
-          description: "1st pillar below 30"
+          description: "P#02 - 1st pillar below 30"
           accuracy: medium
           timestamp: "2025-12-04T12:48:47.726503"
 
-      # GCP 4: pillar next to 30
+      # GCP 4: P#03 - pillar next to 30
       - gps:
           latitude: 39.640421
           longitude: -0.230124
@@ -74,23 +74,23 @@ homography:
           u: 1156.0
           v: 852.0
         metadata:
-          description: "pillar next to 30"
+          description: "P#03 - pillar next to 30"
           accuracy: medium
           timestamp: "2025-12-04T12:49:19.930912"
 
-      # GCP 5: bottom of the number 3
+      # GCP 5: P#04 - bottom of the number 3
       - gps:
-          latitude: 39.640406 
+          latitude: 39.640406
           longitude: -0.230055
         image:
           u: 1009.0
           v: 394.0
         metadata:
-          description: "bottom of the number 3"
+          description: "P#04 - bottom of the number 3"
           accuracy: medium
           timestamp: "2025-12-04T12:50:15.973410"
 
-      # GCP 6: bottom right corner of the last strip of the pedestrian crossing
+      # GCP 6: P#05 - bottom right corner of the last strip of the pedestrian crossing
       - gps:
           latitude: 39.640266
           longitude: -0.229972
@@ -98,11 +98,11 @@ homography:
           u: 1550.0
           v: 81.0
         metadata:
-          description: "bottom right corner of the last strip of the pedestrian crossing"
+          description: "P#05 - bottom right corner of the last strip of the pedestrian crossing"
           accuracy: low
           timestamp: "2025-12-04T12:53:17.580090"
 
-      # GCP 7: bottom point of the number 0
+      # GCP 7: P#06 - bottom point of the number 0
       - gps:
           latitude: 39.640409
           longitude: -0.230062
@@ -110,11 +110,11 @@ homography:
           u: 1016.0
           v: 425.0
         metadata:
-          description: "bottom point of the number 0"
+          description: "P#06 - bottom point of the number 0"
           accuracy: medium
           timestamp: "2025-12-04T12:54:17.668869"
 
-      # GCP 8: bottom left corner of the strip of the zebra crossing that touches the dashes on the road
+      # GCP 8: P#07 - bottom left corner of the strip of the zebra crossing that touches the dashes on the road
       - gps:
           latitude: 39.640308
           longitude: -0.230061
@@ -122,6 +122,6 @@ homography:
           u: 1850.0
           v: 236.0
         metadata:
-          description: "bottom left corner of the strip of the zebra crossing that touches the dashes on the road"
+          description: "P#07 - bottom left corner of the strip of the zebra crossing that touches the dashes on the road"
           accuracy: medium
           timestamp: "2025-12-04T12:55:26.699846"
