@@ -70,9 +70,16 @@ class CameraGeometry:
 
     FOV_MIN_DEG = 2.0
     FOV_MAX_DEG = 120.0
+    FOV_WARN_MIN_DEG = 10.0
+    FOV_WARN_MAX_DEG = 90.0
 
     CONDITION_WARN = 1e6
     CONDITION_ERROR = 1e10
+
+    # Maximum reasonable distance ratio for ground projection validation
+    # Set to 20x camera height as a heuristic for typical PTZ camera scenarios
+    # Beyond this, projections likely indicate near-horizontal viewing angles
+    MAX_DISTANCE_HEIGHT_RATIO = 20.0
 
     def __init__(self, w: int, h: int):
         """
@@ -161,9 +168,17 @@ class CameraGeometry:
         if K.shape != (3, 3):
             raise ValueError(f"K must be 3x3, got shape {K.shape}")
 
+        # Validate K matrix for NaN/Infinity
+        if not np.all(np.isfinite(K)):
+            raise ValueError("K matrix contains NaN or Infinity values")
+
         # Validate w_pos structure
         if len(w_pos) != 3:
             raise ValueError(f"w_pos must have 3 elements [X, Y, Z], got {len(w_pos)}")
+
+        # Validate w_pos for NaN/Infinity
+        if not np.all(np.isfinite(w_pos)):
+            raise ValueError("w_pos contains NaN or Infinity values")
 
         # Camera height validation (w_pos[2])
         height = w_pos[2]
@@ -216,9 +231,10 @@ class CameraGeometry:
                 f"Check intrinsic matrix K and zoom factor."
             )
 
-        if fov_deg < 10.0 or fov_deg > 90.0:
+        if fov_deg < self.FOV_WARN_MIN_DEG or fov_deg > self.FOV_WARN_MAX_DEG:
             logger.warning(
-                f"FOV {fov_deg:.1f}° is unusual. Typical PTZ cameras have FOV between 10° and 90°."
+                f"FOV {fov_deg:.1f}° is unusual. Typical PTZ cameras have FOV between "
+                f"{self.FOV_WARN_MIN_DEG}° and {self.FOV_WARN_MAX_DEG}°."
             )
 
     def set_camera_parameters(self, K: np.ndarray, w_pos: np.ndarray,
@@ -267,20 +283,17 @@ class CameraGeometry:
             )
 
         # Compute condition number
-        try:
-            cond_H = np.linalg.cond(self.H)
-            if cond_H > self.CONDITION_ERROR:
-                raise ValueError(
-                    f"Homography condition number {cond_H:.2e} is too high (>{self.CONDITION_ERROR:.2e}). "
-                    f"Matrix is ill-conditioned. Check camera parameters, especially tilt angle."
-                )
-            elif cond_H > self.CONDITION_WARN:
-                logger.warning(
-                    f"Homography condition number {cond_H:.2e} is high (>{self.CONDITION_WARN:.2e}). "
-                    f"Inverse may be numerically unstable."
-                )
-        except np.linalg.LinAlgError:
-            raise ValueError("Failed to compute homography condition number. Matrix may be singular.")
+        cond_H = np.linalg.cond(self.H)
+        if cond_H > self.CONDITION_ERROR:
+            raise ValueError(
+                f"Homography condition number {cond_H:.2e} is too high (>{self.CONDITION_ERROR:.2e}). "
+                f"Matrix is ill-conditioned. Check camera parameters, especially tilt angle."
+            )
+        elif cond_H > self.CONDITION_WARN:
+            logger.warning(
+                f"Homography condition number {cond_H:.2e} is high (>{self.CONDITION_WARN:.2e}). "
+                f"Inverse may be numerically unstable."
+            )
 
         self.H_inv = np.linalg.inv(self.H)
 
@@ -338,7 +351,7 @@ class CameraGeometry:
         logger.info(f"  Image center projects to ground at distance: {distance:.2f}m")
 
         # Warn if distance seems unreasonable
-        max_reasonable_distance = self.height_m * 20  # Heuristic: 20x height
+        max_reasonable_distance = self.height_m * self.MAX_DISTANCE_HEIGHT_RATIO
         if distance > max_reasonable_distance:
             logger.warning(
                 f"Projected ground distance {distance:.2f}m is very large (>{max_reasonable_distance:.2f}m). "

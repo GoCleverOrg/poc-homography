@@ -163,3 +163,4 @@ data/*
 
 # PTZ test results (generated)
 ptz_discovery_and_control/hikvision/ptz_test_results_*.json
+.review-context/

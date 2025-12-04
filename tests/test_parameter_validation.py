@@ -216,6 +216,48 @@ def test_projection_validation():
         print(f"   ✓ PASS: Shallow angle rejected: {e}")
 
 
+def test_boundary_values():
+    """Test exact boundary values for parameters."""
+    print("\n" + "="*60)
+    print("TEST: Boundary Value Validation")
+    print("="*60)
+
+    geo = CameraGeometry(2560, 1440)
+
+    # Test zoom boundary: max valid (25.0)
+    print("\n1. Testing zoom=25.0 (max valid boundary)...")
+    try:
+        K = CameraGeometry.get_intrinsics(zoom_factor=25.0)
+        print("   ✓ PASS: Zoom 25.0 accepted")
+    except ValueError as e:
+        print(f"   ✗ FAIL: Zoom 25.0 rejected: {e}")
+
+    # Test tilt boundary: max valid (90.0)
+    print("\n2. Testing tilt=90.0 (max valid boundary)...")
+    try:
+        K = CameraGeometry.get_intrinsics(zoom_factor=1.0)
+        geo.set_camera_parameters(K, np.array([0.0, 0.0, 5.0]), 0.0, 90.0, 640, 480)
+        print("   ✓ PASS: Tilt 90.0° accepted")
+    except ValueError as e:
+        print(f"   ✗ FAIL: Tilt 90.0° rejected: {e}")
+
+    # Test height boundary: min valid (1.0)
+    print("\n3. Testing height=1.0m (min valid boundary)...")
+    try:
+        geo.set_camera_parameters(K, np.array([0.0, 0.0, 1.0]), 0.0, 45.0, 640, 480)
+        print("   ✓ PASS: Height 1.0m accepted")
+    except ValueError as e:
+        print(f"   ✗ FAIL: Height 1.0m rejected: {e}")
+
+    # Test height boundary: max valid (50.0)
+    print("\n4. Testing height=50.0m (max valid boundary)...")
+    try:
+        geo.set_camera_parameters(K, np.array([0.0, 0.0, 50.0]), 0.0, 45.0, 640, 480)
+        print("   ✓ PASS: Height 50.0m accepted")
+    except ValueError as e:
+        print(f"   ✗ FAIL: Height 50.0m rejected: {e}")
+
+
 def main():
     """Run all validation tests."""
     print("\n" + "="*70)
@@ -228,6 +270,7 @@ def main():
         test_height_validation()
         test_condition_number_validation()
         test_projection_validation()
+        test_boundary_values()
 
         print("\n" + "="*70)
         print("ALL VALIDATION TESTS COMPLETED")
