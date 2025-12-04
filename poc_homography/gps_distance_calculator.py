@@ -6,8 +6,11 @@ Calculate ground distance between GPS coordinates using Haversine formula.
 import math
 import numpy as np
 
-# Earth's mean radius in meters (WGS84 approximation)
-EARTH_RADIUS_M = 6371000.0
+from poc_homography.coordinate_converter import (
+    EARTH_RADIUS_M,
+    gps_to_local_xy,
+    local_xy_to_gps
+)
 
 
 def dms_to_dd(dms_str: str) -> float:
@@ -90,68 +93,6 @@ def bearing_between_points(lat1: float, lon1: float, lat2: float, lon2: float) -
     bearing_deg = (bearing_deg + 360) % 360
 
     return bearing_deg
-
-
-def gps_to_local_xy(lat_camera: float, lon_camera: float,
-                    lat_point: float, lon_point: float) -> tuple:
-    """
-    Convert GPS coordinates to local X, Y coordinates relative to camera.
-
-    Uses equirectangular approximation (good for small distances).
-
-    Args:
-        lat_camera, lon_camera: Camera GPS position (decimal degrees)
-        lat_point, lon_point: Point GPS position (decimal degrees)
-
-    Returns:
-        (X_meters, Y_meters) where:
-            X = East-West (positive = East)
-            Y = North-South (positive = North)
-    """
-    R = EARTH_RADIUS_M
-
-    # Convert to radians
-    lat_cam_rad = math.radians(lat_camera)
-    lat_pt_rad = math.radians(lat_point)
-    delta_lat = math.radians(lat_point - lat_camera)
-    delta_lon = math.radians(lon_point - lon_camera)
-
-    # Equirectangular approximation
-    x = delta_lon * math.cos((lat_cam_rad + lat_pt_rad) / 2) * R
-    y = delta_lat * R
-
-    return x, y
-
-
-def local_xy_to_gps(lat_camera: float, lon_camera: float,
-                    x_meters: float, y_meters: float) -> tuple:
-    """
-    Convert local X, Y coordinates to GPS coordinates (inverse of gps_to_local_xy).
-
-    Uses equirectangular approximation (good for small distances).
-
-    Args:
-        lat_camera, lon_camera: Camera GPS position (decimal degrees)
-        x_meters: East-West distance in meters (positive = East)
-        y_meters: North-South distance in meters (positive = North)
-
-    Returns:
-        (lat_degrees, lon_degrees) in decimal degrees
-    """
-    R = EARTH_RADIUS_M
-
-    # Convert camera position to radians
-    lat_cam_rad = math.radians(lat_camera)
-
-    # Calculate delta lat/lon in radians
-    delta_lat_rad = y_meters / R
-    delta_lon_rad = x_meters / (R * math.cos(lat_cam_rad))
-
-    # Convert to degrees and add to camera position
-    lat_point = lat_camera + math.degrees(delta_lat_rad)
-    lon_point = lon_camera + math.degrees(delta_lon_rad)
-
-    return lat_point, lon_point
 
 
 def dd_to_dms(dd: float, is_latitude: bool = True) -> str:

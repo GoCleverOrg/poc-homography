@@ -27,6 +27,7 @@ from poc_homography.homography_interface import (
     HomographyApproach,
     GPSPositionMixin
 )
+from poc_homography.coordinate_converter import local_xy_to_gps
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,6 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         Call set_camera_gps_position(lat, lon) before using project_point()
         to get WorldPoint results with GPS coordinates.
     """
-
-    # Earth radius for GPS conversion (meters) - approximate for equirectangular projection
-    EARTH_RADIUS = 6371000.0
 
     # Minimum determinant threshold for valid homography
     MIN_DET_THRESHOLD = 1e-10
@@ -481,9 +479,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         """
         Convert local metric coordinates to GPS coordinates.
 
-        Uses equirectangular projection approximation, which is accurate enough
-        for small areas (< 10 km). For larger areas, a more sophisticated
-        projection should be used.
+        Uses the shared coordinate_converter module for consistency across
+        the codebase.
 
         Args:
             x_meters: X coordinate in meters (East)
@@ -500,30 +497,12 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 "Camera GPS position not set. Call set_camera_gps_position() first."
             )
 
-        # Convert meters to degrees
-        # Latitude: 1 degree ≈ 111,111 meters
-        # Longitude: 1 degree ≈ 111,111 * cos(latitude) meters
-        lat_deg = y_meters / 111111.0
-
-        # Adjust longitude for latitude
-        lat_rad = math.radians(self._camera_gps_lat)
-        cos_lat = math.cos(lat_rad)
-
-        # Check for division by zero at poles
-        if abs(cos_lat) < 1e-6:  # Near poles
-            raise ValueError("Camera latitude too close to poles for GPS projection")
-
-        lon_deg = x_meters / (111111.0 * cos_lat)
-
-        # Add to camera position
-        latitude = self._camera_gps_lat + lat_deg
-        longitude = self._camera_gps_lon + lon_deg
-
-        # Clamp to valid ranges
-        latitude = max(-90.0, min(90.0, latitude))
-        longitude = max(-180.0, min(180.0, longitude))
-
-        return latitude, longitude
+        return local_xy_to_gps(
+            self._camera_gps_lat,
+            self._camera_gps_lon,
+            x_meters,
+            y_meters
+        )
 
     def _project_image_point_to_world(
         self,

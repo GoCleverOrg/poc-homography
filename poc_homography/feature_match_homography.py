@@ -30,6 +30,7 @@ from poc_homography.homography_interface import (
     validate_homography_matrix,
     GPSPositionMixin
 )
+from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 
 logger = logging.getLogger(__name__)
 
@@ -140,12 +141,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         """
         Convert GPS coordinates to local metric coordinates.
 
-        Uses equirectangular projection with the reference point as origin.
-        This approximation is accurate for small areas (< 10 km).
-
-        Formula:
-            x = (lon - ref_lon) * 111111 * cos(ref_lat_radians)
-            y = (lat - ref_lat) * 111111
+        Uses the shared coordinate_converter module for consistency.
 
         Args:
             lat: Latitude in decimal degrees
@@ -163,26 +159,18 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "during compute_homography() from GCPs."
             )
 
-        # Convert to meters using equirectangular projection
-        lat_rad = math.radians(self._reference_lat)
-        cos_lat = math.cos(lat_rad)
-
-        # Check for division by zero at poles
-        if abs(cos_lat) < 1e-6:
-            raise ValueError("Reference latitude too close to poles for GPS projection")
-
-        # Calculate offsets in meters
-        x = (lon - self._reference_lon) * 111111.0 * cos_lat
-        y = (lat - self._reference_lat) * 111111.0
-
-        return x, y
+        return gps_to_local_xy(
+            self._reference_lat,
+            self._reference_lon,
+            lat,
+            lon
+        )
 
     def _local_to_gps(self, x_meters: float, y_meters: float) -> Tuple[float, float]:
         """
         Convert local metric coordinates to GPS coordinates.
 
-        Uses equirectangular projection approximation, which is accurate enough
-        for small areas (< 10 km).
+        Uses the shared coordinate_converter module for consistency.
 
         Args:
             x_meters: X coordinate in meters (East)
@@ -200,28 +188,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "to initialize from GCPs."
             )
 
-        # Convert meters to degrees
-        lat_deg = y_meters / 111111.0
-
-        # Adjust longitude for latitude
-        lat_rad = math.radians(self._reference_lat)
-        cos_lat = math.cos(lat_rad)
-
-        # Check for division by zero at poles
-        if abs(cos_lat) < 1e-6:
-            raise ValueError("Reference latitude too close to poles for GPS projection")
-
-        lon_deg = x_meters / (111111.0 * cos_lat)
-
-        # Add to reference position
-        latitude = self._reference_lat + lat_deg
-        longitude = self._reference_lon + lon_deg
-
-        # Clamp to valid ranges
-        latitude = max(-90.0, min(90.0, latitude))
-        longitude = max(-180.0, min(180.0, longitude))
-
-        return latitude, longitude
+        return local_xy_to_gps(
+            self._reference_lat,
+            self._reference_lon,
+            x_meters,
+            y_meters
+        )
 
     def _calculate_confidence(
         self,
