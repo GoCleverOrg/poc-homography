@@ -54,6 +54,51 @@ homography:
     # Typical range: 1.0-5.0 pixels
     ransac_threshold: 5.0
 
+    # ========================================================================
+    # Camera Capture Context
+    # ========================================================================
+    # The camera configuration and PTZ position where GCPs were captured.
+    # This allows the validation test to:
+    # 1. Move the camera to the exact position where GCPs were collected
+    # 2. Grab a frame and overlay GCP points for visual verification
+    # 3. Validate that GCPs still align with the physical features
+    #
+    # Required for visual GCP validation testing.
+    # ========================================================================
+    camera_capture_context:
+      # Camera name (must match an entry in camera_config.py)
+      camera_name: "Valte"
+
+      # Image dimensions at capture time
+      image_width: 2560
+      image_height: 1440
+
+      # PTZ position where GCPs were captured
+      # The test will move the camera to this position before validation
+      ptz_position:
+        pan: 73.9      # Pan angle in degrees (0-360)
+        tilt: 24.1     # Tilt angle in degrees (negative = looking down)
+        zoom: 1.0       # Zoom factor (1.0 = no zoom)
+
+      # Camera intrinsics (optional - can be computed from zoom + sensor params)
+      # If provided, these override the computed values
+      intrinsics:
+        # Focal length in pixels (fx = fy for square pixels)
+        # Can be computed as: (zoom * base_focal_length_mm / sensor_width_mm) * image_width
+        focal_length_px: null  # null = compute from zoom
+
+        # Principal point (optical center) in pixels
+        # Default: image center
+        principal_point:
+          cx: null  # null = image_width / 2
+          cy: null  # null = image_height / 2
+
+      # Capture timestamp (for reference)
+      capture_timestamp: "2025-11-28T10:30:00Z"
+
+      # Notes about capture conditions
+      notes: "Clear day, good lighting conditions"
+
     # Ground Control Points (GCPs) for feature matching and camera pose estimation
     #
     # GCPs are pairs of corresponding points: GPS coordinates in world space and

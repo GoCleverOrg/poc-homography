@@ -1,0 +1,127 @@
+# GCP Configuration
+# Generated: 2025-12-04T12:55:34.075298
+# Camera: Valte
+# GCPs captured: 8
+
+homography:
+  approach: feature_match
+
+  feature_match:
+    detector: sift
+    min_matches: 4
+    ransac_threshold: 5.0
+
+    # Camera Capture Context
+    camera_capture_context:
+      camera_name: "Valte"
+      image_width: 1920
+      image_height: 1080
+      ptz_position:
+        pan: 73.9
+        tilt: 24.1
+        zoom: 1.0
+      intrinsics:
+        focal_length_px: 1577.72
+        principal_point:
+          cx: 960.0
+          cy: 540.0
+      capture_timestamp: "2025-12-04T12:46:37.120904"
+      notes: ""
+
+    # Ground Control Points
+    ground_control_points:
+      # GCP 1: 3rd pillar below 30
+      - gps:
+          latitude: 39.640457
+          longitude: -0.230096
+        image:
+          u: 74.0
+          v: 865.0
+        metadata:
+          description: "3rd pillar below 30"
+          accuracy: medium
+          timestamp: "2025-12-04T12:47:06.809809"
+
+      # GCP 2: 2nd pillar below 30
+      - gps:
+          latitude: 39.640445
+          longitude: -0.230106
+        image:
+          u: 412.0
+          v: 865.0
+        metadata:
+          description: "2nd pillar below 30"
+          accuracy: medium
+          timestamp: "2025-12-04T12:47:41.643067"
+
+      # GCP 3: 1st pillar below 30
+      - gps:
+          latitude: 39.640431
+          longitude: -0.230115
+        image:
+          u: 788.0
+          v: 860.0
+        metadata:
+          description: "1st pillar below 30"
+          accuracy: medium
+          timestamp: "2025-12-04T12:48:47.726503"
+
+      # GCP 4: pillar next to 30
+      - gps:
+          latitude: 39.640421
+          longitude: -0.230124
+        image:
+          u: 1156.0
+          v: 852.0
+        metadata:
+          description: "pillar next to 30"
+          accuracy: medium
+          timestamp: "2025-12-04T12:49:19.930912"
+
+      # GCP 5: bottom of the number 3
+      - gps:
+          latitude: 39.640406 
+          longitude: -0.230055
+        image:
+          u: 1009.0
+          v: 394.0
+        metadata:
+          description: "bottom of the number 3"
+          accuracy: medium
+          timestamp: "2025-12-04T12:50:15.973410"
+
+      # GCP 6: bottom right corner of the last strip of the pedestrian crossing
+      - gps:
+          latitude: 39.640266
+          longitude: -0.229972
+        image:
+          u: 1550.0
+          v: 81.0
+        metadata:
+          description: "bottom right corner of the last strip of the pedestrian crossing"
+          accuracy: low
+          timestamp: "2025-12-04T12:53:17.580090"
+
+      # GCP 7: bottom point of the number 0
+      - gps:
+          latitude: 39.640409
+          longitude: -0.230062
+        image:
+          u: 1016.0
+          v: 425.0
+        metadata:
+          description: "bottom point of the number 0"
+          accuracy: medium
+          timestamp: "2025-12-04T12:54:17.668869"
+
+      # GCP 8: bottom left corner of the strip of the zebra crossing that touches the dashes on the road
+      - gps:
+          latitude: 39.640308
+          longitude: -0.230061
+        image:
+          u: 1850.0
+          v: 236.0
+        metadata:
+          description: "bottom left corner of the strip of the zebra crossing that touches the dashes on the road"
+          accuracy: medium
+          timestamp: "2025-12-04T12:55:26.699846"

@@ -498,6 +498,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             'num_gcps': len(image_points),
             'num_inliers': int(np.sum(mask)) if mask is not None else 0,
             'inlier_ratio': float(np.sum(mask)) / len(image_points) if mask is not None else 0.0,
+            'inlier_mask': mask.flatten().astype(bool).tolist() if mask is not None else None,
             'determinant': det_H,
             'reference_gps': {
                 'latitude': self._reference_lat,

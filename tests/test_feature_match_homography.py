@@ -16,8 +16,8 @@ from typing import List, Dict, Any
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from feature_match_homography import FeatureMatchHomography
-from homography_interface import (
+from poc_homography.feature_match_homography import FeatureMatchHomography
+from poc_homography.homography_interface import (
     WorldPoint,
     MapCoordinate,
     HomographyResult,

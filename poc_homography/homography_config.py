@@ -219,8 +219,17 @@ class HomographyConfig:
                 gcps = feature_match_config['ground_control_points']
 
                 # Extract optional image dimensions for pixel validation
+                # Check directly under feature_match first, then in camera_capture_context
                 image_width = feature_match_config.get('image_width')
                 image_height = feature_match_config.get('image_height')
+
+                # Fall back to camera_capture_context if dimensions not found directly
+                if image_width is None or image_height is None:
+                    camera_ctx = feature_match_config.get('camera_capture_context', {})
+                    if image_width is None:
+                        image_width = camera_ctx.get('image_width')
+                    if image_height is None:
+                        image_height = camera_ctx.get('image_height')
 
                 # Extract optional minimum GCP count
                 min_gcp_count = feature_match_config.get('min_gcp_count', 6)
