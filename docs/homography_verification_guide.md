@@ -123,8 +123,9 @@ pan_deg=5.0  # Add offset to pan
 **Likely Cause**: Tilt angle incorrect
 ```python
 # Fix: Verify tilt angle from camera
-# Camera reports tilt=-45° but actual may differ
-tilt_deg=-40.0  # Try adjusting ±5°
+# Pass tilt directly from camera - positive = pointing down (Hikvision convention)
+# The internal _get_rotation_matrix() handles the conversion
+tilt_deg=40.0  # Try adjusting ±5°
 ```
 
 ### Issue 4: Homography Determinant Near Zero
@@ -133,7 +134,7 @@ tilt_deg=-40.0  # Try adjusting ±5°
 **Likely Cause**: Camera pointing at or above horizon
 ```python
 # Fix: Camera must point downward
-# Ensure tilt < -10° (negative = down)
+# Ensure tilt > 10° (positive = down in Hikvision convention)
 ```
 
 ---
