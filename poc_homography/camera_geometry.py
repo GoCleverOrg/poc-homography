@@ -3,7 +3,7 @@
 import numpy as np
 import math
 import logging
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,10 @@ class CameraGeometry:
         self.height_m = 5.0  # Camera Height (m)
         self.pan_deg = 0.0  # Camera Pan (Yaw)
         self.tilt_deg = 0.0  # Camera Tilt (Pitch)
+
+        # Height uncertainty for propagation (set via set_height_uncertainty)
+        self.height_uncertainty_lower = None  # Lower bound of height confidence interval
+        self.height_uncertainty_upper = None  # Upper bound of height confidence interval
 
     @staticmethod
     def get_intrinsics(zoom_factor: float, W_px: int = 2560, H_px: int = 1440, sensor_width_mm: float = 7.18) -> np.ndarray:
@@ -502,3 +506,149 @@ class CameraGeometry:
         y_px = int(map_bottom_y - (Yw * self.PPM))
 
         return x_px, y_px
+
+    def set_height_uncertainty(self, confidence_interval: Tuple[float, float]) -> None:
+        """
+        Set height uncertainty for propagation to future projections.
+
+        This stores the confidence interval bounds that will be used by
+        project_to_world_with_uncertainty() to compute uncertainty in
+        projected world coordinates.
+
+        Args:
+            confidence_interval: Tuple of (lower_bound, upper_bound) for camera
+                                height in meters. Typically a 95% confidence interval
+                                from height calibration.
+
+        Raises:
+            ValueError: If confidence_interval is not a 2-tuple or bounds are invalid
+
+        Example:
+            >>> # After height calibration
+            >>> result = calibrator.optimize_height_least_squares()
+            >>> geo.set_height_uncertainty(result.confidence_interval)
+        """
+        if not isinstance(confidence_interval, tuple) or len(confidence_interval) != 2:
+            raise ValueError(
+                f"confidence_interval must be a 2-tuple, got {type(confidence_interval).__name__}"
+            )
+
+        lower, upper = confidence_interval
+
+        if lower <= 0 or upper <= 0:
+            raise ValueError(
+                f"Height bounds must be positive, got lower={lower}, upper={upper}"
+            )
+
+        if lower > upper:
+            raise ValueError(
+                f"Lower bound ({lower}) cannot exceed upper bound ({upper})"
+            )
+
+        self.height_uncertainty_lower = lower
+        self.height_uncertainty_upper = upper
+
+    def project_to_world_with_uncertainty(
+        self,
+        pixel_x: float,
+        pixel_y: float
+    ) -> Dict[str, Any]:
+        """
+        Project pixel to world coordinates with uncertainty propagation.
+
+        This method projects an image pixel to world coordinates and computes
+        uncertainty bounds based on the height uncertainty set via
+        set_height_uncertainty(). The uncertainty is computed by projecting
+        at the lower and upper height bounds and measuring the variation in
+        the resulting world coordinates.
+
+        Physical principle:
+            When camera height changes, world coordinates scale proportionally:
+            - new_world_x = original_world_x * (new_height / original_height)
+            - new_world_y = original_world_y * (new_height / original_height)
+
+        Args:
+            pixel_x: Horizontal pixel coordinate in image
+            pixel_y: Vertical pixel coordinate in image
+
+        Returns:
+            Dictionary with the following keys:
+                - world_x (float): Mean X coordinate in meters (East-West)
+                - world_y (float): Mean Y coordinate in meters (North-South)
+                - distance (float): Mean distance from camera in meters
+                - x_uncertainty (float): Half-width of X uncertainty (± value in meters)
+                - y_uncertainty (float): Half-width of Y uncertainty (± value in meters)
+                - distance_uncertainty (float): Half-width of distance uncertainty (± value in meters)
+                - confidence_level (float): The confidence level (0.95)
+
+        Raises:
+            ValueError: If pixel is near horizon and cannot be projected
+
+        Note:
+            - If set_height_uncertainty() has not been called, all uncertainty
+              values will be 0.0
+            - The mean coordinates are computed from the current height
+            - Uncertainty represents the range due to height uncertainty only
+            - Does not account for other error sources (camera calibration,
+              lens distortion, etc.)
+
+        Example:
+            >>> geo.set_height_uncertainty((4.8, 5.2))
+            >>> result = geo.project_to_world_with_uncertainty(1280, 720)
+            >>> print(f"Position: ({result['world_x']:.2f} ± {result['x_uncertainty']:.2f}, "
+            ...       f"{result['world_y']:.2f} ± {result['y_uncertainty']:.2f}) meters")
+        """
+        # Project at current height to get mean coordinates
+        pt_img = np.array([[pixel_x], [pixel_y], [1.0]])
+        pt_world = self.H_inv @ pt_img
+
+        # Check for valid projection (not near horizon)
+        if abs(pt_world[2, 0]) < 1e-6:
+            raise ValueError(
+                f"Invalid point at pixel ({pixel_x}, {pixel_y}): "
+                "Point is too close to horizon and cannot be projected"
+            )
+
+        # Normalize to get world coordinates at current height
+        world_x_mean = pt_world[0, 0] / pt_world[2, 0]
+        world_y_mean = pt_world[1, 0] / pt_world[2, 0]
+        distance_mean = np.sqrt(world_x_mean**2 + world_y_mean**2)
+
+        # Initialize uncertainty to zero
+        x_uncertainty = 0.0
+        y_uncertainty = 0.0
+        distance_uncertainty = 0.0
+
+        # If height uncertainty has been set, compute uncertainty bounds
+        if (self.height_uncertainty_lower is not None and
+            self.height_uncertainty_upper is not None):
+
+            # World coordinates scale proportionally with height
+            # new_coord = original_coord * (new_height / original_height)
+
+            # Project at lower height bound
+            height_ratio_lower = self.height_uncertainty_lower / self.height_m
+            world_x_lower = world_x_mean * height_ratio_lower
+            world_y_lower = world_y_mean * height_ratio_lower
+            distance_lower = distance_mean * height_ratio_lower
+
+            # Project at upper height bound
+            height_ratio_upper = self.height_uncertainty_upper / self.height_m
+            world_x_upper = world_x_mean * height_ratio_upper
+            world_y_upper = world_y_mean * height_ratio_upper
+            distance_upper = distance_mean * height_ratio_upper
+
+            # Compute half-width of uncertainty range (± value)
+            x_uncertainty = abs(world_x_upper - world_x_lower) / 2.0
+            y_uncertainty = abs(world_y_upper - world_y_lower) / 2.0
+            distance_uncertainty = abs(distance_upper - distance_lower) / 2.0
+
+        return {
+            'world_x': world_x_mean,
+            'world_y': world_y_mean,
+            'distance': distance_mean,
+            'x_uncertainty': x_uncertainty,
+            'y_uncertainty': y_uncertainty,
+            'distance_uncertainty': distance_uncertainty,
+            'confidence_level': 0.95
+        }
