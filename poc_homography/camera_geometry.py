@@ -2,7 +2,10 @@
 
 import numpy as np
 import math
+import logging
 from typing import List, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 class CameraGeometry:
     """
@@ -50,6 +53,34 @@ class CameraGeometry:
     - tilt_deg: Vertical rotation (degrees, positive = down, Hikvision convention)
     """
 
+    # Validation constants
+    ZOOM_MIN = 1.0
+    ZOOM_MAX = 25.0
+    ZOOM_WARN_HIGH = 20.0
+
+    TILT_MIN = 0.0  # Must be positive (pointing down)
+    TILT_MAX = 90.0
+    TILT_WARN_LOW = 10.0
+    TILT_WARN_HIGH = 80.0
+
+    HEIGHT_MIN = 1.0  # meters
+    HEIGHT_MAX = 50.0
+    HEIGHT_WARN_LOW = 2.0
+    HEIGHT_WARN_HIGH = 30.0
+
+    FOV_MIN_DEG = 2.0
+    FOV_MAX_DEG = 120.0
+    FOV_WARN_MIN_DEG = 10.0
+    FOV_WARN_MAX_DEG = 90.0
+
+    CONDITION_WARN = 1e6
+    CONDITION_ERROR = 1e10
+
+    # Maximum reasonable distance ratio for ground projection validation
+    # Set to 20x camera height as a heuristic for typical PTZ camera scenarios
+    # Beyond this, projections likely indicate near-horizontal viewing angles
+    MAX_DISTANCE_HEIGHT_RATIO = 20.0
+
     def __init__(self, w: int, h: int):
         """
         Initializes geometry class with image dimensions.
@@ -87,7 +118,23 @@ class CameraGeometry:
 
         Returns:
             K (3x3): Intrinsic camera matrix.
+
+        Raises:
+            ValueError: If zoom_factor is outside valid range [ZOOM_MIN, ZOOM_MAX].
         """
+        # Validate zoom factor
+        if zoom_factor < CameraGeometry.ZOOM_MIN or zoom_factor > CameraGeometry.ZOOM_MAX:
+            raise ValueError(
+                f"Zoom factor {zoom_factor} is out of valid range "
+                f"[{CameraGeometry.ZOOM_MIN}, {CameraGeometry.ZOOM_MAX}]"
+            )
+
+        if zoom_factor > CameraGeometry.ZOOM_WARN_HIGH:
+            logger.warning(
+                f"Zoom factor {zoom_factor} is very high (>{CameraGeometry.ZOOM_WARN_HIGH}). "
+                f"Results may be less accurate at extreme zoom levels."
+            )
+
         # 1. Calculate focal length in mm (Linear mapping based on datasheet: 1x=5.9mm)
         f_mm = 5.9 * zoom_factor
 
@@ -103,6 +150,93 @@ class CameraGeometry:
         ])
         return K
 
+    def _validate_parameters(self, K: np.ndarray, w_pos: np.ndarray,
+                            pan_deg: float, tilt_deg: float) -> None:
+        """
+        Validates all camera parameters before setting them.
+
+        Args:
+            K: 3x3 intrinsic matrix
+            w_pos: Camera position in world coordinates [X, Y, Z] (meters)
+            pan_deg: Pan angle in degrees (positive = right)
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+
+        Raises:
+            ValueError: If any parameter is invalid or out of acceptable range.
+        """
+        # Validate K matrix shape
+        if K.shape != (3, 3):
+            raise ValueError(f"K must be 3x3, got shape {K.shape}")
+
+        # Validate K matrix for NaN/Infinity
+        if not np.all(np.isfinite(K)):
+            raise ValueError("K matrix contains NaN or Infinity values")
+
+        # Validate w_pos structure
+        if len(w_pos) != 3:
+            raise ValueError(f"w_pos must have 3 elements [X, Y, Z], got {len(w_pos)}")
+
+        # Validate w_pos for NaN/Infinity
+        if not np.all(np.isfinite(w_pos)):
+            raise ValueError("w_pos contains NaN or Infinity values")
+
+        # Camera height validation (w_pos[2])
+        height = w_pos[2]
+        if height < self.HEIGHT_MIN or height > self.HEIGHT_MAX:
+            raise ValueError(
+                f"Camera height {height:.2f}m is out of valid range "
+                f"[{self.HEIGHT_MIN}, {self.HEIGHT_MAX}]m"
+            )
+
+        if height < self.HEIGHT_WARN_LOW:
+            logger.warning(
+                f"Camera height {height:.2f}m is very low (<{self.HEIGHT_WARN_LOW}m). "
+                f"Ground projection accuracy may be reduced."
+            )
+        elif height > self.HEIGHT_WARN_HIGH:
+            logger.warning(
+                f"Camera height {height:.2f}m is very high (>{self.HEIGHT_WARN_HIGH}m). "
+                f"Ground projection accuracy may be reduced at extreme distances."
+            )
+
+        # Tilt angle validation
+        if tilt_deg <= self.TILT_MIN or tilt_deg > self.TILT_MAX:
+            raise ValueError(
+                f"Tilt angle {tilt_deg:.1f}° is out of valid range "
+                f"({self.TILT_MIN}, {self.TILT_MAX}]°. "
+                f"Camera must point downward (positive tilt) for ground plane projection."
+            )
+
+        if tilt_deg < self.TILT_WARN_LOW:
+            logger.warning(
+                f"Tilt angle {tilt_deg:.1f}° is near horizontal (<{self.TILT_WARN_LOW}°). "
+                f"Ground projection may be unstable or extend to very large distances."
+            )
+        elif tilt_deg > self.TILT_WARN_HIGH:
+            logger.warning(
+                f"Tilt angle {tilt_deg:.1f}° is very steep (>{self.TILT_WARN_HIGH}°). "
+                f"Ground coverage area will be very limited."
+            )
+
+        # FOV validation (calculated from K)
+        focal_length = K[0, 0]  # Assuming square pixels (fx = fy)
+        sensor_width_px = 2.0 * K[0, 2]  # Principal point is at center
+        fov_rad = 2.0 * math.atan(sensor_width_px / (2.0 * focal_length))
+        fov_deg = math.degrees(fov_rad)
+
+        if fov_deg < self.FOV_MIN_DEG or fov_deg > self.FOV_MAX_DEG:
+            raise ValueError(
+                f"Calculated FOV {fov_deg:.1f}° is out of reasonable range "
+                f"[{self.FOV_MIN_DEG}, {self.FOV_MAX_DEG}]°. "
+                f"Check intrinsic matrix K and zoom factor."
+            )
+
+        if fov_deg < self.FOV_WARN_MIN_DEG or fov_deg > self.FOV_WARN_MAX_DEG:
+            logger.warning(
+                f"FOV {fov_deg:.1f}° is unusual. Typical PTZ cameras have FOV between "
+                f"{self.FOV_WARN_MIN_DEG}° and {self.FOV_WARN_MAX_DEG}°."
+            )
+
     def set_camera_parameters(self, K: np.ndarray, w_pos: np.ndarray,
                               pan_deg: float, tilt_deg: float,
                               map_width: int, map_height: int):
@@ -116,14 +250,19 @@ class CameraGeometry:
             tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
             map_width: Width of output map in pixels
             map_height: Height of output map in pixels
+
+        Raises:
+            ValueError: If any parameter is invalid or out of acceptable range.
         """
-        # Validation
-        if K.shape != (3, 3):
-            raise ValueError(f"K must be 3x3, got shape {K.shape}")
-        if len(w_pos) != 3:
-            raise ValueError(f"w_pos must have 3 elements [X, Y, Z], got {len(w_pos)}")
-        if w_pos[2] <= 0:
-            print(f"Warning: Camera height (Z={w_pos[2]}) should be positive for ground plane homography.")
+        # Validate all parameters before proceeding
+        self._validate_parameters(K, w_pos, pan_deg, tilt_deg)
+
+        # Log all parameters at INFO level
+        logger.info("Setting camera parameters:")
+        logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
+        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
+        logger.info(f"  Intrinsic matrix K:\n{K}")
+        logger.info(f"  Map dimensions: {map_width}x{map_height} pixels")
 
         self.K = K
         self.w_pos = w_pos
@@ -135,18 +274,89 @@ class CameraGeometry:
 
         self.H = self._calculate_ground_homography()
 
-        # Validate and invert homography
+        # Validate and invert homography with condition number checks
         det_H = np.linalg.det(self.H)
         if abs(det_H) < 1e-10:
-            print(f"Warning: Homography is singular (det={det_H:.2e}). Inverse may be unstable.")
-            self.H_inv = np.eye(3)
-        else:
-            self.H_inv = np.linalg.inv(self.H)
+            raise ValueError(
+                f"Homography matrix is singular (det={det_H:.2e}). "
+                f"Cannot compute inverse. Check camera parameters."
+            )
 
+        # Compute condition number
+        cond_H = np.linalg.cond(self.H)
+        if cond_H > self.CONDITION_ERROR:
+            raise ValueError(
+                f"Homography condition number {cond_H:.2e} is too high (>{self.CONDITION_ERROR:.2e}). "
+                f"Matrix is ill-conditioned. Check camera parameters, especially tilt angle."
+            )
+        elif cond_H > self.CONDITION_WARN:
+            logger.warning(
+                f"Homography condition number {cond_H:.2e} is high (>{self.CONDITION_WARN:.2e}). "
+                f"Inverse may be numerically unstable."
+            )
+
+        self.H_inv = np.linalg.inv(self.H)
+
+        # Validate projected distance from image center
+        self._validate_projection()
+
+        logger.info("Geometry setup complete. Homography matrix H calculated.")
+        logger.info(f"  Homography det(H): {det_H:.2e}")
+        logger.info(f"  Homography condition number: {cond_H:.2e}")
+
+        # Also print to console for backward compatibility
         print("Geometry setup complete. Homography matrix H calculated.")
         print(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
         print(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
         print(f"  Homography det(H): {det_H:.2e}")
+
+    def _validate_projection(self) -> None:
+        """
+        Validates that the homography produces reasonable ground projections.
+
+        Raises:
+            ValueError: If projection yields invalid results (negative or infinite distances).
+        """
+        # Project image center to ground plane
+        image_center = np.array([self.w / 2.0, self.h / 2.0, 1.0])
+        world_point = self.H_inv @ image_center
+
+        # Normalize homogeneous coordinates
+        if abs(world_point[2]) < 1e-10:
+            raise ValueError(
+                "Projection of image center yields invalid homogeneous coordinate (w ≈ 0). "
+                "Check tilt angle and camera height."
+            )
+
+        Xw = world_point[0] / world_point[2]
+        Yw = world_point[1] / world_point[2]
+
+        # Calculate distance from camera position to projected point
+        distance = math.sqrt((Xw - self.w_pos[0])**2 + (Yw - self.w_pos[1])**2)
+
+        # Validate distance
+        if not math.isfinite(distance):
+            raise ValueError(
+                "Projected ground distance is infinite or NaN. "
+                "Check tilt angle - camera may be pointing too close to horizontal."
+            )
+
+        if distance < 0:
+            raise ValueError(
+                f"Projected ground distance is negative ({distance:.2f}m). "
+                f"This should not occur. Check homography calculation."
+            )
+
+        # Log the projected distance for information
+        logger.info(f"  Image center projects to ground at distance: {distance:.2f}m")
+
+        # Warn if distance seems unreasonable
+        max_reasonable_distance = self.height_m * self.MAX_DISTANCE_HEIGHT_RATIO
+        if distance > max_reasonable_distance:
+            logger.warning(
+                f"Projected ground distance {distance:.2f}m is very large (>{max_reasonable_distance:.2f}m). "
+                f"This may indicate a near-horizontal tilt angle."
+            )
 
     # --- Core Geometry Methods (Unchanged from previous output) ---
 
