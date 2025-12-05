@@ -16,6 +16,11 @@ homography:
       camera_name: "Valte"
       image_width: 1920
       image_height: 1080
+      # Camera GPS position - used as reference point for local coordinate system
+      # This minimizes ellipsoid projection errors for points visible in the image
+      camera_gps:
+        latitude: 39.640472
+        longitude: -0.230194
       ptz_position:
         pan: 73.9
         tilt: 24.1

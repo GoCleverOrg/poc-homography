@@ -105,7 +105,8 @@ def run_round_trip_validation(
     tolerance_meters: float = 5.0,
     verbose: bool = True,
     inliers_only: bool = True,
-    confidence_threshold: float = 0.5
+    confidence_threshold: float = 0.5,
+    camera_gps: dict = None
 ) -> dict:
     """
     Run round-trip validation test on GCPs.
@@ -118,6 +119,9 @@ def run_round_trip_validation(
         verbose: Print detailed output
         inliers_only: Only count inliers for pass/fail (outliers reported but not counted)
         confidence_threshold: Minimum confidence for homography to be valid (default 0.5)
+        camera_gps: Optional dict with 'latitude' and 'longitude' for camera position.
+                    Used as reference point for local coordinate system to minimize
+                    ellipsoid projection errors.
 
     Returns:
         Dictionary with test results
@@ -130,6 +134,10 @@ def run_round_trip_validation(
         print(f"Number of GCPs: {len(gcps)}")
         print(f"Tolerance: {tolerance_meters}m")
         print(f"Confidence threshold: {confidence_threshold}")
+        if camera_gps:
+            print(f"Reference point (camera GPS): ({camera_gps['latitude']:.6f}, {camera_gps['longitude']:.6f})")
+        else:
+            print("Reference point: GCP centroid (no camera_gps provided)")
         print()
 
     # Create provider
@@ -145,9 +153,14 @@ def run_round_trip_validation(
     if verbose:
         print("Computing homography from GCPs...")
 
+    # Build reference dict with GCPs and optional camera GPS
+    reference = {'ground_control_points': gcps}
+    if camera_gps:
+        reference['camera_gps'] = camera_gps
+
     result = provider.compute_homography(
         frame=None,
-        reference={'ground_control_points': gcps}
+        reference=reference
     )
 
     if not provider.is_valid():
@@ -308,7 +321,8 @@ def run_round_trip_validation(
             'max_error_m': max_error,
             'min_error_m': min_error,
             'confidence': result.confidence,
-            'details': results_detail
+            'details': results_detail,
+            'provider': provider  # Return the provider for interactive testing
         }
     else:
         return {
@@ -326,6 +340,7 @@ def load_gcp_config(config_path: str) -> dict:
         Dictionary with:
         - 'gcps': List of GCP dictionaries
         - 'camera_capture_context': Camera context dict (or None)
+        - 'camera_gps': Camera GPS position dict (or None)
         - 'image_width': Image width in pixels
         - 'image_height': Image height in pixels
     """
@@ -334,6 +349,7 @@ def load_gcp_config(config_path: str) -> dict:
     result = {
         'gcps': None,
         'camera_capture_context': None,
+        'camera_gps': None,
         'image_width': 2560,
         'image_height': 1440,
     }
@@ -350,6 +366,9 @@ def load_gcp_config(config_path: str) -> dict:
             result['camera_capture_context'] = ctx
             result['image_width'] = ctx.get('image_width', 2560)
             result['image_height'] = ctx.get('image_height', 1440)
+            # Extract camera GPS if available
+            if 'camera_gps' in ctx:
+                result['camera_gps'] = ctx['camera_gps']
 
     if result['gcps'] is None:
         raise ValueError("No ground_control_points found in config")
@@ -588,6 +607,138 @@ def visualize_gcps_on_frame(
         sys.exit(0)
 
 
+def interactive_gps_projection(
+    frame: np.ndarray,
+    provider: 'FeatureMatchHomography',
+    gcps: list = None,
+    results: dict = None,
+    scale_x: float = 1.0,
+    scale_y: float = 1.0,
+    window_name: str = "Interactive GPS Projection"
+) -> None:
+    """
+    Interactive mode: click on the frame to get GPS coordinates.
+
+    Args:
+        frame: Image frame (BGR)
+        provider: The homography provider with computed homography
+        gcps: Optional list of GCPs to display
+        results: Optional validation results
+        scale_x: Scale factor for x coordinates (display -> original)
+        scale_y: Scale factor for y coordinates (display -> original)
+        window_name: OpenCV window name
+    """
+    # State for mouse callback
+    state = {
+        'click_point': None,
+        'projected_points': [],  # List of (pixel, gps) tuples
+    }
+
+    def mouse_callback(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # Convert display coordinates to original image coordinates
+            orig_x = x / scale_x
+            orig_y = y / scale_y
+            state['click_point'] = (x, y, orig_x, orig_y)
+
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.setMouseCallback(window_name, mouse_callback)
+
+    print("\n" + "=" * 60)
+    print("INTERACTIVE GPS PROJECTION MODE")
+    print("=" * 60)
+    print("Click anywhere on the image to get GPS coordinates")
+    print("Press 'c' to clear markers, 'q' to quit")
+    print("=" * 60)
+
+    while True:
+        # Create fresh display
+        display = frame.copy()
+
+        # Draw GCP points if provided
+        if gcps:
+            inlier_mask = None
+            if results and 'details' in results:
+                inlier_mask = [d.get('is_inlier') for d in results['details']]
+
+            for i, gcp in enumerate(gcps):
+                u = int(gcp['image']['u'])
+                v = int(gcp['image']['v'])
+
+                if inlier_mask and i < len(inlier_mask):
+                    color = (0, 255, 0) if inlier_mask[i] else (0, 0, 255)
+                else:
+                    color = (255, 255, 0)
+
+                cv2.drawMarker(display, (u, v), color, cv2.MARKER_CROSS, 15, 1)
+                cv2.circle(display, (u, v), 8, color, 1)
+
+        # Draw previously projected points
+        for i, (pixel, gps_coord) in enumerate(state['projected_points']):
+            px, py = int(pixel[0]), int(pixel[1])
+            # Draw marker
+            cv2.drawMarker(display, (px, py), (255, 0, 255), cv2.MARKER_DIAMOND, 20, 2)
+            cv2.circle(display, (px, py), 12, (255, 0, 255), 2)
+
+            # Draw label
+            label = f"#{i+1}: ({gps_coord[0]:.6f}, {gps_coord[1]:.6f})"
+            label_x = px + 15
+            label_y = py - 10
+            if label_x + 350 > frame.shape[1]:
+                label_x = px - 360
+            if label_y < 20:
+                label_y = py + 25
+
+            (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.rectangle(display, (label_x - 2, label_y - text_h - 2),
+                          (label_x + text_w + 2, label_y + 2), (0, 0, 0), -1)
+            cv2.putText(display, label, (label_x, label_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+
+        # Draw instructions
+        cv2.putText(display, "Click to project GPS | 'c' clear | 'q' quit",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        # Draw point count
+        if state['projected_points']:
+            cv2.putText(display, f"Points: {len(state['projected_points'])}",
+                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+        # Handle new click
+        if state['click_point'] is not None:
+            disp_x, disp_y, orig_x, orig_y = state['click_point']
+            state['click_point'] = None
+
+            try:
+                # Project the point using original coordinates
+                world_point = provider.project_point((orig_x, orig_y))
+                lat, lon = world_point.latitude, world_point.longitude
+
+                # Store for display (using display coordinates)
+                state['projected_points'].append(((disp_x, disp_y), (lat, lon)))
+
+                # Print to console
+                print(f"\n  Point #{len(state['projected_points'])}:")
+                print(f"    Pixel (display): ({disp_x:.1f}, {disp_y:.1f})")
+                if scale_x != 1.0 or scale_y != 1.0:
+                    print(f"    Pixel (original): ({orig_x:.1f}, {orig_y:.1f})")
+                print(f"    GPS: ({lat:.6f}, {lon:.6f})")
+
+            except Exception as e:
+                print(f"\n  Error projecting point ({orig_x:.1f}, {orig_y:.1f}): {e}")
+
+        cv2.imshow(window_name, display)
+        key = cv2.waitKey(30) & 0xFF
+
+        if key == ord('q'):
+            break
+        elif key == ord('c'):
+            state['projected_points'].clear()
+            print("\n  Cleared all projected points")
+
+    cv2.destroyAllWindows()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='GCP Round-Trip Validation Test',
@@ -654,12 +805,18 @@ def main():
         default=3.0,
         help='Seconds to wait after moving camera (default: 3.0)'
     )
+    parser.add_argument(
+        '--interactive', '-i',
+        action='store_true',
+        help='Enable interactive mode: click on frame to get GPS coordinates'
+    )
 
     args = parser.parse_args()
 
     # Initialize variables
     gcps = None
     camera_context = None
+    camera_gps = None
     image_width = args.width or 2560
     image_height = args.height or 1440
 
@@ -669,6 +826,7 @@ def main():
             gcp_config = load_gcp_config(args.config)
             gcps = gcp_config['gcps']
             camera_context = gcp_config['camera_capture_context']
+            camera_gps = gcp_config['camera_gps']
 
             # Use dimensions from config unless overridden
             if args.width is None:
@@ -682,6 +840,8 @@ def main():
                 if camera_context:
                     print(f"\nCamera capture context:")
                     print(f"  Camera: {camera_context.get('camera_name', 'N/A')}")
+                    if camera_gps:
+                        print(f"  Camera GPS: ({camera_gps['latitude']:.6f}, {camera_gps['longitude']:.6f})")
                     ptz = camera_context.get('ptz_position', {})
                     print(f"  PTZ: pan={ptz.get('pan', 0):.1f}°, "
                           f"tilt={ptz.get('tilt', 0):.1f}°, "
@@ -791,15 +951,28 @@ def main():
         height=image_height,
         tolerance_meters=args.tolerance,
         verbose=not args.quiet,
-        confidence_threshold=args.confidence
+        confidence_threshold=args.confidence,
+        camera_gps=camera_gps
     )
 
     # Show results visualization (if we have a frame)
     if frame is not None:
         print("\nShowing validation results on frame...")
         print("Green = inlier (passed), Red = outlier (failed)")
-        print("Press any key to exit")
+        print("Press any key to continue" + (" to interactive mode" if args.interactive else ""))
         visualize_gcps_on_frame(frame, display_gcps, results=results)
+
+        # Interactive mode: click to get GPS coordinates
+        if args.interactive and results.get('provider'):
+            interactive_gps_projection(
+                frame=frame,
+                provider=results['provider'],
+                gcps=display_gcps,
+                results=results,
+                scale_x=scale_x,
+                scale_y=scale_y
+            )
+
         cv2.destroyAllWindows()
 
     # Exit code based on success

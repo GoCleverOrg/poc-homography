@@ -379,20 +379,31 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         image_points = np.array(image_points, dtype=np.float32)
         gps_points = np.array(gps_points, dtype=np.float64)
 
-        # Set reference point (use first GCP or compute centroid)
-        self._reference_lat = gps_points[0, 0]
-        self._reference_lon = gps_points[0, 1]
-
-        # Also set camera GPS position for WorldPoint conversion
-        # (using reference point as camera position approximation)
-        self._camera_gps_lat = self._reference_lat
-        self._camera_gps_lon = self._reference_lon
-
-        logger.info(
-            "Set reference GPS position: lat=%.6f, lon=%.6f",
-            self._reference_lat,
-            self._reference_lon
-        )
+        # Set reference point for local coordinate system
+        # Priority: 1) camera_gps from reference, 2) GCP centroid (more stable than first GCP)
+        camera_gps = reference.get('camera_gps')
+        if camera_gps and 'latitude' in camera_gps and 'longitude' in camera_gps:
+            # Use explicit camera position as reference
+            self._reference_lat = camera_gps['latitude']
+            self._reference_lon = camera_gps['longitude']
+            self._camera_gps_lat = self._reference_lat
+            self._camera_gps_lon = self._reference_lon
+            logger.info(
+                "Using camera GPS as reference: lat=%.6f, lon=%.6f",
+                self._reference_lat,
+                self._reference_lon
+            )
+        else:
+            # Fall back to GCP centroid (more stable than arbitrary first point)
+            self._reference_lat = float(np.mean(gps_points[:, 0]))
+            self._reference_lon = float(np.mean(gps_points[:, 1]))
+            self._camera_gps_lat = self._reference_lat
+            self._camera_gps_lon = self._reference_lon
+            logger.info(
+                "Using GCP centroid as reference (no camera_gps provided): lat=%.6f, lon=%.6f",
+                self._reference_lat,
+                self._reference_lon
+            )
 
         # Convert GPS points to local metric coordinates
         local_points = []
