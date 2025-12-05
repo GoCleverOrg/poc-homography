@@ -47,7 +47,11 @@ from scipy.stats import t as t_dist
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gps_distance_calculator import dms_to_dd, haversine_distance
-from poc_homography.coordinate_converter import gps_to_local_xy
+
+
+# Numerical threshold for detecting near-zero values (used for horizon detection
+# and invalid homography distances). Values below this are considered effectively zero.
+NEAR_ZERO_THRESHOLD = 1e-6
 
 
 @dataclass
@@ -187,13 +191,20 @@ class HeightCalibrator:
 
         Raises:
             ValueError: If pixel coordinates cannot be projected (e.g., near horizon)
+            ValueError: If current_height is zero or negative
         """
+        # Validate current_height to prevent division by zero in calibration
+        if current_height <= 0:
+            raise ValueError(
+                f"current_height must be positive, got {current_height}m"
+            )
+
         # Project image point to world coordinates using homography
         pt_img = np.array([[pixel_x], [pixel_y], [1.0]])
         pt_world = geo.H_inv @ pt_img
 
         # Check for valid projection (not near horizon)
-        if abs(pt_world[2, 0]) < 1e-6:
+        if abs(pt_world[2, 0]) < NEAR_ZERO_THRESHOLD:
             raise ValueError(
                 f"Invalid point at pixel ({pixel_x}, {pixel_y}): "
                 "Point is too close to horizon and cannot be projected"
@@ -273,7 +284,7 @@ class HeightCalibrator:
         Raises:
             ValueError: If homography_distance is zero or near-zero
         """
-        if abs(point.homography_distance) < 1e-6:
+        if abs(point.homography_distance) < NEAR_ZERO_THRESHOLD:
             raise ValueError(
                 f"Cannot estimate height from point with near-zero homography distance: "
                 f"{point.homography_distance}m"
@@ -314,7 +325,7 @@ class HeightCalibrator:
         estimates = []
         for point in self.calibration_points:
             # Skip points with invalid homography distance
-            if abs(point.homography_distance) < 1e-6:
+            if abs(point.homography_distance) < NEAR_ZERO_THRESHOLD:
                 continue
 
             try:
@@ -362,7 +373,7 @@ class HeightCalibrator:
         residuals = []
         for point in self.calibration_points:
             # Skip points with invalid homography distance
-            if abs(point.homography_distance) < 1e-6:
+            if abs(point.homography_distance) < NEAR_ZERO_THRESHOLD:
                 continue
 
             # Scale the homography distance based on the proposed height
@@ -477,7 +488,7 @@ class HeightCalibrator:
         # Filter out points with invalid homography distance
         valid_points = [
             p for p in self.calibration_points
-            if abs(p.homography_distance) >= 1e-6
+            if abs(p.homography_distance) >= NEAR_ZERO_THRESHOLD
         ]
 
         if not valid_points:
@@ -776,7 +787,7 @@ class HeightCalibrator:
         # (some calibration points may be skipped if homography_distance is invalid)
         estimate_to_point_index = []
         for i, point in enumerate(self.calibration_points):
-            if abs(point.homography_distance) >= 1e-6:
+            if abs(point.homography_distance) >= NEAR_ZERO_THRESHOLD:
                 try:
                     self.estimate_height_from_point(point)
                     estimate_to_point_index.append(i)
@@ -819,7 +830,7 @@ class HeightCalibrator:
             # Filter out points with invalid homography distance
             valid_points = [
                 p for p in self.calibration_points
-                if abs(p.homography_distance) >= 1e-6
+                if abs(p.homography_distance) >= NEAR_ZERO_THRESHOLD
             ]
 
             if not valid_points:
