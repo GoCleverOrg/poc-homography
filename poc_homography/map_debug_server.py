@@ -425,6 +425,12 @@ def generate_html(
         const canvas = document.getElementById('gcpCanvas');
         const ctx = canvas.getContext('2d');
 
+        // Extract P#XX from name (e.g., "P#00 - description" → "P#00")
+        function getShortLabel(name, index) {{
+            const match = name.match(/^P#\\d+/);
+            return match ? match[0] : `GCP ${{index + 1}}`;
+        }}
+
         function drawGCPMarkers() {{
             // Get actual displayed image dimensions
             const imgRect = img.getBoundingClientRect();
@@ -468,7 +474,7 @@ def generate_html(
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.arc(projU, projV, 6, 0, 2 * Math.PI);
+                    ctx.arc(projU, projV, 3, 0, 2 * Math.PI);
                     ctx.fill();
                     ctx.stroke();
                 }}
@@ -478,17 +484,18 @@ def generate_html(
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.arc(u, v, 8, 0, 2 * Math.PI);
+                ctx.arc(u, v, 4, 0, 2 * Math.PI);
                 ctx.fill();
                 ctx.stroke();
 
-                // Draw label
+                // Draw label (P#XX format only)
+                const label = getShortLabel(gcp.name, index);
                 ctx.fillStyle = '#ffffff';
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 3;
-                ctx.font = 'bold 14px sans-serif';
-                ctx.strokeText(gcp.name, u + 12, v + 5);
-                ctx.fillText(gcp.name, u + 12, v + 5);
+                ctx.font = 'bold 7px sans-serif';
+                ctx.strokeText(label, u + 12, v + 5);
+                ctx.fillText(label, u + 12, v + 5);
             }});
         }}
 
