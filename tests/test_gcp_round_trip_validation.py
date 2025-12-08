@@ -42,6 +42,8 @@ if parent_dir not in sys.path:
 
 from poc_homography.feature_match_homography import FeatureMatchHomography
 from poc_homography.homography_config import HomographyConfig
+from poc_homography.kml_generator import generate_kml, create_output_directory
+from poc_homography.map_debug_server import start_server, generate_html
 
 # Camera config is optional - only needed for --camera option
 try:
@@ -607,6 +609,125 @@ def visualize_gcps_on_frame(
         sys.exit(0)
 
 
+def export_frame_with_markers(
+    frame: np.ndarray,
+    gcps: list,
+    validation_results: dict,
+    output_path: str
+) -> str:
+    """
+    Export camera frame with GCP markers and validation results.
+
+    Args:
+        frame: Image frame (BGR)
+        gcps: List of GCP dictionaries
+        validation_results: Validation results with projected positions
+        output_path: Output path for JPEG file
+
+    Returns:
+        Absolute path to exported frame
+    """
+    display = frame.copy()
+
+    # Draw GCP markers and validation results
+    for i, gcp in enumerate(gcps):
+        # Original GCP position (green)
+        u_orig = int(gcp['image']['u'])
+        v_orig = int(gcp['image']['v'])
+        cv2.circle(display, (u_orig, v_orig), 8, (0, 255, 0), 2)
+
+        # Get projected position from validation results
+        if validation_results and 'details' in validation_results:
+            details = validation_results['details']
+            if i < len(details):
+                detail = details[i]
+                if 'image_point' in detail:
+                    u_proj, v_proj = detail['image_point']
+                    u_proj = int(u_proj)
+                    v_proj = int(v_proj)
+
+                    # Projected position (blue)
+                    cv2.circle(display, (u_proj, v_proj), 8, (255, 0, 0), 2)
+
+                    # Connection line (yellow)
+                    cv2.line(display, (u_orig, v_orig), (u_proj, v_proj), (0, 255, 255), 2)
+
+        # Label with description
+        desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+        if desc.startswith('P#'):
+            desc = desc.split(' - ')[0]
+
+        label_x = u_orig + 15
+        label_y = v_orig - 10
+        if label_x + 100 > frame.shape[1]:
+            label_x = u_orig - 120
+        if label_y < 20:
+            label_y = v_orig + 25
+
+        (text_w, text_h), _ = cv2.getTextSize(desc, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(display, (label_x - 2, label_y - text_h - 2),
+                      (label_x + text_w + 2, label_y + 2), (0, 0, 0), -1)
+        cv2.putText(display, desc, (label_x, label_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+    # Save frame
+    cv2.imwrite(output_path, display)
+    return str(Path(output_path).absolute())
+
+
+def run_map_debug_visualization(
+    frame: np.ndarray,
+    gcps: list,
+    validation_results: dict,
+    camera_gps: dict,
+    output_dir: str = None
+) -> None:
+    """
+    Launch web-based map visualization with GCP overlays and round-trip error analysis.
+
+    Args:
+        frame: Image frame (BGR)
+        gcps: List of GCP dictionaries
+        validation_results: Validation results from run_round_trip_validation
+        camera_gps: Camera GPS position dict with 'latitude' and 'longitude'
+        output_dir: Optional output directory (creates one if not specified)
+    """
+    import datetime
+
+    # Create output directory if not specified
+    if output_dir is None:
+        output_dir = create_output_directory()
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Generate timestamp for filenames
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Export camera frame with GCP markers
+    frame_filename = f"annotated_frame_{timestamp}.jpg"
+    frame_path = os.path.join(output_dir, frame_filename)
+    export_frame_with_markers(frame, gcps, validation_results, frame_path)
+    print(f"Exported annotated frame: {frame_path}")
+
+    # Generate KML file
+    kml_filename = f"gcp_validation_{timestamp}.kml"
+    kml_path = os.path.join(output_dir, kml_filename)
+    generate_kml(gcps, validation_results, camera_gps, kml_path)
+    print(f"Generated KML file: {kml_path}")
+
+    # Start web server
+    print("\nLaunching map debug visualization...")
+    start_server(
+        output_dir=output_dir,
+        camera_frame_path=frame_path,
+        kml_path=kml_path,
+        camera_gps=camera_gps,
+        gcps=gcps,
+        validation_results=validation_results,
+        auto_open=True
+    )
+
+
 def interactive_gps_projection(
     frame: np.ndarray,
     provider: 'FeatureMatchHomography',
@@ -810,6 +931,11 @@ def main():
         action='store_true',
         help='Enable interactive mode: click on frame to get GPS coordinates'
     )
+    parser.add_argument(
+        '--map-debug',
+        action='store_true',
+        help='Launch web-based map visualization with GCP overlays and round-trip error analysis'
+    )
 
     args = parser.parse_args()
 
@@ -937,8 +1063,8 @@ def main():
                 scaled_gcp['metadata'] = gcp['metadata'].copy()
             display_gcps.append(scaled_gcp)
 
-    # Show GCPs before validation (if we have a frame)
-    if frame is not None:
+    # Show GCPs before validation (if we have a frame and not in map-debug mode)
+    if frame is not None and not args.map_debug:
         print("\nShowing GCP positions on frame (before validation)...")
         print("Verify that GCP markers align with the physical features.")
         print("Press any key to run validation, 'q' to quit")
@@ -955,25 +1081,41 @@ def main():
         camera_gps=camera_gps
     )
 
-    # Show results visualization (if we have a frame)
+    # Show results visualization based on mode
     if frame is not None:
-        print("\nShowing validation results on frame...")
-        print("Green = inlier (passed), Red = outlier (failed)")
-        print("Press any key to continue" + (" to interactive mode" if args.interactive else ""))
-        visualize_gcps_on_frame(frame, display_gcps, results=results)
+        if args.map_debug:
+            # Map debug mode: Launch web-based visualization
+            if camera_gps is None:
+                print("Warning: --map-debug requires camera GPS coordinates")
+                print("  Add camera_gps to your config or use standard visualization")
+                args.map_debug = False
+            else:
+                run_map_debug_visualization(
+                    frame=frame,
+                    gcps=gcps,
+                    validation_results=results,
+                    camera_gps=camera_gps
+                )
 
-        # Interactive mode: click to get GPS coordinates
-        if args.interactive and results.get('provider'):
-            interactive_gps_projection(
-                frame=frame,
-                provider=results['provider'],
-                gcps=display_gcps,
-                results=results,
-                scale_x=scale_x,
-                scale_y=scale_y
-            )
+        if not args.map_debug:
+            # Standard OpenCV visualization
+            print("\nShowing validation results on frame...")
+            print("Green = inlier (passed), Red = outlier (failed)")
+            print("Press any key to continue" + (" to interactive mode" if args.interactive else ""))
+            visualize_gcps_on_frame(frame, display_gcps, results=results)
 
-        cv2.destroyAllWindows()
+            # Interactive mode: click to get GPS coordinates
+            if args.interactive and results.get('provider'):
+                interactive_gps_projection(
+                    frame=frame,
+                    provider=results['provider'],
+                    gcps=display_gcps,
+                    results=results,
+                    scale_x=scale_x,
+                    scale_y=scale_y
+                )
+
+            cv2.destroyAllWindows()
 
     # Exit code based on success
     sys.exit(0 if results.get('success', False) else 1)
