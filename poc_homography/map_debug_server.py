@@ -456,7 +456,7 @@ def generate_html(
                     const projLon = gcp.projected_gps.lon;
 
                     // Use error_meters if available, otherwise calculate
-                    const distance = gcp.error_meters || haversineDistance(origLat, origLon, projLat, projLon);
+                    const distance = gcp.error_meters ?? haversineDistance(origLat, origLon, projLat, projLon);
 
                     if (distance <= threshold) {{
                         // Draw single gold marker
@@ -545,7 +545,6 @@ def generate_html(
 
         function drawGCPMarkers() {{
             // Get actual displayed image dimensions
-            const imgRect = img.getBoundingClientRect();
             const displayWidth = img.width;
             const displayHeight = img.height;
 
