@@ -49,7 +49,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
     2. Convert GPS coordinates to local metric coordinates using equirectangular projection
     3. Compute homography using cv2.findHomography with RANSAC
     4. Store homography matrix and inverse for bidirectional projection
-    5. Calculate confidence based on inlier ratio and reprojection error
+    5. Calculate confidence based on inlier ratio, reprojection error, and spatial distribution
 
     Attributes:
         width: Image width in pixels
@@ -71,6 +71,17 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
     # Confidence calculation parameters
     MIN_INLIER_RATIO = 0.5  # Minimum ratio of inliers to total points
     CONFIDENCE_PENALTY_LOW_INLIERS = 0.7  # Penalty for low inlier ratio
+
+    # Spatial distribution thresholds
+    MIN_COVERAGE_RATIO = 0.15  # Minimum convex hull area / image area ratio
+    GOOD_COVERAGE_RATIO = 0.35  # Good coverage threshold
+    MIN_QUADRANT_COVERAGE = 2  # Minimum number of quadrants with GCPs
+    GOOD_QUADRANT_COVERAGE = 3  # Good quadrant coverage
+
+    # Distribution confidence multipliers
+    DIST_PENALTY_POOR_COVERAGE = 0.5  # Penalty for very clustered GCPs
+    DIST_PENALTY_LOW_COVERAGE = 0.75  # Penalty for somewhat clustered GCPs
+    DIST_BONUS_GOOD_COVERAGE = 1.1  # Bonus for well-distributed GCPs (capped at 1.0)
 
     # Edge factor constants for point confidence calculation
     EDGE_FACTOR_CENTER = 1.0
@@ -195,11 +206,114 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             y_meters
         )
 
+    def _calculate_spatial_distribution(
+        self,
+        image_points: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Assess the spatial distribution quality of GCPs in image space.
+
+        Good homography estimation requires GCPs distributed across the image,
+        not clustered in one area. This method calculates:
+        1. Convex hull coverage: Area covered by GCPs relative to image area
+        2. Quadrant coverage: How many image quadrants contain GCPs
+        3. Spread metrics: Standard deviation of point positions
+
+        Args:
+            image_points: Nx2 array of (u, v) pixel coordinates
+
+        Returns:
+            Dictionary with distribution metrics:
+                - coverage_ratio: Convex hull area / image area [0.0, 1.0]
+                - quadrants_covered: Number of quadrants with GCPs [0-4]
+                - spread_x: Normalized std dev in X direction
+                - spread_y: Normalized std dev in Y direction
+                - distribution_score: Overall distribution quality [0.0, 1.0]
+                - warnings: List of distribution issues
+        """
+        warnings = []
+        n_points = len(image_points)
+
+        if n_points < 3:
+            return {
+                'coverage_ratio': 0.0,
+                'quadrants_covered': 0,
+                'spread_x': 0.0,
+                'spread_y': 0.0,
+                'distribution_score': 0.0,
+                'warnings': ['Too few points for distribution analysis']
+            }
+
+        # Calculate convex hull coverage
+        try:
+            hull = cv2.convexHull(image_points.astype(np.float32))
+            hull_area = cv2.contourArea(hull)
+            image_area = self.width * self.height
+            coverage_ratio = hull_area / image_area if image_area > 0 else 0.0
+        except Exception:
+            coverage_ratio = 0.0
+            warnings.append('Could not compute convex hull')
+
+        # Calculate quadrant coverage
+        center_u = self.width / 2.0
+        center_v = self.height / 2.0
+        quadrants = set()
+        for u, v in image_points:
+            q = 0
+            if u >= center_u:
+                q += 1
+            if v >= center_v:
+                q += 2
+            quadrants.add(q)
+        quadrants_covered = len(quadrants)
+
+        # Calculate spread (normalized standard deviation)
+        spread_x = np.std(image_points[:, 0]) / self.width if self.width > 0 else 0.0
+        spread_y = np.std(image_points[:, 1]) / self.height if self.height > 0 else 0.0
+
+        # Generate warnings
+        if coverage_ratio < self.MIN_COVERAGE_RATIO:
+            warnings.append(
+                f'GCPs are clustered (coverage {coverage_ratio:.1%} < {self.MIN_COVERAGE_RATIO:.0%}). '
+                'Add GCPs in different areas of the image.'
+            )
+        if quadrants_covered < self.MIN_QUADRANT_COVERAGE:
+            warnings.append(
+                f'GCPs only cover {quadrants_covered}/4 quadrants. '
+                'Add GCPs to cover more of the image.'
+            )
+        if spread_x < 0.15 or spread_y < 0.15:
+            warnings.append(
+                'GCPs have low spatial variance. Spread points across the image.'
+            )
+
+        # Calculate overall distribution score
+        # Weight: 40% coverage, 30% quadrant, 30% spread
+        coverage_score = min(1.0, coverage_ratio / self.GOOD_COVERAGE_RATIO)
+        quadrant_score = quadrants_covered / 4.0
+        spread_score = min(1.0, (spread_x + spread_y) / 0.5)  # Normalize to ~1.0 for good spread
+
+        distribution_score = (
+            0.4 * coverage_score +
+            0.3 * quadrant_score +
+            0.3 * spread_score
+        )
+
+        return {
+            'coverage_ratio': coverage_ratio,
+            'quadrants_covered': quadrants_covered,
+            'spread_x': spread_x,
+            'spread_y': spread_y,
+            'distribution_score': distribution_score,
+            'warnings': warnings
+        }
+
     def _calculate_confidence(
         self,
         num_inliers: int,
         total_points: int,
-        reprojection_errors: np.ndarray
+        reprojection_errors: np.ndarray,
+        distribution_metrics: Optional[Dict[str, Any]] = None
     ) -> float:
         """
         Calculate confidence score for the homography.
@@ -207,11 +321,13 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         Confidence is based on:
         1. Inlier ratio: Higher ratio = higher confidence
         2. Reprojection error: Lower mean error = higher confidence
+        3. Spatial distribution: Well-distributed GCPs = higher confidence
 
         Args:
             num_inliers: Number of inlier points from RANSAC
             total_points: Total number of GCP correspondences
             reprojection_errors: Array of reprojection errors for inliers (pixels)
+            distribution_metrics: Optional dict from _calculate_spatial_distribution
 
         Returns:
             float: Confidence score in range [0.0, 1.0]
@@ -237,6 +353,26 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             # Error > ransac_threshold -> multiplier < 0.5
             error_factor = max(0.3, 1.0 - (mean_error / (2 * self.ransac_threshold)))
             confidence *= error_factor
+
+        # Factor in spatial distribution
+        if distribution_metrics:
+            dist_score = distribution_metrics.get('distribution_score', 0.5)
+            coverage = distribution_metrics.get('coverage_ratio', 0.0)
+
+            if coverage < self.MIN_COVERAGE_RATIO:
+                # Severe penalty for very clustered GCPs
+                confidence *= self.DIST_PENALTY_POOR_COVERAGE
+                logger.warning(
+                    "GCPs are severely clustered (coverage=%.1f%%). "
+                    "Homography may be unreliable outside the GCP cluster.",
+                    coverage * 100
+                )
+            elif dist_score < 0.5:
+                # Moderate penalty for somewhat clustered GCPs
+                confidence *= self.DIST_PENALTY_LOW_COVERAGE
+            elif dist_score > 0.7:
+                # Small bonus for well-distributed GCPs (capped at 1.0)
+                confidence *= self.DIST_BONUS_GOOD_COVERAGE
 
         return min(1.0, confidence)
 
@@ -439,6 +575,17 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         # Store homography (local metric -> image)
         self.H = H
 
+        # Calculate spatial distribution of GCPs (for confidence calculation)
+        distribution_metrics = self._calculate_spatial_distribution(image_points)
+
+        # Log distribution warnings
+        for warning in distribution_metrics.get('warnings', []):
+            logger.warning(warning)
+
+        # Initialize reprojection error variables
+        mean_reproj_error = None
+        max_reproj_error = None
+
         # Compute inverse (image -> local metric)
         det_H = np.linalg.det(self.H)
         if abs(det_H) < self.MIN_DET_THRESHOLD:
@@ -469,12 +616,16 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 # Calculate reprojection errors
                 errors = np.linalg.norm(projected - inlier_image, axis=1)
                 self._confidence = self._calculate_confidence(
-                    num_inliers, total_points, errors
+                    num_inliers, total_points, errors, distribution_metrics
                 )
+
+                # Calculate mean reprojection error for metadata
+                mean_reproj_error = float(np.mean(errors))
+                max_reproj_error = float(np.max(errors))
             else:
                 self._confidence = 0.0
 
-        # Build metadata
+        # Build metadata with distribution info
         metadata = {
             'approach': HomographyApproach.FEATURE_MATCH.value,
             'method': 'gcp_based',
@@ -486,16 +637,32 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             'reference_gps': {
                 'latitude': self._reference_lat,
                 'longitude': self._reference_lon
+            },
+            # Distribution metrics
+            'distribution': {
+                'coverage_ratio': distribution_metrics['coverage_ratio'],
+                'quadrants_covered': distribution_metrics['quadrants_covered'],
+                'spread_x': distribution_metrics['spread_x'],
+                'spread_y': distribution_metrics['spread_y'],
+                'distribution_score': distribution_metrics['distribution_score'],
+                'warnings': distribution_metrics['warnings']
+            },
+            # Reprojection error stats
+            'reprojection_error': {
+                'mean_px': mean_reproj_error,
+                'max_px': max_reproj_error,
+                'threshold_px': self.ransac_threshold
             }
         }
 
         self._last_metadata = metadata
 
         logger.info(
-            "Homography computed: %d/%d inliers, confidence=%.3f",
+            "Homography computed: %d/%d inliers, confidence=%.3f, distribution_score=%.2f",
             metadata['num_inliers'],
             metadata['num_gcps'],
-            self._confidence
+            self._confidence,
+            distribution_metrics['distribution_score']
         )
 
         return HomographyResult(

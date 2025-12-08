@@ -181,10 +181,40 @@ def run_round_trip_validation(
     # Get the homography matrix to compute pixel reprojection errors
     H = provider.H  # local metric -> image
 
+    # Extract distribution metrics from result
+    distribution = result.metadata.get('distribution', {})
+    reprojection = result.metadata.get('reprojection_error', {})
+
     if verbose:
         print(f"Homography computed successfully!")
         print(f"  Confidence: {result.confidence:.3f}")
         print(f"  Inliers: {result.metadata.get('num_inliers', 'N/A')}/{len(gcps)}")
+
+        # Display distribution metrics
+        if distribution:
+            print()
+            print("  Distribution Quality:")
+            print(f"    Score: {distribution.get('distribution_score', 0):.2f}")
+            print(f"    Coverage: {distribution.get('coverage_ratio', 0):.1%}")
+            print(f"    Quadrants: {distribution.get('quadrants_covered', 0)}/4")
+            print(f"    Spread X: {distribution.get('spread_x', 0):.2f}, Y: {distribution.get('spread_y', 0):.2f}")
+
+            # Show warnings if any
+            warnings = distribution.get('warnings', [])
+            if warnings:
+                print()
+                print("  Distribution Warnings:")
+                for warning in warnings:
+                    print(f"    - {warning}")
+
+        # Display reprojection error stats
+        if reprojection and reprojection.get('mean_px') is not None:
+            print()
+            print("  Reprojection Error:")
+            print(f"    Mean: {reprojection.get('mean_px', 0):.2f} px")
+            print(f"    Max: {reprojection.get('max_px', 0):.2f} px")
+            print(f"    Threshold: {reprojection.get('threshold_px', 5.0):.1f} px")
+
         print()
 
     # Test each GCP
@@ -300,6 +330,13 @@ def run_round_trip_validation(
                 print(f"  Outliers: {len(outlier_errors)} (excluded from RANSAC fit)")
                 print(f"  Outlier mean error: {outlier_mean:.2f}m")
             print(f"  Overall mean error: {mean_error:.2f}m")
+
+            # Distribution summary
+            if distribution:
+                dist_score = distribution.get('distribution_score', 0)
+                quality = "Good" if dist_score > 0.7 else "Fair" if dist_score > 0.5 else "Poor"
+                print(f"  Distribution: {quality} (score={dist_score:.2f})")
+
             print()
 
             if inliers_only and inlier_errors:
@@ -325,6 +362,8 @@ def run_round_trip_validation(
             'max_error_m': max_error,
             'min_error_m': min_error,
             'confidence': result.confidence,
+            'distribution': distribution,  # Include distribution metrics
+            'reprojection_error': reprojection,  # Include reprojection stats
             'details': results_detail,
             'provider': provider  # Return the provider for interactive testing
         }
@@ -633,26 +672,44 @@ def export_frame_with_markers(
 
     # Draw GCP markers and validation results
     for i, gcp in enumerate(gcps):
-        # Original GCP position (green)
+        # Original GCP position
         u_orig = int(gcp['image']['u'])
         v_orig = int(gcp['image']['v'])
-        cv2.circle(display, (u_orig, v_orig), 8, (0, 255, 0), 2)
 
         # Get projected position from validation results
+        has_projected = False
         if validation_results and 'details' in validation_results:
             details = validation_results['details']
             if i < len(details):
                 detail = details[i]
-                if 'image_point' in detail:
-                    u_proj, v_proj = detail['image_point']
+                if 'projected_pixel' in detail:
+                    u_proj, v_proj = detail['projected_pixel']
                     u_proj = int(u_proj)
                     v_proj = int(v_proj)
+                    has_projected = True
 
-                    # Projected position (blue)
-                    cv2.circle(display, (u_proj, v_proj), 8, (255, 0, 0), 2)
+                    # Calculate distance between original and projected
+                    dx = u_orig - u_proj
+                    dy = v_orig - v_proj
+                    distance = math.sqrt(dx * dx + dy * dy)
+                    threshold = 5  # pixels
 
-                    # Connection line (yellow)
-                    cv2.line(display, (u_orig, v_orig), (u_proj, v_proj), (0, 255, 255), 2)
+                    if distance <= threshold:
+                        # Draw single gold marker for accurate GCPs
+                        cv2.circle(display, (u_orig, v_orig), 10, (0, 215, 255), 3)  # Gold (BGR)
+                    else:
+                        # Draw original marker (green)
+                        cv2.circle(display, (u_orig, v_orig), 8, (0, 255, 0), 2)
+
+                        # Draw projected position (red)
+                        cv2.circle(display, (u_proj, v_proj), 6, (0, 0, 255), 2)
+
+                        # Connection line (yellow)
+                        cv2.line(display, (u_orig, v_orig), (u_proj, v_proj), (0, 255, 255), 2)
+
+        # If no projected data, just draw original in green
+        if not has_projected:
+            cv2.circle(display, (u_orig, v_orig), 8, (0, 255, 0), 2)
 
         # Label with description
         desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
@@ -717,6 +774,12 @@ def run_map_debug_visualization(
     generate_kml(gcps, validation_results, camera_gps, kml_path)
     print(f"Generated KML file: {kml_path}")
 
+    # Extract homography matrix from provider for interactive projection
+    homography_matrix = None
+    provider = validation_results.get('provider')
+    if provider is not None and hasattr(provider, 'H_inv'):
+        homography_matrix = provider.H_inv.tolist()  # Convert numpy to list for JSON
+
     # Start web server
     print("\nLaunching map debug visualization...")
     start_server(
@@ -726,6 +789,7 @@ def run_map_debug_visualization(
         camera_gps=camera_gps,
         gcps=gcps,
         validation_results=validation_results,
+        homography_matrix=homography_matrix,
         auto_open=True
     )
 

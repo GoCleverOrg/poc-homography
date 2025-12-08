@@ -56,16 +56,19 @@ def sample_validation_results():
         'details': [
             {
                 'projected_gps': (39.640605, -0.230205),
+                'projected_pixel': (402.3, 301.5),
                 'error_meters': 0.56,
                 'image_point': (400.0, 300.0)
             },
             {
                 'projected_gps': (39.640618, -0.229805),
+                'projected_pixel': (2098.7, 318.2),
                 'error_meters': 0.45,
                 'image_point': (2100.0, 320.0)
             },
             {
                 'projected_gps': (39.640398, -0.230002),
+                'projected_pixel': (1281.1, 719.8),
                 'error_meters': 0.23,
                 'image_point': (1280.0, 720.0)
             },
@@ -180,10 +183,6 @@ def test_generate_html_contains_required_elements(sample_gcps, sample_validation
         "HTML should contain Leaflet CSS CDN link"
     assert 'unpkg.com/leaflet@1.9.4/dist/leaflet.js' in html, \
         "HTML should contain Leaflet JS CDN link"
-
-    # Verify leaflet-omnivore for KML loading
-    assert 'leaflet-omnivore' in html, \
-        "HTML should contain leaflet-omnivore for KML loading"
 
     # Verify ESRI tile URL
     assert 'server.arcgisonline.com/ArcGIS/rest/services/World_Imagery' in html, \
@@ -530,7 +529,7 @@ def test_integration_end_to_end(sample_frame, sample_gcps, sample_validation_res
 
     assert '<!DOCTYPE html>' in html_content, "HTML should have DOCTYPE"
     assert 'annotated_frame.jpg' in html_content, "HTML should reference frame"
-    assert 'validation.kml' in html_content, "HTML should reference KML"
+    assert 'gcpData' in html_content, "HTML should contain embedded GCP data"
     assert 'leaflet' in html_content.lower(), "HTML should include Leaflet"
 
 
