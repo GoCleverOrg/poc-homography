@@ -241,6 +241,7 @@ def run_round_trip_validation(
                 'original_gps': (original_lat, original_lon),
                 'projected_gps': (projected_lat, projected_lon),
                 'image_point': (u, v),
+                'projected_pixel': (proj_u, proj_v),  # Projected pixel coordinates
                 'error_meters': error_m,
                 'pixel_error': pixel_error,
                 'passed': passed,
