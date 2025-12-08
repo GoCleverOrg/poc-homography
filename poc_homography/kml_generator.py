@@ -264,6 +264,13 @@ def generate_kml(gcps: List[Dict],
     if not camera_gps or 'latitude' not in camera_gps or 'longitude' not in camera_gps:
         raise ValueError("camera_gps must contain 'latitude' and 'longitude' keys")
 
+    # Warn if GCPs and validation details have different lengths
+    details = validation_results['details']
+    if len(gcps) != len(details):
+        print(f"Warning: GCPs list ({len(gcps)} items) and validation details "
+              f"({len(details)} items) have different lengths. "
+              f"Only {min(len(gcps), len(details))} pairs will be processed.")
+
     # Create root KML element
     kml = Element('kml', {'xmlns': 'http://www.opengis.net/kml/2.2'})
     document = SubElement(kml, 'Document')
@@ -330,8 +337,6 @@ def generate_kml(gcps: List[Dict],
     # Create Projected GCPs folder
     projected_folder = Element('Folder')
     SubElement(projected_folder, 'name').text = 'Projected GCPs'
-
-    details = validation_results['details']
 
     for i, (gcp, detail) in enumerate(zip(gcps, details)):
         if 'projected_gps' not in detail:
