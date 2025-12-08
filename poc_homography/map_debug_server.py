@@ -102,6 +102,7 @@ def generate_html(
                 'details': [
                     {
                         'projected_gps': (lat, lon),
+                        'projected_pixel': (u, v),
                         'error_meters': float
                     },
                     ...
@@ -142,7 +143,7 @@ def generate_html(
             }
         }
 
-        # Add projected GPS if available
+        # Add projected GPS and projected pixel if available
         if validation_results and 'details' in validation_results:
             details = validation_results['details']
             if i < len(details) and 'projected_gps' in details[i]:
@@ -152,6 +153,14 @@ def generate_html(
                     'lon': proj_lon
                 }
                 gcp_entry['error_meters'] = details[i].get('error_meters', 0)
+
+                # Add projected pixel coordinates if available
+                if 'projected_pixel' in details[i]:
+                    proj_u, proj_v = details[i]['projected_pixel']
+                    gcp_entry['projected_pixel'] = {
+                        'u': proj_u,
+                        'v': proj_v
+                    }
 
         gcp_data.append(gcp_entry)
 
@@ -323,6 +332,25 @@ def generate_html(
                         <img id="cameraFrame" src="{camera_frame_path}" alt="Camera Frame">
                         <canvas id="gcpCanvas"></canvas>
                     </div>
+                    <div class="legend">
+                        <div class="legend-title">Legend</div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #00ff00;"></div>
+                            <span>Original GCP</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #ff0000;"></div>
+                            <span>Projected GCP</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #ffd700;"></div>
+                            <span>Accurate GCP (&lt;5px)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-line" style="background: #ffff00;"></div>
+                            <span>Error Line</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -340,8 +368,12 @@ def generate_html(
                             <span>Original GCP</span>
                         </div>
                         <div class="legend-item">
-                            <div class="legend-color" style="background: #0000ff;"></div>
+                            <div class="legend-color" style="background: #ff0000;"></div>
                             <span>Projected GCP</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #ffd700;"></div>
+                            <span>Accurate GCP (&lt;5m)</span>
                         </div>
                         <div class="legend-item">
                             <div class="legend-line" style="background: #ffff00;"></div>
@@ -358,14 +390,10 @@ def generate_html(
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""></script>
 
-    <!-- Leaflet Omnivore for KML loading -->
-    <script src='https://api.tiles.mapbox.com/mapbox.js/plugins/leaflet-omnivore/v0.3.1/leaflet-omnivore.min.js'></script>
-
     <script>
         // Embedded data
         const gcpData = {gcp_data_json};
         const cameraGPS = {camera_gps_json};
-        const kmlPath = '{kml_path}';
         const googleMapsApiKey = '{google_maps_api_key}';
 
         // Initialize map
@@ -403,22 +431,106 @@ def generate_html(
             L.control.layers(baseLayers).addTo(map);
         }}
 
-        // Load KML file
-        const kmlLayer = omnivore.kml(kmlPath);
+        // Haversine distance function
+        function haversineDistance(lat1, lon1, lat2, lon2) {{
+            const R = 6371000; // Earth radius in meters
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }}
 
-        kmlLayer.on('ready', function() {{
-            // Fit map to KML bounds
-            map.fitBounds(kmlLayer.getBounds());
-        }});
+        // Draw GCP markers on map
+        function drawMapMarkers() {{
+            const threshold = 5; // meters
 
-        kmlLayer.on('error', function(e) {{
-            console.error('Error loading KML:', e);
-        }});
+            gcpData.forEach((gcp, index) => {{
+                const origLat = gcp.original_gps.lat;
+                const origLon = gcp.original_gps.lon;
 
-        kmlLayer.addTo(map);
+                if (gcp.projected_gps) {{
+                    const projLat = gcp.projected_gps.lat;
+                    const projLon = gcp.projected_gps.lon;
 
-        // Set initial view to camera position
-        map.setView([cameraGPS.latitude, cameraGPS.longitude], 18);
+                    // Use error_meters if available, otherwise calculate
+                    const distance = gcp.error_meters ?? haversineDistance(origLat, origLon, projLat, projLon);
+
+                    if (distance <= threshold) {{
+                        // Draw single gold marker
+                        L.circleMarker([origLat, origLon], {{
+                            radius: 8,
+                            fillColor: '#ffd700',
+                            color: '#ffffff',
+                            weight: 2,
+                            fillOpacity: 1
+                        }}).addTo(map).bindPopup(`${{gcp.name}}<br>Accurate: ${{distance.toFixed(2)}}m`);
+                    }} else {{
+                        // Draw error line (yellow polyline)
+                        L.polyline([[origLat, origLon], [projLat, projLon]], {{
+                            color: '#ffff00',
+                            weight: 2
+                        }}).addTo(map);
+
+                        // Draw projected marker (red)
+                        L.circleMarker([projLat, projLon], {{
+                            radius: 6,
+                            fillColor: '#ff0000',
+                            color: '#ffffff',
+                            weight: 2,
+                            fillOpacity: 1
+                        }}).addTo(map).bindPopup(`${{gcp.name}} (projected)<br>Error: ${{distance.toFixed(2)}}m`);
+
+                        // Draw original marker (green)
+                        L.circleMarker([origLat, origLon], {{
+                            radius: 8,
+                            fillColor: '#00ff00',
+                            color: '#ffffff',
+                            weight: 2,
+                            fillOpacity: 1
+                        }}).addTo(map).bindPopup(`${{gcp.name}} (original)`);
+                    }}
+                }} else {{
+                    // No projected GPS - draw only original marker (green)
+                    L.circleMarker([origLat, origLon], {{
+                        radius: 8,
+                        fillColor: '#00ff00',
+                        color: '#ffffff',
+                        weight: 2,
+                        fillOpacity: 1
+                    }}).addTo(map).bindPopup(`${{gcp.name}}`);
+                }}
+            }});
+        }}
+
+        // Calculate bounds from GCP data
+        function calculateGCPBounds() {{
+            const latLngs = [];
+            gcpData.forEach(gcp => {{
+                latLngs.push([gcp.original_gps.lat, gcp.original_gps.lon]);
+                if (gcp.projected_gps) {{
+                    latLngs.push([gcp.projected_gps.lat, gcp.projected_gps.lon]);
+                }}
+            }});
+            if (latLngs.length > 0) {{
+                return L.latLngBounds(latLngs);
+            }}
+            return null;
+        }}
+
+        // Call after map is ready
+        drawMapMarkers();
+
+        // Fit map to GCP bounds
+        const bounds = calculateGCPBounds();
+        if (bounds) {{
+            map.fitBounds(bounds, {{ padding: [50, 50] }});
+        }} else {{
+            // Fallback to camera position
+            map.setView([cameraGPS.latitude, cameraGPS.longitude], 18);
+        }}
 
         // Canvas overlay for GCP markers on camera frame
         const img = document.getElementById('cameraFrame');
@@ -433,7 +545,6 @@ def generate_html(
 
         function drawGCPMarkers() {{
             // Get actual displayed image dimensions
-            const imgRect = img.getBoundingClientRect();
             const displayWidth = img.width;
             const displayHeight = img.height;
 
@@ -457,36 +568,62 @@ def generate_html(
                 const u = gcp.pixel.u * scaleX;
                 const v = gcp.pixel.v * scaleY;
 
-                // Draw error line if projected GPS available
-                if (gcp.projected_gps) {{
-                    const projU = gcp.pixel.u * scaleX;  // Same pixel coords for line
-                    const projV = gcp.pixel.v * scaleY;
+                if (gcp.projected_pixel) {{
+                    const projU = gcp.projected_pixel.u * scaleX;
+                    const projV = gcp.projected_pixel.v * scaleY;
 
-                    ctx.strokeStyle = '#ffff00';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(u, v);
-                    ctx.lineTo(projU, projV);
-                    ctx.stroke();
+                    // Calculate distance between original and projected pixels
+                    const dx = u - projU;
+                    const dy = v - projV;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const threshold = 5;
 
-                    // Draw projected marker (blue)
-                    ctx.fillStyle = '#0000ff';
+                    if (distance <= threshold) {{
+                        // Draw single gold marker at original position
+                        ctx.fillStyle = '#ffd700';  // Gold
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(u, v, 4, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.stroke();
+                    }} else {{
+                        // Draw error line (yellow)
+                        ctx.strokeStyle = '#ffff00';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(u, v);
+                        ctx.lineTo(projU, projV);
+                        ctx.stroke();
+
+                        // Draw projected marker (red)
+                        ctx.fillStyle = '#ff0000';
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(projU, projV, 3, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.stroke();
+
+                        // Draw original marker (green)
+                        ctx.fillStyle = '#00ff00';
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(u, v, 4, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.stroke();
+                    }}
+                }} else {{
+                    // No projected pixel - draw only original marker (green)
+                    ctx.fillStyle = '#00ff00';
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.arc(projU, projV, 3, 0, 2 * Math.PI);
+                    ctx.arc(u, v, 4, 0, 2 * Math.PI);
                     ctx.fill();
                     ctx.stroke();
                 }}
-
-                // Draw original marker (green)
-                ctx.fillStyle = '#00ff00';
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(u, v, 4, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.stroke();
 
                 // Draw label (P#XX format only)
                 const label = getShortLabel(gcp.name, index);
@@ -672,14 +809,17 @@ if __name__ == '__main__':
         'details': [
             {
                 'projected_gps': (39.640605, -0.230205),
+                'projected_pixel': (402.3, 301.5),
                 'error_meters': 0.56
             },
             {
                 'projected_gps': (39.640618, -0.229805),
+                'projected_pixel': (2098.7, 318.2),
                 'error_meters': 0.45
             },
             {
                 'projected_gps': (39.640398, -0.230002),
+                'projected_pixel': (1281.1, 719.8),
                 'error_meters': 0.23
             },
         ]
