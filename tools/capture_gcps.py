@@ -22,8 +22,10 @@ Controls:
     s - Start/Stop GCP capture mode
     z - Undo last GCP
     c - Clear all GCPs
+    r - Enter outlier review mode (click to remove, 'a' for auto-remove)
     q - Quit (prompts to save if GCPs captured)
     Click - Add GCP at cursor position (in capture mode)
+            Remove GCP near cursor (in outlier review mode)
 """
 
 import argparse
@@ -55,9 +57,25 @@ except (ValueError, ImportError) as e:
 # Import the intrinsics utility
 from tools.get_camera_intrinsics import get_ptz_status, compute_intrinsics
 
+# Import for real-time reprojection error calculation
+try:
+    from poc_homography.coordinate_converter import gps_to_local_xy
+    COORDINATE_CONVERTER_AVAILABLE = True
+except ImportError:
+    COORDINATE_CONVERTER_AVAILABLE = False
+
 # Default camera parameters
 DEFAULT_SENSOR_WIDTH_MM = 7.18
 DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
+
+# Reprojection error thresholds for feedback
+REPROJ_ERROR_GOOD = 5.0  # pixels - considered good fit
+REPROJ_ERROR_WARNING = 10.0  # pixels - warning threshold
+REPROJ_ERROR_BAD = 20.0  # pixels - likely outlier
+
+# Outlier review mode settings
+OUTLIER_CLICK_RADIUS = 30  # pixels - click within this radius to select GCP
+OUTLIER_AUTO_REMOVE_THRESHOLD = 15.0  # pixels - auto-remove GCPs above this error
 
 
 class GCPCaptureSession:
@@ -94,6 +112,17 @@ class GCPCaptureSession:
         self.mouse_pos = (0, 0)
         self.pending_click = None
 
+        # Outlier review mode state
+        self.outlier_review_mode = False
+        self.selected_gcp_index = None  # Index of GCP selected for removal
+        self.highlighted_gcp_index = None  # Index of GCP under mouse cursor
+
+        # Homography state for real-time validation
+        self.current_homography = None
+        self.reference_lat = None
+        self.reference_lon = None
+        self.last_reproj_errors = []  # Store reprojection errors for display
+
     def get_camera_context(self) -> dict:
         """Get current camera context (PTZ + intrinsics)."""
         ptz = get_ptz_status(self.cam_info['ip'], USERNAME, PASSWORD)
@@ -126,6 +155,118 @@ class GCPCaptureSession:
             'capture_timestamp': self.capture_timestamp or datetime.now().isoformat(),
             'notes': '',
         }
+
+    def update_homography(self) -> Optional[Dict[str, Any]]:
+        """Compute homography from current GCPs and return quality metrics.
+
+        Returns:
+            Dictionary with homography quality metrics, or None if insufficient GCPs.
+        """
+        if not COORDINATE_CONVERTER_AVAILABLE:
+            return None
+
+        if len(self.gcps) < 4:
+            self.current_homography = None
+            self.last_reproj_errors = []
+            return None
+
+        # Set reference point from camera GPS or first GCP
+        if self.reference_lat is None:
+            # Use camera GPS if available
+            if hasattr(self, 'cam_info') and self.cam_info:
+                cam_gps = self.cam_info.get('gps')
+                if cam_gps:
+                    self.reference_lat = cam_gps.get('latitude')
+                    self.reference_lon = cam_gps.get('longitude')
+
+            # Fall back to centroid of GCPs
+            if self.reference_lat is None:
+                lats = [g['gps']['latitude'] for g in self.gcps]
+                lons = [g['gps']['longitude'] for g in self.gcps]
+                self.reference_lat = sum(lats) / len(lats)
+                self.reference_lon = sum(lons) / len(lons)
+
+        # Extract points
+        image_points = []
+        local_points = []
+
+        for gcp in self.gcps:
+            u, v = gcp['image']['u'], gcp['image']['v']
+            lat, lon = gcp['gps']['latitude'], gcp['gps']['longitude']
+
+            image_points.append([u, v])
+            x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+            local_points.append([x, y])
+
+        image_points = np.array(image_points, dtype=np.float32)
+        local_points = np.array(local_points, dtype=np.float32)
+
+        # Compute homography with RANSAC
+        H, mask = cv2.findHomography(local_points, image_points, cv2.RANSAC, 5.0)
+
+        if H is None:
+            self.current_homography = None
+            self.last_reproj_errors = []
+            return None
+
+        self.current_homography = H
+
+        # Calculate reprojection errors for all points
+        projected = cv2.perspectiveTransform(
+            local_points.reshape(-1, 1, 2), H
+        ).reshape(-1, 2)
+
+        errors = np.linalg.norm(projected - image_points, axis=1)
+        self.last_reproj_errors = errors.tolist()
+
+        # Calculate metrics
+        num_inliers = int(np.sum(mask)) if mask is not None else 0
+        inlier_errors = errors[mask.ravel() == 1] if mask is not None else errors
+
+        return {
+            'num_gcps': len(self.gcps),
+            'num_inliers': num_inliers,
+            'inlier_ratio': num_inliers / len(self.gcps),
+            'mean_error_px': float(np.mean(errors)),
+            'max_error_px': float(np.max(errors)),
+            'inlier_mean_error_px': float(np.mean(inlier_errors)) if len(inlier_errors) > 0 else 0,
+            'errors': self.last_reproj_errors,
+            'inlier_mask': mask.flatten().tolist() if mask is not None else None
+        }
+
+    def predict_new_gcp_error(self, pixel_coords: tuple, gps_coords: tuple) -> Optional[float]:
+        """Predict reprojection error for a new GCP before adding it.
+
+        Args:
+            pixel_coords: (u, v) pixel coordinates
+            gps_coords: (latitude, longitude) GPS coordinates
+
+        Returns:
+            Predicted reprojection error in pixels, or None if cannot compute.
+        """
+        if self.current_homography is None or not COORDINATE_CONVERTER_AVAILABLE:
+            return None
+
+        if self.reference_lat is None or self.reference_lon is None:
+            return None
+
+        try:
+            lat, lon = gps_coords
+            x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+
+            # Project through current homography
+            local_pt = np.array([[x, y]], dtype=np.float32)
+            projected = cv2.perspectiveTransform(
+                local_pt.reshape(-1, 1, 2), self.current_homography
+            ).reshape(2)
+
+            # Calculate error
+            u, v = pixel_coords
+            error = np.sqrt((projected[0] - u)**2 + (projected[1] - v)**2)
+            return float(error)
+
+        except Exception:
+            return None
 
     def mouse_callback(self, event, x, y, flags, param):
         """Handle mouse events."""
@@ -206,9 +347,35 @@ class GCPCaptureSession:
             if elevation is not None:
                 gcp['gps']['elevation'] = elevation
 
+            # Predict reprojection error for this new GCP
+            predicted_error = self.predict_new_gcp_error(
+                (u, v), (latitude, longitude)
+            )
+
             print(f"\n✓ GCP added: {description}")
             print(f"  GPS: ({latitude:.6f}, {longitude:.6f})")
             print(f"  Pixel: ({u}, {v})")
+
+            if predicted_error is not None:
+                if predicted_error < REPROJ_ERROR_GOOD:
+                    error_status = "✓ GOOD"
+                    color_hint = "green"
+                elif predicted_error < REPROJ_ERROR_WARNING:
+                    error_status = "⚠ WARNING"
+                    color_hint = "yellow"
+                else:
+                    error_status = "✗ HIGH ERROR"
+                    color_hint = "red"
+                print(f"  Predicted error: {predicted_error:.1f}px ({error_status})")
+
+                if predicted_error >= REPROJ_ERROR_WARNING:
+                    print(f"  >> This GCP may be an outlier. Consider:")
+                    print(f"     - Verifying the GPS coordinates are correct")
+                    print(f"     - Re-clicking the pixel location more precisely")
+                    confirm = input("  Add anyway? (y/n) [n]: ").strip().lower()
+                    if confirm != 'y':
+                        print("  GCP discarded.")
+                        return None
 
             return gcp
 
@@ -223,19 +390,37 @@ class GCPCaptureSession:
         """Draw GCPs and UI overlay on frame."""
         display = frame.copy()
 
-        # Draw existing GCPs
+        # Draw existing GCPs with color-coded reprojection error
         for i, gcp in enumerate(self.gcps):
             u = int(gcp['image']['u'])
             v = int(gcp['image']['v'])
             desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
 
+            # Get reprojection error for this GCP if available
+            reproj_error = None
+            if i < len(self.last_reproj_errors):
+                reproj_error = self.last_reproj_errors[i]
+
+            # Color based on reprojection error
+            if reproj_error is None:
+                color = (0, 255, 0)  # Green - no error info
+                error_text = ""
+            elif reproj_error < REPROJ_ERROR_GOOD:
+                color = (0, 255, 0)  # Green - good
+                error_text = f" ({reproj_error:.1f}px)"
+            elif reproj_error < REPROJ_ERROR_WARNING:
+                color = (0, 255, 255)  # Yellow - warning
+                error_text = f" ({reproj_error:.1f}px)"
+            else:
+                color = (0, 0, 255)  # Red - high error (likely outlier)
+                error_text = f" ({reproj_error:.1f}px!)"
+
             # Draw marker
-            color = (0, 255, 0)  # Green
             cv2.drawMarker(display, (u, v), color, cv2.MARKER_CROSS, 20, 2)
             cv2.circle(display, (u, v), 10, color, 2)
 
-            # Draw label
-            label = f"{i+1}: {desc}"
+            # Draw label with error
+            label = f"{i+1}: {desc}{error_text}"
             cv2.putText(display, label, (u + 15, v - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
@@ -264,8 +449,17 @@ class GCPCaptureSession:
         cv2.putText(display, mode_text, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, mode_color, 2)
 
-        # GCP count
+        # GCP count and homography quality
         gcp_text = f"GCPs: {len(self.gcps)}"
+        if len(self.gcps) >= 4 and self.last_reproj_errors:
+            mean_err = sum(self.last_reproj_errors) / len(self.last_reproj_errors)
+            gcp_text += f" | Mean err: {mean_err:.1f}px"
+            if mean_err < REPROJ_ERROR_GOOD:
+                gcp_text += " (Good)"
+            elif mean_err < REPROJ_ERROR_WARNING:
+                gcp_text += " (OK)"
+            else:
+                gcp_text += " (Check outliers!)"
         cv2.putText(display, gcp_text, (10, 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
@@ -429,6 +623,11 @@ class GCPCaptureSession:
                         self.gcps.append(gcp)
                         if self.capture_timestamp is None:
                             self.capture_timestamp = datetime.now().isoformat()
+                        # Update homography and show quality metrics
+                        metrics = self.update_homography()
+                        if metrics:
+                            print(f"\n  Homography updated: {metrics['num_inliers']}/{metrics['num_gcps']} inliers "
+                                  f"({metrics['inlier_ratio']:.0%}), mean error: {metrics['mean_error_px']:.1f}px")
                     self.pending_click = None
 
                 # Draw overlay

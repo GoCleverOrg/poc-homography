@@ -71,6 +71,21 @@ except ImportError:
 DEFAULT_SENSOR_WIDTH_MM = 7.18
 DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
 
+# Reprojection error thresholds for feedback
+REPROJ_ERROR_GOOD = 5.0  # pixels - considered good fit
+REPROJ_ERROR_WARNING = 10.0  # pixels - warning threshold
+REPROJ_ERROR_BAD = 20.0  # pixels - likely outlier
+
+# Outlier auto-remove threshold
+OUTLIER_AUTO_REMOVE_THRESHOLD = 15.0  # pixels
+
+# Import for reprojection error calculation
+try:
+    from poc_homography.coordinate_converter import gps_to_local_xy
+    COORDINATE_CONVERTER_AVAILABLE = True
+except ImportError:
+    COORDINATE_CONVERTER_AVAILABLE = False
+
 
 class GCPCaptureWebSession:
     """Web-based GCP capture session with distribution feedback."""
@@ -100,6 +115,13 @@ class GCPCaptureWebSession:
         self.capture_timestamp = datetime.now().isoformat()
         # Coordinate system: 'image_v' (V=0 at top) or None (legacy leaflet_y format)
         self.coordinate_system = 'image_v'
+
+        # Homography and reprojection error state
+        self.current_homography = None
+        self.reference_lat = None
+        self.reference_lon = None
+        self.last_reproj_errors = []  # Per-GCP reprojection errors
+        self.inlier_mask = None  # RANSAC inlier mask
 
         # Calculate intrinsics if possible
         self.intrinsics = None
@@ -195,6 +217,190 @@ class GCPCaptureWebSession:
             'distribution_score': distribution_score,
             'quality': quality,
             'warnings': warnings
+        }
+
+    def update_homography(self) -> Dict:
+        """
+        Compute homography from current GCPs and calculate per-GCP reprojection errors.
+
+        Returns:
+            Dictionary with homography quality metrics and per-GCP errors.
+        """
+        if not COORDINATE_CONVERTER_AVAILABLE:
+            return {
+                'available': False,
+                'message': 'Coordinate converter not available'
+            }
+
+        if len(self.gcps) < 4:
+            self.current_homography = None
+            self.last_reproj_errors = []
+            self.inlier_mask = None
+            return {
+                'available': True,
+                'num_gcps': len(self.gcps),
+                'errors': [],
+                'message': 'Need at least 4 GCPs for homography'
+            }
+
+        # Set reference point from camera GPS or GCP centroid
+        if self.reference_lat is None:
+            if self.ptz_status:
+                # Try to get camera GPS from config
+                try:
+                    cam_info = get_camera_by_name(self.camera_name)
+                    if cam_info and 'gps' in cam_info:
+                        self.reference_lat = cam_info['gps'].get('latitude')
+                        self.reference_lon = cam_info['gps'].get('longitude')
+                except Exception:
+                    pass
+
+            # Fall back to GCP centroid
+            if self.reference_lat is None:
+                lats = [g['gps']['latitude'] for g in self.gcps]
+                lons = [g['gps']['longitude'] for g in self.gcps]
+                self.reference_lat = sum(lats) / len(lats)
+                self.reference_lon = sum(lons) / len(lons)
+
+        # Extract points
+        image_points = []
+        local_points = []
+
+        for gcp in self.gcps:
+            u, v = gcp['image']['u'], gcp['image']['v']
+            lat, lon = gcp['gps']['latitude'], gcp['gps']['longitude']
+
+            image_points.append([u, v])
+            x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+            local_points.append([x, y])
+
+        image_points = np.array(image_points, dtype=np.float32)
+        local_points = np.array(local_points, dtype=np.float32)
+
+        # Compute homography with RANSAC
+        H, mask = cv2.findHomography(local_points, image_points, cv2.RANSAC, 5.0)
+
+        if H is None:
+            self.current_homography = None
+            self.last_reproj_errors = []
+            self.inlier_mask = None
+            return {
+                'available': True,
+                'num_gcps': len(self.gcps),
+                'errors': [],
+                'message': 'Failed to compute homography'
+            }
+
+        self.current_homography = H
+        self.inlier_mask = mask.ravel().tolist() if mask is not None else [True] * len(self.gcps)
+
+        # Calculate reprojection errors for ALL points
+        projected = cv2.perspectiveTransform(
+            local_points.reshape(-1, 1, 2), H
+        ).reshape(-1, 2)
+
+        errors = np.linalg.norm(projected - image_points, axis=1)
+        self.last_reproj_errors = errors.tolist()
+
+        # Calculate metrics
+        num_inliers = int(np.sum(mask)) if mask is not None else len(self.gcps)
+        inlier_errors = errors[mask.ravel() == 1] if mask is not None else errors
+
+        # Build per-GCP error info
+        gcp_errors = []
+        for i, (gcp, error, is_inlier) in enumerate(zip(self.gcps, errors, self.inlier_mask)):
+            status = 'good' if error < REPROJ_ERROR_GOOD else 'warning' if error < REPROJ_ERROR_WARNING else 'bad'
+            gcp_errors.append({
+                'index': i,
+                'description': gcp.get('metadata', {}).get('description', f'GCP {i+1}'),
+                'error_px': float(error),
+                'is_inlier': bool(is_inlier),
+                'status': status
+            })
+
+        # Sort by error (highest first) for outlier identification
+        sorted_by_error = sorted(gcp_errors, key=lambda x: x['error_px'], reverse=True)
+
+        return {
+            'available': True,
+            'num_gcps': len(self.gcps),
+            'num_inliers': num_inliers,
+            'inlier_ratio': num_inliers / len(self.gcps),
+            'mean_error_px': float(np.mean(errors)),
+            'max_error_px': float(np.max(errors)),
+            'inlier_mean_error_px': float(np.mean(inlier_errors)) if len(inlier_errors) > 0 else 0,
+            'errors': gcp_errors,
+            'outliers': [e for e in sorted_by_error if not e['is_inlier']],
+            'worst_gcps': sorted_by_error[:3],
+            'thresholds': {
+                'good': REPROJ_ERROR_GOOD,
+                'warning': REPROJ_ERROR_WARNING,
+                'bad': REPROJ_ERROR_BAD,
+                'auto_remove': OUTLIER_AUTO_REMOVE_THRESHOLD
+            }
+        }
+
+    def get_outliers(self, threshold: float = None) -> List[int]:
+        """
+        Get indices of GCPs with reprojection error above threshold.
+
+        Args:
+            threshold: Error threshold in pixels. Defaults to OUTLIER_AUTO_REMOVE_THRESHOLD.
+
+        Returns:
+            List of GCP indices that are outliers.
+        """
+        if threshold is None:
+            threshold = OUTLIER_AUTO_REMOVE_THRESHOLD
+
+        if not self.last_reproj_errors:
+            self.update_homography()
+
+        if not self.last_reproj_errors:
+            return []
+
+        outliers = []
+        for i, error in enumerate(self.last_reproj_errors):
+            if error > threshold:
+                outliers.append(i)
+
+        return outliers
+
+    def remove_outliers(self, threshold: float = None) -> Dict:
+        """
+        Remove all GCPs with reprojection error above threshold.
+
+        Args:
+            threshold: Error threshold in pixels. Defaults to OUTLIER_AUTO_REMOVE_THRESHOLD.
+
+        Returns:
+            Dictionary with removal results.
+        """
+        outlier_indices = self.get_outliers(threshold)
+
+        if not outlier_indices:
+            return {
+                'removed_count': 0,
+                'removed_indices': [],
+                'remaining_gcps': len(self.gcps)
+            }
+
+        # Remove in reverse order to preserve indices
+        removed_descriptions = []
+        for i in sorted(outlier_indices, reverse=True):
+            if i < len(self.gcps):
+                desc = self.gcps[i].get('metadata', {}).get('description', f'GCP {i+1}')
+                removed_descriptions.append(desc)
+                self.gcps.pop(i)
+
+        # Recalculate homography
+        self.update_homography()
+
+        return {
+            'removed_count': len(outlier_indices),
+            'removed_indices': outlier_indices,
+            'removed_descriptions': removed_descriptions,
+            'remaining_gcps': len(self.gcps)
         }
 
     def add_gcp(self, u: float, v: float, lat: float, lon: float, description: str = "", accuracy: str = "medium") -> Dict:
@@ -455,6 +661,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
     gcps_json = json.dumps(session.gcps)
     distribution_json = json.dumps(session.calculate_distribution())
+    homography_json = json.dumps(session.update_homography())
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -879,6 +1086,74 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         .leaflet-control-zoom a:hover {{
             background: #3a3a3a !important;
         }}
+
+        /* Homography Quality Panel */
+        .homography-panel {{
+            margin-bottom: 15px;
+        }}
+
+        .error-indicator {{
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }}
+
+        .error-good {{ background: #4CAF50; }}
+        .error-warning {{ background: #ff9800; }}
+        .error-bad {{ background: #f44336; }}
+
+        .gcp-error {{
+            font-size: 11px;
+            color: #888;
+            font-family: monospace;
+        }}
+
+        .gcp-error.good {{ color: #4CAF50; }}
+        .gcp-error.warning {{ color: #ff9800; }}
+        .gcp-error.bad {{ color: #f44336; }}
+
+        .outlier-badge {{
+            background: #f44336;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }}
+
+        .btn-danger {{
+            background: #c62828;
+            color: white;
+        }}
+
+        .btn-danger:hover {{
+            background: #b71c1c;
+        }}
+
+        .btn-danger:disabled {{
+            background: #666;
+            cursor: not-allowed;
+        }}
+
+        .outlier-summary {{
+            background: rgba(244, 67, 54, 0.15);
+            border-left: 3px solid #f44336;
+            padding: 8px 10px;
+            margin-top: 10px;
+            font-size: 12px;
+            border-radius: 0 4px 4px 0;
+        }}
+
+        .inlier-stats {{
+            background: rgba(76, 175, 80, 0.15);
+            border-left: 3px solid #4CAF50;
+            padding: 8px 10px;
+            margin-top: 10px;
+            font-size: 12px;
+            border-radius: 0 4px 4px 0;
+        }}
     </style>
 </head>
 <body>
@@ -931,6 +1206,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 </div>
 
                 <div class="panel-section">
+                    <h3>Homography Quality</h3>
+                    <div id="homographyPanel">
+                        <div style="color: #666; font-size: 12px;">Need at least 4 GCPs</div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
                     <h3>GCPs (<span id="gcpCount">0</span>)</h3>
                 </div>
 
@@ -944,10 +1226,11 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     <input type="file" id="yamlFileInput" accept=".yaml,.yml" style="display: none;" onchange="handleYamlUpload(event)">
                     <button class="btn btn-secondary" onclick="document.getElementById('yamlFileInput').click()" style="flex: 0 0 auto;">Load YAML</button>
                     <button class="btn btn-secondary" onclick="clearAllGCPs()">Clear All</button>
+                    <button class="btn btn-danger" id="removeOutliersBtn" onclick="removeOutliers()" disabled>Remove Outliers</button>
                     <button class="btn btn-primary" id="saveBtn" onclick="saveConfig()" disabled>Save YAML</button>
                 </div>
                 <div style="padding: 10px 15px; font-size: 11px; color: #666; border-top: 1px solid #444;">
-                    Tip: Drag markers on the image to fine-tune positions
+                    Tip: Drag markers to fine-tune. Red markers are outliers.
                 </div>
             </div>
         </div>
@@ -1023,6 +1306,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         // State
         let gcps = {gcps_json};
         let distribution = {distribution_json};
+        let homography = {homography_json};
         let pendingClick = null;
         let gcpMarkers = [];
         // Coordinate system: 'image_v' = standard (V=0 at top), null = legacy leaflet_y format (V=0 at bottom)
@@ -1248,7 +1532,35 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             .then(data => {{
                 gcps = data.gcps;
                 distribution = data.distribution;
+                homography = data.homography;
                 updateUI();
+            }});
+        }}
+
+        // Remove all outliers
+        function removeOutliers() {{
+            if (!homography || !homography.outliers || homography.outliers.length === 0) return;
+
+            const outlierCount = homography.outliers.length;
+            const outlierNames = homography.outliers.map(o => o.description).join(', ');
+
+            if (!confirm(`Remove ${{outlierCount}} outlier(s)?\\n\\n${{outlierNames}}`)) return;
+
+            fetch('/api/remove_outliers', {{ method: 'POST' }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.error) {{
+                    alert('Error removing outliers: ' + data.error);
+                    return;
+                }}
+                gcps = data.gcps;
+                distribution = data.distribution;
+                homography = data.homography;
+                updateUI();
+
+                if (data.removed_count > 0) {{
+                    alert(`Removed ${{data.removed_count}} outlier(s):\\n${{data.removed_descriptions.join(', ')}}`);
+                }}
             }});
         }}
 
@@ -1304,24 +1616,46 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 warningsEl.innerHTML = '';
             }}
 
+            // Update homography panel
+            updateHomographyPanel();
+
             // Update GCP count
             document.getElementById('gcpCount').textContent = gcps.length;
 
-            // Update GCP list
+            // Update GCP list with reprojection errors
             const listEl = document.getElementById('gcpList');
             if (gcps.length === 0) {{
                 listEl.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">Click on the image to add GCPs</div>';
             }} else {{
-                listEl.innerHTML = gcps.map((gcp, i) => `
-                    <div class="gcp-item" onmouseover="highlightGCP(${{i}})" onmouseout="unhighlightGCP(${{i}})">
-                        <button class="gcp-delete" onclick="deleteGCP(${{i}})">&times;</button>
-                        <div class="gcp-name">${{gcp.metadata?.description || 'GCP ' + (i+1)}}</div>
-                        <div class="gcp-coords">
-                            Pixel: (${{gcp.image.u.toFixed(1)}}, ${{gcp.image.v.toFixed(1)}})<br>
-                            GPS: (${{gcp.gps.latitude.toFixed(6)}}, ${{gcp.gps.longitude.toFixed(6)}})
+                listEl.innerHTML = gcps.map((gcp, i) => {{
+                    // Get error info from homography if available
+                    let errorHtml = '';
+                    let outlierBadge = '';
+                    if (homography && homography.errors && homography.errors[i]) {{
+                        const errInfo = homography.errors[i];
+                        const statusClass = errInfo.status || 'good';
+                        errorHtml = `<div class="gcp-error ${{statusClass}}">
+                            <span class="error-indicator error-${{statusClass}}"></span>
+                            Error: ${{errInfo.error_px.toFixed(1)}}px
+                            ${{!errInfo.is_inlier ? ' (outlier)' : ''}}
+                        </div>`;
+                        if (!errInfo.is_inlier) {{
+                            outlierBadge = '<span class="outlier-badge">OUTLIER</span>';
+                        }}
+                    }}
+
+                    return `
+                        <div class="gcp-item" onmouseover="highlightGCP(${{i}})" onmouseout="unhighlightGCP(${{i}})">
+                            <button class="gcp-delete" onclick="deleteGCP(${{i}})">&times;</button>
+                            <div class="gcp-name">${{gcp.metadata?.description || 'GCP ' + (i+1)}}${{outlierBadge}}</div>
+                            <div class="gcp-coords">
+                                Pixel: (${{gcp.image.u.toFixed(1)}}, ${{gcp.image.v.toFixed(1)}})<br>
+                                GPS: (${{gcp.gps.latitude.toFixed(6)}}, ${{gcp.gps.longitude.toFixed(6)}})
+                            </div>
+                            ${{errorHtml}}
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }}).join('');
             }}
 
             // Update markers on map
@@ -1329,6 +1663,79 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Enable/disable save button
             document.getElementById('saveBtn').disabled = gcps.length < 4;
+
+            // Enable/disable remove outliers button
+            const outlierCount = homography && homography.outliers ? homography.outliers.length : 0;
+            document.getElementById('removeOutliersBtn').disabled = outlierCount === 0;
+            document.getElementById('removeOutliersBtn').textContent = outlierCount > 0
+                ? `Remove Outliers (${{outlierCount}})`
+                : 'Remove Outliers';
+        }}
+
+        // Update the homography quality panel
+        function updateHomographyPanel() {{
+            const panel = document.getElementById('homographyPanel');
+
+            if (!homography || !homography.available) {{
+                panel.innerHTML = '<div style="color: #666; font-size: 12px;">Homography calculation not available</div>';
+                return;
+            }}
+
+            if (gcps.length < 4) {{
+                panel.innerHTML = '<div style="color: #666; font-size: 12px;">Need at least 4 GCPs for homography</div>';
+                return;
+            }}
+
+            const numInliers = homography.num_inliers || 0;
+            const numGcps = homography.num_gcps || 0;
+            const inlierRatio = homography.inlier_ratio || 0;
+            const meanError = homography.mean_error_px || 0;
+            const maxError = homography.max_error_px || 0;
+            const outliers = homography.outliers || [];
+
+            // Determine quality status
+            let qualityClass = 'good';
+            let qualityText = 'Good';
+            if (inlierRatio < 0.5 || meanError > 10) {{
+                qualityClass = 'bad';
+                qualityText = 'Poor';
+            }} else if (inlierRatio < 0.7 || meanError > 5) {{
+                qualityClass = 'warning';
+                qualityText = 'Fair';
+            }}
+
+            let html = `
+                <div class="distribution-grid" style="margin-bottom: 10px;">
+                    <div class="metric-box">
+                        <div class="metric-value ${{qualityClass === 'bad' ? 'error' : qualityClass === 'warning' ? 'warning' : ''}}">${{(inlierRatio * 100).toFixed(0)}}%</div>
+                        <div class="metric-label">Inlier Ratio</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-value ${{meanError > 10 ? 'error' : meanError > 5 ? 'warning' : ''}}">${{meanError.toFixed(1)}}px</div>
+                        <div class="metric-label">Mean Error</div>
+                    </div>
+                </div>
+            `;
+
+            // Show inlier stats
+            html += `
+                <div class="inlier-stats">
+                    <strong>${{numInliers}}/${{numGcps}}</strong> inliers | Max error: <strong>${{maxError.toFixed(1)}}px</strong>
+                </div>
+            `;
+
+            // Show outlier summary if any
+            if (outliers.length > 0) {{
+                html += `
+                    <div class="outlier-summary">
+                        <strong>${{outliers.length}} outlier${{outliers.length > 1 ? 's' : ''}} detected:</strong><br>
+                        ${{outliers.slice(0, 3).map(o => `${{o.description}} (${{o.error_px.toFixed(1)}}px)`).join(', ')}}
+                        ${{outliers.length > 3 ? '...' : ''}}
+                    </div>
+                `;
+            }}
+
+            panel.innerHTML = html;
         }}
 
         // Create a custom draggable icon
@@ -1378,17 +1785,42 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             gcpMarkers.forEach(m => map.removeLayer(m));
             gcpMarkers = [];
 
-            // Add new markers (draggable)
+            // Add new markers (draggable, color-coded by error status)
             gcps.forEach((gcp, i) => {{
                 // Convert image coords to Leaflet coords (invert Y)
                 const leafletCoords = imageToLeaflet(gcp.image.u, gcp.image.v);
+
+                // Determine marker color based on reprojection error
+                let markerColor = '#4CAF50';  // Default: green (good)
+                let markerSize = 14;
+                let tooltipExtra = '';
+
+                if (homography && homography.errors && homography.errors[i]) {{
+                    const errInfo = homography.errors[i];
+                    if (!errInfo.is_inlier) {{
+                        markerColor = '#f44336';  // Red for outliers
+                        markerSize = 16;
+                        tooltipExtra = ` - OUTLIER (${{errInfo.error_px.toFixed(1)}}px)`;
+                    }} else if (errInfo.status === 'bad') {{
+                        markerColor = '#f44336';  // Red for high error
+                        tooltipExtra = ` (${{errInfo.error_px.toFixed(1)}}px)`;
+                    }} else if (errInfo.status === 'warning') {{
+                        markerColor = '#ff9800';  // Orange for medium error
+                        tooltipExtra = ` (${{errInfo.error_px.toFixed(1)}}px)`;
+                    }} else {{
+                        tooltipExtra = ` (${{errInfo.error_px.toFixed(1)}}px)`;
+                    }}
+                }}
+
                 const marker = L.marker(leafletCoords, {{
-                    icon: createGcpIcon('#4CAF50', 14),
+                    icon: createGcpIcon(markerColor, markerSize),
                     draggable: true
                 }}).addTo(map);
 
-                // Store index for reference
+                // Store index and original color for reference
                 marker.gcpIndex = i;
+                marker.originalColor = markerColor;
+                marker.originalSize = markerSize;
 
                 // CRITICAL: Stop click propagation to prevent map click from firing
                 // This allows dragging to work without opening the modal
@@ -1399,8 +1831,8 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     L.DomEvent.stopPropagation(e);
                 }});
 
-                // Add label
-                marker.bindTooltip(`${{gcp.metadata?.description || 'GCP ' + (i+1)}}`, {{
+                // Add label with error info
+                marker.bindTooltip(`${{gcp.metadata?.description || 'GCP ' + (i+1)}}${{tooltipExtra}}`, {{
                     permanent: false,
                     direction: 'top',
                     offset: [0, -10]
@@ -1464,7 +1896,11 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
         function unhighlightGCP(index) {{
             if (gcpMarkers[index]) {{
-                gcpMarkers[index].setIcon(createGcpIcon('#4CAF50', 14));
+                // Restore to original color based on error status
+                const marker = gcpMarkers[index];
+                const color = marker.originalColor || '#4CAF50';
+                const size = marker.originalSize || 14;
+                marker.setIcon(createGcpIcon(color, size));
             }}
         }}
 
@@ -1496,6 +1932,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
                     gcps = data.gcps;
                     distribution = data.distribution;
+                    homography = data.homography;
                     updateUI();
 
                     let msg = `Loaded ${{data.gcps_loaded}} GCPs`;
@@ -1951,7 +2388,8 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
             )
             self.send_json_response({
                 'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution()
+                'distribution': self.session.calculate_distribution(),
+                'homography': self.session.update_homography()
             })
 
         elif parsed.path == '/api/delete_gcp':
@@ -1959,14 +2397,19 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
             self.session.remove_gcp(data['index'])
             self.send_json_response({
                 'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution()
+                'distribution': self.session.calculate_distribution(),
+                'homography': self.session.update_homography()
             })
 
         elif parsed.path == '/api/clear_gcps':
             self.session.gcps.clear()
+            self.session.current_homography = None
+            self.session.last_reproj_errors = []
+            self.session.inlier_mask = None
             self.send_json_response({
                 'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution()
+                'distribution': self.session.calculate_distribution(),
+                'homography': self.session.update_homography()
             })
 
         elif parsed.path == '/api/update_gcp_position':
@@ -1979,7 +2422,20 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response({
                 'success': success,
                 'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution()
+                'distribution': self.session.calculate_distribution(),
+                'homography': self.session.update_homography()
+            })
+
+        elif parsed.path == '/api/remove_outliers':
+            result = self.session.remove_outliers()
+            self.send_json_response({
+                'gcps': self.session.gcps,
+                'distribution': self.session.calculate_distribution(),
+                'homography': self.session.update_homography(),
+                'removed_count': result['removed_count'],
+                'removed_indices': result['removed_indices'],
+                'removed_descriptions': result.get('removed_descriptions', []),
+                'remaining_gcps': result['remaining_gcps']
             })
 
         elif parsed.path == '/api/load_yaml':
@@ -1993,6 +2449,7 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 'warnings': result['warnings'],
                 'gcps': self.session.gcps,
                 'distribution': self.session.calculate_distribution(),
+                'homography': self.session.update_homography(),
                 'loaded_ptz': result.get('loaded_ptz'),
                 'loaded_camera_name': result.get('loaded_camera_name'),
                 'current_ptz': current_ptz,

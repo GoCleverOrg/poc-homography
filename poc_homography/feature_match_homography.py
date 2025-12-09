@@ -68,6 +68,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
     # Minimum determinant threshold for valid homography
     MIN_DET_THRESHOLD = 1e-10
 
+    # Fitting method options
+    FITTING_METHOD_RANSAC = 'ransac'
+    FITTING_METHOD_LMEDS = 'lmeds'
+    FITTING_METHOD_AUTO = 'auto'  # Use LMEDS first, fall back to RANSAC
+
     # Confidence calculation parameters
     MIN_INLIER_RATIO = 0.5  # Minimum ratio of inliers to total points
     CONFIDENCE_PENALTY_LOW_INLIERS = 0.7  # Penalty for low inlier ratio
@@ -95,7 +100,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         detector: str = 'gcp',  # Not used, kept for API compatibility
         min_matches: int = 4,
         ransac_threshold: float = 3.0,
-        confidence_threshold: float = 0.5
+        confidence_threshold: float = 0.5,
+        fitting_method: str = 'auto'
     ):
         """
         Initialize GCP-based homography provider.
@@ -112,6 +118,10 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             confidence_threshold: Minimum confidence score [0.0, 1.0] for
                 homography to be considered valid. Based on inlier ratio and
                 reprojection error.
+            fitting_method: Method for robust fitting:
+                - 'ransac': Use RANSAC (default for lower outlier rates)
+                - 'lmeds': Use Least Median of Squares (more robust to high outlier rates)
+                - 'auto': Try LMEDS first, use RANSAC if inlier ratio < 50%
 
         Raises:
             ValueError: If parameters are invalid (e.g., min_matches < 4)
@@ -128,12 +138,19 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 f"got {confidence_threshold}"
             )
 
+        valid_methods = [self.FITTING_METHOD_RANSAC, self.FITTING_METHOD_LMEDS, self.FITTING_METHOD_AUTO]
+        if fitting_method not in valid_methods:
+            raise ValueError(
+                f"fitting_method must be one of {valid_methods}, got {fitting_method}"
+            )
+
         self.width = width
         self.height = height
         self.detector = detector
         self.min_matches = min_matches
         self.ransac_threshold = ransac_threshold
         self.confidence_threshold = confidence_threshold
+        self.fitting_method = fitting_method
 
         # Homography state
         self.H = np.eye(3)  # Maps local metric to image
@@ -376,6 +393,65 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         return min(1.0, confidence)
 
+    def _get_suggested_action(
+        self,
+        confidence_breakdown: Dict[str, Any],
+        outlier_analysis: List[Dict[str, Any]]
+    ) -> str:
+        """Generate a suggested action based on confidence diagnostics.
+
+        Args:
+            confidence_breakdown: Confidence calculation breakdown
+            outlier_analysis: Per-GCP outlier analysis
+
+        Returns:
+            Human-readable suggested action string
+        """
+        suggestions = []
+
+        inlier_ratio = confidence_breakdown.get('inlier_ratio', 1.0)
+        final_confidence = confidence_breakdown.get('final_confidence', 0.0)
+
+        # Check inlier ratio
+        if inlier_ratio < 0.5:
+            num_outliers = sum(1 for o in outlier_analysis if not o['is_inlier'])
+            high_error_outliers = [o for o in outlier_analysis if not o['is_inlier'] and o['error_px'] > 20]
+
+            if len(high_error_outliers) > 0:
+                worst = high_error_outliers[0]
+                suggestions.append(
+                    f"Remove or fix GCP '{worst['description']}' (error: {worst['error_px']:.1f}px)"
+                )
+
+            if num_outliers > 5:
+                suggestions.append(
+                    f"Consider increasing RANSAC threshold (current: {self.ransac_threshold}px) or "
+                    "verifying GPS coordinate accuracy"
+                )
+
+        # Check if confidence is below threshold
+        if final_confidence < self.confidence_threshold:
+            if inlier_ratio >= 0.5:
+                suggestions.append(
+                    "Inlier ratio is acceptable but confidence is low. "
+                    "Check reprojection errors and GCP spatial distribution."
+                )
+
+        # Distribution warnings
+        dist_penalty = confidence_breakdown.get('distribution_penalty', '')
+        if 'POOR_COVERAGE' in dist_penalty:
+            suggestions.append(
+                "GCPs are too clustered. Add GCPs spread across the full image area."
+            )
+
+        if not suggestions:
+            if final_confidence >= self.confidence_threshold:
+                return "Homography quality is acceptable."
+            else:
+                return "Review GCP quality and distribution."
+
+        return " | ".join(suggestions)
+
     def _calculate_point_confidence(
         self,
         image_point: Tuple[float, float],
@@ -453,6 +529,107 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         y_local = local_homogeneous[1] / local_homogeneous[2]
 
         return x_local, y_local
+
+    def _compute_homography_with_method(
+        self,
+        local_points: np.ndarray,
+        image_points: np.ndarray
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], str]:
+        """
+        Compute homography using the configured fitting method.
+
+        Args:
+            local_points: Nx2 array of local metric coordinates
+            image_points: Nx2 array of image pixel coordinates
+
+        Returns:
+            Tuple of (H, mask, method_used):
+                - H: 3x3 homography matrix or None if failed
+                - mask: Nx1 inlier mask or None if failed
+                - method_used: String indicating which method was used
+        """
+        if self.fitting_method == self.FITTING_METHOD_RANSAC:
+            # Use RANSAC directly
+            H, mask = cv2.findHomography(
+                local_points,
+                image_points,
+                cv2.RANSAC,
+                self.ransac_threshold
+            )
+            return H, mask, 'ransac'
+
+        elif self.fitting_method == self.FITTING_METHOD_LMEDS:
+            # Use LMEDS directly (no threshold parameter needed)
+            H, mask = cv2.findHomography(
+                local_points,
+                image_points,
+                cv2.LMEDS
+            )
+            return H, mask, 'lmeds'
+
+        else:  # AUTO mode
+            # Try LMEDS first (more robust to high outlier rates up to 50%)
+            logger.debug("AUTO mode: trying LMEDS first")
+            H_lmeds, mask_lmeds = cv2.findHomography(
+                local_points,
+                image_points,
+                cv2.LMEDS
+            )
+
+            if H_lmeds is not None and mask_lmeds is not None:
+                inlier_ratio_lmeds = np.sum(mask_lmeds) / len(mask_lmeds)
+                logger.debug("LMEDS inlier ratio: %.2f%%", inlier_ratio_lmeds * 100)
+
+                # If LMEDS gives good results (>50% inliers), use it
+                if inlier_ratio_lmeds >= 0.5:
+                    logger.info(
+                        "AUTO mode: using LMEDS (inlier ratio %.1f%% >= 50%%)",
+                        inlier_ratio_lmeds * 100
+                    )
+                    return H_lmeds, mask_lmeds, 'lmeds'
+
+                # Otherwise, try RANSAC and compare
+                logger.debug("LMEDS inlier ratio low, trying RANSAC")
+
+            # Try RANSAC
+            H_ransac, mask_ransac = cv2.findHomography(
+                local_points,
+                image_points,
+                cv2.RANSAC,
+                self.ransac_threshold
+            )
+
+            if H_ransac is not None and mask_ransac is not None:
+                inlier_ratio_ransac = np.sum(mask_ransac) / len(mask_ransac)
+                logger.debug("RANSAC inlier ratio: %.2f%%", inlier_ratio_ransac * 100)
+
+                # Compare RANSAC vs LMEDS (if LMEDS succeeded)
+                if H_lmeds is not None and mask_lmeds is not None:
+                    inlier_ratio_lmeds = np.sum(mask_lmeds) / len(mask_lmeds)
+
+                    # Use whichever has more inliers
+                    if inlier_ratio_lmeds > inlier_ratio_ransac:
+                        logger.info(
+                            "AUTO mode: using LMEDS (%.1f%% > RANSAC %.1f%%)",
+                            inlier_ratio_lmeds * 100,
+                            inlier_ratio_ransac * 100
+                        )
+                        return H_lmeds, mask_lmeds, 'lmeds'
+
+                logger.info(
+                    "AUTO mode: using RANSAC (inlier ratio %.1f%%)",
+                    inlier_ratio_ransac * 100
+                )
+                return H_ransac, mask_ransac, 'ransac'
+
+            # If RANSAC failed but LMEDS succeeded, use LMEDS
+            if H_lmeds is not None:
+                logger.info("AUTO mode: RANSAC failed, falling back to LMEDS")
+                return H_lmeds, mask_lmeds, 'lmeds'
+
+            # Both failed
+            logger.error("AUTO mode: both LMEDS and RANSAC failed")
+            return None, None, 'none'
 
     # =========================================================================
     # HomographyProvider Interface Implementation
@@ -550,17 +727,15 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         local_points = np.array(local_points, dtype=np.float32)
 
         logger.info(
-            "Computing homography from %d GCPs (image -> local metric)",
-            len(image_points)
+            "Computing homography from %d GCPs (image -> local metric), method=%s",
+            len(image_points),
+            self.fitting_method
         )
 
-        # Compute homography using RANSAC
+        # Compute homography using specified fitting method
         # H maps local metric coordinates to image coordinates
-        H, mask = cv2.findHomography(
-            local_points,  # Source points (world)
-            image_points,  # Destination points (image)
-            cv2.RANSAC,
-            self.ransac_threshold
+        H, mask, method_used = self._compute_homography_with_method(
+            local_points, image_points
         )
 
         if H is None:
@@ -625,10 +800,62 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             else:
                 self._confidence = 0.0
 
+        # Identify outliers with per-GCP diagnostics
+        outlier_analysis = []
+        if mask is not None:
+            # Calculate errors for ALL points (not just inliers)
+            all_projected = cv2.perspectiveTransform(
+                local_points.reshape(-1, 1, 2), self.H
+            ).reshape(-1, 2)
+            all_errors = np.linalg.norm(all_projected - image_points, axis=1)
+
+            for i in range(len(gcps)):
+                gcp = gcps[i]
+                is_inlier = bool(mask[i][0])
+                error = float(all_errors[i])
+                desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+
+                outlier_analysis.append({
+                    'index': i,
+                    'description': desc,
+                    'is_inlier': is_inlier,
+                    'error_px': error,
+                    'pixel': [float(image_points[i][0]), float(image_points[i][1])],
+                    'gps': [float(gps_points[i][0]), float(gps_points[i][1])]
+                })
+
+        # Sort outlier analysis by error (highest first)
+        outlier_analysis.sort(key=lambda x: x['error_px'], reverse=True)
+
+        # Build confidence breakdown for diagnostics
+        inlier_ratio = num_inliers / total_points if 'num_inliers' in dir() else 0
+        confidence_breakdown = {
+            'inlier_ratio': inlier_ratio,
+            'inlier_penalty_applied': inlier_ratio < self.MIN_INLIER_RATIO,
+            'base_confidence': inlier_ratio * self.CONFIDENCE_PENALTY_LOW_INLIERS if inlier_ratio < self.MIN_INLIER_RATIO else inlier_ratio,
+            'error_factor': max(0.3, 1.0 - (mean_reproj_error / (2 * self.ransac_threshold))) if mean_reproj_error else 1.0,
+            'distribution_penalty': None,
+            'final_confidence': self._confidence
+        }
+
+        # Determine distribution penalty
+        dist_score = distribution_metrics.get('distribution_score', 0.5)
+        coverage = distribution_metrics.get('coverage_ratio', 0.0)
+        if coverage < self.MIN_COVERAGE_RATIO:
+            confidence_breakdown['distribution_penalty'] = f'POOR_COVERAGE ({self.DIST_PENALTY_POOR_COVERAGE}x)'
+        elif dist_score < 0.5:
+            confidence_breakdown['distribution_penalty'] = f'LOW_COVERAGE ({self.DIST_PENALTY_LOW_COVERAGE}x)'
+        elif dist_score > 0.7:
+            confidence_breakdown['distribution_penalty'] = f'GOOD_COVERAGE_BONUS ({self.DIST_BONUS_GOOD_COVERAGE}x)'
+        else:
+            confidence_breakdown['distribution_penalty'] = 'NONE (1.0x)'
+
         # Build metadata with distribution info
         metadata = {
             'approach': HomographyApproach.FEATURE_MATCH.value,
             'method': 'gcp_based',
+            'fitting_method': method_used,
+            'fitting_method_config': self.fitting_method,
             'num_gcps': len(image_points),
             'num_inliers': int(np.sum(mask)) if mask is not None else 0,
             'inlier_ratio': float(np.sum(mask)) / len(image_points) if mask is not None else 0.0,
@@ -652,17 +879,23 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 'mean_px': mean_reproj_error,
                 'max_px': max_reproj_error,
                 'threshold_px': self.ransac_threshold
-            }
+            },
+            # NEW: Detailed diagnostics
+            'confidence_breakdown': confidence_breakdown,
+            'outlier_analysis': outlier_analysis,
+            'top_outliers': [o for o in outlier_analysis if not o['is_inlier']][:5],
+            'suggested_action': self._get_suggested_action(confidence_breakdown, outlier_analysis)
         }
 
         self._last_metadata = metadata
 
         logger.info(
-            "Homography computed: %d/%d inliers, confidence=%.3f, distribution_score=%.2f",
+            "Homography computed: %d/%d inliers, confidence=%.3f, distribution_score=%.2f, method=%s",
             metadata['num_inliers'],
             metadata['num_gcps'],
             self._confidence,
-            distribution_metrics['distribution_score']
+            distribution_metrics['distribution_score'],
+            method_used
         )
 
         return HomographyResult(
