@@ -86,6 +86,13 @@ try:
 except ImportError:
     COORDINATE_CONVERTER_AVAILABLE = False
 
+# Import for GPS precision analysis and duplicate detection
+try:
+    from poc_homography.gcp_validation import analyze_gps_precision, detect_duplicate_gcps
+    GCP_VALIDATION_AVAILABLE = True
+except ImportError:
+    GCP_VALIDATION_AVAILABLE = False
+
 
 class GCPCaptureWebSession:
     """Web-based GCP capture session with distribution feedback."""
@@ -193,6 +200,23 @@ class GCPCaptureWebSession:
             )
         if spread_x < 0.15 or spread_y < 0.15:
             warnings.append('GCPs have low spatial variance. Spread points across the image.')
+
+        # Check for GPS precision issues and duplicates
+        if GCP_VALIDATION_AVAILABLE and len(self.gcps) >= 2:
+            # Analyze GPS precision
+            try:
+                precision_result = analyze_gps_precision(self.gcps)
+                if precision_result.get('warnings'):
+                    warnings.extend(precision_result['warnings'])
+            except Exception as e:
+                pass  # Don't fail if precision analysis fails
+
+            # Check for duplicate GCPs
+            try:
+                detect_duplicate_gcps(self.gcps)
+            except ValueError as e:
+                # ValueError is raised when duplicates are detected
+                warnings.append(str(e))
 
         # Calculate overall score
         coverage_score = min(1.0, coverage_ratio / self.GOOD_COVERAGE_RATIO)
@@ -1595,6 +1619,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             .then(data => {{
                 gcps = data.gcps;
                 distribution = data.distribution;
+                homography = data.homography;
                 updateUI();
                 closeModal();
             }});
@@ -1653,6 +1678,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             .then(data => {{
                 gcps = data.gcps;
                 distribution = data.distribution;
+                homography = data.homography;
                 updateUI();
             }});
         }}
