@@ -98,6 +98,8 @@ class GCPCaptureWebSession:
         self.frame_height, self.frame_width = frame.shape[:2]
         self.gcps: List[Dict] = []
         self.capture_timestamp = datetime.now().isoformat()
+        # Coordinate system: 'image_v' (V=0 at top) or None (legacy leaflet_y format)
+        self.coordinate_system = 'image_v'
 
         # Calculate intrinsics if possible
         self.intrinsics = None
@@ -234,13 +236,18 @@ class GCPCaptureWebSession:
         """
         Load GCPs from YAML content.
 
-        Returns dict with 'gcps_loaded' count and any 'warnings'.
+        Returns dict with 'gcps_loaded' count, 'warnings', 'loaded_ptz' position,
+        and 'coordinate_system' indicating the V coordinate format.
         """
         warnings = []
+        loaded_ptz = None
+        loaded_camera_name = None
+        coordinate_system = None  # 'image_v' or None (legacy leaflet_y format)
+
         try:
             data = yaml.safe_load(yaml_content)
         except yaml.YAMLError as e:
-            return {'gcps_loaded': 0, 'warnings': [f'YAML parse error: {e}']}
+            return {'gcps_loaded': 0, 'warnings': [f'YAML parse error: {e}'], 'loaded_ptz': None}
 
         # Navigate to GCPs
         gcps_data = None
@@ -253,14 +260,29 @@ class GCPCaptureWebSession:
                 if 'camera_capture_context' in fm:
                     ctx = fm['camera_capture_context']
                     if ctx.get('camera_name'):
-                        self.camera_name = ctx['camera_name']
+                        loaded_camera_name = ctx['camera_name']
+                        self.camera_name = loaded_camera_name
                     if 'ptz_position' in ctx:
-                        self.ptz_status = ctx['ptz_position']
+                        loaded_ptz = ctx['ptz_position']
+                        self.ptz_status = loaded_ptz
                     if ctx.get('capture_timestamp'):
                         self.capture_timestamp = ctx['capture_timestamp']
+                    # Check coordinate system - old files won't have this field
+                    coordinate_system = ctx.get('coordinate_system')
 
         if not gcps_data:
-            return {'gcps_loaded': 0, 'warnings': ['No GCPs found in YAML']}
+            return {'gcps_loaded': 0, 'warnings': ['No GCPs found in YAML'], 'loaded_ptz': None}
+
+        # Set session coordinate system based on loaded data
+        self.coordinate_system = coordinate_system  # None for legacy, 'image_v' for new
+
+        # Warn about legacy format
+        if coordinate_system is None:
+            warnings.append(
+                'Legacy format detected (no coordinate_system flag). '
+                'V coordinates are treated as Leaflet Y values. '
+                'Save will convert to standard image_v format.'
+            )
 
         # Load GCPs
         loaded_count = 0
@@ -286,7 +308,61 @@ class GCPCaptureWebSession:
             except (KeyError, TypeError) as e:
                 warnings.append(f'Skipped invalid GCP: {e}')
 
-        return {'gcps_loaded': loaded_count, 'warnings': warnings}
+        return {
+            'gcps_loaded': loaded_count,
+            'warnings': warnings,
+            'loaded_ptz': loaded_ptz,
+            'loaded_camera_name': loaded_camera_name,
+            'coordinate_system': coordinate_system
+        }
+
+    def move_camera_to_ptz(self, ptz_position: dict, wait_time: float = 3.0) -> dict:
+        """
+        Move camera to specified PTZ position.
+
+        Args:
+            ptz_position: Dict with 'pan', 'tilt', 'zoom' keys
+            wait_time: Seconds to wait for camera to reach position
+
+        Returns:
+            Dict with 'success' bool and 'message' string
+        """
+        import time
+
+        if not CAMERA_CONFIG_AVAILABLE:
+            return {'success': False, 'message': 'Camera config not available'}
+
+        cam_info = get_camera_by_name(self.camera_name)
+        if not cam_info:
+            return {'success': False, 'message': f"Camera '{self.camera_name}' not found in config"}
+
+        try:
+            from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
+
+            ptz = HikvisionPTZ(cam_info['ip'], USERNAME, PASSWORD)
+
+            # Move to absolute position
+            ptz.send_ptz_return({
+                'pan': ptz_position.get('pan', 0),
+                'tilt': ptz_position.get('tilt', 0),
+                'zoom': ptz_position.get('zoom', 1.0)
+            })
+
+            # Wait for camera to reach position
+            time.sleep(wait_time)
+
+            # Update session PTZ status
+            self.ptz_status = ptz_position
+
+            return {
+                'success': True,
+                'message': f"Camera moved to P={ptz_position.get('pan', 0):.1f} T={ptz_position.get('tilt', 0):.1f} Z={ptz_position.get('zoom', 1):.1f}x"
+            }
+
+        except ImportError as e:
+            return {'success': False, 'message': f'PTZ control not available: {e}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Failed to move camera: {e}'}
 
     def generate_yaml(self) -> str:
         """Generate YAML config content."""
@@ -330,6 +406,9 @@ class GCPCaptureWebSession:
 
         lines.extend([
             f"      capture_timestamp: \"{self.capture_timestamp}\"",
+            "      # Coordinate system: image_v means V=0 at top (standard image coords)",
+            "      # Old files without this field used leaflet_y format (V=0 at bottom)",
+            "      coordinate_system: image_v",
             "      notes: \"\"",
             "",
             "    # Ground Control Points",
@@ -341,6 +420,14 @@ class GCPCaptureWebSession:
             lon = gcp['gps']['longitude']
             u = gcp['image']['u']
             v = gcp['image']['v']
+
+            # Convert V to image_v format if loaded from legacy (leaflet_y) format
+            # Legacy: v was stored as leaflet_y (0 at bottom)
+            # image_v: v should be image V (0 at top)
+            # Conversion: image_v = frame_height - leaflet_y
+            if self.coordinate_system is None:  # Legacy format
+                v = self.frame_height - v
+
             desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
             accuracy = gcp.get('metadata', {}).get('accuracy', 'medium')
             timestamp = gcp.get('metadata', {}).get('timestamp', '')
@@ -938,6 +1025,8 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         let distribution = {distribution_json};
         let pendingClick = null;
         let gcpMarkers = [];
+        // Coordinate system: 'image_v' = standard (V=0 at top), null = legacy leaflet_y format (V=0 at bottom)
+        let coordinateSystem = 'image_v';  // Default for new captures
 
         // Batch mode state
         let batchMode = false;
@@ -1076,27 +1165,28 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
         // Handle click on map to add GCP
         map.on('click', function(e) {{
-            // Convert Leaflet coords to image coords
-            // Leaflet CRS.Simple uses [y, x] format
-            const y = e.latlng.lat;
-            const x = e.latlng.lng;
+            // Convert Leaflet coords to image pixel coords
+            // Uses coordinate-system-aware conversion
+            const imgCoords = leafletToImage(e.latlng.lat, e.latlng.lng);
+            const u = imgCoords.u;
+            const v = imgCoords.v;
 
             // Check bounds
-            if (x < 0 || x > imageWidth || y < 0 || y > imageHeight) {{
+            if (u < 0 || u > imageWidth || v < 0 || v > imageHeight) {{
                 return;
             }}
 
             // Batch mode: just add to list without modal
             if (batchMode) {{
-                batchPoints.push({{ u: x, v: y }});
+                batchPoints.push({{ u: imgCoords.u, v: imgCoords.v }});
                 updateBatchMarkers();
                 updateBatchUI();
                 return;
             }}
 
             // Normal mode: Store pending click and show modal
-            pendingClick = {{ u: x, v: y }};
-            document.getElementById('pixelPos').value = `(${{x.toFixed(1)}}, ${{y.toFixed(1)}})`;
+            pendingClick = {{ u: u, v: v }};
+            document.getElementById('pixelPos').value = `(${{u.toFixed(1)}}, ${{v.toFixed(1)}})`;
             document.getElementById('gpsInput').value = '';
             document.getElementById('descInput').value = '';
             document.getElementById('parsedCoords').style.display = 'none';
@@ -1259,6 +1349,29 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             }});
         }}
 
+        // Convert image pixel coords to Leaflet coords
+        // For image_v format: Image V (0 at top) -> Leaflet Y (0 at bottom): leaflet_y = imageHeight - v
+        // For legacy format (null): V was stored as leaflet_y directly, no conversion needed
+        function imageToLeaflet(u, v) {{
+            if (coordinateSystem === 'image_v') {{
+                return [imageHeight - v, u];  // [lat, lng] = [leaflet_y, x]
+            }} else {{
+                // Legacy format: v is already leaflet_y
+                return [v, u];
+            }}
+        }}
+
+        // Convert Leaflet coords to image pixel coords
+        // Uses current coordinate system to stay consistent with loaded data
+        function leafletToImage(lat, lng) {{
+            if (coordinateSystem === 'image_v') {{
+                return {{ u: lng, v: imageHeight - lat }};
+            }} else {{
+                // Legacy format: store leaflet_y directly as v
+                return {{ u: lng, v: lat }};
+            }}
+        }}
+
         // Update markers on map
         function updateMarkers() {{
             // Remove existing markers
@@ -1267,8 +1380,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Add new markers (draggable)
             gcps.forEach((gcp, i) => {{
-                // In CRS.Simple, we use [y, x] format
-                const marker = L.marker([gcp.image.v, gcp.image.u], {{
+                // Convert image coords to Leaflet coords (invert Y)
+                const leafletCoords = imageToLeaflet(gcp.image.u, gcp.image.v);
+                const marker = L.marker(leafletCoords, {{
                     icon: createGcpIcon('#4CAF50', 14),
                     draggable: true
                 }}).addTo(map);
@@ -1295,14 +1409,15 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 // Handle drag end - update position
                 marker.on('dragend', function(e) {{
                     const newPos = e.target.getLatLng();
-                    // In CRS.Simple: lat = v (y), lng = u (x)
-                    const newU = newPos.lng;
-                    const newV = newPos.lat;
+                    // Convert Leaflet coords back to image coords (invert Y)
+                    const imgCoords = leafletToImage(newPos.lat, newPos.lng);
+                    const newU = imgCoords.u;
+                    const newV = imgCoords.v;
 
                     // Check bounds
                     if (newU < 0 || newU > imageWidth || newV < 0 || newV > imageHeight) {{
-                        // Revert to original position
-                        e.target.setLatLng([gcp.image.v, gcp.image.u]);
+                        // Revert to original position (convert back to Leaflet coords)
+                        e.target.setLatLng(imageToLeaflet(gcp.image.u, gcp.image.v));
                         return;
                     }}
 
@@ -1330,9 +1445,10 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }});
 
                 marker.on('drag', function() {{
-                    // Update tooltip during drag
+                    // Update tooltip during drag with image coordinates
                     const pos = marker.getLatLng();
-                    marker.setTooltipContent(`${{gcp.metadata?.description || 'GCP ' + (i+1)}}<br>(${{pos.lng.toFixed(1)}}, ${{pos.lat.toFixed(1)}})`);
+                    const imgCoords = leafletToImage(pos.lat, pos.lng);
+                    marker.setTooltipContent(`${{gcp.metadata?.description || 'GCP ' + (i+1)}}<br>(${{imgCoords.u.toFixed(1)}}, ${{imgCoords.v.toFixed(1)}})`);
                 }});
 
                 gcpMarkers.push(marker);
@@ -1373,6 +1489,11 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                         return;
                     }}
 
+                    // Set coordinate system based on loaded data
+                    // If null/undefined, it's legacy format (V stored as leaflet_y)
+                    coordinateSystem = data.coordinate_system || null;
+                    console.log('Loaded coordinate system:', coordinateSystem);
+
                     gcps = data.gcps;
                     distribution = data.distribution;
                     updateUI();
@@ -1381,6 +1502,31 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     if (data.warnings && data.warnings.length > 0) {{
                         msg += '\\n\\nWarnings:\\n' + data.warnings.join('\\n');
                     }}
+
+                    // Check if PTZ position differs and live camera is available
+                    if (data.has_live_camera && data.loaded_ptz && data.current_ptz) {{
+                        const loadedPtz = data.loaded_ptz;
+                        const currentPtz = data.current_ptz;
+
+                        // Check if positions differ significantly (threshold: 0.5 deg for pan/tilt, 0.1 for zoom)
+                        const panDiff = Math.abs((loadedPtz.pan || 0) - (currentPtz.pan || 0));
+                        const tiltDiff = Math.abs((loadedPtz.tilt || 0) - (currentPtz.tilt || 0));
+                        const zoomDiff = Math.abs((loadedPtz.zoom || 1) - (currentPtz.zoom || 1));
+
+                        if (panDiff > 0.5 || tiltDiff > 0.5 || zoomDiff > 0.1) {{
+                            const moveMsg = `\\n\\nThe YAML was captured at a different PTZ position:\\n` +
+                                `  Loaded:  P=${{loadedPtz.pan?.toFixed(1) || '?'}}° T=${{loadedPtz.tilt?.toFixed(1) || '?'}}° Z=${{loadedPtz.zoom?.toFixed(1) || '?'}}x\\n` +
+                                `  Current: P=${{currentPtz.pan?.toFixed(1) || '?'}}° T=${{currentPtz.tilt?.toFixed(1) || '?'}}° Z=${{currentPtz.zoom?.toFixed(1) || '?'}}x\\n\\n` +
+                                `Move camera to the saved position?`;
+
+                            if (confirm(msg + moveMsg)) {{
+                                // Move camera to loaded position
+                                moveCameraToPosition(loadedPtz);
+                                return;
+                            }}
+                        }}
+                    }}
+
                     alert(msg);
                 }});
             }};
@@ -1388,6 +1534,41 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Reset input so same file can be loaded again
             event.target.value = '';
+        }}
+
+        // Move camera to PTZ position
+        function moveCameraToPosition(ptzPosition) {{
+            const statusEl = document.getElementById('instructions');
+            const originalText = statusEl.textContent;
+            const originalBg = statusEl.style.background;
+
+            statusEl.textContent = 'Moving camera to saved position...';
+            statusEl.style.background = 'rgba(255, 152, 0, 0.9)';
+
+            fetch('/api/move_camera', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{
+                    ptz_position: ptzPosition,
+                    wait_time: 3.0
+                }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                statusEl.textContent = originalText;
+                statusEl.style.background = originalBg;
+
+                if (data.success) {{
+                    alert(data.message + '\\n\\nNote: The displayed frame is from the old position. Reload page for new frame.');
+                }} else {{
+                    alert('Failed to move camera: ' + data.message);
+                }}
+            }})
+            .catch(err => {{
+                statusEl.textContent = originalText;
+                statusEl.style.background = originalBg;
+                alert('Error moving camera: ' + err);
+            }});
         }}
 
         // ============================================================
@@ -1441,7 +1622,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Add numbered markers for batch points
             batchPoints.forEach((pt, i) => {{
-                const marker = L.marker([pt.v, pt.u], {{
+                // Convert image coords to Leaflet coords (invert Y)
+                const leafletCoords = imageToLeaflet(pt.u, pt.v);
+                const marker = L.marker(leafletCoords, {{
                     icon: L.divIcon({{
                         className: 'batch-marker',
                         html: `<div style="
@@ -1475,8 +1658,10 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 // Allow dragging batch markers to adjust position
                 marker.on('dragend', function(e) {{
                     const newPos = e.target.getLatLng();
-                    batchPoints[i].u = newPos.lng;
-                    batchPoints[i].v = newPos.lat;
+                    // Convert Leaflet coords back to image coords (coordinate-system aware)
+                    const newImgCoords = leafletToImage(newPos.lat, newPos.lng);
+                    batchPoints[i].u = newImgCoords.u;
+                    batchPoints[i].v = newImgCoords.v;
                 }});
 
                 batchMarkers.push(marker);
@@ -1699,6 +1884,7 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
     output_path: str = None
     temp_dir: str = None
     frame_filename: str = None
+    has_live_camera: bool = False  # True if using live camera, False if using static frame
 
     def log_message(self, format, *args):
         """Suppress default logging."""
@@ -1798,13 +1984,31 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
 
         elif parsed.path == '/api/load_yaml':
             data = json.loads(post_data)
+            # Store current PTZ before loading
+            current_ptz = self.session.ptz_status.copy() if self.session.ptz_status else None
             result = self.session.load_from_yaml(data['yaml_content'])
             self.send_json_response({
                 'success': True,
                 'gcps_loaded': result['gcps_loaded'],
                 'warnings': result['warnings'],
                 'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution()
+                'distribution': self.session.calculate_distribution(),
+                'loaded_ptz': result.get('loaded_ptz'),
+                'loaded_camera_name': result.get('loaded_camera_name'),
+                'current_ptz': current_ptz,
+                'has_live_camera': self.has_live_camera,
+                'coordinate_system': result.get('coordinate_system')
+            })
+
+        elif parsed.path == '/api/move_camera':
+            data = json.loads(post_data)
+            ptz_position = data.get('ptz_position', {})
+            wait_time = data.get('wait_time', 3.0)
+            result = self.session.move_camera_to_ptz(ptz_position, wait_time)
+            self.send_json_response({
+                'success': result['success'],
+                'message': result['message'],
+                'ptz_status': self.session.ptz_status
             })
 
         else:
@@ -1823,7 +2027,8 @@ def start_capture_server(
     session: GCPCaptureWebSession,
     output_path: str = None,
     port: int = 8765,
-    auto_open: bool = True
+    auto_open: bool = True,
+    has_live_camera: bool = False
 ):
     """Start the web server for GCP capture."""
 
@@ -1838,6 +2043,7 @@ def start_capture_server(
     GCPCaptureHandler.output_path = output_path
     GCPCaptureHandler.temp_dir = temp_dir
     GCPCaptureHandler.frame_filename = frame_filename
+    GCPCaptureHandler.has_live_camera = has_live_camera
 
     # Find available port
     while True:
@@ -1986,6 +2192,7 @@ def main():
     frame = None
     ptz_status = None
     camera_name = args.camera or "Unknown"
+    has_live_camera = False
 
     if args.frame:
         # Load from file
@@ -2001,6 +2208,7 @@ def main():
         try:
             frame, ptz_status = grab_frame_from_camera(args.camera)
             camera_name = args.camera
+            has_live_camera = True
         except (RuntimeError, ValueError) as e:
             print(f"Error: {e}")
             sys.exit(1)
@@ -2030,7 +2238,8 @@ def main():
         session=session,
         output_path=output_path,
         port=args.port,
-        auto_open=not args.no_open
+        auto_open=not args.no_open,
+        has_live_camera=has_live_camera
     )
 
 

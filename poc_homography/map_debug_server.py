@@ -336,18 +336,19 @@ def generate_html(
             border: none;
         }}
 
-        /* Tooltip styling */
+        /* Tooltip styling - use fixed positioning to render on top of all panels */
         .gcp-tooltip {{
-            position: absolute;
-            background: rgba(0, 0, 0, 0.85);
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
             color: #fff;
-            padding: 8px 12px;
+            padding: 10px 14px;
             border-radius: 6px;
             font-size: 12px;
             pointer-events: none;
-            z-index: 2000;
+            z-index: 10000;
             white-space: nowrap;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            border: 1px solid #555;
         }}
 
         .gcp-tooltip .tooltip-title {{
@@ -834,6 +835,13 @@ def generate_html(
 
             // Show left tooltip (pixel error)
             const leftTooltip = document.getElementById('leftTooltip');
+
+            // Calculate distance from camera to this GCP
+            const distToCamera = haversineDistance(
+                cameraGPS.latitude, cameraGPS.longitude,
+                gcp.original_gps.lat, gcp.original_gps.lon
+            );
+
             if (gcp.projected_pixel) {{
                 const dx = gcp.pixel.u - gcp.projected_pixel.u;
                 const dy = gcp.pixel.v - gcp.projected_pixel.v;
@@ -842,16 +850,18 @@ def generate_html(
                     <div class="tooltip-title">${{gcp.name}}</div>
                     <div class="tooltip-row">Pixel: (${{gcp.pixel.u.toFixed(1)}}, ${{gcp.pixel.v.toFixed(1)}})</div>
                     <div class="tooltip-row">Pixel Error: ${{pixelError.toFixed(2)}}px</div>
+                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
                 `;
             }} else {{
                 leftTooltip.innerHTML = `
                     <div class="tooltip-title">${{gcp.name}}</div>
                     <div class="tooltip-row">Pixel: (${{gcp.pixel.u.toFixed(1)}}, ${{gcp.pixel.v.toFixed(1)}})</div>
+                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
                 `;
             }}
             leftTooltip.style.display = 'block';
 
-            // Position left tooltip near the GCP
+            // Position left tooltip using viewport coordinates (fixed positioning)
             const displayWidth = img.width;
             const displayHeight = img.height;
             const naturalWidth = img.naturalWidth;
@@ -861,14 +871,18 @@ def generate_html(
             const u = gcp.pixel.u * scaleX;
             const v = gcp.pixel.v * scaleY;
 
-            // Position tooltip relative to image container
-            const container = document.querySelector('.image-container');
-            const rect = container.getBoundingClientRect();
+            // Get viewport position of the GCP marker
             const imgRect = img.getBoundingClientRect();
-            const offsetX = imgRect.left - rect.left + u + 15;
-            const offsetY = imgRect.top - rect.top + v - 30;
-            leftTooltip.style.left = offsetX + 'px';
-            leftTooltip.style.top = offsetY + 'px';
+            const tooltipX = imgRect.left + u + 15;
+            const tooltipY = imgRect.top + v - 30;
+
+            // Ensure tooltip doesn't go off-screen
+            const tooltipRect = leftTooltip.getBoundingClientRect();
+            const maxX = window.innerWidth - tooltipRect.width - 10;
+            const maxY = window.innerHeight - tooltipRect.height - 10;
+
+            leftTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
+            leftTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
 
             // Only zoom when precision mode is enabled
             if (precisionZoomEnabled) {{
@@ -917,36 +931,35 @@ def generate_html(
                     <div class="tooltip-title">${{gcp.name}}</div>
                     <div class="tooltip-row">Original: (${{gcp.original_gps.lat.toFixed(6)}}, ${{gcp.original_gps.lon.toFixed(6)}})</div>
                     <div class="tooltip-row">GPS Error: ${{errorMeters.toFixed(2)}}m</div>
+                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
                 `;
             }} else {{
                 rightTooltip.innerHTML = `
                     <div class="tooltip-title">${{gcp.name}}</div>
                     <div class="tooltip-row">GPS: (${{gcp.original_gps.lat.toFixed(6)}}, ${{gcp.original_gps.lon.toFixed(6)}})</div>
+                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
                 `;
             }}
             rightTooltip.style.display = 'block';
 
-            // Position right tooltip - with delay if zooming, immediate otherwise
+            // Position right tooltip using viewport coordinates (fixed positioning)
             const positionRightTooltip = () => {{
                 const mapContainer = document.getElementById('map');
                 const mapRect = mapContainer.getBoundingClientRect();
                 const markerLatLng = L.latLng(gcp.original_gps.lat, gcp.original_gps.lon);
                 const markerPoint = map.latLngToContainerPoint(markerLatLng);
 
-                // Position tooltip to the right of the marker, or left if near edge
-                const tooltipWidth = 200;
-                let tooltipX = markerPoint.x + 20;
-                if (tooltipX + tooltipWidth > mapRect.width) {{
-                    tooltipX = markerPoint.x - tooltipWidth - 10;
-                }}
-                let tooltipY = markerPoint.y - 20;
-                if (tooltipY < 10) {{
-                    tooltipY = 10;
-                }}
+                // Convert to viewport coordinates
+                const tooltipX = mapRect.left + markerPoint.x + 20;
+                const tooltipY = mapRect.top + markerPoint.y - 20;
 
-                rightTooltip.style.left = tooltipX + 'px';
-                rightTooltip.style.top = tooltipY + 'px';
-                rightTooltip.style.right = 'auto';
+                // Ensure tooltip doesn't go off-screen
+                const tooltipRect = rightTooltip.getBoundingClientRect();
+                const maxX = window.innerWidth - tooltipRect.width - 10;
+                const maxY = window.innerHeight - tooltipRect.height - 10;
+
+                rightTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
+                rightTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
             }};
 
             if (precisionZoomEnabled) {{
@@ -1046,23 +1059,34 @@ def generate_html(
             const cm = clickedMarkers[index];
             if (!cm) return;
 
+            // Calculate distance from camera to this clicked point
+            const distToCamera = haversineDistance(
+                cameraGPS.latitude, cameraGPS.longitude,
+                cm.lat, cm.lon
+            );
+
             // Show left tooltip
             const leftTooltip = document.getElementById('leftTooltip');
             leftTooltip.innerHTML = `
                 <div class="tooltip-title">Clicked Point</div>
                 <div class="tooltip-row">Pixel: (${{cm.origU.toFixed(1)}}, ${{cm.origV.toFixed(1)}})</div>
                 <div class="tooltip-row">GPS: (${{cm.lat.toFixed(6)}}, ${{cm.lon.toFixed(6)}})</div>
+                <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
             `;
             leftTooltip.style.display = 'block';
 
-            // Position left tooltip near the point
-            const container = document.querySelector('.image-container');
-            const rect = container.getBoundingClientRect();
+            // Position left tooltip using viewport coordinates (fixed positioning)
             const imgRect = img.getBoundingClientRect();
-            const offsetX = imgRect.left - rect.left + cm.displayU + 15;
-            const offsetY = imgRect.top - rect.top + cm.displayV - 30;
-            leftTooltip.style.left = offsetX + 'px';
-            leftTooltip.style.top = offsetY + 'px';
+            const tooltipX = imgRect.left + cm.displayU + 15;
+            const tooltipY = imgRect.top + cm.displayV - 30;
+
+            // Ensure tooltip doesn't go off-screen
+            const tooltipRect = leftTooltip.getBoundingClientRect();
+            const maxX = window.innerWidth - tooltipRect.width - 10;
+            const maxY = window.innerHeight - tooltipRect.height - 10;
+
+            leftTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
+            leftTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
 
             // Only zoom when precision mode is enabled
             if (precisionZoomEnabled) {{
@@ -1090,29 +1114,28 @@ def generate_html(
             rightTooltip.innerHTML = `
                 <div class="tooltip-title">Clicked Point</div>
                 <div class="tooltip-row">GPS: (${{cm.lat.toFixed(6)}}, ${{cm.lon.toFixed(6)}})</div>
+                <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
             `;
             rightTooltip.style.display = 'block';
 
-            // Position right tooltip
+            // Position right tooltip using viewport coordinates (fixed positioning)
             const positionRightTooltip = () => {{
                 const mapContainer = document.getElementById('map');
                 const mapRect = mapContainer.getBoundingClientRect();
                 const markerLatLng = L.latLng(cm.lat, cm.lon);
                 const markerPoint = map.latLngToContainerPoint(markerLatLng);
 
-                const tooltipWidth = 200;
-                let tooltipX = markerPoint.x + 20;
-                if (tooltipX + tooltipWidth > mapRect.width) {{
-                    tooltipX = markerPoint.x - tooltipWidth - 10;
-                }}
-                let tooltipY = markerPoint.y - 20;
-                if (tooltipY < 10) {{
-                    tooltipY = 10;
-                }}
+                // Convert to viewport coordinates
+                const tooltipX = mapRect.left + markerPoint.x + 20;
+                const tooltipY = mapRect.top + markerPoint.y - 20;
 
-                rightTooltip.style.left = tooltipX + 'px';
-                rightTooltip.style.top = tooltipY + 'px';
-                rightTooltip.style.right = 'auto';
+                // Ensure tooltip doesn't go off-screen
+                const tooltipRect = rightTooltip.getBoundingClientRect();
+                const maxX = window.innerWidth - tooltipRect.width - 10;
+                const maxY = window.innerHeight - tooltipRect.height - 10;
+
+                rightTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
+                rightTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
             }};
 
             if (precisionZoomEnabled) {{

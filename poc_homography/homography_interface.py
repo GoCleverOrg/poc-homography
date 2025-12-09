@@ -423,7 +423,7 @@ def validate_homography_matrix(
     matrix: Optional[np.ndarray],
     confidence: float,
     confidence_threshold: float,
-    min_det_threshold: float = 1e-10
+    min_det_threshold: float = 1e-15
 ) -> bool:
     """
     Validate a homography matrix for use in projections.
@@ -435,7 +435,10 @@ def validate_homography_matrix(
         matrix: The homography matrix to validate, or None
         confidence: Current confidence score
         confidence_threshold: Minimum confidence for validity
-        min_det_threshold: Minimum determinant magnitude for non-singular check
+        min_det_threshold: Minimum determinant magnitude for non-singular check.
+            Note: Homographies mapping between pixel coords (0-2000) and metric
+            coords (0-500m) naturally have very small determinants due to scale
+            differences. Default of 1e-15 accommodates this.
 
     Returns:
         True if the matrix is valid for projections, False otherwise
@@ -449,6 +452,8 @@ def validate_homography_matrix(
         return False
 
     # Check if matrix is not singular
+    # Note: For homographies with large scale differences (pixels to meters),
+    # the determinant can be very small but the matrix is still valid.
     det_H = np.linalg.det(matrix)
     if abs(det_H) < min_det_threshold:
         return False

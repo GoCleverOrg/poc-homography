@@ -109,7 +109,8 @@ def run_round_trip_validation(
     verbose: bool = True,
     inliers_only: bool = True,
     confidence_threshold: float = 0.5,
-    camera_gps: dict = None
+    camera_gps: dict = None,
+    ransac_threshold: float = 5.0
 ) -> dict:
     """
     Run round-trip validation test on GCPs.
@@ -148,7 +149,7 @@ def run_round_trip_validation(
         width=width,
         height=height,
         min_matches=4,
-        ransac_threshold=5.0,
+        ransac_threshold=ransac_threshold,
         confidence_threshold=confidence_threshold
     )
 
@@ -1002,6 +1003,12 @@ def main():
         action='store_true',
         help='Launch web-based map visualization with GCP overlays and round-trip error analysis'
     )
+    parser.add_argument(
+        '--ransac-threshold', '-R',
+        type=float,
+        default=5.0,
+        help='RANSAC inlier threshold in pixels (default: 5.0). Increase for datasets with many manually-clicked GCPs.'
+    )
 
     args = parser.parse_args()
 
@@ -1144,7 +1151,8 @@ def main():
         tolerance_meters=args.tolerance,
         verbose=not args.quiet,
         confidence_threshold=args.confidence,
-        camera_gps=camera_gps
+        camera_gps=camera_gps,
+        ransac_threshold=args.ransac_threshold
     )
 
     # Show results visualization based on mode
