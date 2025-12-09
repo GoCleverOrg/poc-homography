@@ -403,6 +403,85 @@ class GCPCaptureWebSession:
             'remaining_gcps': len(self.gcps)
         }
 
+    def predict_new_gcp_error(self, u: float, v: float, lat: float, lon: float) -> Dict:
+        """
+        Predict reprojection error for a potential new GCP before adding it.
+
+        This helps users identify if a GCP would be an outlier before committing.
+
+        Args:
+            u: Pixel x-coordinate
+            v: Pixel y-coordinate
+            lat: GPS latitude
+            lon: GPS longitude
+
+        Returns:
+            Dictionary with prediction results:
+                - available: Whether prediction is available
+                - predicted_error_px: Predicted reprojection error
+                - status: 'good', 'warning', or 'bad'
+                - message: Human-readable assessment
+        """
+        if not COORDINATE_CONVERTER_AVAILABLE:
+            return {
+                'available': False,
+                'message': 'Coordinate converter not available'
+            }
+
+        if self.current_homography is None:
+            return {
+                'available': False,
+                'message': 'Need at least 4 GCPs to predict error'
+            }
+
+        if self.reference_lat is None or self.reference_lon is None:
+            return {
+                'available': False,
+                'message': 'Reference point not set'
+            }
+
+        try:
+            # Convert GPS to local coordinates
+            x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+
+            # Project through current homography
+            local_pt = np.array([[x, y]], dtype=np.float32)
+            projected = cv2.perspectiveTransform(
+                local_pt.reshape(-1, 1, 2), self.current_homography
+            ).reshape(2)
+
+            # Calculate error
+            error = float(np.sqrt((projected[0] - u)**2 + (projected[1] - v)**2))
+
+            # Determine status
+            if error < REPROJ_ERROR_GOOD:
+                status = 'good'
+                message = f'Good fit ({error:.1f}px)'
+            elif error < REPROJ_ERROR_WARNING:
+                status = 'warning'
+                message = f'Moderate error ({error:.1f}px) - consider verifying coordinates'
+            else:
+                status = 'bad'
+                message = f'High error ({error:.1f}px) - likely outlier, verify GPS and pixel position'
+
+            return {
+                'available': True,
+                'predicted_error_px': error,
+                'status': status,
+                'message': message,
+                'thresholds': {
+                    'good': REPROJ_ERROR_GOOD,
+                    'warning': REPROJ_ERROR_WARNING,
+                    'bad': REPROJ_ERROR_BAD
+                }
+            }
+
+        except Exception as e:
+            return {
+                'available': False,
+                'message': f'Prediction failed: {str(e)}'
+            }
+
     def add_gcp(self, u: float, v: float, lat: float, lon: float, description: str = "", accuracy: str = "medium") -> Dict:
         """Add a new GCP."""
         gcp = {
@@ -2437,6 +2516,16 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 'removed_descriptions': result.get('removed_descriptions', []),
                 'remaining_gcps': result['remaining_gcps']
             })
+
+        elif parsed.path == '/api/predict_error':
+            data = json.loads(post_data)
+            result = self.session.predict_new_gcp_error(
+                u=data['u'],
+                v=data['v'],
+                lat=data['lat'],
+                lon=data['lon']
+            )
+            self.send_json_response(result)
 
         elif parsed.path == '/api/load_yaml':
             data = json.loads(post_data)
