@@ -26,6 +26,188 @@ MAX_ELEVATION = 9000.0  # Mount Everest is ~8849m, allow some margin
 MAX_GCP_COUNT = 1000  # Maximum number of GCPs to prevent O(n^2) performance issues
 MAX_DESCRIPTION_LENGTH = 200  # Maximum length for description field in error messages
 
+# GPS precision constants
+# Arc-second quantization (1/3600 degree) gives ~30m lat / ~23m lon precision at mid-latitudes
+# We want sub-meter precision, which requires at least 6 decimal places
+GPS_MIN_DECIMAL_PLACES = 6  # Minimum recommended decimal places for GPS
+GPS_ARC_SECOND_THRESHOLD = 1.0 / 3600.0  # ~0.000278 degrees = 1 arc-second
+METERS_PER_DEGREE_LAT = 111320  # Approximate meters per degree latitude
+METERS_PER_ARC_SECOND_LAT = METERS_PER_DEGREE_LAT / 3600  # ~30.9 meters
+
+
+def analyze_gps_precision(
+    gcps: List[Dict[str, Any]],
+    reference_lat: Optional[float] = None
+) -> Dict[str, Any]:
+    """Analyze GPS coordinate precision and detect potential quantization issues.
+
+    This function detects common GPS precision issues:
+    1. Arc-second quantization (coordinates entered as degrees-minutes-seconds)
+    2. Insufficient decimal places (< 6 decimal places gives > 0.1m error)
+    3. Inconsistent spacing between adjacent GCPs
+
+    Args:
+        gcps: List of validated GCP dictionaries
+        reference_lat: Reference latitude for longitude precision calculation
+                      (longitude precision varies with latitude)
+
+    Returns:
+        Dictionary with precision analysis:
+            - estimated_precision_m: Estimated GPS precision in meters
+            - decimal_places: Detected number of significant decimal places
+            - quantization_detected: True if arc-second quantization detected
+            - spacing_analysis: Statistics on GCP spacing
+            - warnings: List of precision-related warnings
+            - recommendations: List of recommendations to improve precision
+    """
+    if not gcps:
+        return {
+            'estimated_precision_m': None,
+            'decimal_places': None,
+            'quantization_detected': False,
+            'spacing_analysis': None,
+            'warnings': [],
+            'recommendations': []
+        }
+
+    warnings = []
+    recommendations = []
+
+    # Extract GPS coordinates
+    latitudes = [gcp['gps']['latitude'] for gcp in gcps]
+    longitudes = [gcp['gps']['longitude'] for gcp in gcps]
+
+    # Use centroid if no reference provided
+    if reference_lat is None:
+        reference_lat = sum(latitudes) / len(latitudes)
+
+    # Analyze decimal places
+    def count_decimal_places(value: float) -> int:
+        """Count significant decimal places in a float."""
+        s = f"{value:.15f}".rstrip('0')
+        if '.' in s:
+            return len(s.split('.')[1])
+        return 0
+
+    lat_decimals = [count_decimal_places(lat) for lat in latitudes]
+    lon_decimals = [count_decimal_places(lon) for lon in longitudes]
+    min_decimals = min(min(lat_decimals), min(lon_decimals))
+
+    # Check for arc-second quantization
+    # Arc-second values have specific patterns like X.XXXYYY where YYY is 000, 278, 556, 833
+    arc_second_fractions = [0, 1/3600, 2/3600, 3/3600]  # 0, ~0.000278, etc.
+
+    def is_arc_second_quantized(coords: List[float]) -> bool:
+        """Check if coordinates appear to be arc-second quantized."""
+        quantized_count = 0
+        for coord in coords:
+            # Get fractional part of coordinate
+            frac = abs(coord) % (1/60)  # Fractional part within a minute
+            # Check if close to arc-second boundary
+            for arc_frac in [i/3600 for i in range(60)]:
+                if abs(frac - arc_frac) < 1e-7:
+                    quantized_count += 1
+                    break
+        return quantized_count > len(coords) * 0.8  # 80% threshold
+
+    lat_quantized = is_arc_second_quantized(latitudes)
+    lon_quantized = is_arc_second_quantized(longitudes)
+    quantization_detected = lat_quantized or lon_quantized
+
+    # Calculate estimated precision in meters
+    # Based on decimal places: 6 decimals ≈ 0.1m, 5 decimals ≈ 1m, etc.
+    precision_by_decimals = {
+        8: 0.001,   # 8 decimals ≈ 1mm
+        7: 0.01,    # 7 decimals ≈ 1cm
+        6: 0.1,     # 6 decimals ≈ 10cm
+        5: 1.0,     # 5 decimals ≈ 1m
+        4: 11.0,    # 4 decimals ≈ 11m
+        3: 111.0,   # 3 decimals ≈ 111m
+    }
+    estimated_precision = precision_by_decimals.get(min_decimals, 1000.0)
+
+    # If arc-second quantized, precision is limited to ~30m
+    if quantization_detected:
+        estimated_precision = max(estimated_precision, METERS_PER_ARC_SECOND_LAT)
+
+    # Analyze spacing between adjacent GCPs
+    spacing_analysis = None
+    if len(gcps) >= 2:
+        spacings = []
+        cos_lat = math.cos(math.radians(reference_lat))
+        for i in range(1, len(gcps)):
+            lat1, lon1 = latitudes[i-1], longitudes[i-1]
+            lat2, lon2 = latitudes[i], longitudes[i]
+            # Approximate distance in meters
+            dlat = (lat2 - lat1) * METERS_PER_DEGREE_LAT
+            dlon = (lon2 - lon1) * METERS_PER_DEGREE_LAT * cos_lat
+            dist = math.sqrt(dlat**2 + dlon**2)
+            if dist > 0.01:  # Ignore very close points
+                spacings.append(dist)
+
+        if spacings:
+            import statistics
+            spacing_analysis = {
+                'min_m': min(spacings),
+                'max_m': max(spacings),
+                'mean_m': statistics.mean(spacings),
+                'std_m': statistics.stdev(spacings) if len(spacings) > 1 else 0,
+                'count': len(spacings)
+            }
+
+            # Check for suspiciously regular spacing (may indicate manual entry)
+            if spacing_analysis['std_m'] > 0:
+                cv = spacing_analysis['std_m'] / spacing_analysis['mean_m']
+                if cv > 0.5:
+                    warnings.append(
+                        f"Inconsistent GCP spacing (CV={cv:.2f}). "
+                        "Check GPS coordinate accuracy."
+                    )
+
+    # Generate warnings
+    if min_decimals < GPS_MIN_DECIMAL_PLACES:
+        warnings.append(
+            f"GPS coordinates have only {min_decimals} decimal places. "
+            f"Recommend at least {GPS_MIN_DECIMAL_PLACES} for sub-meter precision."
+        )
+
+    if quantization_detected:
+        warnings.append(
+            "GPS coordinates appear to be arc-second quantized (~30m precision). "
+            "Use decimal degrees with more precision for accurate homography."
+        )
+
+    if estimated_precision > 1.0:
+        warnings.append(
+            f"Estimated GPS precision is {estimated_precision:.1f}m. "
+            "This may cause significant homography errors."
+        )
+
+    # Generate recommendations
+    if estimated_precision > 0.5:
+        recommendations.append(
+            "Use GPS coordinates with at least 7 decimal places for best results."
+        )
+    if quantization_detected:
+        recommendations.append(
+            "Avoid converting to degrees-minutes-seconds format. "
+            "Use decimal degrees directly from GPS source."
+        )
+    if spacing_analysis and spacing_analysis['min_m'] < estimated_precision:
+        recommendations.append(
+            f"Some GCPs are closer ({spacing_analysis['min_m']:.2f}m) than GPS precision "
+            f"({estimated_precision:.1f}m). Consider using more widely spaced points."
+        )
+
+    return {
+        'estimated_precision_m': estimated_precision,
+        'decimal_places': min_decimals,
+        'quantization_detected': quantization_detected,
+        'spacing_analysis': spacing_analysis,
+        'warnings': warnings,
+        'recommendations': recommendations
+    }
+
 
 def _is_valid_finite_number(value: Any) -> bool:
     """Check if a value is a valid finite number (int, float, or numpy numeric).
