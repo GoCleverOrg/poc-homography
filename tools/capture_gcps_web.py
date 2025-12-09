@@ -1354,8 +1354,12 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     Accepts: "39.640296, -0.230037" or "39°38'25.7"N 0°13'48.7"W"
                 </div>
             </div>
-            <div id="parsedCoords" style="display: none; background: #3a3a3a; padding: 8px 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px;">
+            <div id="parsedCoords" style="display: none; background: #3a3a3a; padding: 8px 10px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;">
                 <span style="color: #888;">Parsed:</span> <span id="parsedLat"></span>, <span id="parsedLon"></span>
+            </div>
+            <div id="predictedError" style="display: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; border-left: 3px solid #888;">
+                <span style="color: #888;">Predicted error:</span> <span id="predictedErrorValue"></span>
+                <div id="predictedErrorMessage" style="margin-top: 4px; font-size: 11px;"></div>
             </div>
             <div class="form-group">
                 <label>Description (optional)</label>
@@ -1534,19 +1538,70 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             const input = document.getElementById('gpsInput').value;
             const parsed = parseGPSCoordinates(input);
             const parsedDiv = document.getElementById('parsedCoords');
+            const errorDiv = document.getElementById('predictedError');
 
             if (parsed) {{
                 document.getElementById('parsedLat').textContent = parsed.lat.toFixed(6);
                 document.getElementById('parsedLon').textContent = parsed.lon.toFixed(6);
                 parsedDiv.style.display = 'block';
                 parsedDiv.style.borderLeft = '3px solid #4CAF50';
+
+                // Call predict_error API if we have a pending click position and enough GCPs
+                if (pendingClick && gcps.length >= 4) {{
+                    fetch('/api/predict_error', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            u: pendingClick.u,
+                            v: pendingClick.v,
+                            lat: parsed.lat,
+                            lon: parsed.lon
+                        }})
+                    }})
+                    .then(r => r.json())
+                    .then(data => {{
+                        if (data.available) {{
+                            const errorValue = document.getElementById('predictedErrorValue');
+                            const errorMessage = document.getElementById('predictedErrorMessage');
+
+                            errorValue.textContent = data.predicted_error_px.toFixed(1) + 'px';
+
+                            // Color based on status
+                            if (data.status === 'good') {{
+                                errorDiv.style.borderLeftColor = '#4CAF50';
+                                errorDiv.style.background = 'rgba(76, 175, 80, 0.1)';
+                                errorValue.style.color = '#4CAF50';
+                            }} else if (data.status === 'warning') {{
+                                errorDiv.style.borderLeftColor = '#ff9800';
+                                errorDiv.style.background = 'rgba(255, 152, 0, 0.1)';
+                                errorValue.style.color = '#ff9800';
+                            }} else {{
+                                errorDiv.style.borderLeftColor = '#f44336';
+                                errorDiv.style.background = 'rgba(244, 67, 54, 0.1)';
+                                errorValue.style.color = '#f44336';
+                            }}
+
+                            errorMessage.textContent = data.message;
+                            errorDiv.style.display = 'block';
+                        }} else {{
+                            errorDiv.style.display = 'none';
+                        }}
+                    }})
+                    .catch(() => {{
+                        errorDiv.style.display = 'none';
+                    }});
+                }} else {{
+                    errorDiv.style.display = 'none';
+                }}
             }} else if (input.trim()) {{
                 document.getElementById('parsedLat').textContent = '?';
                 document.getElementById('parsedLon').textContent = '?';
                 parsedDiv.style.display = 'block';
                 parsedDiv.style.borderLeft = '3px solid #f44336';
+                errorDiv.style.display = 'none';
             }} else {{
                 parsedDiv.style.display = 'none';
+                errorDiv.style.display = 'none';
             }}
         }}
 
