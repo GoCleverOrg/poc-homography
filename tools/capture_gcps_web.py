@@ -35,6 +35,7 @@ import sys
 import tempfile
 import threading
 import webbrowser
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -93,6 +94,543 @@ try:
 except ImportError:
     GCP_VALIDATION_AVAILABLE = False
 
+# Import for map-first mode camera parameter retrieval
+try:
+    from poc_homography.gps_distance_calculator import dms_to_dd
+    from poc_homography.camera_geometry import CameraGeometry
+    GPS_CONVERTER_AVAILABLE = True
+except ImportError:
+    GPS_CONVERTER_AVAILABLE = False
+
+# Import for height calibration verification
+try:
+    from poc_homography.height_calibration import HeightCalibrator
+    HEIGHT_CALIBRATOR_AVAILABLE = True
+except ImportError:
+    HEIGHT_CALIBRATOR_AVAILABLE = False
+
+
+def parse_kml_points(kml_path: str) -> List[Dict]:
+    """
+    Parse KML file and extract Point placemarks.
+
+    This function parses KML 2.2 compliant files and extracts all Point placemarks,
+    ignoring LineString and Polygon geometries. It handles common edge cases like
+    missing names, invalid coordinates, and empty files.
+
+    Args:
+        kml_path: Path to the KML file to parse
+
+    Returns:
+        List of dictionaries with structure:
+        [
+            {'name': str, 'latitude': float, 'longitude': float},
+            ...
+        ]
+
+    Example:
+        >>> points = parse_kml_points('gcps.kml')
+        >>> print(points)
+        [{'name': 'P#01', 'latitude': 39.640600, 'longitude': -0.230200}]
+
+    Edge cases handled:
+        - Missing name element: uses "Unnamed Point N" (1-based index)
+        - Missing Point element: skips the placemark
+        - Invalid coordinates format: skips the placemark and logs warning
+        - Empty KML file: returns empty list
+    """
+    # KML 2.2 namespace
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
+    try:
+        tree = ET.parse(kml_path)
+        root = tree.getroot()
+    except FileNotFoundError:
+        print(f"Warning: KML file not found: {kml_path}")
+        return []
+    except ET.ParseError as e:
+        print(f"Warning: Failed to parse KML file {kml_path}: {e}")
+        return []
+
+    points = []
+    unnamed_counter = 1
+
+    # Find all Placemark elements (handles both with and without namespace)
+    placemarks = root.findall('.//kml:Placemark', ns)
+    if not placemarks:
+        # Try without namespace (for KML files without proper namespace)
+        placemarks = root.findall('.//Placemark')
+
+    for placemark in placemarks:
+        # Check if this placemark contains a Point (not LineString or Polygon)
+        point_elem = placemark.find('.//kml:Point', ns)
+        if point_elem is None:
+            point_elem = placemark.find('.//Point')
+
+        if point_elem is None:
+            # Skip placemarks without Point geometry (LineString, Polygon, etc.)
+            continue
+
+        # Extract name
+        name_elem = placemark.find('.//kml:name', ns)
+        if name_elem is None:
+            name_elem = placemark.find('.//name')
+
+        if name_elem is not None and name_elem.text:
+            name = name_elem.text.strip()
+        else:
+            name = f"Unnamed Point {unnamed_counter}"
+            unnamed_counter += 1
+
+        # Extract coordinates
+        coords_elem = point_elem.find('.//kml:coordinates', ns)
+        if coords_elem is None:
+            coords_elem = point_elem.find('.//coordinates')
+
+        if coords_elem is None or not coords_elem.text:
+            print(f"Warning: Skipping placemark '{name}' - missing coordinates")
+            continue
+
+        # Parse coordinates string: "longitude,latitude,altitude" or "longitude,latitude"
+        coords_text = coords_elem.text.strip()
+        try:
+            parts = coords_text.split(',')
+            if len(parts) < 2:
+                raise ValueError("Not enough coordinate values")
+
+            longitude = float(parts[0])
+            latitude = float(parts[1])
+            # Altitude (parts[2]) is ignored if present
+
+            points.append({
+                'name': name,
+                'latitude': latitude,
+                'longitude': longitude
+            })
+
+        except (ValueError, IndexError) as e:
+            print(f"Warning: Skipping placemark '{name}' - invalid coordinates format: {coords_text} ({e})")
+            continue
+
+    return points
+
+
+def get_camera_params_for_projection(camera_name: str) -> Dict:
+    """
+    Retrieve camera parameters for map-first mode projection.
+
+    This function gathers all parameters needed to project map coordinates to camera view:
+    - Camera GPS position (converted from DMS to decimal degrees)
+    - Camera height above ground
+    - Current PTZ status (pan, tilt, zoom) from live camera
+    - Camera intrinsic matrix K computed from current zoom level
+
+    Args:
+        camera_name: Name of the camera (e.g., "Valte", "Setram")
+
+    Returns:
+        Dictionary with structure:
+        {
+            'camera_lat': float,      # decimal degrees
+            'camera_lon': float,      # decimal degrees
+            'height_m': float,        # meters
+            'pan_deg': float,         # degrees
+            'tilt_deg': float,        # degrees
+            'zoom': float,            # zoom factor
+            'K': np.ndarray,          # 3x3 intrinsic matrix
+            'image_width': int,       # typically 2560
+            'image_height': int       # typically 1440
+        }
+
+    Raises:
+        ValueError: If camera not found or required modules not available
+        RuntimeError: If cannot connect to camera or retrieve PTZ status
+
+    Example:
+        >>> params = get_camera_params_for_projection("Valte")
+        >>> print(f"Camera at ({params['camera_lat']:.6f}, {params['camera_lon']:.6f})")
+        >>> print(f"Pan: {params['pan_deg']:.1f}°, Tilt: {params['tilt_deg']:.1f}°")
+    """
+    # Check required modules
+    if not CAMERA_CONFIG_AVAILABLE:
+        raise ValueError(
+            "Camera configuration not available. "
+            "Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables."
+        )
+
+    if not INTRINSICS_AVAILABLE:
+        raise ValueError(
+            "Camera intrinsics module not available. "
+            "Ensure tools.get_camera_intrinsics is accessible."
+        )
+
+    if not GPS_CONVERTER_AVAILABLE:
+        raise ValueError(
+            "GPS converter modules not available. "
+            "Ensure poc_homography.gps_distance_calculator and "
+            "poc_homography.camera_geometry are installed."
+        )
+
+    # Get camera configuration
+    cam_config = get_camera_by_name(camera_name)
+    if not cam_config:
+        available = [c['name'] for c in CAMERAS]
+        raise ValueError(
+            f"Camera '{camera_name}' not found. "
+            f"Available cameras: {', '.join(available)}"
+        )
+
+    # Convert GPS coordinates from DMS to decimal degrees
+    try:
+        camera_lat = dms_to_dd(cam_config['lat'])
+        camera_lon = dms_to_dd(cam_config['lon'])
+    except (KeyError, ValueError) as e:
+        raise ValueError(
+            f"Failed to parse GPS coordinates for camera '{camera_name}': {e}"
+        )
+
+    # Get camera height
+    height_m = cam_config.get('height_m', 5.0)
+
+    # Get current PTZ status from live camera
+    try:
+        ptz_status = get_ptz_status(cam_config['ip'], USERNAME, PASSWORD, timeout=5.0)
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Failed to retrieve PTZ status from camera '{camera_name}' "
+            f"at {cam_config['ip']}: {e}\n"
+            f"Check that the camera is online and credentials are correct."
+        )
+
+    # Extract PTZ values
+    pan_deg = ptz_status['pan']
+    tilt_deg = ptz_status['tilt']
+    zoom = ptz_status['zoom']
+
+    # Compute intrinsic matrix from current zoom level
+    image_width = 2560
+    image_height = 1440
+
+    K = CameraGeometry.get_intrinsics(
+        zoom_factor=zoom,
+        W_px=image_width,
+        H_px=image_height,
+        sensor_width_mm=DEFAULT_SENSOR_WIDTH_MM
+    )
+
+    return {
+        'camera_lat': camera_lat,
+        'camera_lon': camera_lon,
+        'height_m': height_m,
+        'pan_deg': pan_deg,
+        'tilt_deg': tilt_deg,
+        'zoom': zoom,
+        'K': K,
+        'image_width': image_width,
+        'image_height': image_height
+    }
+
+
+def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Dict]:
+    """
+    Project GPS points to image pixel coordinates using camera homography.
+
+    This function converts GPS latitude/longitude coordinates to image pixel locations
+    by:
+    1. Converting GPS to local XY meters relative to camera position
+    2. Initializing CameraGeometry with camera parameters
+    3. Applying homography H to project world coordinates to image
+    4. Filtering points that are behind camera or outside image bounds
+
+    Args:
+        gps_points: List of GPS point dictionaries from parse_kml_points()
+                   [{'name': str, 'latitude': float, 'longitude': float}, ...]
+        camera_params: Camera parameter dictionary from get_camera_params_for_projection()
+                      with keys: camera_lat, camera_lon, height_m, pan_deg, tilt_deg,
+                      K, image_width, image_height
+
+    Returns:
+        List of dictionaries with projected points:
+        [
+            {
+                'name': str,
+                'latitude': float,
+                'longitude': float,
+                'pixel_u': float,        # image x coordinate (horizontal)
+                'pixel_v': float,        # image y coordinate (vertical)
+                'visible': bool,         # True if in camera view
+                'reason': str            # 'visible', 'behind_camera', 'outside_bounds'
+            },
+            ...
+        ]
+
+    Example:
+        >>> gps_points = parse_kml_points('gcps.kml')
+        >>> camera_params = get_camera_params_for_projection("Valte")
+        >>> projected = project_gps_to_image(gps_points, camera_params)
+        >>> for pt in projected:
+        ...     if pt['visible']:
+        ...         print(f"{pt['name']}: ({pt['pixel_u']:.1f}, {pt['pixel_v']:.1f})")
+    """
+    from math import cos, radians
+
+    # Check required modules
+    if not COORDINATE_CONVERTER_AVAILABLE:
+        raise ValueError(
+            "Coordinate converter not available. "
+            "Ensure poc_homography.coordinate_converter is installed."
+        )
+
+    if not GPS_CONVERTER_AVAILABLE:
+        raise ValueError(
+            "GPS converter modules not available. "
+            "Ensure poc_homography.camera_geometry is installed."
+        )
+
+    # Extract camera parameters
+    camera_lat = camera_params['camera_lat']
+    camera_lon = camera_params['camera_lon']
+    height_m = camera_params['height_m']
+    pan_deg = camera_params['pan_deg']
+    tilt_deg = camera_params['tilt_deg']
+    K = camera_params['K']
+    image_width = camera_params['image_width']
+    image_height = camera_params['image_height']
+
+    # Initialize CameraGeometry with camera parameters
+    geo = CameraGeometry(w=image_width, h=image_height)
+
+    # Camera position in world coordinates (X=0, Y=0 at camera location, Z=height)
+    w_pos = np.array([0.0, 0.0, height_m])
+
+    # Set up homography
+    geo.set_camera_parameters(
+        K=K,
+        w_pos=w_pos,
+        pan_deg=pan_deg,
+        tilt_deg=tilt_deg,
+        map_width=640,  # Default map size (not critical for projection)
+        map_height=640
+    )
+
+    # Project each GPS point
+    projected_points = []
+
+    for point in gps_points:
+        gps_lat = point['latitude']
+        gps_lon = point['longitude']
+        name = point['name']
+
+        # Convert GPS to local XY meters relative to camera
+        x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, gps_lat, gps_lon)
+
+        # Create homogeneous world coordinate [X, Y, 1]
+        world_point = np.array([[x_m], [y_m], [1.0]])
+
+        # Apply homography H to project world -> image
+        # H maps [X_world, Y_world, 1] -> [u, v, w]
+        image_point_homogeneous = geo.H @ world_point
+
+        # Extract homogeneous coordinates
+        u = image_point_homogeneous[0, 0]
+        v = image_point_homogeneous[1, 0]
+        w = image_point_homogeneous[2, 0]
+
+        # Check if point is behind camera (w <= 0)
+        if w <= 0:
+            projected_points.append({
+                'name': name,
+                'latitude': gps_lat,
+                'longitude': gps_lon,
+                'pixel_u': None,
+                'pixel_v': None,
+                'visible': False,
+                'reason': 'behind_camera'
+            })
+            continue
+
+        # Normalize to get pixel coordinates
+        u_px = u / w
+        v_px = v / w
+
+        # Check if point is within image bounds
+        if 0 <= u_px < image_width and 0 <= v_px < image_height:
+            projected_points.append({
+                'name': name,
+                'latitude': gps_lat,
+                'longitude': gps_lon,
+                'pixel_u': u_px,
+                'pixel_v': v_px,
+                'visible': True,
+                'reason': 'visible'
+            })
+        else:
+            projected_points.append({
+                'name': name,
+                'latitude': gps_lat,
+                'longitude': gps_lon,
+                'pixel_u': u_px,
+                'pixel_v': v_px,
+                'visible': False,
+                'reason': 'outside_bounds'
+            })
+
+    return projected_points
+
+
+def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: CameraGeometry) -> Dict:
+    """
+    Verify camera height accuracy using HeightCalibrator and KML reference points.
+
+    This function estimates the optimal camera height by comparing homography-projected
+    distances with actual GPS distances. It helps validate if the configured camera
+    height is accurate before projecting GPS points to the image.
+
+    Args:
+        kml_points: List of GPS point dictionaries from parse_kml_points()
+                   [{'name': str, 'latitude': float, 'longitude': float}, ...]
+        camera_params: Camera parameter dictionary from get_camera_params_for_projection()
+                      with keys: camera_lat, camera_lon, height_m, pan_deg, tilt_deg,
+                      K, image_width, image_height
+        geo: Initialized CameraGeometry instance with homography matrix
+
+    Returns:
+        Dictionary with height verification results:
+        {
+            'configured_height': float,        # from camera_params (meters)
+            'estimated_height': float,         # from HeightCalibrator (meters)
+            'confidence_interval': Tuple[float, float],  # 95% CI (meters)
+            'height_valid': bool,              # True if within 10% of configured
+            'height_difference_percent': float, # percentage difference
+            'inlier_count': int,               # points used for estimation
+            'warning': str or None             # warning message if height invalid
+        }
+
+    Example:
+        >>> gps_points = parse_kml_points('gcps.kml')
+        >>> camera_params = get_camera_params_for_projection("Valte")
+        >>> geo = CameraGeometry(w=1920, h=1080)
+        >>> geo.set_camera_parameters(...)
+        >>> verification = verify_camera_height(gps_points, camera_params, geo)
+        >>> if not verification['height_valid']:
+        ...     print(f"Warning: {verification['warning']}")
+    """
+    # Check if HeightCalibrator is available
+    if not HEIGHT_CALIBRATOR_AVAILABLE:
+        return {
+            'configured_height': camera_params['height_m'],
+            'estimated_height': None,
+            'confidence_interval': (None, None),
+            'height_valid': True,  # Assume valid if we can't verify
+            'height_difference_percent': 0.0,
+            'inlier_count': 0,
+            'warning': 'Height calibrator module not available - skipping verification'
+        }
+
+    # Check minimum points requirement
+    if len(kml_points) < 5:
+        return {
+            'configured_height': camera_params['height_m'],
+            'estimated_height': None,
+            'confidence_interval': (None, None),
+            'height_valid': True,  # Assume valid if we can't verify
+            'height_difference_percent': 0.0,
+            'inlier_count': len(kml_points),
+            'warning': f'Insufficient points for height verification (need 5, have {len(kml_points)})'
+        }
+
+    # Extract camera parameters
+    camera_lat = camera_params['camera_lat']
+    camera_lon = camera_params['camera_lon']
+    height_m = camera_params['height_m']
+    image_width = camera_params['image_width']
+    image_height = camera_params['image_height']
+
+    # Create camera GPS dict for HeightCalibrator
+    camera_gps = {
+        'lat': camera_lat,
+        'lon': camera_lon
+    }
+
+    try:
+        # Initialize HeightCalibrator
+        calibrator = HeightCalibrator(camera_gps, min_points=5)
+
+        # Project GPS points to get pixel coordinates
+        projected = project_gps_to_image(kml_points, camera_params)
+
+        # Add each visible point to the calibrator
+        points_added = 0
+        for point in projected:
+            # Only use visible points that have valid pixel coordinates
+            if point['visible'] and point['pixel_u'] is not None and point['pixel_v'] is not None:
+                try:
+                    calibrator.add_point(
+                        pixel_x=point['pixel_u'],
+                        pixel_y=point['pixel_v'],
+                        gps_lat=point['latitude'],
+                        gps_lon=point['longitude'],
+                        current_height=height_m,
+                        geo=geo
+                    )
+                    points_added += 1
+                except (ValueError, RuntimeError) as e:
+                    # Skip points that can't be added (e.g., near horizon)
+                    continue
+
+        # Check if we have enough points after filtering
+        if points_added < 5:
+            return {
+                'configured_height': height_m,
+                'estimated_height': None,
+                'confidence_interval': (None, None),
+                'height_valid': True,  # Assume valid if we can't verify
+                'height_difference_percent': 0.0,
+                'inlier_count': points_added,
+                'warning': f'Insufficient valid points for height verification (need 5, have {points_added})'
+            }
+
+        # Optimize height using outlier detection
+        result = calibrator.optimize_height_with_outliers(method='mad', threshold=2.5)
+
+        # Calculate percentage difference
+        estimated_height = result.estimated_height
+        height_diff_percent = abs((estimated_height - height_m) / height_m) * 100.0
+
+        # Check if height is valid (within 10% threshold)
+        height_valid = height_diff_percent <= 10.0
+
+        # Generate warning message if height is invalid
+        warning = None
+        if not height_valid:
+            warning = (
+                f"Camera height may be inaccurate: configured {height_m:.2f}m, "
+                f"estimated {estimated_height:.2f}m ({height_diff_percent:.1f}% difference). "
+                f"Consider updating camera height in configuration."
+            )
+
+        return {
+            'configured_height': height_m,
+            'estimated_height': estimated_height,
+            'confidence_interval': result.confidence_interval,
+            'height_valid': height_valid,
+            'height_difference_percent': height_diff_percent,
+            'inlier_count': result.inlier_count,
+            'warning': warning
+        }
+
+    except ValueError as e:
+        # Handle calibration errors
+        return {
+            'configured_height': height_m,
+            'estimated_height': None,
+            'confidence_interval': (None, None),
+            'height_valid': True,  # Assume valid if verification failed
+            'height_difference_percent': 0.0,
+            'inlier_count': 0,
+            'warning': f'Height verification failed: {str(e)}'
+        }
+
 
 class GCPCaptureWebSession:
     """Web-based GCP capture session with distribution feedback."""
@@ -109,7 +647,12 @@ class GCPCaptureWebSession:
         camera_name: str = None,
         ptz_status: dict = None,
         sensor_width_mm: float = DEFAULT_SENSOR_WIDTH_MM,
-        base_focal_length_mm: float = DEFAULT_BASE_FOCAL_LENGTH_MM
+        base_focal_length_mm: float = DEFAULT_BASE_FOCAL_LENGTH_MM,
+        map_first_mode: bool = False,
+        kml_points: List[Dict] = None,
+        projected_points: List[Dict] = None,
+        kml_file_name: str = None,
+        height_verification: Dict = None
     ):
         self.frame = frame
         self.camera_name = camera_name or "Unknown"
@@ -129,6 +672,13 @@ class GCPCaptureWebSession:
         self.reference_lon = None
         self.last_reproj_errors = []  # Per-GCP reprojection errors
         self.inlier_mask = None  # RANSAC inlier mask
+
+        # Map-first mode support
+        self.map_first_mode = map_first_mode
+        self.kml_points = kml_points or []
+        self.projected_points = projected_points or []
+        self.kml_file_name = kml_file_name
+        self.height_verification = height_verification
 
         # Calculate intrinsics if possible
         self.intrinsics = None
@@ -675,11 +1225,13 @@ class GCPCaptureWebSession:
 
     def generate_yaml(self) -> str:
         """Generate YAML config content."""
+        mode_description = "map-first mode" if self.map_first_mode else "manual capture"
         lines = [
             "# GCP Configuration",
             f"# Generated: {datetime.now().isoformat()}",
             f"# Camera: {self.camera_name}",
             f"# GCPs captured: {len(self.gcps)}",
+            f"# Mode: {mode_description}",
             "",
             "homography:",
             "  approach: feature_match",
@@ -695,6 +1247,19 @@ class GCPCaptureWebSession:
             f"      image_width: {self.frame_width}",
             f"      image_height: {self.frame_height}",
         ]
+
+        # Add camera GPS if available
+        if CAMERA_CONFIG_AVAILABLE:
+            try:
+                cam_info = get_camera_by_name(self.camera_name)
+                if cam_info and 'gps' in cam_info:
+                    lines.extend([
+                        "      camera_gps:",
+                        f"        latitude: {cam_info['gps'].get('latitude')}",
+                        f"        longitude: {cam_info['gps'].get('longitude')}",
+                    ])
+            except Exception:
+                pass
 
         if self.ptz_status:
             lines.extend([
@@ -713,12 +1278,16 @@ class GCPCaptureWebSession:
                 f"          cy: {self.intrinsics['principal_point']['cy']:.1f}",
             ])
 
+        notes = ""
+        if self.map_first_mode and self.kml_file_name:
+            notes = f"Generated from KML using --map-first mode (source: {self.kml_file_name})"
+
         lines.extend([
             f"      capture_timestamp: \"{self.capture_timestamp}\"",
             "      # Coordinate system: image_v means V=0 at top (standard image coords)",
             "      # Old files without this field used leaflet_y format (V=0 at bottom)",
             "      coordinate_system: image_v",
-            "      notes: \"\"",
+            f"      notes: \"{notes}\"",
             "",
             "    # Ground Control Points",
             "    ground_control_points:",
@@ -740,6 +1309,7 @@ class GCPCaptureWebSession:
             desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
             accuracy = gcp.get('metadata', {}).get('accuracy', 'medium')
             timestamp = gcp.get('metadata', {}).get('timestamp', '')
+            source = gcp.get('metadata', {}).get('source', 'manual')
 
             lines.extend([
                 f"      # GCP {i+1}: {desc}",
@@ -753,10 +1323,57 @@ class GCPCaptureWebSession:
                 f"          description: \"{desc}\"",
                 f"          accuracy: {accuracy}",
                 f"          timestamp: \"{timestamp}\"",
+                f"          source: {source}",
                 "",
             ])
 
         return "\n".join(lines)
+
+    def generate_gcps_from_map_first(self, projected_points_data: List[Dict]) -> List[Dict]:
+        """
+        Generate GCP list from map-first projected points.
+
+        Args:
+            projected_points_data: List of projected point dictionaries from JavaScript
+                Each should have: {pixel_u, pixel_v, visible, kml_index}
+
+        Returns:
+            List of GCP dictionaries suitable for self.gcps
+        """
+        gcps = []
+
+        for point_data in projected_points_data:
+            # Skip non-visible (discarded) points
+            if not point_data.get('visible', True):
+                continue
+
+            # Get KML data for this point
+            kml_index = point_data.get('kml_index', -1)
+            if kml_index < 0 or kml_index >= len(self.kml_points):
+                continue
+
+            kml_point = self.kml_points[kml_index]
+
+            # Create GCP entry
+            gcp = {
+                'gps': {
+                    'latitude': kml_point['latitude'],
+                    'longitude': kml_point['longitude'],
+                },
+                'image': {
+                    'u': float(point_data['pixel_u']),
+                    'v': float(point_data['pixel_v']),
+                },
+                'metadata': {
+                    'description': kml_point.get('name', f"Point {kml_index}"),
+                    'accuracy': 'medium',
+                    'timestamp': datetime.now().isoformat(),
+                    'source': 'kml'
+                }
+            }
+            gcps.append(gcp)
+
+        return gcps
 
 
 def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str:
@@ -765,6 +1382,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
     gcps_json = json.dumps(session.gcps)
     distribution_json = json.dumps(session.calculate_distribution())
     homography_json = json.dumps(session.update_homography())
+
+    # Map-first mode data
+    map_first_mode_json = json.dumps(session.map_first_mode)
+    kml_points_json = json.dumps(session.kml_points)
+    projected_points_json = json.dumps(session.projected_points)
+    kml_file_name_json = json.dumps(session.kml_file_name)
+    height_verification_json = json.dumps(session.height_verification)
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -919,6 +1543,52 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             padding: 8px 10px;
             margin-bottom: 6px;
             font-size: 12px;
+            border-radius: 0 4px 4px 0;
+        }}
+
+        /* Map-First Summary Panel */
+        #mapFirstSummary {{
+            border-bottom: 1px solid #444;
+        }}
+
+        .summary-content {{
+            margin-bottom: 10px;
+        }}
+
+        .summary-item {{
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 12px;
+        }}
+
+        .summary-item .label {{
+            color: #888;
+        }}
+
+        .summary-item .value {{
+            color: #e0e0e0;
+            font-weight: 600;
+        }}
+
+        .summary-item .value.success {{
+            color: #4CAF50;
+        }}
+
+        .summary-item .value.warning {{
+            color: #ff9800;
+        }}
+
+        .summary-item .value.error {{
+            color: #f44336;
+        }}
+
+        #heightWarning {{
+            background: rgba(244, 67, 54, 0.15);
+            border-left: 3px solid #f44336;
+            padding: 8px 10px;
+            margin-top: 10px;
+            font-size: 11px;
             border-radius: 0 4px 4px 0;
         }}
 
@@ -1257,6 +1927,54 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             font-size: 12px;
             border-radius: 0 4px 4px 0;
         }}
+
+        /* Map-first marker styles */
+        .map-first-marker {{
+            position: relative;
+        }}
+
+        .map-first-marker .marker-pin {{
+            width: 20px;
+            height: 20px;
+            border-radius: 50% 50% 50% 0;
+            background: #2196F3;
+            border: 3px solid white;
+            position: absolute;
+            transform: rotate(-45deg);
+            left: 50%;
+            top: 50%;
+            margin: -15px 0 0 -10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            cursor: grab;
+        }}
+
+        .map-first-marker .marker-pin.blue {{
+            background: #2196F3;
+        }}
+
+        .map-first-marker .marker-label {{
+            position: absolute;
+            left: 20px;
+            top: -10px;
+            background: rgba(33, 150, 243, 0.9);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }}
+
+        .map-first-marker:hover .marker-pin {{
+            background: #1976D2;
+            transform: rotate(-45deg) scale(1.1);
+        }}
+
+        .map-first-marker:hover .marker-label {{
+            background: rgba(25, 118, 210, 0.95);
+        }}
     </style>
 </head>
 <body>
@@ -1284,6 +2002,34 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             </div>
 
             <div class="side-panel">
+                <!-- Map-First Mode Summary Panel -->
+                <div id="mapFirstSummary" class="panel-section" style="display: none;">
+                    <h3>Map-First Mode Summary</h3>
+                    <div class="summary-content">
+                        <div class="summary-item">
+                            <span class="label">KML File:</span>
+                            <span class="value" id="kmlFileName">-</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Total KML Points:</span>
+                            <span class="value" id="totalKmlPoints">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Visible Points:</span>
+                            <span class="value success" id="visiblePoints">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Out of View:</span>
+                            <span class="value warning" id="outOfViewPoints">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Discarded:</span>
+                            <span class="value error" id="discardedPoints">0</span>
+                        </div>
+                    </div>
+                    <div id="heightWarning" style="display: none;"></div>
+                </div>
+
                 <div class="panel-section">
                     <h3>Distribution Quality</h3>
                     <div class="distribution-grid">
@@ -1424,6 +2170,14 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         let batchPoints = [];  // Array of {{u, v}} pixel positions
         let batchMarkers = []; // Temporary markers shown during batch mode
         let batchGpsCoords = []; // GPS coords loaded from KML
+
+        // Map-first mode state
+        let mapFirstMode = {map_first_mode_json};
+        let kmlPoints = {kml_points_json};  // Original KML data with names and GPS
+        let projectedPoints = {projected_points_json};  // Projected pixel positions
+        let mapFirstMarkers = [];  // Markers for projected points
+        let kmlFileName = {kml_file_name_json};  // KML file name
+        let heightVerification = {height_verification_json};  // Height verification results
 
         // Initialize Leaflet map with simple CRS for image
         const map = L.map('imageMap', {{
@@ -1740,7 +2494,47 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
         // Save config
         function saveConfig() {{
-            window.location.href = '/api/save';
+            if (mapFirstMode) {{
+                // In map-first mode, export projected points with their current positions
+                const exportData = projectedPoints.map((point, index) => ({{
+                    pixel_u: point.pixel_u,
+                    pixel_v: point.pixel_v,
+                    visible: point.visible !== false,
+                    kml_index: index
+                }}));
+
+                fetch('/api/export_map_first', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{projected_points: exportData}})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        alert(`Map-first GCPs saved successfully!\n\nGCPs exported: ${{data.gcps_saved}}`);
+
+                        // Create download link for YAML
+                        const blob = new Blob([data.yaml_content], {{type: 'application/x-yaml'}});
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'gcps_map_first.yaml';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }} else {{
+                        alert('Failed to export map-first GCPs');
+                    }}
+                }})
+                .catch(err => {{
+                    console.error('Export error:', err);
+                    alert('Error exporting map-first GCPs');
+                }});
+            }} else {{
+                // Standard manual capture mode
+                window.location.href = '/api/save';
+            }}
         }}
 
         // Update UI with current state
@@ -1820,6 +2614,12 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Update markers on map
             updateMarkers();
+
+            // Update map-first markers if in map-first mode
+            if (mapFirstMode) {{
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
 
             // Enable/disable save button
             document.getElementById('saveBtn').disabled = gcps.length < 4;
@@ -2061,6 +2861,185 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 const color = marker.originalColor || '#4CAF50';
                 const size = marker.originalSize || 14;
                 marker.setIcon(createGcpIcon(color, size));
+            }}
+        }}
+
+        // Create map-first marker icon with label
+        function createMapFirstIcon(label) {{
+            return L.divIcon({{
+                className: 'map-first-marker',
+                html: `<div class="marker-pin blue"></div><span class="marker-label">${{label}}</span>`,
+                iconSize: [30, 42],
+                iconAnchor: [15, 42]
+            }});
+        }}
+
+        // Render map-first projected points
+        function renderMapFirstPoints() {{
+            // Remove existing map-first markers
+            mapFirstMarkers.forEach(m => map.removeLayer(m));
+            mapFirstMarkers = [];
+
+            if (!mapFirstMode || !projectedPoints || projectedPoints.length === 0) {{
+                return;
+            }}
+
+            // Add markers for each projected point
+            projectedPoints.forEach((point, i) => {{
+                if (!point.visible) return;  // Skip discarded points
+
+                // Get corresponding KML point for label
+                const kmlPoint = kmlPoints[i] || {{}};
+                const label = kmlPoint.name || `Point ${{i + 1}}`;
+                const gpsLat = kmlPoint.latitude || 0;
+                const gpsLon = kmlPoint.longitude || 0;
+
+                // Convert image coords to Leaflet coords
+                const leafletCoords = imageToLeaflet(point.pixel_u, point.pixel_v);
+
+                // Create marker with custom icon
+                const marker = L.marker(leafletCoords, {{
+                    icon: createMapFirstIcon(label),
+                    draggable: true
+                }}).addTo(map);
+
+                // Store reference data
+                marker.projectedIndex = i;
+                marker.kmlName = label;
+
+                // Add popup with GPS info and discard button
+                const popupContent = `
+                    <div style="min-width: 200px;">
+                        <strong>${{label}}</strong><br>
+                        GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}<br>
+                        Image: (${{point.pixel_u.toFixed(1)}}, ${{point.pixel_v.toFixed(1)}})<br>
+                        <button onclick="discardMapFirstPoint(${{i}})"
+                                style="margin-top: 8px; padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                            Discard Point
+                        </button>
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+
+                // Add tooltip with name and GPS
+                marker.bindTooltip(`${{label}}<br>GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}`, {{
+                    permanent: false,
+                    direction: 'top',
+                    offset: [0, -35]
+                }});
+
+                // Prevent click propagation
+                marker.on('click', function(e) {{
+                    L.DomEvent.stopPropagation(e);
+                }});
+                marker.on('mousedown', function(e) {{
+                    L.DomEvent.stopPropagation(e);
+                }});
+
+                // Handle drag end - update position
+                marker.on('dragend', function(e) {{
+                    const newPos = e.target.getLatLng();
+                    const imgCoords = leafletToImage(newPos.lat, newPos.lng);
+                    const newU = imgCoords.u;
+                    const newV = imgCoords.v;
+
+                    // Check bounds
+                    if (newU < 0 || newU > imageWidth || newV < 0 || newV > imageHeight) {{
+                        // Revert to original position
+                        e.target.setLatLng(imageToLeaflet(point.pixel_u, point.pixel_v));
+                        return;
+                    }}
+
+                    // Update projected point position
+                    projectedPoints[i].pixel_u = newU;
+                    projectedPoints[i].pixel_v = newV;
+
+                    // Update popup with new coordinates
+                    const updatedPopupContent = `
+                        <div style="min-width: 200px;">
+                            <strong>${{label}}</strong><br>
+                            GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}<br>
+                            Image: (${{newU.toFixed(1)}}, ${{newV.toFixed(1)}})<br>
+                            <button onclick="discardMapFirstPoint(${{i}})"
+                                    style="margin-top: 8px; padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                                Discard Point
+                            </button>
+                        </div>
+                    `;
+                    marker.setPopupContent(updatedPopupContent);
+                }});
+
+                // Visual feedback during drag
+                marker.on('dragstart', function() {{
+                    marker.setIcon(createMapFirstIcon(label + ' (moving)'));
+                }});
+
+                marker.on('drag', function() {{
+                    const pos = marker.getLatLng();
+                    const imgCoords = leafletToImage(pos.lat, pos.lng);
+                    marker.setTooltipContent(`${{label}}<br>(${{imgCoords.u.toFixed(1)}}, ${{imgCoords.v.toFixed(1)}})`);
+                }});
+
+                marker.on('dragend', function() {{
+                    marker.setIcon(createMapFirstIcon(label));
+                }});
+
+                mapFirstMarkers.push(marker);
+            }});
+        }}
+
+        // Discard a map-first point
+        function discardMapFirstPoint(index) {{
+            if (confirm(`Discard point "${{kmlPoints[index]?.name || 'Point ' + (index + 1)}}"?`)) {{
+                projectedPoints[index].visible = false;
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Update the Map-First Mode summary panel
+        function updateMapFirstSummary() {{
+            if (!mapFirstMode) {{
+                document.getElementById('mapFirstSummary').style.display = 'none';
+                return;
+            }}
+
+            // Show the summary panel
+            document.getElementById('mapFirstSummary').style.display = 'block';
+
+            // Update KML file name
+            if (kmlFileName) {{
+                document.getElementById('kmlFileName').textContent = kmlFileName;
+            }}
+
+            // Count points by status
+            let visibleCount = 0;
+            let outOfViewCount = 0;
+            let discardedCount = 0;
+
+            projectedPoints.forEach(point => {{
+                if (point.visible === false) {{
+                    discardedCount++;
+                }} else if (point.reason === 'visible') {{
+                    visibleCount++;
+                }} else if (point.reason === 'behind_camera' || point.reason === 'outside_bounds') {{
+                    outOfViewCount++;
+                }}
+            }});
+
+            // Update display
+            document.getElementById('totalKmlPoints').textContent = kmlPoints.length;
+            document.getElementById('visiblePoints').textContent = visibleCount;
+            document.getElementById('outOfViewPoints').textContent = outOfViewCount;
+            document.getElementById('discardedPoints').textContent = discardedCount;
+
+            // Update height verification warning
+            const warningEl = document.getElementById('heightWarning');
+            if (heightVerification && heightVerification.warning) {{
+                warningEl.textContent = heightVerification.warning;
+                warningEl.style.display = 'block';
+            }} else {{
+                warningEl.style.display = 'none';
             }}
         }}
 
@@ -2638,6 +3617,63 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 'ptz_status': self.session.ptz_status
             })
 
+        elif parsed.path == '/api/export_map_first':
+            # Export map-first mode GCPs
+            try:
+                data = json.loads(post_data)
+                projected_points_data = data.get('projected_points', [])
+
+                if not projected_points_data:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No projected points provided for export'
+                    })
+                    return
+
+                # Generate GCPs from projected points
+                self.session.gcps = self.session.generate_gcps_from_map_first(projected_points_data)
+
+                if not self.session.gcps:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No visible GCPs to export. All points may have been discarded.'
+                    })
+                    return
+
+                # Generate YAML content
+                yaml_content = self.session.generate_yaml()
+
+                # Save to file if output path specified
+                if self.output_path:
+                    try:
+                        with open(self.output_path, 'w') as f:
+                            f.write(yaml_content)
+                        print(f"\nSaved map-first configuration to: {self.output_path}")
+                        print(f"  GCPs: {len(self.session.gcps)}")
+                        print(f"  Source: {self.session.kml_file_name}")
+                    except IOError as e:
+                        self.send_json_response({
+                            'success': False,
+                            'error': f'Failed to save file: {str(e)}'
+                        })
+                        return
+
+                self.send_json_response({
+                    'success': True,
+                    'gcps_saved': len(self.session.gcps),
+                    'yaml_content': yaml_content
+                })
+            except json.JSONDecodeError as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Invalid JSON data: {str(e)}'
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Export failed: {str(e)}'
+                })
+
         else:
             self.send_error(404)
 
@@ -2803,8 +3839,26 @@ def main():
         action='store_true',
         help='List available cameras and exit'
     )
+    parser.add_argument(
+        '--map-first',
+        type=str,
+        metavar='KML_FILE',
+        help='Load GPS points from KML file and project onto camera image (GPS-to-image workflow)'
+    )
 
     args = parser.parse_args()
+
+    if args.map_first:
+        # Validate KML file exists
+        if not os.path.exists(args.map_first):
+            print(f"Error: KML file not found: {args.map_first}")
+            sys.exit(1)
+
+        # Camera name is required in map-first mode
+        if not args.camera:
+            print("Error: Camera name is required when using --map-first mode")
+            parser.print_help()
+            sys.exit(1)
 
     if args.list_cameras:
         if CAMERA_CONFIG_AVAILABLE:
@@ -2854,11 +3908,95 @@ def main():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_path = f"gcps_{camera_name}_{timestamp}.yaml"
 
+    # Handle map-first mode
+    map_first_mode = False
+    kml_points = None
+    projected_points = None
+    kml_file_name = None
+    height_verification = None
+
+    if args.map_first:
+        map_first_mode = True
+        kml_file_name = Path(args.map_first).name
+
+        # Parse KML points
+        try:
+            kml_points = parse_kml_points(args.map_first)
+        except Exception as e:
+            print(f"Error: Failed to parse KML file: {e}")
+            sys.exit(1)
+
+        if not kml_points:
+            print(f"Error: No valid GPS points found in KML file: {args.map_first}")
+            sys.exit(1)
+
+        print(f"Loaded {len(kml_points)} points from KML file")
+
+        # Get camera parameters for projection
+        if not CAMERA_CONFIG_AVAILABLE:
+            print("Error: Camera config not available for map-first mode")
+            print("  Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.")
+            sys.exit(1)
+
+        try:
+            camera_params = get_camera_params_for_projection(camera_name)
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        except RuntimeError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+
+        # Verify camera height if possible
+        if GEOMETRY_AVAILABLE:
+            try:
+                from poc_homography.camera_geometry import CameraGeometry
+                geo = CameraGeometry(
+                    camera_lat=camera_params['camera_lat'],
+                    camera_lon=camera_params['camera_lon'],
+                    height_m=camera_params['height_m'],
+                    pan_deg=camera_params['pan_deg'],
+                    tilt_deg=camera_params['tilt_deg'],
+                    K=camera_params['K'],
+                    image_width=camera_params['image_width'],
+                    image_height=camera_params['image_height']
+                )
+                height_verification = verify_camera_height(kml_points, camera_params, geo)
+                if height_verification.get('warning'):
+                    print(f"Height verification warning: {height_verification['warning']}")
+            except Exception as e:
+                print(f"Warning: Height verification failed: {e}")
+                height_verification = {
+                    'configured_height': camera_params['height_m'],
+                    'warning': f'Verification failed: {str(e)}'
+                }
+
+        # Project GPS points to image
+        try:
+            projected_points = project_gps_to_image(kml_points, camera_params)
+        except ValueError as e:
+            print(f"Error: Failed to project GPS points: {e}")
+            sys.exit(1)
+
+        # Count visible points
+        visible_count = sum(1 for p in projected_points if p['visible'] and p['reason'] == 'visible')
+        print(f"Projected {visible_count} visible points onto image")
+
+        if visible_count == 0:
+            print("Warning: No KML points are visible in the camera view.")
+            print("  All points are either behind the camera or outside image bounds.")
+            print("  The UI will show all points for reference, but none can be exported.")
+
     # Create session and start server
     session = GCPCaptureWebSession(
         frame=frame,
         camera_name=camera_name,
-        ptz_status=ptz_status
+        ptz_status=ptz_status,
+        map_first_mode=map_first_mode,
+        kml_points=kml_points or [],
+        projected_points=projected_points or [],
+        kml_file_name=kml_file_name,
+        height_verification=height_verification
     )
 
     start_capture_server(
