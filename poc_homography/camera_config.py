@@ -21,9 +21,10 @@ CAMERAS = [
     {
         "ip": "10.207.99.178",
         "name": "Valte",
-        "lat": "39°38'25.7\"N",
-        "lon": "0°13'48.7\"W",
-        "height_m": 11.3,  # Default height, calibrate with GPS validation
+        "lat": "39°38'25.79\"N",
+        "lon": "0°13'48.38\"W",
+        "height_m": 3.4,  # Default height, calibrate with GPS validation
+        "pan_offset_deg": 66.7,  # Pan=0 points 66.7° east of north
         "description": "Valte camera location"
     },
     {
@@ -32,6 +33,7 @@ CAMERAS = [
         "lat": "41°19'46.8\"N",
         "lon": "2°08'31.3\"E",
         "height_m": 5.0,  # Default height, calibrate with GPS validation
+        "pan_offset_deg": 0.0,  # Pan=0 points north (default)
         "description": "Setram camera location"
     },
 ]

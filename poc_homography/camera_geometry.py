@@ -373,39 +373,56 @@ class CameraGeometry:
         - World: X=East, Y=North, Z=Up
         - Camera: X=Right, Y=Down, Z=Forward (optical axis)
 
-        Rotation order: Pan first (around Z-axis), then Tilt (around rotated X-axis).
-        This matches standard PTZ camera behavior.
+        The transformation consists of:
+        1. Base transform: Convert world coords to camera coords when pan=0, tilt=0
+           (camera looking North, horizontal)
+        2. Pan rotation: Rotate around world Z-axis (yaw)
+        3. Tilt rotation: Rotate around camera X-axis (pitch)
 
-        Tilt Convention:
-        - Positive tilt_deg = camera pointing downward (Hikvision convention)
+        Tilt Convention (Hikvision):
+        - Positive tilt_deg = camera pointing downward
         - Negative tilt_deg = camera pointing upward
-        - The sign is negated when converting to radians because the standard
-          Rx rotation matrix rotates in the opposite direction to achieve
-          downward tilt in a Y=Down camera coordinate system.
         """
         pan_rad = math.radians(self.pan_deg)
-        # Negate tilt: positive tilt_deg means "point down", but standard Rx
-        # rotation needs negative angle to rotate the optical axis downward
-        tilt_rad = math.radians(-self.tilt_deg)
+        tilt_rad = math.radians(self.tilt_deg)
 
-        # 1. Yaw (Rotation around World Z-axis - Pan)
-        # Positive pan rotates camera to the right (clockwise from above)
-        Rz = np.array([
+        # Base transformation from World to Camera when pan=0, tilt=0
+        # (camera looking North, horizontal):
+        # - World X (East)  -> Camera X (Right)
+        # - World Y (North) -> Camera Z (Forward)
+        # - World Z (Up)    -> Camera -Y (camera Y points Down)
+        #
+        # This matrix transforms [Xw, Yw, Zw] to [Xc, Yc, Zc]:
+        #   Xc = Xw
+        #   Yc = -Zw
+        #   Zc = Yw
+        R_base = np.array([
+            [1,  0,  0],
+            [0,  0, -1],
+            [0,  1,  0]
+        ])
+
+        # Pan rotation around world Z-axis (yaw)
+        # Positive pan = clockwise from above = camera looks right (towards East when starting North)
+        # This is applied in world coordinates before the base transform
+        Rz_pan = np.array([
             [math.cos(pan_rad), -math.sin(pan_rad), 0],
-            [math.sin(pan_rad), math.cos(pan_rad), 0],
-            [0, 0, 1]
+            [math.sin(pan_rad),  math.cos(pan_rad), 0],
+            [0,                  0,                 1]
         ])
 
-        # 2. Pitch (Rotation around X-axis - Tilt)
-        # Standard rotation matrix (Camera Y=Down requires careful angle interpretation)
-        Rx = np.array([
-            [1, 0, 0],
-            [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
-            [0, math.sin(tilt_rad), math.cos(tilt_rad)]
+        # Tilt rotation around camera X-axis (pitch)
+        # Positive tilt = camera looks down
+        # This is applied in camera coordinates after pan and base transform
+        Rx_tilt = np.array([
+            [1,  0,                   0],
+            [0,  math.cos(tilt_rad), -math.sin(tilt_rad)],
+            [0,  math.sin(tilt_rad),  math.cos(tilt_rad)]
         ])
 
-        # Apply Pan first, then Tilt
-        R = Rz @ Rx
+        # Full rotation: first pan in world, then base transform, then tilt in camera
+        # R_world_to_cam = R_tilt @ R_base @ R_pan
+        R = Rx_tilt @ R_base @ Rz_pan
         return R
 
     def _calculate_ground_homography(self) -> np.ndarray:

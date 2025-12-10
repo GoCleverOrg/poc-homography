@@ -109,6 +109,9 @@ try:
 except ImportError:
     HEIGHT_CALIBRATOR_AVAILABLE = False
 
+# CameraGeometry is available when GPS_CONVERTER_AVAILABLE is True
+GEOMETRY_AVAILABLE = GPS_CONVERTER_AVAILABLE
+
 
 def parse_kml_points(kml_path: str) -> List[Dict]:
     """
@@ -212,10 +215,21 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
             print(f"Warning: Skipping placemark '{name}' - invalid coordinates format: {coords_text} ({e})")
             continue
 
+    # Debug: Print parsed KML points
+    print("\n" + "=" * 60)
+    print("KML POINTS PARSED")
+    print("=" * 60)
+    print(f"File: {kml_path}")
+    print(f"Total points found: {len(points)}")
+    print("-" * 60)
+    for i, p in enumerate(points):
+        print(f"  {i+1}. {p['name']:<20} lat={p['latitude']:.6f}, lon={p['longitude']:.6f}")
+    print("=" * 60 + "\n")
+
     return points
 
 
-def get_camera_params_for_projection(camera_name: str) -> Dict:
+def get_camera_params_for_projection(camera_name: str, image_width: int = None, image_height: int = None) -> Dict:
     """
     Retrieve camera parameters for map-first mode projection.
 
@@ -227,6 +241,8 @@ def get_camera_params_for_projection(camera_name: str) -> Dict:
 
     Args:
         camera_name: Name of the camera (e.g., "Valte", "Setram")
+        image_width: Width of the actual captured frame in pixels (optional, defaults to 1920)
+        image_height: Height of the actual captured frame in pixels (optional, defaults to 1080)
 
     Returns:
         Dictionary with structure:
@@ -238,8 +254,8 @@ def get_camera_params_for_projection(camera_name: str) -> Dict:
             'tilt_deg': float,        # degrees
             'zoom': float,            # zoom factor
             'K': np.ndarray,          # 3x3 intrinsic matrix
-            'image_width': int,       # typically 2560
-            'image_height': int       # typically 1440
+            'image_width': int,       # from parameter or default 1920
+            'image_height': int       # from parameter or default 1080
         }
 
     Raises:
@@ -247,7 +263,7 @@ def get_camera_params_for_projection(camera_name: str) -> Dict:
         RuntimeError: If cannot connect to camera or retrieve PTZ status
 
     Example:
-        >>> params = get_camera_params_for_projection("Valte")
+        >>> params = get_camera_params_for_projection("Valte", 1920, 1080)
         >>> print(f"Camera at ({params['camera_lat']:.6f}, {params['camera_lon']:.6f})")
         >>> print(f"Pan: {params['pan_deg']:.1f}°, Tilt: {params['tilt_deg']:.1f}°")
     """
@@ -292,6 +308,10 @@ def get_camera_params_for_projection(camera_name: str) -> Dict:
     # Get camera height
     height_m = cam_config.get('height_m', 5.0)
 
+    # Get pan offset (angle from north when pan=0)
+    # Positive offset means pan=0 points east of north
+    pan_offset_deg = cam_config.get('pan_offset_deg', 0.0)
+
     # Get current PTZ status from live camera
     try:
         ptz_status = get_ptz_status(cam_config['ip'], USERNAME, PASSWORD, timeout=5.0)
@@ -302,15 +322,21 @@ def get_camera_params_for_projection(camera_name: str) -> Dict:
             f"Check that the camera is online and credentials are correct."
         )
 
-    # Extract PTZ values
-    pan_deg = ptz_status['pan']
+    # Extract PTZ values and apply pan offset
+    # True bearing = reported_pan + pan_offset
+    # This converts camera-relative pan to world bearing (degrees from north)
+    pan_deg_raw = ptz_status['pan']
+    pan_deg = pan_deg_raw + pan_offset_deg
     tilt_deg = ptz_status['tilt']
     zoom = ptz_status['zoom']
 
-    # Compute intrinsic matrix from current zoom level
-    image_width = 2560
-    image_height = 1440
+    # Use provided image dimensions or defaults
+    if image_width is None:
+        image_width = 1920  # Default HD resolution
+    if image_height is None:
+        image_height = 1080  # Default HD resolution
 
+    # Compute intrinsic matrix from current zoom level
     K = CameraGeometry.get_intrinsics(
         zoom_factor=zoom,
         W_px=image_width,
@@ -323,6 +349,8 @@ def get_camera_params_for_projection(camera_name: str) -> Dict:
         'camera_lon': camera_lon,
         'height_m': height_m,
         'pan_deg': pan_deg,
+        'pan_deg_raw': pan_deg_raw,
+        'pan_offset_deg': pan_offset_deg,
         'tilt_deg': tilt_deg,
         'zoom': zoom,
         'K': K,
@@ -392,10 +420,27 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
     camera_lon = camera_params['camera_lon']
     height_m = camera_params['height_m']
     pan_deg = camera_params['pan_deg']
+    pan_deg_raw = camera_params.get('pan_deg_raw', pan_deg)
+    pan_offset_deg = camera_params.get('pan_offset_deg', 0.0)
     tilt_deg = camera_params['tilt_deg']
     K = camera_params['K']
     image_width = camera_params['image_width']
     image_height = camera_params['image_height']
+
+    # Debug: Print camera parameters
+    print("\n" + "=" * 60)
+    print("KML POINT PROJECTION DEBUG")
+    print("=" * 60)
+    print(f"Camera Position: lat={camera_lat:.6f}, lon={camera_lon:.6f}")
+    print(f"Camera Height: {height_m:.2f} m")
+    if pan_offset_deg != 0:
+        print(f"Camera PTZ: pan={pan_deg_raw:.1f}° (raw) + {pan_offset_deg:.1f}° (offset) = {pan_deg:.1f}° (true bearing)")
+    else:
+        print(f"Camera PTZ: pan={pan_deg:.1f}°")
+    print(f"Camera Tilt: {tilt_deg:.1f}°")
+    print(f"Image Size: {image_width}x{image_height}")
+    print(f"Intrinsic Matrix K:\n{K}")
+    print("-" * 60)
 
     # Initialize CameraGeometry with camera parameters
     geo = CameraGeometry(w=image_width, h=image_height)
@@ -412,6 +457,12 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
         map_width=640,  # Default map size (not critical for projection)
         map_height=640
     )
+
+    # Debug: Print homography matrix
+    print(f"Homography Matrix H:\n{geo.H}")
+    print("-" * 60)
+    print(f"\n{'Point Name':<20} {'GPS (lat,lon)':<25} {'Local XY (m)':<20} {'Pixel (u,v)':<20} {'W':<10} {'Result':<15}")
+    print("-" * 110)
 
     # Project each GPS point
     projected_points = []
@@ -438,6 +489,8 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
 
         # Check if point is behind camera (w <= 0)
         if w <= 0:
+            # Debug output for behind_camera
+            print(f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) {'N/A':<20} {w:<10.3f} BEHIND_CAMERA")
             projected_points.append({
                 'name': name,
                 'latitude': gps_lat,
@@ -455,6 +508,8 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
 
         # Check if point is within image bounds
         if 0 <= u_px < image_width and 0 <= v_px < image_height:
+            # Debug output for visible
+            print(f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) ({u_px:>8.1f},{v_px:>8.1f}) {w:<10.3f} VISIBLE")
             projected_points.append({
                 'name': name,
                 'latitude': gps_lat,
@@ -465,6 +520,8 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
                 'reason': 'visible'
             })
         else:
+            # Debug output for outside_bounds
+            print(f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) ({u_px:>8.1f},{v_px:>8.1f}) {w:<10.3f} OUTSIDE_BOUNDS")
             projected_points.append({
                 'name': name,
                 'latitude': gps_lat,
@@ -474,6 +531,14 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
                 'visible': False,
                 'reason': 'outside_bounds'
             })
+
+    # Debug summary
+    visible_count = sum(1 for p in projected_points if p['visible'])
+    behind_count = sum(1 for p in projected_points if p.get('reason') == 'behind_camera')
+    outside_count = sum(1 for p in projected_points if p.get('reason') == 'outside_bounds')
+    print("-" * 110)
+    print(f"SUMMARY: {len(projected_points)} total, {visible_count} visible, {behind_count} behind_camera, {outside_count} outside_bounds")
+    print("=" * 60 + "\n")
 
     return projected_points
 
@@ -626,6 +691,134 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
             'estimated_height': None,
             'confidence_interval': (None, None),
             'height_valid': True,  # Assume valid if verification failed
+            'height_difference_percent': 0.0,
+            'inlier_count': 0,
+            'warning': f'Height verification failed: {str(e)}'
+        }
+
+
+def verify_camera_height_with_projected(
+    projected_points: List[Dict],
+    kml_points: List[Dict],
+    camera_params: Dict,
+    geo: 'CameraGeometry'
+) -> Dict:
+    """
+    Verify camera height using already-projected points.
+
+    This is an optimized version of verify_camera_height that accepts
+    pre-computed projected points to avoid duplicate projection calculations.
+
+    Args:
+        projected_points: Already projected points from project_gps_to_image()
+        kml_points: Original KML points (for reference)
+        camera_params: Camera parameter dictionary
+        geo: Initialized CameraGeometry instance
+
+    Returns:
+        Same structure as verify_camera_height()
+    """
+    # Check if HeightCalibrator is available
+    if not HEIGHT_CALIBRATOR_AVAILABLE:
+        return {
+            'configured_height': camera_params['height_m'],
+            'estimated_height': None,
+            'confidence_interval': (None, None),
+            'height_valid': True,
+            'height_difference_percent': 0.0,
+            'inlier_count': 0,
+            'warning': 'Height calibrator module not available - skipping verification'
+        }
+
+    # Extract camera parameters
+    camera_lat = camera_params['camera_lat']
+    camera_lon = camera_params['camera_lon']
+    height_m = camera_params['height_m']
+
+    # Create camera GPS dict for HeightCalibrator
+    camera_gps = {
+        'lat': camera_lat,
+        'lon': camera_lon
+    }
+
+    # Count visible points
+    visible_count = sum(1 for p in projected_points if p['visible'])
+    if visible_count < 5:
+        return {
+            'configured_height': height_m,
+            'estimated_height': None,
+            'confidence_interval': (None, None),
+            'height_valid': True,
+            'height_difference_percent': 0.0,
+            'inlier_count': visible_count,
+            'warning': f'Insufficient valid points for height verification (need 5, have {visible_count})'
+        }
+
+    try:
+        # Initialize HeightCalibrator
+        calibrator = HeightCalibrator(camera_gps, min_points=5)
+
+        # Add each visible point to the calibrator
+        points_added = 0
+        for point in projected_points:
+            if point['visible'] and point['pixel_u'] is not None and point['pixel_v'] is not None:
+                try:
+                    calibrator.add_point(
+                        pixel_x=point['pixel_u'],
+                        pixel_y=point['pixel_v'],
+                        gps_lat=point['latitude'],
+                        gps_lon=point['longitude'],
+                        current_height=height_m,
+                        geo=geo
+                    )
+                    points_added += 1
+                except (ValueError, RuntimeError):
+                    continue
+
+        if points_added < 5:
+            return {
+                'configured_height': height_m,
+                'estimated_height': None,
+                'confidence_interval': (None, None),
+                'height_valid': True,
+                'height_difference_percent': 0.0,
+                'inlier_count': points_added,
+                'warning': f'Insufficient valid points for height verification (need 5, have {points_added})'
+            }
+
+        # Optimize height using outlier detection
+        result = calibrator.optimize_height_with_outliers(method='mad', threshold=2.5)
+
+        # Calculate percentage difference
+        estimated_height = result.estimated_height
+        height_diff_percent = abs((estimated_height - height_m) / height_m) * 100.0
+
+        # Check if height is valid (within 10% threshold)
+        height_valid = height_diff_percent <= 10.0
+
+        warning = None
+        if not height_valid:
+            warning = (
+                f"Camera height may be inaccurate: configured {height_m:.2f}m, "
+                f"estimated {estimated_height:.2f}m ({height_diff_percent:.1f}% difference)."
+            )
+
+        return {
+            'configured_height': height_m,
+            'estimated_height': estimated_height,
+            'confidence_interval': result.confidence_interval,
+            'height_valid': height_valid,
+            'height_difference_percent': height_diff_percent,
+            'inlier_count': result.inlier_count,
+            'warning': warning
+        }
+
+    except ValueError as e:
+        return {
+            'configured_height': height_m,
+            'estimated_height': None,
+            'confidence_interval': (None, None),
+            'height_valid': True,
             'height_difference_percent': 0.0,
             'inlier_count': 0,
             'warning': f'Height verification failed: {str(e)}'
@@ -1376,6 +1569,25 @@ class GCPCaptureWebSession:
         return gcps
 
 
+def _convert_numpy_types(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(_convert_numpy_types(item) for item in obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
+
 def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str:
     """Generate the HTML interface for GCP capture."""
 
@@ -1388,7 +1600,8 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
     kml_points_json = json.dumps(session.kml_points)
     projected_points_json = json.dumps(session.projected_points)
     kml_file_name_json = json.dumps(session.kml_file_name)
-    height_verification_json = json.dumps(session.height_verification)
+    # Convert numpy types to native Python types for JSON serialization
+    height_verification_json = json.dumps(_convert_numpy_types(session.height_verification))
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1462,7 +1675,26 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             border-left: 1px solid #444;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }}
+
+        /* Custom scrollbar for side panel */
+        .side-panel::-webkit-scrollbar {{
+            width: 8px;
+        }}
+
+        .side-panel::-webkit-scrollbar-track {{
+            background: #1a1a1a;
+        }}
+
+        .side-panel::-webkit-scrollbar-thumb {{
+            background: #555;
+            border-radius: 4px;
+        }}
+
+        .side-panel::-webkit-scrollbar-thumb:hover {{
+            background: #777;
         }}
 
         .panel-section {{
@@ -1975,6 +2207,64 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         .map-first-marker:hover .marker-label {{
             background: rgba(25, 118, 210, 0.95);
         }}
+
+        /* Selected marker pulse animation */
+        @keyframes pulse {{
+            0% {{
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 0 rgba(76, 175, 80, 0.7);
+            }}
+            50% {{
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 8px rgba(76, 175, 80, 0);
+            }}
+            100% {{
+                box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 0 rgba(76, 175, 80, 0);
+            }}
+        }}
+
+        .map-first-marker.selected {{
+            z-index: 1000 !important;
+        }}
+
+        /* Map-first tooltip style */
+        .map-first-tooltip {{
+            background: rgba(33, 150, 243, 0.9) !important;
+            border: 1px solid white !important;
+            color: white !important;
+            font-size: 11px !important;
+            padding: 2px 6px !important;
+        }}
+
+        /* Context menu styles */
+        .context-menu-item {{
+            padding: 8px 12px;
+            cursor: pointer;
+            color: #fff;
+            font-size: 13px;
+        }}
+
+        .context-menu-item:hover {{
+            background: #3a3a3a;
+        }}
+
+        .context-menu-item.delete {{
+            color: #f44336;
+        }}
+
+        .context-menu-item.delete:hover {{
+            background: rgba(244, 67, 54, 0.2);
+        }}
+
+        /* Selected tooltip style */
+        .selected-tooltip {{
+            background: rgba(76, 175, 80, 0.95) !important;
+            border: 2px solid white !important;
+            font-weight: bold !important;
+            color: white !important;
+        }}
+
+        .selected-tooltip::before {{
+            border-top-color: rgba(76, 175, 80, 0.95) !important;
+        }}
     </style>
 </head>
 <body>
@@ -1985,6 +2275,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 Frame: {session.frame_width} x {session.frame_height}
                 {f"| PTZ: P={session.ptz_status['pan']:.1f} T={session.ptz_status['tilt']:.1f} Z={session.ptz_status['zoom']:.1f}x" if session.ptz_status else ""}
                 <button class="btn btn-batch" id="batchModeBtn" onclick="toggleBatchMode()" style="margin-left: 20px; padding: 4px 12px; font-size: 12px;">Batch Mode: OFF</button>
+                <button class="btn btn-secondary" onclick="exportImageWithMarkers()" style="margin-left: 10px; padding: 4px 12px; font-size: 12px;" title="Export frame with markers overlay">Export Image</button>
             </div>
         </div>
 
@@ -2026,8 +2317,45 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                             <span class="label">Discarded:</span>
                             <span class="value error" id="discardedPoints">0</span>
                         </div>
+                        <div class="summary-item">
+                            <span class="label">Adjusted:</span>
+                            <span class="value" id="adjustedPoints" style="color: #ff9800;">0</span>
+                        </div>
                     </div>
                     <div id="heightWarning" style="display: none;"></div>
+                    <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="convertAllToGCPs()" style="flex: 1; min-width: 120px;">
+                            Convert to GCPs
+                        </button>
+                        <button class="btn btn-secondary" onclick="showDriftAnalysis()" style="flex: 1; min-width: 120px;">
+                            Analyze Drift
+                        </button>
+                    </div>
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">
+                        <button class="btn btn-secondary" id="moveAllBtn" onclick="toggleMoveAllMode()" style="flex: 1;">
+                            Move All
+                        </button>
+                        <button class="btn btn-secondary" id="rotateAllBtn" onclick="toggleRotateAllMode()" style="flex: 1;">
+                            Rotate All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Drift Analysis Panel -->
+                <div id="driftAnalysisPanel" class="panel-section" style="display: none;">
+                    <h3>Drift Analysis</h3>
+                    <div id="driftResults" style="font-size: 12px;">
+                        <p style="color: #888;">Drag KML points to match visible features, then click "Analyze Drift" to diagnose projection errors.</p>
+                    </div>
+                    <div id="driftRecommendations" style="margin-top: 10px; display: none;">
+                        <h4 style="font-size: 13px; color: #fff; margin-bottom: 8px;">Recommendations</h4>
+                        <div id="driftRecommendationsContent"></div>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <button class="btn btn-secondary" onclick="applyCalibration()" id="applyCalibrationBtn" style="width: 100%;" disabled>
+                            Apply Suggested Calibration
+                        </button>
+                    </div>
                 </div>
 
                 <div class="panel-section">
@@ -2179,24 +2507,46 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         let kmlFileName = {kml_file_name_json};  // KML file name
         let heightVerification = {height_verification_json};  // Height verification results
 
+        // Store original projected positions for drift analysis
+        let originalProjectedPositions = JSON.parse(JSON.stringify({projected_points_json}));
+
+        // Drift analysis state
+        let driftAnalysisResult = null;
+        let suggestedCalibration = null;
+
         // Initialize Leaflet map with simple CRS for image
+        // Extended bounds allow dragging markers outside the visible image area
+        // IMPORTANT: Disable keyboard navigation to prevent arrow keys from panning
         const map = L.map('imageMap', {{
             crs: L.CRS.Simple,
             minZoom: -3,
             maxZoom: 5,
             zoomSnap: 0.25,
-            zoomDelta: 0.5
+            zoomDelta: 0.5,
+            // Don't restrict panning - allow dragging markers anywhere
+            maxBoundsViscosity: 0,
+            // Disable keyboard navigation - we handle arrow keys ourselves
+            keyboard: false
         }});
 
         // Calculate bounds for the image
         const bounds = [[0, 0], [imageHeight, imageWidth]];
         const imageBounds = L.latLngBounds([[0, 0], [imageHeight, imageWidth]]);
 
+        // Extended bounds for marker dragging (2x image size in each direction)
+        const extendedBounds = L.latLngBounds(
+            [[-imageHeight, -imageWidth],
+             [imageHeight * 2, imageWidth * 2]]
+        );
+
         // Add the image as an overlay
         L.imageOverlay(imagePath, bounds).addTo(map);
 
-        // Fit the map to show the full image
+        // Fit the map to show the full image, but allow panning beyond
         map.fitBounds(bounds);
+
+        // Set extended max bounds to allow dragging markers outside image
+        map.setMaxBounds(extendedBounds);
 
         // Update zoom info display
         function updateZoomInfo() {{
@@ -2537,6 +2887,109 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             }}
         }}
 
+        // Export image with markers overlay (and plain frame)
+        function exportImageWithMarkers() {{
+            const timestamp = Date.now();
+
+            // Load the original frame image
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() {{
+                // First, export the plain frame without markers
+                const canvasPlain = document.createElement('canvas');
+                canvasPlain.width = imageWidth;
+                canvasPlain.height = imageHeight;
+                const ctxPlain = canvasPlain.getContext('2d');
+                ctxPlain.drawImage(img, 0, 0, imageWidth, imageHeight);
+
+                canvasPlain.toBlob(function(blob) {{
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `frame_${{timestamp}}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }}, 'image/png');
+
+                // Then, export markers only (transparent background)
+                const canvas = document.createElement('canvas');
+                canvas.width = imageWidth;
+                canvas.height = imageHeight;
+                const ctx = canvas.getContext('2d');
+                // Leave background transparent (don't draw the image)
+
+                // Draw markers
+                if (mapFirstMode) {{
+                    // Draw map-first projected points
+                    projectedPoints.forEach((point, i) => {{
+                        if (point.visible === false) return;
+
+                        const kmlPoint = kmlPoints[i] || {{}};
+                        const label = kmlPoint.name || `P${{i + 1}}`;
+
+                        // Draw marker circle
+                        ctx.beginPath();
+                        ctx.arc(point.pixel_u, point.pixel_v, 8, 0, 2 * Math.PI);
+                        ctx.fillStyle = 'rgba(33, 150, 243, 0.8)';
+                        ctx.fill();
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+
+                        // Draw label
+                        ctx.font = 'bold 12px Arial';
+                        ctx.fillStyle = 'white';
+                        ctx.strokeStyle = 'black';
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(label, point.pixel_u + 12, point.pixel_v + 4);
+                        ctx.fillText(label, point.pixel_u + 12, point.pixel_v + 4);
+                    }});
+                }} else {{
+                    // Draw manual GCP markers
+                    gcps.forEach((gcp, i) => {{
+                        const u = gcp.image.u;
+                        const v = gcp.image.v;
+                        const label = gcp.metadata?.description || `GCP ${{i + 1}}`;
+
+                        // Draw marker circle
+                        ctx.beginPath();
+                        ctx.arc(u, v, 8, 0, 2 * Math.PI);
+                        ctx.fillStyle = 'rgba(76, 175, 80, 0.8)';
+                        ctx.fill();
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+
+                        // Draw label
+                        ctx.font = 'bold 12px Arial';
+                        ctx.fillStyle = 'white';
+                        ctx.strokeStyle = 'black';
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(label, u + 12, v + 4);
+                        ctx.fillText(label, u + 12, v + 4);
+                    }});
+                }}
+
+                // Download image with markers
+                canvas.toBlob(function(blob) {{
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `frame_markers_${{timestamp}}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }}, 'image/png');
+            }};
+            img.onerror = function() {{
+                alert('Failed to load image for export');
+            }};
+            img.src = imagePath;
+        }}
+
         // Update UI with current state
         function updateUI() {{
             // Update distribution metrics
@@ -2619,6 +3072,25 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             if (mapFirstMode) {{
                 renderMapFirstPoints();
                 updateMapFirstSummary();
+
+                // Update instructions for map-first mode
+                const instructions = document.getElementById('instructions');
+                if (rotateAllMode) {{
+                    instructions.textContent = 'ROTATE MODE: ← → rotate all points around centroid (Shift = faster) | Enter/Esc = done';
+                    instructions.style.background = 'rgba(156, 39, 176, 0.9)';
+                }} else if (moveAllMode) {{
+                    instructions.textContent = 'MOVE ALL MODE: Arrow keys move all points (Shift = faster) | Enter/Esc = done';
+                    instructions.style.background = 'rgba(255, 152, 0, 0.9)';
+                }} else if (selectedMapFirstIndices.size > 0) {{
+                    const count = selectedMapFirstIndices.size;
+                    instructions.textContent = count > 1
+                        ? `Arrow keys to move ${{count}} selected points (Shift = faster) | Ctrl+click = add/remove | Esc = deselect`
+                        : 'Arrow keys to move selected point (Shift = faster) | Ctrl+click = add to selection | Esc = deselect';
+                    instructions.style.background = 'rgba(76, 175, 80, 0.9)';
+                }} else {{
+                    instructions.textContent = 'Click a KML marker to select it, then use Arrow keys to move';
+                    instructions.style.background = 'rgba(33, 150, 243, 0.9)';
+                }}
             }}
 
             // Enable/disable save button
@@ -2864,15 +3336,14 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             }}
         }}
 
-        // Create map-first marker icon with label
-        function createMapFirstIcon(label) {{
-            return L.divIcon({{
-                className: 'map-first-marker',
-                html: `<div class="marker-pin blue"></div><span class="marker-label">${{label}}</span>`,
-                iconSize: [30, 42],
-                iconAnchor: [15, 42]
-            }});
-        }}
+        // Selected map-first points for keyboard movement (Set of indices for multi-select)
+        let selectedMapFirstIndices = new Set();
+
+        // Move All mode state
+        let moveAllMode = false;
+
+        // Rotate All mode state
+        let rotateAllMode = false;
 
         // Render map-first projected points
         function renderMapFirstPoints() {{
@@ -2883,6 +3354,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             if (!mapFirstMode || !projectedPoints || projectedPoints.length === 0) {{
                 return;
             }}
+
+            // Check if any points are selected
+            const hasSelection = selectedMapFirstIndices.size > 0;
 
             // Add markers for each projected point
             projectedPoints.forEach((point, i) => {{
@@ -2897,103 +3371,641 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 // Convert image coords to Leaflet coords
                 const leafletCoords = imageToLeaflet(point.pixel_u, point.pixel_v);
 
-                // Create marker with custom icon
+                // Check if this point is selected (multi-select)
+                const isSelected = selectedMapFirstIndices.has(i);
+
+                // Check if we should dim this marker (when other points are selected but not this one)
+                const shouldDim = (hasSelection && !isSelected);
+
+                // Create marker with custom icon (NOT draggable - use arrow keys instead)
                 const marker = L.marker(leafletCoords, {{
-                    icon: createMapFirstIcon(label),
-                    draggable: true
+                    icon: createMapFirstIcon(label, isSelected),
+                    draggable: false,  // Disabled - use arrow keys to move
+                    opacity: shouldDim ? 0.15 : 1.0  // Dim non-selected markers when some are selected
                 }}).addTo(map);
 
                 // Store reference data
                 marker.projectedIndex = i;
                 marker.kmlName = label;
 
-                // Add popup with GPS info and discard button
+                // Calculate drift info
+                const orig = originalProjectedPositions[i];
+                let driftInfo = '';
+                if (orig && orig.pixel_u !== null && orig.pixel_v !== null) {{
+                    const dx = point.pixel_u - orig.pixel_u;
+                    const dy = point.pixel_v - orig.pixel_v;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > 2) {{
+                        driftInfo = `<br><span style="color: #ff9800;">Drift: (${{dx.toFixed(1)}}, ${{dy.toFixed(1)}}) = ${{dist.toFixed(1)}}px</span>`;
+                    }}
+                }}
+
+                // Add popup with GPS info and drift (no discard button - use context menu)
+                const selectionCount = selectedMapFirstIndices.size;
                 const popupContent = `
-                    <div style="min-width: 200px;">
-                        <strong>${{label}}</strong><br>
+                    <div style="min-width: 220px;">
+                        <strong>${{label}}</strong>${{isSelected ? ' <span style="color: #4CAF50;">(SELECTED)</span>' : ''}}<br>
                         GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}<br>
                         Image: (${{point.pixel_u.toFixed(1)}}, ${{point.pixel_v.toFixed(1)}})<br>
-                        <button onclick="discardMapFirstPoint(${{i}})"
-                                style="margin-top: 8px; padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                            Discard Point
-                        </button>
+                        ${{driftInfo}}
+                        <div style="margin-top: 8px; font-size: 11px; color: #888;">
+                            Click to select/deselect (Ctrl+Click for multi-select)<br>
+                            Right-click for options
+                        </div>
                     </div>
                 `;
                 marker.bindPopup(popupContent);
 
-                // Add tooltip with name and GPS
-                marker.bindTooltip(`${{label}}<br>GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}`, {{
-                    permanent: false,
-                    direction: 'top',
-                    offset: [0, -35]
-                }});
+                // Add tooltip with label - permanent so we can see point names
+                // Hide tooltips for dimmed markers to reduce clutter
+                if (!shouldDim) {{
+                    let tooltipText = label;
+                    if (isSelected && selectionCount > 1) {{
+                        tooltipText = `${{label}} (1 of ${{selectionCount}} selected)`;
+                    }} else if (isSelected) {{
+                        tooltipText = `${{label}} (SELECTED)`;
+                    }}
+                    marker.bindTooltip(tooltipText, {{
+                        permanent: true,
+                        direction: 'right',
+                        offset: [10, 0],
+                        className: isSelected ? 'selected-tooltip' : 'map-first-tooltip'
+                    }});
+                }}
 
-                // Prevent click propagation
+                // Handle left click to select/deselect point (Ctrl for multi-select)
                 marker.on('click', function(e) {{
                     L.DomEvent.stopPropagation(e);
+                    toggleMapFirstPointSelection(i, e.originalEvent.ctrlKey || e.originalEvent.metaKey);
                 }});
+
+                // Handle right-click for context menu
+                marker.on('contextmenu', function(e) {{
+                    L.DomEvent.stopPropagation(e);
+                    L.DomEvent.preventDefault(e);
+                    showPointContextMenu(e.originalEvent, i);
+                }});
+
                 marker.on('mousedown', function(e) {{
                     L.DomEvent.stopPropagation(e);
                 }});
 
-                // Handle drag end - update position
-                marker.on('dragend', function(e) {{
-                    const newPos = e.target.getLatLng();
-                    const imgCoords = leafletToImage(newPos.lat, newPos.lng);
-                    const newU = imgCoords.u;
-                    const newV = imgCoords.v;
-
-                    // Check bounds
-                    if (newU < 0 || newU > imageWidth || newV < 0 || newV > imageHeight) {{
-                        // Revert to original position
-                        e.target.setLatLng(imageToLeaflet(point.pixel_u, point.pixel_v));
-                        return;
-                    }}
-
-                    // Update projected point position
-                    projectedPoints[i].pixel_u = newU;
-                    projectedPoints[i].pixel_v = newV;
-
-                    // Update popup with new coordinates
-                    const updatedPopupContent = `
-                        <div style="min-width: 200px;">
-                            <strong>${{label}}</strong><br>
-                            GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}<br>
-                            Image: (${{newU.toFixed(1)}}, ${{newV.toFixed(1)}})<br>
-                            <button onclick="discardMapFirstPoint(${{i}})"
-                                    style="margin-top: 8px; padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                                Discard Point
-                            </button>
-                        </div>
-                    `;
-                    marker.setPopupContent(updatedPopupContent);
-                }});
-
-                // Visual feedback during drag
-                marker.on('dragstart', function() {{
-                    marker.setIcon(createMapFirstIcon(label + ' (moving)'));
-                }});
-
-                marker.on('drag', function() {{
-                    const pos = marker.getLatLng();
-                    const imgCoords = leafletToImage(pos.lat, pos.lng);
-                    marker.setTooltipContent(`${{label}}<br>(${{imgCoords.u.toFixed(1)}}, ${{imgCoords.v.toFixed(1)}})`);
-                }});
-
-                marker.on('dragend', function() {{
-                    marker.setIcon(createMapFirstIcon(label));
-                }});
-
                 mapFirstMarkers.push(marker);
+            }});
+
+            // Update selection indicator
+            updateSelectionIndicator();
+        }}
+
+        // Show context menu for a point
+        function showPointContextMenu(event, pointIndex) {{
+            // Remove any existing context menu
+            const existingMenu = document.getElementById('pointContextMenu');
+            if (existingMenu) existingMenu.remove();
+
+            const isSelected = selectedMapFirstIndices.has(pointIndex);
+            const selectionCount = selectedMapFirstIndices.size;
+            const kmlPoint = kmlPoints[pointIndex] || {{}};
+            const label = kmlPoint.name || `Point ${{pointIndex + 1}}`;
+
+            // Create context menu
+            const menu = document.createElement('div');
+            menu.id = 'pointContextMenu';
+            menu.style.cssText = `
+                position: fixed;
+                left: ${{event.clientX}}px;
+                top: ${{event.clientY}}px;
+                background: #2d2d2d;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 0;
+                min-width: 180px;
+                z-index: 10001;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            `;
+
+            let menuItems = '';
+
+            // If this point is not selected, offer to select it
+            if (!isSelected) {{
+                menuItems += `
+                    <div class="context-menu-item" onclick="toggleMapFirstPointSelection(${{pointIndex}}, false); hidePointContextMenu();">
+                        Select "${{label}}"
+                    </div>
+                    <div class="context-menu-item" onclick="toggleMapFirstPointSelection(${{pointIndex}}, true); hidePointContextMenu();">
+                        Add to selection
+                    </div>
+                `;
+            }} else {{
+                menuItems += `
+                    <div class="context-menu-item" onclick="toggleMapFirstPointSelection(${{pointIndex}}, true); hidePointContextMenu();">
+                        Deselect "${{label}}"
+                    </div>
+                `;
+            }}
+
+            // Separator
+            menuItems += `<div style="border-top: 1px solid #555; margin: 4px 0;"></div>`;
+
+            // Delete options
+            if (isSelected && selectionCount > 1) {{
+                menuItems += `
+                    <div class="context-menu-item delete" onclick="deleteSelectedPoints(); hidePointContextMenu();">
+                        Delete ${{selectionCount}} selected points
+                    </div>
+                `;
+            }} else {{
+                menuItems += `
+                    <div class="context-menu-item delete" onclick="discardMapFirstPoint(${{pointIndex}}); hidePointContextMenu();">
+                        Delete "${{label}}"
+                    </div>
+                `;
+            }}
+
+            // Select all option
+            menuItems += `
+                <div style="border-top: 1px solid #555; margin: 4px 0;"></div>
+                <div class="context-menu-item" onclick="selectAllMapFirstPoints(); hidePointContextMenu();">
+                    Select all points
+                </div>
+                <div class="context-menu-item" onclick="clearMapFirstSelection(); hidePointContextMenu();">
+                    Clear selection
+                </div>
+            `;
+
+            menu.innerHTML = menuItems;
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {{
+                document.addEventListener('click', hidePointContextMenu, {{ once: true }});
+            }}, 10);
+        }}
+
+        // Hide context menu
+        function hidePointContextMenu() {{
+            const menu = document.getElementById('pointContextMenu');
+            if (menu) menu.remove();
+        }}
+
+        // Create map-first icon - uses exact same structure as GCP icons to ensure correct positioning
+        function createMapFirstIcon(label, isSelected = false) {{
+            const color = isSelected ? '#4CAF50' : '#2196F3';
+            const size = isSelected ? 16 : 14;
+
+            // Use exact same icon structure as createGcpIcon
+            return L.divIcon({{
+                className: 'gcp-drag-marker',
+                html: `<div style="
+                    width: ${{size}}px;
+                    height: ${{size}}px;
+                    background: ${{color}};
+                    border: 2px solid white;
+                    border-radius: 50%;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                    cursor: pointer;
+                "></div>`,
+                iconSize: [size, size],
+                iconAnchor: [size/2, size/2]
             }});
         }}
 
-        // Discard a map-first point
-        function discardMapFirstPoint(index) {{
-            if (confirm(`Discard point "${{kmlPoints[index]?.name || 'Point ' + (index + 1)}}"?`)) {{
-                projectedPoints[index].visible = false;
+        // Toggle selection of a map-first point (multi-select support)
+        function toggleMapFirstPointSelection(index, isMultiSelect = false) {{
+            if (isMultiSelect) {{
+                // Multi-select mode: add/remove from selection
+                if (selectedMapFirstIndices.has(index)) {{
+                    selectedMapFirstIndices.delete(index);
+                }} else {{
+                    selectedMapFirstIndices.add(index);
+                }}
+            }} else {{
+                // Single-select mode: clear others and toggle this one
+                if (selectedMapFirstIndices.has(index) && selectedMapFirstIndices.size === 1) {{
+                    selectedMapFirstIndices.clear();
+                }} else {{
+                    selectedMapFirstIndices.clear();
+                    selectedMapFirstIndices.add(index);
+                }}
+            }}
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+
+            // Focus on the map to receive keyboard events
+            document.getElementById('imageMap').focus();
+        }}
+
+        // Select all visible map-first points
+        function selectAllMapFirstPoints() {{
+            selectedMapFirstIndices.clear();
+            projectedPoints.forEach((point, i) => {{
+                if (point.visible !== false && point.reason === 'visible') {{
+                    selectedMapFirstIndices.add(i);
+                }}
+            }});
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+        }}
+
+        // Clear all selections
+        function clearMapFirstSelection() {{
+            if (selectedMapFirstIndices.size > 0) {{
+                selectedMapFirstIndices.clear();
                 renderMapFirstPoints();
                 updateMapFirstSummary();
+            }}
+        }}
+
+        // Delete all selected points
+        function deleteSelectedPoints() {{
+            if (selectedMapFirstIndices.size === 0) return;
+
+            const count = selectedMapFirstIndices.size;
+            if (confirm(`Delete ${{count}} selected point${{count > 1 ? 's' : ''}}?`)) {{
+                selectedMapFirstIndices.forEach(index => {{
+                    projectedPoints[index].visible = false;
+                }});
+                selectedMapFirstIndices.clear();
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Legacy function for backward compatibility
+        function selectMapFirstPoint(index) {{
+            toggleMapFirstPointSelection(index, false);
+        }}
+
+        // Deselect all points
+        function deselectMapFirstPoint() {{
+            clearMapFirstSelection();
+        }}
+
+        // Move the selected point(s) with arrow keys
+        function moveSelectedPoint(dx, dy) {{
+            if (selectedMapFirstIndices.size === 0) return;
+
+            // Move all selected points
+            let anyMoved = false;
+            selectedMapFirstIndices.forEach(i => {{
+                if (projectedPoints[i] && projectedPoints[i].visible !== false) {{
+                    projectedPoints[i].pixel_u += dx;
+                    projectedPoints[i].pixel_v += dy;
+                    anyMoved = true;
+                }}
+            }});
+
+            if (anyMoved) {{
+                // Re-render to update marker positions
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Update selection indicator in the UI
+        function updateSelectionIndicator() {{
+            const existingIndicator = document.getElementById('selectionIndicator');
+            if (existingIndicator) {{
+                existingIndicator.remove();
+            }}
+
+            if (selectedMapFirstIndices.size > 0 && mapFirstMode) {{
+                const selectionCount = selectedMapFirstIndices.size;
+                let labelText = '';
+                let driftText = '';
+
+                if (selectionCount === 1) {{
+                    // Single selection - show point name and drift
+                    const index = Array.from(selectedMapFirstIndices)[0];
+                    const kmlPoint = kmlPoints[index] || {{}};
+                    labelText = `<strong>${{kmlPoint.name || 'Point ' + (index + 1)}}</strong> selected`;
+
+                    // Calculate drift
+                    const point = projectedPoints[index];
+                    const orig = originalProjectedPositions[index];
+                    if (orig && orig.pixel_u !== null && orig.pixel_v !== null) {{
+                        const dx = point.pixel_u - orig.pixel_u;
+                        const dy = point.pixel_v - orig.pixel_v;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        driftText = ` | Drift: ${{dist.toFixed(0)}}px`;
+                    }}
+                }} else {{
+                    // Multi-selection - show count
+                    labelText = `<strong>${{selectionCount}} points</strong> selected`;
+
+                    // Calculate average drift
+                    let totalDrift = 0;
+                    let driftCount = 0;
+                    selectedMapFirstIndices.forEach(index => {{
+                        const point = projectedPoints[index];
+                        const orig = originalProjectedPositions[index];
+                        if (orig && orig.pixel_u !== null && orig.pixel_v !== null) {{
+                            const dx = point.pixel_u - orig.pixel_u;
+                            const dy = point.pixel_v - orig.pixel_v;
+                            totalDrift += Math.sqrt(dx * dx + dy * dy);
+                            driftCount++;
+                        }}
+                    }});
+                    if (driftCount > 0) {{
+                        driftText = ` | Avg drift: ${{(totalDrift / driftCount).toFixed(0)}}px`;
+                    }}
+                }}
+
+                const indicator = document.createElement('div');
+                indicator.id = 'selectionIndicator';
+                indicator.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(76, 175, 80, 0.95);
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    z-index: 10000;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                `;
+                indicator.innerHTML = `
+                    <span>${{labelText}}${{driftText}}</span>
+                    <span style="font-size: 12px; opacity: 0.9;">
+                        ← → ↑ ↓ to move | Shift = faster | Esc = deselect
+                    </span>
+                    <button onclick="clearMapFirstSelection()" style="
+                        background: rgba(255,255,255,0.2);
+                        border: none;
+                        color: white;
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                    ">✕</button>
+                `;
+                document.body.appendChild(indicator);
+            }}
+        }}
+
+        // Discard a map-first point (now used by context menu only)
+        function discardMapFirstPoint(index) {{
+            projectedPoints[index].visible = false;
+            selectedMapFirstIndices.delete(index);
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+        }}
+
+        // Toggle Move All mode
+        function toggleMoveAllMode() {{
+            if (moveAllMode) {{
+                // Exit Move All mode
+                exitMoveAllMode();
+            }} else {{
+                // Enter Move All mode - exit other modes first
+                selectedMapFirstIndices.clear();
+                rotateAllMode = false;
+                updateRotateAllUI();
+                moveAllMode = true;
+                updateMoveAllUI();
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Exit Move All mode
+        function exitMoveAllMode() {{
+            moveAllMode = false;
+            updateMoveAllUI();
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+        }}
+
+        // Update Move All button and indicator
+        function updateMoveAllUI() {{
+            const btn = document.getElementById('moveAllBtn');
+            const existingIndicator = document.getElementById('moveAllIndicator');
+
+            if (existingIndicator) {{
+                existingIndicator.remove();
+            }}
+
+            if (moveAllMode) {{
+                btn.textContent = 'Accept Movement';
+                btn.style.background = '#4CAF50';
+                btn.style.borderColor = '#4CAF50';
+
+                // Show indicator at bottom
+                const indicator = document.createElement('div');
+                indicator.id = 'moveAllIndicator';
+                indicator.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(255, 152, 0, 0.95);
+                    color: white;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    z-index: 10000;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                `;
+
+                // Count visible points
+                const visibleCount = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible').length;
+
+                indicator.innerHTML = `
+                    <span><strong>MOVE ALL MODE</strong> - Moving ${{visibleCount}} points</span>
+                    <span style="font-size: 12px; opacity: 0.9;">
+                        ← → ↑ ↓ to move | Shift = faster
+                    </span>
+                    <button onclick="exitMoveAllMode()" style="
+                        background: rgba(255,255,255,0.2);
+                        border: none;
+                        color: white;
+                        padding: 4px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                    ">Done</button>
+                `;
+                document.body.appendChild(indicator);
+            }} else {{
+                btn.textContent = 'Move All Points';
+                btn.style.background = '';
+                btn.style.borderColor = '';
+            }}
+        }}
+
+        // Move all visible points
+        function moveAllPoints(dx, dy) {{
+            if (!moveAllMode) return;
+
+            let movedCount = 0;
+            projectedPoints.forEach((point, i) => {{
+                // Only move visible points that are in frame
+                if (point.visible !== false && point.reason === 'visible') {{
+                    point.pixel_u += dx;
+                    point.pixel_v += dy;
+                    movedCount++;
+                }}
+            }});
+
+            if (movedCount > 0) {{
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // ============================================================
+        // Rotate All Mode Functions
+        // ============================================================
+
+        // Toggle Rotate All mode
+        function toggleRotateAllMode() {{
+            if (rotateAllMode) {{
+                // Exit Rotate All mode
+                exitRotateAllMode();
+            }} else {{
+                // Enter Rotate All mode - exit other modes first
+                selectedMapFirstIndices.clear();
+                moveAllMode = false;
+                updateMoveAllUI();
+                rotateAllMode = true;
+                updateRotateAllUI();
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Exit Rotate All mode
+        function exitRotateAllMode() {{
+            rotateAllMode = false;
+            updateRotateAllUI();
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+        }}
+
+        // Calculate centroid of all visible points
+        function calculateCentroid() {{
+            let sumU = 0, sumV = 0, count = 0;
+
+            projectedPoints.forEach((point) => {{
+                if (point.visible !== false && point.reason === 'visible') {{
+                    sumU += point.pixel_u;
+                    sumV += point.pixel_v;
+                    count++;
+                }}
+            }});
+
+            if (count === 0) return null;
+
+            return {{
+                u: sumU / count,
+                v: sumV / count
+            }};
+        }}
+
+        // Rotate all visible points around centroid
+        function rotateAllPoints(angleDegrees) {{
+            if (!rotateAllMode) return;
+
+            const centroid = calculateCentroid();
+            if (!centroid) return;
+
+            const angleRadians = angleDegrees * Math.PI / 180;
+            const cosA = Math.cos(angleRadians);
+            const sinA = Math.sin(angleRadians);
+
+            let rotatedCount = 0;
+            projectedPoints.forEach((point) => {{
+                if (point.visible !== false && point.reason === 'visible') {{
+                    // Translate to origin (centroid)
+                    const dx = point.pixel_u - centroid.u;
+                    const dy = point.pixel_v - centroid.v;
+
+                    // Rotate
+                    const newDx = dx * cosA - dy * sinA;
+                    const newDy = dx * sinA + dy * cosA;
+
+                    // Translate back
+                    point.pixel_u = centroid.u + newDx;
+                    point.pixel_v = centroid.v + newDy;
+
+                    rotatedCount++;
+                }}
+            }});
+
+            if (rotatedCount > 0) {{
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Update Rotate All button and indicator
+        function updateRotateAllUI() {{
+            const btn = document.getElementById('rotateAllBtn');
+            const existingIndicator = document.getElementById('rotateAllIndicator');
+
+            if (existingIndicator) {{
+                existingIndicator.remove();
+            }}
+
+            if (rotateAllMode) {{
+                btn.textContent = 'Accept Rotation';
+                btn.style.background = '#4CAF50';
+                btn.style.borderColor = '#4CAF50';
+
+                // Show indicator at bottom
+                const indicator = document.createElement('div');
+                indicator.id = 'rotateAllIndicator';
+                indicator.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(156, 39, 176, 0.95);
+                    color: white;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    z-index: 10000;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                `;
+
+                // Count visible points
+                const visibleCount = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible').length;
+
+                indicator.innerHTML = `
+                    <span><strong>ROTATE MODE</strong> - Rotating ${{visibleCount}} points around centroid</span>
+                    <span style="font-size: 12px; opacity: 0.9;">
+                        ← → to rotate | Shift = faster (10×)
+                    </span>
+                    <button onclick="exitRotateAllMode()" style="
+                        background: rgba(255,255,255,0.2);
+                        border: none;
+                        color: white;
+                        padding: 4px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                    ">Done</button>
+                `;
+                document.body.appendChild(indicator);
+            }} else {{
+                btn.textContent = 'Rotate All';
+                btn.style.background = '';
+                btn.style.borderColor = '';
             }}
         }}
 
@@ -3016,12 +4028,23 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             let visibleCount = 0;
             let outOfViewCount = 0;
             let discardedCount = 0;
+            let adjustedCount = 0;
 
-            projectedPoints.forEach(point => {{
+            projectedPoints.forEach((point, i) => {{
                 if (point.visible === false) {{
                     discardedCount++;
                 }} else if (point.reason === 'visible') {{
                     visibleCount++;
+                    // Check if point was adjusted from original position
+                    if (originalProjectedPositions[i] &&
+                        originalProjectedPositions[i].pixel_u !== null &&
+                        originalProjectedPositions[i].pixel_v !== null) {{
+                        const dx = point.pixel_u - originalProjectedPositions[i].pixel_u;
+                        const dy = point.pixel_v - originalProjectedPositions[i].pixel_v;
+                        if (Math.sqrt(dx*dx + dy*dy) > 2) {{  // More than 2 pixels moved
+                            adjustedCount++;
+                        }}
+                    }}
                 }} else if (point.reason === 'behind_camera' || point.reason === 'outside_bounds') {{
                     outOfViewCount++;
                 }}
@@ -3032,6 +4055,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             document.getElementById('visiblePoints').textContent = visibleCount;
             document.getElementById('outOfViewPoints').textContent = outOfViewCount;
             document.getElementById('discardedPoints').textContent = discardedCount;
+            document.getElementById('adjustedPoints').textContent = adjustedCount;
 
             // Update height verification warning
             const warningEl = document.getElementById('heightWarning');
@@ -3430,14 +4454,594 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             alert(`Added ${{batchPoints.length || gcps.length}} GCPs successfully!`);
         }}
 
+        // ============================================================
+        // Map-First Mode: Convert KML Points to GCPs
+        // ============================================================
+
+        function convertAllToGCPs() {{
+            if (!mapFirstMode) {{
+                alert('This function is only available in map-first mode.');
+                return;
+            }}
+
+            // Filter visible points
+            const visiblePoints = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible');
+
+            if (visiblePoints.length === 0) {{
+                alert('No visible points to convert. Make sure KML points are projected within the camera view.');
+                return;
+            }}
+
+            // Prepare data with current (possibly adjusted) positions
+            const convertData = projectedPoints.map((point, index) => ({{
+                pixel_u: point.pixel_u,
+                pixel_v: point.pixel_v,
+                visible: point.visible !== false && point.reason === 'visible',
+                kml_index: index
+            }}));
+
+            // Call API to convert KML points to GCPs (without saving to file)
+            fetch('/api/convert_kml_to_gcps', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{projected_points: convertData}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    // Update local GCPs list and UI
+                    gcps = data.gcps || [];
+                    distribution = data.distribution || {{}};
+                    homography = data.homography || {{}};
+                    updateUI();
+
+                    // Show success message (no file download)
+                    const count = data.gcps_converted || gcps.length;
+                    console.log(`Converted ${{count}} KML points to GCPs`);
+
+                    // Update button to show conversion done
+                    const btn = document.querySelector('button[onclick="convertAllToGCPs()"]');
+                    if (btn) {{
+                        btn.textContent = `Converted (${{count}} GCPs)`;
+                        btn.style.background = '#4CAF50';
+                        btn.style.borderColor = '#4CAF50';
+                    }}
+                }} else {{
+                    alert('Failed to convert KML points: ' + (data.error || 'Unknown error'));
+                }}
+            }})
+            .catch(err => {{
+                console.error('Conversion error:', err);
+                alert('Error converting KML points to GCPs: ' + err);
+            }});
+        }}
+
+        // ============================================================
+        // Drift Analysis Functions
+        // ============================================================
+
+        function calculateDriftVectors() {{
+            const driftData = [];
+
+            projectedPoints.forEach((point, i) => {{
+                // Skip non-visible or discarded points
+                if (point.visible === false || point.reason !== 'visible') return;
+
+                const original = originalProjectedPositions[i];
+                if (!original || original.pixel_u === null || original.pixel_v === null) return;
+
+                const dx = point.pixel_u - original.pixel_u;
+                const dy = point.pixel_v - original.pixel_v;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Only include if actually moved (threshold: 2 pixels)
+                if (distance > 2) {{
+                    driftData.push({{
+                        index: i,
+                        name: kmlPoints[i]?.name || `Point ${{i + 1}}`,
+                        original_u: original.pixel_u,
+                        original_v: original.pixel_v,
+                        current_u: point.pixel_u,
+                        current_v: point.pixel_v,
+                        dx: dx,
+                        dy: dy,
+                        distance: distance,
+                        // Direction in degrees (0 = right, 90 = down)
+                        direction: Math.atan2(dy, dx) * 180 / Math.PI
+                    }});
+                }}
+            }});
+
+            return driftData;
+        }}
+
+        function analyzeDriftPattern(driftData) {{
+            if (driftData.length < 2) {{
+                return {{
+                    pattern: 'insufficient_data',
+                    message: 'Need at least 2 adjusted points for drift analysis.',
+                    suggestions: []
+                }};
+            }}
+
+            // Calculate statistics
+            const dxValues = driftData.map(d => d.dx);
+            const dyValues = driftData.map(d => d.dy);
+            const distances = driftData.map(d => d.distance);
+
+            const meanDx = dxValues.reduce((a, b) => a + b, 0) / dxValues.length;
+            const meanDy = dyValues.reduce((a, b) => a + b, 0) / dyValues.length;
+            const meanDistance = distances.reduce((a, b) => a + b, 0) / distances.length;
+
+            const stdDx = Math.sqrt(dxValues.reduce((sum, x) => sum + Math.pow(x - meanDx, 2), 0) / dxValues.length);
+            const stdDy = Math.sqrt(dyValues.reduce((sum, y) => sum + Math.pow(y - meanDy, 2), 0) / dyValues.length);
+            const stdDistance = Math.sqrt(distances.reduce((sum, d) => sum + Math.pow(d - meanDistance, 2), 0) / distances.length);
+
+            // Coefficient of variation (how consistent is the drift?)
+            const cvDx = stdDx / Math.abs(meanDx) || Infinity;
+            const cvDy = stdDy / Math.abs(meanDy) || Infinity;
+
+            const result = {{
+                stats: {{
+                    mean_dx: meanDx,
+                    mean_dy: meanDy,
+                    mean_distance: meanDistance,
+                    std_dx: stdDx,
+                    std_dy: stdDy,
+                    std_distance: stdDistance,
+                    num_points: driftData.length
+                }},
+                pattern: 'unknown',
+                message: '',
+                suggestions: [],
+                confidence: 'low'
+            }};
+
+            // Analyze pattern
+            const isConsistentDx = cvDx < 0.5;  // CV < 50%
+            const isConsistentDy = cvDy < 0.5;
+
+            // Check for uniform translation (all points shifted same direction)
+            if (isConsistentDx && isConsistentDy && stdDistance < meanDistance * 0.3) {{
+                result.pattern = 'uniform_translation';
+                result.message = `All points shifted uniformly by (~${{meanDx.toFixed(1)}}px, ~${{meanDy.toFixed(1)}}px)`;
+                result.confidence = 'high';
+
+                // This suggests camera GPS position error or pan offset error
+                if (Math.abs(meanDx) > Math.abs(meanDy) * 2) {{
+                    result.suggestions.push({{
+                        type: 'pan_offset',
+                        message: `Horizontal drift suggests pan offset error. Consider adjusting pan_offset_deg.`,
+                        estimated_correction: meanDx > 0 ? 'Increase pan_offset_deg' : 'Decrease pan_offset_deg'
+                    }});
+                }} else if (Math.abs(meanDy) > Math.abs(meanDx) * 2) {{
+                    result.suggestions.push({{
+                        type: 'tilt_or_height',
+                        message: `Vertical drift suggests tilt or height error.`,
+                        estimated_correction: meanDy > 0 ? 'Height may be too low or tilt too high' : 'Height may be too high or tilt too low'
+                    }});
+                }} else {{
+                    result.suggestions.push({{
+                        type: 'camera_position',
+                        message: `Combined drift suggests camera GPS position error.`,
+                        estimated_correction: `Check camera lat/lon configuration`
+                    }});
+                }}
+            }}
+            // Check for radial pattern (scaling from center)
+            else {{
+                // Calculate if points move radially from image center
+                const centerU = imageWidth / 2;
+                const centerV = imageHeight / 2;
+
+                let radialScore = 0;
+                driftData.forEach(d => {{
+                    const fromCenterU = d.original_u - centerU;
+                    const fromCenterV = d.original_v - centerV;
+                    const toPointU = d.current_u - d.original_u;
+                    const toPointV = d.current_v - d.original_v;
+
+                    // Dot product to check if drift is along radial direction
+                    const dot = fromCenterU * toPointU + fromCenterV * toPointV;
+                    const radialMag = Math.sqrt(fromCenterU*fromCenterU + fromCenterV*fromCenterV);
+                    const driftMag = Math.sqrt(toPointU*toPointU + toPointV*toPointV);
+
+                    if (radialMag > 10 && driftMag > 2) {{
+                        radialScore += dot / (radialMag * driftMag);  // Cosine similarity
+                    }}
+                }});
+
+                radialScore /= driftData.length;
+
+                if (Math.abs(radialScore) > 0.6) {{
+                    result.pattern = 'radial_scaling';
+                    const direction = radialScore > 0 ? 'outward' : 'inward';
+                    result.message = `Points drift ${{direction}} from image center (scale factor error)`;
+                    result.confidence = 'medium';
+                    result.suggestions.push({{
+                        type: 'height',
+                        message: `Radial ${{direction}} drift strongly suggests camera height error.`,
+                        estimated_correction: radialScore > 0
+                            ? `Height appears LOWER than configured. Try increasing height_m.`
+                            : `Height appears HIGHER than configured. Try decreasing height_m.`
+                    }});
+                }} else {{
+                    result.pattern = 'mixed';
+                    result.message = `Mixed drift pattern - multiple error sources likely`;
+                    result.confidence = 'low';
+                    result.suggestions.push({{
+                        type: 'multiple',
+                        message: `Complex drift pattern may indicate multiple calibration errors.`,
+                        estimated_correction: `Check height, pan_offset, and camera GPS coordinates.`
+                    }});
+                }}
+            }}
+
+            // Estimate height correction if we have enough data
+            if (driftData.length >= 3 && heightVerification) {{
+                const configuredHeight = heightVerification.configured_height || 11.3;
+
+                // Use radial drift to estimate scale factor
+                let scaleSamples = [];
+                const centerU = imageWidth / 2;
+                const centerV = imageHeight / 2;
+
+                driftData.forEach(d => {{
+                    const origDist = Math.sqrt(Math.pow(d.original_u - centerU, 2) + Math.pow(d.original_v - centerV, 2));
+                    const currDist = Math.sqrt(Math.pow(d.current_u - centerU, 2) + Math.pow(d.current_v - centerV, 2));
+
+                    if (origDist > 50) {{  // Only use points reasonably far from center
+                        scaleSamples.push(currDist / origDist);
+                    }}
+                }});
+
+                if (scaleSamples.length >= 2) {{
+                    const avgScale = scaleSamples.reduce((a, b) => a + b, 0) / scaleSamples.length;
+                    const estimatedHeight = configuredHeight / avgScale;
+
+                    if (Math.abs(avgScale - 1.0) > 0.05) {{  // More than 5% scale change
+                        result.estimatedHeight = estimatedHeight;
+                        result.suggestions.push({{
+                            type: 'height_estimate',
+                            message: `Based on point adjustments, estimated true height: ${{estimatedHeight.toFixed(2)}}m (configured: ${{configuredHeight.toFixed(2)}}m)`,
+                            estimated_correction: `Set height_m to approximately ${{estimatedHeight.toFixed(1)}}m`
+                        }});
+                    }}
+                }}
+            }}
+
+            // Estimate camera GPS correction from uniform translation drift
+            if (heightVerification && heightVerification.camera_lat && heightVerification.camera_lon &&
+                driftData.length >= 2 && (result.pattern === 'uniform_translation' || Math.abs(meanDx) > 5 || Math.abs(meanDy) > 5)) {{
+
+                const configuredHeight = heightVerification.configured_height || 11.3;
+                const tiltDeg = heightVerification.tilt_deg || 45;
+                const panDeg = heightVerification.pan_deg || 0;
+                const cameraLat = heightVerification.camera_lat;
+                const cameraLon = heightVerification.camera_lon;
+                const imgWidth = heightVerification.image_width || imageWidth;
+                const imgHeight = heightVerification.image_height || imageHeight;
+
+                // Calculate approximate meters per pixel at scene center
+                // Ground distance from camera = height / tan(tilt)
+                // For a typical PTZ camera with ~60° horizontal FOV
+                const tiltRad = tiltDeg * Math.PI / 180;
+                const groundDistanceAtCenter = configuredHeight / Math.tan(tiltRad);
+
+                // Approximate horizontal FOV based on typical PTZ camera
+                const hFovDeg = 60;  // Typical PTZ horizontal FOV at 1x zoom
+                const hFovRad = hFovDeg * Math.PI / 180;
+                const viewWidthAtCenter = 2 * groundDistanceAtCenter * Math.tan(hFovRad / 2);
+
+                // Meters per pixel
+                const metersPerPixelX = viewWidthAtCenter / imgWidth;
+                const metersPerPixelY = metersPerPixelX;  // Approximate square pixels
+
+                // Convert pixel drift to meters in camera coordinate system
+                // Note: positive dx means points need to move right in image,
+                // which means the projected points are too far left,
+                // which means camera thinks it's further right than it is
+                // So we need to move camera LEFT (subtract from position in that direction)
+                const driftMetersRight = -meanDx * metersPerPixelX;  // Camera needs to move this much right
+                const driftMetersForward = -meanDy * metersPerPixelY;  // Camera needs to move this much forward
+
+                // Rotate by pan angle to get East/North offset
+                // Pan=0 means camera pointing North, pan increases clockwise
+                const panRad = panDeg * Math.PI / 180;
+                const driftEast = driftMetersRight * Math.cos(panRad) + driftMetersForward * Math.sin(panRad);
+                const driftNorth = -driftMetersRight * Math.sin(panRad) + driftMetersForward * Math.cos(panRad);
+
+                // Convert to lat/lon offset
+                // 1 degree latitude ≈ 111,111 meters
+                // 1 degree longitude ≈ 111,111 * cos(latitude) meters
+                const metersPerDegreeLat = 111111;
+                const metersPerDegreeLon = 111111 * Math.cos(cameraLat * Math.PI / 180);
+
+                const driftLat = driftNorth / metersPerDegreeLat;
+                const driftLon = driftEast / metersPerDegreeLon;
+
+                // Calculate suggested camera GPS
+                const suggestedLat = cameraLat + driftLat;
+                const suggestedLon = cameraLon + driftLon;
+
+                // Only suggest if drift is significant (> 0.5 meters)
+                const totalDriftMeters = Math.sqrt(driftEast * driftEast + driftNorth * driftNorth);
+
+                if (totalDriftMeters > 0.5) {{
+                    result.estimatedCameraGPS = {{
+                        latitude: suggestedLat,
+                        longitude: suggestedLon,
+                        currentLatitude: cameraLat,
+                        currentLongitude: cameraLon,
+                        driftEast: driftEast,
+                        driftNorth: driftNorth,
+                        driftMeters: totalDriftMeters,
+                        metersPerPixel: metersPerPixelX
+                    }};
+
+                    result.suggestions.push({{
+                        type: 'camera_gps_estimate',
+                        message: `Based on uniform drift of ${{totalDriftMeters.toFixed(1)}}m (${{driftEast >= 0 ? '+' : ''}}${{driftEast.toFixed(1)}}m E, ${{driftNorth >= 0 ? '+' : ''}}${{driftNorth.toFixed(1)}}m N), estimated camera GPS:`,
+                        estimated_correction: `Suggested: ${{suggestedLat.toFixed(6)}}, ${{suggestedLon.toFixed(6)}}\\nCurrent: ${{cameraLat.toFixed(6)}}, ${{cameraLon.toFixed(6)}}`
+                    }});
+                }}
+            }}
+
+            return result;
+        }}
+
+        function showDriftAnalysis() {{
+            if (!mapFirstMode) {{
+                alert('Drift analysis is only available in map-first mode.');
+                return;
+            }}
+
+            const driftData = calculateDriftVectors();
+            const analysis = analyzeDriftPattern(driftData);
+
+            driftAnalysisResult = analysis;
+            suggestedCalibration = analysis.estimatedHeight || null;
+
+            // Show the drift analysis panel
+            document.getElementById('driftAnalysisPanel').style.display = 'block';
+
+            const resultsEl = document.getElementById('driftResults');
+            const recommendationsEl = document.getElementById('driftRecommendations');
+            const recommendationsContent = document.getElementById('driftRecommendationsContent');
+
+            if (driftData.length === 0) {{
+                resultsEl.innerHTML = `
+                    <p style="color: #ff9800;">No adjusted points detected.</p>
+                    <p style="color: #888; margin-top: 8px;">Drag KML markers to match visible features in the image, then click "Analyze Drift" again.</p>
+                `;
+                recommendationsEl.style.display = 'none';
+                return;
+            }}
+
+            // Show statistics
+            const stats = analysis.stats;
+            let html = `
+                <div style="margin-bottom: 12px;">
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">
+                        Pattern: <span style="color: ${{analysis.confidence === 'high' ? '#4CAF50' : analysis.confidence === 'medium' ? '#ff9800' : '#f44336'}};">
+                        ${{analysis.pattern.replace(/_/g, ' ')}}</span>
+                        <span style="font-size: 11px; color: #888;">(${{analysis.confidence}} confidence)</span>
+                    </div>
+                    <div style="color: #ccc;">${{analysis.message}}</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; background: #3a3a3a; padding: 10px; border-radius: 4px;">
+                    <div>Points adjusted: <strong>${{stats.num_points}}</strong></div>
+                    <div>Mean distance: <strong>${{stats.mean_distance.toFixed(1)}}px</strong></div>
+                    <div>Mean Δx: <strong>${{stats.mean_dx.toFixed(1)}}px</strong></div>
+                    <div>Mean Δy: <strong>${{stats.mean_dy.toFixed(1)}}px</strong></div>
+                    <div>Std Δx: <strong>${{stats.std_dx.toFixed(1)}}px</strong></div>
+                    <div>Std Δy: <strong>${{stats.std_dy.toFixed(1)}}px</strong></div>
+                </div>
+            `;
+
+            // Show per-point drift table
+            if (driftData.length <= 10) {{
+                html += `
+                    <div style="margin-top: 12px; font-size: 11px;">
+                        <div style="font-weight: 600; margin-bottom: 4px;">Individual Point Drift:</div>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr style="color: #888;">
+                                <th style="text-align: left; padding: 2px 4px;">Point</th>
+                                <th style="text-align: right; padding: 2px 4px;">Δx</th>
+                                <th style="text-align: right; padding: 2px 4px;">Δy</th>
+                                <th style="text-align: right; padding: 2px 4px;">Dist</th>
+                            </tr>
+                `;
+                driftData.forEach(d => {{
+                    html += `
+                        <tr>
+                            <td style="padding: 2px 4px;">${{d.name}}</td>
+                            <td style="text-align: right; padding: 2px 4px; color: ${{d.dx > 0 ? '#4CAF50' : '#f44336'}};">${{d.dx.toFixed(1)}}</td>
+                            <td style="text-align: right; padding: 2px 4px; color: ${{d.dy > 0 ? '#4CAF50' : '#f44336'}};">${{d.dy.toFixed(1)}}</td>
+                            <td style="text-align: right; padding: 2px 4px;">${{d.distance.toFixed(1)}}</td>
+                        </tr>
+                    `;
+                }});
+                html += `</table></div>`;
+            }}
+
+            resultsEl.innerHTML = html;
+
+            // Show recommendations
+            if (analysis.suggestions.length > 0) {{
+                recommendationsEl.style.display = 'block';
+                let recHtml = '';
+                analysis.suggestions.forEach(s => {{
+                    // Choose border color based on suggestion type
+                    let borderColor = '#ff9800';  // Default orange
+                    if (s.type === 'height_estimate') borderColor = '#4CAF50';  // Green
+                    if (s.type === 'camera_gps_estimate') borderColor = '#2196F3';  // Blue
+
+                    // Handle multi-line corrections (especially for GPS coordinates)
+                    const correctionHtml = s.estimated_correction.replace(/\\n/g, '<br>');
+
+                    recHtml += `
+                        <div style="background: #3a3a3a; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid ${{borderColor}};">
+                            <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">${{s.type.replace(/_/g, ' ').toUpperCase()}}</div>
+                            <div style="font-size: 12px; color: #ccc;">${{s.message}}</div>
+                            <div style="font-size: 11px; color: #4CAF50; margin-top: 4px; font-family: monospace;">${{correctionHtml}}</div>
+                        </div>
+                    `;
+                }});
+                recommendationsContent.innerHTML = recHtml;
+
+                // Enable calibration button if we have height estimate
+                if (analysis.estimatedHeight) {{
+                    document.getElementById('applyCalibrationBtn').disabled = false;
+                }}
+            }} else {{
+                recommendationsEl.style.display = 'none';
+            }}
+        }}
+
+        function applyCalibration() {{
+            if (!suggestedCalibration) {{
+                alert('No calibration suggestion available. Run drift analysis first.');
+                return;
+            }}
+
+            const currentHeight = heightVerification?.configured_height || 11.3;
+            const newHeight = suggestedCalibration;
+
+            if (!confirm(`Apply calibration?\n\nCurrent height: ${{currentHeight.toFixed(2)}}m\nSuggested height: ${{newHeight.toFixed(2)}}m\n\nThis will update the camera configuration.`)) {{
+                return;
+            }}
+
+            // Send calibration request to server
+            fetch('/api/apply_calibration', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{
+                    estimated_height: newHeight,
+                    drift_analysis: driftAnalysisResult
+                }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    alert(`Calibration applied!\n\nNew height: ${{newHeight.toFixed(2)}}m\n\nNote: To see the effect, reload the page with the new camera parameters.`);
+
+                    // Update local height verification
+                    if (heightVerification) {{
+                        heightVerification.configured_height = newHeight;
+                    }}
+                }} else {{
+                    alert('Failed to apply calibration: ' + (data.error || 'Unknown error'));
+                }}
+            }})
+            .catch(err => {{
+                console.error('Calibration error:', err);
+                alert('Error applying calibration: ' + err);
+            }});
+        }}
+
         // Handle keyboard shortcuts
         document.addEventListener('keydown', function(e) {{
+            // Escape key - close modals, exit modes, or deselect point
             if (e.key === 'Escape') {{
+                if (rotateAllMode) {{
+                    exitRotateAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (moveAllMode) {{
+                    exitMoveAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (selectedMapFirstIndices.size > 0) {{
+                    clearMapFirstSelection();
+                    e.preventDefault();
+                    return;
+                }}
                 closeModal();
                 closeBatchModal();
             }}
-            if (e.key === 'Enter' && document.getElementById('addGcpModal').classList.contains('active')) {{
-                confirmAddGCP();
+
+            // Enter key - confirm modal or accept current mode
+            if (e.key === 'Enter') {{
+                if (rotateAllMode) {{
+                    exitRotateAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (moveAllMode) {{
+                    exitMoveAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (document.getElementById('addGcpModal').classList.contains('active')) {{
+                    confirmAddGCP();
+                }}
+            }}
+
+            // Arrow keys - handle different modes
+            if (mapFirstMode) {{
+                // Rotation speed: normal = 0.5 degrees, shift = 5 degrees
+                const rotationSpeed = e.shiftKey ? 5 : 0.5;
+                // Movement speed: normal = 1px, shift = 10px
+                const moveSpeed = e.shiftKey ? 10 : 1;
+
+                // Rotate All mode - left/right arrows rotate around centroid
+                if (rotateAllMode) {{
+                    switch (e.key) {{
+                        case 'ArrowLeft':
+                            rotateAllPoints(-rotationSpeed);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowRight':
+                            rotateAllPoints(rotationSpeed);
+                            e.preventDefault();
+                            break;
+                    }}
+                }}
+                // Move All mode - move all visible points
+                else if (moveAllMode) {{
+                    switch (e.key) {{
+                        case 'ArrowLeft':
+                            moveAllPoints(-moveSpeed, 0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowRight':
+                            moveAllPoints(moveSpeed, 0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowUp':
+                            moveAllPoints(0, -moveSpeed);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowDown':
+                            moveAllPoints(0, moveSpeed);
+                            e.preventDefault();
+                            break;
+                    }}
+                }}
+                // Point(s) selected - move selected points
+                else if (selectedMapFirstIndices.size > 0) {{
+                    switch (e.key) {{
+                        case 'ArrowLeft':
+                            moveSelectedPoint(-moveSpeed, 0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowRight':
+                            moveSelectedPoint(moveSpeed, 0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowUp':
+                            moveSelectedPoint(0, -moveSpeed);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowDown':
+                            moveSelectedPoint(0, moveSpeed);
+                            e.preventDefault();
+                            break;
+                    }}
+                }}
             }}
         }});
 
@@ -3617,6 +5221,50 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 'ptz_status': self.session.ptz_status
             })
 
+        elif parsed.path == '/api/convert_kml_to_gcps':
+            # Convert KML points to GCPs without saving to file
+            try:
+                data = json.loads(post_data)
+                projected_points_data = data.get('projected_points', [])
+
+                if not projected_points_data:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No projected points provided for conversion'
+                    })
+                    return
+
+                # Generate GCPs from projected points
+                self.session.gcps = self.session.generate_gcps_from_map_first(projected_points_data)
+
+                if not self.session.gcps:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No visible GCPs to convert. All points may have been discarded.'
+                    })
+                    return
+
+                # Update homography with new GCPs
+                homography_result = self.session.update_homography()
+
+                self.send_json_response({
+                    'success': True,
+                    'gcps_converted': len(self.session.gcps),
+                    'gcps': self.session.gcps,
+                    'distribution': self.session.calculate_distribution(),
+                    'homography': homography_result
+                })
+            except json.JSONDecodeError as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Invalid JSON data: {str(e)}'
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Conversion failed: {str(e)}'
+                })
+
         elif parsed.path == '/api/export_map_first':
             # Export map-first mode GCPs
             try:
@@ -3661,7 +5309,9 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({
                     'success': True,
                     'gcps_saved': len(self.session.gcps),
-                    'yaml_content': yaml_content
+                    'yaml_content': yaml_content,
+                    'gcps': self.session.gcps,
+                    'distribution': self.session.calculate_distribution()
                 })
             except json.JSONDecodeError as e:
                 self.send_json_response({
@@ -3672,6 +5322,83 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({
                     'success': False,
                     'error': f'Export failed: {str(e)}'
+                })
+
+        elif parsed.path == '/api/apply_calibration':
+            # Apply calibration from drift analysis
+            try:
+                data = json.loads(post_data)
+                estimated_height = data.get('estimated_height')
+                drift_analysis = data.get('drift_analysis', {})
+
+                if estimated_height is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No estimated height provided'
+                    })
+                    return
+
+                # Log the calibration
+                print("\n" + "=" * 60)
+                print("CALIBRATION APPLIED FROM DRIFT ANALYSIS")
+                print("=" * 60)
+                print(f"Camera: {self.session.camera_name}")
+                print(f"Previous height: {self.session.height_verification.get('configured_height', 'unknown')}m")
+                print(f"New estimated height: {estimated_height:.2f}m")
+                if drift_analysis:
+                    print(f"Pattern detected: {drift_analysis.get('pattern', 'unknown')}")
+                    print(f"Confidence: {drift_analysis.get('confidence', 'unknown')}")
+                    if drift_analysis.get('stats'):
+                        stats = drift_analysis['stats']
+                        print(f"Points analyzed: {stats.get('num_points', 0)}")
+                        print(f"Mean drift: ({stats.get('mean_dx', 0):.1f}, {stats.get('mean_dy', 0):.1f}) px")
+                print("=" * 60)
+
+                # Save calibration to a file for reference
+                calibration_file = f"calibration_{self.session.camera_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml"
+                calibration_data = {
+                    'camera_name': self.session.camera_name,
+                    'timestamp': datetime.now().isoformat(),
+                    'previous_height': self.session.height_verification.get('configured_height') if self.session.height_verification else None,
+                    'estimated_height': float(estimated_height),
+                    'drift_analysis': {
+                        'pattern': drift_analysis.get('pattern'),
+                        'confidence': drift_analysis.get('confidence'),
+                        'stats': drift_analysis.get('stats'),
+                        'suggestions': drift_analysis.get('suggestions', [])
+                    }
+                }
+
+                try:
+                    with open(calibration_file, 'w') as f:
+                        yaml.dump(calibration_data, f, default_flow_style=False)
+                    print(f"Calibration saved to: {calibration_file}")
+                except IOError as e:
+                    print(f"Warning: Could not save calibration file: {e}")
+
+                # Update the session's height verification
+                if self.session.height_verification:
+                    self.session.height_verification['previous_height'] = self.session.height_verification.get('configured_height')
+                    self.session.height_verification['configured_height'] = estimated_height
+                    self.session.height_verification['calibrated'] = True
+                    self.session.height_verification['calibration_timestamp'] = datetime.now().isoformat()
+
+                self.send_json_response({
+                    'success': True,
+                    'message': f'Calibration applied. New height: {estimated_height:.2f}m',
+                    'calibration_file': calibration_file,
+                    'estimated_height': estimated_height
+                })
+
+            except json.JSONDecodeError as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Invalid JSON data: {str(e)}'
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Calibration failed: {str(e)}'
                 })
 
         else:
@@ -3938,8 +5665,15 @@ def main():
             print("  Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.")
             sys.exit(1)
 
+        # Get actual frame dimensions for accurate projection
+        frame_height, frame_width = frame.shape[:2]
+
         try:
-            camera_params = get_camera_params_for_projection(camera_name)
+            camera_params = get_camera_params_for_projection(
+                camera_name,
+                image_width=frame_width,
+                image_height=frame_height
+            )
         except ValueError as e:
             print(f"Error: {e}")
             sys.exit(1)
@@ -3947,36 +5681,58 @@ def main():
             print(f"Error: {e}")
             sys.exit(1)
 
-        # Verify camera height if possible
-        if GEOMETRY_AVAILABLE:
-            try:
-                from poc_homography.camera_geometry import CameraGeometry
-                geo = CameraGeometry(
-                    camera_lat=camera_params['camera_lat'],
-                    camera_lon=camera_params['camera_lon'],
-                    height_m=camera_params['height_m'],
-                    pan_deg=camera_params['pan_deg'],
-                    tilt_deg=camera_params['tilt_deg'],
-                    K=camera_params['K'],
-                    image_width=camera_params['image_width'],
-                    image_height=camera_params['image_height']
-                )
-                height_verification = verify_camera_height(kml_points, camera_params, geo)
-                if height_verification.get('warning'):
-                    print(f"Height verification warning: {height_verification['warning']}")
-            except Exception as e:
-                print(f"Warning: Height verification failed: {e}")
-                height_verification = {
-                    'configured_height': camera_params['height_m'],
-                    'warning': f'Verification failed: {str(e)}'
-                }
-
-        # Project GPS points to image
+        # Project GPS points to image first (needed by both height verification and display)
         try:
             projected_points = project_gps_to_image(kml_points, camera_params)
         except ValueError as e:
             print(f"Error: Failed to project GPS points: {e}")
             sys.exit(1)
+
+        # Verify camera height if possible (using already projected points)
+        if GEOMETRY_AVAILABLE:
+            try:
+                from poc_homography.camera_geometry import CameraGeometry
+                # Initialize CameraGeometry with image dimensions
+                geo = CameraGeometry(
+                    w=camera_params['image_width'],
+                    h=camera_params['image_height']
+                )
+                # Camera position in world coordinates (X=0, Y=0 at camera location, Z=height)
+                w_pos = np.array([0.0, 0.0, camera_params['height_m']])
+                # Set up homography with camera parameters
+                geo.set_camera_parameters(
+                    K=camera_params['K'],
+                    w_pos=w_pos,
+                    pan_deg=camera_params['pan_deg'],
+                    tilt_deg=camera_params['tilt_deg'],
+                    map_width=640,
+                    map_height=640
+                )
+                # Pass already projected points to avoid duplicate projection
+                height_verification = verify_camera_height_with_projected(
+                    projected_points, kml_points, camera_params, geo
+                )
+                if height_verification.get('warning'):
+                    print(f"Height verification warning: {height_verification['warning']}")
+                # Add camera GPS and parameters for drift-based GPS estimation
+                height_verification['camera_lat'] = camera_params['camera_lat']
+                height_verification['camera_lon'] = camera_params['camera_lon']
+                height_verification['tilt_deg'] = camera_params['tilt_deg']
+                height_verification['pan_deg'] = camera_params['pan_deg']
+                height_verification['image_width'] = camera_params['image_width']
+                height_verification['image_height'] = camera_params['image_height']
+            except Exception as e:
+                print(f"Warning: Height verification failed: {e}")
+                height_verification = {
+                    'configured_height': camera_params['height_m'],
+                    'camera_lat': camera_params['camera_lat'],
+                    'camera_lon': camera_params['camera_lon'],
+                    'tilt_deg': camera_params['tilt_deg'],
+                    'pan_deg': camera_params['pan_deg'],
+                    'image_width': camera_params['image_width'],
+                    'image_height': camera_params['image_height'],
+                    'warning': f'Verification failed: {str(e)}'
+                }
 
         # Count visible points
         visible_count = sum(1 for p in projected_points if p['visible'] and p['reason'] == 'visible')
