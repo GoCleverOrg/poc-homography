@@ -84,8 +84,10 @@ REPROJ_ERROR_GOOD = 5.0  # pixels - considered good fit
 REPROJ_ERROR_WARNING = 10.0  # pixels - warning threshold
 REPROJ_ERROR_BAD = 20.0  # pixels - likely outlier
 
-# Outlier auto-remove threshold
-OUTLIER_AUTO_REMOVE_THRESHOLD = 15.0  # pixels
+# RANSAC threshold used in cv2.findHomography() for outlier detection
+# Note: Outlier removal now uses RANSAC's inlier mask directly, not a separate threshold.
+# The RANSAC threshold (5.0px) is passed directly to cv2.findHomography() in update_homography().
+RANSAC_REPROJ_THRESHOLD = 5.0  # pixels - matches cv2.findHomography() call
 
 # Import for reprojection error calculation
 try:
@@ -1262,47 +1264,53 @@ class GCPCaptureWebSession:
                 'good': REPROJ_ERROR_GOOD,
                 'warning': REPROJ_ERROR_WARNING,
                 'bad': REPROJ_ERROR_BAD,
-                'auto_remove': OUTLIER_AUTO_REMOVE_THRESHOLD
+                'ransac': RANSAC_REPROJ_THRESHOLD
             }
         }
 
-    def get_outliers(self, threshold: float = None) -> List[int]:
+    def get_outliers(self) -> List[int]:
         """
-        Get indices of GCPs with reprojection error above threshold.
+        Get indices of GCPs marked as outliers by RANSAC.
 
-        Args:
-            threshold: Error threshold in pixels. Defaults to OUTLIER_AUTO_REMOVE_THRESHOLD.
+        This method returns GCP indices where RANSAC's inlier mask is False,
+        ensuring consistency between what the UI displays as outliers and
+        what gets removed. The outlier determination is based on RANSAC's
+        geometric consensus algorithm, not a fixed error threshold.
 
         Returns:
-            List of GCP indices that are outliers.
+            List of GCP indices that are outliers according to RANSAC.
         """
-        if threshold is None:
-            threshold = OUTLIER_AUTO_REMOVE_THRESHOLD
-
-        if not self.last_reproj_errors:
+        if self.inlier_mask is None:
             self.update_homography()
 
-        if not self.last_reproj_errors:
+        if self.inlier_mask is None:
             return []
 
+        # Verify mask length matches GCPs (in case of stale data)
+        if len(self.inlier_mask) != len(self.gcps):
+            self.update_homography()
+            if self.inlier_mask is None or len(self.inlier_mask) != len(self.gcps):
+                return []
+
         outliers = []
-        for i, error in enumerate(self.last_reproj_errors):
-            if error > threshold:
+        for i, is_inlier in enumerate(self.inlier_mask):
+            if not is_inlier:
                 outliers.append(i)
 
         return outliers
 
-    def remove_outliers(self, threshold: float = None) -> Dict:
+    def remove_outliers(self) -> Dict:
         """
-        Remove all GCPs with reprojection error above threshold.
+        Remove all GCPs marked as outliers by RANSAC.
 
-        Args:
-            threshold: Error threshold in pixels. Defaults to OUTLIER_AUTO_REMOVE_THRESHOLD.
+        This removes exactly the GCPs shown as outliers in the UI, ensuring
+        consistency between the displayed outlier count and the actual removal.
+        The outlier determination uses RANSAC's inlier mask from cv2.findHomography().
 
         Returns:
             Dictionary with removal results.
         """
-        outlier_indices = self.get_outliers(threshold)
+        outlier_indices = self.get_outliers()
 
         if not outlier_indices:
             return {
