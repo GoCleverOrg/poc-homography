@@ -20,35 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.coordinate_converter import gps_to_local_xy
-
-# Local camera configs (to avoid credential requirements from camera_config)
-CAMERA_CONFIGS = {
-    'Valte': {
-        'lat': 39.640477,
-        'lon': -0.230175,
-        'height_m': 4.71,
-        'pan_offset_deg': 51.7,
-        'tilt_offset_deg': -0.25,  # Camera reports ~0.25° higher than actual
-        'focal_multiplier': 1.0,
-        'k1': -0.341052,
-        'k2': 0.787571,
-    },
-    'Setram': {
-        'lat': 41.329667,
-        'lon': 2.142028,
-        'height_m': 5.0,
-        'pan_offset_deg': 0.0,
-        'tilt_offset_deg': 0.0,
-        'focal_multiplier': 1.0,
-        'k1': 0.0,
-        'k2': 0.0,
-    }
-}
-
-
-def get_camera_by_name(name):
-    """Get camera config by name."""
-    return CAMERA_CONFIGS.get(name)
+from poc_homography.camera_config import get_camera_by_name_safe
+from poc_homography.gps_distance_calculator import dms_to_dd
 
 try:
     import yaml
@@ -190,13 +163,14 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
     Returns (mean_error, individual_errors)
     """
     # Get camera config
-    cam_config = get_camera_by_name(camera_name)
+    cam_config = get_camera_by_name_safe(camera_name)
     if not cam_config:
         print(f"Error: Unknown camera '{camera_name}'")
         return None, []
 
-    camera_lat = cam_config['lat']
-    camera_lon = cam_config['lon']
+    # Convert DMS coordinates to decimal degrees
+    camera_lat = dms_to_dd(cam_config['lat'])
+    camera_lon = dms_to_dd(cam_config['lon'])
     camera_height = cam_config.get('height_m', 5.0)
     pan_offset = cam_config.get('pan_offset_deg', 0.0)
     tilt_offset = cam_config.get('tilt_offset_deg', 0.0)
