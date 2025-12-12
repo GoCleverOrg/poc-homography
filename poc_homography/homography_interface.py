@@ -176,7 +176,7 @@ class GPSPositionMixin:
     If GPS position is not set, project_point() will raise RuntimeError.
 
     Example usage:
-        provider = IntrinsicExtrinsicHomography(2560, 1440)
+        provider = IntrinsicExtrinsicHomography(1920, 1080)
         provider.set_camera_gps_position(39.640, -0.230)  # Set GPS first
         provider.compute_homography(frame, reference)      # Then compute homography
         world_point = provider.project_point((1280, 720)) # Now projection works

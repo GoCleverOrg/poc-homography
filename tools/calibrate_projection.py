@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""
+Calibration tool to verify and fix projection parameters.
+
+This tool helps identify which parameter is causing projection misalignment:
+1. Pan offset
+2. Camera height
+3. Focal length / intrinsics
+
+Usage:
+    python calibrate_projection.py --reference-point LAT,LON --pixel U,V --camera Valte
+
+The tool will:
+1. Take a known GPS point that you've manually marked in the image
+2. Calculate what parameters would make that projection correct
+3. Compare against current parameters to identify the error
+"""
+
+import sys
+import os
+import math
+import argparse
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.coordinate_converter import gps_to_local_xy
+
+
+# Default camera configs (same as in diagnostic script)
+CAMERA_CONFIGS = {
+    'Valte': {
+        'lat': 39.640477,
+        'lon': -0.230175,
+        'height_m': 4.71,
+        'pan_offset_deg': 51.7,
+    },
+    'Setram': {
+        'lat': 41.329667,
+        'lon': 2.142028,
+        'height_m': 5.0,
+        'pan_offset_deg': 0.0,
+    }
+}
+
+
+def analyze_projection_error(camera_config: dict,
+                             ref_lat: float, ref_lon: float,
+                             actual_u: float, actual_v: float,
+                             pan_raw: float, tilt_deg: float, zoom: float,
+                             image_width: int = 1920, image_height: int = 1080):
+    """
+    Analyze the projection error for a known reference point.
+    """
+    camera_lat = camera_config['lat']
+    camera_lon = camera_config['lon']
+    height_m = camera_config['height_m']
+    pan_offset_deg = camera_config['pan_offset_deg']
+
+    # Current pan calculation
+    pan_deg = pan_raw + pan_offset_deg
+
+    print("\n" + "=" * 70)
+    print("PROJECTION ERROR ANALYSIS")
+    print("=" * 70)
+
+    print(f"\nReference Point:")
+    print(f"  GPS: ({ref_lat:.6f}, {ref_lon:.6f})")
+    print(f"  Actual pixel (marked by user): ({actual_u:.1f}, {actual_v:.1f})")
+
+    print(f"\nCamera Parameters:")
+    print(f"  GPS: ({camera_lat:.6f}, {camera_lon:.6f})")
+    print(f"  Height: {height_m}m")
+    print(f"  Pan raw: {pan_raw}°, Offset: {pan_offset_deg}°, Applied: {pan_deg}°")
+    print(f"  Tilt: {tilt_deg}°, Zoom: {zoom}x")
+
+    # Convert GPS to local XY
+    x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, ref_lat, ref_lon)
+    distance = math.sqrt(x_m**2 + y_m**2)
+    bearing = math.degrees(math.atan2(x_m, y_m))  # Bearing from camera to point
+
+    print(f"\nLocal Coordinates:")
+    print(f"  X (East): {x_m:.2f}m")
+    print(f"  Y (North): {y_m:.2f}m")
+    print(f"  Distance: {distance:.2f}m")
+    print(f"  Bearing from camera: {bearing:.1f}°")
+
+    # Get intrinsics
+    K = CameraGeometry.get_intrinsics(zoom, image_width, image_height, 7.18)
+
+    # Project with current parameters
+    geo = CameraGeometry(w=image_width, h=image_height)
+    w_pos = np.array([0.0, 0.0, height_m])
+    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, 640, 640)
+
+    world_pt = np.array([[x_m], [y_m], [1.0]])
+    img_pt = geo.H @ world_pt
+    if img_pt[2, 0] > 0:
+        projected_u = img_pt[0, 0] / img_pt[2, 0]
+        projected_v = img_pt[1, 0] / img_pt[2, 0]
+    else:
+        projected_u, projected_v = None, None
+
+    print(f"\nProjection Result:")
+    if projected_u is not None:
+        print(f"  Current projection: ({projected_u:.1f}, {projected_v:.1f})")
+        error_u = actual_u - projected_u
+        error_v = actual_v - projected_v
+        error_dist = math.sqrt(error_u**2 + error_v**2)
+        print(f"  Actual pixel: ({actual_u:.1f}, {actual_v:.1f})")
+        print(f"  Error: ({error_u:.1f}, {error_v:.1f}) = {error_dist:.1f} pixels")
+    else:
+        print(f"  Point projects behind camera!")
+
+    # Now analyze what parameters would fix the projection
+    print("\n" + "=" * 70)
+    print("PARAMETER SWEEP ANALYSIS")
+    print("=" * 70)
+
+    # Sweep pan offset
+    print("\n1. Pan Offset Sweep (finding best match):")
+    best_pan_error = float('inf')
+    best_pan_offset = pan_offset_deg
+
+    for test_offset in np.arange(-180, 180, 1):
+        test_pan = pan_raw + test_offset
+        geo.set_camera_parameters(K, w_pos, test_pan, tilt_deg, 640, 640)
+        img_pt = geo.H @ world_pt
+        if img_pt[2, 0] > 0:
+            u = img_pt[0, 0] / img_pt[2, 0]
+            v = img_pt[1, 0] / img_pt[2, 0]
+            error = math.sqrt((actual_u - u)**2 + (actual_v - v)**2)
+            if error < best_pan_error:
+                best_pan_error = error
+                best_pan_offset = test_offset
+
+    print(f"  Current pan offset: {pan_offset_deg}°")
+    print(f"  Best pan offset: {best_pan_offset}°")
+    print(f"  Best error at this offset: {best_pan_error:.1f} pixels")
+    if abs(best_pan_offset - pan_offset_deg) > 5:
+        print(f"  --> SUGGESTION: Change pan_offset_deg from {pan_offset_deg} to {best_pan_offset}")
+
+    # Sweep height
+    print("\n2. Height Sweep (at current pan offset):")
+    best_height_error = float('inf')
+    best_height = height_m
+
+    for test_height in np.arange(1.0, 20.0, 0.1):
+        test_w_pos = np.array([0.0, 0.0, test_height])
+        geo.set_camera_parameters(K, test_w_pos, pan_deg, tilt_deg, 640, 640)
+        img_pt = geo.H @ world_pt
+        if img_pt[2, 0] > 0:
+            u = img_pt[0, 0] / img_pt[2, 0]
+            v = img_pt[1, 0] / img_pt[2, 0]
+            error = math.sqrt((actual_u - u)**2 + (actual_v - v)**2)
+            if error < best_height_error:
+                best_height_error = error
+                best_height = test_height
+
+    print(f"  Current height: {height_m}m")
+    print(f"  Best height: {best_height:.2f}m")
+    print(f"  Best error at this height: {best_height_error:.1f} pixels")
+    if abs(best_height - height_m) > 0.5:
+        print(f"  --> SUGGESTION: Change height_m from {height_m} to {best_height:.1f}")
+
+    # Sweep both pan offset and height together
+    print("\n3. Joint Pan+Height Optimization:")
+    best_joint_error = float('inf')
+    best_joint_pan = pan_offset_deg
+    best_joint_height = height_m
+
+    for test_offset in np.arange(-180, 180, 5):  # Coarser grid for speed
+        test_pan = pan_raw + test_offset
+        for test_height in np.arange(1.0, 20.0, 0.5):
+            test_w_pos = np.array([0.0, 0.0, test_height])
+            try:
+                geo.set_camera_parameters(K, test_w_pos, test_pan, tilt_deg, 640, 640)
+            except ValueError:
+                continue
+            img_pt = geo.H @ world_pt
+            if img_pt[2, 0] > 0:
+                u = img_pt[0, 0] / img_pt[2, 0]
+                v = img_pt[1, 0] / img_pt[2, 0]
+                error = math.sqrt((actual_u - u)**2 + (actual_v - v)**2)
+                if error < best_joint_error:
+                    best_joint_error = error
+                    best_joint_pan = test_offset
+                    best_joint_height = test_height
+
+    print(f"  Best pan offset: {best_joint_pan}°")
+    print(f"  Best height: {best_joint_height:.2f}m")
+    print(f"  Best error: {best_joint_error:.1f} pixels")
+
+    # Final recommendation
+    print("\n" + "=" * 70)
+    print("RECOMMENDATIONS")
+    print("=" * 70)
+
+    if best_joint_error < 50:
+        print(f"\nTo fix projection, update camera_config.py:")
+        print(f"  'height_m': {best_joint_height:.1f},")
+        print(f"  'pan_offset_deg': {best_joint_pan:.1f},")
+    else:
+        print(f"\nCould not find parameters that reduce error below 50 pixels.")
+        print(f"Best achievable error: {best_joint_error:.1f} pixels")
+        print("\nPossible issues:")
+        print("  - Intrinsic matrix may be wrong (focal length, sensor size)")
+        print("  - Camera GPS position may be inaccurate")
+        print("  - Tilt angle may be incorrectly reported by camera")
+        print("  - Reference point GPS may be inaccurate")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Calibrate projection parameters using a known reference point"
+    )
+    parser.add_argument(
+        '--camera', '-c',
+        type=str,
+        required=True,
+        help='Camera name (e.g., Valte)'
+    )
+    parser.add_argument(
+        '--reference-point', '-r',
+        type=str,
+        required=True,
+        help='GPS coordinates of reference point: LAT,LON'
+    )
+    parser.add_argument(
+        '--pixel', '-p',
+        type=str,
+        required=True,
+        help='Actual pixel location of reference point in image: U,V'
+    )
+    parser.add_argument(
+        '--pan-raw',
+        type=float,
+        default=0.0,
+        help='Raw pan value from camera PTZ (default: 0)'
+    )
+    parser.add_argument(
+        '--tilt',
+        type=float,
+        default=30.0,
+        help='Tilt angle in degrees (default: 30)'
+    )
+    parser.add_argument(
+        '--zoom',
+        type=float,
+        default=1.0,
+        help='Zoom factor (default: 1.0)'
+    )
+
+    args = parser.parse_args()
+
+    # Parse reference point
+    try:
+        ref_lat, ref_lon = map(float, args.reference_point.split(','))
+    except ValueError:
+        print("Error: Invalid reference point format. Use: LAT,LON")
+        sys.exit(1)
+
+    # Parse pixel
+    try:
+        actual_u, actual_v = map(float, args.pixel.split(','))
+    except ValueError:
+        print("Error: Invalid pixel format. Use: U,V")
+        sys.exit(1)
+
+    # Get camera config
+    if args.camera not in CAMERA_CONFIGS:
+        print(f"Error: Unknown camera '{args.camera}'. Available: {list(CAMERA_CONFIGS.keys())}")
+        sys.exit(1)
+
+    camera_config = CAMERA_CONFIGS[args.camera]
+
+    analyze_projection_error(
+        camera_config,
+        ref_lat, ref_lon,
+        actual_u, actual_v,
+        args.pan_raw, args.tilt, args.zoom
+    )
+
+
+if __name__ == '__main__':
+    main()

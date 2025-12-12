@@ -22,7 +22,7 @@ Example Usage:
     >>> from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
     >>>
     >>> # Create provider
-    >>> provider = IntrinsicExtrinsicHomography(width=2560, height=1440)
+    >>> provider = IntrinsicExtrinsicHomography(width=1920, height=1080)
     >>> provider.set_camera_gps_position(lat=40.7128, lon=-74.0060)
     >>>
     >>> # Compute homography

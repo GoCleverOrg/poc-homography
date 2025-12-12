@@ -107,8 +107,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         Initialize GCP-based homography provider.
 
         Args:
-            width: Image width in pixels (e.g., 2560)
-            height: Image height in pixels (e.g., 1440)
+            width: Image width in pixels (e.g., 1920)
+            height: Image height in pixels (e.g., 1080)
             detector: Detector type (kept for API compatibility, not used for GCP)
             min_matches: Minimum number of GCP matches required for computing
                 homography. Must be at least 4 (minimum for homography estimation).

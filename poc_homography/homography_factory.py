@@ -39,13 +39,13 @@ class HomographyFactory:
         >>> # Create provider directly
         >>> provider = HomographyFactory.create(
         ...     HomographyApproach.INTRINSIC_EXTRINSIC,
-        ...     width=2560,
-        ...     height=1440
+        ...     width=1920,
+        ...     height=1080
         ... )
         >>>
         >>> # Create from configuration
         >>> config = HomographyConfig.from_yaml('config.yaml')
-        >>> provider = HomographyFactory.from_config(config, width=2560, height=1440)
+        >>> provider = HomographyFactory.from_config(config, width=1920, height=1080)
         >>>
         >>> # Register custom provider
         >>> HomographyFactory.register(
@@ -124,16 +124,16 @@ class HomographyFactory:
             >>> # Create intrinsic/extrinsic provider
             >>> provider = HomographyFactory.create(
             ...     HomographyApproach.INTRINSIC_EXTRINSIC,
-            ...     width=2560,
-            ...     height=1440,
+            ...     width=1920,
+            ...     height=1080,
             ...     pixels_per_meter=100.0
             ... )
             >>>
             >>> # Create feature matching provider
             >>> provider = HomographyFactory.create(
             ...     HomographyApproach.FEATURE_MATCH,
-            ...     width=2560,
-            ...     height=1440,
+            ...     width=1920,
+            ...     height=1080,
             ...     detector='sift',
             ...     min_matches=10
             ... )
@@ -197,15 +197,15 @@ class HomographyFactory:
             >>> config = HomographyConfig.from_yaml('config.yaml')
             >>> provider = HomographyFactory.from_config(
             ...     config,
-            ...     width=2560,
-            ...     height=1440
+            ...     width=1920,
+            ...     height=1080
             ... )
             >>>
             >>> # Without fallbacks (fail fast)
             >>> provider = HomographyFactory.from_config(
             ...     config,
-            ...     width=2560,
-            ...     height=1440,
+            ...     width=1920,
+            ...     height=1080,
             ...     try_fallbacks=False
             ... )
         """
@@ -307,8 +307,8 @@ class HomographyFactory:
             ... )
             >>> provider = HomographyFactory.create(
             ...     HomographyApproach.LEARNED,
-            ...     width=2560,
-            ...     height=1440
+            ...     width=1920,
+            ...     height=1080
             ... )
         """
         if not isinstance(provider_class, type):

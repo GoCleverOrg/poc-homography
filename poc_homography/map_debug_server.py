@@ -291,6 +291,12 @@ def generate_html(
             border-radius: 8px;
             z-index: 1000;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            cursor: move;
+            user-select: none;
+        }}
+
+        .legend:active {{
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
         }}
 
         .legend.top-right {{
@@ -527,6 +533,53 @@ def generate_html(
         let savedMapView = null;  // Store map view before zoom
         let initialMapView = null;  // Store initial map view for reset
         let precisionZoomEnabled = false;  // Precision zoom mode toggle
+
+        // Make legends draggable
+        function makeDraggable(element) {{
+            let isDragging = false;
+            let startX, startY, startLeft, startTop;
+
+            element.addEventListener('mousedown', function(e) {{
+                // Ignore if clicking on interactive elements
+                if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+
+                const rect = element.getBoundingClientRect();
+                const parentRect = element.parentElement.getBoundingClientRect();
+                startLeft = rect.left - parentRect.left;
+                startTop = rect.top - parentRect.top;
+
+                // Reset right/bottom positioning to use left/top
+                element.style.right = 'auto';
+                element.style.bottom = 'auto';
+                element.style.left = startLeft + 'px';
+                element.style.top = startTop + 'px';
+
+                e.preventDefault();
+            }});
+
+            document.addEventListener('mousemove', function(e) {{
+                if (!isDragging) return;
+
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+
+                element.style.left = (startLeft + dx) + 'px';
+                element.style.top = (startTop + dy) + 'px';
+            }});
+
+            document.addEventListener('mouseup', function() {{
+                isDragging = false;
+            }});
+        }}
+
+        // Initialize draggable legends after DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {{
+            document.querySelectorAll('.legend').forEach(makeDraggable);
+        }});
 
         // Initialize map with high max zoom for over-zooming
         const map = L.map('map', {{

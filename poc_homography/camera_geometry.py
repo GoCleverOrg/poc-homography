@@ -3,7 +3,7 @@
 import numpy as np
 import math
 import logging
-from typing import List, Tuple, Union, Dict, Any
+from typing import List, Tuple, Union, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +109,14 @@ class CameraGeometry:
         self.height_uncertainty_lower = None  # Lower bound of height confidence interval
         self.height_uncertainty_upper = None  # Upper bound of height confidence interval
 
+        # Lens distortion coefficients (OpenCV model)
+        # Radial: k1, k2, k3 (k3 often 0 for simple lenses)
+        # Tangential: p1, p2
+        self._dist_coeffs = None  # Will be np.array([k1, k2, p1, p2, k3]) when set
+        self._use_distortion = False
+
     @staticmethod
-    def get_intrinsics(zoom_factor: float, W_px: int = 2560, H_px: int = 1440, sensor_width_mm: float = 7.18) -> np.ndarray:
+    def get_intrinsics(zoom_factor: float, W_px: int = 1920, H_px: int = 1080, sensor_width_mm: float = 6.78) -> np.ndarray:
         """
         Calculates the 3x3 Intrinsic Matrix K based on camera specifications and zoom factor.
 
@@ -139,10 +145,16 @@ class CameraGeometry:
                 f"Results may be less accurate at extreme zoom levels."
             )
 
-        # 1. Calculate focal length in mm (Linear mapping based on datasheet: 1x=5.9mm)
+        # 1. Calculate focal length in mm
+        # Based on Hikvision DS-2DF8425IX-AELW datasheet:
+        #   - Focal length: 5.9mm (wide) to 147.5mm (tele)
+        #   - Optical zoom: 25x (linear: f = 5.9mm × zoom_factor)
         f_mm = 5.9 * zoom_factor
 
         # 2. Convert focal length to pixels (f_px = f_mm * (W_px / sensor_width_mm))
+        # Default sensor_width_mm (6.78mm) is calculated from:
+        #   - Horizontal FOV = 59.8° at 5.9mm focal length
+        #   - sensor_width = 2 × 5.9 × tan(59.8°/2) = 6.78mm
         f_px = f_mm * (W_px / sensor_width_mm)
 
         # 3. Construct K
@@ -153,6 +165,191 @@ class CameraGeometry:
             [0, 0, 1]
         ])
         return K
+
+    def set_distortion_coefficients(
+        self,
+        k1: float = 0.0,
+        k2: float = 0.0,
+        p1: float = 0.0,
+        p2: float = 0.0,
+        k3: float = 0.0
+    ) -> None:
+        """
+        Set lens distortion coefficients using the OpenCV distortion model.
+
+        The distortion model corrects for radial and tangential lens distortion:
+        - Radial distortion (barrel/pincushion): controlled by k1, k2, k3
+        - Tangential distortion (decentering): controlled by p1, p2
+
+        For most PTZ cameras, only k1 (and sometimes k2) are significant.
+        Positive k1 = barrel distortion (edges curve outward)
+        Negative k1 = pincushion distortion (edges curve inward)
+
+        Args:
+            k1: First radial distortion coefficient (most significant)
+            k2: Second radial distortion coefficient
+            p1: First tangential distortion coefficient
+            p2: Second tangential distortion coefficient
+            k3: Third radial distortion coefficient (usually 0)
+
+        Example:
+            >>> geo = CameraGeometry(1920, 1080)
+            >>> # Typical barrel distortion for wide-angle PTZ
+            >>> geo.set_distortion_coefficients(k1=-0.1, k2=0.01)
+        """
+        self._dist_coeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float64)
+        self._use_distortion = not np.allclose(self._dist_coeffs, 0.0)
+
+        if self._use_distortion:
+            logger.info(f"Distortion coefficients set: k1={k1:.6f}, k2={k2:.6f}, "
+                       f"p1={p1:.6f}, p2={p2:.6f}, k3={k3:.6f}")
+        else:
+            logger.info("Distortion coefficients cleared (all zero)")
+
+    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
+        """
+        Get current distortion coefficients.
+
+        Returns:
+            numpy array [k1, k2, p1, p2, k3] or None if not set
+        """
+        return self._dist_coeffs.copy() if self._dist_coeffs is not None else None
+
+    def undistort_point(
+        self,
+        u: float,
+        v: float,
+        iterations: int = 10
+    ) -> Tuple[float, float]:
+        """
+        Undistort a single image point to remove lens distortion.
+
+        Converts a distorted pixel coordinate to the corresponding undistorted
+        coordinate that would be observed with an ideal pinhole camera.
+
+        This uses an iterative method to invert the distortion model.
+
+        Args:
+            u: Distorted x pixel coordinate
+            v: Distorted y pixel coordinate
+            iterations: Number of iterations for undistortion (default: 10)
+
+        Returns:
+            Tuple (u_undistorted, v_undistorted) in pixel coordinates
+
+        Note:
+            If no distortion coefficients are set, returns the input unchanged.
+        """
+        if not self._use_distortion or self.K is None:
+            return (u, v)
+
+        # Get intrinsic parameters
+        fx = self.K[0, 0]
+        fy = self.K[1, 1]
+        cx = self.K[0, 2]
+        cy = self.K[1, 2]
+
+        k1, k2, p1, p2, k3 = self._dist_coeffs
+
+        # Convert to normalized camera coordinates
+        x_d = (u - cx) / fx
+        y_d = (v - cy) / fy
+
+        # Iterative undistortion (Newton-Raphson style)
+        x = x_d
+        y = y_d
+
+        for _ in range(iterations):
+            r2 = x * x + y * y
+            r4 = r2 * r2
+            r6 = r4 * r2
+
+            # Radial distortion factor
+            radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6
+
+            # Tangential distortion
+            dx_tangential = 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x)
+            dy_tangential = p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y
+
+            # Update estimate (inverse iteration)
+            x = (x_d - dx_tangential) / radial
+            y = (y_d - dy_tangential) / radial
+
+        # Convert back to pixel coordinates
+        u_undist = x * fx + cx
+        v_undist = y * fy + cy
+
+        return (u_undist, v_undist)
+
+    def undistort_points(
+        self,
+        points: List[Tuple[float, float]],
+        iterations: int = 10
+    ) -> List[Tuple[float, float]]:
+        """
+        Undistort multiple image points.
+
+        Args:
+            points: List of (u, v) distorted pixel coordinates
+            iterations: Number of iterations for undistortion
+
+        Returns:
+            List of (u, v) undistorted pixel coordinates
+        """
+        return [self.undistort_point(u, v, iterations) for u, v in points]
+
+    def distort_point(self, u: float, v: float) -> Tuple[float, float]:
+        """
+        Apply lens distortion to an undistorted point.
+
+        Converts an ideal pinhole camera coordinate to the corresponding
+        distorted coordinate as observed through the actual lens.
+
+        Args:
+            u: Undistorted x pixel coordinate
+            v: Undistorted y pixel coordinate
+
+        Returns:
+            Tuple (u_distorted, v_distorted) in pixel coordinates
+
+        Note:
+            If no distortion coefficients are set, returns the input unchanged.
+        """
+        if not self._use_distortion or self.K is None:
+            return (u, v)
+
+        # Get intrinsic parameters
+        fx = self.K[0, 0]
+        fy = self.K[1, 1]
+        cx = self.K[0, 2]
+        cy = self.K[1, 2]
+
+        k1, k2, p1, p2, k3 = self._dist_coeffs
+
+        # Convert to normalized camera coordinates
+        x = (u - cx) / fx
+        y = (v - cy) / fy
+
+        r2 = x * x + y * y
+        r4 = r2 * r2
+        r6 = r4 * r2
+
+        # Radial distortion
+        radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6
+
+        # Tangential distortion
+        dx_tangential = 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x)
+        dy_tangential = p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y
+
+        # Apply distortion
+        x_d = x * radial + dx_tangential
+        y_d = y * radial + dy_tangential
+
+        # Convert back to pixel coordinates
+        u_dist = x_d * fx + cx
+        v_dist = y_d * fy + cy
+
+        return (u_dist, v_dist)
 
     def _validate_parameters(self, K: np.ndarray, w_pos: np.ndarray,
                             pan_deg: float, tilt_deg: float) -> None:
@@ -212,12 +409,12 @@ class CameraGeometry:
             )
 
         if tilt_deg < self.TILT_WARN_LOW:
-            logger.warning(
+            logger.debug(
                 f"Tilt angle {tilt_deg:.1f}° is near horizontal (<{self.TILT_WARN_LOW}°). "
                 f"Ground projection may be unstable or extend to very large distances."
             )
         elif tilt_deg > self.TILT_WARN_HIGH:
-            logger.warning(
+            logger.debug(
                 f"Tilt angle {tilt_deg:.1f}° is very steep (>{self.TILT_WARN_HIGH}°). "
                 f"Ground coverage area will be very limited."
             )
@@ -305,14 +502,10 @@ class CameraGeometry:
         self._validate_projection()
 
         logger.info("Geometry setup complete. Homography matrix H calculated.")
+        logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
+        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
         logger.info(f"  Homography det(H): {det_H:.2e}")
         logger.info(f"  Homography condition number: {cond_H:.2e}")
-
-        # Also print to console for backward compatibility
-        print("Geometry setup complete. Homography matrix H calculated.")
-        print(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
-        print(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
-        print(f"  Homography det(H): {det_H:.2e}")
 
     def _validate_projection(self) -> None:
         """
@@ -475,9 +668,15 @@ class CameraGeometry:
     def project_image_to_map(self, pts: List[Tuple[int, int]], sw: int, sh: int) -> List[Tuple[int, int]]:
         """
         Projects image coordinates (pixels) to the world ground plane (meters).
+
+        If distortion coefficients are set, points are undistorted before projection.
         """
         if self.H_inv is None or np.all(self.H_inv == np.eye(3)):
             return [(int(x / 2), int(y / 2)) for x, y in pts]
+
+        # Undistort points if distortion is enabled
+        if self._use_distortion:
+            pts = self.undistort_points(pts)
 
         pts_homogeneous = np.array(pts, dtype=np.float64).T
         pts_homogeneous = np.vstack([pts_homogeneous, np.ones(pts_homogeneous.shape[1])])

@@ -68,9 +68,16 @@ try:
 except ImportError:
     INTRINSICS_AVAILABLE = False
 
-# Default camera parameters
-DEFAULT_SENSOR_WIDTH_MM = 7.18
-DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
+# Import camera defaults from config
+try:
+    from poc_homography.camera_config import (
+        DEFAULT_SENSOR_WIDTH_MM,
+        DEFAULT_BASE_FOCAL_LENGTH_MM
+    )
+except ImportError:
+    # Fallback values if config import fails
+    DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8° FOV at 5.9mm focal length
+    DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
 
 # Reprojection error thresholds for feedback
 REPROJ_ERROR_GOOD = 5.0  # pixels - considered good fit
@@ -82,10 +89,16 @@ OUTLIER_AUTO_REMOVE_THRESHOLD = 15.0  # pixels
 
 # Import for reprojection error calculation
 try:
-    from poc_homography.coordinate_converter import gps_to_local_xy
+    from poc_homography.coordinate_converter import (
+        gps_to_local_xy,
+        GCPCoordinateConverter,
+        DEFAULT_UTM_CRS
+    )
     COORDINATE_CONVERTER_AVAILABLE = True
 except ImportError:
     COORDINATE_CONVERTER_AVAILABLE = False
+    GCPCoordinateConverter = None
+    DEFAULT_UTM_CRS = "EPSG:25830"
 
 # Import for GPS precision analysis and duplicate detection
 try:
@@ -115,11 +128,14 @@ GEOMETRY_AVAILABLE = GPS_CONVERTER_AVAILABLE
 
 def parse_kml_points(kml_path: str) -> List[Dict]:
     """
-    Parse KML file and extract Point placemarks.
+    Parse KML file and extract Point placemarks with GPS and optional UTM coordinates.
 
     This function parses KML 2.2 compliant files and extracts all Point placemarks,
     ignoring LineString and Polygon geometries. It handles common edge cases like
     missing names, invalid coordinates, and empty files.
+
+    If the KML contains ExtendedData with UTM coordinates (from extract_kml_points.py),
+    those are also extracted for more accurate coordinate conversion.
 
     Args:
         kml_path: Path to the KML file to parse
@@ -127,7 +143,14 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
     Returns:
         List of dictionaries with structure:
         [
-            {'name': str, 'latitude': float, 'longitude': float},
+            {
+                'name': str,
+                'latitude': float,
+                'longitude': float,
+                'utm_easting': float (optional),
+                'utm_northing': float (optional),
+                'utm_crs': str (optional)
+            },
             ...
         ]
 
@@ -157,6 +180,7 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
 
     points = []
     unnamed_counter = 1
+    has_utm = False
 
     # Find all Placemark elements (handles both with and without namespace)
     placemarks = root.findall('.//kml:Placemark', ns)
@@ -205,11 +229,37 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
             latitude = float(parts[1])
             # Altitude (parts[2]) is ignored if present
 
-            points.append({
+            point_data = {
                 'name': name,
                 'latitude': latitude,
                 'longitude': longitude
-            })
+            }
+
+            # Try to extract UTM coordinates from ExtendedData
+            extended_data = placemark.find('.//kml:ExtendedData', ns)
+            if extended_data is None:
+                extended_data = placemark.find('.//ExtendedData')
+
+            if extended_data is not None:
+                # Look for SimpleData elements with UTM coordinates
+                simple_data_elems = extended_data.findall('.//kml:SimpleData', ns)
+                if not simple_data_elems:
+                    simple_data_elems = extended_data.findall('.//SimpleData')
+
+                for sd in simple_data_elems:
+                    sd_name = sd.get('name')
+                    sd_value = sd.text
+                    if sd_name and sd_value:
+                        if sd_name == 'utm_easting':
+                            point_data['utm_easting'] = float(sd_value)
+                            has_utm = True
+                        elif sd_name == 'utm_northing':
+                            point_data['utm_northing'] = float(sd_value)
+                            has_utm = True
+                        elif sd_name == 'utm_crs':
+                            point_data['utm_crs'] = sd_value
+
+            points.append(point_data)
 
         except (ValueError, IndexError) as e:
             print(f"Warning: Skipping placemark '{name}' - invalid coordinates format: {coords_text} ({e})")
@@ -221,9 +271,13 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
     print("=" * 60)
     print(f"File: {kml_path}")
     print(f"Total points found: {len(points)}")
+    print(f"UTM coordinates available: {'Yes' if has_utm else 'No'}")
     print("-" * 60)
     for i, p in enumerate(points):
-        print(f"  {i+1}. {p['name']:<20} lat={p['latitude']:.6f}, lon={p['longitude']:.6f}")
+        utm_str = ""
+        if 'utm_easting' in p and 'utm_northing' in p:
+            utm_str = f" UTM: E={p['utm_easting']:.2f}, N={p['utm_northing']:.2f}"
+        print(f"  {i+1}. {p['name']:<20} lat={p['latitude']:.6f}, lon={p['longitude']:.6f}{utm_str}")
     print("=" * 60 + "\n")
 
     return points
@@ -336,12 +390,15 @@ def get_camera_params_for_projection(camera_name: str, image_width: int = None, 
     if image_height is None:
         image_height = 1080  # Default HD resolution
 
+    # Get camera-specific sensor width or use default
+    sensor_width_mm = cam_config.get('sensor_width_mm', DEFAULT_SENSOR_WIDTH_MM)
+
     # Compute intrinsic matrix from current zoom level
     K = CameraGeometry.get_intrinsics(
         zoom_factor=zoom,
         W_px=image_width,
         H_px=image_height,
-        sensor_width_mm=DEFAULT_SENSOR_WIDTH_MM
+        sensor_width_mm=sensor_width_mm
     )
 
     return {
@@ -355,11 +412,12 @@ def get_camera_params_for_projection(camera_name: str, image_width: int = None, 
         'zoom': zoom,
         'K': K,
         'image_width': image_width,
-        'image_height': image_height
+        'image_height': image_height,
+        'sensor_width_mm': sensor_width_mm
     }
 
 
-def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Dict]:
+def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_name: str = None) -> List[Dict]:
     """
     Project GPS points to image pixel coordinates using camera homography.
 
@@ -368,7 +426,8 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
     1. Converting GPS to local XY meters relative to camera position
     2. Initializing CameraGeometry with camera parameters
     3. Applying homography H to project world coordinates to image
-    4. Filtering points that are behind camera or outside image bounds
+    4. Applying lens distortion correction if camera has calibrated coefficients
+    5. Filtering points that are behind camera or outside image bounds
 
     Args:
         gps_points: List of GPS point dictionaries from parse_kml_points()
@@ -376,6 +435,7 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
         camera_params: Camera parameter dictionary from get_camera_params_for_projection()
                       with keys: camera_lat, camera_lon, height_m, pan_deg, tilt_deg,
                       K, image_width, image_height
+        camera_name: Optional camera name to load distortion coefficients from config
 
     Returns:
         List of dictionaries with projected points:
@@ -395,7 +455,7 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
     Example:
         >>> gps_points = parse_kml_points('gcps.kml')
         >>> camera_params = get_camera_params_for_projection("Valte")
-        >>> projected = project_gps_to_image(gps_points, camera_params)
+        >>> projected = project_gps_to_image(gps_points, camera_params, camera_name="Valte")
         >>> for pt in projected:
         ...     if pt['visible']:
         ...         print(f"{pt['name']}: ({pt['pixel_u']:.1f}, {pt['pixel_v']:.1f})")
@@ -458,11 +518,50 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
         map_height=640
     )
 
+    # Load and apply distortion coefficients from camera config
+    distortion_applied = False
+    if camera_name and CAMERA_CONFIG_AVAILABLE:
+        try:
+            cam_config = get_camera_by_name(camera_name)
+            if cam_config:
+                k1 = cam_config.get('k1', 0.0)
+                k2 = cam_config.get('k2', 0.0)
+                p1 = cam_config.get('p1', 0.0)
+                p2 = cam_config.get('p2', 0.0)
+                # Only apply if non-zero coefficients exist
+                if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
+                    geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
+                    distortion_applied = True
+                    print(f"Distortion coefficients applied: k1={k1:.6f}, k2={k2:.6f}, p1={p1:.6f}, p2={p2:.6f}")
+        except Exception as e:
+            print(f"Warning: Could not load distortion coefficients: {e}")
+
+    if not distortion_applied:
+        print("Note: No distortion correction applied (no coefficients available)")
+
     # Debug: Print homography matrix
     print(f"Homography Matrix H:\n{geo.H}")
     print("-" * 60)
     print(f"\n{'Point Name':<20} {'GPS (lat,lon)':<25} {'Local XY (m)':<20} {'Pixel (u,v)':<20} {'W':<10} {'Result':<15}")
     print("-" * 110)
+
+    # Check if any points have UTM coordinates
+    has_utm_points = any('utm_easting' in p and 'utm_northing' in p for p in gps_points)
+
+    # If we have UTM points, set up UTM converter with camera position as reference
+    utm_converter = None
+    if has_utm_points:
+        try:
+            from poc_homography.coordinate_converter import UTMConverter
+            # Get UTM CRS from first point that has it, or use default
+            utm_crs = next((p.get('utm_crs', 'EPSG:25830') for p in gps_points if 'utm_crs' in p), 'EPSG:25830')
+            utm_converter = UTMConverter(utm_crs)
+            utm_converter.set_reference(camera_lat, camera_lon)
+            print(f"Using UTM coordinates (CRS: {utm_crs}) for accurate conversion")
+        except Exception as e:
+            print(f"Warning: Could not initialize UTM converter: {e}")
+            print("Falling back to equirectangular projection")
+            utm_converter = None
 
     # Project each GPS point
     projected_points = []
@@ -472,8 +571,17 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
         gps_lon = point['longitude']
         name = point['name']
 
-        # Convert GPS to local XY meters relative to camera
-        x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, gps_lat, gps_lon)
+        # Convert to local XY meters relative to camera
+        # Prefer UTM coordinates if available (more accurate)
+        if utm_converter and 'utm_easting' in point and 'utm_northing' in point:
+            # Use UTM coordinates directly - more accurate
+            x_m, y_m = utm_converter.utm_to_local_xy(point['utm_easting'], point['utm_northing'])
+        elif utm_converter:
+            # UTM converter available but point only has GPS - convert via UTM
+            x_m, y_m = utm_converter.gps_to_local_xy(gps_lat, gps_lon)
+        else:
+            # Fall back to equirectangular projection
+            x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, gps_lat, gps_lon)
 
         # Create homogeneous world coordinate [X, Y, 1]
         world_point = np.array([[x_m], [y_m], [1.0]])
@@ -502,9 +610,16 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
             })
             continue
 
-        # Normalize to get pixel coordinates
-        u_px = u / w
-        v_px = v / w
+        # Normalize to get pixel coordinates (undistorted pinhole model)
+        u_px_undist = u / w
+        v_px_undist = v / w
+
+        # Apply lens distortion to get actual camera pixel coordinates
+        # The distort_point method applies the forward distortion model
+        if distortion_applied:
+            u_px, v_px = geo.distort_point(u_px_undist, v_px_undist)
+        else:
+            u_px, v_px = u_px_undist, v_px_undist
 
         # Check if point is within image bounds
         if 0 <= u_px < image_width and 0 <= v_px < image_height:
@@ -543,7 +658,7 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict) -> List[Di
     return projected_points
 
 
-def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: CameraGeometry) -> Dict:
+def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: CameraGeometry, camera_name: str = None) -> Dict:
     """
     Verify camera height accuracy using HeightCalibrator and KML reference points.
 
@@ -558,6 +673,7 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
                       with keys: camera_lat, camera_lon, height_m, pan_deg, tilt_deg,
                       K, image_width, image_height
         geo: Initialized CameraGeometry instance with homography matrix
+        camera_name: Optional camera name to load distortion coefficients
 
     Returns:
         Dictionary with height verification results:
@@ -576,7 +692,7 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
         >>> camera_params = get_camera_params_for_projection("Valte")
         >>> geo = CameraGeometry(w=1920, h=1080)
         >>> geo.set_camera_parameters(...)
-        >>> verification = verify_camera_height(gps_points, camera_params, geo)
+        >>> verification = verify_camera_height(gps_points, camera_params, geo, camera_name="Valte")
         >>> if not verification['height_valid']:
         ...     print(f"Warning: {verification['warning']}")
     """
@@ -622,7 +738,7 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
         calibrator = HeightCalibrator(camera_gps, min_points=5)
 
         # Project GPS points to get pixel coordinates
-        projected = project_gps_to_image(kml_points, camera_params)
+        projected = project_gps_to_image(kml_points, camera_params, camera_name=camera_name)
 
         # Add each visible point to the calibrator
         points_added = 0
@@ -863,8 +979,16 @@ class GCPCaptureWebSession:
         self.current_homography = None
         self.reference_lat = None
         self.reference_lon = None
+        self.reference_utm_easting = None
+        self.reference_utm_northing = None
         self.last_reproj_errors = []  # Per-GCP reprojection errors
         self.inlier_mask = None  # RANSAC inlier mask
+
+        # Coordinate converter for accurate GPS/UTM handling
+        self.utm_crs = DEFAULT_UTM_CRS
+        self.coord_converter = None
+        if COORDINATE_CONVERTER_AVAILABLE and GCPCoordinateConverter:
+            self.coord_converter = GCPCoordinateConverter(utm_crs=self.utm_crs)
 
         # Map-first mode support
         self.map_first_mode = map_first_mode
@@ -1010,7 +1134,7 @@ class GCPCaptureWebSession:
                 'message': 'Need at least 4 GCPs for homography'
             }
 
-        # Set reference point from camera GPS or GCP centroid
+        # Set reference point from camera GPS, UTM centroid, or GPS centroid
         if self.reference_lat is None:
             if self.ptz_status:
                 # Try to get camera GPS from config
@@ -1022,12 +1146,36 @@ class GCPCaptureWebSession:
                 except Exception:
                     pass
 
-            # Fall back to GCP centroid
+            # Fall back to GCP centroid (prefer UTM if available)
             if self.reference_lat is None:
-                lats = [g['gps']['latitude'] for g in self.gcps]
-                lons = [g['gps']['longitude'] for g in self.gcps]
-                self.reference_lat = sum(lats) / len(lats)
-                self.reference_lon = sum(lons) / len(lons)
+                # Check if GCPs have UTM coordinates
+                has_utm = any('utm_easting' in g.get('gps', {}) for g in self.gcps)
+                if has_utm:
+                    # Use UTM centroid
+                    eastings = [g['gps']['utm_easting'] for g in self.gcps if 'utm_easting' in g.get('gps', {})]
+                    northings = [g['gps']['utm_northing'] for g in self.gcps if 'utm_northing' in g.get('gps', {})]
+                    if eastings and northings:
+                        self.reference_utm_easting = sum(eastings) / len(eastings)
+                        self.reference_utm_northing = sum(northings) / len(northings)
+                        # Also compute GPS reference for compatibility
+                        if self.coord_converter:
+                            self.coord_converter.set_reference_utm(self.reference_utm_easting, self.reference_utm_northing)
+                            self.reference_lat = self.coord_converter._ref_lat
+                            self.reference_lon = self.coord_converter._ref_lon
+
+                # Fall back to GPS centroid
+                if self.reference_lat is None:
+                    lats = [g['gps']['latitude'] for g in self.gcps]
+                    lons = [g['gps']['longitude'] for g in self.gcps]
+                    self.reference_lat = sum(lats) / len(lats)
+                    self.reference_lon = sum(lons) / len(lons)
+
+        # Set up the coordinate converter reference point
+        if self.coord_converter and self.reference_lat is not None:
+            if self.reference_utm_easting is not None:
+                self.coord_converter.set_reference_utm(self.reference_utm_easting, self.reference_utm_northing)
+            else:
+                self.coord_converter.set_reference_gps(self.reference_lat, self.reference_lon)
 
         # Extract points
         image_points = []
@@ -1035,10 +1183,21 @@ class GCPCaptureWebSession:
 
         for gcp in self.gcps:
             u, v = gcp['image']['u'], gcp['image']['v']
-            lat, lon = gcp['gps']['latitude'], gcp['gps']['longitude']
-
             image_points.append([u, v])
-            x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+
+            # Use the unified converter if available (handles both UTM and GPS)
+            if self.coord_converter:
+                # Build point dict for converter
+                point = {'latitude': gcp['gps']['latitude'], 'longitude': gcp['gps']['longitude']}
+                if 'utm_easting' in gcp['gps']:
+                    point['utm_easting'] = gcp['gps']['utm_easting']
+                    point['utm_northing'] = gcp['gps']['utm_northing']
+                x, y = self.coord_converter.convert_point(point)
+            else:
+                # Fall back to equirectangular
+                lat, lon = gcp['gps']['latitude'], gcp['gps']['longitude']
+                x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+
             local_points.append([x, y])
 
         image_points = np.array(image_points, dtype=np.float32)
@@ -1170,17 +1329,23 @@ class GCPCaptureWebSession:
             'remaining_gcps': len(self.gcps)
         }
 
-    def predict_new_gcp_error(self, u: float, v: float, lat: float, lon: float) -> Dict:
+    def predict_new_gcp_error(
+        self, u: float, v: float, lat: float, lon: float,
+        utm_easting: float = None, utm_northing: float = None
+    ) -> Dict:
         """
         Predict reprojection error for a potential new GCP before adding it.
 
         This helps users identify if a GCP would be an outlier before committing.
+        Supports both GPS and UTM coordinates for accurate prediction.
 
         Args:
             u: Pixel x-coordinate
             v: Pixel y-coordinate
             lat: GPS latitude
             lon: GPS longitude
+            utm_easting: Optional UTM easting (preferred when available)
+            utm_northing: Optional UTM northing (preferred when available)
 
         Returns:
             Dictionary with prediction results:
@@ -1208,8 +1373,16 @@ class GCPCaptureWebSession:
             }
 
         try:
-            # Convert GPS to local coordinates
-            x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
+            # Convert to local coordinates using the unified converter if available
+            if self.coord_converter:
+                point = {'latitude': lat, 'longitude': lon}
+                if utm_easting is not None and utm_northing is not None:
+                    point['utm_easting'] = utm_easting
+                    point['utm_northing'] = utm_northing
+                x, y = self.coord_converter.convert_point(point)
+            else:
+                # Fall back to equirectangular
+                x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
 
             # Project through current homography
             local_pt = np.array([[x, y]], dtype=np.float32)
@@ -1249,8 +1422,29 @@ class GCPCaptureWebSession:
                 'message': f'Prediction failed: {str(e)}'
             }
 
-    def add_gcp(self, u: float, v: float, lat: float, lon: float, description: str = "", accuracy: str = "medium") -> Dict:
-        """Add a new GCP."""
+    def add_gcp(
+        self, u: float, v: float, lat: float, lon: float,
+        description: str = "", accuracy: str = "medium",
+        utm_easting: float = None, utm_northing: float = None,
+        utm_crs: str = None
+    ) -> Dict:
+        """
+        Add a new GCP with optional UTM coordinates.
+
+        Args:
+            u: Pixel x-coordinate
+            v: Pixel y-coordinate
+            lat: GPS latitude
+            lon: GPS longitude
+            description: Optional description for the GCP
+            accuracy: Accuracy level (low, medium, high)
+            utm_easting: Optional UTM easting coordinate
+            utm_northing: Optional UTM northing coordinate
+            utm_crs: Optional UTM coordinate reference system (e.g., EPSG:25830)
+
+        Returns:
+            The created GCP dictionary.
+        """
         gcp = {
             'gps': {
                 'latitude': lat,
@@ -1266,6 +1460,13 @@ class GCPCaptureWebSession:
                 'timestamp': datetime.now().isoformat(),
             }
         }
+
+        # Add UTM coordinates if provided
+        if utm_easting is not None and utm_northing is not None:
+            gcp['gps']['utm_easting'] = utm_easting
+            gcp['gps']['utm_northing'] = utm_northing
+            gcp['gps']['utm_crs'] = utm_crs or self.utm_crs
+
         self.gcps.append(gcp)
         return gcp
 
@@ -1295,6 +1496,8 @@ class GCPCaptureWebSession:
         loaded_ptz = None
         loaded_camera_name = None
         coordinate_system = None  # 'image_v' or None (legacy leaflet_y format)
+        loaded_image_width = None
+        loaded_image_height = None
 
         try:
             data = yaml.safe_load(yaml_content)
@@ -1321,6 +1524,9 @@ class GCPCaptureWebSession:
                         self.capture_timestamp = ctx['capture_timestamp']
                     # Check coordinate system - old files won't have this field
                     coordinate_system = ctx.get('coordinate_system')
+                    # Get source image dimensions for scaling
+                    loaded_image_width = ctx.get('image_width')
+                    loaded_image_height = ctx.get('image_height')
 
         if not gcps_data:
             return {'gcps_loaded': 0, 'warnings': ['No GCPs found in YAML'], 'loaded_ptz': None}
@@ -1336,19 +1542,41 @@ class GCPCaptureWebSession:
                 'Save will convert to standard image_v format.'
             )
 
+        # Check for resolution mismatch and calculate scale factors
+        scale_u = 1.0
+        scale_v = 1.0
+        if loaded_image_width and loaded_image_height:
+            if loaded_image_width != self.frame_width or loaded_image_height != self.frame_height:
+                scale_u = self.frame_width / loaded_image_width
+                scale_v = self.frame_height / loaded_image_height
+                warnings.append(
+                    f'Resolution mismatch: GCPs were captured at {loaded_image_width}x{loaded_image_height}, '
+                    f'current frame is {self.frame_width}x{self.frame_height}. '
+                    f'Scaling coordinates by ({scale_u:.3f}, {scale_v:.3f}).'
+                )
+
         # Load GCPs
         loaded_count = 0
         for gcp in gcps_data:
             try:
                 lat = gcp['gps']['latitude']
                 lon = gcp['gps']['longitude']
-                u = gcp['image']['u']
-                v = gcp['image']['v']
+                u = gcp['image']['u'] * scale_u
+                v = gcp['image']['v'] * scale_v
                 desc = gcp.get('metadata', {}).get('description', f'GCP {len(self.gcps) + 1}')
                 accuracy = gcp.get('metadata', {}).get('accuracy', 'medium')
 
+                # Build GPS dict with latitude/longitude
+                gps_data = {'latitude': lat, 'longitude': lon}
+
+                # Preserve UTM coordinates if present
+                if 'utm_easting' in gcp['gps']:
+                    gps_data['utm_easting'] = gcp['gps']['utm_easting']
+                    gps_data['utm_northing'] = gcp['gps']['utm_northing']
+                    gps_data['utm_crs'] = gcp['gps'].get('utm_crs', self.utm_crs)
+
                 self.gcps.append({
-                    'gps': {'latitude': lat, 'longitude': lon},
+                    'gps': gps_data,
                     'image': {'u': u, 'v': v},
                     'metadata': {
                         'description': desc,
@@ -1504,11 +1732,25 @@ class GCPCaptureWebSession:
             timestamp = gcp.get('metadata', {}).get('timestamp', '')
             source = gcp.get('metadata', {}).get('source', 'manual')
 
-            lines.extend([
+            gcp_lines = [
                 f"      # GCP {i+1}: {desc}",
                 "      - gps:",
                 f"          latitude: {lat}",
                 f"          longitude: {lon}",
+            ]
+
+            # Include UTM coordinates if available
+            if 'utm_easting' in gcp['gps'] and 'utm_northing' in gcp['gps']:
+                utm_e = gcp['gps']['utm_easting']
+                utm_n = gcp['gps']['utm_northing']
+                utm_crs = gcp['gps'].get('utm_crs', self.utm_crs)
+                gcp_lines.extend([
+                    f"          utm_easting: {utm_e}",
+                    f"          utm_northing: {utm_n}",
+                    f"          utm_crs: \"{utm_crs}\"",
+                ])
+
+            gcp_lines.extend([
                 "        image:",
                 f"          u: {u}",
                 f"          v: {v}",
@@ -1519,6 +1761,7 @@ class GCPCaptureWebSession:
                 f"          source: {source}",
                 "",
             ])
+            lines.extend(gcp_lines)
 
         return "\n".join(lines)
 
@@ -5127,7 +5370,10 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 lat=data['lat'],
                 lon=data['lon'],
                 description=data.get('description', ''),
-                accuracy=data.get('accuracy', 'medium')
+                accuracy=data.get('accuracy', 'medium'),
+                utm_easting=data.get('utm_easting'),
+                utm_northing=data.get('utm_northing'),
+                utm_crs=data.get('utm_crs')
             )
             self.send_json_response({
                 'gcps': self.session.gcps,
@@ -5187,7 +5433,9 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 u=data['u'],
                 v=data['v'],
                 lat=data['lat'],
-                lon=data['lon']
+                lon=data['lon'],
+                utm_easting=data.get('utm_easting'),
+                utm_northing=data.get('utm_northing')
             )
             self.send_json_response(result)
 
@@ -5683,7 +5931,7 @@ def main():
 
         # Project GPS points to image first (needed by both height verification and display)
         try:
-            projected_points = project_gps_to_image(kml_points, camera_params)
+            projected_points = project_gps_to_image(kml_points, camera_params, camera_name=camera_name)
         except ValueError as e:
             print(f"Error: Failed to project GPS points: {e}")
             sys.exit(1)

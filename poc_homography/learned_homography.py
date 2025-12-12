@@ -71,8 +71,8 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
 
     Example Usage (future):
         >>> provider = LearnedHomography(
-        ...     width=2560,
-        ...     height=1440,
+        ...     width=1920,
+        ...     height=1080,
         ...     model_path='models/homography_net.pth',
         ...     model_type='homography_net',
         ...     confidence_threshold=0.7
@@ -112,8 +112,8 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         Initialize learned homography provider.
 
         Args:
-            width: Image width in pixels (e.g., 2560)
-            height: Image height in pixels (e.g., 1440)
+            width: Image width in pixels (e.g., 1920)
+            height: Image height in pixels (e.g., 1080)
             model_path: Path to trained model weights. If None, will attempt
                 to load default pre-trained model. Model format depends on
                 model_type (e.g., .pth for PyTorch, .h5 for TensorFlow).

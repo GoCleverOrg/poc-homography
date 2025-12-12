@@ -1163,6 +1163,10 @@ def main():
                 print("Warning: --map-debug requires camera GPS coordinates")
                 print("  Add camera_gps to your config or use standard visualization")
                 args.map_debug = False
+            elif not results.get('details'):
+                print("Warning: --map-debug requires valid homography results")
+                print("  Homography computation failed. Try lowering --confidence threshold.")
+                args.map_debug = False
             else:
                 run_map_debug_visualization(
                     frame=frame,

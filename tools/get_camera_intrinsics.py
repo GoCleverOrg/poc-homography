@@ -37,11 +37,19 @@ except (ValueError, ImportError) as e:
     print("Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.")
     sys.exit(1)
 
-# Default camera parameters (can be overridden via CLI)
-DEFAULT_SENSOR_WIDTH_MM = 7.18
-DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
-DEFAULT_IMAGE_WIDTH = 2560
-DEFAULT_IMAGE_HEIGHT = 1440
+# Import camera defaults from config
+try:
+    from poc_homography.camera_config import (
+        DEFAULT_SENSOR_WIDTH_MM,
+        DEFAULT_BASE_FOCAL_LENGTH_MM
+    )
+except ImportError:
+    # Fallback values if config import fails
+    DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8° FOV at 5.9mm
+    DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
+
+DEFAULT_IMAGE_WIDTH = 1920
+DEFAULT_IMAGE_HEIGHT = 1080
 
 
 def get_ptz_status(ip: str, username: str, password: str, timeout: float = 5.0) -> dict:
@@ -153,8 +161,8 @@ def get_camera_intrinsics(
 
     Args:
         camera_name: Camera name from camera_config
-        image_width: Override image width (default: 2560)
-        image_height: Override image height (default: 1440)
+        image_width: Override image width (default: 1920)
+        image_height: Override image height (default: 1080)
         sensor_width_mm: Override sensor width (default: 7.18)
         base_focal_length_mm: Override base focal length (default: 5.9)
 
