@@ -272,9 +272,9 @@ def test_generate_html_google_maps_without_api_key(sample_gcps, sample_validatio
         assert 'Google Satellite' in html, "Google Satellite should be in layer control"
         assert 'Hybrid' in html, "Hybrid layer should be in layer control"
 
-        # ESRI should be the default layer when no Google API key (fallback)
-        assert 'satellite.addTo(map)' in html, \
-            "ESRI satellite should be default layer without API key"
+        # Google should be the default layer (works without API key)
+        assert 'google.addTo(map)' in html, \
+            "Google should be default layer even without API key"
 
 
 def test_generate_html_google_maps_with_api_key(sample_gcps, sample_validation_results,

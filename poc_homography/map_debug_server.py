@@ -173,6 +173,28 @@ def generate_html(
 
         gcp_data.append(gcp_entry)
 
+    # Extract homography stats for header display
+    confidence = validation_results.get('confidence', 0) if validation_results else 0
+    inliers = validation_results.get('inliers', 0) if validation_results else 0
+    outliers = validation_results.get('outliers', 0) if validation_results else 0
+    total_gcps = validation_results.get('gcps_tested', len(gcps)) if validation_results else len(gcps)
+
+    # GPS error stats (in meters)
+    mean_gps_error = validation_results.get('mean_error_m', 0) if validation_results else 0
+    min_gps_error = validation_results.get('min_error_m', 0) if validation_results else 0
+    max_gps_error = validation_results.get('max_error_m', 0) if validation_results else 0
+
+    # Pixel reprojection error stats
+    reproj = validation_results.get('reprojection_error', {}) if validation_results else {}
+    mean_px_error = reproj.get('mean_px', 0) or 0
+    min_px_error = reproj.get('min_px', 0) or 0
+    max_px_error = reproj.get('max_px', 0) or 0
+
+    # Determine CSS classes for color coding
+    conf_class = 'good' if confidence >= 0.7 else ('warn' if confidence >= 0.5 else 'bad')
+    mean_gps_class = 'good' if mean_gps_error < 1.0 else ('warn' if mean_gps_error < 3.0 else 'bad')
+    mean_px_class = 'good' if mean_px_error < 5.0 else ('warn' if mean_px_error < 10.0 else 'bad')
+
     # Convert data to JSON for embedding in HTML
     gcp_data_json = json.dumps(gcp_data)
     camera_gps_json = json.dumps(camera_gps)
@@ -216,6 +238,9 @@ def generate_html(
             background: #2d2d2d;
             padding: 15px 20px;
             border-bottom: 2px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }}
 
         .header h1 {{
@@ -243,6 +268,54 @@ def generate_html(
             border-bottom: 1px solid #404040;
             font-size: 16px;
             font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+
+        .control-btn.header-btn {{
+            position: static;
+            padding: 6px 12px;
+            font-size: 12px;
+        }}
+
+        .header-stats {{
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #b0b0b0;
+        }}
+
+        .header-stats .stat-group {{
+            display: flex;
+            gap: 12px;
+        }}
+
+        .header-stats .stat {{
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }}
+
+        .header-stats .stat-label {{
+            color: #888;
+        }}
+
+        .header-stats .stat-value {{
+            color: #e0e0e0;
+            font-weight: 500;
+        }}
+
+        .header-stats .stat-value.good {{
+            color: #4CAF50;
+        }}
+
+        .header-stats .stat-value.warn {{
+            color: #FFC107;
+        }}
+
+        .header-stats .stat-value.bad {{
+            color: #f44336;
         }}
 
         .panel-content {{
@@ -441,6 +514,33 @@ def generate_html(
     <div class="container">
         <div class="header">
             <h1>GCP Map Debug Visualization</h1>
+            <div class="header-stats">
+                <div class="stat-group">
+                    <div class="stat">
+                        <span class="stat-label">Confidence:</span>
+                        <span class="stat-value {conf_class}">{confidence:.1%}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Points:</span>
+                        <span class="stat-value">{inliers}/{total_gcps}</span>
+                        <span class="stat-label">({outliers} outliers)</span>
+                    </div>
+                </div>
+                <div class="stat-group">
+                    <div class="stat">
+                        <span class="stat-label">GPS Error:</span>
+                        <span class="stat-value {mean_gps_class}">{mean_gps_error:.2f}m</span>
+                        <span class="stat-label">(min: {min_gps_error:.2f}m, max: {max_gps_error:.2f}m)</span>
+                    </div>
+                </div>
+                <div class="stat-group">
+                    <div class="stat">
+                        <span class="stat-label">Pixel Error:</span>
+                        <span class="stat-value {mean_px_class}">{mean_px_error:.1f}px</span>
+                        <span class="stat-label">(min: {min_px_error:.1f}px, max: {max_px_error:.1f}px)</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="content">
@@ -481,11 +581,13 @@ def generate_html(
 
             <!-- Right Panel: Satellite Map -->
             <div class="panel">
-                <div class="panel-header">Satellite Map</div>
+                <div class="panel-header">
+                    Satellite Map
+                    <button id="resetViewBtn" class="control-btn reset header-btn">Reset View</button>
+                </div>
                 <div class="panel-content">
                     <div id="map"></div>
                     <div id="rightTooltip" class="gcp-tooltip" style="display: none;"></div>
-                    <button id="resetViewBtn" class="control-btn reset">Reset View</button>
                     <div class="legend">
                         <div class="legend-title">Legend</div>
                         <div class="legend-item">

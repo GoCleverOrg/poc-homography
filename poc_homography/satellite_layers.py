@@ -35,7 +35,7 @@ def generate_satellite_layers_js(
             Google Satellite layer is excluded from the layer control.
         default_layer: Which layer to activate by default. Options:
             'google', 'esri', 'pnoa', 'osm', 'hybrid'.
-            Falls back to 'esri' if 'google' is selected but no API key provided.
+            Google works without API key (uses unauthenticated endpoint).
         max_zoom: Maximum zoom level for over-zooming support (default: 23).
         max_native_zoom: Native tile resolution zoom level (default: 19).
 
@@ -56,13 +56,8 @@ def generate_satellite_layers_js(
         'hybrid': 'hybrid'
     }
 
-    # Determine effective default layer
-    effective_default = default_layer
-    if default_layer == 'google' and not google_api_key:
-        effective_default = 'esri'
-
-    # Get JavaScript variable name for default layer
-    default_js_var = layer_var_names.get(effective_default, 'satellite')
+    # Get JavaScript variable name for default layer (no fallback - Google works without API key)
+    default_js_var = layer_var_names.get(default_layer, 'google')
 
     # Build JavaScript code
     js_parts = []
