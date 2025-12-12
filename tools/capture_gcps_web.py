@@ -1670,14 +1670,16 @@ class GCPCaptureWebSession:
         ]
 
         # Add camera GPS if available
-        if CAMERA_CONFIG_AVAILABLE:
+        if CAMERA_CONFIG_AVAILABLE and GPS_CONVERTER_AVAILABLE:
             try:
                 cam_info = get_camera_by_name(self.camera_name)
-                if cam_info and 'gps' in cam_info:
+                if cam_info and 'lat' in cam_info and 'lon' in cam_info:
+                    camera_lat = dms_to_dd(cam_info['lat'])
+                    camera_lon = dms_to_dd(cam_info['lon'])
                     lines.extend([
                         "      camera_gps:",
-                        f"        latitude: {cam_info['gps'].get('latitude')}",
-                        f"        longitude: {cam_info['gps'].get('longitude')}",
+                        f"        latitude: {camera_lat}",
+                        f"        longitude: {camera_lon}",
                     ])
             except Exception:
                 pass
