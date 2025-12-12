@@ -27,7 +27,6 @@ Environment Variables:
 import http.server
 import os
 import shutil
-import socket
 import socketserver
 import webbrowser
 from pathlib import Path
