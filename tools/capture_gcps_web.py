@@ -2581,6 +2581,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                         <button class="btn btn-secondary" id="rotateAllBtn" onclick="toggleRotateAllMode()" style="flex: 1;">
                             Rotate All
                         </button>
+                        <button class="btn btn-secondary" id="scaleAllBtn" onclick="toggleScaleAllMode()" style="flex: 1;">
+                            Scale All
+                        </button>
                     </div>
                 </div>
 
@@ -3588,6 +3591,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         // Rotate All mode state
         let rotateAllMode = false;
 
+        // Scale All mode state
+        let scaleAllMode = false;
+
         // Render map-first projected points
         function renderMapFirstPoints() {{
             // Remove existing map-first markers
@@ -4010,6 +4016,8 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 selectedMapFirstIndices.clear();
                 rotateAllMode = false;
                 updateRotateAllUI();
+                scaleAllMode = false;
+                updateScaleAllUI();
                 moveAllMode = true;
                 updateMoveAllUI();
                 renderMapFirstPoints();
@@ -4120,6 +4128,8 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 selectedMapFirstIndices.clear();
                 moveAllMode = false;
                 updateMoveAllUI();
+                scaleAllMode = false;
+                updateScaleAllUI();
                 rotateAllMode = true;
                 updateRotateAllUI();
                 renderMapFirstPoints();
@@ -4247,6 +4257,130 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 document.body.appendChild(indicator);
             }} else {{
                 btn.textContent = 'Rotate All';
+                btn.style.background = '';
+                btn.style.borderColor = '';
+            }}
+        }}
+
+        // ============================================================
+        // Scale All Mode Functions
+        // ============================================================
+
+        // Toggle Scale All mode
+        function toggleScaleAllMode() {{
+            if (scaleAllMode) {{
+                // Exit Scale All mode
+                exitScaleAllMode();
+            }} else {{
+                // Enter Scale All mode - exit other modes first
+                selectedMapFirstIndices.clear();
+                moveAllMode = false;
+                updateMoveAllUI();
+                rotateAllMode = false;
+                updateRotateAllUI();
+                scaleAllMode = true;
+                updateScaleAllUI();
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Exit Scale All mode
+        function exitScaleAllMode() {{
+            scaleAllMode = false;
+            updateScaleAllUI();
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+        }}
+
+        // Scale all visible points around centroid
+        function scaleAllPoints(scaleX, scaleY) {{
+            if (!scaleAllMode) return;
+
+            const centroid = calculateCentroid();
+            if (!centroid) return;
+
+            let scaledCount = 0;
+            projectedPoints.forEach((point) => {{
+                if (point.visible !== false && point.reason === 'visible') {{
+                    // Translate to origin (centroid)
+                    const dx = point.pixel_u - centroid.u;
+                    const dy = point.pixel_v - centroid.v;
+
+                    // Scale
+                    const newDx = dx * scaleX;
+                    const newDy = dy * scaleY;
+
+                    // Translate back
+                    point.pixel_u = centroid.u + newDx;
+                    point.pixel_v = centroid.v + newDy;
+
+                    scaledCount++;
+                }}
+            }});
+
+            if (scaledCount > 0) {{
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        // Update Scale All button and indicator
+        function updateScaleAllUI() {{
+            const btn = document.getElementById('scaleAllBtn');
+            const existingIndicator = document.getElementById('scaleAllIndicator');
+
+            if (existingIndicator) {{
+                existingIndicator.remove();
+            }}
+
+            if (scaleAllMode) {{
+                btn.textContent = 'Accept Scaling';
+                btn.style.background = '#4CAF50';
+                btn.style.borderColor = '#4CAF50';
+
+                // Show indicator at bottom
+                const indicator = document.createElement('div');
+                indicator.id = 'scaleAllIndicator';
+                indicator.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(0, 150, 136, 0.95);
+                    color: white;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    z-index: 10000;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                `;
+
+                // Count visible points
+                const visibleCount = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible').length;
+
+                indicator.innerHTML = `
+                    <span><strong>SCALE MODE</strong> - Scaling ${{visibleCount}} points around centroid</span>
+                    <span style="font-size: 12px; opacity: 0.9;">
+                        ← → horizontal | ↑ ↓ vertical | Shift = 10%
+                    </span>
+                    <button onclick="exitScaleAllMode()" style="
+                        background: rgba(255,255,255,0.2);
+                        border: none;
+                        color: white;
+                        padding: 4px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                    ">Done</button>
+                `;
+                document.body.appendChild(indicator);
+            }} else {{
+                btn.textContent = 'Scale All';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
@@ -5187,6 +5321,11 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         document.addEventListener('keydown', function(e) {{
             // Escape key - close modals, exit modes, or deselect point
             if (e.key === 'Escape') {{
+                if (scaleAllMode) {{
+                    exitScaleAllMode();
+                    e.preventDefault();
+                    return;
+                }}
                 if (rotateAllMode) {{
                     exitRotateAllMode();
                     e.preventDefault();
@@ -5208,6 +5347,11 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Enter key - confirm modal or accept current mode
             if (e.key === 'Enter') {{
+                if (scaleAllMode) {{
+                    exitScaleAllMode();
+                    e.preventDefault();
+                    return;
+                }}
                 if (rotateAllMode) {{
                     exitRotateAllMode();
                     e.preventDefault();
@@ -5229,9 +5373,32 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 const rotationSpeed = e.shiftKey ? 5 : 0.5;
                 // Movement speed: normal = 1px, shift = 10px
                 const moveSpeed = e.shiftKey ? 10 : 1;
+                // Scale speed: normal = 1% (0.01), shift = 10% (0.10)
+                const scaleSpeed = e.shiftKey ? 0.10 : 0.01;
 
+                // Scale All mode - arrow keys scale around centroid
+                if (scaleAllMode) {{
+                    switch (e.key) {{
+                        case 'ArrowLeft':
+                            scaleAllPoints(1 - scaleSpeed, 1.0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowRight':
+                            scaleAllPoints(1 + scaleSpeed, 1.0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowUp':
+                            scaleAllPoints(1.0, 1 - scaleSpeed);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowDown':
+                            scaleAllPoints(1.0, 1 + scaleSpeed);
+                            e.preventDefault();
+                            break;
+                    }}
+                }}
                 // Rotate All mode - left/right arrows rotate around centroid
-                if (rotateAllMode) {{
+                else if (rotateAllMode) {{
                     switch (e.key) {{
                         case 'ArrowLeft':
                             rotateAllPoints(-rotationSpeed);
