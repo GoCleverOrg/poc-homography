@@ -1160,8 +1160,19 @@ def main():
         if args.map_debug:
             # Map debug mode: Launch web-based visualization
             if camera_gps is None:
-                print("Warning: --map-debug requires camera GPS coordinates")
-                print("  Add camera_gps to your config or use standard visualization")
+                config_path = args.config if args.config else "<no config file provided>"
+                print("Warning: --map-debug skipped - camera_gps not found in config", file=sys.stderr)
+                print(f"  Config file: {config_path}", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("  Add camera_gps to your config under camera_capture_context:", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("    camera_capture_context:", file=sys.stderr)
+                print("      camera_gps:", file=sys.stderr)
+                print("        latitude: 39.640477", file=sys.stderr)
+                print("        longitude: -0.230175", file=sys.stderr)
+                print("      ...", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("  Falling back to standard OpenCV visualization.", file=sys.stderr)
                 args.map_debug = False
             elif not results.get('details'):
                 print("Warning: --map-debug requires valid homography results")
