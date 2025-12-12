@@ -125,6 +125,13 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, title="GCP Verification Map"):
     """Generate interactive HTML map with GCPs plotted."""
 
+    # Check for Google Maps API key and generate satellite layers
+    google_maps_api_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    satellite_layers_js = generate_satellite_layers_js(
+        google_api_key=google_maps_api_key if google_maps_api_key else None,
+        default_layer='google'
+    )
+
     # Calculate center point
     if gcps:
         center_lat = sum(g['lat'] for g in gcps) / len(gcps)
@@ -304,7 +311,7 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
         ]);
 
         // Satellite layer configuration (from shared module)
-        {generate_satellite_layers_js()}
+        {satellite_layers_js}
 
         // Add GCP markers
         {gcp_markers_js}

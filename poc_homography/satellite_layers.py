@@ -79,7 +79,7 @@ def generate_satellite_layers_js(
     js_parts.append(f"""
         // ESRI Satellite with over-zoom support
         var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
-            attribution: 'Tiles &copy; Esri',
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
             maxNativeZoom: {max_native_zoom},
             maxZoom: {max_zoom}
         }});""")
