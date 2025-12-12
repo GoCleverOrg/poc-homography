@@ -26,23 +26,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.coordinate_converter import gps_to_local_xy
+from poc_homography.camera_config import get_camera_configs
+from poc_homography.gps_distance_calculator import dms_to_dd
 
 
-# Default camera configs (same as in diagnostic script)
-CAMERA_CONFIGS = {
-    'Valte': {
-        'lat': 39.640477,
-        'lon': -0.230175,
-        'height_m': 4.71,
-        'pan_offset_deg': 51.7,
-    },
-    'Setram': {
-        'lat': 41.329667,
-        'lon': 2.142028,
-        'height_m': 5.0,
-        'pan_offset_deg': 0.0,
+# Load camera configs from canonical source and convert DMS to decimal degrees
+def _convert_camera_config(cam):
+    """Convert camera config from DMS format to decimal degrees for this tool."""
+    return {
+        'lat': dms_to_dd(cam['lat']),
+        'lon': dms_to_dd(cam['lon']),
+        'height_m': cam['height_m'],
+        'pan_offset_deg': cam['pan_offset_deg'],
     }
-}
+
+CAMERA_CONFIGS = {cam['name']: _convert_camera_config(cam) for cam in get_camera_configs()}
 
 
 def analyze_projection_error(camera_config: dict,

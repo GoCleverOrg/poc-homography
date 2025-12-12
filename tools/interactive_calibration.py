@@ -43,13 +43,16 @@ from poc_homography.coordinate_converter import gps_to_local_xy
 
 # Try to import camera modules
 try:
-    from poc_homography.camera_config import get_camera_by_name, CAMERAS
-    from poc_homography.dms_parser import dms_to_dd
+    from poc_homography.camera_config import get_camera_by_name, get_camera_by_name_safe, CAMERAS
+    from poc_homography.gps_distance_calculator import dms_to_dd
     from poc_homography.ptz_control import get_ptz_status
     from poc_homography.frame_grabber import grab_frame
     CAMERA_AVAILABLE = True
 except (ImportError, ValueError):
     CAMERA_AVAILABLE = False
+    # Import safe fallback functions that don't require credentials
+    from poc_homography.camera_config import get_camera_by_name_safe
+    from poc_homography.gps_distance_calculator import dms_to_dd
 
 
 class CalibrationSession:
@@ -400,29 +403,22 @@ def main():
 
     args = parser.parse_args()
 
-    # Get camera config
+    # Get camera config from canonical source
     if CAMERA_AVAILABLE:
         cam_config = get_camera_by_name(args.camera)
-        if cam_config is None:
-            print(f"Error: Camera '{args.camera}' not found")
-            sys.exit(1)
-        camera_lat = dms_to_dd(cam_config['lat'])
-        camera_lon = dms_to_dd(cam_config['lon'])
-        height_m = cam_config.get('height_m', 5.0)
-        pan_offset_deg = cam_config.get('pan_offset_deg', 0.0)
     else:
-        # Use hardcoded defaults
-        CAMERA_CONFIGS = {
-            'Valte': {'lat': 39.640497, 'lon': -0.230106, 'height_m': 3.4, 'pan_offset_deg': 66.7},
-            'Setram': {'lat': 41.329667, 'lon': 2.142028, 'height_m': 5.0, 'pan_offset_deg': 0.0}
-        }
-        if args.camera not in CAMERA_CONFIGS:
-            print(f"Error: Unknown camera '{args.camera}'")
-            sys.exit(1)
-        cfg = CAMERA_CONFIGS[args.camera]
-        camera_lat, camera_lon = cfg['lat'], cfg['lon']
-        height_m = cfg['height_m']
-        pan_offset_deg = cfg['pan_offset_deg']
+        # Fallback to safe accessor when camera modules aren't available
+        cam_config = get_camera_by_name_safe(args.camera)
+
+    if cam_config is None:
+        print(f"Error: Camera '{args.camera}' not found")
+        sys.exit(1)
+
+    # Convert DMS strings to decimal degrees
+    camera_lat = dms_to_dd(cam_config['lat'])
+    camera_lon = dms_to_dd(cam_config['lon'])
+    height_m = cam_config.get('height_m', 5.0)
+    pan_offset_deg = cam_config.get('pan_offset_deg', 0.0)
 
     # Get frame
     pan_raw = args.pan_raw

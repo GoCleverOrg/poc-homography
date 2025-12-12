@@ -53,6 +53,8 @@ def suppress_stdout():
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.coordinate_converter import gps_to_local_xy
+from poc_homography.camera_config import get_camera_configs, get_camera_by_name_safe
+from poc_homography.gps_distance_calculator import dms_to_dd
 
 # Try to import yaml, fallback to manual parsing if not available
 try:
@@ -89,24 +91,22 @@ class CalibrationParams:
     k2: float = 0.0  # Secondary radial distortion
 
 
-# Default camera configs
-CAMERA_CONFIGS = {
-    'Valte': {
-        'lat': 39.640477,
-        'lon': -0.230175,
-        'height_m': 4.71,
-        'pan_offset_deg': 51.7,
-        'focal_multiplier': 1.176,
-        'k1': -0.341052,
-        'k2': 0.787571,
-    },
-    'Setram': {
-        'lat': 41.329667,
-        'lon': 2.142028,
-        'height_m': 5.0,
-        'pan_offset_deg': 0.0,
+# Import camera configs from canonical source and convert DMS coordinates to decimal degrees
+_camera_configs_list = get_camera_configs()
+CAMERA_CONFIGS = {}
+for cam in _camera_configs_list:
+    # Convert DMS coordinates to decimal degrees for calculations
+    config = {
+        'name': cam['name'],
+        'lat': dms_to_dd(cam['lat']),
+        'lon': dms_to_dd(cam['lon']),
+        'height_m': cam.get('height_m', 5.0),
+        'pan_offset_deg': cam.get('pan_offset_deg', 0.0),
+        'focal_multiplier': 1.0,  # Default multiplier, can be calibrated
+        'k1': cam.get('k1', 0.0),
+        'k2': cam.get('k2', 0.0),
     }
-}
+    CAMERA_CONFIGS[cam['name']] = config
 
 
 def parse_gcps_from_yaml(yaml_path: str) -> List[GCP]:

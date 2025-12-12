@@ -25,21 +25,31 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-# Camera configs (local copy to avoid credential requirements)
-CAMERA_CONFIGS = {
-    'Valte': {
-        'lat': 39.640477,
-        'lon': -0.230175,
-        'height_m': 4.71,
-        'pan_offset_deg': 51.7,
-    },
-    'Setram': {
-        'lat': 41.329667,
-        'lon': 2.142028,
-        'height_m': 5.0,
-        'pan_offset_deg': 0.0,
+from poc_homography.camera_config import get_camera_by_name_safe
+from poc_homography.gps_distance_calculator import dms_to_dd
+
+
+def get_camera_config_decimal(camera_name: str) -> dict:
+    """
+    Get camera config with GPS coordinates converted to decimal degrees.
+
+    Args:
+        camera_name: Name of the camera (e.g., "Valte", "Setram")
+
+    Returns:
+        Camera config dict with lat/lon in decimal degrees, or None if not found
+    """
+    cam = get_camera_by_name_safe(camera_name)
+    if not cam:
+        return None
+
+    # Convert DMS coordinates to decimal degrees
+    return {
+        'lat': dms_to_dd(cam['lat']),
+        'lon': dms_to_dd(cam['lon']),
+        'height_m': cam['height_m'],
+        'pan_offset_deg': cam['pan_offset_deg'],
     }
-}
 
 
 def load_gcps_from_yaml(yaml_path: str, image_height: int = 1080) -> tuple:
@@ -356,7 +366,7 @@ Examples:
     # Get camera config if specified
     camera_config = None
     if args.camera:
-        camera_config = CAMERA_CONFIGS.get(args.camera)
+        camera_config = get_camera_config_decimal(args.camera)
         if camera_config:
             print(f"  Camera: {args.camera} at ({camera_config['lat']:.6f}, {camera_config['lon']:.6f})")
         else:

@@ -9,13 +9,6 @@ import os
 USERNAME = os.getenv("CAMERA_USERNAME")
 PASSWORD = os.getenv("CAMERA_PASSWORD")
 
-# Validate that credentials are set
-if not USERNAME or not PASSWORD:
-    raise ValueError(
-        "Camera credentials not set. Please set CAMERA_USERNAME and CAMERA_PASSWORD "
-        "environment variables. See .env.example for template."
-    )
-
 # =============================================================================
 # CAMERA LENS SPECIFICATIONS (Hikvision DS-2DF8425IX-AELW series)
 # =============================================================================
@@ -92,6 +85,18 @@ CAMERAS = [
 ]
 
 
+def get_camera_configs() -> list:
+    """
+    Get list of all camera configurations.
+
+    Returns:
+        List of camera configuration dicts containing camera parameters,
+        GPS coordinates, and calibration data. Does not require credentials
+        and does not generate RTSP URLs.
+    """
+    return CAMERAS
+
+
 def get_camera_by_name(camera_name: str) -> dict:
     """
     Find camera configuration by name.
@@ -103,6 +108,23 @@ def get_camera_by_name(camera_name: str) -> dict:
         Camera configuration dict or None if not found
     """
     return next((cam for cam in CAMERAS if cam.get("name") == camera_name), None)
+
+
+def get_camera_by_name_safe(camera_name: str) -> dict:
+    """
+    Alias for get_camera_by_name().
+
+    This function exists for backwards compatibility. Since credential validation
+    was moved from module-level to get_rtsp_url(), get_camera_by_name() is now
+    safe to call without credentials. Both functions are equivalent.
+
+    Args:
+        camera_name: Name of the camera (e.g., "Valte", "Setram")
+
+    Returns:
+        Camera configuration dict or None if not found
+    """
+    return get_camera_by_name(camera_name)
 
 
 def get_camera_gps(camera_name: str) -> dict:
@@ -131,7 +153,17 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str:
 
     Returns:
         Full RTSP URL or None if camera not found
+
+    Raises:
+        ValueError: If camera credentials are not set
     """
+    # Validate that credentials are set
+    if not USERNAME or not PASSWORD:
+        raise ValueError(
+            "Camera credentials not set. Please set CAMERA_USERNAME and CAMERA_PASSWORD "
+            "environment variables. See .env.example for template."
+        )
+
     cam = get_camera_by_name(camera_name)
     if not cam:
         return None
