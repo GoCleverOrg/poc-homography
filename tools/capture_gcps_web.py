@@ -1206,7 +1206,7 @@ class GCPCaptureWebSession:
         local_points = np.array(local_points, dtype=np.float32)
 
         # Compute homography with RANSAC
-        H, mask = cv2.findHomography(local_points, image_points, cv2.RANSAC, 5.0)
+        H, mask = cv2.findHomography(local_points, image_points, cv2.RANSAC, RANSAC_REPROJ_THRESHOLD)
 
         if H is None:
             self.current_homography = None
@@ -1220,7 +1220,7 @@ class GCPCaptureWebSession:
             }
 
         self.current_homography = H
-        self.inlier_mask = mask.ravel().tolist() if mask is not None else [True] * len(self.gcps)
+        self.inlier_mask = mask.ravel().tolist() if mask is not None else [1] * len(self.gcps)
 
         # Calculate reprojection errors for ALL points
         projected = cv2.perspectiveTransform(
