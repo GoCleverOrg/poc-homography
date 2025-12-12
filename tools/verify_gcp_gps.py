@@ -260,7 +260,7 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
         .info-panel {{
             position: absolute;
             top: 10px;
-            right: 10px;
+            left: 10px;
             z-index: 1000;
             background: white;
             padding: 10px 15px;
@@ -269,8 +269,10 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
             max-width: 300px;
             font-family: Arial, sans-serif;
             font-size: 12px;
+            cursor: move;
+            user-select: none;
         }}
-        .info-panel h3 {{ margin: 0 0 10px 0; font-size: 14px; }}
+        .info-panel h3 {{ margin: 0 0 10px 0; font-size: 14px; cursor: move; }}
         .legend {{ margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; }}
         .legend-item {{ display: flex; align-items: center; margin: 5px 0; }}
         .legend-dot {{ width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }}
@@ -278,8 +280,8 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
 </head>
 <body>
     <div id="map"></div>
-    <div class="info-panel">
-        <h3>GCP Verification Map</h3>
+    <div class="info-panel" id="infoPanel">
+        <h3>GCP Verification Map <span style="font-size:10px;color:#999;">drag to move</span></h3>
         <div>GCPs: {len(gcps)}</div>
         <div>{meta_info}</div>
         <div class="legend">
@@ -302,11 +304,28 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
 
         // Base layers
         var osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-            attribution: '&copy; OpenStreetMap contributors'
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19
         }});
 
         var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
-            attribution: 'Tiles &copy; Esri'
+            attribution: 'Tiles &copy; Esri',
+            maxZoom: 19
+        }});
+
+        // PNOA - Spanish high-resolution orthophotos (25-50cm resolution)
+        var pnoa = L.tileLayer.wms('https://www.ign.es/wms-inspire/pnoa-ma', {{
+            layers: 'OI.OrthoimageCoverage',
+            format: 'image/png',
+            transparent: true,
+            attribution: 'PNOA &copy; IGN España',
+            maxZoom: 22
+        }});
+
+        // Google Satellite (higher res in many areas)
+        var google = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={{x}}&y={{y}}&z={{z}}', {{
+            attribution: '&copy; Google',
+            maxZoom: 21
         }});
 
         var hybrid = L.layerGroup([
@@ -316,12 +335,14 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
             }})
         ]);
 
-        // Default to satellite
-        satellite.addTo(map);
+        // Default to Google Satellite
+        google.addTo(map);
 
         L.control.layers({{
             'Street Map': osm,
-            'Satellite': satellite,
+            'ESRI Satellite': satellite,
+            'PNOA Spain (Best)': pnoa,
+            'Google Satellite': google,
             'Hybrid': hybrid
         }}).addTo(map);
 
@@ -330,6 +351,33 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
 
         // Add camera marker and FOV
         {camera_js}
+
+        // Make info panel draggable
+        (function() {{
+            var panel = document.getElementById('infoPanel');
+            var isDragging = false;
+            var offsetX, offsetY;
+
+            panel.addEventListener('mousedown', function(e) {{
+                isDragging = true;
+                offsetX = e.clientX - panel.offsetLeft;
+                offsetY = e.clientY - panel.offsetTop;
+                panel.style.opacity = '0.8';
+            }});
+
+            document.addEventListener('mousemove', function(e) {{
+                if (isDragging) {{
+                    panel.style.left = (e.clientX - offsetX) + 'px';
+                    panel.style.top = (e.clientY - offsetY) + 'px';
+                    panel.style.right = 'auto';
+                }}
+            }});
+
+            document.addEventListener('mouseup', function() {{
+                isDragging = false;
+                panel.style.opacity = '1';
+            }});
+        }})();
     </script>
 </body>
 </html>"""
