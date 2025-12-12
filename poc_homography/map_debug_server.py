@@ -921,6 +921,18 @@ def generate_html(
 
         // Highlight GCP on both panels
         function highlightGCP(index) {{
+            // State reconciliation: unhighlight any previously highlighted marker first
+            // This prevents stuck highlights when mouseout events are missed during rapid movement
+            if (hoveredGcpIndex !== null && hoveredGcpIndex !== index) {{
+                // Restore ALL previous markers to original state (GCPs with error > 0.5m have 2 markers)
+                mapMarkers.filter(m => m.index === hoveredGcpIndex).forEach(prevMarker => {{
+                    const originalIcon = prevMarker.iconType === 'star'
+                        ? createStarIcon(prevMarker.color, prevMarker.size, 1)
+                        : createDiamondIcon(prevMarker.color, prevMarker.size, 1);
+                    prevMarker.marker.setIcon(originalIcon);
+                }});
+            }}
+
             hoveredGcpIndex = index;
             const gcp = gcpData[index];
             if (!gcp) return;
