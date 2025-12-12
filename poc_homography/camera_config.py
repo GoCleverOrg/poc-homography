@@ -112,11 +112,11 @@ def get_camera_by_name(camera_name: str) -> dict:
 
 def get_camera_by_name_safe(camera_name: str) -> dict:
     """
-    Find camera configuration by name without requiring credentials.
+    Alias for get_camera_by_name().
 
-    This is a safe alternative to get_camera_by_name() for tools that need
-    to access camera parameters (GPS, calibration data, etc.) without
-    triggering credential validation.
+    This function exists for backwards compatibility. Since credential validation
+    was moved from module-level to get_rtsp_url(), get_camera_by_name() is now
+    safe to call without credentials. Both functions are equivalent.
 
     Args:
         camera_name: Name of the camera (e.g., "Valte", "Setram")
@@ -124,7 +124,7 @@ def get_camera_by_name_safe(camera_name: str) -> dict:
     Returns:
         Camera configuration dict or None if not found
     """
-    return next((cam for cam in CAMERAS if cam.get("name") == camera_name), None)
+    return get_camera_by_name(camera_name)
 
 
 def get_camera_gps(camera_name: str) -> dict:
