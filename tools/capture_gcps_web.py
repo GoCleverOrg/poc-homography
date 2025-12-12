@@ -50,6 +50,8 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from poc_homography.server_utils import find_available_port
+
 # Camera config is optional
 try:
     from poc_homography.camera_config import (
@@ -5861,12 +5863,8 @@ def start_capture_server(
     GCPCaptureHandler.has_live_camera = has_live_camera
 
     # Find available port
-    while True:
-        try:
-            server = socketserver.TCPServer(("", port), GCPCaptureHandler)
-            break
-        except OSError:
-            port += 1
+    port = find_available_port(start_port=port, max_attempts=10)
+    server = socketserver.TCPServer(("", port), GCPCaptureHandler)
 
     url = f"http://localhost:{port}"
     print(f"\nGCP Capture server running at: {url}")

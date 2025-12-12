@@ -7,6 +7,7 @@ Click on features (zebra crossings, arrows, parking corners) and save as KML.
 import http.server
 import socketserver
 import json
+import sys
 import webbrowser
 import urllib.parse
 from pathlib import Path
@@ -15,6 +16,13 @@ import base64
 import argparse
 import xml.etree.ElementTree as ET
 import re
+
+# Add parent directory to path for imports
+parent_dir = str(Path(__file__).parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from poc_homography.server_utils import find_available_port
 
 # Default georeferencing for the Valencia cartography
 DEFAULT_CONFIG = {
@@ -906,6 +914,9 @@ def run_server(image_path: str, config: dict, port: int = 8765):
 
         def log_message(self, format, *args):
             pass  # Suppress logging
+
+    # Find available port
+    port = find_available_port(start_port=port, max_attempts=10)
 
     with socketserver.TCPServer(("", port), Handler) as httpd:
         url = f"http://localhost:{port}"
