@@ -27,6 +27,7 @@ except ImportError:
 
 from poc_homography.camera_config import get_camera_by_name_safe
 from poc_homography.gps_distance_calculator import dms_to_dd
+from poc_homography.satellite_layers import generate_satellite_layers_js
 
 
 def get_camera_config_decimal(camera_name: str) -> dict:
@@ -123,6 +124,13 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, title="GCP Verification Map"):
     """Generate interactive HTML map with GCPs plotted."""
+
+    # Check for Google Maps API key and generate satellite layers
+    google_maps_api_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    satellite_layers_js = generate_satellite_layers_js(
+        google_api_key=google_maps_api_key if google_maps_api_key else None,
+        default_layer='google'
+    )
 
     # Calculate center point
     if gcps:
@@ -302,49 +310,8 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
             [{max_lat + 0.0002}, {max_lon + 0.0003}]
         ]);
 
-        // Base layers
-        var osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19
-        }});
-
-        var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
-            attribution: 'Tiles &copy; Esri',
-            maxZoom: 19
-        }});
-
-        // PNOA - Spanish high-resolution orthophotos (25-50cm resolution)
-        var pnoa = L.tileLayer.wms('https://www.ign.es/wms-inspire/pnoa-ma', {{
-            layers: 'OI.OrthoimageCoverage',
-            format: 'image/png',
-            transparent: true,
-            attribution: 'PNOA &copy; IGN España',
-            maxZoom: 22
-        }});
-
-        // Google Satellite (higher res in many areas)
-        var google = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={{x}}&y={{y}}&z={{z}}', {{
-            attribution: '&copy; Google',
-            maxZoom: 21
-        }});
-
-        var hybrid = L.layerGroup([
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{}}),
-            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                opacity: 0.3
-            }})
-        ]);
-
-        // Default to Google Satellite
-        google.addTo(map);
-
-        L.control.layers({{
-            'Street Map': osm,
-            'ESRI Satellite': satellite,
-            'PNOA Spain (Best)': pnoa,
-            'Google Satellite': google,
-            'Hybrid': hybrid
-        }}).addTo(map);
+        // Satellite layer configuration (from shared module)
+        {satellite_layers_js}
 
         // Add GCP markers
         {gcp_markers_js}

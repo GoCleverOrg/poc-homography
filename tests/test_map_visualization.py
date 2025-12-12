@@ -254,7 +254,7 @@ def test_generate_html_camera_gps_centered(sample_gcps, sample_validation_result
 
 def test_generate_html_google_maps_without_api_key(sample_gcps, sample_validation_results,
                                                     sample_camera_gps):
-    """Test that Google Maps layer is not enabled without API key."""
+    """Test that all 5 satellite layers are present without API key."""
     # Ensure no GOOGLE_MAPS_API_KEY in environment
     with patch.dict(os.environ, {}, clear=True):
         html = generate_html(
@@ -265,19 +265,21 @@ def test_generate_html_google_maps_without_api_key(sample_gcps, sample_validatio
             validation_results=sample_validation_results
         )
 
-        # Google Maps API key variable should be empty
-        assert "const googleMapsApiKey = '';" in html or \
-               'const googleMapsApiKey = "";' in html, \
-               "Google Maps API key should be empty string"
+        # All 5 layers should be present in layer control
+        assert 'Street Map' in html, "OSM Street Map should be in layer control"
+        assert 'ESRI Satellite' in html, "ESRI Satellite should be in layer control"
+        assert 'PNOA Spain' in html, "PNOA Spain should be in layer control"
+        assert 'Google Satellite' in html, "Google Satellite should be in layer control"
+        assert 'Hybrid' in html, "Hybrid layer should be in layer control"
 
-        # Conditional check should prevent Google Maps layer
-        assert 'if (googleMapsApiKey)' in html, \
-            "HTML should have conditional check for Google Maps API key"
+        # Google should be the default layer (works without API key)
+        assert 'google.addTo(map)' in html, \
+            "Google should be default layer even without API key"
 
 
 def test_generate_html_google_maps_with_api_key(sample_gcps, sample_validation_results,
                                                  sample_camera_gps):
-    """Test that Google Maps layer is enabled with API key."""
+    """Test that all 5 satellite layers are present and Google is default with API key."""
     test_api_key = 'TEST_API_KEY_12345'
 
     # Mock GOOGLE_MAPS_API_KEY environment variable
@@ -290,12 +292,23 @@ def test_generate_html_google_maps_with_api_key(sample_gcps, sample_validation_r
             validation_results=sample_validation_results
         )
 
-        # Verify API key is embedded in HTML
+        # Verify API key is embedded in Google layer URL
         assert test_api_key in html, "Google Maps API key should be in HTML"
 
         # Verify Google Maps tile URL template is present
         assert 'mt1.google.com/vt/lyrs=s' in html, \
             "HTML should contain Google Maps tile URL when API key is present"
+
+        # All 5 layers should be present in layer control
+        assert 'Street Map' in html, "OSM Street Map should be in layer control"
+        assert 'ESRI Satellite' in html, "ESRI Satellite should be in layer control"
+        assert 'PNOA Spain' in html, "PNOA Spain should be in layer control"
+        assert 'Google Satellite' in html, "Google Satellite should be in layer control"
+        assert 'Hybrid' in html, "Hybrid layer should be in layer control"
+
+        # Google should be the default layer when API key is present
+        assert 'google.addTo(map)' in html, \
+            "Google should be default layer with API key"
 
 
 def test_generate_html_valid_structure(sample_gcps, sample_validation_results,
