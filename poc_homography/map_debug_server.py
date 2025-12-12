@@ -34,6 +34,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import json
 
+from poc_homography.satellite_layers import generate_satellite_layers_js
+
 
 def find_available_port(start_port: int = 8080, max_attempts: int = 10) -> int:
     """
@@ -124,8 +126,12 @@ def generate_html(
         ...     validation_results={...}
         ... )
     """
-    # Check for Google Maps API key
+    # Check for Google Maps API key and generate satellite layers
     google_maps_api_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    satellite_layers_js = generate_satellite_layers_js(
+        google_api_key=google_maps_api_key if google_maps_api_key else None,
+        default_layer='google'
+    )
 
     # Prepare GCP data for JavaScript
     gcp_data = []
@@ -522,7 +528,6 @@ def generate_html(
         // Embedded data
         const gcpData = {gcp_data_json};
         const cameraGPS = {camera_gps_json};
-        const googleMapsApiKey = '{google_maps_api_key}';
         const homographyMatrix = {homography_json};
         const EARTH_RADIUS_M = 6371000;
 
@@ -586,38 +591,8 @@ def generate_html(
             maxZoom: 23  // Allow over-zooming for precision inspection
         }});
 
-        // ESRI World Imagery base layer with over-zoom support
-        const esriSatellite = L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
-            {{
-                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-                maxNativeZoom: 19,  // Native tile resolution
-                maxZoom: 23         // Allow over-zooming for precision inspection
-            }}
-        );
-
-        esriSatellite.addTo(map);
-
-        // Optional Google Maps layer
-        const baseLayers = {{
-            "ESRI Satellite": esriSatellite
-        }};
-
-        if (googleMapsApiKey) {{
-            const googleSatellite = L.tileLayer(
-                'https://mt1.google.com/vt/lyrs=s&x={{x}}&y={{y}}&z={{z}}&key=' + googleMapsApiKey,
-                {{
-                    attribution: '&copy; Google Maps',
-                    maxZoom: 20
-                }}
-            );
-            baseLayers["Google Satellite"] = googleSatellite;
-        }}
-
-        // Add layer control if multiple base layers
-        if (Object.keys(baseLayers).length > 1) {{
-            L.control.layers(baseLayers).addTo(map);
-        }}
+        // Satellite layer configuration (from shared module)
+        {satellite_layers_js}
 
         // Haversine distance function
         function haversineDistance(lat1, lon1, lat2, lon2) {{
