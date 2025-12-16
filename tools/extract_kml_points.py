@@ -661,15 +661,24 @@ def create_html(image_path: str, config: dict) -> str:
             updateStatus('Added: ' + name + ' at E:' + utm.easting.toFixed(2) + ' N:' + utm.northing.toFixed(2));
         }
 
+        // Helper to escape HTML special characters to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function updatePointsList() {
             const container = document.getElementById('points-container');
             container.innerHTML = points.map((p, i) => {
                 const aiIndicator = (p.isAIDetected && !p.assigned) ? ' \u2728 AI' : '';
                 const categoryDisplay = (p.isAIDetected && !p.assigned) ? 'unassigned' : p.category;
+                const safeName = escapeHtml(p.name);
+                const safeCategory = escapeHtml(categoryDisplay);
                 return `
                 <div class="point-item">
                     <div class="info">
-                        <div class="name">${i+1}. ${p.name} (${categoryDisplay})${aiIndicator}</div>
+                        <div class="name">${i+1}. ${safeName} (${safeCategory})${aiIndicator}</div>
                         <div class="coords">Pixel: (${p.px.toFixed(1)}, ${p.py.toFixed(1)})</div>
                         <div class="coords">UTM: E ${p.easting.toFixed(2)}, N ${p.northing.toFixed(2)}</div>
                     </div>
@@ -1059,7 +1068,12 @@ def create_html(image_path: str, config: dict) -> str:
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: prompt })
             })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error('Server error: ' + r.status);
+                }
+                return r.json();
+            })
             .then(data => {
                 showLoadingOverlay(false);
                 detectBtn.disabled = false;
@@ -1125,9 +1139,10 @@ def create_html(image_path: str, config: dict) -> str:
             menu.style.top = event.clientY + 'px';
 
             let menuItems = '';
+            const safeName = escapeHtml(p.name);
 
             // Delete option (always available)
-            menuItems += `<div class="context-menu-item delete" onclick="deletePointFromMenu(${pointIndex})">Delete "${p.name}"</div>`;
+            menuItems += `<div class="context-menu-item delete" onclick="deletePointFromMenu(${pointIndex})">Delete "${safeName}"</div>`;
 
             // Separator
             menuItems += `<div class="context-menu-separator"></div>`;
@@ -1314,11 +1329,22 @@ def run_server(image_path: str, config: dict, port: int = 8765):
                     with open(image_path, 'rb') as img_file:
                         image_data = img_file.read()
 
+                    # Determine MIME type from file extension
+                    suffix = Path(image_path).suffix.lower()
+                    mime_types = {
+                        '.png': 'image/png',
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.tif': 'image/tiff',
+                        '.tiff': 'image/tiff'
+                    }
+                    mime_type = mime_types.get(suffix, 'image/jpeg')
+
                     # Call Roboflow SAM 3 concept segmentation API
                     api_url = f"https://detect.roboflow.com/sam3/concept_segment?api_key={api_key}&format=polygon"
 
                     files = {
-                        'file': (Path(image_path).name, image_data, 'image/jpeg')
+                        'file': (Path(image_path).name, image_data, mime_type)
                     }
                     data = {
                         'prompt': prompt
@@ -1332,11 +1358,22 @@ def run_server(image_path: str, config: dict, port: int = 8765):
                         self.end_headers()
                         self.wfile.write(json.dumps({
                             'success': False,
-                            'error': f'API request failed with status {response.status_code}: {response.text}'
+                            'error': f'API request failed with status {response.status_code}'
                         }).encode())
                         return
 
-                    api_response = response.json()
+                    # Parse JSON response with error handling
+                    try:
+                        api_response = response.json()
+                    except json.JSONDecodeError as e:
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': 'Invalid JSON response from API'
+                        }).encode())
+                        return
 
                     # Parse the response to extract all polygon vertices
                     # Response structure: { "prompt_results": [{ "predictions": [{ "masks": [[x,y], ...] }] }] }
@@ -1351,7 +1388,13 @@ def run_server(image_path: str, config: dict, port: int = 8765):
                                 if isinstance(mask, list):
                                     for coord in mask:
                                         if isinstance(coord, list) and len(coord) >= 2:
-                                            vertices.append({'x': coord[0], 'y': coord[1]})
+                                            # Validate coordinates are numeric
+                                            try:
+                                                x = float(coord[0])
+                                                y = float(coord[1])
+                                                vertices.append({'x': x, 'y': y})
+                                            except (TypeError, ValueError):
+                                                continue  # Skip invalid coordinates
 
                     self.send_response(200)
                     self.send_header('Content-type', 'application/json')
