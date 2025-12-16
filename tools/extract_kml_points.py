@@ -18,6 +18,8 @@ import xml.etree.ElementTree as ET
 import re
 import os
 import requests
+from PIL import Image
+import io
 
 # Add parent directory to path for imports
 parent_dir = str(Path(__file__).parent.parent)
@@ -507,6 +509,52 @@ def create_html(image_path: str, config: dict) -> str:
         .detection-section label {
             color: #9b59b6;
         }
+
+        /* Rectangle selection */
+        #selection-rect {
+            position: absolute;
+            border: 2px dashed #9b59b6;
+            background: rgba(155, 89, 182, 0.2);
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+        #selection-rect.active {
+            display: block;
+        }
+        .selection-buttons {
+            display: none;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .selection-buttons.visible {
+            display: flex;
+        }
+        .selection-buttons button {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .selection-buttons .confirm {
+            background: #0ead69;
+        }
+        .selection-buttons .cancel {
+            background: #e94560;
+        }
+        .detection-step {
+            display: none;
+        }
+        .detection-step.active {
+            display: block;
+        }
+        .selected-area-info {
+            font-size: 11px;
+            color: #9b59b6;
+            margin-top: 5px;
+            padding: 5px;
+            background: rgba(155, 89, 182, 0.1);
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -515,6 +563,7 @@ def create_html(image_path: str, config: dict) -> str:
             <div id="image-container">
                 <img id="main-image" src="data:''' + mime_type + ''';base64,''' + img_data + '''">
                 <svg id="connectors-svg"></svg>
+                <div id="selection-rect"></div>
             </div>
         </div>
 
@@ -543,8 +592,28 @@ def create_html(image_path: str, config: dict) -> str:
 
                 <div class="detection-section">
                     <label>AI Feature Detection</label>
-                    <input type="text" id="detection-prompt" placeholder="e.g., zebra crossing, arrow">
-                    <button id="detect-btn" onclick="detectFeatures()" class="secondary">Detect Features</button>
+
+                    <!-- Step 1: Select Area -->
+                    <div id="step-select" class="detection-step active">
+                        <button id="select-area-btn" onclick="startAreaSelection()" class="secondary">Select Detection Area</button>
+                    </div>
+
+                    <!-- Step 2: Confirm Selection -->
+                    <div id="step-confirm" class="detection-step">
+                        <p style="font-size: 11px; color: #aaa; margin-bottom: 10px;">Draw rectangle on image, then confirm or retry</p>
+                        <div class="selection-buttons visible">
+                            <button class="confirm" onclick="confirmSelection()">✓</button>
+                            <button class="cancel" onclick="cancelSelection()">✗</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Enter prompt and detect -->
+                    <div id="step-detect" class="detection-step">
+                        <div id="selected-area-info" class="selected-area-info"></div>
+                        <input type="text" id="detection-prompt" placeholder="e.g., zebra crossing, arrow">
+                        <button id="detect-btn" onclick="detectFeatures()" class="secondary">Detect Features</button>
+                        <button onclick="resetSelection()" style="background: #555; margin-top: 5px;">Change Area</button>
+                    </div>
                 </div>
 
                 <button onclick="exportKML()" class="secondary">Export KML</button>
@@ -614,6 +683,12 @@ def create_html(image_path: str, config: dict) -> str:
         let aiCounter = 1;
         let assigningPointIndex = null;  // Index of point being assigned in dialog
 
+        // Rectangle selection state
+        let isSelectingArea = false;
+        let selectionStart = null;
+        let selectionRect = null;  // {x, y, width, height} in image pixels (not zoomed)
+        let isDrawingRect = false;
+
         const img = document.getElementById('main-image');
         const container = document.getElementById('image-container');
 
@@ -628,6 +703,8 @@ def create_html(image_path: str, config: dict) -> str:
         }
 
         container.addEventListener('click', function(e) {
+            // Ignore clicks when in selection mode
+            if (isSelectingArea) return;
             if (e.target !== img) return;
 
             const rect = img.getBoundingClientRect();
@@ -642,6 +719,63 @@ def create_html(image_path: str, config: dict) -> str:
             // Increment counter
             counters[category]++;
             updatePointName();
+        });
+
+        // Rectangle selection event handlers
+        container.addEventListener('mousedown', function(e) {
+            if (!isSelectingArea || e.target !== img) return;
+            e.preventDefault();
+
+            const rect = img.getBoundingClientRect();
+            selectionStart = {
+                x: (e.clientX - rect.left) / currentZoom,
+                y: (e.clientY - rect.top) / currentZoom
+            };
+            isDrawingRect = true;
+
+            const selRect = document.getElementById('selection-rect');
+            selRect.classList.add('active');
+            selRect.style.left = (selectionStart.x * currentZoom) + 'px';
+            selRect.style.top = (selectionStart.y * currentZoom) + 'px';
+            selRect.style.width = '0px';
+            selRect.style.height = '0px';
+        });
+
+        container.addEventListener('mousemove', function(e) {
+            if (!isDrawingRect || !selectionStart) return;
+
+            const rect = img.getBoundingClientRect();
+            const currentX = (e.clientX - rect.left) / currentZoom;
+            const currentY = (e.clientY - rect.top) / currentZoom;
+
+            // Calculate rectangle bounds
+            const x = Math.min(selectionStart.x, currentX);
+            const y = Math.min(selectionStart.y, currentY);
+            const width = Math.abs(currentX - selectionStart.x);
+            const height = Math.abs(currentY - selectionStart.y);
+
+            // Update visual rectangle (in zoomed coordinates)
+            const selRect = document.getElementById('selection-rect');
+            selRect.style.left = (x * currentZoom) + 'px';
+            selRect.style.top = (y * currentZoom) + 'px';
+            selRect.style.width = (width * currentZoom) + 'px';
+            selRect.style.height = (height * currentZoom) + 'px';
+
+            // Store rectangle in image pixels (not zoomed)
+            selectionRect = { x, y, width, height };
+        });
+
+        container.addEventListener('mouseup', function(e) {
+            if (!isDrawingRect) return;
+            isDrawingRect = false;
+
+            // Require minimum size
+            if (!selectionRect || selectionRect.width < 20 || selectionRect.height < 20) {
+                updateStatus('Selection too small. Draw a larger rectangle.');
+                return;
+            }
+
+            updateStatus('Selection ready. Confirm or redraw.');
         });
 
         function pixelToUTM(px, py) {
@@ -1039,6 +1173,66 @@ def create_html(image_path: str, config: dict) -> str:
             document.getElementById('status').textContent = msg;
         }
 
+        // ===== Area Selection Functions =====
+
+        function showStep(stepId) {
+            document.querySelectorAll('.detection-step').forEach(s => s.classList.remove('active'));
+            document.getElementById(stepId).classList.add('active');
+        }
+
+        function startAreaSelection() {
+            isSelectingArea = true;
+            selectionRect = null;
+            showStep('step-confirm');
+            container.style.cursor = 'crosshair';
+            updateStatus('Draw a rectangle on the image to select detection area');
+
+            // Hide any existing selection
+            const selRect = document.getElementById('selection-rect');
+            selRect.classList.remove('active');
+        }
+
+        function confirmSelection() {
+            if (!selectionRect || selectionRect.width < 20 || selectionRect.height < 20) {
+                updateStatus('Please draw a valid selection rectangle first');
+                return;
+            }
+
+            isSelectingArea = false;
+            container.style.cursor = 'crosshair';
+
+            // Update info display
+            const info = document.getElementById('selected-area-info');
+            info.textContent = `Selected: ${Math.round(selectionRect.width)}x${Math.round(selectionRect.height)} px at (${Math.round(selectionRect.x)}, ${Math.round(selectionRect.y)})`;
+
+            showStep('step-detect');
+            updateStatus('Area selected. Enter a prompt and click Detect Features.');
+        }
+
+        function cancelSelection() {
+            // Clear selection and go back to start
+            selectionRect = null;
+            isSelectingArea = false;
+            isDrawingRect = false;
+            container.style.cursor = 'crosshair';
+
+            const selRect = document.getElementById('selection-rect');
+            selRect.classList.remove('active');
+
+            showStep('step-select');
+            updateStatus('Selection cancelled. Click Select Detection Area to try again.');
+        }
+
+        function resetSelection() {
+            // Clear selection rectangle visual
+            const selRect = document.getElementById('selection-rect');
+            selRect.classList.remove('active');
+
+            selectionRect = null;
+            showStep('step-select');
+            updateStatus('Click Select Detection Area to choose a new region.');
+        }
+
         // ===== AI Feature Detection Functions =====
 
         function showLoadingOverlay(show) {
@@ -1057,16 +1251,31 @@ def create_html(image_path: str, config: dict) -> str:
                 return;
             }
 
+            // Require selection rectangle
+            if (!selectionRect) {
+                alert('Please select a detection area first');
+                return;
+            }
+
             const detectBtn = document.getElementById('detect-btn');
             detectBtn.disabled = true;
 
             showLoadingOverlay(true);
             updateStatus('Detecting features with AI...');
 
+            // Send prompt and crop coordinates
             fetch('/detect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt })
+                body: JSON.stringify({
+                    prompt: prompt,
+                    crop: {
+                        x: Math.round(selectionRect.x),
+                        y: Math.round(selectionRect.y),
+                        width: Math.round(selectionRect.width),
+                        height: Math.round(selectionRect.height)
+                    }
+                })
             })
             .then(r => {
                 if (!r.ok) {
@@ -1079,18 +1288,22 @@ def create_html(image_path: str, config: dict) -> str:
                 detectBtn.disabled = false;
 
                 if (data.success) {
-                    // Process detected vertices
+                    // Process detected vertices - offset by crop origin
                     const vertices = data.vertices || [];
+                    const cropOffset = data.crop_offset || { x: 0, y: 0 };
                     let addedCount = 0;
 
                     vertices.forEach(vertex => {
                         const name = 'AI_' + aiCounter;
                         aiCounter++;
+                        // Offset vertex by crop origin to get full image coordinates
+                        const px = vertex.x + cropOffset.x;
+                        const py = vertex.y + cropOffset.y;
                         // Add as AI-detected, unassigned point
-                        const utm = pixelToUTM(vertex.x, vertex.y);
+                        const utm = pixelToUTM(px, py);
                         const point = {
-                            px: vertex.x,
-                            py: vertex.y,
+                            px: px,
+                            py: py,
                             name: name,
                             category: 'other',  // Default category, user will assign
                             isAIDetected: true,
@@ -1325,32 +1538,72 @@ def run_server(image_path: str, config: dict, port: int = 8765):
                         }).encode())
                         return
 
+                    # Get crop coordinates if provided
+                    crop = post_data.get('crop')
+                    crop_offset = {'x': 0, 'y': 0}
+
                     # Read the image file
                     with open(image_path, 'rb') as img_file:
                         image_data = img_file.read()
 
-                    # Determine MIME type from file extension
-                    suffix = Path(image_path).suffix.lower()
-                    mime_types = {
-                        '.png': 'image/png',
-                        '.jpg': 'image/jpeg',
-                        '.jpeg': 'image/jpeg',
-                        '.tif': 'image/tiff',
-                        '.tiff': 'image/tiff'
-                    }
-                    mime_type = mime_types.get(suffix, 'image/jpeg')
+                    # If crop coordinates provided, crop the image
+                    if crop and all(k in crop for k in ['x', 'y', 'width', 'height']):
+                        try:
+                            img = Image.open(io.BytesIO(image_data))
+                            x = int(crop['x'])
+                            y = int(crop['y'])
+                            w = int(crop['width'])
+                            h = int(crop['height'])
+
+                            # Ensure crop bounds are within image
+                            x = max(0, min(x, img.width - 1))
+                            y = max(0, min(y, img.height - 1))
+                            w = min(w, img.width - x)
+                            h = min(h, img.height - y)
+
+                            # Crop the image
+                            cropped = img.crop((x, y, x + w, y + h))
+
+                            # Save to bytes
+                            buffer = io.BytesIO()
+                            # Preserve original format
+                            fmt = img.format or 'PNG'
+                            cropped.save(buffer, format=fmt)
+                            image_data = buffer.getvalue()
+
+                            # Store offset for coordinate adjustment
+                            crop_offset = {'x': x, 'y': y}
+                        except Exception as e:
+                            self.send_response(200)
+                            self.send_header('Content-type', 'application/json')
+                            self.end_headers()
+                            self.wfile.write(json.dumps({
+                                'success': False,
+                                'error': f'Failed to crop image: {str(e)}'
+                            }).encode())
+                            return
+
+                    image_base64 = base64.b64encode(image_data).decode('utf-8')
 
                     # Call Roboflow SAM 3 concept segmentation API
-                    api_url = f"https://detect.roboflow.com/sam3/concept_segment?api_key={api_key}&format=polygon"
+                    # Using serverless endpoint with JSON body format
+                    api_url = f"https://serverless.roboflow.com/sam3/concept_segment?api_key={api_key}"
 
-                    files = {
-                        'file': (Path(image_path).name, image_data, mime_type)
-                    }
-                    data = {
-                        'prompt': prompt
+                    request_body = {
+                        "image": {
+                            "type": "base64",
+                            "value": image_base64
+                        },
+                        "prompts": [
+                            {"type": "text", "text": prompt}
+                        ]
                     }
 
-                    response = requests.post(api_url, files=files, data=data, timeout=60)
+                    headers = {
+                        'Content-Type': 'application/json'
+                    }
+
+                    response = requests.post(api_url, json=request_body, headers=headers, timeout=120)
 
                     if response.status_code != 200:
                         self.send_response(200)
@@ -1402,7 +1655,8 @@ def run_server(image_path: str, config: dict, port: int = 8765):
                     self.wfile.write(json.dumps({
                         'success': True,
                         'vertices': vertices,
-                        'count': len(vertices)
+                        'count': len(vertices),
+                        'crop_offset': crop_offset
                     }).encode())
 
                 except requests.exceptions.Timeout:
