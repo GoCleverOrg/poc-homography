@@ -16,6 +16,8 @@ import base64
 import argparse
 import xml.etree.ElementTree as ET
 import re
+import os
+import requests
 
 # Add parent directory to path for imports
 parent_dir = str(Path(__file__).parent.parent)
@@ -296,6 +298,17 @@ def create_html(image_path: str, config: dict) -> str:
         .point-dot.arrow { background: #0ead69; }
         .point-dot.parking { background: #3498db; }
         .point-dot.other { background: #f39c12; }
+        .point-dot.unassigned { background: #9b59b6; border-style: dashed; }
+
+        /* AI-detected points before assignment */
+        .marker.unassigned {
+            background: #9b59b6;
+            border-style: dashed;
+        }
+        .marker.unassigned::after {
+            content: ' \u2728';
+            font-size: 8px;
+        }
 
         #connectors-svg {
             position: absolute;
@@ -380,6 +393,120 @@ def create_html(image_path: str, config: dict) -> str:
             background: #16213e; padding: 10px; border-radius: 4px;
             font-size: 11px; color: #aaa; margin-bottom: 15px;
         }
+
+        /* Loading overlay */
+        #loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        #loading-overlay.visible { display: flex; }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #333;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            margin-top: 15px;
+            color: #eee;
+            font-size: 14px;
+        }
+
+        /* Context menu */
+        .context-menu {
+            position: fixed;
+            background: #2d2d2d;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 0;
+            min-width: 180px;
+            z-index: 10001;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .context-menu-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #eee;
+        }
+        .context-menu-item:hover {
+            background: #3d3d3d;
+        }
+        .context-menu-item.delete {
+            color: #e94560;
+        }
+        .context-menu-separator {
+            border-top: 1px solid #555;
+            margin: 4px 0;
+        }
+
+        /* Assignment dialog */
+        #assign-dialog {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10002;
+            justify-content: center;
+            align-items: center;
+        }
+        #assign-dialog.visible { display: flex; }
+        .dialog-content {
+            background: #2d2d2d;
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 300px;
+            max-width: 400px;
+        }
+        .dialog-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #e94560;
+        }
+        .dialog-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .dialog-buttons button {
+            width: auto;
+            padding: 8px 20px;
+        }
+        .dialog-buttons button.cancel {
+            background: #555;
+        }
+
+        /* AI Detection section */
+        .detection-section {
+            background: #1a1a2e;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid #9b59b6;
+        }
+        .detection-section label {
+            color: #9b59b6;
+        }
     </style>
 </head>
 <body>
@@ -414,6 +541,12 @@ def create_html(image_path: str, config: dict) -> str:
                 <label>Point Name (auto-increments):</label>
                 <input type="text" id="point-name" placeholder="e.g., Z1, A1, P1">
 
+                <div class="detection-section">
+                    <label>AI Feature Detection</label>
+                    <input type="text" id="detection-prompt" placeholder="e.g., zebra crossing, arrow">
+                    <button id="detect-btn" onclick="detectFeatures()" class="secondary">Detect Features</button>
+                </div>
+
                 <button onclick="exportKML()" class="secondary">Export KML</button>
 
                 <label>Import KML:</label>
@@ -429,6 +562,7 @@ def create_html(image_path: str, config: dict) -> str:
                     <div class="category-btn arrow" onclick="toggleCategory('arrow')" data-category="arrow">Arrow</div>
                     <div class="category-btn parking" onclick="toggleCategory('parking')" data-category="parking">Parking</div>
                     <div class="category-btn other" onclick="toggleCategory('other')" data-category="other">Other</div>
+                    <div class="category-btn unassigned" onclick="toggleCategory('unassigned')" data-category="unassigned" style="background: #9b59b6; border-color: #9b59b6;">AI</div>
                 </div>
                 <div id="points-container"></div>
             </div>
@@ -443,12 +577,42 @@ def create_html(image_path: str, config: dict) -> str:
         <button onclick="resetZoom()">Reset</button>
     </div>
 
+    <!-- Loading overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Detecting features...</div>
+    </div>
+
+    <!-- Context menu (created dynamically) -->
+
+    <!-- Assignment dialog -->
+    <div id="assign-dialog">
+        <div class="dialog-content">
+            <div class="dialog-title">Assign Category & ID</div>
+            <label>Category:</label>
+            <select id="assign-category">
+                <option value="zebra">Zebra Crossing Corner</option>
+                <option value="arrow">Arrow Tip</option>
+                <option value="parking">Parking Spot Corner</option>
+                <option value="other">Other</option>
+            </select>
+            <label>Point Name/ID:</label>
+            <input type="text" id="assign-name" placeholder="e.g., Z1, A1, P1">
+            <div class="dialog-buttons">
+                <button class="cancel" onclick="closeAssignDialog()">Cancel</button>
+                <button onclick="confirmAssignment()">Assign</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const config = ''' + json.dumps(config) + ''';
         let points = [];
         let currentZoom = 1;
         let counters = { zebra: 1, arrow: 1, parking: 1, other: 1 };
-        let categoryVisibility = { zebra: true, arrow: true, parking: true, other: true };
+        let categoryVisibility = { zebra: true, arrow: true, parking: true, other: true, unassigned: true };
+        let aiCounter = 1;
+        let assigningPointIndex = null;  // Index of point being assigned in dialog
 
         const img = document.getElementById('main-image');
         const container = document.getElementById('image-container');
@@ -486,9 +650,9 @@ def create_html(image_path: str, config: dict) -> str:
             return { easting, northing };
         }
 
-        function addPoint(px, py, name, category) {
+        function addPoint(px, py, name, category, isAIDetected = false, assigned = true) {
             const utm = pixelToUTM(px, py);
-            const point = { px, py, name, category, ...utm };
+            const point = { px, py, name, category, isAIDetected, assigned, ...utm };
             points.push(point);
 
             // Redraw all markers to handle collision detection
@@ -499,16 +663,20 @@ def create_html(image_path: str, config: dict) -> str:
 
         function updatePointsList() {
             const container = document.getElementById('points-container');
-            container.innerHTML = points.map((p, i) => `
+            container.innerHTML = points.map((p, i) => {
+                const aiIndicator = (p.isAIDetected && !p.assigned) ? ' \u2728 AI' : '';
+                const categoryDisplay = (p.isAIDetected && !p.assigned) ? 'unassigned' : p.category;
+                return `
                 <div class="point-item">
                     <div class="info">
-                        <div class="name">${i+1}. ${p.name} (${p.category})</div>
+                        <div class="name">${i+1}. ${p.name} (${categoryDisplay})${aiIndicator}</div>
                         <div class="coords">Pixel: (${p.px.toFixed(1)}, ${p.py.toFixed(1)})</div>
                         <div class="coords">UTM: E ${p.easting.toFixed(2)}, N ${p.northing.toFixed(2)}</div>
                     </div>
                     <div class="delete" onclick="deletePoint(${i})">X</div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
             document.getElementById('point-count').textContent = points.length;
         }
 
@@ -542,10 +710,14 @@ def create_html(image_path: str, config: dict) -> str:
                 const pos = labelPositions[i];
                 const pointX = p.px * currentZoom;
                 const pointY = p.py * currentZoom;
+                const originalIndex = points.indexOf(p);
+
+                // Determine display category (unassigned for AI points not yet assigned)
+                const displayCategory = (p.isAIDetected && !p.assigned) ? 'unassigned' : p.category;
 
                 // Always draw a dot at the actual point location
                 const dot = document.createElement('div');
-                dot.className = 'point-dot ' + p.category;
+                dot.className = 'point-dot ' + displayCategory;
                 dot.style.left = pointX + 'px';
                 dot.style.top = pointY + 'px';
                 container.appendChild(dot);
@@ -560,12 +732,14 @@ def create_html(image_path: str, config: dict) -> str:
 
                 // Draw the label
                 const marker = document.createElement('div');
-                marker.className = 'marker ' + p.category;
+                marker.className = 'marker ' + displayCategory;
                 marker.style.left = pos.x + 'px';
                 marker.style.top = pos.y + 'px';
                 marker.textContent = p.name;
-                marker.dataset.index = points.indexOf(p);  // Use original index
-                marker.onclick = (e) => { e.stopPropagation(); selectPoint(points.indexOf(p)); };
+                marker.dataset.index = originalIndex;
+                marker.onclick = (e) => { e.stopPropagation(); selectPoint(originalIndex); };
+                // Add right-click context menu
+                marker.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showContextMenu(e, originalIndex); };
                 container.appendChild(marker);
             });
         }
@@ -742,7 +916,13 @@ def create_html(image_path: str, config: dict) -> str:
         }
 
         function getVisiblePoints() {
-            return points.filter(p => categoryVisibility[p.category]);
+            return points.filter(p => {
+                // AI-detected but not yet assigned points use 'unassigned' visibility
+                if (p.isAIDetected && !p.assigned) {
+                    return categoryVisibility['unassigned'];
+                }
+                return categoryVisibility[p.category];
+            });
         }
 
         function zoom(factor) {
@@ -761,6 +941,7 @@ def create_html(image_path: str, config: dict) -> str:
             if (confirm('Clear all points?')) {
                 points = [];
                 counters = { zebra: 1, arrow: 1, parking: 1, other: 1 };
+                aiCounter = 1;
                 redrawMarkers();
                 updatePointsList();
                 updatePointName();
@@ -808,7 +989,7 @@ def create_html(image_path: str, config: dict) -> str:
                         points = [];
                         counters = { zebra: 1, arrow: 1, parking: 1, other: 1 };
 
-                        // Add imported points
+                        // Add imported points (backward compatible: treat as manually placed)
                         data.points.forEach(p => {
                             const utm = pixelToUTM(p.px, p.py);
                             points.push({
@@ -816,6 +997,8 @@ def create_html(image_path: str, config: dict) -> str:
                                 py: p.py,
                                 name: p.name,
                                 category: p.category,
+                                isAIDetected: false,  // Legacy imports are manual points
+                                assigned: true,
                                 ...utm
                             });
 
@@ -846,6 +1029,197 @@ def create_html(image_path: str, config: dict) -> str:
         function updateStatus(msg) {
             document.getElementById('status').textContent = msg;
         }
+
+        // ===== AI Feature Detection Functions =====
+
+        function showLoadingOverlay(show) {
+            const overlay = document.getElementById('loading-overlay');
+            if (show) {
+                overlay.classList.add('visible');
+            } else {
+                overlay.classList.remove('visible');
+            }
+        }
+
+        function detectFeatures() {
+            const prompt = document.getElementById('detection-prompt').value.trim();
+            if (!prompt) {
+                alert('Please enter a detection prompt (e.g., "zebra crossing", "arrow")');
+                return;
+            }
+
+            const detectBtn = document.getElementById('detect-btn');
+            detectBtn.disabled = true;
+
+            showLoadingOverlay(true);
+            updateStatus('Detecting features with AI...');
+
+            fetch('/detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: prompt })
+            })
+            .then(r => r.json())
+            .then(data => {
+                showLoadingOverlay(false);
+                detectBtn.disabled = false;
+
+                if (data.success) {
+                    // Process detected vertices
+                    const vertices = data.vertices || [];
+                    let addedCount = 0;
+
+                    vertices.forEach(vertex => {
+                        const name = 'AI_' + aiCounter;
+                        aiCounter++;
+                        // Add as AI-detected, unassigned point
+                        const utm = pixelToUTM(vertex.x, vertex.y);
+                        const point = {
+                            px: vertex.x,
+                            py: vertex.y,
+                            name: name,
+                            category: 'other',  // Default category, user will assign
+                            isAIDetected: true,
+                            assigned: false,
+                            ...utm
+                        };
+                        points.push(point);
+                        addedCount++;
+                    });
+
+                    redrawMarkers();
+                    updatePointsList();
+                    updateStatus('Detected ' + addedCount + ' points. Right-click to assign categories.');
+                    if (addedCount > 0) {
+                        alert('Detected ' + addedCount + ' feature vertices. Right-click on points to assign categories.');
+                    } else {
+                        alert('No features detected for the given prompt. Try a different prompt.');
+                    }
+                } else {
+                    updateStatus('Detection failed: ' + data.error);
+                    alert('Detection failed: ' + data.error);
+                }
+            })
+            .catch(err => {
+                showLoadingOverlay(false);
+                detectBtn.disabled = false;
+                updateStatus('Detection error: ' + err.message);
+                alert('Detection error: ' + err.message);
+            });
+        }
+
+        // ===== Context Menu Functions =====
+
+        function showContextMenu(event, pointIndex) {
+            // Remove any existing context menu
+            hideContextMenu();
+
+            const p = points[pointIndex];
+            const isUnassigned = p.isAIDetected && !p.assigned;
+
+            // Create context menu
+            const menu = document.createElement('div');
+            menu.id = 'context-menu';
+            menu.className = 'context-menu';
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+
+            let menuItems = '';
+
+            // Delete option (always available)
+            menuItems += `<div class="context-menu-item delete" onclick="deletePointFromMenu(${pointIndex})">Delete "${p.name}"</div>`;
+
+            // Separator
+            menuItems += `<div class="context-menu-separator"></div>`;
+
+            // Assign/Change category option
+            if (isUnassigned) {
+                menuItems += `<div class="context-menu-item" onclick="openAssignDialog(${pointIndex})">Assign Category & ID</div>`;
+            } else {
+                menuItems += `<div class="context-menu-item" onclick="openAssignDialog(${pointIndex})">Change Category & ID</div>`;
+            }
+
+            menu.innerHTML = menuItems;
+            document.body.appendChild(menu);
+
+            // Close menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', hideContextMenu, { once: true });
+            }, 10);
+        }
+
+        function hideContextMenu() {
+            const menu = document.getElementById('context-menu');
+            if (menu) menu.remove();
+        }
+
+        function deletePointFromMenu(index) {
+            hideContextMenu();
+            points.splice(index, 1);
+            redrawMarkers();
+            updatePointsList();
+            updateStatus('Point deleted');
+        }
+
+        // ===== Assignment Dialog Functions =====
+
+        function openAssignDialog(pointIndex) {
+            hideContextMenu();
+            assigningPointIndex = pointIndex;
+
+            const p = points[pointIndex];
+
+            // Pre-fill the dialog with current values
+            document.getElementById('assign-category').value = p.category;
+            document.getElementById('assign-name').value = p.name;
+
+            // Show dialog
+            document.getElementById('assign-dialog').classList.add('visible');
+        }
+
+        function closeAssignDialog() {
+            document.getElementById('assign-dialog').classList.remove('visible');
+            assigningPointIndex = null;
+        }
+
+        function confirmAssignment() {
+            if (assigningPointIndex === null) return;
+
+            const category = document.getElementById('assign-category').value;
+            const name = document.getElementById('assign-name').value.trim();
+
+            if (!name) {
+                alert('Please enter a name/ID for the point');
+                return;
+            }
+
+            const p = points[assigningPointIndex];
+
+            // Update point
+            p.category = category;
+            p.name = name;
+            p.assigned = true;
+
+            // Update counter for the assigned category to avoid duplicates
+            const prefix = { zebra: 'Z', arrow: 'A', parking: 'P', other: 'X' }[category];
+            const match = name.match(new RegExp('^' + prefix + '(\\d+)$'));
+            if (match) {
+                counters[category] = Math.max(counters[category], parseInt(match[1]) + 1);
+            }
+
+            closeAssignDialog();
+            redrawMarkers();
+            updatePointsList();
+            updateStatus('Assigned: ' + name + ' (' + category + ')');
+        }
+
+        // Close dialog with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeAssignDialog();
+                hideContextMenu();
+            }
+        });
     </script>
 </body>
 </html>'''
@@ -901,6 +1275,108 @@ def run_server(image_path: str, config: dict, port: int = 8765):
                     self.wfile.write(json.dumps({
                         'success': True,
                         'points': points
+                    }).encode())
+                except Exception as e:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': str(e)
+                    }).encode())
+
+            elif self.path == '/detect':
+                # Roboflow SAM 3 API integration
+                try:
+                    api_key = os.environ.get('ROBOFLOW_API_KEY', '')
+                    if not api_key:
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': 'ROBOFLOW_API_KEY not found in environment. Please set the environment variable.'
+                        }).encode())
+                        return
+
+                    prompt = post_data.get('prompt', '')
+                    if not prompt:
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': 'No detection prompt provided'
+                        }).encode())
+                        return
+
+                    # Read the image file
+                    with open(image_path, 'rb') as img_file:
+                        image_data = img_file.read()
+
+                    # Call Roboflow SAM 3 concept segmentation API
+                    api_url = f"https://detect.roboflow.com/sam3/concept_segment?api_key={api_key}&format=polygon"
+
+                    files = {
+                        'file': (Path(image_path).name, image_data, 'image/jpeg')
+                    }
+                    data = {
+                        'prompt': prompt
+                    }
+
+                    response = requests.post(api_url, files=files, data=data, timeout=60)
+
+                    if response.status_code != 200:
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': f'API request failed with status {response.status_code}: {response.text}'
+                        }).encode())
+                        return
+
+                    api_response = response.json()
+
+                    # Parse the response to extract all polygon vertices
+                    # Response structure: { "prompt_results": [{ "predictions": [{ "masks": [[x,y], ...] }] }] }
+                    vertices = []
+                    prompt_results = api_response.get('prompt_results', [])
+                    for prompt_result in prompt_results:
+                        predictions = prompt_result.get('predictions', [])
+                        for prediction in predictions:
+                            masks = prediction.get('masks', [])
+                            for mask in masks:
+                                # Each mask is an array of [x, y] coordinate pairs
+                                if isinstance(mask, list):
+                                    for coord in mask:
+                                        if isinstance(coord, list) and len(coord) >= 2:
+                                            vertices.append({'x': coord[0], 'y': coord[1]})
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'vertices': vertices,
+                        'count': len(vertices)
+                    }).encode())
+
+                except requests.exceptions.Timeout:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': 'API request timed out. Please try again.'
+                    }).encode())
+                except requests.exceptions.RequestException as e:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        'success': False,
+                        'error': f'Network error: {str(e)}'
                     }).encode())
                 except Exception as e:
                     self.send_response(200)
