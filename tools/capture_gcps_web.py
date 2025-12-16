@@ -2588,13 +2588,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     </div>
                     <div style="margin-top: 8px; display: flex; gap: 8px;">
                         <button class="btn btn-secondary" id="moveAllBtn" onclick="toggleMoveAllMode()" style="flex: 1;">
-                            Move All
+                            Move All (W)
                         </button>
                         <button class="btn btn-secondary" id="rotateAllBtn" onclick="toggleRotateAllMode()" style="flex: 1;">
-                            Rotate All
+                            Rotate All (E)
                         </button>
                         <button class="btn btn-secondary" id="scaleAllBtn" onclick="toggleScaleAllMode()" style="flex: 1;">
-                            Scale All
+                            Scale All (R)
                         </button>
                     </div>
                 </div>
@@ -4100,7 +4100,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 `;
                 document.body.appendChild(indicator);
             }} else {{
-                btn.textContent = 'Move All Points';
+                btn.textContent = 'Move All (W)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
@@ -4268,7 +4268,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 `;
                 document.body.appendChild(indicator);
             }} else {{
-                btn.textContent = 'Rotate All';
+                btn.textContent = 'Rotate All (E)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
@@ -4392,7 +4392,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 `;
                 document.body.appendChild(indicator);
             }} else {{
-                btn.textContent = 'Scale All';
+                btn.textContent = 'Scale All (R)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
@@ -5376,6 +5376,26 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }}
                 if (document.getElementById('addGcpModal').classList.contains('active')) {{
                     confirmAddGCP();
+                }}
+            }}
+
+            // W/E/R keys - toggle Move/Rotate/Scale All modes
+            // Skip if user is typing in an input field
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {{
+                if (e.key === 'w' || e.key === 'W') {{
+                    toggleMoveAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (e.key === 'e' || e.key === 'E') {{
+                    toggleRotateAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (e.key === 'r' || e.key === 'R') {{
+                    toggleScaleAllMode();
+                    e.preventDefault();
+                    return;
                 }}
             }}
 
