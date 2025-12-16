@@ -39,7 +39,7 @@ class TestRotationMatrixConsistency:
         (180, 30),
         (-45, 30),
         (-90, 30),
-        (66.7, 30),  # Valte camera pan offset
+        (66.7, 30),  # Test pan offset value (Valencia region test data)
         (0, 15),
         (0, 45),
         (0, 60),
@@ -167,6 +167,7 @@ class TestHomographyConsistency:
 
     @pytest.fixture
     def camera_params(self):
+        # Static test parameters (Valencia region test data, not current camera config)
         return {
             'width': 1920,
             'height': 1080,
@@ -272,6 +273,7 @@ class TestGPSProjection:
 
     @pytest.fixture
     def valte_config(self):
+        # Static test parameters (Valencia region test data, not current camera config)
         return {
             'camera_lat': 39.640497,
             'camera_lon': -0.230106,

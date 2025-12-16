@@ -6,18 +6,28 @@ This traces a point through every step of the transformation to identify
 where the Y scaling mismatch occurs.
 """
 
+import argparse
 import math
-from pyproj import Transformer
+import sys
+from pathlib import Path
 
-# Georeferencing parameters
-ORIGIN_EASTING = 737575.05
-ORIGIN_NORTHING = 4391595.45
-GSD = 0.15  # meters per pixel
-UTM_CRS = "EPSG:25830"
+# Add parent directory to path for imports
+parent_dir = str(Path(__file__).parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from pyproj import Transformer
+from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 
 # Image dimensions
 IMAGE_WIDTH = 1681
 IMAGE_HEIGHT = 916
+
+# Georeferencing parameters - loaded from camera config at runtime
+ORIGIN_EASTING = None
+ORIGIN_NORTHING = None
+GSD = None
+UTM_CRS = None
 
 
 def trace_pixel_to_all(px: float, py: float):
@@ -277,7 +287,72 @@ def check_capture_gcps_local_xy():
     print(f"  Equirectangular:        X={equirect_x:.4f}, Y={equirect_y:.4f}")
 
 
+def load_geotiff_params(camera_name: str):
+    """
+    Load georeferencing parameters from camera config.
+
+    Args:
+        camera_name: Name of the camera to load config for
+
+    Returns:
+        Tuple of (origin_easting, origin_northing, gsd, utm_crs)
+
+    Raises:
+        SystemExit: If camera not found or missing geotiff_params
+    """
+    camera_config = get_camera_by_name(camera_name)
+
+    if camera_config is None:
+        available_cameras = [cam["name"] for cam in get_camera_configs()]
+        print(f"Error: Camera '{camera_name}' not found in camera configuration.", file=sys.stderr)
+        print(f"Available cameras: {', '.join(available_cameras)}", file=sys.stderr)
+        sys.exit(1)
+
+    if "geotiff_params" not in camera_config:
+        print(f"Error: Camera '{camera_name}' does not have 'geotiff_params' configured.", file=sys.stderr)
+        sys.exit(1)
+
+    geotiff_params = camera_config["geotiff_params"]
+
+    # Validate required parameters
+    required_params = ["origin_easting", "origin_northing", "pixel_size_x", "utm_crs"]
+    missing_params = [p for p in required_params if p not in geotiff_params]
+
+    if missing_params:
+        print(f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}", file=sys.stderr)
+        sys.exit(1)
+
+    origin_easting = geotiff_params["origin_easting"]
+    origin_northing = geotiff_params["origin_northing"]
+    gsd = abs(geotiff_params["pixel_size_x"])  # GSD is always positive
+    utm_crs = geotiff_params["utm_crs"]
+
+    return origin_easting, origin_northing, gsd, utm_crs
+
+
 if __name__ == '__main__':
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Debug tool to trace Y scaling issues in coordinate transformations"
+    )
+    parser.add_argument(
+        "--camera",
+        type=str,
+        default="Valte",
+        help="Camera name to load georeferencing parameters from (default: Valte)"
+    )
+    args = parser.parse_args()
+
+    # Load georeferencing parameters from camera config
+    ORIGIN_EASTING, ORIGIN_NORTHING, GSD, UTM_CRS = load_geotiff_params(args.camera)
+
+    print(f"Loaded georeferencing parameters from camera '{args.camera}':")
+    print(f"  Origin Easting: {ORIGIN_EASTING}")
+    print(f"  Origin Northing: {ORIGIN_NORTHING}")
+    print(f"  GSD: {GSD} m/pixel")
+    print(f"  UTM CRS: {UTM_CRS}")
+    print()
+
     check_origin_interpretation()
     analyze_gsd_sign()
 

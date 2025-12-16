@@ -23,6 +23,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from poc_homography.server_utils import find_available_port
+from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 
 # Default georeferencing for the Valencia cartography
 DEFAULT_CONFIG = {
@@ -940,26 +941,63 @@ def run_server(image_path: str, config: dict, port: int = 8765):
 def main():
     parser = argparse.ArgumentParser(description='Extract reference points from georeferenced image to KML')
     parser.add_argument('image', help='Path to the image file')
-    parser.add_argument('--origin-e', type=float, default=DEFAULT_CONFIG['origin_easting'],
-                        help='Origin easting (UTM)')
-    parser.add_argument('--origin-n', type=float, default=DEFAULT_CONFIG['origin_northing'],
-                        help='Origin northing (UTM)')
-    parser.add_argument('--gsd', type=float, default=0.15,
-                        help='Ground sample distance in meters (default: 0.15)')
-    parser.add_argument('--crs', default=DEFAULT_CONFIG['crs'],
-                        help='Coordinate reference system (default: EPSG:25830)')
+    parser.add_argument('--camera', type=str, default='Valte',
+                        help='Camera name to load configuration from (default: Valte)')
+    parser.add_argument('--origin-e', type=float, default=None,
+                        help='Origin easting (UTM) - overrides camera config')
+    parser.add_argument('--origin-n', type=float, default=None,
+                        help='Origin northing (UTM) - overrides camera config')
+    parser.add_argument('--gsd', type=float, default=None,
+                        help='Ground sample distance in meters - overrides camera config')
+    parser.add_argument('--crs', default=None,
+                        help='Coordinate reference system - overrides camera config')
     parser.add_argument('--port', type=int, default=8765,
                         help='Server port (default: 8765)')
 
     args = parser.parse_args()
 
-    config = {
-        "origin_easting": args.origin_e,
-        "origin_northing": args.origin_n,
-        "pixel_size_x": args.gsd,
-        "pixel_size_y": -args.gsd,
-        "crs": args.crs
-    }
+    # Start with DEFAULT_CONFIG as fallback
+    config = DEFAULT_CONFIG.copy()
+
+    # Try to load camera configuration
+    if args.camera:
+        camera_config = get_camera_by_name(args.camera)
+
+        if camera_config is None:
+            print(f"Error: Camera '{args.camera}' not found in configuration.")
+            print(f"Available cameras: {', '.join([c['name'] for c in get_camera_configs()])}")
+            sys.exit(1)
+
+        # Check if camera has geotiff_params
+        if 'geotiff_params' not in camera_config:
+            print(f"Error: Camera '{args.camera}' does not have 'geotiff_params' defined.")
+            print(f"Please update the camera configuration in poc_homography/camera_config.py")
+            sys.exit(1)
+
+        geotiff_params = camera_config['geotiff_params']
+
+        # Map camera config fields to DEFAULT_CONFIG format
+        # Note: camera config uses 'utm_crs' but we use 'crs' internally
+        config = {
+            "origin_easting": geotiff_params['origin_easting'],
+            "origin_northing": geotiff_params['origin_northing'],
+            "pixel_size_x": geotiff_params['pixel_size_x'],
+            "pixel_size_y": geotiff_params['pixel_size_y'],
+            "crs": geotiff_params['utm_crs']
+        }
+
+        print(f"Loaded georeferencing parameters from camera: {args.camera}")
+
+    # Command-line arguments override camera config
+    if args.origin_e is not None:
+        config['origin_easting'] = args.origin_e
+    if args.origin_n is not None:
+        config['origin_northing'] = args.origin_n
+    if args.gsd is not None:
+        config['pixel_size_x'] = args.gsd
+        config['pixel_size_y'] = -args.gsd
+    if args.crs is not None:
+        config['crs'] = args.crs
 
     run_server(args.image, config, args.port)
 
