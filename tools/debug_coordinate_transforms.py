@@ -20,11 +20,12 @@ EARTH_RADIUS_M = 6371000.0  # Spherical approximation used in coordinate_convert
 ORIGIN_EASTING = None
 ORIGIN_NORTHING = None
 GSD = None
+UTM_CRS = None
 
 
 def pyproj_pixel_to_latlon(px: float, py: float) -> tuple:
     """Convert pixel to lat/lon using pyproj (what extract_kml_points.py does)."""
-    transformer = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+    transformer = Transformer.from_crs(UTM_CRS, "EPSG:4326", always_xy=True)
 
     easting = ORIGIN_EASTING + (px * GSD)
     northing = ORIGIN_NORTHING + (py * -GSD)  # Y is inverted
@@ -35,7 +36,7 @@ def pyproj_pixel_to_latlon(px: float, py: float) -> tuple:
 
 def pyproj_latlon_to_pixel(lat: float, lon: float) -> tuple:
     """Convert lat/lon to pixel using pyproj (reverse of above)."""
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
+    transformer = Transformer.from_crs("EPSG:4326", UTM_CRS, always_xy=True)
 
     easting, northing = transformer.transform(lon, lat)
 
@@ -265,7 +266,7 @@ def load_geotiff_params(camera_name: str):
         camera_name: Name of the camera to load config for
 
     Returns:
-        Tuple of (origin_easting, origin_northing, gsd)
+        Tuple of (origin_easting, origin_northing, gsd, utm_crs)
 
     Raises:
         SystemExit: If camera not found or missing geotiff_params
@@ -285,7 +286,7 @@ def load_geotiff_params(camera_name: str):
     geotiff_params = camera_config["geotiff_params"]
 
     # Validate required parameters
-    required_params = ["origin_easting", "origin_northing", "pixel_size_x"]
+    required_params = ["origin_easting", "origin_northing", "pixel_size_x", "utm_crs"]
     missing_params = [p for p in required_params if p not in geotiff_params]
 
     if missing_params:
@@ -295,8 +296,9 @@ def load_geotiff_params(camera_name: str):
     origin_easting = geotiff_params["origin_easting"]
     origin_northing = geotiff_params["origin_northing"]
     gsd = abs(geotiff_params["pixel_size_x"])  # GSD is always positive
+    utm_crs = geotiff_params["utm_crs"]
 
-    return origin_easting, origin_northing, gsd
+    return origin_easting, origin_northing, gsd, utm_crs
 
 
 if __name__ == '__main__':
@@ -325,12 +327,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Load georeferencing parameters from camera config
-    ORIGIN_EASTING, ORIGIN_NORTHING, GSD = load_geotiff_params(args.camera)
+    ORIGIN_EASTING, ORIGIN_NORTHING, GSD, UTM_CRS = load_geotiff_params(args.camera)
 
     print(f"Loaded georeferencing parameters from camera '{args.camera}':")
     print(f"  Origin Easting: {ORIGIN_EASTING}")
     print(f"  Origin Northing: {ORIGIN_NORTHING}")
     print(f"  GSD: {GSD} m/pixel")
+    print(f"  UTM CRS: {UTM_CRS}")
     print()
 
     errors = analyze_transformation_discrepancy()
