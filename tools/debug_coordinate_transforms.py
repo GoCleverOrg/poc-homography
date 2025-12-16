@@ -9,8 +9,15 @@ This helps identify the root cause of translation and scaling mismatches.
 
 import argparse
 import math
-from pyproj import Transformer
 import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+parent_dir = str(Path(__file__).parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from pyproj import Transformer
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 
 # Constants
