@@ -420,7 +420,7 @@ class TestGPSCoordinateAccuracy:
 
         # Compute homography
         K = homography.get_intrinsics(zoom_factor=1.0)
-        camera_height = 11.3  # Valte camera height
+        camera_height = 11.3  # Test height value (Valencia region test data)
         reference = {
             'camera_matrix': K,
             'camera_position': np.array([0.0, 0.0, camera_height]),

@@ -5068,7 +5068,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Estimate height correction if we have enough data
             if (driftData.length >= 3 && heightVerification) {{
-                const configuredHeight = heightVerification.configured_height || 11.3;
+                const configuredHeight = heightVerification.configured_height || 5.0;
 
                 // Use radial drift to estimate scale factor
                 let scaleSamples = [];
@@ -5103,7 +5103,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             if (heightVerification && heightVerification.camera_lat && heightVerification.camera_lon &&
                 driftData.length >= 2 && (result.pattern === 'uniform_translation' || Math.abs(meanDx) > 5 || Math.abs(meanDy) > 5)) {{
 
-                const configuredHeight = heightVerification.configured_height || 11.3;
+                const configuredHeight = heightVerification.configured_height || 5.0;
                 const tiltDeg = heightVerification.tilt_deg || 45;
                 const panDeg = heightVerification.pan_deg || 0;
                 const cameraLat = heightVerification.camera_lat;
@@ -5294,7 +5294,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 return;
             }}
 
-            const currentHeight = heightVerification?.configured_height || 11.3;
+            const currentHeight = heightVerification?.configured_height || 5.0;
             const newHeight = suggestedCalibration;
 
             if (!confirm(`Apply calibration?\n\nCurrent height: ${{currentHeight.toFixed(2)}}m\nSuggested height: ${{newHeight.toFixed(2)}}m\n\nThis will update the camera configuration.`)) {{
