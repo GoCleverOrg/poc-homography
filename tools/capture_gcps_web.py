@@ -780,24 +780,31 @@ def match_points_to_features(kml_points: List[Dict], features: np.ndarray, thres
 
     kml_coords = np.array(kml_coords, dtype=np.float32)
 
-    # For each KML point, find nearest feature
+    # For each KML point, find nearest feature (ensuring one-to-one matching)
     source_points = []
     target_points = []
     matched_indices = []
     distances = []
+    used_feature_indices = set()  # Track features already matched to prevent many-to-one
 
     for i, kml_pt in enumerate(kml_coords):
         # Calculate distances to all features
         dists = np.linalg.norm(features - kml_pt, axis=1)
-        min_idx = np.argmin(dists)
-        min_dist = dists[min_idx]
 
-        # Only accept if within threshold
-        if min_dist <= threshold:
-            source_points.append(kml_pt)
-            target_points.append(features[min_idx])
-            matched_indices.append(kml_indices[i])
-            distances.append(float(min_dist))
+        # Find nearest unused feature
+        sorted_indices = np.argsort(dists)
+        for min_idx in sorted_indices:
+            if min_idx in used_feature_indices:
+                continue  # Skip already-matched features
+            min_dist = dists[min_idx]
+            # Only accept if within threshold
+            if min_dist <= threshold:
+                source_points.append(kml_pt)
+                target_points.append(features[min_idx])
+                matched_indices.append(kml_indices[i])
+                distances.append(float(min_dist))
+                used_feature_indices.add(min_idx)  # Mark feature as used
+            break  # Found best available match (or none within threshold)
 
     # Determine unmatched indices
     unmatched_indices = [i for i in kml_indices if i not in matched_indices]
@@ -4709,12 +4716,14 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 console.log('Auto-align transform:', transform);
                 console.log('Alignment metrics:', metrics);
 
-                // Apply transform to points
+                // Apply transform to points using the source centroid from matched points
+                const sourceCentroid = result.source_centroid;
                 applyAutoAlignTransform(
                     transform.translation_x,
                     transform.translation_y,
                     transform.rotation_degrees,
-                    transform.scale
+                    transform.scale,
+                    sourceCentroid
                 );
 
                 // Show results
@@ -4732,8 +4741,10 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         }}
 
         // Apply computed transform to projected points
-        function applyAutoAlignTransform(tx, ty, rotationDegrees, scale) {{
-            const centroid = calculateCentroid();
+        // Uses sourceCentroid from matched points for mathematically correct transform application
+        function applyAutoAlignTransform(tx, ty, rotationDegrees, scale, sourceCentroid) {{
+            // Use provided source centroid or fall back to all-points centroid
+            const centroid = sourceCentroid || calculateCentroid();
             if (!centroid) return;
 
             const angleRadians = rotationDegrees * Math.PI / 180;
@@ -6261,6 +6272,13 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
 
                 # Get the frame image
                 frame = self.session.frame
+                if frame is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No camera frame available',
+                        'warning': 'The camera frame has not been loaded. Please ensure an image is loaded before using auto-align.'
+                    })
+                    return
 
                 # Detect features in the image
                 print("\nAuto-align: Detecting features in frame...")
@@ -6342,10 +6360,17 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 # Determine quality
                 quality = 'good' if mean_error < REPROJ_ERROR_GOOD else 'warning' if mean_error < REPROJ_ERROR_WARNING else 'poor'
 
+                # Compute source centroid for proper transform application
+                source_centroid = np.mean(match_result['source_points'], axis=0)
+
                 # Prepare response with alignment metrics and detected features
                 self.send_json_response({
                     'success': True,
                     'transform': transform_params,
+                    'source_centroid': {
+                        'u': float(source_centroid[0]),
+                        'v': float(source_centroid[1])
+                    },
                     'metrics': {
                         'matched_count': matched_count,
                         'unmatched_count': unmatched_count,
