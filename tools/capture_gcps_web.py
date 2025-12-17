@@ -662,6 +662,236 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
     return projected_points
 
 
+def detect_corners(image: np.ndarray, max_corners: int = 500, quality_level: float = 0.01, min_distance: int = 10) -> np.ndarray:
+    """
+    Detect corner features in an image using Shi-Tomasi corner detection.
+
+    Args:
+        image: Input image (color or grayscale)
+        max_corners: Maximum number of corners to detect
+        quality_level: Quality level parameter (0-1). Lower values detect more corners.
+        min_distance: Minimum distance between detected corners in pixels
+
+    Returns:
+        Array of detected corner coordinates with shape (N, 2) containing [x, y] coordinates,
+        or empty array if no corners detected
+    """
+    # Convert to grayscale if needed
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    # Detect corners using goodFeaturesToTrack (Shi-Tomasi)
+    corners = cv2.goodFeaturesToTrack(
+        gray,
+        maxCorners=max_corners,
+        qualityLevel=quality_level,
+        minDistance=min_distance,
+        useHarrisDetector=False
+    )
+
+    if corners is None:
+        return np.array([])
+
+    # Reshape from (N, 1, 2) to (N, 2)
+    corners = corners.reshape(-1, 2)
+
+    return corners
+
+
+def detect_keypoints(image: np.ndarray) -> np.ndarray:
+    """
+    Detect keypoint features in an image using SIFT (if available) or ORB fallback.
+
+    Args:
+        image: Input image (color or grayscale)
+
+    Returns:
+        Array of detected keypoint coordinates with shape (N, 2) containing [x, y] coordinates,
+        or empty array if no keypoints detected
+    """
+    # Convert to grayscale if needed
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    # Try SIFT first (better quality but may not be available in all OpenCV builds)
+    try:
+        sift = cv2.SIFT_create(nfeatures=500)
+        keypoints = sift.detect(gray, None)
+    except (cv2.error, AttributeError):
+        # Fallback to ORB if SIFT not available
+        orb = cv2.ORB_create(nfeatures=500)
+        keypoints = orb.detect(gray, None)
+
+    if not keypoints:
+        return np.array([])
+
+    # Extract (x, y) coordinates from keypoints
+    points = np.array([kp.pt for kp in keypoints], dtype=np.float32)
+
+    return points
+
+
+def match_points_to_features(kml_points: List[Dict], features: np.ndarray, threshold: float = 50.0) -> Dict:
+    """
+    Match KML projected points to detected image features using nearest neighbor matching.
+
+    Args:
+        kml_points: List of projected KML point dictionaries with 'pixel_u', 'pixel_v' keys
+        features: Array of detected feature coordinates with shape (N, 2) containing [x, y]
+        threshold: Maximum distance in pixels for a match to be considered valid
+
+    Returns:
+        Dictionary containing:
+        - 'source_points': Array of matched KML point coordinates (Mx2)
+        - 'target_points': Array of matched feature coordinates (Mx2)
+        - 'matched_indices': List of indices of matched KML points
+        - 'unmatched_indices': List of indices of unmatched KML points
+        - 'distances': List of match distances for matched points
+    """
+    if len(features) == 0:
+        return {
+            'source_points': np.array([]),
+            'target_points': np.array([]),
+            'matched_indices': [],
+            'unmatched_indices': list(range(len(kml_points))),
+            'distances': []
+        }
+
+    # Extract visible KML point coordinates
+    kml_coords = []
+    kml_indices = []
+    for i, point in enumerate(kml_points):
+        if point.get('visible', True) and point.get('reason') == 'visible':
+            kml_coords.append([point['pixel_u'], point['pixel_v']])
+            kml_indices.append(i)
+
+    if len(kml_coords) == 0:
+        return {
+            'source_points': np.array([]),
+            'target_points': np.array([]),
+            'matched_indices': [],
+            'unmatched_indices': list(range(len(kml_points))),
+            'distances': []
+        }
+
+    kml_coords = np.array(kml_coords, dtype=np.float32)
+
+    # For each KML point, find nearest feature (ensuring one-to-one matching)
+    source_points = []
+    target_points = []
+    matched_indices = []
+    distances = []
+    used_feature_indices = set()  # Track features already matched to prevent many-to-one
+
+    for i, kml_pt in enumerate(kml_coords):
+        # Calculate distances to all features
+        dists = np.linalg.norm(features - kml_pt, axis=1)
+
+        # Find nearest unused feature
+        sorted_indices = np.argsort(dists)
+        for min_idx in sorted_indices:
+            if min_idx in used_feature_indices:
+                continue  # Skip already-matched features
+            min_dist = dists[min_idx]
+            # Only accept if within threshold
+            if min_dist <= threshold:
+                source_points.append(kml_pt)
+                target_points.append(features[min_idx])
+                matched_indices.append(kml_indices[i])
+                distances.append(float(min_dist))
+                used_feature_indices.add(min_idx)  # Mark feature as used
+            break  # Found best available match (or none within threshold)
+
+    # Determine unmatched indices
+    unmatched_indices = [i for i in kml_indices if i not in matched_indices]
+
+    return {
+        'source_points': np.array(source_points, dtype=np.float32) if source_points else np.array([]),
+        'target_points': np.array(target_points, dtype=np.float32) if target_points else np.array([]),
+        'matched_indices': matched_indices,
+        'unmatched_indices': unmatched_indices,
+        'distances': distances
+    }
+
+
+def estimate_similarity_transform(source_points: np.ndarray, target_points: np.ndarray) -> Optional[np.ndarray]:
+    """
+    Estimate similarity transform (translation + rotation + uniform scale) between point sets.
+
+    Args:
+        source_points: Source point coordinates with shape (N, 2)
+        target_points: Target point coordinates with shape (N, 2)
+
+    Returns:
+        2x3 affine transformation matrix, or None if estimation fails
+        Matrix format: [[a, -b, tx], [b, a, ty]]
+        where a = s*cos(θ), b = s*sin(θ), s = scale, θ = rotation
+    """
+    if len(source_points) < 3 or len(target_points) < 3:
+        return None
+
+    if len(source_points) != len(target_points):
+        return None
+
+    # Use estimateAffinePartial2D for similarity transform
+    # This constrains to translation + rotation + uniform scale
+    transform, inliers = cv2.estimateAffinePartial2D(
+        source_points,
+        target_points,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=5.0
+    )
+
+    return transform
+
+
+def decompose_transform(transform_matrix: np.ndarray) -> Dict:
+    """
+    Decompose a 2x3 similarity transform matrix into translation, rotation, and scale.
+
+    Args:
+        transform_matrix: 2x3 affine transformation matrix
+                         [[a, -b, tx], [b, a, ty]]
+
+    Returns:
+        Dictionary containing:
+        - 'translation_x': X translation in pixels
+        - 'translation_y': Y translation in pixels
+        - 'rotation_degrees': Rotation angle in degrees (counter-clockwise)
+        - 'scale': Uniform scale factor
+    """
+    if transform_matrix is None or transform_matrix.shape != (2, 3):
+        return {
+            'translation_x': 0.0,
+            'translation_y': 0.0,
+            'rotation_degrees': 0.0,
+            'scale': 1.0
+        }
+
+    # Extract components
+    a = transform_matrix[0, 0]
+    b = transform_matrix[1, 0]
+    tx = transform_matrix[0, 2]
+    ty = transform_matrix[1, 2]
+
+    # Calculate scale and rotation
+    # For similarity transform: a = s*cos(θ), b = s*sin(θ)
+    scale = np.sqrt(a**2 + b**2)
+    rotation_rad = np.arctan2(b, a)
+    rotation_deg = np.degrees(rotation_rad)
+
+    return {
+        'translation_x': float(tx),
+        'translation_y': float(ty),
+        'rotation_degrees': float(rotation_deg),
+        'scale': float(scale)
+    }
+
+
 def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: CameraGeometry, camera_name: str = None) -> Dict:
     """
     Verify camera height accuracy using HeightCalibrator and KML reference points.
@@ -2597,6 +2827,15 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                             Scale All (R)
                         </button>
                     </div>
+                    <div style="margin-top: 8px;">
+                        <button class="btn btn-secondary" id="autoAlignBtn" onclick="autoAlignToFeatures()" style="width: 100%;">
+                            Auto-Align to Features (A)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Auto-Align Results Panel -->
+                <div id="autoAlignResults" class="panel-section" style="display: none;">
                 </div>
 
                 <!-- Drift Analysis Panel -->
@@ -3716,6 +3955,25 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Update selection indicator
             updateSelectionIndicator();
+
+            // Render detected features overlay if enabled
+            if (showFeaturesOverlay && detectedFeatures.length > 0) {{
+                detectedFeatures.forEach((feature) => {{
+                    const [x, y] = feature;
+                    const leafletCoords = imageToLeaflet(x, y);
+
+                    // Create small circle marker for detected feature
+                    const featureMarker = L.circleMarker(leafletCoords, {{
+                        radius: 3,
+                        color: '#00ff00',
+                        fillColor: '#00ff00',
+                        fillOpacity: 0.5,
+                        weight: 1
+                    }}).addTo(map);
+
+                    mapFirstMarkers.push(featureMarker);
+                }});
+            }}
         }}
 
         // Show context menu for a point
@@ -4395,6 +4653,216 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 btn.textContent = 'Scale All (R)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
+            }}
+        }}
+
+        // ============================================================
+        // Auto-Align Functions
+        // ============================================================
+
+        let detectedFeatures = [];  // Store detected features for overlay
+        let showFeaturesOverlay = false;  // Toggle for feature visualization
+        let autoAlignInProgress = false;  // Track if auto-align is running
+
+        // Auto-align KML points to detected image features
+        async function autoAlignToFeatures() {{
+            if (!mapFirstMode || projectedPoints.length === 0) {{
+                alert('Auto-align is only available in Map-First mode with loaded KML points.');
+                return;
+            }}
+
+            if (autoAlignInProgress) {{
+                console.log('Auto-align already in progress');
+                return;
+            }}
+
+            // Exit any active transformation modes
+            if (moveAllMode) exitMoveAllMode();
+            if (rotateAllMode) exitRotateAllMode();
+            if (scaleAllMode) exitScaleAllMode();
+
+            // Show progress indicator
+            autoAlignInProgress = true;
+            updateAutoAlignUI();
+            showProgress('Detecting features and computing alignment...');
+
+            try {{
+                // Call API to perform auto-alignment
+                const response = await fetch('/api/auto_align', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        projected_points: projectedPoints
+                    }})
+                }});
+
+                const result = await response.json();
+
+                if (!result.success) {{
+                    hideProgress();
+                    alert(`Auto-align failed: ${{result.error}}\\n\\n${{result.warning || ''}}`);
+                    autoAlignInProgress = false;
+                    updateAutoAlignUI();
+                    return;
+                }}
+
+                // Store detected features for visualization
+                detectedFeatures = result.detected_features || [];
+
+                // Apply the computed transform
+                const transform = result.transform;
+                const metrics = result.metrics;
+
+                console.log('Auto-align transform:', transform);
+                console.log('Alignment metrics:', metrics);
+
+                // Apply transform to points using the source centroid from matched points
+                const sourceCentroid = result.source_centroid;
+                applyAutoAlignTransform(
+                    transform.translation_x,
+                    transform.translation_y,
+                    transform.rotation_degrees,
+                    transform.scale,
+                    sourceCentroid
+                );
+
+                // Show results
+                showAutoAlignResults(metrics, transform);
+
+                hideProgress();
+            }} catch (error) {{
+                hideProgress();
+                console.error('Auto-align error:', error);
+                alert(`Auto-align failed: ${{error.message}}`);
+            }} finally {{
+                autoAlignInProgress = false;
+                updateAutoAlignUI();
+            }}
+        }}
+
+        // Apply computed transform to projected points
+        // Uses sourceCentroid from matched points for mathematically correct transform application
+        function applyAutoAlignTransform(tx, ty, rotationDegrees, scale, sourceCentroid) {{
+            // Use provided source centroid or fall back to all-points centroid
+            const centroid = sourceCentroid || calculateCentroid();
+            if (!centroid) return;
+
+            const angleRadians = rotationDegrees * Math.PI / 180;
+            const cosA = Math.cos(angleRadians);
+            const sinA = Math.sin(angleRadians);
+
+            let transformedCount = 0;
+
+            projectedPoints.forEach((point) => {{
+                if (point.visible !== false && point.reason === 'visible') {{
+                    // Step 1: Translate to origin (centroid)
+                    let dx = point.pixel_u - centroid.u;
+                    let dy = point.pixel_v - centroid.v;
+
+                    // Step 2: Scale
+                    dx *= scale;
+                    dy *= scale;
+
+                    // Step 3: Rotate
+                    const rotatedDx = dx * cosA - dy * sinA;
+                    const rotatedDy = dx * sinA + dy * cosA;
+
+                    // Step 4: Translate back and apply translation
+                    point.pixel_u = centroid.u + rotatedDx + tx;
+                    point.pixel_v = centroid.v + rotatedDy + ty;
+
+                    transformedCount++;
+                }}
+            }});
+
+            if (transformedCount > 0) {{
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+
+            console.log(`Applied auto-align transform to ${{transformedCount}} points`);
+        }}
+
+        // Show auto-align results panel
+        function showAutoAlignResults(metrics, transform) {{
+            const panel = document.getElementById('autoAlignResults');
+            if (!panel) return;
+
+            // Determine quality color
+            let qualityColor = '#4CAF50';  // green
+            let qualityText = 'Excellent';
+            if (metrics.quality === 'warning') {{
+                qualityColor = '#FF9800';  // orange
+                qualityText = 'Fair';
+            }} else if (metrics.quality === 'poor') {{
+                qualityColor = '#F44336';  // red
+                qualityText = 'Poor';
+            }}
+
+            panel.innerHTML = `
+                <h4 style="margin-top: 0; color: #fff; font-size: 14px;">Auto-Align Results</h4>
+                <div style="font-size: 12px; line-height: 1.6;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>Quality:</span>
+                        <strong style="color: ${{qualityColor}};">${{qualityText}}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>Mean Error:</span>
+                        <strong>${{metrics.mean_error.toFixed(2)}} px</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>Max Error:</span>
+                        <strong>${{metrics.max_error.toFixed(2)}} px</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>Matched Points:</span>
+                        <strong>${{metrics.matched_count}} / ${{metrics.matched_count + metrics.unmatched_count}}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>Features Detected:</span>
+                        <strong>${{metrics.features_detected}}</strong>
+                    </div>
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #444;">
+                        <div style="font-size: 11px; color: #aaa;">Transform Applied:</div>
+                        <div style="font-size: 11px; color: #ccc; margin-top: 4px;">
+                            Translation: (${{transform.translation_x.toFixed(1)}}, ${{transform.translation_y.toFixed(1)}}) px<br>
+                            Rotation: ${{transform.rotation_degrees.toFixed(2)}}°<br>
+                            Scale: ${{transform.scale.toFixed(4)}}
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px;">
+                        <input type="checkbox" id="showFeaturesCheckbox" onchange="toggleFeatureOverlay()"
+                               ${{showFeaturesOverlay ? 'checked' : ''}}>
+                        <span>Show Detected Features</span>
+                    </label>
+                </div>
+            `;
+
+            panel.style.display = 'block';
+        }}
+
+        // Toggle feature overlay visualization
+        function toggleFeatureOverlay() {{
+            const checkbox = document.getElementById('showFeaturesCheckbox');
+            showFeaturesOverlay = checkbox ? checkbox.checked : !showFeaturesOverlay;
+            renderMapFirstPoints();
+        }}
+
+        // Update auto-align button UI
+        function updateAutoAlignUI() {{
+            const btn = document.getElementById('autoAlignBtn');
+            if (!btn) return;
+
+            if (autoAlignInProgress) {{
+                btn.disabled = true;
+                btn.textContent = 'Aligning...';
+                btn.style.opacity = '0.6';
+            }} else {{
+                btn.disabled = false;
+                btn.textContent = 'Auto-Align to Features (A)';
+                btn.style.opacity = '1';
             }}
         }}
 
@@ -5379,7 +5847,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }}
             }}
 
-            // W/E/R keys - toggle Move/Rotate/Scale All modes
+            // W/E/R/A keys - toggle Move/Rotate/Scale All modes and Auto-Align
             // Skip if user is typing in an input field
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {{
                 if (e.key === 'w' || e.key === 'W') {{
@@ -5394,6 +5862,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }}
                 if (e.key === 'r' || e.key === 'R') {{
                     toggleScaleAllMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (e.key === 'a' || e.key === 'A') {{
+                    if (mapFirstMode) {{
+                        autoAlignToFeatures();
+                    }}
                     e.preventDefault();
                     return;
                 }}
@@ -5769,6 +6244,159 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({
                     'success': False,
                     'error': f'Export failed: {str(e)}'
+                })
+
+        elif parsed.path == '/api/auto_align':
+            # Auto-align KML points to detected image features
+            try:
+                data = json.loads(post_data)
+                projected_points_data = data.get('projected_points', [])
+
+                if not projected_points_data:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No projected points provided for auto-alignment'
+                    })
+                    return
+
+                # Filter for visible points
+                visible_points = [p for p in projected_points_data if p.get('visible', True) and p.get('reason') == 'visible']
+
+                if len(visible_points) < 3:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Insufficient visible points for alignment (need 3, have {len(visible_points)})',
+                        'warning': 'Need at least 3 visible KML points to perform auto-alignment'
+                    })
+                    return
+
+                # Get the frame image
+                frame = self.session.frame
+                if frame is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No camera frame available',
+                        'warning': 'The camera frame has not been loaded. Please ensure an image is loaded before using auto-align.'
+                    })
+                    return
+
+                # Detect features in the image
+                print("\nAuto-align: Detecting features in frame...")
+                corners = detect_corners(frame, max_corners=500, quality_level=0.01, min_distance=10)
+
+                if len(corners) < 3:
+                    # Try keypoint detection as fallback
+                    print("  Insufficient corners, trying keypoint detection...")
+                    features = detect_keypoints(frame)
+                else:
+                    features = corners
+
+                print(f"  Detected {len(features)} features")
+
+                if len(features) < 3:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Insufficient features detected in image (need 3, detected {len(features)})',
+                        'warning': 'Could not detect enough features in the image. The image may be too uniform or low contrast.',
+                        'features_detected': len(features)
+                    })
+                    return
+
+                # Match KML points to features
+                print("  Matching KML points to features...")
+                match_result = match_points_to_features(projected_points_data, features, threshold=50.0)
+
+                matched_count = len(match_result['matched_indices'])
+                unmatched_count = len(match_result['unmatched_indices'])
+                print(f"  Matched: {matched_count}, Unmatched: {unmatched_count}")
+
+                if matched_count < 3:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Insufficient matched points (need 3, matched {matched_count})',
+                        'warning': f'Only {matched_count} KML points matched to detected features. Try adjusting the KML points manually or ensure they align roughly with image features.',
+                        'matched_count': matched_count,
+                        'unmatched_count': unmatched_count,
+                        'features_detected': len(features)
+                    })
+                    return
+
+                # Estimate similarity transform
+                print("  Estimating similarity transform...")
+                transform = estimate_similarity_transform(
+                    match_result['source_points'],
+                    match_result['target_points']
+                )
+
+                if transform is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Failed to estimate transformation',
+                        'warning': 'Could not compute a valid transformation from the matched points. The point correspondences may be inconsistent.',
+                        'matched_count': matched_count
+                    })
+                    return
+
+                # Decompose transform into components
+                transform_params = decompose_transform(transform)
+                print(f"  Transform: tx={transform_params['translation_x']:.2f}, ty={transform_params['translation_y']:.2f}, " +
+                      f"rotation={transform_params['rotation_degrees']:.2f}°, scale={transform_params['scale']:.4f}")
+
+                # Calculate alignment error metrics
+                # Transform source points and compute error
+                source_homogeneous = np.hstack([
+                    match_result['source_points'],
+                    np.ones((len(match_result['source_points']), 1))
+                ])
+                transformed_points = (transform @ source_homogeneous.T).T
+                errors = np.linalg.norm(transformed_points - match_result['target_points'], axis=1)
+
+                mean_error = float(np.mean(errors))
+                max_error = float(np.max(errors))
+                median_error = float(np.median(errors))
+
+                print(f"  Alignment error: mean={mean_error:.2f}px, max={max_error:.2f}px, median={median_error:.2f}px")
+
+                # Determine quality
+                quality = 'good' if mean_error < REPROJ_ERROR_GOOD else 'warning' if mean_error < REPROJ_ERROR_WARNING else 'poor'
+
+                # Compute source centroid for proper transform application
+                source_centroid = np.mean(match_result['source_points'], axis=0)
+
+                # Prepare response with alignment metrics and detected features
+                self.send_json_response({
+                    'success': True,
+                    'transform': transform_params,
+                    'source_centroid': {
+                        'u': float(source_centroid[0]),
+                        'v': float(source_centroid[1])
+                    },
+                    'metrics': {
+                        'matched_count': matched_count,
+                        'unmatched_count': unmatched_count,
+                        'features_detected': len(features),
+                        'mean_error': mean_error,
+                        'max_error': max_error,
+                        'median_error': median_error,
+                        'quality': quality,
+                        'match_distances': match_result['distances']
+                    },
+                    'detected_features': features.tolist(),
+                    'matched_features': match_result['target_points'].tolist(),
+                    'matched_indices': match_result['matched_indices'],
+                    'unmatched_indices': match_result['unmatched_indices']
+                })
+            except json.JSONDecodeError as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Invalid JSON data: {str(e)}'
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Auto-alignment failed: {str(e)}'
                 })
 
         elif parsed.path == '/api/apply_calibration':
