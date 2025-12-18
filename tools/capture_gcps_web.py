@@ -2166,24 +2166,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             background: #666;
         }}
 
-        .btn-batch {{
-            background: #666;
-            color: white;
-        }}
-
-        .btn-batch.active {{
-            background: #ff9800;
-            color: black;
-        }}
-
-        .btn-batch:hover {{
-            background: #777;
-        }}
-
-        .btn-batch.active:hover {{
-            background: #ffb74d;
-        }}
-
         /* Modal */
         .modal {{
             display: none;
@@ -2529,7 +2511,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             <div class="header-info">
                 Frame: {session.frame_width} x {session.frame_height}
                 {f"| PTZ: P={session.ptz_status['pan']:.1f} T={session.ptz_status['tilt']:.1f} Z={session.ptz_status['zoom']:.1f}x" if session.ptz_status else ""}
-                <button class="btn btn-batch" id="batchModeBtn" onclick="toggleBatchMode()" style="margin-left: 20px; padding: 4px 12px; font-size: 12px;">Batch Mode: OFF</button>
                 <button class="btn btn-secondary" onclick="exportImageWithMarkers()" style="margin-left: 10px; padding: 4px 12px; font-size: 12px;" title="Export frame with markers overlay">Export Image</button>
             </div>
         </div>
@@ -2712,30 +2693,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         </div>
     </div>
 
-    <!-- Batch Mode Modal -->
-    <div class="modal" id="batchModal">
-        <div class="modal-content" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
-            <div class="modal-header">Batch Mode - Finalize GCPs</div>
-            <div style="margin-bottom: 15px; color: #888; font-size: 13px;">
-                <span id="batchPointCount">0</span> points clicked. Assign names and load a KML file with GPS coordinates.
-            </div>
-            <div style="margin-bottom: 15px;">
-                <input type="file" id="kmlFileInput" accept=".kml" style="display: none;" onchange="handleKmlUpload(event)">
-                <button class="btn btn-secondary" onclick="document.getElementById('kmlFileInput').click()" style="padding: 6px 12px; font-size: 13px;">
-                    Load KML File
-                </button>
-                <span id="kmlStatus" style="margin-left: 10px; font-size: 12px; color: #888;"></span>
-            </div>
-            <div id="batchPointsList" style="max-height: 400px; overflow-y: auto;">
-                <!-- Points will be listed here -->
-            </div>
-            <div class="modal-actions" style="margin-top: 15px;">
-                <button class="btn btn-secondary" onclick="closeBatchModal()">Cancel</button>
-                <button class="btn btn-primary" id="batchConfirmBtn" onclick="confirmBatchGCPs()" disabled>Add All GCPs</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         // Configuration
         const imageWidth = {session.frame_width};
@@ -2750,12 +2707,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         let gcpMarkers = [];
         // Coordinate system: 'image_v' = standard (V=0 at top), null = legacy leaflet_y format (V=0 at bottom)
         let coordinateSystem = 'image_v';  // Default for new captures
-
-        // Batch mode state
-        let batchMode = false;
-        let batchPoints = [];  // Array of {{u, v}} pixel positions
-        let batchMarkers = []; // Temporary markers shown during batch mode
-        let batchGpsCoords = []; // GPS coords loaded from KML
 
         // Map-first mode state
         let mapFirstMode = {map_first_mode_json};
@@ -2977,14 +2928,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Check bounds
             if (u < 0 || u > imageWidth || v < 0 || v > imageHeight) {{
-                return;
-            }}
-
-            // Batch mode: just add to list without modal
-            if (batchMode) {{
-                batchPoints.push({{ u: imgCoords.u, v: imgCoords.v }});
-                updateBatchMarkers();
-                updateBatchUI();
                 return;
             }}
 
@@ -4561,289 +4504,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         }}
 
         // ============================================================
-        // Batch Mode Functions
-        // ============================================================
-
-        function toggleBatchMode() {{
-            if (batchMode) {{
-                // Turning off batch mode - show finalize modal if there are points
-                if (batchPoints.length > 0) {{
-                    openBatchModal();
-                }} else {{
-                    batchMode = false;
-                    updateBatchModeUI();
-                }}
-            }} else {{
-                // Turning on batch mode
-                batchMode = true;
-                batchPoints = [];
-                batchGpsCoords = [];
-                clearBatchMarkers();
-                updateBatchModeUI();
-            }}
-        }}
-
-        function updateBatchModeUI() {{
-            const btn = document.getElementById('batchModeBtn');
-            const instructions = document.getElementById('instructions');
-            if (batchMode) {{
-                btn.textContent = `Batch Mode: ON (${{batchPoints.length}})`;
-                btn.classList.add('active');
-                instructions.textContent = 'BATCH MODE: Click points to add them. Click button again to finalize.';
-                instructions.style.background = 'rgba(255, 152, 0, 0.9)';
-                instructions.style.color = 'black';
-            }} else {{
-                btn.textContent = 'Batch Mode: OFF';
-                btn.classList.remove('active');
-                instructions.textContent = 'Scroll to zoom, drag to pan. Click to add GCP.';
-                instructions.style.background = 'rgba(0,0,0,0.7)';
-                instructions.style.color = 'white';
-            }}
-        }}
-
-        function updateBatchUI() {{
-            document.getElementById('batchModeBtn').textContent = `Batch Mode: ON (${{batchPoints.length}})`;
-        }}
-
-        function updateBatchMarkers() {{
-            // Clear existing batch markers
-            clearBatchMarkers();
-
-            // Add numbered markers for batch points
-            batchPoints.forEach((pt, i) => {{
-                // Convert image coords to Leaflet coords (invert Y)
-                const leafletCoords = imageToLeaflet(pt.u, pt.v);
-                const marker = L.marker(leafletCoords, {{
-                    icon: L.divIcon({{
-                        className: 'batch-marker',
-                        html: `<div style="
-                            width: 24px;
-                            height: 24px;
-                            background: #ff9800;
-                            border: 2px solid white;
-                            border-radius: 50%;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-size: 11px;
-                            font-weight: bold;
-                            color: black;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                        ">${{i + 1}}</div>`,
-                        iconSize: [24, 24],
-                        iconAnchor: [12, 12]
-                    }}),
-                    draggable: true
-                }}).addTo(map);
-
-                // Stop click propagation to prevent adding duplicate points
-                marker.on('click', function(e) {{
-                    L.DomEvent.stopPropagation(e);
-                }});
-                marker.on('mousedown', function(e) {{
-                    L.DomEvent.stopPropagation(e);
-                }});
-
-                // Allow dragging batch markers to adjust position
-                marker.on('dragend', function(e) {{
-                    const newPos = e.target.getLatLng();
-                    // Convert Leaflet coords back to image coords (coordinate-system aware)
-                    const newImgCoords = leafletToImage(newPos.lat, newPos.lng);
-                    batchPoints[i].u = newImgCoords.u;
-                    batchPoints[i].v = newImgCoords.v;
-                }});
-
-                batchMarkers.push(marker);
-            }});
-        }}
-
-        function clearBatchMarkers() {{
-            batchMarkers.forEach(m => map.removeLayer(m));
-            batchMarkers = [];
-        }}
-
-        function openBatchModal() {{
-            document.getElementById('batchPointCount').textContent = batchPoints.length;
-            document.getElementById('kmlStatus').textContent = '';
-            batchGpsCoords = [];
-
-            // Build the points list
-            let html = '<table style="width: 100%; border-collapse: collapse;">';
-            html += '<tr style="background: #3a3a3a; font-size: 12px;">';
-            html += '<th style="padding: 8px; text-align: left;">#</th>';
-            html += '<th style="padding: 8px; text-align: left;">Pixel (u, v)</th>';
-            html += '<th style="padding: 8px; text-align: left;">Name</th>';
-            html += '<th style="padding: 8px; text-align: left;">GPS</th>';
-            html += '<th style="padding: 8px; text-align: center;">Del</th>';
-            html += '</tr>';
-
-            batchPoints.forEach((pt, i) => {{
-                html += `<tr style="border-bottom: 1px solid #444;">`;
-                html += `<td style="padding: 8px; font-size: 12px;">${{i + 1}}</td>`;
-                html += `<td style="padding: 8px; font-size: 12px;">(${{pt.u.toFixed(1)}}, ${{pt.v.toFixed(1)}})</td>`;
-                html += `<td style="padding: 8px;"><input type="text" id="batchName_${{i}}" placeholder="GCP ${{i + 1}}" style="width: 150px; padding: 4px; font-size: 12px; background: #3a3a3a; border: 1px solid #555; color: white; border-radius: 4px;"></td>`;
-                html += `<td style="padding: 8px; font-size: 12px;" id="batchGps_${{i}}">-</td>`;
-                html += `<td style="padding: 8px; text-align: center;"><button onclick="removeBatchPoint(${{i}})" style="background: #c62828; color: white; border: none; padding: 2px 8px; cursor: pointer; border-radius: 3px; font-size: 11px;">×</button></td>`;
-                html += '</tr>';
-            }});
-            html += '</table>';
-
-            document.getElementById('batchPointsList').innerHTML = html;
-            document.getElementById('batchConfirmBtn').disabled = true;
-            document.getElementById('batchModal').classList.add('active');
-        }}
-
-        function closeBatchModal() {{
-            document.getElementById('batchModal').classList.remove('active');
-            // Keep batch mode on, user can continue adding points
-        }}
-
-        function removeBatchPoint(index) {{
-            batchPoints.splice(index, 1);
-            if (batchGpsCoords.length > index) {{
-                batchGpsCoords.splice(index, 1);
-            }}
-            updateBatchMarkers();
-            openBatchModal(); // Refresh the modal
-        }}
-
-        function handleKmlUpload(event) {{
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {{
-                const content = e.target.result;
-                const coords = parseKmlCoordinates(content);
-
-                if (coords.length === 0) {{
-                    document.getElementById('kmlStatus').textContent = '❌ No coordinates found in KML';
-                    document.getElementById('kmlStatus').style.color = '#f44336';
-                    return;
-                }}
-
-                if (coords.length !== batchPoints.length) {{
-                    document.getElementById('kmlStatus').textContent = `❌ Mismatch: KML has ${{coords.length}} points, you clicked ${{batchPoints.length}}`;
-                    document.getElementById('kmlStatus').style.color = '#f44336';
-                    alert(`Count mismatch!\\n\\nKML file has ${{coords.length}} coordinates.\\nYou clicked ${{batchPoints.length}} points.\\n\\nPlease ensure the KML has the same number of points in the correct order.`);
-                    return;
-                }}
-
-                // Assign GPS coords to batch points
-                batchGpsCoords = coords;
-                document.getElementById('kmlStatus').textContent = `✓ Loaded ${{coords.length}} coordinates`;
-                document.getElementById('kmlStatus').style.color = '#4CAF50';
-
-                // Update GPS display in table
-                coords.forEach((coord, i) => {{
-                    const gpsCell = document.getElementById(`batchGps_${{i}}`);
-                    if (gpsCell) {{
-                        gpsCell.textContent = `${{coord.lat.toFixed(6)}}, ${{coord.lon.toFixed(6)}}`;
-                        gpsCell.style.color = '#4CAF50';
-                    }}
-                }});
-
-                // Enable confirm button
-                document.getElementById('batchConfirmBtn').disabled = false;
-            }};
-            reader.readAsText(file);
-
-            // Reset input so same file can be loaded again
-            event.target.value = '';
-        }}
-
-        function parseKmlCoordinates(kmlContent) {{
-            const coords = [];
-
-            // Parse KML - look for <coordinates> tags
-            // KML format: longitude,latitude,altitude (whitespace separated)
-            const coordPattern = /<coordinates>([^<]+)<\\/coordinates>/gi;
-            let match;
-
-            while ((match = coordPattern.exec(kmlContent)) !== null) {{
-                const coordText = match[1].trim();
-                // Split by whitespace (newlines, spaces)
-                const points = coordText.split(/\\s+/);
-
-                points.forEach(point => {{
-                    if (!point.trim()) return;
-                    const parts = point.split(',');
-                    if (parts.length >= 2) {{
-                        const lon = parseFloat(parts[0]);
-                        const lat = parseFloat(parts[1]);
-                        if (!isNaN(lat) && !isNaN(lon)) {{
-                            coords.push({{ lat, lon }});
-                        }}
-                    }}
-                }});
-            }}
-
-            // Also try to parse <Point> elements with single coordinates
-            const pointPattern = /<Point>[^<]*<coordinates>([^<]+)<\\/coordinates>[^<]*<\\/Point>/gi;
-            while ((match = pointPattern.exec(kmlContent)) !== null) {{
-                const coordText = match[1].trim();
-                const parts = coordText.split(',');
-                if (parts.length >= 2) {{
-                    const lon = parseFloat(parts[0]);
-                    const lat = parseFloat(parts[1]);
-                    if (!isNaN(lat) && !isNaN(lon)) {{
-                        // Check if not already added
-                        const exists = coords.some(c => c.lat === lat && c.lon === lon);
-                        if (!exists) {{
-                            coords.push({{ lat, lon }});
-                        }}
-                    }}
-                }}
-            }}
-
-            return coords;
-        }}
-
-        async function confirmBatchGCPs() {{
-            if (batchGpsCoords.length !== batchPoints.length) {{
-                alert('Please load a KML file with matching coordinates first.');
-                return;
-            }}
-
-            // Add all GCPs one by one
-            for (let i = 0; i < batchPoints.length; i++) {{
-                const pt = batchPoints[i];
-                const gps = batchGpsCoords[i];
-                const nameInput = document.getElementById(`batchName_${{i}}`);
-                const name = nameInput ? nameInput.value.trim() || `GCP ${{i + 1}}` : `GCP ${{i + 1}}`;
-
-                await fetch('/api/add_gcp', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        u: pt.u,
-                        v: pt.v,
-                        lat: gps.lat,
-                        lon: gps.lon,
-                        description: name,
-                        accuracy: 'medium'
-                    }})
-                }})
-                .then(r => r.json())
-                .then(data => {{
-                    gcps = data.gcps;
-                    distribution = data.distribution;
-                }});
-            }}
-
-            // Clean up batch mode
-            batchMode = false;
-            batchPoints = [];
-            batchGpsCoords = [];
-            clearBatchMarkers();
-            updateBatchModeUI();
-            updateUI();
-
-            document.getElementById('batchModal').classList.remove('active');
-            alert(`Added ${{batchPoints.length || gcps.length}} GCPs successfully!`);
-        }}
-
-        // ============================================================
         // Map-First Mode: Convert KML Points to GCPs
         // ============================================================
 
@@ -5354,7 +5014,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     return;
                 }}
                 closeModal();
-                closeBatchModal();
             }}
 
             // Enter key - confirm modal or accept current mode
