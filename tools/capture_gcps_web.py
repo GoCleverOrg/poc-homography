@@ -5954,7 +5954,13 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 # Encode frame to base64
-                _, buffer = cv2.imencode('.jpg', self.session.frame)
+                success, buffer = cv2.imencode('.jpg', self.session.frame)
+                if not success:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Failed to encode camera frame'
+                    })
+                    return
                 image_base64 = base64.b64encode(buffer).decode('utf-8')
 
                 # Use default prompt or custom prompt
@@ -6019,11 +6025,11 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                         for polygon in masks:
                             # Each polygon is an array of [x, y] coordinate pairs
                             if isinstance(polygon, list) and len(polygon) >= 3:
-                                total_polygons += 1
                                 # Convert to numpy array for cv2.fillPoly
                                 pts = np.array([[int(pt[0]), int(pt[1])] for pt in polygon if len(pt) >= 2], dtype=np.int32)
                                 if len(pts) >= 3:
                                     cv2.fillPoly(mask, [pts], 255)
+                                    total_polygons += 1
 
                 # Store mask in session
                 self.session.feature_mask = mask
@@ -6038,7 +6044,13 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 }
 
                 # Encode mask as base64 PNG for frontend
-                _, mask_buffer = cv2.imencode('.png', mask)
+                success, mask_buffer = cv2.imencode('.png', mask)
+                if not success:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Failed to encode detection mask'
+                    })
+                    return
                 mask_base64 = base64.b64encode(mask_buffer).decode('utf-8')
 
                 self.send_json_response({
