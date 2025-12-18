@@ -2568,14 +2568,19 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                         </button>
                     </div>
                     <div style="margin-top: 8px; display: flex; gap: 8px;">
-                        <button class="btn btn-secondary" id="moveAllBtn" onclick="toggleMoveAllMode()" style="flex: 1;">
-                            Move All (W)
+                        <button class="btn btn-secondary" id="yawModeBtn" onclick="toggleYawMode()" style="flex: 1;">
+                            Yaw (1)
                         </button>
-                        <button class="btn btn-secondary" id="rotateAllBtn" onclick="toggleRotateAllMode()" style="flex: 1;">
-                            Rotate All (E)
+                        <button class="btn btn-secondary" id="pitchModeBtn" onclick="togglePitchMode()" style="flex: 1;">
+                            Pitch (2)
                         </button>
-                        <button class="btn btn-secondary" id="scaleAllBtn" onclick="toggleScaleAllMode()" style="flex: 1;">
-                            Scale All (R)
+                    </div>
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">
+                        <button class="btn btn-secondary" id="heightModeBtn" onclick="toggleHeightMode()" style="flex: 1;">
+                            Height (3)
+                        </button>
+                        <button class="btn btn-secondary" id="gpsModeBtn" onclick="toggleGPSMode()" style="flex: 1;">
+                            GPS (4)
                         </button>
                     </div>
                 </div>
@@ -3276,12 +3281,18 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
                 // Update instructions for map-first mode
                 const instructions = document.getElementById('instructions');
-                if (rotateAllMode) {{
-                    instructions.textContent = 'ROTATE MODE: ← → rotate all points around centroid (Shift = faster) | Enter/Esc = done';
-                    instructions.style.background = 'rgba(156, 39, 176, 0.9)';
-                }} else if (moveAllMode) {{
-                    instructions.textContent = 'MOVE ALL MODE: Arrow keys move all points (Shift = faster) | Enter/Esc = done';
+                if (yawMode) {{
+                    instructions.textContent = 'YAW MODE: ← → adjust camera pan (Shift = 10× step) | Enter/Esc = done';
                     instructions.style.background = 'rgba(255, 152, 0, 0.9)';
+                }} else if (pitchMode) {{
+                    instructions.textContent = 'PITCH MODE: ↑ ↓ adjust camera tilt (Shift = 10× step) | Enter/Esc = done';
+                    instructions.style.background = 'rgba(156, 39, 176, 0.9)';
+                }} else if (heightMode) {{
+                    instructions.textContent = 'HEIGHT MODE: ↑ ↓ adjust camera height (Shift = 10× step) | Enter/Esc = done';
+                    instructions.style.background = 'rgba(0, 150, 136, 0.9)';
+                }} else if (gpsMode) {{
+                    instructions.textContent = 'GPS MODE: ↑↓ latitude | ←→ longitude (Shift = 10× step) | Enter/Esc = done';
+                    instructions.style.background = 'rgba(33, 150, 243, 0.9)';
                 }} else if (selectedMapFirstIndices.size > 0) {{
                     const count = selectedMapFirstIndices.size;
                     instructions.textContent = count > 1
@@ -3540,14 +3551,21 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         // Selected map-first points for keyboard movement (Set of indices for multi-select)
         let selectedMapFirstIndices = new Set();
 
-        // Move All mode state
-        let moveAllMode = false;
+        // Camera parameter adjustment mode states (mutually exclusive)
+        let yawMode = false;
+        let pitchMode = false;
+        let heightMode = false;
+        let gpsMode = false;
 
-        // Rotate All mode state
-        let rotateAllMode = false;
-
-        // Scale All mode state
-        let scaleAllMode = false;
+        // Current camera parameters (initialized from heightVerification)
+        let cameraLat = heightVerification ? heightVerification.camera_lat : 0;
+        let cameraLon = heightVerification ? heightVerification.camera_lon : 0;
+        let cameraPanDeg = heightVerification ? heightVerification.pan_deg : 0;
+        let cameraTiltDeg = heightVerification ? heightVerification.tilt_deg : 0;
+        let cameraHeightM = heightVerification ? heightVerification.configured_height : 5.0;
+        let cameraK = null;  // Intrinsic matrix - will be stored from initial projection
+        let cameraImageWidth = heightVerification ? heightVerification.image_width : 1920;
+        let cameraImageHeight = heightVerification ? heightVerification.image_height : 1080;
 
         // Render map-first projected points
         function renderMapFirstPoints() {{
@@ -3961,50 +3979,95 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             updateMapFirstSummary();
         }}
 
-        // Toggle Move All mode
-        function toggleMoveAllMode() {{
-            if (moveAllMode) {{
-                // Exit Move All mode
-                exitMoveAllMode();
+        // ============================================================
+        // Camera Parameter Adjustment Mode Functions
+        // ============================================================
+
+        // Exit all camera parameter modes
+        function exitAllCameraParamModes() {{
+            if (yawMode) exitYawMode();
+            if (pitchMode) exitPitchMode();
+            if (heightMode) exitHeightMode();
+            if (gpsMode) exitGPSMode();
+        }}
+
+        // Update homography and reproject all points
+        async function updateHomographyAndReproject() {{
+            try {{
+                const response = await fetch('/api/update_homography', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        camera_lat: cameraLat,
+                        camera_lon: cameraLon,
+                        height_m: cameraHeightM,
+                        pan_deg: cameraPanDeg,
+                        tilt_deg: cameraTiltDeg,
+                        image_width: cameraImageWidth,
+                        image_height: cameraImageHeight,
+                        kml_points: kmlPoints
+                    }})
+                }});
+
+                if (!response.ok) {{
+                    throw new Error(`HTTP error! status: ${{response.status}}`);
+                }}
+
+                const result = await response.json();
+
+                if (result.success && result.projected_points) {{
+                    // Update projected points with new positions
+                    projectedPoints = result.projected_points;
+                    renderMapFirstPoints();
+                    updateMapFirstSummary();
+                }} else {{
+                    console.error('Failed to update homography:', result.error || 'Unknown error');
+                }}
+            }} catch (error) {{
+                console.error('Error updating homography:', error);
+            }}
+        }}
+
+        // ============================================================
+        // Yaw Mode Functions
+        // ============================================================
+
+        // Toggle Yaw mode
+        function toggleYawMode() {{
+            if (yawMode) {{
+                exitYawMode();
             }} else {{
-                // Enter Move All mode - exit other modes first
                 selectedMapFirstIndices.clear();
-                rotateAllMode = false;
-                updateRotateAllUI();
-                scaleAllMode = false;
-                updateScaleAllUI();
-                moveAllMode = true;
-                updateMoveAllUI();
+                exitAllCameraParamModes();
+                yawMode = true;
+                updateYawModeUI();
                 renderMapFirstPoints();
                 updateMapFirstSummary();
             }}
         }}
 
-        // Exit Move All mode
-        function exitMoveAllMode() {{
-            moveAllMode = false;
-            updateMoveAllUI();
+        function exitYawMode() {{
+            yawMode = false;
+            updateYawModeUI();
             renderMapFirstPoints();
             updateMapFirstSummary();
         }}
 
-        // Update Move All button and indicator
-        function updateMoveAllUI() {{
-            const btn = document.getElementById('moveAllBtn');
-            const existingIndicator = document.getElementById('moveAllIndicator');
+        function updateYawModeUI() {{
+            const btn = document.getElementById('yawModeBtn');
+            const existingIndicator = document.getElementById('yawModeIndicator');
 
             if (existingIndicator) {{
                 existingIndicator.remove();
             }}
 
-            if (moveAllMode) {{
-                btn.textContent = 'Accept Movement';
+            if (yawMode) {{
+                btn.textContent = 'Accept Yaw';
                 btn.style.background = '#4CAF50';
                 btn.style.borderColor = '#4CAF50';
 
-                // Show indicator at bottom
                 const indicator = document.createElement('div');
-                indicator.id = 'moveAllIndicator';
+                indicator.id = 'yawModeIndicator';
                 indicator.style.cssText = `
                     position: fixed;
                     bottom: 20px;
@@ -4023,15 +4086,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     gap: 15px;
                 `;
 
-                // Count visible points
-                const visibleCount = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible').length;
-
                 indicator.innerHTML = `
-                    <span><strong>MOVE ALL MODE</strong> - Moving ${{visibleCount}} points</span>
+                    <span><strong>YAW (PAN) MODE</strong></span>
+                    <span style="font-size: 12px;">Current: ${{cameraPanDeg.toFixed(1)}}°</span>
                     <span style="font-size: 12px; opacity: 0.9;">
-                        ← → ↑ ↓ to move | Shift = faster
+                        ← → adjust yaw | Shift = 10× step
                     </span>
-                    <button onclick="exitMoveAllMode()" style="
+                    <button onclick="exitYawMode()" style="
                         background: rgba(255,255,255,0.2);
                         border: none;
                         color: white;
@@ -4043,136 +4104,58 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 `;
                 document.body.appendChild(indicator);
             }} else {{
-                btn.textContent = 'Move All (W)';
+                btn.textContent = 'Yaw (1)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
         }}
 
-        // Move all visible points
-        function moveAllPoints(dx, dy) {{
-            if (!moveAllMode) return;
-
-            let movedCount = 0;
-            projectedPoints.forEach((point, i) => {{
-                // Only move visible points that are in frame
-                if (point.visible !== false && point.reason === 'visible') {{
-                    point.pixel_u += dx;
-                    point.pixel_v += dy;
-                    movedCount++;
-                }}
-            }});
-
-            if (movedCount > 0) {{
-                renderMapFirstPoints();
-                updateMapFirstSummary();
-            }}
+        function adjustYaw(delta) {{
+            if (!yawMode) return;
+            cameraPanDeg += delta;
+            updateHomographyAndReproject();
+            updateYawModeUI();
         }}
 
         // ============================================================
-        // Rotate All Mode Functions
+        // Pitch Mode Functions
         // ============================================================
 
-        // Toggle Rotate All mode
-        function toggleRotateAllMode() {{
-            if (rotateAllMode) {{
-                // Exit Rotate All mode
-                exitRotateAllMode();
+        function togglePitchMode() {{
+            if (pitchMode) {{
+                exitPitchMode();
             }} else {{
-                // Enter Rotate All mode - exit other modes first
                 selectedMapFirstIndices.clear();
-                moveAllMode = false;
-                updateMoveAllUI();
-                scaleAllMode = false;
-                updateScaleAllUI();
-                rotateAllMode = true;
-                updateRotateAllUI();
+                exitAllCameraParamModes();
+                pitchMode = true;
+                updatePitchModeUI();
                 renderMapFirstPoints();
                 updateMapFirstSummary();
             }}
         }}
 
-        // Exit Rotate All mode
-        function exitRotateAllMode() {{
-            rotateAllMode = false;
-            updateRotateAllUI();
+        function exitPitchMode() {{
+            pitchMode = false;
+            updatePitchModeUI();
             renderMapFirstPoints();
             updateMapFirstSummary();
         }}
 
-        // Calculate centroid of all visible points
-        function calculateCentroid() {{
-            let sumU = 0, sumV = 0, count = 0;
-
-            projectedPoints.forEach((point) => {{
-                if (point.visible !== false && point.reason === 'visible') {{
-                    sumU += point.pixel_u;
-                    sumV += point.pixel_v;
-                    count++;
-                }}
-            }});
-
-            if (count === 0) return null;
-
-            return {{
-                u: sumU / count,
-                v: sumV / count
-            }};
-        }}
-
-        // Rotate all visible points around centroid
-        function rotateAllPoints(angleDegrees) {{
-            if (!rotateAllMode) return;
-
-            const centroid = calculateCentroid();
-            if (!centroid) return;
-
-            const angleRadians = angleDegrees * Math.PI / 180;
-            const cosA = Math.cos(angleRadians);
-            const sinA = Math.sin(angleRadians);
-
-            let rotatedCount = 0;
-            projectedPoints.forEach((point) => {{
-                if (point.visible !== false && point.reason === 'visible') {{
-                    // Translate to origin (centroid)
-                    const dx = point.pixel_u - centroid.u;
-                    const dy = point.pixel_v - centroid.v;
-
-                    // Rotate
-                    const newDx = dx * cosA - dy * sinA;
-                    const newDy = dx * sinA + dy * cosA;
-
-                    // Translate back
-                    point.pixel_u = centroid.u + newDx;
-                    point.pixel_v = centroid.v + newDy;
-
-                    rotatedCount++;
-                }}
-            }});
-
-            if (rotatedCount > 0) {{
-                renderMapFirstPoints();
-                updateMapFirstSummary();
-            }}
-        }}
-
-        // Update Rotate All button and indicator
-        function updateRotateAllUI() {{
-            const btn = document.getElementById('rotateAllBtn');
-            const existingIndicator = document.getElementById('rotateAllIndicator');
+        function updatePitchModeUI() {{
+            const btn = document.getElementById('pitchModeBtn');
+            const existingIndicator = document.getElementById('pitchModeIndicator');
 
             if (existingIndicator) {{
                 existingIndicator.remove();
             }}
 
-            if (rotateAllMode) {{
-                btn.textContent = 'Accept Rotation';
+            if (pitchMode) {{
+                btn.textContent = 'Accept Pitch';
                 btn.style.background = '#4CAF50';
                 btn.style.borderColor = '#4CAF50';
 
-                // Show indicator at bottom
                 const indicator = document.createElement('div');
-                indicator.id = 'rotateAllIndicator';
+                indicator.id = 'pitchModeIndicator';
                 indicator.style.cssText = `
                     position: fixed;
                     bottom: 20px;
@@ -4191,15 +4174,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     gap: 15px;
                 `;
 
-                // Count visible points
-                const visibleCount = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible').length;
-
                 indicator.innerHTML = `
-                    <span><strong>ROTATE MODE</strong> - Rotating ${{visibleCount}} points around centroid</span>
+                    <span><strong>PITCH (TILT) MODE</strong></span>
+                    <span style="font-size: 12px;">Current: ${{cameraTiltDeg.toFixed(1)}}°</span>
                     <span style="font-size: 12px; opacity: 0.9;">
-                        ← → to rotate | Shift = faster (10×)
+                        ↑ ↓ adjust pitch | Shift = 10× step
                     </span>
-                    <button onclick="exitRotateAllMode()" style="
+                    <button onclick="exitPitchMode()" style="
                         background: rgba(255,255,255,0.2);
                         border: none;
                         color: white;
@@ -4211,92 +4192,58 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 `;
                 document.body.appendChild(indicator);
             }} else {{
-                btn.textContent = 'Rotate All (E)';
+                btn.textContent = 'Pitch (2)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
         }}
 
+        function adjustPitch(delta) {{
+            if (!pitchMode) return;
+            cameraTiltDeg += delta;
+            updateHomographyAndReproject();
+            updatePitchModeUI();
+        }}
+
         // ============================================================
-        // Scale All Mode Functions
+        // Height Mode Functions
         // ============================================================
 
-        // Toggle Scale All mode
-        function toggleScaleAllMode() {{
-            if (scaleAllMode) {{
-                // Exit Scale All mode
-                exitScaleAllMode();
+        function toggleHeightMode() {{
+            if (heightMode) {{
+                exitHeightMode();
             }} else {{
-                // Enter Scale All mode - exit other modes first
                 selectedMapFirstIndices.clear();
-                moveAllMode = false;
-                updateMoveAllUI();
-                rotateAllMode = false;
-                updateRotateAllUI();
-                scaleAllMode = true;
-                updateScaleAllUI();
+                exitAllCameraParamModes();
+                heightMode = true;
+                updateHeightModeUI();
                 renderMapFirstPoints();
                 updateMapFirstSummary();
             }}
         }}
 
-        // Exit Scale All mode
-        function exitScaleAllMode() {{
-            scaleAllMode = false;
-            updateScaleAllUI();
+        function exitHeightMode() {{
+            heightMode = false;
+            updateHeightModeUI();
             renderMapFirstPoints();
             updateMapFirstSummary();
         }}
 
-        // Scale all visible points around centroid
-        function scaleAllPoints(scaleX, scaleY) {{
-            if (!scaleAllMode) return;
-
-            const centroid = calculateCentroid();
-            if (!centroid) return;
-
-            let scaledCount = 0;
-            projectedPoints.forEach((point) => {{
-                if (point.visible !== false && point.reason === 'visible') {{
-                    // Translate to origin (centroid)
-                    const dx = point.pixel_u - centroid.u;
-                    const dy = point.pixel_v - centroid.v;
-
-                    // Scale
-                    const newDx = dx * scaleX;
-                    const newDy = dy * scaleY;
-
-                    // Translate back
-                    point.pixel_u = centroid.u + newDx;
-                    point.pixel_v = centroid.v + newDy;
-
-                    scaledCount++;
-                }}
-            }});
-
-            if (scaledCount > 0) {{
-                renderMapFirstPoints();
-                updateMapFirstSummary();
-            }}
-        }}
-
-        // Update Scale All button and indicator
-        function updateScaleAllUI() {{
-            const btn = document.getElementById('scaleAllBtn');
-            const existingIndicator = document.getElementById('scaleAllIndicator');
+        function updateHeightModeUI() {{
+            const btn = document.getElementById('heightModeBtn');
+            const existingIndicator = document.getElementById('heightModeIndicator');
 
             if (existingIndicator) {{
                 existingIndicator.remove();
             }}
 
-            if (scaleAllMode) {{
-                btn.textContent = 'Accept Scaling';
+            if (heightMode) {{
+                btn.textContent = 'Accept Height';
                 btn.style.background = '#4CAF50';
                 btn.style.borderColor = '#4CAF50';
 
-                // Show indicator at bottom
                 const indicator = document.createElement('div');
-                indicator.id = 'scaleAllIndicator';
+                indicator.id = 'heightModeIndicator';
                 indicator.style.cssText = `
                     position: fixed;
                     bottom: 20px;
@@ -4315,15 +4262,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     gap: 15px;
                 `;
 
-                // Count visible points
-                const visibleCount = projectedPoints.filter(p => p.visible !== false && p.reason === 'visible').length;
-
                 indicator.innerHTML = `
-                    <span><strong>SCALE MODE</strong> - Scaling ${{visibleCount}} points around centroid</span>
+                    <span><strong>HEIGHT MODE</strong></span>
+                    <span style="font-size: 12px;">Current: ${{cameraHeightM.toFixed(1)}}m</span>
                     <span style="font-size: 12px; opacity: 0.9;">
-                        ← → horizontal | ↑ ↓ vertical | Shift = 10%
+                        ↑ ↓ adjust height | Shift = 10× step
                     </span>
-                    <button onclick="exitScaleAllMode()" style="
+                    <button onclick="exitHeightMode()" style="
                         background: rgba(255,255,255,0.2);
                         border: none;
                         color: white;
@@ -4335,10 +4280,106 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 `;
                 document.body.appendChild(indicator);
             }} else {{
-                btn.textContent = 'Scale All (R)';
+                btn.textContent = 'Height (3)';
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }}
+        }}
+
+        function adjustHeight(delta) {{
+            if (!heightMode) return;
+            cameraHeightM = Math.max(0.5, cameraHeightM + delta);  // Min height 0.5m
+            updateHomographyAndReproject();
+            updateHeightModeUI();
+        }}
+
+        // ============================================================
+        // GPS Mode Functions
+        // ============================================================
+
+        function toggleGPSMode() {{
+            if (gpsMode) {{
+                exitGPSMode();
+            }} else {{
+                selectedMapFirstIndices.clear();
+                exitAllCameraParamModes();
+                gpsMode = true;
+                updateGPSModeUI();
+                renderMapFirstPoints();
+                updateMapFirstSummary();
+            }}
+        }}
+
+        function exitGPSMode() {{
+            gpsMode = false;
+            updateGPSModeUI();
+            renderMapFirstPoints();
+            updateMapFirstSummary();
+        }}
+
+        function updateGPSModeUI() {{
+            const btn = document.getElementById('gpsModeBtn');
+            const existingIndicator = document.getElementById('gpsModeIndicator');
+
+            if (existingIndicator) {{
+                existingIndicator.remove();
+            }}
+
+            if (gpsMode) {{
+                btn.textContent = 'Accept GPS';
+                btn.style.background = '#4CAF50';
+                btn.style.borderColor = '#4CAF50';
+
+                const indicator = document.createElement('div');
+                indicator.id = 'gpsModeIndicator';
+                indicator.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(33, 150, 243, 0.95);
+                    color: white;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    z-index: 10000;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                `;
+
+                indicator.innerHTML = `
+                    <span><strong>GPS POSITION MODE</strong></span>
+                    <span style="font-size: 12px;">Lat: ${{cameraLat.toFixed(6)}}°, Lon: ${{cameraLon.toFixed(6)}}°</span>
+                    <span style="font-size: 12px; opacity: 0.9;">
+                        ↑↓ lat | ←→ lon | Shift = 10× step
+                    </span>
+                    <button onclick="exitGPSMode()" style="
+                        background: rgba(255,255,255,0.2);
+                        border: none;
+                        color: white;
+                        padding: 4px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                    ">Done</button>
+                `;
+                document.body.appendChild(indicator);
+            }} else {{
+                btn.textContent = 'GPS (4)';
+                btn.style.background = '';
+                btn.style.borderColor = '';
+            }}
+        }}
+
+        function adjustGPS(latDelta, lonDelta) {{
+            if (!gpsMode) return;
+            cameraLat += latDelta;
+            cameraLon += lonDelta;
+            updateHomographyAndReproject();
+            updateGPSModeUI();
         }}
 
         // Update the Map-First Mode summary panel
@@ -4993,18 +5034,23 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         document.addEventListener('keydown', function(e) {{
             // Escape key - close modals, exit modes, or deselect point
             if (e.key === 'Escape') {{
-                if (scaleAllMode) {{
-                    exitScaleAllMode();
+                if (yawMode) {{
+                    exitYawMode();
                     e.preventDefault();
                     return;
                 }}
-                if (rotateAllMode) {{
-                    exitRotateAllMode();
+                if (pitchMode) {{
+                    exitPitchMode();
                     e.preventDefault();
                     return;
                 }}
-                if (moveAllMode) {{
-                    exitMoveAllMode();
+                if (heightMode) {{
+                    exitHeightMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (gpsMode) {{
+                    exitGPSMode();
                     e.preventDefault();
                     return;
                 }}
@@ -5018,18 +5064,23 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Enter key - confirm modal or accept current mode
             if (e.key === 'Enter') {{
-                if (scaleAllMode) {{
-                    exitScaleAllMode();
+                if (yawMode) {{
+                    exitYawMode();
                     e.preventDefault();
                     return;
                 }}
-                if (rotateAllMode) {{
-                    exitRotateAllMode();
+                if (pitchMode) {{
+                    exitPitchMode();
                     e.preventDefault();
                     return;
                 }}
-                if (moveAllMode) {{
-                    exitMoveAllMode();
+                if (heightMode) {{
+                    exitHeightMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (gpsMode) {{
+                    exitGPSMode();
                     e.preventDefault();
                     return;
                 }}
@@ -5038,21 +5089,26 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }}
             }}
 
-            // W/E/R keys - toggle Move/Rotate/Scale All modes
+            // 1/2/3/4 keys - toggle camera parameter modes
             // Skip if user is typing in an input field
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {{
-                if (e.key === 'w' || e.key === 'W') {{
-                    toggleMoveAllMode();
+                if (e.key === '1') {{
+                    toggleYawMode();
                     e.preventDefault();
                     return;
                 }}
-                if (e.key === 'e' || e.key === 'E') {{
-                    toggleRotateAllMode();
+                if (e.key === '2') {{
+                    togglePitchMode();
                     e.preventDefault();
                     return;
                 }}
-                if (e.key === 'r' || e.key === 'R') {{
-                    toggleScaleAllMode();
+                if (e.key === '3') {{
+                    toggleHeightMode();
+                    e.preventDefault();
+                    return;
+                }}
+                if (e.key === '4') {{
+                    toggleGPSMode();
                     e.preventDefault();
                     return;
                 }}
@@ -5060,64 +5116,70 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
             // Arrow keys - handle different modes
             if (mapFirstMode) {{
-                // Rotation speed: normal = 0.5 degrees, shift = 5 degrees
-                const rotationSpeed = e.shiftKey ? 5 : 0.5;
                 // Movement speed: normal = 1px, shift = 10px
                 const moveSpeed = e.shiftKey ? 10 : 1;
-                // Scale speed: normal = 1% (0.01), shift = 10% (0.10)
-                const scaleSpeed = e.shiftKey ? 0.10 : 0.01;
 
-                // Scale All mode - arrow keys scale around centroid
-                if (scaleAllMode) {{
+                // Camera parameter adjustment modes
+                if (yawMode) {{
+                    // Yaw: left/right arrows, normal = 0.5°, shift = 5°
+                    const yawStep = e.shiftKey ? 5.0 : 0.5;
                     switch (e.key) {{
                         case 'ArrowLeft':
-                            scaleAllPoints(1 - scaleSpeed, 1.0);
+                            adjustYaw(-yawStep);
                             e.preventDefault();
                             break;
                         case 'ArrowRight':
-                            scaleAllPoints(1 + scaleSpeed, 1.0);
-                            e.preventDefault();
-                            break;
-                        case 'ArrowUp':
-                            scaleAllPoints(1.0, 1 - scaleSpeed);
-                            e.preventDefault();
-                            break;
-                        case 'ArrowDown':
-                            scaleAllPoints(1.0, 1 + scaleSpeed);
+                            adjustYaw(yawStep);
                             e.preventDefault();
                             break;
                     }}
                 }}
-                // Rotate All mode - left/right arrows rotate around centroid
-                else if (rotateAllMode) {{
+                else if (pitchMode) {{
+                    // Pitch: up/down arrows, normal = 0.5°, shift = 5°
+                    const pitchStep = e.shiftKey ? 5.0 : 0.5;
                     switch (e.key) {{
-                        case 'ArrowLeft':
-                            rotateAllPoints(-rotationSpeed);
+                        case 'ArrowUp':
+                            adjustPitch(-pitchStep);  // Up arrow decreases tilt (camera tilts up)
                             e.preventDefault();
                             break;
-                        case 'ArrowRight':
-                            rotateAllPoints(rotationSpeed);
+                        case 'ArrowDown':
+                            adjustPitch(pitchStep);   // Down arrow increases tilt (camera tilts down)
                             e.preventDefault();
                             break;
                     }}
                 }}
-                // Move All mode - move all visible points
-                else if (moveAllMode) {{
+                else if (heightMode) {{
+                    // Height: up/down arrows, normal = 0.1m, shift = 1.0m
+                    const heightStep = e.shiftKey ? 1.0 : 0.1;
                     switch (e.key) {{
-                        case 'ArrowLeft':
-                            moveAllPoints(-moveSpeed, 0);
-                            e.preventDefault();
-                            break;
-                        case 'ArrowRight':
-                            moveAllPoints(moveSpeed, 0);
-                            e.preventDefault();
-                            break;
                         case 'ArrowUp':
-                            moveAllPoints(0, -moveSpeed);
+                            adjustHeight(heightStep);
                             e.preventDefault();
                             break;
                         case 'ArrowDown':
-                            moveAllPoints(0, moveSpeed);
+                            adjustHeight(-heightStep);
+                            e.preventDefault();
+                            break;
+                    }}
+                }}
+                else if (gpsMode) {{
+                    // GPS: all arrows, normal = 0.00001°, shift = 0.0001°
+                    const gpsStep = e.shiftKey ? 0.0001 : 0.00001;
+                    switch (e.key) {{
+                        case 'ArrowUp':
+                            adjustGPS(gpsStep, 0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowDown':
+                            adjustGPS(-gpsStep, 0);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowLeft':
+                            adjustGPS(0, -gpsStep);
+                            e.preventDefault();
+                            break;
+                        case 'ArrowRight':
+                            adjustGPS(0, gpsStep);
                             e.preventDefault();
                             break;
                     }}
@@ -5507,6 +5569,237 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                     'error': f'Calibration failed: {str(e)}'
                 })
 
+        elif parsed.path == '/api/update_homography':
+            # Update homography with new camera parameters and reproject all KML points
+            try:
+                data = json.loads(post_data)
+
+                # Extract camera parameters from request
+                camera_lat = data.get('camera_lat')
+                camera_lon = data.get('camera_lon')
+                height_m = data.get('height_m')
+                pan_deg = data.get('pan_deg')
+                tilt_deg = data.get('tilt_deg')
+                image_width = data.get('image_width', 1920)
+                image_height = data.get('image_height', 1080)
+                kml_points = data.get('kml_points', [])
+
+                # Validate required parameters
+                if camera_lat is None or camera_lon is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Missing required camera GPS coordinates'
+                    })
+                    return
+
+                if height_m is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Missing required camera height'
+                    })
+                    return
+
+                if pan_deg is None or tilt_deg is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Missing required pan/tilt angles'
+                    })
+                    return
+
+                if not kml_points:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No KML points provided for reprojection'
+                    })
+                    return
+
+                # Check if required modules are available
+                if not GPS_CONVERTER_AVAILABLE:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'GPS converter modules not available'
+                    })
+                    return
+
+                if not COORDINATE_CONVERTER_AVAILABLE:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Coordinate converter not available'
+                    })
+                    return
+
+                # Get sensor width from camera config or use default
+                sensor_width_mm = DEFAULT_SENSOR_WIDTH_MM
+                if self.session.camera_name and CAMERA_CONFIG_AVAILABLE:
+                    try:
+                        cam_config = get_camera_by_name(self.session.camera_name)
+                        if cam_config:
+                            sensor_width_mm = cam_config.get('sensor_width_mm', DEFAULT_SENSOR_WIDTH_MM)
+                    except Exception:
+                        pass
+
+                # Get zoom from session's height verification or use default
+                zoom = 1.0
+                if self.session.height_verification:
+                    # Use stored zoom if available
+                    zoom = self.session.height_verification.get('zoom', 1.0)
+
+                # Compute intrinsic matrix K from zoom level
+                K = CameraGeometry.get_intrinsics(
+                    zoom_factor=zoom,
+                    W_px=image_width,
+                    H_px=image_height,
+                    sensor_width_mm=sensor_width_mm
+                )
+
+                # Initialize CameraGeometry with image dimensions
+                geo = CameraGeometry(w=image_width, h=image_height)
+
+                # Camera position in world coordinates (X=0, Y=0 at camera location, Z=height)
+                w_pos = np.array([0.0, 0.0, height_m])
+
+                # Set up homography with new camera parameters
+                try:
+                    geo.set_camera_parameters(
+                        K=K,
+                        w_pos=w_pos,
+                        pan_deg=pan_deg,
+                        tilt_deg=tilt_deg,
+                        map_width=640,
+                        map_height=640
+                    )
+                except ValueError as e:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Invalid camera parameters: {str(e)}'
+                    })
+                    return
+
+                # Load distortion coefficients if available
+                if self.session.camera_name and CAMERA_CONFIG_AVAILABLE:
+                    try:
+                        cam_config = get_camera_by_name(self.session.camera_name)
+                        if cam_config:
+                            k1 = cam_config.get('k1', 0.0)
+                            k2 = cam_config.get('k2', 0.0)
+                            p1 = cam_config.get('p1', 0.0)
+                            p2 = cam_config.get('p2', 0.0)
+                            if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
+                                geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
+                    except Exception:
+                        pass
+
+                # Set up coordinate converter for GPS to local XY
+                # Check if any points have UTM coordinates
+                has_utm_points = any('utm_easting' in p and 'utm_northing' in p for p in kml_points)
+                utm_converter = None
+
+                if has_utm_points:
+                    try:
+                        from poc_homography.coordinate_converter import UTMConverter
+                        utm_crs = next((p.get('utm_crs', 'EPSG:25830') for p in kml_points if 'utm_crs' in p), 'EPSG:25830')
+                        utm_converter = UTMConverter(utm_crs)
+                        utm_converter.set_reference(camera_lat, camera_lon)
+                    except Exception:
+                        utm_converter = None
+
+                # Project each GPS point with updated camera parameters
+                projected_points = []
+
+                for point in kml_points:
+                    gps_lat = point.get('latitude', 0)
+                    gps_lon = point.get('longitude', 0)
+                    name = point.get('name', 'Unknown')
+
+                    # Convert GPS to local XY meters relative to camera
+                    if utm_converter and 'utm_easting' in point and 'utm_northing' in point:
+                        x_m, y_m = utm_converter.utm_to_local_xy(point['utm_easting'], point['utm_northing'])
+                    elif utm_converter:
+                        x_m, y_m = utm_converter.gps_to_local_xy(gps_lat, gps_lon)
+                    else:
+                        x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, gps_lat, gps_lon)
+
+                    # Create homogeneous world coordinate [X, Y, 1]
+                    world_point = np.array([[x_m], [y_m], [1.0]])
+
+                    # Apply homography H to project world -> image
+                    image_point_homogeneous = geo.H @ world_point
+
+                    # Extract homogeneous coordinates
+                    u = image_point_homogeneous[0, 0]
+                    v = image_point_homogeneous[1, 0]
+                    w = image_point_homogeneous[2, 0]
+
+                    # Check if point is behind camera (w <= 0)
+                    if w <= 0:
+                        projected_points.append({
+                            'name': name,
+                            'latitude': gps_lat,
+                            'longitude': gps_lon,
+                            'pixel_u': None,
+                            'pixel_v': None,
+                            'visible': False,
+                            'reason': 'behind_camera'
+                        })
+                        continue
+
+                    # Normalize to get pixel coordinates
+                    u_px_undist = u / w
+                    v_px_undist = v / w
+
+                    # Apply lens distortion if available
+                    if geo._use_distortion:
+                        u_px, v_px = geo.distort_point(u_px_undist, v_px_undist)
+                    else:
+                        u_px, v_px = u_px_undist, v_px_undist
+
+                    # Check if point is within image bounds
+                    if 0 <= u_px < image_width and 0 <= v_px < image_height:
+                        projected_points.append({
+                            'name': name,
+                            'latitude': gps_lat,
+                            'longitude': gps_lon,
+                            'pixel_u': float(u_px),
+                            'pixel_v': float(v_px),
+                            'visible': True,
+                            'reason': 'visible'
+                        })
+                    else:
+                        projected_points.append({
+                            'name': name,
+                            'latitude': gps_lat,
+                            'longitude': gps_lon,
+                            'pixel_u': float(u_px),
+                            'pixel_v': float(v_px),
+                            'visible': False,
+                            'reason': 'outside_bounds'
+                        })
+
+                self.send_json_response({
+                    'success': True,
+                    'projected_points': projected_points,
+                    'camera_params': {
+                        'camera_lat': camera_lat,
+                        'camera_lon': camera_lon,
+                        'height_m': height_m,
+                        'pan_deg': pan_deg,
+                        'tilt_deg': tilt_deg
+                    }
+                })
+
+            except json.JSONDecodeError as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Invalid JSON data: {str(e)}'
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Homography update failed: {str(e)}'
+                })
+
         else:
             self.send_error(404)
 
@@ -5823,6 +6116,7 @@ def main():
                 height_verification['pan_deg'] = camera_params['pan_deg']
                 height_verification['image_width'] = camera_params['image_width']
                 height_verification['image_height'] = camera_params['image_height']
+                height_verification['zoom'] = camera_params['zoom']
             except Exception as e:
                 print(f"Warning: Height verification failed: {e}")
                 height_verification = {
@@ -5833,6 +6127,7 @@ def main():
                     'pan_deg': camera_params['pan_deg'],
                     'image_width': camera_params['image_width'],
                     'image_height': camera_params['image_height'],
+                    'zoom': camera_params['zoom'],
                     'warning': f'Verification failed: {str(e)}'
                 }
 
