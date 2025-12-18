@@ -43,6 +43,7 @@ from urllib.parse import parse_qs, urlparse
 
 import cv2
 import numpy as np
+import requests
 import yaml
 
 # Add parent directory to path for imports
@@ -90,6 +91,10 @@ REPROJ_ERROR_BAD = 20.0  # pixels - likely outlier
 # Note: Outlier removal now uses RANSAC's inlier mask directly, not a separate threshold.
 # The RANSAC threshold (5.0px) is passed directly to cv2.findHomography() in update_homography().
 RANSAC_REPROJ_THRESHOLD = 5.0  # pixels - matches cv2.findHomography() call
+
+# SAM3 detection prompt for road markings
+# Future: Make configurable via UI or per-camera config
+DEFAULT_SAM3_PROMPT = "white paint"
 
 # Import for reprojection error calculation
 try:
@@ -1011,6 +1016,10 @@ class GCPCaptureWebSession:
                 sensor_width_mm=sensor_width_mm,
                 base_focal_length_mm=base_focal_length_mm,
             )
+
+        # SAM3 feature detection mask storage
+        self.feature_mask = None  # Binary mask as numpy array (uint8)
+        self.feature_mask_metadata = None  # Metadata about the last detection
 
     def calculate_distribution(self) -> Dict:
         """Calculate distribution metrics for current GCPs."""
@@ -2526,6 +2535,17 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     Scroll to zoom, drag to pan. Click to add GCP.
                 </div>
                 <div class="zoom-info" id="zoomInfo">Zoom: 1x</div>
+                <!-- Loading overlay for feature detection -->
+                <div id="loadingOverlay" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; flex-direction: column;">
+                    <div style="color: white; font-size: 18px; margin-bottom: 10px;">Detecting Features...</div>
+                    <div style="width: 50px; height: 50px; border: 4px solid #333; border-top: 4px solid #4CAF50; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                </div>
+                <style>
+                    @keyframes spin {{
+                        0% {{ transform: rotate(0deg); }}
+                        100% {{ transform: rotate(360deg); }}
+                    }}
+                </style>
             </div>
 
             <div class="side-panel">
@@ -2649,6 +2669,14 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     <button class="btn btn-secondary" onclick="clearAllGCPs()">Clear All</button>
                     <button class="btn btn-danger" id="removeOutliersBtn" onclick="removeOutliers()" disabled>Remove Outliers</button>
                     <button class="btn btn-primary" id="saveBtn" onclick="saveConfig()" disabled>Save YAML</button>
+                </div>
+                <div class="actions" style="flex-wrap: wrap; margin-top: 8px; border-top: 1px solid #444; padding-top: 8px;">
+                    <button class="btn btn-secondary" id="detectFeaturesBtn" onclick="detectFeatures()" title="Detect road markings using SAM3 AI">
+                        Detect Features
+                    </button>
+                    <button class="btn btn-secondary" id="toggleMaskBtn" onclick="toggleMaskOverlay()" style="display: none;" title="Toggle mask overlay visibility">
+                        Hide Mask
+                    </button>
                 </div>
                 <div style="padding: 10px 15px; font-size: 11px; color: #666; border-top: 1px solid #444;">
                     Tip: Drag markers to fine-tune. Red markers are outliers.
@@ -5211,6 +5239,101 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         // Add event listener for GPS input to show real-time parsing
         document.getElementById('gpsInput').addEventListener('input', updateParsedDisplay);
 
+        // ===== Feature Detection Functions =====
+        let maskOverlay = null;
+        let maskVisible = true;
+        let featureMaskData = null;
+
+        function showLoadingOverlay(show) {{
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = show ? 'flex' : 'none';
+        }}
+
+        function detectFeatures() {{
+            const detectBtn = document.getElementById('detectFeaturesBtn');
+            detectBtn.disabled = true;
+            showLoadingOverlay(true);
+
+            fetch('/api/detect_features', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{
+                    method: 'sam3'
+                }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                showLoadingOverlay(false);
+                detectBtn.disabled = false;
+
+                if (!data.success) {{
+                    alert('Feature detection failed: ' + data.error);
+                    return;
+                }}
+
+                // Store mask data
+                featureMaskData = data;
+
+                // Display mask overlay on the map
+                displayMaskOverlay(data.mask);
+
+                // Show toggle button
+                document.getElementById('toggleMaskBtn').style.display = 'inline-block';
+
+                // Show detection results
+                const meta = data.metadata;
+                const confRange = meta.confidence_range;
+                let msg = `Detected ${{meta.total_polygons}} regions from ${{meta.total_predictions}} predictions.`;
+                if (confRange.min > 0 || confRange.max > 0) {{
+                    msg += `\\nConfidence: ${{(confRange.min * 100).toFixed(0)}}% - ${{(confRange.max * 100).toFixed(0)}}%`;
+                }}
+                msg += `\\nPrompt: "${{meta.prompt}}"`;
+                alert(msg);
+            }})
+            .catch(err => {{
+                showLoadingOverlay(false);
+                detectBtn.disabled = false;
+                alert('Feature detection error: ' + err.message);
+            }});
+        }}
+
+        function displayMaskOverlay(maskBase64) {{
+            // Remove existing overlay if any
+            if (maskOverlay) {{
+                map.removeLayer(maskOverlay);
+            }}
+
+            // Create image URL from base64
+            const imgUrl = 'data:image/png;base64,' + maskBase64;
+
+            // Create overlay with same bounds as the main image
+            maskOverlay = L.imageOverlay(imgUrl, bounds, {{
+                opacity: 0.5,
+                interactive: false
+            }}).addTo(map);
+
+            // Apply a color transform to make the mask more visible (cyan tint)
+            // The mask is white on black, we want to show it as a semi-transparent overlay
+            maskOverlay.getElement().style.mixBlendMode = 'screen';
+
+            maskVisible = true;
+            document.getElementById('toggleMaskBtn').textContent = 'Hide Mask';
+        }}
+
+        function toggleMaskOverlay() {{
+            if (!maskOverlay) return;
+
+            if (maskVisible) {{
+                map.removeLayer(maskOverlay);
+                maskVisible = false;
+                document.getElementById('toggleMaskBtn').textContent = 'Show Mask';
+            }} else {{
+                maskOverlay.addTo(map);
+                maskVisible = true;
+                document.getElementById('toggleMaskBtn').textContent = 'Hide Mask';
+            }}
+        }}
+
         // Initial UI update
         updateUI();
     </script>
@@ -5798,6 +5921,165 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({
                     'success': False,
                     'error': f'Homography update failed: {str(e)}'
+                })
+
+        elif parsed.path == '/api/detect_features':
+            # SAM3 feature detection endpoint for generating binary masks
+            try:
+                data = json.loads(post_data)
+                method = data.get('method', 'sam3')
+
+                if method != 'sam3':
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Unknown detection method: {method}'
+                    })
+                    return
+
+                # Get API key from environment
+                api_key = os.environ.get('ROBOFLOW_API_KEY', '')
+                if not api_key:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'ROBOFLOW_API_KEY environment variable not set'
+                    })
+                    return
+
+                # Get the current camera frame
+                if self.session.frame is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No camera frame available'
+                    })
+                    return
+
+                # Encode frame to base64
+                _, buffer = cv2.imencode('.jpg', self.session.frame)
+                image_base64 = base64.b64encode(buffer).decode('utf-8')
+
+                # Use default prompt or custom prompt
+                prompt = data.get('prompt', DEFAULT_SAM3_PROMPT)
+
+                # Call Roboflow SAM3 concept segmentation API
+                api_url = f"https://serverless.roboflow.com/sam3/concept_segment?api_key={api_key}"
+
+                request_body = {
+                    "format": "polygon",
+                    "image": {
+                        "type": "base64",
+                        "value": image_base64
+                    },
+                    "prompts": [
+                        {"type": "text", "text": prompt}
+                    ]
+                }
+
+                headers = {
+                    'Content-Type': 'application/json'
+                }
+
+                response = requests.post(api_url, json=request_body, headers=headers, timeout=120)
+
+                if response.status_code != 200:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'SAM3 API request failed: {response.status_code}'
+                    })
+                    return
+
+                # Parse JSON response
+                try:
+                    api_response = response.json()
+                except json.JSONDecodeError:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Invalid JSON response from SAM3 API'
+                    })
+                    return
+
+                # Create binary mask from polygon response
+                frame_height, frame_width = self.session.frame.shape[:2]
+                mask = np.zeros((frame_height, frame_width), dtype=np.uint8)
+
+                # Parse response structure: prompt_results[].predictions[].masks[]
+                prompt_results = api_response.get('prompt_results', [])
+                total_predictions = 0
+                total_polygons = 0
+                confidence_scores = []
+
+                for prompt_result in prompt_results:
+                    predictions = prompt_result.get('predictions', [])
+                    total_predictions += len(predictions)
+
+                    for prediction in predictions:
+                        confidence = prediction.get('confidence', 0)
+                        confidence_scores.append(confidence)
+                        masks = prediction.get('masks', [])
+
+                        for polygon in masks:
+                            # Each polygon is an array of [x, y] coordinate pairs
+                            if isinstance(polygon, list) and len(polygon) >= 3:
+                                total_polygons += 1
+                                # Convert to numpy array for cv2.fillPoly
+                                pts = np.array([[int(pt[0]), int(pt[1])] for pt in polygon if len(pt) >= 2], dtype=np.int32)
+                                if len(pts) >= 3:
+                                    cv2.fillPoly(mask, [pts], 255)
+
+                # Store mask in session
+                self.session.feature_mask = mask
+                self.session.feature_mask_metadata = {
+                    'timestamp': datetime.now().isoformat(),
+                    'prompt': prompt,
+                    'total_predictions': total_predictions,
+                    'total_polygons': total_polygons,
+                    'confidence_scores': confidence_scores,
+                    'frame_width': frame_width,
+                    'frame_height': frame_height
+                }
+
+                # Encode mask as base64 PNG for frontend
+                _, mask_buffer = cv2.imencode('.png', mask)
+                mask_base64 = base64.b64encode(mask_buffer).decode('utf-8')
+
+                self.send_json_response({
+                    'success': True,
+                    'mask': mask_base64,
+                    'metadata': {
+                        'total_predictions': total_predictions,
+                        'total_polygons': total_polygons,
+                        'confidence_range': {
+                            'min': min(confidence_scores) if confidence_scores else 0,
+                            'max': max(confidence_scores) if confidence_scores else 0
+                        },
+                        'frame_dimensions': {
+                            'width': frame_width,
+                            'height': frame_height
+                        },
+                        'prompt': prompt
+                    }
+                })
+
+            except json.JSONDecodeError as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Invalid JSON data: {str(e)}'
+                })
+            except requests.Timeout:
+                self.send_json_response({
+                    'success': False,
+                    'error': 'SAM3 API request timed out'
+                })
+            except requests.RequestException as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': f'SAM3 API network error: {str(e)}'
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': f'Feature detection failed: {str(e)}'
                 })
 
         else:
