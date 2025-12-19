@@ -54,6 +54,7 @@ from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 try:
     from poc_homography.camera_geometry import CameraGeometry
     from poc_homography.gps_distance_calculator import dms_to_dd
+    from poc_homography.coordinate_converter import UTMConverter
     GEOMETRY_AVAILABLE = True
 except ImportError:
     GEOMETRY_AVAILABLE = False
@@ -134,6 +135,7 @@ class UnifiedSession:
         # SAM3 feature detection masks
         self.cartography_mask = None
         self.camera_mask = None
+        self.projected_cartography_mask = None  # Cartography mask projected to camera coords
         self.feature_mask_metadata = None
 
         # KML points storage (single source of truth)
@@ -517,6 +519,156 @@ CRS: {crs}</description>
             print(f"Warning: Failed to calculate camera footprint: {e}")
             return None
 
+    def project_cartography_mask_to_camera(self) -> Optional[np.ndarray]:
+        """
+        Project the cartography mask from Tab 1 onto the camera frame coordinates.
+
+        This transforms the cartography mask (in cartography image pixel coordinates)
+        to camera image coordinates using the coordinate transformation chain:
+        1. Cartography pixels → UTM coordinates (using geotiff_params)
+        2. UTM coordinates → World XY (relative to camera position)
+        3. World XY → Camera image pixels (using camera homography H)
+
+        The transformation is computed by finding the homography between cartography
+        pixels and camera pixels, then applying cv2.warpPerspective to transform
+        the entire mask image efficiently.
+
+        Returns:
+            Binary mask in camera image coordinates, or None if projection fails
+            or required data is not available.
+        """
+        if not GEOMETRY_AVAILABLE:
+            print("Warning: Geometry modules not available for mask projection")
+            return None
+
+        if self.cartography_mask is None:
+            return None
+
+        if self.camera_params is None or self.camera_frame is None:
+            return None
+
+        try:
+            # Get camera frame dimensions
+            cam_height, cam_width = self.camera_frame.shape[:2]
+
+            # Set up UTM converter with camera position as reference
+            utm_converter = UTMConverter(self.utm_crs)
+            camera_lat = self.camera_params['camera_lat']
+            camera_lon = self.camera_params['camera_lon']
+            utm_converter.set_reference(camera_lat, camera_lon)
+
+            # Set up CameraGeometry for projection
+            geo = CameraGeometry(w=cam_width, h=cam_height)
+            height_m = self.camera_params['height_m']
+            pan_deg = self.camera_params['pan_deg']
+            tilt_deg = self.camera_params['tilt_deg']
+            K = self.camera_params['K']
+
+            # Camera position in world coordinates (X=0, Y=0 at camera location, Z=height)
+            w_pos = np.array([0.0, 0.0, height_m])
+
+            geo.set_camera_parameters(
+                K=K,
+                w_pos=w_pos,
+                pan_deg=pan_deg,
+                tilt_deg=tilt_deg,
+                map_width=640,
+                map_height=640
+            )
+
+            # Load and apply distortion coefficients from camera config
+            distortion_applied = False
+            if self.camera_name:
+                try:
+                    cam_config = get_camera_by_name(self.camera_name)
+                    if cam_config:
+                        k1 = cam_config.get('k1', 0.0)
+                        k2 = cam_config.get('k2', 0.0)
+                        p1 = cam_config.get('p1', 0.0)
+                        p2 = cam_config.get('p2', 0.0)
+                        # Only apply if non-zero coefficients exist
+                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
+                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
+                            distortion_applied = True
+                except Exception as e:
+                    print(f"Warning: Could not load distortion coefficients: {e}")
+
+            # To compute the homography from cartography pixels to camera pixels,
+            # we need at least 4 corresponding point pairs.
+            # We'll use the 4 corners of the cartography mask.
+            carto_height, carto_width = self.cartography_mask.shape[:2]
+
+            # Define 4 corners in cartography pixel coordinates
+            carto_corners = [
+                (0, 0),                              # top-left
+                (carto_width - 1, 0),                # top-right
+                (carto_width - 1, carto_height - 1), # bottom-right
+                (0, carto_height - 1)                # bottom-left
+            ]
+
+            # Transform each corner through the coordinate chain
+            camera_corners = []
+            for px, py in carto_corners:
+                # Step 1: Cartography pixel → UTM
+                easting, northing = self.pixel_to_utm(px, py)
+
+                # Step 2: UTM → World XY (relative to camera)
+                x_m, y_m = utm_converter.utm_to_local_xy(easting, northing)
+
+                # Step 3: World XY → Camera pixels (using homography H)
+                world_point = np.array([[x_m], [y_m], [1.0]])
+                image_point_homogeneous = geo.H @ world_point
+
+                u = image_point_homogeneous[0, 0]
+                v = image_point_homogeneous[1, 0]
+                w = image_point_homogeneous[2, 0]
+
+                # Check if point is in front of camera (w > 0)
+                if w <= 0:
+                    # Point is behind camera, projection not valid
+                    print(f"Warning: Corner ({px}, {py}) is behind camera")
+                    return None
+
+                # Normalize to get undistorted pixel coordinates
+                u_px_undist = u / w
+                v_px_undist = v / w
+
+                # Step 4: Apply lens distortion to get actual camera pixel coordinates
+                if distortion_applied:
+                    u_px, v_px = geo.distort_point(u_px_undist, v_px_undist)
+                else:
+                    u_px, v_px = u_px_undist, v_px_undist
+
+                camera_corners.append((u_px, v_px))
+
+            # Convert corners to numpy arrays for cv2.getPerspectiveTransform
+            src_pts = np.float32(carto_corners)
+            dst_pts = np.float32(camera_corners)
+
+            # Compute the perspective transform matrix
+            H_carto_to_cam = cv2.getPerspectiveTransform(src_pts, dst_pts)
+
+            # Apply the transformation to the mask
+            projected_mask = cv2.warpPerspective(
+                self.cartography_mask,
+                H_carto_to_cam,
+                (cam_width, cam_height),
+                flags=cv2.INTER_NEAREST,  # Use nearest neighbor for binary mask
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0
+            )
+
+            # Store and return the projected mask
+            self.projected_cartography_mask = projected_mask
+            print(f"Successfully projected cartography mask to camera coordinates")
+            return projected_mask
+
+        except Exception as e:
+            print(f"Warning: Failed to project cartography mask: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
 
 class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler for unified two-tab interface."""
@@ -664,13 +816,26 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if success:
                     camera_frame_b64 = base64.b64encode(buffer).decode('utf-8')
 
+            # Project cartography mask to camera coordinates if available
+            projected_mask_b64 = None
+            projected_mask_available = False
+            if self.session.cartography_mask is not None:
+                projected_mask = self.session.project_cartography_mask_to_camera()
+                if projected_mask is not None:
+                    success, mask_buffer = cv2.imencode('.png', projected_mask)
+                    if success:
+                        projected_mask_b64 = base64.b64encode(mask_buffer).decode('utf-8')
+                        projected_mask_available = True
+
             self.send_json_response({
                 'success': True,
                 'projected_points': projected_points,
                 'camera_frame': camera_frame_b64,
                 'camera_params': self.camera_params_to_dict(),
                 'kml_saved_to': temp_kml_path,
-                'total_points': len(self.session.points)
+                'total_points': len(self.session.points),
+                'projected_mask': projected_mask_b64,
+                'projected_mask_available': projected_mask_available
             })
 
         elif self.path == '/api/capture_frame':
@@ -693,11 +858,24 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
                 camera_frame_b64 = base64.b64encode(buffer).decode('utf-8')
 
+                # Re-project cartography mask with new camera params
+                projected_mask_b64 = None
+                projected_mask_available = False
+                if self.session.cartography_mask is not None:
+                    projected_mask = self.session.project_cartography_mask_to_camera()
+                    if projected_mask is not None:
+                        success_mask, mask_buffer = cv2.imencode('.png', projected_mask)
+                        if success_mask:
+                            projected_mask_b64 = base64.b64encode(mask_buffer).decode('utf-8')
+                            projected_mask_available = True
+
                 self.send_json_response({
                     'success': True,
                     'camera_frame': camera_frame_b64,
                     'camera_params': self.camera_params_to_dict(),
-                    'projected_points': projected_points
+                    'projected_points': projected_points,
+                    'projected_mask': projected_mask_b64,
+                    'projected_mask_available': projected_mask_available
                 })
             except Exception as e:
                 self.send_json_response({
@@ -888,10 +1066,23 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 projected_points = self.session.project_points_to_image()
                 self.session.projected_points = projected_points
 
+                # Re-project cartography mask with updated camera params
+                projected_mask_b64 = None
+                projected_mask_available = False
+                if self.session.cartography_mask is not None:
+                    projected_mask = self.session.project_cartography_mask_to_camera()
+                    if projected_mask is not None:
+                        success_mask, mask_buffer = cv2.imencode('.png', projected_mask)
+                        if success_mask:
+                            projected_mask_b64 = base64.b64encode(mask_buffer).decode('utf-8')
+                            projected_mask_available = True
+
                 self.send_json_response({
                     'success': True,
                     'camera_params': self.camera_params_to_dict(),
-                    'projected_points': projected_points
+                    'projected_points': projected_points,
+                    'projected_mask': projected_mask_b64,
+                    'projected_mask_available': projected_mask_available
                 })
             except Exception as e:
                 self.send_json_response({
@@ -1319,6 +1510,19 @@ def generate_unified_html(session: UnifiedSession) -> str:
             mix-blend-mode: multiply;
         }}
 
+        /* Projected mask overlay (map mask projected onto camera view) */
+        .mask-overlay.projected {{
+            opacity: 0.4;
+            mix-blend-mode: screen;
+            filter: hue-rotate(180deg) saturate(2);
+        }}
+
+        /* Camera mask overlay (camera-detected features) */
+        .mask-overlay.camera {{
+            opacity: 0.5;
+            mix-blend-mode: multiply;
+        }}
+
         /* Active mode button highlight */
         .mode-active {{
             background: #0ead69 !important;
@@ -1508,11 +1712,17 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         <button onclick="adjustParam('height', 0.5)">Height +</button>
                     </div>
 
+                    <h3>Map Mask Projection</h3>
+                    <div style="font-size: 11px; color: #888; margin-bottom: 8px;">
+                        Projects road markings from cartography map onto camera view
+                    </div>
+                    <button onclick="toggleProjectedMask()" id="toggle-projected-mask-btn" style="display: none;">Show Map Mask</button>
+
                     <h3>SAM3 Feature Detection</h3>
                     <label>Prompt:</label>
                     <input type="text" id="sam3-prompt-gcp" placeholder="road markings" value="road markings">
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
-                    <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Mask</button>
+                    <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
 
                     <h3>Projected Points (<span id="gcp-point-count">0</span>)</h3>
                     <div id="gcp-points-list"></div>
@@ -1541,6 +1751,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let adjustmentMode = 'move';  // 'move', 'rotate', 'scale'
         let maskVisible = {{ kml: false, gcp: false }};
         let maskData = {{ kml: null, gcp: null }};
+        let projectedMaskVisible = false;
+        let projectedMaskData = null;
         let cameraOverlayVisible = true;  // Camera visualization toggle state
 
         const img = document.getElementById('main-image');
@@ -1646,6 +1858,15 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     // Update camera frame if provided
                     if (data.camera_frame) {{
                         gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
+                    }}
+
+                    // Handle projected mask
+                    if (data.projected_mask_available && data.projected_mask) {{
+                        projectedMaskData = data.projected_mask;
+                        document.getElementById('toggle-projected-mask-btn').style.display = 'block';
+                    }} else {{
+                        projectedMaskData = null;
+                        document.getElementById('toggle-projected-mask-btn').style.display = 'none';
                     }}
 
                     updateCameraParamsDisplay();
@@ -1884,6 +2105,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
             // Update mask overlays
             if (maskVisible.kml) showMask('kml');
             if (maskVisible.gcp) showMask('gcp');
+            if (projectedMaskVisible) showProjectedMask();
 
             // Update camera visualization
             updateCameraVisualization();
@@ -1899,6 +2121,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
             // Update mask overlays
             if (maskVisible.kml) showMask('kml');
             if (maskVisible.gcp) showMask('gcp');
+            if (projectedMaskVisible) showProjectedMask();
 
             // Update camera visualization
             updateCameraVisualization();
@@ -2015,6 +2238,21 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
                     cameraParams = data.camera_params;
                     projectedPoints = data.projected_points;
+
+                    // Update projected mask
+                    if (data.projected_mask_available && data.projected_mask) {{
+                        projectedMaskData = data.projected_mask;
+                        document.getElementById('toggle-projected-mask-btn').style.display = 'block';
+                        // If mask was visible, refresh it with new data
+                        if (projectedMaskVisible) {{
+                            showProjectedMask();
+                        }}
+                    }} else {{
+                        projectedMaskData = null;
+                        hideProjectedMask();
+                        document.getElementById('toggle-projected-mask-btn').style.display = 'none';
+                    }}
+
                     updateCameraParamsDisplay();
                     updateGCPView();
 
@@ -2087,6 +2325,16 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 if (data.success) {{
                     cameraParams = data.camera_params;
                     projectedPoints = data.projected_points;
+
+                    // Update projected mask
+                    if (data.projected_mask_available && data.projected_mask) {{
+                        projectedMaskData = data.projected_mask;
+                        // If mask was visible, refresh it with new data
+                        if (projectedMaskVisible) {{
+                            showProjectedMask();
+                        }}
+                    }}
+
                     updateCameraParamsDisplay();
                     updateGCPView();
 
@@ -2161,15 +2409,15 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const targetContainer = tab === 'gcp' ? gcpContainer : container;
             const targetImg = tab === 'gcp' ? gcpImg : img;
 
-            // Remove existing mask
-            const existingMask = targetContainer.querySelector('.mask-overlay');
+            // Remove existing mask (not the projected one)
+            const existingMask = targetContainer.querySelector('.mask-overlay:not(.projected)');
             if (existingMask) existingMask.remove();
 
             if (!maskData[tab]) return;
 
-            // Create mask overlay
+            // Create mask overlay with camera class for GCP tab
             const maskImg = document.createElement('img');
-            maskImg.className = 'mask-overlay';
+            maskImg.className = 'mask-overlay' + (tab === 'gcp' ? ' camera' : '');
             maskImg.src = 'data:image/png;base64,' + maskData[tab];
             maskImg.style.width = (targetImg.naturalWidth * currentZoom) + 'px';
             maskImg.style.height = (targetImg.naturalHeight * currentZoom) + 'px';
@@ -2179,7 +2427,43 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         function hideMask(tab) {{
             const targetContainer = tab === 'gcp' ? gcpContainer : container;
-            const maskOverlay = targetContainer.querySelector('.mask-overlay');
+            const maskOverlay = targetContainer.querySelector('.mask-overlay:not(.projected)');
+            if (maskOverlay) maskOverlay.remove();
+        }}
+
+        // Projected mask functions (Map mask projected onto camera view)
+        function toggleProjectedMask() {{
+            projectedMaskVisible = !projectedMaskVisible;
+
+            if (projectedMaskVisible) {{
+                showProjectedMask();
+            }} else {{
+                hideProjectedMask();
+            }}
+
+            document.getElementById('toggle-projected-mask-btn').textContent =
+                projectedMaskVisible ? 'Hide Map Mask' : 'Show Map Mask';
+        }}
+
+        function showProjectedMask() {{
+            // Remove existing projected mask
+            const existingMask = gcpContainer.querySelector('.mask-overlay.projected');
+            if (existingMask) existingMask.remove();
+
+            if (!projectedMaskData) return;
+
+            // Create projected mask overlay with distinct styling
+            const maskImg = document.createElement('img');
+            maskImg.className = 'mask-overlay projected';
+            maskImg.src = 'data:image/png;base64,' + projectedMaskData;
+            maskImg.style.width = (gcpImg.naturalWidth * currentZoom) + 'px';
+            maskImg.style.height = (gcpImg.naturalHeight * currentZoom) + 'px';
+
+            gcpContainer.appendChild(maskImg);
+        }}
+
+        function hideProjectedMask() {{
+            const maskOverlay = gcpContainer.querySelector('.mask-overlay.projected');
             if (maskOverlay) maskOverlay.remove();
         }}
 
