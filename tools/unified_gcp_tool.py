@@ -2415,12 +2415,15 @@ def main():
     # Pre-load KML points if --kml argument provided
     if args.kml:
         try:
-            with open(args.kml, 'r') as f:
+            with open(args.kml, 'r', encoding='utf-8') as f:
                 kml_text = f.read()
             points = session.parse_kml(kml_text)
             for p in points:
                 session.add_point(p['px'], p['py'], p['name'], p['category'])
-            print(f"Pre-loaded {len(points)} points from KML: {args.kml}")
+            if len(points) == 0:
+                print(f"Warning: KML file contains no valid points: {args.kml}")
+            else:
+                print(f"Pre-loaded {len(points)} points from KML: {args.kml}")
         except ET.ParseError as e:
             print(f"Error: Malformed KML file: {args.kml}")
             print(f"  XML parsing error: {e}")
