@@ -368,6 +368,96 @@ CRS: {crs}</description>
 
         return projected
 
+    def calculate_camera_footprint(self) -> Optional[List[Dict]]:
+        """
+        Calculate the camera's visible ground footprint by projecting image frame corners.
+
+        Projects the four corners of the camera frame (0,0), (w,0), (w,h), (0,h) through
+        the inverse homography to get world coordinates, then converts to lat/lon.
+
+        Returns:
+            List of 4 dicts with 'lat' and 'lon' keys representing footprint corners,
+            ordered: top-left, top-right, bottom-right, bottom-left.
+            Returns None if camera_params are not available or projection fails.
+        """
+        if not GEOMETRY_AVAILABLE or self.camera_params is None:
+            return None
+
+        try:
+            # Get camera geometry from camera_params
+            K = self.camera_params.get('K')
+            if K is None:
+                return None
+
+            # Convert K to numpy array if it's a list
+            if isinstance(K, list):
+                K = np.array(K)
+
+            image_width = self.camera_params.get('image_width', 1920)
+            image_height = self.camera_params.get('image_height', 1080)
+            camera_lat = self.camera_params.get('camera_lat')
+            camera_lon = self.camera_params.get('camera_lon')
+            height_m = self.camera_params.get('height_m', 5.0)
+            pan_deg = self.camera_params.get('pan_deg', 0.0)
+            tilt_deg = self.camera_params.get('tilt_deg', 0.0)
+
+            if camera_lat is None or camera_lon is None:
+                return None
+
+            # Create CameraGeometry instance and compute homography
+            geo = CameraGeometry(image_width, image_height)
+            geo.K = K
+            geo.height_m = height_m
+            geo.pan_deg = pan_deg
+            geo.tilt_deg = tilt_deg
+            geo.w_pos = np.array([0.0, 0.0, height_m])  # Camera at origin
+
+            # Compute homography matrix
+            geo.compute_homography_from_angles()
+
+            # Define the four corners of the camera frame
+            corners = [
+                (0, 0),                          # top-left
+                (image_width - 1, 0),            # top-right
+                (image_width - 1, image_height - 1),  # bottom-right
+                (0, image_height - 1)            # bottom-left
+            ]
+
+            footprint = []
+            for u, v in corners:
+                # Project pixel to world coordinates (relative to camera position)
+                pt_img = np.array([[u], [v], [1.0]])
+                pt_world = geo.H_inv @ pt_img
+
+                # Check for valid projection (not near horizon)
+                if abs(pt_world[2, 0]) < 1e-6:
+                    # Point is near horizon, projection is invalid
+                    return None
+
+                # Normalize homogeneous coordinates
+                world_x = pt_world[0, 0] / pt_world[2, 0]
+                world_y = pt_world[1, 0] / pt_world[2, 0]
+
+                # Convert world offset (meters) to lat/lon
+                # world_x is East-West offset, world_y is North-South offset
+                # Use approximate conversion: 1 degree lat ≈ 111320m
+                lat_offset_deg = world_y / 111320.0
+                lon_offset_deg = world_x / (111320.0 * np.cos(np.radians(camera_lat)))
+
+                corner_lat = camera_lat + lat_offset_deg
+                corner_lon = camera_lon + lon_offset_deg
+
+                footprint.append({
+                    'lat': corner_lat,
+                    'lon': corner_lon
+                })
+
+            return footprint
+
+        except Exception as e:
+            print(f"Warning: Failed to calculate camera footprint: {e}")
+            return None
+
 
 class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler for unified two-tab interface."""
@@ -788,7 +878,7 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
         print(f"Camera params: pan={camera_params['pan_deg']:.1f}°, tilt={camera_params['tilt_deg']:.1f}°, zoom={camera_params['zoom']:.1f}x")
 
     def camera_params_to_dict(self) -> dict:
-        """Convert camera parameters to JSON-serializable dict."""
+        """Convert camera parameters to JSON-serializable dict including footprint."""
         if self.session.camera_params is None:
             return {}
 
@@ -798,6 +888,9 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
         if 'K' in params and isinstance(params['K'], np.ndarray):
             params['K'] = params['K'].tolist()
 
+        # Calculate camera footprint
+        footprint = self.session.calculate_camera_footprint()
+
         return {
             'camera_lat': params.get('camera_lat', 0),
             'camera_lon': params.get('camera_lon', 0),
@@ -806,7 +899,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             'tilt_deg': params.get('tilt_deg', 0),
             'zoom': params.get('zoom', 1),
             'image_width': params.get('image_width', 0),
-            'image_height': params.get('image_height', 0)
+            'image_height': params.get('image_height', 0),
+            'camera_footprint': footprint
         }
 
 
@@ -1156,6 +1250,55 @@ def generate_unified_html(session: UnifiedSession) -> str:
             background: #0ead69 !important;
             border: 2px solid #fff !important;
         }}
+
+        /* Camera visualization */
+        .camera-position-dot {{
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #4A90E2;
+            border: 3px solid white;
+            transform: translate(-50%, -50%);
+            z-index: 6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }}
+
+        .camera-footprint-polygon {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 3;
+        }}
+
+        /* Camera toggle button */
+        .camera-toggle {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }}
+        .camera-toggle input {{
+            width: auto;
+            margin: 0;
+        }}
+        .camera-toggle label {{
+            margin: 0;
+            cursor: pointer;
+            color: #4A90E2;
+            font-weight: bold;
+        }}
+        .camera-toggle.disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
     </style>
 </head>
 <body>
@@ -1205,6 +1348,15 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                     <label>Point Name (auto-increments):</label>
                     <input type="text" id="point-name" placeholder="e.g., Z1, A1, P1">
+
+                    <h3>Camera Visualization</h3>
+                    <div class="camera-toggle disabled" id="camera-toggle-container">
+                        <input type="checkbox" id="camera-overlay-toggle" checked disabled>
+                        <label for="camera-overlay-toggle">Show Camera View</label>
+                    </div>
+                    <div id="camera-status" style="font-size: 11px; color: #888; margin-bottom: 10px;">
+                        Camera view available after switching to GCP Capture tab
+                    </div>
 
                     <h3>SAM3 Feature Detection</h3>
                     <label>Prompt:</label>
@@ -1315,6 +1467,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let adjustmentMode = 'move';  // 'move', 'rotate', 'scale'
         let maskVisible = {{ kml: false, gcp: false }};
         let maskData = {{ kml: null, gcp: null }};
+        let cameraOverlayVisible = true;  // Camera visualization toggle state
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -1407,6 +1560,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                     updateCameraParamsDisplay();
                     updateGCPView();
+
+                    // Enable and update camera visualization on Tab 1
+                    enableCameraToggle();
+                    updateCameraVisualization();
+
                     updateStatus(`Captured frame and projected ${{data.projected_points.length}} points`);
                 }} else {{
                     updateStatus('Error: ' + data.error);
@@ -1613,6 +1771,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
             // Update mask overlays
             if (maskVisible.kml) showMask('kml');
             if (maskVisible.gcp) showMask('gcp');
+
+            // Update camera visualization
+            updateCameraVisualization();
         }}
 
         function resetZoom() {{
@@ -1625,6 +1786,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
             // Update mask overlays
             if (maskVisible.kml) showMask('kml');
             if (maskVisible.gcp) showMask('gcp');
+
+            // Update camera visualization
+            updateCameraVisualization();
         }}
 
         function clearAll() {{
@@ -1740,6 +1904,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     projectedPoints = data.projected_points;
                     updateCameraParamsDisplay();
                     updateGCPView();
+
+                    // Update camera visualization on Tab 1
+                    enableCameraToggle();
+                    updateCameraVisualization();
+
                     updateStatus('Camera frame captured successfully');
                 }} else {{
                     updateStatus('Error: ' + data.error);
@@ -1807,6 +1976,10 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     projectedPoints = data.projected_points;
                     updateCameraParamsDisplay();
                     updateGCPView();
+
+                    // Update camera visualization on Tab 1 (real-time sync)
+                    updateCameraVisualization();
+
                     updateStatus(`${{param}} adjusted to ${{newValue.toFixed(1)}}`);
                 }} else {{
                     updateStatus('Error: ' + data.error);
@@ -1895,6 +2068,140 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const targetContainer = tab === 'gcp' ? gcpContainer : container;
             const maskOverlay = targetContainer.querySelector('.mask-overlay');
             if (maskOverlay) maskOverlay.remove();
+        }}
+
+        // Camera Visualization Functions
+
+        function latLonToPixel(lat, lon) {{
+            // Convert lat/lon to pixel coordinates on cartography image
+            // Uses geotiff_params from config
+            const easting = (lon - (-0.2305)) * 111320 * Math.cos(lat * Math.PI / 180);  // Approximate
+            const northing = (lat - 39.645) * 111320;  // Approximate
+
+            // Actually use the config parameters
+            const pixelX = (easting - config.origin_easting) / config.pixel_size_x;
+            const pixelY = (northing - config.origin_northing) / config.pixel_size_y;
+            return {{ x: pixelX, y: pixelY }};
+        }}
+
+        function latLonToPixelProper(lat, lon) {{
+            // Convert lat/lon to UTM first, then to pixel
+            // UTM conversion using pyproj-like calculation (simplified)
+            // Uses the existing config georeferencing parameters
+
+            // Simple approximation for UTM zone 30N (EPSG:25830)
+            // More accurate: use proper UTM conversion
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
+
+            // UTM Zone 30N central meridian is -3°
+            const centralMeridian = -3 * Math.PI / 180;
+
+            // WGS84 parameters
+            const a = 6378137.0;  // semi-major axis
+            const f = 1/298.257223563;  // flattening
+            const k0 = 0.9996;  // scale factor
+
+            const e2 = 2*f - f*f;
+            const e_prime2 = e2 / (1 - e2);
+
+            const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) * Math.sin(latRad));
+            const T = Math.tan(latRad) * Math.tan(latRad);
+            const C = e_prime2 * Math.cos(latRad) * Math.cos(latRad);
+            const A = Math.cos(latRad) * (lonRad - centralMeridian);
+
+            const M = a * ((1 - e2/4 - 3*e2*e2/64 - 5*e2*e2*e2/256) * latRad
+                        - (3*e2/8 + 3*e2*e2/32 + 45*e2*e2*e2/1024) * Math.sin(2*latRad)
+                        + (15*e2*e2/256 + 45*e2*e2*e2/1024) * Math.sin(4*latRad)
+                        - (35*e2*e2*e2/3072) * Math.sin(6*latRad));
+
+            const easting = k0 * N * (A + (1-T+C)*A*A*A/6
+                        + (5-18*T+T*T+72*C-58*e_prime2)*A*A*A*A*A/120) + 500000;
+
+            const northing = k0 * (M + N * Math.tan(latRad) * (A*A/2
+                        + (5-T+9*C+4*C*C)*A*A*A*A/24
+                        + (61-58*T+T*T+600*C-330*e_prime2)*A*A*A*A*A*A/720));
+
+            // Convert UTM to pixel coordinates
+            const pixelX = (easting - config.origin_easting) / config.pixel_size_x;
+            const pixelY = (northing - config.origin_northing) / config.pixel_size_y;
+
+            return {{ x: pixelX, y: pixelY }};
+        }}
+
+        function updateCameraVisualization() {{
+            // Remove existing camera visualization elements
+            const existingDot = container.querySelector('.camera-position-dot');
+            const existingPolygon = container.querySelector('.camera-footprint-polygon');
+            if (existingDot) existingDot.remove();
+            if (existingPolygon) existingPolygon.remove();
+
+            // Check if camera params are available
+            if (!cameraParams || !cameraOverlayVisible) {{
+                return;
+            }}
+
+            const cameraLat = cameraParams.camera_lat;
+            const cameraLon = cameraParams.camera_lon;
+            const footprint = cameraParams.camera_footprint;
+
+            if (!cameraLat || !cameraLon) {{
+                return;
+            }}
+
+            // Draw camera position dot
+            const cameraPixel = latLonToPixelProper(cameraLat, cameraLon);
+            const dotX = cameraPixel.x * currentZoom;
+            const dotY = cameraPixel.y * currentZoom;
+
+            const dot = document.createElement('div');
+            dot.className = 'camera-position-dot';
+            dot.style.left = dotX + 'px';
+            dot.style.top = dotY + 'px';
+            dot.title = `Camera: ${{cameraLat.toFixed(6)}}, ${{cameraLon.toFixed(6)}}`;
+            container.appendChild(dot);
+
+            // Draw camera footprint polygon if available
+            if (footprint && footprint.length === 4) {{
+                // Create SVG for polygon
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'camera-footprint-polygon');
+                svg.style.width = (img.naturalWidth * currentZoom) + 'px';
+                svg.style.height = (img.naturalHeight * currentZoom) + 'px';
+
+                // Convert footprint corners to pixel coordinates
+                const points = footprint.map(corner => {{
+                    const pixel = latLonToPixelProper(corner.lat, corner.lon);
+                    return `${{pixel.x * currentZoom}},${{pixel.y * currentZoom}}`;
+                }}).join(' ');
+
+                const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                polygon.setAttribute('points', points);
+                polygon.setAttribute('fill', 'rgba(74, 144, 226, 0.15)');
+                polygon.setAttribute('stroke', '#4A90E2');
+                polygon.setAttribute('stroke-width', '3');
+
+                svg.appendChild(polygon);
+                container.appendChild(svg);
+            }}
+        }}
+
+        function toggleCameraOverlay() {{
+            const checkbox = document.getElementById('camera-overlay-toggle');
+            cameraOverlayVisible = checkbox.checked;
+            updateCameraVisualization();
+            updateStatus('Camera visualization ' + (cameraOverlayVisible ? 'shown' : 'hidden'));
+        }}
+
+        function enableCameraToggle() {{
+            const toggleContainer = document.getElementById('camera-toggle-container');
+            const checkbox = document.getElementById('camera-overlay-toggle');
+            const statusDiv = document.getElementById('camera-status');
+
+            toggleContainer.classList.remove('disabled');
+            checkbox.disabled = false;
+            checkbox.addEventListener('change', toggleCameraOverlay);
+            statusDiv.textContent = 'Camera position and footprint visible on map';
         }}
     </script>
 </body>
