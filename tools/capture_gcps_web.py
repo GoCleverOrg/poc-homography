@@ -2573,10 +2573,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                             <span class="label">Discarded:</span>
                             <span class="value error" id="discardedPoints">0</span>
                         </div>
-                        <div class="summary-item">
-                            <span class="label">Adjusted:</span>
-                            <span class="value" id="adjustedPoints" style="color: #ff9800;">0</span>
-                        </div>
                     </div>
                     <div id="heightWarning" style="display: none;"></div>
                     <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -2735,159 +2731,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         }}
         map.on('zoom', updateZoomInfo);
         updateZoomInfo();
-
-        // ============================================================
-        // GPS Coordinate Parsing
-        // ============================================================
-
-        /**
-         * Parse GPS coordinates from various formats:
-         * - Decimal: "39.640296, -0.230037"
-         * - DMS: "39°38'25.7"N 0°13'48.7"W"
-         * Returns {{ lat, lon }} or null if parsing fails
-         */
-        function parseGPSCoordinates(input) {{
-            if (!input || typeof input !== 'string') return null;
-
-            // Clean up input
-            input = input.trim();
-
-            // Try decimal format first: "39.640296, -0.230037"
-            const decimalMatch = input.match(/^(-?\\d+\\.?\\d*)\\s*[,\\s]\\s*(-?\\d+\\.?\\d*)$/);
-            if (decimalMatch) {{
-                const lat = parseFloat(decimalMatch[1]);
-                const lon = parseFloat(decimalMatch[2]);
-                if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {{
-                    return {{ lat, lon }};
-                }}
-            }}
-
-            // Try DMS format: "39°38'25.7"N 0°13'48.7"W"
-            // Also handles variations like: 39°38'25.7"N, 0°13'48.7"W
-            const dmsPattern = /(-?\\d+)[°]\\s*(\\d+)[′']\\s*(\\d+\\.?\\d*)[″"]?\\s*([NSns])?[,\\s]+(-?\\d+)[°]\\s*(\\d+)[′']\\s*(\\d+\\.?\\d*)[″"]?\\s*([EWew])?/;
-            const dmsMatch = input.match(dmsPattern);
-            if (dmsMatch) {{
-                let latDeg = parseFloat(dmsMatch[1]);
-                const latMin = parseFloat(dmsMatch[2]);
-                const latSec = parseFloat(dmsMatch[3]);
-                const latDir = (dmsMatch[4] || 'N').toUpperCase();
-
-                let lonDeg = parseFloat(dmsMatch[5]);
-                const lonMin = parseFloat(dmsMatch[6]);
-                const lonSec = parseFloat(dmsMatch[7]);
-                const lonDir = (dmsMatch[8] || 'E').toUpperCase();
-
-                // Convert to decimal
-                let lat = Math.abs(latDeg) + latMin / 60 + latSec / 3600;
-                let lon = Math.abs(lonDeg) + lonMin / 60 + lonSec / 3600;
-
-                // Apply direction
-                if (latDir === 'S') lat = -lat;
-                if (lonDir === 'W') lon = -lon;
-
-                if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {{
-                    return {{ lat, lon }};
-                }}
-            }}
-
-            // Try simpler DMS without seconds: "39°38'N 0°13'W"
-            const dmsSimplePattern = /(-?\\d+)[°]\\s*(\\d+\\.?\\d*)[′']\\s*([NSns])?[,\\s]+(-?\\d+)[°]\\s*(\\d+\\.?\\d*)[′']\\s*([EWew])?/;
-            const dmsSimpleMatch = input.match(dmsSimplePattern);
-            if (dmsSimpleMatch) {{
-                let latDeg = parseFloat(dmsSimpleMatch[1]);
-                const latMin = parseFloat(dmsSimpleMatch[2]);
-                const latDir = (dmsSimpleMatch[3] || 'N').toUpperCase();
-
-                let lonDeg = parseFloat(dmsSimpleMatch[4]);
-                const lonMin = parseFloat(dmsSimpleMatch[5]);
-                const lonDir = (dmsSimpleMatch[6] || 'E').toUpperCase();
-
-                let lat = Math.abs(latDeg) + latMin / 60;
-                let lon = Math.abs(lonDeg) + lonMin / 60;
-
-                if (latDir === 'S') lat = -lat;
-                if (lonDir === 'W') lon = -lon;
-
-                if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {{
-                    return {{ lat, lon }};
-                }}
-            }}
-
-            return null;
-        }}
-
-        // Update parsed coordinates display on input
-        function updateParsedDisplay() {{
-            const input = document.getElementById('gpsInput').value;
-            const parsed = parseGPSCoordinates(input);
-            const parsedDiv = document.getElementById('parsedCoords');
-            const errorDiv = document.getElementById('predictedError');
-
-            if (parsed) {{
-                document.getElementById('parsedLat').textContent = parsed.lat.toFixed(6);
-                document.getElementById('parsedLon').textContent = parsed.lon.toFixed(6);
-                parsedDiv.style.display = 'block';
-                parsedDiv.style.borderLeft = '3px solid #4CAF50';
-
-                // Call predict_error API if we have a pending click position and enough GCPs
-                if (pendingClick && gcps.length >= 4) {{
-                    fetch('/api/predict_error', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            u: pendingClick.u,
-                            v: pendingClick.v,
-                            lat: parsed.lat,
-                            lon: parsed.lon
-                        }})
-                    }})
-                    .then(r => r.json())
-                    .then(data => {{
-                        if (data.available) {{
-                            const errorValue = document.getElementById('predictedErrorValue');
-                            const errorMessage = document.getElementById('predictedErrorMessage');
-
-                            errorValue.textContent = data.predicted_error_px.toFixed(1) + 'px';
-
-                            // Color based on status
-                            if (data.status === 'good') {{
-                                errorDiv.style.borderLeftColor = '#4CAF50';
-                                errorDiv.style.background = 'rgba(76, 175, 80, 0.1)';
-                                errorValue.style.color = '#4CAF50';
-                            }} else if (data.status === 'warning') {{
-                                errorDiv.style.borderLeftColor = '#ff9800';
-                                errorDiv.style.background = 'rgba(255, 152, 0, 0.1)';
-                                errorValue.style.color = '#ff9800';
-                            }} else {{
-                                errorDiv.style.borderLeftColor = '#f44336';
-                                errorDiv.style.background = 'rgba(244, 67, 54, 0.1)';
-                                errorValue.style.color = '#f44336';
-                            }}
-
-                            errorMessage.textContent = data.message;
-                            errorDiv.style.display = 'block';
-                        }} else {{
-                            errorDiv.style.display = 'none';
-                        }}
-                    }})
-                    .catch(() => {{
-                        errorDiv.style.display = 'none';
-                    }});
-                }} else {{
-                    errorDiv.style.display = 'none';
-                }}
-            }} else if (input.trim()) {{
-                document.getElementById('parsedLat').textContent = '?';
-                document.getElementById('parsedLon').textContent = '?';
-                parsedDiv.style.display = 'block';
-                parsedDiv.style.borderLeft = '3px solid #f44336';
-                errorDiv.style.display = 'none';
-            }} else {{
-                parsedDiv.style.display = 'none';
-                errorDiv.style.display = 'none';
-            }}
-        }}
-
         // Delete GCP
         function deleteGCP(index) {{
             fetch('/api/delete_gcp', {{
@@ -4258,23 +4101,12 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             let visibleCount = 0;
             let outOfViewCount = 0;
             let discardedCount = 0;
-            let adjustedCount = 0;
 
             projectedPoints.forEach((point, i) => {{
                 if (point.visible === false) {{
                     discardedCount++;
                 }} else if (point.reason === 'visible') {{
                     visibleCount++;
-                    // Check if point was adjusted from original position
-                    if (originalProjectedPositions[i] &&
-                        originalProjectedPositions[i].pixel_u !== null &&
-                        originalProjectedPositions[i].pixel_v !== null) {{
-                        const dx = point.pixel_u - originalProjectedPositions[i].pixel_u;
-                        const dy = point.pixel_v - originalProjectedPositions[i].pixel_v;
-                        if (Math.sqrt(dx*dx + dy*dy) > 2) {{  // More than 2 pixels moved
-                            adjustedCount++;
-                        }}
-                    }}
                 }} else if (point.reason === 'behind_camera' || point.reason === 'outside_bounds') {{
                     outOfViewCount++;
                 }}
@@ -4285,7 +4117,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             document.getElementById('visiblePoints').textContent = visibleCount;
             document.getElementById('outOfViewPoints').textContent = outOfViewCount;
             document.getElementById('discardedPoints').textContent = discardedCount;
-            document.getElementById('adjustedPoints').textContent = adjustedCount;
 
             // Update height verification warning
             const warningEl = document.getElementById('heightWarning');
@@ -4636,9 +4467,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }}
             }}
         }});
-
-        // Add event listener for GPS input to show real-time parsing
-        document.getElementById('gpsInput').addEventListener('input', updateParsedDisplay);
 
         // ===== Feature Detection Functions =====
         let maskOverlay = null;
