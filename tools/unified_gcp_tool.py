@@ -36,6 +36,7 @@ from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
+import requests
 from pyproj import Transformer
 
 # Add parent directory to path for imports
@@ -60,6 +61,24 @@ try:
     INTRINSICS_AVAILABLE = True
 except ImportError:
     INTRINSICS_AVAILABLE = False
+
+# SAM3 detection prompt for road markings
+DEFAULT_SAM3_PROMPT = "road markings"
+
+# Import camera defaults
+try:
+    from poc_homography.camera_config import (
+        DEFAULT_SENSOR_WIDTH_MM,
+        DEFAULT_BASE_FOCAL_LENGTH_MM,
+        get_rtsp_url,
+        USERNAME,
+        PASSWORD
+    )
+except ImportError:
+    DEFAULT_SENSOR_WIDTH_MM = 6.78
+    DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
+    USERNAME = None
+    PASSWORD = None
 
 
 class UnifiedSession:
@@ -92,12 +111,24 @@ class UnifiedSession:
         self.camera_name = camera_config['name']
         self.geotiff_params = geotiff_params
 
-        # Load frame image
-        self.frame = cv2.imread(str(image_path))
-        if self.frame is None:
+        # Load cartography frame (georeferenced image for Tab 1)
+        self.cartography_frame = cv2.imread(str(image_path))
+        if self.cartography_frame is None:
             raise ValueError(f"Could not load image: {image_path}")
 
-        self.frame_height, self.frame_width = self.frame.shape[:2]
+        # Legacy alias for compatibility
+        self.frame = self.cartography_frame
+        self.frame_height, self.frame_width = self.cartography_frame.shape[:2]
+
+        # Camera frame (live camera capture for Tab 2)
+        self.camera_frame = None
+        self.camera_params = None
+        self.projected_points = []
+
+        # SAM3 feature detection masks
+        self.cartography_mask = None
+        self.camera_mask = None
+        self.feature_mask_metadata = None
 
         # KML points storage (single source of truth)
         self.points = []
@@ -297,25 +328,43 @@ CRS: {crs}</description>
 
     def project_points_to_image(self) -> List[Dict]:
         """
-        Project KML points to image coordinates for GCP Capture tab.
+        Project KML points to camera frame using actual camera projection.
 
         Returns list of dictionaries with projected pixel coordinates.
         """
-        if not GEOMETRY_AVAILABLE:
+        if not GEOMETRY_AVAILABLE or self.camera_params is None:
             return []
 
-        projected = []
+        # Import the projection function
+        try:
+            from tools.capture_gcps_web import project_gps_to_image
+        except ImportError:
+            print("Warning: Could not import project_gps_to_image")
+            return []
+
+        # Convert points to format expected by project_gps_to_image
+        gps_points = []
         for pt in self.points:
-            # Points already have pixel coordinates from KML extraction
-            projected.append({
+            gps_points.append({
                 'name': pt['name'],
-                'category': pt['category'],
-                'pixel_u': pt['pixel_x'],
-                'pixel_v': pt['pixel_y'],
                 'latitude': pt['lat'],
                 'longitude': pt['lon'],
-                'visible': True
+                'utm_easting': pt['easting'],
+                'utm_northing': pt['northing'],
+                'utm_crs': self.utm_crs
             })
+
+        # Project points using camera geometry
+        projected = project_gps_to_image(
+            gps_points,
+            self.camera_params,
+            camera_name=self.camera_name
+        )
+
+        # Add category information
+        for i, proj_pt in enumerate(projected):
+            if i < len(self.points):
+                proj_pt['category'] = self.points[i]['category']
 
         return projected
 
@@ -444,15 +493,262 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"Warning: Could not auto-save KML: {e}")
 
+            # Capture camera frame if not already done
+            if self.session.camera_frame is None:
+                try:
+                    self.capture_camera_frame()
+                except Exception as e:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Failed to capture camera frame: {str(e)}'
+                    })
+                    return
+
             # Project points for GCP tab
             projected_points = self.session.project_points_to_image()
+            self.session.projected_points = projected_points
+
+            # Encode camera frame as base64
+            camera_frame_b64 = None
+            if self.session.camera_frame is not None:
+                success, buffer = cv2.imencode('.jpg', self.session.camera_frame)
+                if success:
+                    camera_frame_b64 = base64.b64encode(buffer).decode('utf-8')
 
             self.send_json_response({
                 'success': True,
                 'projected_points': projected_points,
+                'camera_frame': camera_frame_b64,
+                'camera_params': self.camera_params_to_dict(),
                 'kml_saved_to': temp_kml_path,
                 'total_points': len(self.session.points)
             })
+
+        elif self.path == '/api/capture_frame':
+            # Capture new camera frame
+            try:
+                self.capture_camera_frame()
+
+                # Re-project points with new frame
+                projected_points = self.session.project_points_to_image()
+                self.session.projected_points = projected_points
+
+                # Encode camera frame as base64
+                success, buffer = cv2.imencode('.jpg', self.session.camera_frame)
+                if not success:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Failed to encode camera frame'
+                    })
+                    return
+
+                camera_frame_b64 = base64.b64encode(buffer).decode('utf-8')
+
+                self.send_json_response({
+                    'success': True,
+                    'camera_frame': camera_frame_b64,
+                    'camera_params': self.camera_params_to_dict(),
+                    'projected_points': projected_points
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/detect_features':
+            # SAM3 feature detection endpoint
+            try:
+                method = post_data.get('method', 'sam3')
+                tab = post_data.get('tab', 'kml')  # 'kml' or 'gcp'
+
+                if method != 'sam3':
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Unknown detection method: {method}'
+                    })
+                    return
+
+                # Get API key from environment
+                api_key = os.environ.get('ROBOFLOW_API_KEY', '')
+                if not api_key:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'ROBOFLOW_API_KEY environment variable not set'
+                    })
+                    return
+
+                # Get the appropriate frame based on tab
+                if tab == 'gcp':
+                    frame = self.session.camera_frame
+                else:
+                    frame = self.session.cartography_frame
+
+                if frame is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'No {tab} frame available'
+                    })
+                    return
+
+                # Encode frame to base64
+                success, buffer = cv2.imencode('.jpg', frame)
+                if not success:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Failed to encode frame'
+                    })
+                    return
+                image_base64 = base64.b64encode(buffer).decode('utf-8')
+
+                # Use default prompt or custom prompt
+                prompt = post_data.get('prompt', DEFAULT_SAM3_PROMPT)
+
+                # Call Roboflow SAM3 API
+                api_url = f"https://serverless.roboflow.com/sam3/concept_segment?api_key={api_key}"
+
+                request_body = {
+                    "format": "polygon",
+                    "image": {
+                        "type": "base64",
+                        "value": image_base64
+                    },
+                    "prompts": [
+                        {"type": "text", "text": prompt}
+                    ]
+                }
+
+                headers = {'Content-Type': 'application/json'}
+                response = requests.post(api_url, json=request_body, headers=headers, timeout=120)
+
+                if response.status_code != 200:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'SAM3 API request failed: {response.status_code}'
+                    })
+                    return
+
+                # Parse response
+                try:
+                    api_response = response.json()
+                except json.JSONDecodeError:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Invalid JSON response from SAM3 API'
+                    })
+                    return
+
+                # Create binary mask
+                frame_height, frame_width = frame.shape[:2]
+                mask = np.zeros((frame_height, frame_width), dtype=np.uint8)
+
+                prompt_results = api_response.get('prompt_results', [])
+                total_predictions = 0
+                total_polygons = 0
+                confidence_scores = []
+
+                for prompt_result in prompt_results:
+                    predictions = prompt_result.get('predictions', [])
+                    total_predictions += len(predictions)
+
+                    for prediction in predictions:
+                        confidence = prediction.get('confidence', 0)
+                        confidence_scores.append(confidence)
+                        masks = prediction.get('masks', [])
+
+                        for polygon in masks:
+                            if isinstance(polygon, list) and len(polygon) >= 3:
+                                pts = np.array([[int(pt[0]), int(pt[1])] for pt in polygon if len(pt) >= 2], dtype=np.int32)
+                                if len(pts) >= 3:
+                                    cv2.fillPoly(mask, [pts], 255)
+                                    total_polygons += 1
+
+                # Store mask
+                if tab == 'gcp':
+                    self.session.camera_mask = mask
+                else:
+                    self.session.cartography_mask = mask
+
+                self.session.feature_mask_metadata = {
+                    'timestamp': datetime.now().isoformat(),
+                    'prompt': prompt,
+                    'tab': tab,
+                    'total_predictions': total_predictions,
+                    'total_polygons': total_polygons,
+                    'confidence_scores': confidence_scores
+                }
+
+                # Encode mask as base64
+                success, mask_buffer = cv2.imencode('.png', mask)
+                if not success:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Failed to encode mask'
+                    })
+                    return
+                mask_base64 = base64.b64encode(mask_buffer).decode('utf-8')
+
+                self.send_json_response({
+                    'success': True,
+                    'mask': mask_base64,
+                    'metadata': {
+                        'total_predictions': total_predictions,
+                        'total_polygons': total_polygons,
+                        'confidence_range': {
+                            'min': min(confidence_scores) if confidence_scores else 0,
+                            'max': max(confidence_scores) if confidence_scores else 0
+                        }
+                    }
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/update_camera_params':
+            # Update camera parameters and reproject
+            try:
+                if self.session.camera_params is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No camera parameters available'
+                    })
+                    return
+
+                # Update parameters from request
+                if 'pan_deg' in post_data:
+                    self.session.camera_params['pan_deg'] = float(post_data['pan_deg'])
+                if 'tilt_deg' in post_data:
+                    self.session.camera_params['tilt_deg'] = float(post_data['tilt_deg'])
+                if 'zoom' in post_data:
+                    self.session.camera_params['zoom'] = float(post_data['zoom'])
+                    # Recompute intrinsics with new zoom
+                    sensor_width_mm = self.session.camera_params.get('sensor_width_mm', DEFAULT_SENSOR_WIDTH_MM)
+                    K = CameraGeometry.get_intrinsics(
+                        zoom_factor=self.session.camera_params['zoom'],
+                        W_px=self.session.camera_params['image_width'],
+                        H_px=self.session.camera_params['image_height'],
+                        sensor_width_mm=sensor_width_mm
+                    )
+                    self.session.camera_params['K'] = K
+                if 'height_m' in post_data:
+                    self.session.camera_params['height_m'] = float(post_data['height_m'])
+
+                # Reproject points
+                projected_points = self.session.project_points_to_image()
+                self.session.projected_points = projected_points
+
+                self.send_json_response({
+                    'success': True,
+                    'camera_params': self.camera_params_to_dict(),
+                    'projected_points': projected_points
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
 
         else:
             self.send_error(404)
@@ -463,6 +759,55 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+    def capture_camera_frame(self):
+        """Capture frame from live camera and get camera parameters."""
+        if not GEOMETRY_AVAILABLE or not INTRINSICS_AVAILABLE:
+            raise RuntimeError("Camera geometry or intrinsics modules not available")
+
+        # Import helper functions
+        try:
+            from tools.capture_gcps_web import grab_frame_from_camera, get_camera_params_for_projection
+        except ImportError as e:
+            raise RuntimeError(f"Could not import camera functions: {e}")
+
+        # Grab frame from camera
+        frame, ptz_status = grab_frame_from_camera(self.session.camera_name, wait_time=2.0)
+        self.session.camera_frame = frame
+
+        # Get camera parameters for projection
+        frame_height, frame_width = frame.shape[:2]
+        camera_params = get_camera_params_for_projection(
+            self.session.camera_name,
+            image_width=frame_width,
+            image_height=frame_height
+        )
+        self.session.camera_params = camera_params
+
+        print(f"Captured camera frame: {frame_width}x{frame_height}")
+        print(f"Camera params: pan={camera_params['pan_deg']:.1f}°, tilt={camera_params['tilt_deg']:.1f}°, zoom={camera_params['zoom']:.1f}x")
+
+    def camera_params_to_dict(self) -> dict:
+        """Convert camera parameters to JSON-serializable dict."""
+        if self.session.camera_params is None:
+            return {}
+
+        params = self.session.camera_params.copy()
+
+        # Convert numpy arrays to lists
+        if 'K' in params and isinstance(params['K'], np.ndarray):
+            params['K'] = params['K'].tolist()
+
+        return {
+            'camera_lat': params.get('camera_lat', 0),
+            'camera_lon': params.get('camera_lon', 0),
+            'height_m': params.get('height_m', 0),
+            'pan_deg': params.get('pan_deg', 0),
+            'tilt_deg': params.get('tilt_deg', 0),
+            'zoom': params.get('zoom', 1),
+            'image_width': params.get('image_width', 0),
+            'image_height': params.get('image_height', 0)
+        }
 
 
 def generate_unified_html(session: UnifiedSession) -> str:
@@ -795,6 +1140,22 @@ def generate_unified_html(session: UnifiedSession) -> str:
             max-height: 300px;
             overflow-y: auto;
         }}
+
+        /* Mask overlay */
+        .mask-overlay {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            opacity: 0.5;
+            mix-blend-mode: multiply;
+        }}
+
+        /* Active mode button highlight */
+        .mode-active {{
+            background: #0ead69 !important;
+            border: 2px solid #fff !important;
+        }}
     </style>
 </head>
 <body>
@@ -845,6 +1206,13 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <label>Point Name (auto-increments):</label>
                     <input type="text" id="point-name" placeholder="e.g., Z1, A1, P1">
 
+                    <h3>SAM3 Feature Detection</h3>
+                    <label>Prompt:</label>
+                    <input type="text" id="sam3-prompt-kml" placeholder="road markings" value="road markings">
+                    <button onclick="detectFeatures('kml')" class="secondary">Detect Features</button>
+                    <button onclick="toggleMask('kml')" id="toggle-mask-kml-btn" style="display: none;">Toggle Mask</button>
+
+                    <h3>Export/Import</h3>
                     <button onclick="exportKML()" class="secondary">Export KML</button>
 
                     <label>Import KML:</label>
@@ -879,12 +1247,48 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                 <div class="instructions">
                     <strong>Map-First Mode:</strong><br>
-                    KML points from Tab 1 are projected onto the image.
-                    These markers show where your GPS points appear in the camera view.
+                    KML points from Tab 1 are projected onto the camera frame.
+                    Use camera controls to adjust projection.
                 </div>
 
                 <div class="controls">
-                    <h3>Projected Points</h3>
+                    <h3>Camera Frame</h3>
+                    <button onclick="captureNewFrame()" class="secondary">Capture New Frame</button>
+
+                    <h3>Camera Parameters</h3>
+                    <div id="camera-params-display" style="font-size: 11px; color: #aaa; margin-bottom: 10px;">
+                        <div>Pan: <span id="param-pan">--</span>°</div>
+                        <div>Tilt: <span id="param-tilt">--</span>°</div>
+                        <div>Zoom: <span id="param-zoom">--</span>x</div>
+                        <div>Height: <span id="param-height">--</span>m</div>
+                    </div>
+
+                    <label>Adjustment Mode (W/E/R):</label>
+                    <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                        <button onclick="setAdjustmentMode('move')" id="mode-move-btn" style="flex: 1; padding: 6px;">Move (W)</button>
+                        <button onclick="setAdjustmentMode('rotate')" id="mode-rotate-btn" style="flex: 1; padding: 6px;">Rotate (E)</button>
+                        <button onclick="setAdjustmentMode('scale')" id="mode-scale-btn" style="flex: 1; padding: 6px;">Scale (R)</button>
+                    </div>
+
+                    <label>Adjust (1=Pan, 2=Tilt, 3=Zoom, 4=Height):</label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                        <button onclick="adjustParam('pan', -1)">Pan -</button>
+                        <button onclick="adjustParam('pan', 1)">Pan +</button>
+                        <button onclick="adjustParam('tilt', -0.5)">Tilt -</button>
+                        <button onclick="adjustParam('tilt', 0.5)">Tilt +</button>
+                        <button onclick="adjustParam('zoom', -0.1)">Zoom -</button>
+                        <button onclick="adjustParam('zoom', 0.1)">Zoom +</button>
+                        <button onclick="adjustParam('height', -0.5)">Height -</button>
+                        <button onclick="adjustParam('height', 0.5)">Height +</button>
+                    </div>
+
+                    <h3>SAM3 Feature Detection</h3>
+                    <label>Prompt:</label>
+                    <input type="text" id="sam3-prompt-gcp" placeholder="road markings" value="road markings">
+                    <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
+                    <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Mask</button>
+
+                    <h3>Projected Points (<span id="gcp-point-count">0</span>)</h3>
                     <div id="gcp-points-list"></div>
                 </div>
             </div>
@@ -907,6 +1311,10 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let categoryVisibility = {{ zebra: true, arrow: true, parking: true, other: true }};
         let currentTab = 'kml';
         let projectedPoints = [];
+        let cameraParams = null;
+        let adjustmentMode = 'move';  // 'move', 'rotate', 'scale'
+        let maskVisible = {{ kml: false, gcp: false }};
+        let maskData = {{ kml: null, gcp: null }};
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -916,6 +1324,34 @@ def generate_unified_html(session: UnifiedSession) -> str:
         // Initialize
         updatePointName();
         document.getElementById('category').addEventListener('change', updatePointName);
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {{
+            // Only process if not typing in input field
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            if (currentTab === 'gcp') {{
+                // Adjustment modes
+                if (e.key === 'w' || e.key === 'W') {{
+                    e.preventDefault();
+                    setAdjustmentMode('move');
+                }} else if (e.key === 'e' || e.key === 'E') {{
+                    e.preventDefault();
+                    setAdjustmentMode('rotate');
+                }} else if (e.key === 'r' || e.key === 'R') {{
+                    e.preventDefault();
+                    setAdjustmentMode('scale');
+                }}
+                // Parameter selection and adjustment
+                else if (e.key >= '1' && e.key <= '4') {{
+                    const params = ['pan', 'tilt', 'zoom', 'height'];
+                    const param = params[parseInt(e.key) - 1];
+                    const delta = e.shiftKey ? -1 : 1;
+                    const amount = {{ pan: delta, tilt: delta * 0.5, zoom: delta * 0.1, height: delta * 0.5 }}[param];
+                    adjustParam(param, amount);
+                }}
+            }}
+        }});
 
         // Tab switching
         function switchTab(tabName) {{
@@ -951,6 +1387,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
         function autoSaveAndProject() {{
             if (points.length === 0) return;
 
+            updateStatus('Capturing camera frame and projecting points...');
+
             fetch('/api/switch_to_gcp', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
@@ -960,8 +1398,19 @@ def generate_unified_html(session: UnifiedSession) -> str:
             .then(data => {{
                 if (data.success) {{
                     projectedPoints = data.projected_points;
+                    cameraParams = data.camera_params;
+
+                    // Update camera frame if provided
+                    if (data.camera_frame) {{
+                        gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
+                    }}
+
+                    updateCameraParamsDisplay();
                     updateGCPView();
-                    updateStatus(`Auto-saved ${{points.length}} points and projected to image`);
+                    updateStatus(`Captured frame and projected ${{data.projected_points.length}} points`);
+                }} else {{
+                    updateStatus('Error: ' + data.error);
+                    alert('Failed to switch to GCP tab: ' + data.error);
                 }}
             }})
             .catch(err => {{
@@ -999,11 +1448,18 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 <div class="point-item">
                     <div class="info">
                         <div class="name">${{i+1}}. ${{pt.name}} (${{pt.category || 'point'}})</div>
-                        <div class="coords">Pixel: (${{pt.pixel_u.toFixed(1)}}, ${{pt.pixel_v.toFixed(1)}})</div>
+                        <div class="coords">
+                            ${{pt.visible ?
+                                `Pixel: (${{pt.pixel_u.toFixed(1)}}, ${{pt.pixel_v.toFixed(1)}})` :
+                                `Not visible (${{pt.reason || 'unknown'}})`
+                            }}
+                        </div>
                         <div class="coords">GPS: ${{pt.latitude.toFixed(6)}}, ${{pt.longitude.toFixed(6)}}</div>
                     </div>
                 </div>
             `).join('');
+
+            document.getElementById('gcp-point-count').textContent = projectedPoints.filter(p => p.visible).length;
         }}
 
         // KML Extractor functionality
@@ -1153,6 +1609,10 @@ def generate_unified_html(session: UnifiedSession) -> str:
             gcpImg.style.width = (gcpImg.naturalWidth * currentZoom) + 'px';
             redrawMarkers();
             updateGCPView();
+
+            // Update mask overlays
+            if (maskVisible.kml) showMask('kml');
+            if (maskVisible.gcp) showMask('gcp');
         }}
 
         function resetZoom() {{
@@ -1161,6 +1621,10 @@ def generate_unified_html(session: UnifiedSession) -> str:
             gcpImg.style.width = '';
             redrawMarkers();
             updateGCPView();
+
+            // Update mask overlays
+            if (maskVisible.kml) showMask('kml');
+            if (maskVisible.gcp) showMask('gcp');
         }}
 
         function clearAll() {{
@@ -1256,6 +1720,181 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         function updateStatus(msg) {{
             document.getElementById('status').textContent = msg;
+        }}
+
+        // New GCP Tab Functions
+
+        function captureNewFrame() {{
+            updateStatus('Capturing new camera frame...');
+
+            fetch('/api/capture_frame', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
+                    cameraParams = data.camera_params;
+                    projectedPoints = data.projected_points;
+                    updateCameraParamsDisplay();
+                    updateGCPView();
+                    updateStatus('Camera frame captured successfully');
+                }} else {{
+                    updateStatus('Error: ' + data.error);
+                    alert('Failed to capture frame: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Capture failed:', err);
+                updateStatus('Capture failed: ' + err.message);
+            }});
+        }}
+
+        function updateCameraParamsDisplay() {{
+            if (!cameraParams) return;
+
+            document.getElementById('param-pan').textContent = cameraParams.pan_deg.toFixed(1);
+            document.getElementById('param-tilt').textContent = cameraParams.tilt_deg.toFixed(1);
+            document.getElementById('param-zoom').textContent = cameraParams.zoom.toFixed(1);
+            document.getElementById('param-height').textContent = cameraParams.height_m.toFixed(1);
+        }}
+
+        function setAdjustmentMode(mode) {{
+            adjustmentMode = mode;
+
+            // Update button highlights
+            ['move', 'rotate', 'scale'].forEach(m => {{
+                const btn = document.getElementById('mode-' + m + '-btn');
+                if (m === mode) {{
+                    btn.classList.add('mode-active');
+                }} else {{
+                    btn.classList.remove('mode-active');
+                }}
+            }});
+
+            updateStatus('Adjustment mode: ' + mode.toUpperCase());
+        }}
+
+        function adjustParam(param, delta) {{
+            if (!cameraParams) {{
+                updateStatus('No camera parameters available');
+                return;
+            }}
+
+            // Apply adjustment based on mode
+            let actualDelta = delta;
+            if (adjustmentMode === 'rotate') actualDelta *= 0.5;
+            if (adjustmentMode === 'scale') actualDelta *= 2;
+
+            const newValue = cameraParams[param + (param === 'zoom' || param === 'height' ? '' : '_deg')] + actualDelta;
+
+            updateStatus(`Adjusting ${{param}}: ${{newValue.toFixed(1)}}...`);
+
+            const updateData = {{}};
+            updateData[param + (param === 'zoom' || param === 'height' ? '' : '_deg')] = newValue;
+
+            fetch('/api/update_camera_params', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(updateData)
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    cameraParams = data.camera_params;
+                    projectedPoints = data.projected_points;
+                    updateCameraParamsDisplay();
+                    updateGCPView();
+                    updateStatus(`${{param}} adjusted to ${{newValue.toFixed(1)}}`);
+                }} else {{
+                    updateStatus('Error: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Adjustment failed:', err);
+                updateStatus('Adjustment failed: ' + err.message);
+            }});
+        }}
+
+        function detectFeatures(tab) {{
+            const promptInput = document.getElementById('sam3-prompt-' + tab);
+            const prompt = promptInput.value.trim() || 'road markings';
+
+            updateStatus('Detecting features with SAM3...');
+
+            fetch('/api/detect_features', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{
+                    method: 'sam3',
+                    prompt: prompt,
+                    tab: tab
+                }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    maskData[tab] = data.mask;
+
+                    // Show toggle button
+                    document.getElementById('toggle-mask-' + tab + '-btn').style.display = 'block';
+
+                    // Auto-show mask
+                    maskVisible[tab] = true;
+                    showMask(tab);
+
+                    const meta = data.metadata;
+                    updateStatus(`Detected ${{meta.total_predictions}} features (${{meta.total_polygons}} polygons)`);
+                }} else {{
+                    updateStatus('Error: ' + data.error);
+                    alert('Feature detection failed: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Detection failed:', err);
+                updateStatus('Detection failed: ' + err.message);
+            }});
+        }}
+
+        function toggleMask(tab) {{
+            maskVisible[tab] = !maskVisible[tab];
+
+            if (maskVisible[tab]) {{
+                showMask(tab);
+            }} else {{
+                hideMask(tab);
+            }}
+
+            document.getElementById('toggle-mask-' + tab + '-btn').textContent =
+                maskVisible[tab] ? 'Hide Mask' : 'Show Mask';
+        }}
+
+        function showMask(tab) {{
+            const targetContainer = tab === 'gcp' ? gcpContainer : container;
+            const targetImg = tab === 'gcp' ? gcpImg : img;
+
+            // Remove existing mask
+            const existingMask = targetContainer.querySelector('.mask-overlay');
+            if (existingMask) existingMask.remove();
+
+            if (!maskData[tab]) return;
+
+            // Create mask overlay
+            const maskImg = document.createElement('img');
+            maskImg.className = 'mask-overlay';
+            maskImg.src = 'data:image/png;base64,' + maskData[tab];
+            maskImg.style.width = (targetImg.naturalWidth * currentZoom) + 'px';
+            maskImg.style.height = (targetImg.naturalHeight * currentZoom) + 'px';
+
+            targetContainer.appendChild(maskImg);
+        }}
+
+        function hideMask(tab) {{
+            const targetContainer = tab === 'gcp' ? gcpContainer : container;
+            const maskOverlay = targetContainer.querySelector('.mask-overlay');
+            if (maskOverlay) maskOverlay.remove();
         }}
     </script>
 </body>
