@@ -9,7 +9,7 @@ This tool provides a unified workflow for:
 The two tabs share a unified session with automatic point synchronization.
 
 Usage:
-    python tools/unified_gcp_tool.py <image> --camera <camera_name> [--port <port>]
+    python tools/unified_gcp_tool.py <image> --camera <camera_name> [--port <port>] [--kml <kml_file>]
 
 Examples:
     # Basic usage
@@ -17,6 +17,9 @@ Examples:
 
     # Custom port
     python tools/unified_gcp_tool.py frame.jpg --camera Valte --port 8080
+
+    # Pre-load KML points on startup
+    python tools/unified_gcp_tool.py frame.jpg --camera Valte --kml exported_points.kml
 """
 
 import argparse
@@ -2363,12 +2366,22 @@ def main():
         default=8765,
         help='Server port (default: 8765)'
     )
+    parser.add_argument(
+        '--kml',
+        type=str,
+        help='Path to KML file to pre-load points on startup'
+    )
 
     args = parser.parse_args()
 
     # Validate image exists
     if not os.path.exists(args.image):
         print(f"Error: Image file not found: {args.image}")
+        sys.exit(1)
+
+    # Validate KML file exists (if provided)
+    if args.kml and not os.path.exists(args.kml):
+        print(f"Error: KML file not found: {args.kml}")
         sys.exit(1)
 
     # Load camera configuration
@@ -2398,6 +2411,24 @@ def main():
     except Exception as e:
         print(f"Error creating session: {e}")
         sys.exit(1)
+
+    # Pre-load KML points if --kml argument provided
+    if args.kml:
+        try:
+            with open(args.kml, 'r') as f:
+                kml_text = f.read()
+            points = session.parse_kml(kml_text)
+            for p in points:
+                session.add_point(p['px'], p['py'], p['name'], p['category'])
+            print(f"Pre-loaded {len(points)} points from KML: {args.kml}")
+        except ET.ParseError as e:
+            print(f"Error: Malformed KML file: {args.kml}")
+            print(f"  XML parsing error: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error loading KML file: {args.kml}")
+            print(f"  {e}")
+            sys.exit(1)
 
     # Run server
     run_server(session, args.port)
