@@ -1851,6 +1851,29 @@ def generate_unified_html(session: UnifiedSession) -> str:
             }}
         }}
 
+        // Load existing points from server on page load
+        function loadExistingPoints() {{
+            fetch('/api/get_points', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.points && data.points.length > 0) {{
+                    points = data.points;
+                    redrawMarkers();
+                    updatePointsList();
+                    updateTabStatus();
+                    updateStatus('Loaded ' + points.length + ' pre-existing points');
+                }}
+            }})
+            .catch(err => console.error('Failed to load existing points:', err));
+        }}
+
+        // Load existing points on page load
+        loadExistingPoints();
+
         function zoom(factor) {{
             currentZoom *= factor;
             img.style.width = (img.naturalWidth * currentZoom) + 'px';
