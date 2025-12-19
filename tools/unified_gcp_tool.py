@@ -137,8 +137,9 @@ class UnifiedSession:
 
     def add_point(self, px: float, py: float, name: str, category: str):
         """Add a KML point."""
-        lat, lon = self.pixel_to_latlon(px, py)
+        # Calculate UTM first, then derive lat/lon (avoid redundant pixel_to_utm call)
         easting, northing = self.pixel_to_utm(px, py)
+        lon, lat = self.transformer_utm_to_gps.transform(easting, northing)
         self.points.append({
             "name": name,
             "category": category,
@@ -353,8 +354,12 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = json.loads(self.rfile.read(content_length))
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = json.loads(self.rfile.read(content_length))
+        except (ValueError, json.JSONDecodeError) as e:
+            self.send_json_response({'success': False, 'error': f'Invalid request: {e}'})
+            return
 
         if self.path == '/api/add_point':
             # Add KML point (Tab 1)
@@ -1259,11 +1264,22 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
 def run_server(session: UnifiedSession, port: int = 8765):
     """Run the unified web server."""
+    import atexit
+    import shutil
 
     # Create temp directory for serving frame
     temp_dir = tempfile.mkdtemp(prefix='unified_gcp_')
     frame_path = os.path.join(temp_dir, 'frame.jpg')
     cv2.imwrite(frame_path, session.frame)
+
+    # Register cleanup handler for temp directory
+    def cleanup_temp():
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    atexit.register(cleanup_temp)
 
     # Set up handler
     UnifiedHTTPHandler.session = session
@@ -1293,6 +1309,8 @@ def run_server(session: UnifiedSession, port: int = 8765):
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nServer stopped.")
+        finally:
+            cleanup_temp()
 
 
 def main():
