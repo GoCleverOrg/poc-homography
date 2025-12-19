@@ -406,14 +406,18 @@ CRS: {crs}</description>
 
             # Create CameraGeometry instance and compute homography
             geo = CameraGeometry(image_width, image_height)
-            geo.K = K
-            geo.height_m = height_m
-            geo.pan_deg = pan_deg
-            geo.tilt_deg = tilt_deg
-            geo.w_pos = np.array([0.0, 0.0, height_m])  # Camera at origin
 
-            # Compute homography matrix
-            geo.compute_homography_from_angles()
+            # Use set_camera_parameters() to properly compute homography
+            # Camera is at origin in local coordinate frame, height is Z component
+            w_pos = np.array([0.0, 0.0, height_m])
+            geo.set_camera_parameters(
+                K=K,
+                w_pos=w_pos,
+                pan_deg=pan_deg,
+                tilt_deg=tilt_deg,
+                map_width=640,  # Map dimensions for visualization (not used for footprint calc)
+                map_height=640
+            )
 
             # Define the four corners of the camera frame
             corners = [
@@ -2072,18 +2076,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         // Camera Visualization Functions
 
-        function latLonToPixel(lat, lon) {{
-            // Convert lat/lon to pixel coordinates on cartography image
-            // Uses geotiff_params from config
-            const easting = (lon - (-0.2305)) * 111320 * Math.cos(lat * Math.PI / 180);  // Approximate
-            const northing = (lat - 39.645) * 111320;  // Approximate
-
-            // Actually use the config parameters
-            const pixelX = (easting - config.origin_easting) / config.pixel_size_x;
-            const pixelY = (northing - config.origin_northing) / config.pixel_size_y;
-            return {{ x: pixelX, y: pixelY }};
-        }}
-
         function latLonToPixelProper(lat, lon) {{
             // Convert lat/lon to UTM first, then to pixel
             // UTM conversion using pyproj-like calculation (simplified)
@@ -2163,26 +2155,35 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
             // Draw camera footprint polygon if available
             if (footprint && footprint.length === 4) {{
-                // Create SVG for polygon
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.setAttribute('class', 'camera-footprint-polygon');
-                svg.style.width = (img.naturalWidth * currentZoom) + 'px';
-                svg.style.height = (img.naturalHeight * currentZoom) + 'px';
-
                 // Convert footprint corners to pixel coordinates
-                const points = footprint.map(corner => {{
+                const pixelCorners = footprint.map(corner => {{
                     const pixel = latLonToPixelProper(corner.lat, corner.lon);
-                    return `${{pixel.x * currentZoom}},${{pixel.y * currentZoom}}`;
-                }}).join(' ');
+                    return {{ x: pixel.x * currentZoom, y: pixel.y * currentZoom }};
+                }});
 
-                const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                polygon.setAttribute('points', points);
-                polygon.setAttribute('fill', 'rgba(74, 144, 226, 0.15)');
-                polygon.setAttribute('stroke', '#4A90E2');
-                polygon.setAttribute('stroke-width', '3');
+                // Validate all coordinates are finite (not NaN or Infinity)
+                const allValid = pixelCorners.every(p =>
+                    Number.isFinite(p.x) && Number.isFinite(p.y)
+                );
 
-                svg.appendChild(polygon);
-                container.appendChild(svg);
+                if (allValid) {{
+                    // Create SVG for polygon
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('class', 'camera-footprint-polygon');
+                    svg.style.width = (img.naturalWidth * currentZoom) + 'px';
+                    svg.style.height = (img.naturalHeight * currentZoom) + 'px';
+
+                    const points = pixelCorners.map(p => `${{p.x}},${{p.y}}`).join(' ');
+
+                    const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    polygon.setAttribute('points', points);
+                    polygon.setAttribute('fill', 'rgba(74, 144, 226, 0.15)');
+                    polygon.setAttribute('stroke', '#4A90E2');
+                    polygon.setAttribute('stroke-width', '3');
+
+                    svg.appendChild(polygon);
+                    container.appendChild(svg);
+                }}
             }}
         }}
 
