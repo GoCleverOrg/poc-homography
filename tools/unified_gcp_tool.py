@@ -9,7 +9,7 @@ This tool provides a unified workflow for:
 The two tabs share a unified session with automatic point synchronization.
 
 Usage:
-    python tools/unified_gcp_tool.py <image> --camera <camera_name> [--port <port>]
+    python tools/unified_gcp_tool.py <image> --camera <camera_name> [--port <port>] [--kml <kml_file>]
 
 Examples:
     # Basic usage
@@ -17,6 +17,9 @@ Examples:
 
     # Custom port
     python tools/unified_gcp_tool.py frame.jpg --camera Valte --port 8080
+
+    # Pre-load KML points on startup
+    python tools/unified_gcp_tool.py frame.jpg --camera Valte --kml exported_points.kml
 """
 
 import argparse
@@ -1848,6 +1851,29 @@ def generate_unified_html(session: UnifiedSession) -> str:
             }}
         }}
 
+        // Load existing points from server on page load
+        function loadExistingPoints() {{
+            fetch('/api/get_points', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.points && data.points.length > 0) {{
+                    points = data.points;
+                    redrawMarkers();
+                    updatePointsList();
+                    updateTabStatus();
+                    updateStatus('Loaded ' + points.length + ' pre-existing points');
+                }}
+            }})
+            .catch(err => console.error('Failed to load existing points:', err));
+        }}
+
+        // Load existing points on page load
+        loadExistingPoints();
+
         function zoom(factor) {{
             currentZoom *= factor;
             img.style.width = (img.naturalWidth * currentZoom) + 'px';
@@ -2363,12 +2389,22 @@ def main():
         default=8765,
         help='Server port (default: 8765)'
     )
+    parser.add_argument(
+        '--kml',
+        type=str,
+        help='Path to KML file to pre-load points on startup'
+    )
 
     args = parser.parse_args()
 
     # Validate image exists
     if not os.path.exists(args.image):
         print(f"Error: Image file not found: {args.image}")
+        sys.exit(1)
+
+    # Validate KML file exists (if provided)
+    if args.kml and not os.path.exists(args.kml):
+        print(f"Error: KML file not found: {args.kml}")
         sys.exit(1)
 
     # Load camera configuration
@@ -2398,6 +2434,27 @@ def main():
     except Exception as e:
         print(f"Error creating session: {e}")
         sys.exit(1)
+
+    # Pre-load KML points if --kml argument provided
+    if args.kml:
+        try:
+            with open(args.kml, 'r', encoding='utf-8') as f:
+                kml_text = f.read()
+            points = session.parse_kml(kml_text)
+            for p in points:
+                session.add_point(p['px'], p['py'], p['name'], p['category'])
+            if len(points) == 0:
+                print(f"Warning: KML file contains no valid points: {args.kml}")
+            else:
+                print(f"Pre-loaded {len(points)} points from KML: {args.kml}")
+        except ET.ParseError as e:
+            print(f"Error: Malformed KML file: {args.kml}")
+            print(f"  XML parsing error: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error loading KML file: {args.kml}")
+            print(f"  {e}")
+            sys.exit(1)
 
     # Run server
     run_server(session, args.port)
