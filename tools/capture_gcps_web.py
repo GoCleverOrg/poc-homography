@@ -2532,7 +2532,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     <div class="crosshair-v"></div>
                 </div>
                 <div class="instructions" id="instructions">
-                    Scroll to zoom, drag to pan. Click to add GCP.
+                    Scroll to zoom, drag to pan.
                 </div>
                 <div class="zoom-info" id="zoomInfo">Zoom: 1x</div>
                 <!-- Loading overlay for feature detection -->
@@ -2573,18 +2573,11 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                             <span class="label">Discarded:</span>
                             <span class="value error" id="discardedPoints">0</span>
                         </div>
-                        <div class="summary-item">
-                            <span class="label">Adjusted:</span>
-                            <span class="value" id="adjustedPoints" style="color: #ff9800;">0</span>
-                        </div>
                     </div>
                     <div id="heightWarning" style="display: none;"></div>
                     <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn btn-primary" onclick="convertAllToGCPs()" style="flex: 1; min-width: 120px;">
                             Convert to GCPs
-                        </button>
-                        <button class="btn btn-secondary" onclick="showDriftAnalysis()" style="flex: 1; min-width: 120px;">
-                            Analyze Drift
                         </button>
                     </div>
                     <div style="margin-top: 8px; display: flex; gap: 8px;">
@@ -2601,23 +2594,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                         </button>
                         <button class="btn btn-secondary" id="gpsModeBtn" onclick="toggleGPSMode()" style="flex: 1;">
                             GPS (4)
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Drift Analysis Panel -->
-                <div id="driftAnalysisPanel" class="panel-section" style="display: none;">
-                    <h3>Drift Analysis</h3>
-                    <div id="driftResults" style="font-size: 12px;">
-                        <p style="color: #888;">Drag KML points to match visible features, then click "Analyze Drift" to diagnose projection errors.</p>
-                    </div>
-                    <div id="driftRecommendations" style="margin-top: 10px; display: none;">
-                        <h4 style="font-size: 13px; color: #fff; margin-bottom: 8px;">Recommendations</h4>
-                        <div id="driftRecommendationsContent"></div>
-                    </div>
-                    <div style="margin-top: 12px;">
-                        <button class="btn btn-secondary" onclick="applyCalibration()" id="applyCalibrationBtn" style="width: 100%;" disabled>
-                            Apply Suggested Calibration
                         </button>
                     </div>
                 </div>
@@ -2659,7 +2635,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
                 <div class="gcp-list" id="gcpList">
                     <div style="color: #666; text-align: center; padding: 20px;">
-                        Click on the image to add GCPs
+                        Load YAML or use KML import to add GCPs
                     </div>
                 </div>
 
@@ -2691,47 +2667,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         </div>
     </div>
 
-    <!-- Add GCP Modal -->
-    <div class="modal" id="addGcpModal">
-        <div class="modal-content">
-            <div class="modal-header">Add Ground Control Point</div>
-            <div class="form-group">
-                <label>Pixel Position</label>
-                <input type="text" id="pixelPos" readonly>
-            </div>
-            <div class="form-group">
-                <label>GPS Coordinates (paste from Google Maps)</label>
-                <input type="text" id="gpsInput" placeholder="39.640296, -0.230037 or 39°38'25.7&quot;N 0°13'48.7&quot;W">
-                <div style="font-size: 11px; color: #666; margin-top: 4px;">
-                    Accepts: "39.640296, -0.230037" or "39°38'25.7"N 0°13'48.7"W"
-                </div>
-            </div>
-            <div id="parsedCoords" style="display: none; background: #3a3a3a; padding: 8px 10px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;">
-                <span style="color: #888;">Parsed:</span> <span id="parsedLat"></span>, <span id="parsedLon"></span>
-            </div>
-            <div id="predictedError" style="display: none; padding: 8px 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; border-left: 3px solid #888;">
-                <span style="color: #888;">Predicted error:</span> <span id="predictedErrorValue"></span>
-                <div id="predictedErrorMessage" style="margin-top: 4px; font-size: 11px;"></div>
-            </div>
-            <div class="form-group">
-                <label>Description (optional)</label>
-                <input type="text" id="descInput" placeholder="e.g., Corner of zebra crossing">
-            </div>
-            <div class="form-group">
-                <label>Accuracy</label>
-                <select id="accuracyInput">
-                    <option value="high">High</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="low">Low</option>
-                </select>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="confirmAddGCP()">Add GCP</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         // Configuration
         const imageWidth = {session.frame_width};
@@ -2742,7 +2677,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         let gcps = {gcps_json};
         let distribution = {distribution_json};
         let homography = {homography_json};
-        let pendingClick = null;
         let gcpMarkers = [];
         // Coordinate system: 'image_v' = standard (V=0 at top), null = legacy leaflet_y format (V=0 at bottom)
         let coordinateSystem = 'image_v';  // Default for new captures
@@ -2754,13 +2688,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         let mapFirstMarkers = [];  // Markers for projected points
         let kmlFileName = {kml_file_name_json};  // KML file name
         let heightVerification = {height_verification_json};  // Height verification results
-
-        // Store original projected positions for drift analysis
-        let originalProjectedPositions = JSON.parse(JSON.stringify({projected_points_json}));
-
-        // Drift analysis state
-        let driftAnalysisResult = null;
-        let suggestedCalibration = null;
 
         // Initialize Leaflet map with simple CRS for image
         // Extended bounds allow dragging markers outside the visible image area
@@ -2804,226 +2731,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
         }}
         map.on('zoom', updateZoomInfo);
         updateZoomInfo();
-
-        // ============================================================
-        // GPS Coordinate Parsing
-        // ============================================================
-
-        /**
-         * Parse GPS coordinates from various formats:
-         * - Decimal: "39.640296, -0.230037"
-         * - DMS: "39°38'25.7"N 0°13'48.7"W"
-         * Returns {{ lat, lon }} or null if parsing fails
-         */
-        function parseGPSCoordinates(input) {{
-            if (!input || typeof input !== 'string') return null;
-
-            // Clean up input
-            input = input.trim();
-
-            // Try decimal format first: "39.640296, -0.230037"
-            const decimalMatch = input.match(/^(-?\\d+\\.?\\d*)\\s*[,\\s]\\s*(-?\\d+\\.?\\d*)$/);
-            if (decimalMatch) {{
-                const lat = parseFloat(decimalMatch[1]);
-                const lon = parseFloat(decimalMatch[2]);
-                if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {{
-                    return {{ lat, lon }};
-                }}
-            }}
-
-            // Try DMS format: "39°38'25.7"N 0°13'48.7"W"
-            // Also handles variations like: 39°38'25.7"N, 0°13'48.7"W
-            const dmsPattern = /(-?\\d+)[°]\\s*(\\d+)[′']\\s*(\\d+\\.?\\d*)[″"]?\\s*([NSns])?[,\\s]+(-?\\d+)[°]\\s*(\\d+)[′']\\s*(\\d+\\.?\\d*)[″"]?\\s*([EWew])?/;
-            const dmsMatch = input.match(dmsPattern);
-            if (dmsMatch) {{
-                let latDeg = parseFloat(dmsMatch[1]);
-                const latMin = parseFloat(dmsMatch[2]);
-                const latSec = parseFloat(dmsMatch[3]);
-                const latDir = (dmsMatch[4] || 'N').toUpperCase();
-
-                let lonDeg = parseFloat(dmsMatch[5]);
-                const lonMin = parseFloat(dmsMatch[6]);
-                const lonSec = parseFloat(dmsMatch[7]);
-                const lonDir = (dmsMatch[8] || 'E').toUpperCase();
-
-                // Convert to decimal
-                let lat = Math.abs(latDeg) + latMin / 60 + latSec / 3600;
-                let lon = Math.abs(lonDeg) + lonMin / 60 + lonSec / 3600;
-
-                // Apply direction
-                if (latDir === 'S') lat = -lat;
-                if (lonDir === 'W') lon = -lon;
-
-                if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {{
-                    return {{ lat, lon }};
-                }}
-            }}
-
-            // Try simpler DMS without seconds: "39°38'N 0°13'W"
-            const dmsSimplePattern = /(-?\\d+)[°]\\s*(\\d+\\.?\\d*)[′']\\s*([NSns])?[,\\s]+(-?\\d+)[°]\\s*(\\d+\\.?\\d*)[′']\\s*([EWew])?/;
-            const dmsSimpleMatch = input.match(dmsSimplePattern);
-            if (dmsSimpleMatch) {{
-                let latDeg = parseFloat(dmsSimpleMatch[1]);
-                const latMin = parseFloat(dmsSimpleMatch[2]);
-                const latDir = (dmsSimpleMatch[3] || 'N').toUpperCase();
-
-                let lonDeg = parseFloat(dmsSimpleMatch[4]);
-                const lonMin = parseFloat(dmsSimpleMatch[5]);
-                const lonDir = (dmsSimpleMatch[6] || 'E').toUpperCase();
-
-                let lat = Math.abs(latDeg) + latMin / 60;
-                let lon = Math.abs(lonDeg) + lonMin / 60;
-
-                if (latDir === 'S') lat = -lat;
-                if (lonDir === 'W') lon = -lon;
-
-                if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {{
-                    return {{ lat, lon }};
-                }}
-            }}
-
-            return null;
-        }}
-
-        // Update parsed coordinates display on input
-        function updateParsedDisplay() {{
-            const input = document.getElementById('gpsInput').value;
-            const parsed = parseGPSCoordinates(input);
-            const parsedDiv = document.getElementById('parsedCoords');
-            const errorDiv = document.getElementById('predictedError');
-
-            if (parsed) {{
-                document.getElementById('parsedLat').textContent = parsed.lat.toFixed(6);
-                document.getElementById('parsedLon').textContent = parsed.lon.toFixed(6);
-                parsedDiv.style.display = 'block';
-                parsedDiv.style.borderLeft = '3px solid #4CAF50';
-
-                // Call predict_error API if we have a pending click position and enough GCPs
-                if (pendingClick && gcps.length >= 4) {{
-                    fetch('/api/predict_error', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            u: pendingClick.u,
-                            v: pendingClick.v,
-                            lat: parsed.lat,
-                            lon: parsed.lon
-                        }})
-                    }})
-                    .then(r => r.json())
-                    .then(data => {{
-                        if (data.available) {{
-                            const errorValue = document.getElementById('predictedErrorValue');
-                            const errorMessage = document.getElementById('predictedErrorMessage');
-
-                            errorValue.textContent = data.predicted_error_px.toFixed(1) + 'px';
-
-                            // Color based on status
-                            if (data.status === 'good') {{
-                                errorDiv.style.borderLeftColor = '#4CAF50';
-                                errorDiv.style.background = 'rgba(76, 175, 80, 0.1)';
-                                errorValue.style.color = '#4CAF50';
-                            }} else if (data.status === 'warning') {{
-                                errorDiv.style.borderLeftColor = '#ff9800';
-                                errorDiv.style.background = 'rgba(255, 152, 0, 0.1)';
-                                errorValue.style.color = '#ff9800';
-                            }} else {{
-                                errorDiv.style.borderLeftColor = '#f44336';
-                                errorDiv.style.background = 'rgba(244, 67, 54, 0.1)';
-                                errorValue.style.color = '#f44336';
-                            }}
-
-                            errorMessage.textContent = data.message;
-                            errorDiv.style.display = 'block';
-                        }} else {{
-                            errorDiv.style.display = 'none';
-                        }}
-                    }})
-                    .catch(() => {{
-                        errorDiv.style.display = 'none';
-                    }});
-                }} else {{
-                    errorDiv.style.display = 'none';
-                }}
-            }} else if (input.trim()) {{
-                document.getElementById('parsedLat').textContent = '?';
-                document.getElementById('parsedLon').textContent = '?';
-                parsedDiv.style.display = 'block';
-                parsedDiv.style.borderLeft = '3px solid #f44336';
-                errorDiv.style.display = 'none';
-            }} else {{
-                parsedDiv.style.display = 'none';
-                errorDiv.style.display = 'none';
-            }}
-        }}
-
-        // Handle click on map to add GCP
-        map.on('click', function(e) {{
-            // Convert Leaflet coords to image pixel coords
-            // Uses coordinate-system-aware conversion
-            const imgCoords = leafletToImage(e.latlng.lat, e.latlng.lng);
-            const u = imgCoords.u;
-            const v = imgCoords.v;
-
-            // Check bounds
-            if (u < 0 || u > imageWidth || v < 0 || v > imageHeight) {{
-                return;
-            }}
-
-            // Normal mode: Store pending click and show modal
-            pendingClick = {{ u: u, v: v }};
-            document.getElementById('pixelPos').value = `(${{u.toFixed(1)}}, ${{v.toFixed(1)}})`;
-            document.getElementById('gpsInput').value = '';
-            document.getElementById('descInput').value = '';
-            document.getElementById('parsedCoords').style.display = 'none';
-            document.getElementById('addGcpModal').classList.add('active');
-            document.getElementById('gpsInput').focus();
-        }});
-
-        // Modal functions
-        function closeModal() {{
-            document.getElementById('addGcpModal').classList.remove('active');
-            pendingClick = null;
-        }}
-
-        function confirmAddGCP() {{
-            if (!pendingClick) return;
-
-            const gpsInput = document.getElementById('gpsInput').value;
-            const parsed = parseGPSCoordinates(gpsInput);
-            const desc = document.getElementById('descInput').value.trim();
-            const accuracy = document.getElementById('accuracyInput').value;
-
-            if (!parsed) {{
-                alert('Could not parse GPS coordinates.\\n\\nAccepted formats:\\n• Decimal: 39.640296, -0.230037\\n• DMS: 39°38\\'25.7"N 0°13\\'48.7"W');
-                return;
-            }}
-
-            const {{ lat, lon }} = parsed;
-
-            // Add GCP via API
-            fetch('/api/add_gcp', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{
-                    u: pendingClick.u,
-                    v: pendingClick.v,
-                    lat: lat,
-                    lon: lon,
-                    description: desc,
-                    accuracy: accuracy
-                }})
-            }})
-            .then(r => r.json())
-            .then(data => {{
-                gcps = data.gcps;
-                distribution = data.distribution;
-                homography = data.homography;
-                updateUI();
-                closeModal();
-            }});
-        }}
-
         // Delete GCP
         function deleteGCP(index) {{
             fetch('/api/delete_gcp', {{
@@ -3272,7 +2979,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             // Update GCP list with reprojection errors
             const listEl = document.getElementById('gcpList');
             if (gcps.length === 0) {{
-                listEl.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">Click on the image to add GCPs</div>';
+                listEl.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">Load YAML or use KML import to add GCPs</div>';
             }} else {{
                 listEl.innerHTML = gcps.map((gcp, i) => {{
                     // Get error info from homography if available
@@ -3644,26 +3351,13 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 marker.projectedIndex = i;
                 marker.kmlName = label;
 
-                // Calculate drift info
-                const orig = originalProjectedPositions[i];
-                let driftInfo = '';
-                if (orig && orig.pixel_u !== null && orig.pixel_v !== null) {{
-                    const dx = point.pixel_u - orig.pixel_u;
-                    const dy = point.pixel_v - orig.pixel_v;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist > 2) {{
-                        driftInfo = `<br><span style="color: #ff9800;">Drift: (${{dx.toFixed(1)}}, ${{dy.toFixed(1)}}) = ${{dist.toFixed(1)}}px</span>`;
-                    }}
-                }}
-
-                // Add popup with GPS info and drift (no discard button - use context menu)
+                // Add popup with GPS info (no discard button - use context menu)
                 const selectionCount = selectedMapFirstIndices.size;
                 const popupContent = `
                     <div style="min-width: 220px;">
                         <strong>${{label}}</strong>${{isSelected ? ' <span style="color: #4CAF50;">(SELECTED)</span>' : ''}}<br>
                         GPS: ${{gpsLat.toFixed(6)}}, ${{gpsLon.toFixed(6)}}<br>
                         Image: (${{point.pixel_u.toFixed(1)}}, ${{point.pixel_v.toFixed(1)}})<br>
-                        ${{driftInfo}}
                         <div style="margin-top: 8px; font-size: 11px; color: #888;">
                             Click to select/deselect (Ctrl+Click for multi-select)<br>
                             Right-click for options
@@ -3928,43 +3622,15 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             if (selectedMapFirstIndices.size > 0 && mapFirstMode) {{
                 const selectionCount = selectedMapFirstIndices.size;
                 let labelText = '';
-                let driftText = '';
 
                 if (selectionCount === 1) {{
-                    // Single selection - show point name and drift
+                    // Single selection - show point name
                     const index = Array.from(selectedMapFirstIndices)[0];
                     const kmlPoint = kmlPoints[index] || {{}};
                     labelText = `<strong>${{kmlPoint.name || 'Point ' + (index + 1)}}</strong> selected`;
-
-                    // Calculate drift
-                    const point = projectedPoints[index];
-                    const orig = originalProjectedPositions[index];
-                    if (orig && orig.pixel_u !== null && orig.pixel_v !== null) {{
-                        const dx = point.pixel_u - orig.pixel_u;
-                        const dy = point.pixel_v - orig.pixel_v;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        driftText = ` | Drift: ${{dist.toFixed(0)}}px`;
-                    }}
                 }} else {{
                     // Multi-selection - show count
                     labelText = `<strong>${{selectionCount}} points</strong> selected`;
-
-                    // Calculate average drift
-                    let totalDrift = 0;
-                    let driftCount = 0;
-                    selectedMapFirstIndices.forEach(index => {{
-                        const point = projectedPoints[index];
-                        const orig = originalProjectedPositions[index];
-                        if (orig && orig.pixel_u !== null && orig.pixel_v !== null) {{
-                            const dx = point.pixel_u - orig.pixel_u;
-                            const dy = point.pixel_v - orig.pixel_v;
-                            totalDrift += Math.sqrt(dx * dx + dy * dy);
-                            driftCount++;
-                        }}
-                    }});
-                    if (driftCount > 0) {{
-                        driftText = ` | Avg drift: ${{(totalDrift / driftCount).toFixed(0)}}px`;
-                    }}
                 }}
 
                 const indicator = document.createElement('div');
@@ -3987,7 +3653,7 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     gap: 15px;
                 `;
                 indicator.innerHTML = `
-                    <span>${{labelText}}${{driftText}}</span>
+                    <span>${{labelText}}</span>
                     <span style="font-size: 12px; opacity: 0.9;">
                         ← → ↑ ↓ to move | Shift = faster | Esc = deselect
                     </span>
@@ -4435,23 +4101,12 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             let visibleCount = 0;
             let outOfViewCount = 0;
             let discardedCount = 0;
-            let adjustedCount = 0;
 
             projectedPoints.forEach((point, i) => {{
                 if (point.visible === false) {{
                     discardedCount++;
                 }} else if (point.reason === 'visible') {{
                     visibleCount++;
-                    // Check if point was adjusted from original position
-                    if (originalProjectedPositions[i] &&
-                        originalProjectedPositions[i].pixel_u !== null &&
-                        originalProjectedPositions[i].pixel_v !== null) {{
-                        const dx = point.pixel_u - originalProjectedPositions[i].pixel_u;
-                        const dy = point.pixel_v - originalProjectedPositions[i].pixel_v;
-                        if (Math.sqrt(dx*dx + dy*dy) > 2) {{  // More than 2 pixels moved
-                            adjustedCount++;
-                        }}
-                    }}
                 }} else if (point.reason === 'behind_camera' || point.reason === 'outside_bounds') {{
                     outOfViewCount++;
                 }}
@@ -4462,7 +4117,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             document.getElementById('visiblePoints').textContent = visibleCount;
             document.getElementById('outOfViewPoints').textContent = outOfViewCount;
             document.getElementById('discardedPoints').textContent = discardedCount;
-            document.getElementById('adjustedPoints').textContent = adjustedCount;
 
             // Update height verification warning
             const warningEl = document.getElementById('heightWarning');
@@ -4640,430 +4294,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
             }});
         }}
 
-        // ============================================================
-        // Drift Analysis Functions
-        // ============================================================
-
-        function calculateDriftVectors() {{
-            const driftData = [];
-
-            projectedPoints.forEach((point, i) => {{
-                // Skip non-visible or discarded points
-                if (point.visible === false || point.reason !== 'visible') return;
-
-                const original = originalProjectedPositions[i];
-                if (!original || original.pixel_u === null || original.pixel_v === null) return;
-
-                const dx = point.pixel_u - original.pixel_u;
-                const dy = point.pixel_v - original.pixel_v;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                // Only include if actually moved (threshold: 2 pixels)
-                if (distance > 2) {{
-                    driftData.push({{
-                        index: i,
-                        name: kmlPoints[i]?.name || `Point ${{i + 1}}`,
-                        original_u: original.pixel_u,
-                        original_v: original.pixel_v,
-                        current_u: point.pixel_u,
-                        current_v: point.pixel_v,
-                        dx: dx,
-                        dy: dy,
-                        distance: distance,
-                        // Direction in degrees (0 = right, 90 = down)
-                        direction: Math.atan2(dy, dx) * 180 / Math.PI
-                    }});
-                }}
-            }});
-
-            return driftData;
-        }}
-
-        function analyzeDriftPattern(driftData) {{
-            if (driftData.length < 2) {{
-                return {{
-                    pattern: 'insufficient_data',
-                    message: 'Need at least 2 adjusted points for drift analysis.',
-                    suggestions: []
-                }};
-            }}
-
-            // Calculate statistics
-            const dxValues = driftData.map(d => d.dx);
-            const dyValues = driftData.map(d => d.dy);
-            const distances = driftData.map(d => d.distance);
-
-            const meanDx = dxValues.reduce((a, b) => a + b, 0) / dxValues.length;
-            const meanDy = dyValues.reduce((a, b) => a + b, 0) / dyValues.length;
-            const meanDistance = distances.reduce((a, b) => a + b, 0) / distances.length;
-
-            const stdDx = Math.sqrt(dxValues.reduce((sum, x) => sum + Math.pow(x - meanDx, 2), 0) / dxValues.length);
-            const stdDy = Math.sqrt(dyValues.reduce((sum, y) => sum + Math.pow(y - meanDy, 2), 0) / dyValues.length);
-            const stdDistance = Math.sqrt(distances.reduce((sum, d) => sum + Math.pow(d - meanDistance, 2), 0) / distances.length);
-
-            // Coefficient of variation (how consistent is the drift?)
-            const cvDx = stdDx / Math.abs(meanDx) || Infinity;
-            const cvDy = stdDy / Math.abs(meanDy) || Infinity;
-
-            const result = {{
-                stats: {{
-                    mean_dx: meanDx,
-                    mean_dy: meanDy,
-                    mean_distance: meanDistance,
-                    std_dx: stdDx,
-                    std_dy: stdDy,
-                    std_distance: stdDistance,
-                    num_points: driftData.length
-                }},
-                pattern: 'unknown',
-                message: '',
-                suggestions: [],
-                confidence: 'low'
-            }};
-
-            // Analyze pattern
-            const isConsistentDx = cvDx < 0.5;  // CV < 50%
-            const isConsistentDy = cvDy < 0.5;
-
-            // Check for uniform translation (all points shifted same direction)
-            if (isConsistentDx && isConsistentDy && stdDistance < meanDistance * 0.3) {{
-                result.pattern = 'uniform_translation';
-                result.message = `All points shifted uniformly by (~${{meanDx.toFixed(1)}}px, ~${{meanDy.toFixed(1)}}px)`;
-                result.confidence = 'high';
-
-                // This suggests camera GPS position error or pan offset error
-                if (Math.abs(meanDx) > Math.abs(meanDy) * 2) {{
-                    result.suggestions.push({{
-                        type: 'pan_offset',
-                        message: `Horizontal drift suggests pan offset error. Consider adjusting pan_offset_deg.`,
-                        estimated_correction: meanDx > 0 ? 'Increase pan_offset_deg' : 'Decrease pan_offset_deg'
-                    }});
-                }} else if (Math.abs(meanDy) > Math.abs(meanDx) * 2) {{
-                    result.suggestions.push({{
-                        type: 'tilt_or_height',
-                        message: `Vertical drift suggests tilt or height error.`,
-                        estimated_correction: meanDy > 0 ? 'Height may be too low or tilt too high' : 'Height may be too high or tilt too low'
-                    }});
-                }} else {{
-                    result.suggestions.push({{
-                        type: 'camera_position',
-                        message: `Combined drift suggests camera GPS position error.`,
-                        estimated_correction: `Check camera lat/lon configuration`
-                    }});
-                }}
-            }}
-            // Check for radial pattern (scaling from center)
-            else {{
-                // Calculate if points move radially from image center
-                const centerU = imageWidth / 2;
-                const centerV = imageHeight / 2;
-
-                let radialScore = 0;
-                driftData.forEach(d => {{
-                    const fromCenterU = d.original_u - centerU;
-                    const fromCenterV = d.original_v - centerV;
-                    const toPointU = d.current_u - d.original_u;
-                    const toPointV = d.current_v - d.original_v;
-
-                    // Dot product to check if drift is along radial direction
-                    const dot = fromCenterU * toPointU + fromCenterV * toPointV;
-                    const radialMag = Math.sqrt(fromCenterU*fromCenterU + fromCenterV*fromCenterV);
-                    const driftMag = Math.sqrt(toPointU*toPointU + toPointV*toPointV);
-
-                    if (radialMag > 10 && driftMag > 2) {{
-                        radialScore += dot / (radialMag * driftMag);  // Cosine similarity
-                    }}
-                }});
-
-                radialScore /= driftData.length;
-
-                if (Math.abs(radialScore) > 0.6) {{
-                    result.pattern = 'radial_scaling';
-                    const direction = radialScore > 0 ? 'outward' : 'inward';
-                    result.message = `Points drift ${{direction}} from image center (scale factor error)`;
-                    result.confidence = 'medium';
-                    result.suggestions.push({{
-                        type: 'height',
-                        message: `Radial ${{direction}} drift strongly suggests camera height error.`,
-                        estimated_correction: radialScore > 0
-                            ? `Height appears LOWER than configured. Try increasing height_m.`
-                            : `Height appears HIGHER than configured. Try decreasing height_m.`
-                    }});
-                }} else {{
-                    result.pattern = 'mixed';
-                    result.message = `Mixed drift pattern - multiple error sources likely`;
-                    result.confidence = 'low';
-                    result.suggestions.push({{
-                        type: 'multiple',
-                        message: `Complex drift pattern may indicate multiple calibration errors.`,
-                        estimated_correction: `Check height, pan_offset, and camera GPS coordinates.`
-                    }});
-                }}
-            }}
-
-            // Estimate height correction if we have enough data
-            if (driftData.length >= 3 && heightVerification) {{
-                const configuredHeight = heightVerification.configured_height || 5.0;
-
-                // Use radial drift to estimate scale factor
-                let scaleSamples = [];
-                const centerU = imageWidth / 2;
-                const centerV = imageHeight / 2;
-
-                driftData.forEach(d => {{
-                    const origDist = Math.sqrt(Math.pow(d.original_u - centerU, 2) + Math.pow(d.original_v - centerV, 2));
-                    const currDist = Math.sqrt(Math.pow(d.current_u - centerU, 2) + Math.pow(d.current_v - centerV, 2));
-
-                    if (origDist > 50) {{  // Only use points reasonably far from center
-                        scaleSamples.push(currDist / origDist);
-                    }}
-                }});
-
-                if (scaleSamples.length >= 2) {{
-                    const avgScale = scaleSamples.reduce((a, b) => a + b, 0) / scaleSamples.length;
-                    const estimatedHeight = configuredHeight / avgScale;
-
-                    if (Math.abs(avgScale - 1.0) > 0.05) {{  // More than 5% scale change
-                        result.estimatedHeight = estimatedHeight;
-                        result.suggestions.push({{
-                            type: 'height_estimate',
-                            message: `Based on point adjustments, estimated true height: ${{estimatedHeight.toFixed(2)}}m (configured: ${{configuredHeight.toFixed(2)}}m)`,
-                            estimated_correction: `Set height_m to approximately ${{estimatedHeight.toFixed(1)}}m`
-                        }});
-                    }}
-                }}
-            }}
-
-            // Estimate camera GPS correction from uniform translation drift
-            if (heightVerification && heightVerification.camera_lat && heightVerification.camera_lon &&
-                driftData.length >= 2 && (result.pattern === 'uniform_translation' || Math.abs(meanDx) > 5 || Math.abs(meanDy) > 5)) {{
-
-                const configuredHeight = heightVerification.configured_height || 5.0;
-                const tiltDeg = heightVerification.tilt_deg || 45;
-                const panDeg = heightVerification.pan_deg || 0;
-                const cameraLat = heightVerification.camera_lat;
-                const cameraLon = heightVerification.camera_lon;
-                const imgWidth = heightVerification.image_width || imageWidth;
-                const imgHeight = heightVerification.image_height || imageHeight;
-
-                // Calculate approximate meters per pixel at scene center
-                // Ground distance from camera = height / tan(tilt)
-                // For a typical PTZ camera with ~60° horizontal FOV
-                const tiltRad = tiltDeg * Math.PI / 180;
-                const groundDistanceAtCenter = configuredHeight / Math.tan(tiltRad);
-
-                // Approximate horizontal FOV based on typical PTZ camera
-                const hFovDeg = 60;  // Typical PTZ horizontal FOV at 1x zoom
-                const hFovRad = hFovDeg * Math.PI / 180;
-                const viewWidthAtCenter = 2 * groundDistanceAtCenter * Math.tan(hFovRad / 2);
-
-                // Meters per pixel
-                const metersPerPixelX = viewWidthAtCenter / imgWidth;
-                const metersPerPixelY = metersPerPixelX;  // Approximate square pixels
-
-                // Convert pixel drift to meters in camera coordinate system
-                // Note: positive dx means points need to move right in image,
-                // which means the projected points are too far left,
-                // which means camera thinks it's further right than it is
-                // So we need to move camera LEFT (subtract from position in that direction)
-                const driftMetersRight = -meanDx * metersPerPixelX;  // Camera needs to move this much right
-                const driftMetersForward = -meanDy * metersPerPixelY;  // Camera needs to move this much forward
-
-                // Rotate by pan angle to get East/North offset
-                // Pan=0 means camera pointing North, pan increases clockwise
-                const panRad = panDeg * Math.PI / 180;
-                const driftEast = driftMetersRight * Math.cos(panRad) + driftMetersForward * Math.sin(panRad);
-                const driftNorth = -driftMetersRight * Math.sin(panRad) + driftMetersForward * Math.cos(panRad);
-
-                // Convert to lat/lon offset
-                // 1 degree latitude ≈ 111,111 meters
-                // 1 degree longitude ≈ 111,111 * cos(latitude) meters
-                const metersPerDegreeLat = 111111;
-                const metersPerDegreeLon = 111111 * Math.cos(cameraLat * Math.PI / 180);
-
-                const driftLat = driftNorth / metersPerDegreeLat;
-                const driftLon = driftEast / metersPerDegreeLon;
-
-                // Calculate suggested camera GPS
-                const suggestedLat = cameraLat + driftLat;
-                const suggestedLon = cameraLon + driftLon;
-
-                // Only suggest if drift is significant (> 0.5 meters)
-                const totalDriftMeters = Math.sqrt(driftEast * driftEast + driftNorth * driftNorth);
-
-                if (totalDriftMeters > 0.5) {{
-                    result.estimatedCameraGPS = {{
-                        latitude: suggestedLat,
-                        longitude: suggestedLon,
-                        currentLatitude: cameraLat,
-                        currentLongitude: cameraLon,
-                        driftEast: driftEast,
-                        driftNorth: driftNorth,
-                        driftMeters: totalDriftMeters,
-                        metersPerPixel: metersPerPixelX
-                    }};
-
-                    result.suggestions.push({{
-                        type: 'camera_gps_estimate',
-                        message: `Based on uniform drift of ${{totalDriftMeters.toFixed(1)}}m (${{driftEast >= 0 ? '+' : ''}}${{driftEast.toFixed(1)}}m E, ${{driftNorth >= 0 ? '+' : ''}}${{driftNorth.toFixed(1)}}m N), estimated camera GPS:`,
-                        estimated_correction: `Suggested: ${{suggestedLat.toFixed(6)}}, ${{suggestedLon.toFixed(6)}}\\nCurrent: ${{cameraLat.toFixed(6)}}, ${{cameraLon.toFixed(6)}}`
-                    }});
-                }}
-            }}
-
-            return result;
-        }}
-
-        function showDriftAnalysis() {{
-            if (!mapFirstMode) {{
-                alert('Drift analysis is only available in map-first mode.');
-                return;
-            }}
-
-            const driftData = calculateDriftVectors();
-            const analysis = analyzeDriftPattern(driftData);
-
-            driftAnalysisResult = analysis;
-            suggestedCalibration = analysis.estimatedHeight || null;
-
-            // Show the drift analysis panel
-            document.getElementById('driftAnalysisPanel').style.display = 'block';
-
-            const resultsEl = document.getElementById('driftResults');
-            const recommendationsEl = document.getElementById('driftRecommendations');
-            const recommendationsContent = document.getElementById('driftRecommendationsContent');
-
-            if (driftData.length === 0) {{
-                resultsEl.innerHTML = `
-                    <p style="color: #ff9800;">No adjusted points detected.</p>
-                    <p style="color: #888; margin-top: 8px;">Drag KML markers to match visible features in the image, then click "Analyze Drift" again.</p>
-                `;
-                recommendationsEl.style.display = 'none';
-                return;
-            }}
-
-            // Show statistics
-            const stats = analysis.stats;
-            let html = `
-                <div style="margin-bottom: 12px;">
-                    <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">
-                        Pattern: <span style="color: ${{analysis.confidence === 'high' ? '#4CAF50' : analysis.confidence === 'medium' ? '#ff9800' : '#f44336'}};">
-                        ${{analysis.pattern.replace(/_/g, ' ')}}</span>
-                        <span style="font-size: 11px; color: #888;">(${{analysis.confidence}} confidence)</span>
-                    </div>
-                    <div style="color: #ccc;">${{analysis.message}}</div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; background: #3a3a3a; padding: 10px; border-radius: 4px;">
-                    <div>Points adjusted: <strong>${{stats.num_points}}</strong></div>
-                    <div>Mean distance: <strong>${{stats.mean_distance.toFixed(1)}}px</strong></div>
-                    <div>Mean Δx: <strong>${{stats.mean_dx.toFixed(1)}}px</strong></div>
-                    <div>Mean Δy: <strong>${{stats.mean_dy.toFixed(1)}}px</strong></div>
-                    <div>Std Δx: <strong>${{stats.std_dx.toFixed(1)}}px</strong></div>
-                    <div>Std Δy: <strong>${{stats.std_dy.toFixed(1)}}px</strong></div>
-                </div>
-            `;
-
-            // Show per-point drift table
-            if (driftData.length <= 10) {{
-                html += `
-                    <div style="margin-top: 12px; font-size: 11px;">
-                        <div style="font-weight: 600; margin-bottom: 4px;">Individual Point Drift:</div>
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr style="color: #888;">
-                                <th style="text-align: left; padding: 2px 4px;">Point</th>
-                                <th style="text-align: right; padding: 2px 4px;">Δx</th>
-                                <th style="text-align: right; padding: 2px 4px;">Δy</th>
-                                <th style="text-align: right; padding: 2px 4px;">Dist</th>
-                            </tr>
-                `;
-                driftData.forEach(d => {{
-                    html += `
-                        <tr>
-                            <td style="padding: 2px 4px;">${{d.name}}</td>
-                            <td style="text-align: right; padding: 2px 4px; color: ${{d.dx > 0 ? '#4CAF50' : '#f44336'}};">${{d.dx.toFixed(1)}}</td>
-                            <td style="text-align: right; padding: 2px 4px; color: ${{d.dy > 0 ? '#4CAF50' : '#f44336'}};">${{d.dy.toFixed(1)}}</td>
-                            <td style="text-align: right; padding: 2px 4px;">${{d.distance.toFixed(1)}}</td>
-                        </tr>
-                    `;
-                }});
-                html += `</table></div>`;
-            }}
-
-            resultsEl.innerHTML = html;
-
-            // Show recommendations
-            if (analysis.suggestions.length > 0) {{
-                recommendationsEl.style.display = 'block';
-                let recHtml = '';
-                analysis.suggestions.forEach(s => {{
-                    // Choose border color based on suggestion type
-                    let borderColor = '#ff9800';  // Default orange
-                    if (s.type === 'height_estimate') borderColor = '#4CAF50';  // Green
-                    if (s.type === 'camera_gps_estimate') borderColor = '#2196F3';  // Blue
-
-                    // Handle multi-line corrections (especially for GPS coordinates)
-                    const correctionHtml = s.estimated_correction.replace(/\\n/g, '<br>');
-
-                    recHtml += `
-                        <div style="background: #3a3a3a; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid ${{borderColor}};">
-                            <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">${{s.type.replace(/_/g, ' ').toUpperCase()}}</div>
-                            <div style="font-size: 12px; color: #ccc;">${{s.message}}</div>
-                            <div style="font-size: 11px; color: #4CAF50; margin-top: 4px; font-family: monospace;">${{correctionHtml}}</div>
-                        </div>
-                    `;
-                }});
-                recommendationsContent.innerHTML = recHtml;
-
-                // Enable calibration button if we have height estimate
-                if (analysis.estimatedHeight) {{
-                    document.getElementById('applyCalibrationBtn').disabled = false;
-                }}
-            }} else {{
-                recommendationsEl.style.display = 'none';
-            }}
-        }}
-
-        function applyCalibration() {{
-            if (!suggestedCalibration) {{
-                alert('No calibration suggestion available. Run drift analysis first.');
-                return;
-            }}
-
-            const currentHeight = heightVerification?.configured_height || 5.0;
-            const newHeight = suggestedCalibration;
-
-            if (!confirm(`Apply calibration?\n\nCurrent height: ${{currentHeight.toFixed(2)}}m\nSuggested height: ${{newHeight.toFixed(2)}}m\n\nThis will update the camera configuration.`)) {{
-                return;
-            }}
-
-            // Send calibration request to server
-            fetch('/api/apply_calibration', {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{
-                    estimated_height: newHeight,
-                    drift_analysis: driftAnalysisResult
-                }})
-            }})
-            .then(r => r.json())
-            .then(data => {{
-                if (data.success) {{
-                    alert(`Calibration applied!\n\nNew height: ${{newHeight.toFixed(2)}}m\n\nNote: To see the effect, reload the page with the new camera parameters.`);
-
-                    // Update local height verification
-                    if (heightVerification) {{
-                        heightVerification.configured_height = newHeight;
-                    }}
-                }} else {{
-                    alert('Failed to apply calibration: ' + (data.error || 'Unknown error'));
-                }}
-            }})
-            .catch(err => {{
-                console.error('Calibration error:', err);
-                alert('Error applying calibration: ' + err);
-            }});
-        }}
-
         // Handle keyboard shortcuts
         document.addEventListener('keydown', function(e) {{
             // Escape key - close modals, exit modes, or deselect point
@@ -5093,10 +4323,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     e.preventDefault();
                     return;
                 }}
-                closeModal();
             }}
 
-            // Enter key - confirm modal or accept current mode
+            // Enter key - accept current mode
             if (e.key === 'Enter') {{
                 if (yawMode) {{
                     exitYawMode();
@@ -5117,9 +4346,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     exitGPSMode();
                     e.preventDefault();
                     return;
-                }}
-                if (document.getElementById('addGcpModal').classList.contains('active')) {{
-                    confirmAddGCP();
                 }}
             }}
 
@@ -5241,9 +4467,6 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 }}
             }}
         }});
-
-        // Add event listener for GPS input to show real-time parsing
-        document.getElementById('gpsInput').addEventListener('input', updateParsedDisplay);
 
         // ===== Feature Detection Functions =====
         let maskOverlay = null;
@@ -5415,26 +4638,7 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
         content_length = int(self.headers['Content-Length'])
         post_data = self.rfile.read(content_length)
 
-        if parsed.path == '/api/add_gcp':
-            data = json.loads(post_data)
-            self.session.add_gcp(
-                u=data['u'],
-                v=data['v'],
-                lat=data['lat'],
-                lon=data['lon'],
-                description=data.get('description', ''),
-                accuracy=data.get('accuracy', 'medium'),
-                utm_easting=data.get('utm_easting'),
-                utm_northing=data.get('utm_northing'),
-                utm_crs=data.get('utm_crs')
-            )
-            self.send_json_response({
-                'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution(),
-                'homography': self.session.update_homography()
-            })
-
-        elif parsed.path == '/api/delete_gcp':
+        if parsed.path == '/api/delete_gcp':
             data = json.loads(post_data)
             self.session.remove_gcp(data['index'])
             self.send_json_response({
@@ -5623,83 +4827,6 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({
                     'success': False,
                     'error': f'Export failed: {str(e)}'
-                })
-
-        elif parsed.path == '/api/apply_calibration':
-            # Apply calibration from drift analysis
-            try:
-                data = json.loads(post_data)
-                estimated_height = data.get('estimated_height')
-                drift_analysis = data.get('drift_analysis', {})
-
-                if estimated_height is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No estimated height provided'
-                    })
-                    return
-
-                # Log the calibration
-                print("\n" + "=" * 60)
-                print("CALIBRATION APPLIED FROM DRIFT ANALYSIS")
-                print("=" * 60)
-                print(f"Camera: {self.session.camera_name}")
-                print(f"Previous height: {self.session.height_verification.get('configured_height', 'unknown')}m")
-                print(f"New estimated height: {estimated_height:.2f}m")
-                if drift_analysis:
-                    print(f"Pattern detected: {drift_analysis.get('pattern', 'unknown')}")
-                    print(f"Confidence: {drift_analysis.get('confidence', 'unknown')}")
-                    if drift_analysis.get('stats'):
-                        stats = drift_analysis['stats']
-                        print(f"Points analyzed: {stats.get('num_points', 0)}")
-                        print(f"Mean drift: ({stats.get('mean_dx', 0):.1f}, {stats.get('mean_dy', 0):.1f}) px")
-                print("=" * 60)
-
-                # Save calibration to a file for reference
-                calibration_file = f"calibration_{self.session.camera_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml"
-                calibration_data = {
-                    'camera_name': self.session.camera_name,
-                    'timestamp': datetime.now().isoformat(),
-                    'previous_height': self.session.height_verification.get('configured_height') if self.session.height_verification else None,
-                    'estimated_height': float(estimated_height),
-                    'drift_analysis': {
-                        'pattern': drift_analysis.get('pattern'),
-                        'confidence': drift_analysis.get('confidence'),
-                        'stats': drift_analysis.get('stats'),
-                        'suggestions': drift_analysis.get('suggestions', [])
-                    }
-                }
-
-                try:
-                    with open(calibration_file, 'w') as f:
-                        yaml.dump(calibration_data, f, default_flow_style=False)
-                    print(f"Calibration saved to: {calibration_file}")
-                except IOError as e:
-                    print(f"Warning: Could not save calibration file: {e}")
-
-                # Update the session's height verification
-                if self.session.height_verification:
-                    self.session.height_verification['previous_height'] = self.session.height_verification.get('configured_height')
-                    self.session.height_verification['configured_height'] = estimated_height
-                    self.session.height_verification['calibrated'] = True
-                    self.session.height_verification['calibration_timestamp'] = datetime.now().isoformat()
-
-                self.send_json_response({
-                    'success': True,
-                    'message': f'Calibration applied. New height: {estimated_height:.2f}m',
-                    'calibration_file': calibration_file,
-                    'estimated_height': estimated_height
-                })
-
-            except json.JSONDecodeError as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Invalid JSON data: {str(e)}'
-                })
-            except Exception as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Calibration failed: {str(e)}'
                 })
 
         elif parsed.path == '/api/update_homography':
