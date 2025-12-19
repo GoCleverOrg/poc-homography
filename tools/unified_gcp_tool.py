@@ -122,8 +122,11 @@ class UnifiedSession:
 
         # Camera frame (live camera capture for Tab 2)
         self.camera_frame = None
-        self.camera_params = None
         self.projected_points = []
+
+        # Initialize camera_params from config (available immediately for visualization)
+        # These are default/static params; live capture will update pan/tilt/zoom
+        self._init_camera_params_from_config()
 
         # SAM3 feature detection masks
         self.cartography_mask = None
@@ -165,6 +168,47 @@ class UnifiedSession:
         px = (easting - self.geotiff_params['origin_easting']) / self.geotiff_params['pixel_size_x']
         py = (northing - self.geotiff_params['origin_northing']) / self.geotiff_params['pixel_size_y']
         return px, py
+
+    def _init_camera_params_from_config(self):
+        """Initialize camera_params from camera_config for immediate visualization."""
+        from poc_homography.gps_distance_calculator import dms_to_dd
+
+        # Parse camera lat/lon from DMS format
+        camera_lat = dms_to_dd(self.camera_config['lat'])
+        camera_lon = dms_to_dd(self.camera_config['lon'])
+
+        # Get height from config
+        height_m = self.camera_config.get('height_m', 5.0)
+
+        # Default pan/tilt/zoom (will be updated when camera frame is captured)
+        # Use values that produce a visible footprint on the cartography
+        # - Low zoom for wide FOV
+        # - Moderate tilt to look at a reasonable distance
+        default_pan = self.camera_config.get('pan_offset_deg', 0.0)
+        default_tilt = 25.0  # Look further out (ground dist ≈ height / tan(25°) ≈ 10m)
+        default_zoom = 1.0   # Widest FOV (~60° horizontal)
+
+        # Compute intrinsic matrix K
+        image_width = 1920
+        image_height = 1080
+        K = CameraGeometry.get_intrinsics(
+            zoom_factor=default_zoom,
+            W_px=image_width,
+            H_px=image_height,
+            sensor_width_mm=self.camera_config.get('sensor_width_mm', 6.78)
+        )
+
+        self.camera_params = {
+            'camera_lat': camera_lat,
+            'camera_lon': camera_lon,
+            'height_m': height_m,
+            'pan_deg': default_pan,
+            'tilt_deg': default_tilt,
+            'zoom': default_zoom,
+            'image_width': image_width,
+            'image_height': image_height,
+            'K': K
+        }
 
     def add_point(self, px: float, py: float, name: str, category: str):
         """Add a KML point."""
@@ -439,14 +483,22 @@ CRS: {crs}</description>
                     return None
 
                 # Normalize homogeneous coordinates
-                world_x = pt_world[0, 0] / pt_world[2, 0]
-                world_y = pt_world[1, 0] / pt_world[2, 0]
+                # These are in camera's local frame: Y = forward, X = right
+                local_x = pt_world[0, 0] / pt_world[2, 0]
+                local_y = pt_world[1, 0] / pt_world[2, 0]
+
+                # Rotate by pan angle to get absolute North/East offsets
+                # Pan is measured clockwise from North in degrees
+                # At pan=0: forward=North, right=East
+                # At pan=P: forward=bearing P from North, right=bearing (P+90) from North
+                pan_rad = np.radians(pan_deg)
+                north_offset = local_y * np.cos(pan_rad) - local_x * np.sin(pan_rad)
+                east_offset = local_y * np.sin(pan_rad) + local_x * np.cos(pan_rad)
 
                 # Convert world offset (meters) to lat/lon
-                # world_x is East-West offset, world_y is North-South offset
                 # Use approximate conversion: 1 degree lat ≈ 111320m
-                lat_offset_deg = world_y / 111320.0
-                lon_offset_deg = world_x / (111320.0 * np.cos(np.radians(camera_lat)))
+                lat_offset_deg = north_offset / 111320.0
+                lon_offset_deg = east_offset / (111320.0 * np.cos(np.radians(camera_lat)))
 
                 corner_lat = camera_lat + lat_offset_deg
                 corner_lon = camera_lon + lon_offset_deg
@@ -928,6 +980,21 @@ def generate_unified_html(session: UnifiedSession) -> str:
     # Prepare config for JavaScript
     config = session.geotiff_params
 
+    # Prepare initial camera params for JavaScript
+    initial_camera_params = None
+    if session.camera_params:
+        initial_camera_params = {
+            'camera_lat': session.camera_params.get('camera_lat'),
+            'camera_lon': session.camera_params.get('camera_lon'),
+            'height_m': session.camera_params.get('height_m'),
+            'pan_deg': session.camera_params.get('pan_deg'),
+            'tilt_deg': session.camera_params.get('tilt_deg'),
+            'zoom': session.camera_params.get('zoom'),
+            'image_width': session.camera_params.get('image_width'),
+            'image_height': session.camera_params.get('image_height'),
+            'camera_footprint': session.calculate_camera_footprint()
+        }
+
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -1354,12 +1421,12 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <input type="text" id="point-name" placeholder="e.g., Z1, A1, P1">
 
                     <h3>Camera Visualization</h3>
-                    <div class="camera-toggle disabled" id="camera-toggle-container">
-                        <input type="checkbox" id="camera-overlay-toggle" checked disabled>
+                    <div class="camera-toggle" id="camera-toggle-container">
+                        <input type="checkbox" id="camera-overlay-toggle" checked>
                         <label for="camera-overlay-toggle">Show Camera View</label>
                     </div>
                     <div id="camera-status" style="font-size: 11px; color: #888; margin-bottom: 10px;">
-                        Camera view available after switching to GCP Capture tab
+                        Shows camera position and estimated field of view
                     </div>
 
                     <h3>SAM3 Feature Detection</h3>
@@ -1467,7 +1534,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let categoryVisibility = {{ zebra: true, arrow: true, parking: true, other: true }};
         let currentTab = 'kml';
         let projectedPoints = [];
-        let cameraParams = null;
+        let cameraParams = {json.dumps(initial_camera_params) if initial_camera_params else 'null'};
         let adjustmentMode = 'move';  // 'move', 'rotate', 'scale'
         let maskVisible = {{ kml: false, gcp: false }};
         let maskData = {{ kml: null, gcp: null }};
@@ -1477,6 +1544,22 @@ def generate_unified_html(session: UnifiedSession) -> str:
         const gcpImg = document.getElementById('gcp-image');
         const container = document.getElementById('image-container');
         const gcpContainer = document.getElementById('gcp-image-container');
+
+        // Initialize camera visualization when image loads
+        img.onload = function() {{
+            if (cameraParams) {{
+                enableCameraToggle();
+                updateCameraVisualization();
+            }}
+        }};
+
+        // Also check if image is already loaded (base64 inline images load synchronously)
+        if (img.complete && img.naturalWidth > 0) {{
+            if (cameraParams) {{
+                enableCameraToggle();
+                updateCameraVisualization();
+            }}
+        }}
 
         // Initialize
         updatePointName();
@@ -2195,15 +2278,13 @@ def generate_unified_html(session: UnifiedSession) -> str:
         }}
 
         function enableCameraToggle() {{
-            const toggleContainer = document.getElementById('camera-toggle-container');
-            const checkbox = document.getElementById('camera-overlay-toggle');
+            // Update status when live camera data is captured
             const statusDiv = document.getElementById('camera-status');
-
-            toggleContainer.classList.remove('disabled');
-            checkbox.disabled = false;
-            checkbox.addEventListener('change', toggleCameraOverlay);
             statusDiv.textContent = 'Camera position and footprint visible on map';
         }}
+
+        // Attach toggle event listener immediately
+        document.getElementById('camera-overlay-toggle').addEventListener('change', toggleCameraOverlay);
     </script>
 </body>
 </html>'''
