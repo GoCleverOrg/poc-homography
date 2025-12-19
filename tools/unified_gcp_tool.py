@@ -427,6 +427,23 @@ CRS: {crs}</description>
                 map_height=640
             )
 
+            # Load and apply distortion coefficients from camera config
+            distortion_applied = False
+            if self.camera_name:
+                try:
+                    cam_config = get_camera_by_name(self.camera_name)
+                    if cam_config:
+                        k1 = cam_config.get('k1', 0.0)
+                        k2 = cam_config.get('k2', 0.0)
+                        p1 = cam_config.get('p1', 0.0)
+                        p2 = cam_config.get('p2', 0.0)
+                        # Only apply if non-zero coefficients exist
+                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
+                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
+                            distortion_applied = True
+                except Exception as e:
+                    print(f"Warning: Could not load distortion coefficients: {e}")
+
             # To compute the homography from cartography pixels to camera pixels,
             # we need at least 4 corresponding point pairs.
             # We'll use the 4 corners of the cartography mask.
@@ -463,9 +480,15 @@ CRS: {crs}</description>
                     print(f"Warning: Corner ({px}, {py}) is behind camera")
                     return None
 
-                # Normalize to get pixel coordinates
-                u_px = u / w
-                v_px = v / w
+                # Normalize to get undistorted pixel coordinates
+                u_px_undist = u / w
+                v_px_undist = v / w
+
+                # Step 4: Apply lens distortion to get actual camera pixel coordinates
+                if distortion_applied:
+                    u_px, v_px = geo.distort_point(u_px_undist, v_px_undist)
+                else:
+                    u_px, v_px = u_px_undist, v_px_undist
 
                 camera_corners.append((u_px, v_px))
 
