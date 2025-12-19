@@ -93,8 +93,8 @@ REPROJ_ERROR_BAD = 20.0  # pixels - likely outlier
 RANSAC_REPROJ_THRESHOLD = 5.0  # pixels - matches cv2.findHomography() call
 
 # SAM3 detection prompt for road markings
-# Future: Make configurable via UI or per-camera config
-DEFAULT_SAM3_PROMPT = "white paint"
+# Configurable via UI prompt input field
+DEFAULT_SAM3_PROMPT = "road markings"
 
 # Import for reprojection error calculation
 try:
@@ -2670,13 +2670,19 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                     <button class="btn btn-danger" id="removeOutliersBtn" onclick="removeOutliers()" disabled>Remove Outliers</button>
                     <button class="btn btn-primary" id="saveBtn" onclick="saveConfig()" disabled>Save YAML</button>
                 </div>
-                <div class="actions" style="flex-wrap: wrap; margin-top: 8px; border-top: 1px solid #444; padding-top: 8px;">
-                    <button class="btn btn-secondary" id="detectFeaturesBtn" onclick="detectFeatures()" title="Detect road markings using SAM3 AI">
-                        Detect Features
-                    </button>
-                    <button class="btn btn-secondary" id="toggleMaskBtn" onclick="toggleMaskOverlay()" style="display: none;" title="Toggle mask overlay visibility">
-                        Hide Mask
-                    </button>
+                <div style="margin-top: 8px; border-top: 1px solid #444; padding-top: 8px;">
+                    <div style="margin-bottom: 8px;">
+                        <label style="font-size: 11px; color: #888; display: block; margin-bottom: 4px;">SAM3 Detection Prompt</label>
+                        <input type="text" id="sam3PromptInput" value="road markings" placeholder="e.g., road markings, zebra crossing" style="width: 100%; padding: 6px 8px; border: 1px solid #555; border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px;">
+                    </div>
+                    <div class="actions" style="flex-wrap: wrap;">
+                        <button class="btn btn-secondary" id="detectFeaturesBtn" onclick="detectFeatures()" title="Detect features using SAM3 AI">
+                            Detect Features
+                        </button>
+                        <button class="btn btn-secondary" id="toggleMaskBtn" onclick="toggleMaskOverlay()" style="display: none;" title="Toggle mask overlay visibility">
+                            Hide Mask
+                        </button>
+                    </div>
                 </div>
                 <div style="padding: 10px 15px; font-size: 11px; color: #666; border-top: 1px solid #444;">
                     Tip: Drag markers to fine-tune. Red markers are outliers.
@@ -5251,6 +5257,9 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
 
         function detectFeatures() {{
             const detectBtn = document.getElementById('detectFeaturesBtn');
+            const promptInput = document.getElementById('sam3PromptInput');
+            const prompt = promptInput.value.trim() || 'road markings';
+
             detectBtn.disabled = true;
             showLoadingOverlay(true);
 
@@ -5258,7 +5267,8 @@ def generate_capture_html(session: GCPCaptureWebSession, frame_path: str) -> str
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{
-                    method: 'sam3'
+                    method: 'sam3',
+                    prompt: prompt
                 }})
             }})
             .then(r => r.json())
