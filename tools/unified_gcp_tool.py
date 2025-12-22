@@ -136,6 +136,7 @@ class UnifiedSession:
         self.cartography_mask = None
         self.camera_mask = None
         self.projected_cartography_mask = None  # Cartography mask projected to camera coords
+        self.projected_mask_offset = None  # CSS offset (left, top) for positioning mask overlay
         self.feature_mask_metadata = None
 
         # KML points storage (single source of truth)
@@ -488,17 +489,10 @@ CRS: {crs}</description>
                     return None
 
                 # Normalize homogeneous coordinates
-                # These are in camera's local frame: Y = forward, X = right
-                local_x = pt_world[0, 0] / pt_world[2, 0]
-                local_y = pt_world[1, 0] / pt_world[2, 0]
-
-                # Rotate by pan angle to get absolute North/East offsets
-                # Pan is measured clockwise from North in degrees
-                # At pan=0: forward=North, right=East
-                # At pan=P: forward=bearing P from North, right=bearing (P+90) from North
-                pan_rad = np.radians(pan_deg)
-                north_offset = local_y * np.cos(pan_rad) - local_x * np.sin(pan_rad)
-                east_offset = local_y * np.sin(pan_rad) + local_x * np.cos(pan_rad)
+                # H_inv returns world coordinates: X=East, Y=North (pan is already in the homography)
+                # Bug fix: Removed erroneous pan rotation that was double-applying pan
+                east_offset = pt_world[0, 0] / pt_world[2, 0]   # X = East
+                north_offset = pt_world[1, 0] / pt_world[2, 0]  # Y = North
 
                 # Convert world offset (meters) to lat/lon
                 # Use approximate conversion: 1 degree lat ≈ 111320m
@@ -593,75 +587,159 @@ CRS: {crs}</description>
                 except Exception as e:
                     print(f"Warning: Could not load distortion coefficients: {e}")
 
-            # To compute the homography from cartography pixels to camera pixels,
-            # we need at least 4 corresponding point pairs.
-            # We'll use the 4 corners of the cartography mask.
+            # =================================================================
+            # COMPOSE THE HOMOGRAPHY MATHEMATICALLY (not from sampled points)
+            # =================================================================
+            # The transformation chain is:
+            #   Cartography pixels → UTM → Local XY → Camera pixels
+            #
+            # This can be expressed as: H_total = H_camera @ T_pixel_to_localXY
+            # where T_pixel_to_localXY is an affine transformation (3x3 matrix)
+            # =================================================================
+
+            # Get camera's UTM coordinates
+            camera_easting, camera_northing = utm_converter.gps_to_utm(camera_lat, camera_lon)
+            print(f"Camera UTM: E={camera_easting:.2f}, N={camera_northing:.2f}")
+
+            # Build T_pixel_to_localXY: transforms cartography pixels to local XY
+            # Cartography pixel (px, py) → Local XY (x, y):
+            #   easting = origin_easting + px * pixel_size_x
+            #   northing = origin_northing + py * pixel_size_y
+            #   x = easting - camera_easting
+            #   y = northing - camera_northing
+            #
+            # Combined:
+            #   x = pixel_size_x * px + (origin_easting - camera_easting)
+            #   y = pixel_size_y * py + (origin_northing - camera_northing)
+            #
+            # In homogeneous coordinates:
+            #   [x]   [pixel_size_x  0            dx] [px]
+            #   [y] = [0             pixel_size_y dy] [py]
+            #   [1]   [0             0            1 ] [1 ]
+            # where dx = origin_easting - camera_easting
+            #       dy = origin_northing - camera_northing
+
+            pixel_size_x = self.geotiff_params['pixel_size_x']
+            pixel_size_y = self.geotiff_params['pixel_size_y']
+            origin_easting = self.geotiff_params['origin_easting']
+            origin_northing = self.geotiff_params['origin_northing']
+
+            dx = origin_easting - camera_easting
+            dy = origin_northing - camera_northing
+
+            T_pixel_to_localXY = np.array([
+                [pixel_size_x, 0,            dx],
+                [0,            pixel_size_y, dy],
+                [0,            0,            1 ]
+            ], dtype=np.float64)
+
+            print(f"T_pixel_to_localXY:")
+            print(f"  pixel_size: ({pixel_size_x}, {pixel_size_y})")
+            print(f"  translation: ({dx:.2f}, {dy:.2f})")
+
+            # Compose the total homography: H_total = H_camera @ T_pixel_to_localXY
+            # This maps cartography pixels directly to camera pixels
+            H_total = geo.H @ T_pixel_to_localXY
+
+            print(f"H_camera (geo.H):")
+            print(geo.H)
+            print(f"H_total (composed):")
+            print(H_total)
+
+            # Get mask dimensions
             carto_height, carto_width = self.cartography_mask.shape[:2]
 
-            # Define 4 corners in cartography pixel coordinates
-            carto_corners = [
-                (0, 0),                              # top-left
-                (carto_width - 1, 0),                # top-right
-                (carto_width - 1, carto_height - 1), # bottom-right
-                (0, carto_height - 1)                # bottom-left
-            ]
+            # Find bounding box of non-zero pixels in the mask
+            non_zero_coords = cv2.findNonZero(self.cartography_mask)
+            if non_zero_coords is None:
+                print("Warning: Mask has no non-zero pixels")
+                return None
 
-            # Transform each corner through the coordinate chain
+            bbox_x, bbox_y, w_box, h_box = cv2.boundingRect(non_zero_coords)
+            print(f"Mask bounding box: x={bbox_x}, y={bbox_y}, w={w_box}, h={h_box}")
+
+            # Project the 4 corners of the mask bounding box to determine output canvas size
+            carto_corners = np.array([
+                [bbox_x, bbox_y],                          # top-left
+                [bbox_x + w_box, bbox_y],                  # top-right
+                [bbox_x + w_box, bbox_y + h_box],          # bottom-right
+                [bbox_x, bbox_y + h_box]                   # bottom-left
+            ], dtype=np.float32)
+
+            # Project corners using H_total
             camera_corners = []
             for px, py in carto_corners:
-                # Step 1: Cartography pixel → UTM
-                easting, northing = self.pixel_to_utm(px, py)
-
-                # Step 2: UTM → World XY (relative to camera)
-                x_m, y_m = utm_converter.utm_to_local_xy(easting, northing)
-
-                # Step 3: World XY → Camera pixels (using homography H)
-                world_point = np.array([[x_m], [y_m], [1.0]])
-                image_point_homogeneous = geo.H @ world_point
-
-                u = image_point_homogeneous[0, 0]
-                v = image_point_homogeneous[1, 0]
-                w = image_point_homogeneous[2, 0]
-
-                # Check if point is in front of camera (w > 0)
-                if w <= 0:
-                    # Point is behind camera, projection not valid
-                    print(f"Warning: Corner ({px}, {py}) is behind camera")
-                    return None
-
-                # Normalize to get undistorted pixel coordinates
-                u_px_undist = u / w
-                v_px_undist = v / w
-
-                # Step 4: Apply lens distortion to get actual camera pixel coordinates
-                if distortion_applied:
-                    u_px, v_px = geo.distort_point(u_px_undist, v_px_undist)
+                pt_h = np.array([px, py, 1.0])
+                proj = H_total @ pt_h
+                if proj[2] != 0:
+                    u, v = proj[0] / proj[2], proj[1] / proj[2]
                 else:
-                    u_px, v_px = u_px_undist, v_px_undist
+                    u, v = 0, 0
+                camera_corners.append((u, v))
 
-                camera_corners.append((u_px, v_px))
+            print(f"Projected corners:")
+            for i, (c, p) in enumerate(zip(carto_corners, camera_corners)):
+                print(f"  {i}: carto ({c[0]:.0f}, {c[1]:.0f}) -> camera ({p[0]:.1f}, {p[1]:.1f})")
 
-            # Convert corners to numpy arrays for cv2.getPerspectiveTransform
-            src_pts = np.float32(carto_corners)
-            dst_pts = np.float32(camera_corners)
+            # Calculate canvas size to fit both camera frame and projected mask
+            all_x = [c[0] for c in camera_corners] + [0, cam_width]
+            all_y = [c[1] for c in camera_corners] + [0, cam_height]
+            min_x, max_x = min(all_x), max(all_x)
+            min_y, max_y = min(all_y), max(all_y)
 
-            # Compute the perspective transform matrix
-            H_carto_to_cam = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            # Clamp to reasonable bounds (10x frame size max)
+            max_extent = max(cam_width, cam_height) * 10
+            min_x = max(min_x, -max_extent)
+            max_x = min(max_x, max_extent)
+            min_y = max(min_y, -max_extent)
+            max_y = min(max_y, max_extent)
+
+            offset_x = int(-min_x) if min_x < 0 else 0
+            offset_y = int(-min_y) if min_y < 0 else 0
+            canvas_width = int(max_x - min_x) + 1
+            canvas_height = int(max_y - min_y) + 1
+
+            print(f"  Canvas size: {canvas_width}x{canvas_height}, offset: ({offset_x}, {offset_y})")
+
+            # Adjust H_total to account for the canvas offset
+            # We need to translate the output by (offset_x, offset_y)
+            T_offset = np.array([
+                [1, 0, offset_x],
+                [0, 1, offset_y],
+                [0, 0, 1]
+            ], dtype=np.float64)
+
+            H_final = T_offset @ H_total
 
             # Apply the transformation to the mask
-            projected_mask = cv2.warpPerspective(
+            projected_mask_full = cv2.warpPerspective(
                 self.cartography_mask,
-                H_carto_to_cam,
-                (cam_width, cam_height),
+                H_final,
+                (canvas_width, canvas_height),
                 flags=cv2.INTER_NEAREST,  # Use nearest neighbor for binary mask
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=0
             )
 
-            # Store and return the projected mask
-            self.projected_cartography_mask = projected_mask
+            # Debug: save full canvas mask
+            debug_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output')
+            os.makedirs(debug_dir, exist_ok=True)
+            cv2.imwrite(os.path.join(debug_dir, 'debug_projected_mask_full.png'), projected_mask_full)
+            print(f"  Debug: Saved full canvas mask to {debug_dir}/debug_projected_mask_full.png")
+
+            # Return the FULL projected mask (not cropped) so it can be displayed as overlay
+            # The offset tells JavaScript where the camera frame sits within this larger canvas
+            # A negative offset means the mask extends BEFORE the camera frame origin
+            # So to position the mask, JavaScript should use: left = -offset_x, top = -offset_y
+            print(f"  Full canvas non-zero pixels: {cv2.countNonZero(projected_mask_full)}")
+            print(f"  Camera frame is at offset ({offset_x}, {offset_y}) within canvas")
+
+            # Store the full mask and offset for the overlay
+            self.projected_cartography_mask = projected_mask_full
+            self.projected_mask_offset = (-offset_x, -offset_y)  # CSS position relative to camera frame
             print(f"Successfully projected cartography mask to camera coordinates")
-            return projected_mask
+            print(f"  Mask size: {canvas_width}x{canvas_height}, CSS offset: ({-offset_x}, {-offset_y})")
+            return projected_mask_full
 
         except Exception as e:
             print(f"Warning: Failed to project cartography mask: {e}")
@@ -819,10 +897,22 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             # Project cartography mask to camera coordinates if available (Bug 3 fix - improved logging)
             projected_mask_b64 = None
             projected_mask_available = False
+            projection_error = None
             if self.session.cartography_mask is not None:
                 print(f"Cartography mask exists, attempting projection...")
+                # Debug: save original cartography mask
+                debug_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output')
+                os.makedirs(debug_dir, exist_ok=True)
+                cv2.imwrite(os.path.join(debug_dir, 'debug_cartography_mask.png'), self.session.cartography_mask)
+                print(f"Debug: Saved cartography mask to {debug_dir}/debug_cartography_mask.png")
+
                 projected_mask = self.session.project_cartography_mask_to_camera()
                 if projected_mask is not None:
+                    # Debug: save projected mask
+                    cv2.imwrite(os.path.join(debug_dir, 'debug_projected_mask.png'), projected_mask)
+                    print(f"Debug: Saved projected mask to {debug_dir}/debug_projected_mask.png")
+                    print(f"Debug: Projected mask shape: {projected_mask.shape}, non-zero pixels: {cv2.countNonZero(projected_mask)}")
+
                     success, mask_buffer = cv2.imencode('.png', projected_mask)
                     if success:
                         projected_mask_b64 = base64.b64encode(mask_buffer).decode('utf-8')
@@ -830,8 +920,10 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         print(f"Mask projection successful, base64 length: {len(projected_mask_b64)}")
                     else:
                         print("Warning: Failed to encode projected mask as PNG")
+                        projection_error = "encoding_failed"
                 else:
-                    print("Warning: Mask projection returned None")
+                    print("Warning: Mask projection failed unexpectedly")
+                    projection_error = "projection_failed"
             else:
                 print("No cartography mask available for projection")
 
@@ -843,7 +935,9 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'kml_saved_to': temp_kml_path,
                 'total_points': len(self.session.points),
                 'projected_mask': projected_mask_b64,
-                'projected_mask_available': projected_mask_available
+                'projected_mask_available': projected_mask_available,
+                'projected_mask_offset': self.session.projected_mask_offset,
+                'projection_error': projection_error
             })
 
         elif self.path == '/api/capture_frame':
@@ -883,7 +977,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'camera_params': self.camera_params_to_dict(),
                     'projected_points': projected_points,
                     'projected_mask': projected_mask_b64,
-                    'projected_mask_available': projected_mask_available
+                    'projected_mask_available': projected_mask_available,
+                    'projected_mask_offset': self.session.projected_mask_offset
                 })
             except Exception as e:
                 self.send_json_response({
@@ -1090,7 +1185,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'camera_params': self.camera_params_to_dict(),
                     'projected_points': projected_points,
                     'projected_mask': projected_mask_b64,
-                    'projected_mask_available': projected_mask_available
+                    'projected_mask_available': projected_mask_available,
+                    'projected_mask_offset': self.session.projected_mask_offset
                 })
             except Exception as e:
                 self.send_json_response({
@@ -1287,7 +1383,16 @@ def generate_unified_html(session: UnifiedSession) -> str:
             display: inline-block;
             cursor: crosshair;
         }}
+        #gcp-image-container {{
+            position: relative;
+            display: inline-block;
+            overflow: visible;
+        }}
         #main-image {{
+            display: block;
+            max-width: none;
+        }}
+        #gcp-image {{
             display: block;
             max-width: none;
         }}
@@ -1520,9 +1625,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         /* Projected mask overlay (map mask projected onto camera view) */
         .mask-overlay.projected {{
-            opacity: 0.4;
-            mix-blend-mode: screen;
-            filter: hue-rotate(180deg) saturate(2);
+            opacity: 0.6;
+            mix-blend-mode: normal;
+            filter: sepia(100%) saturate(500%) hue-rotate(70deg) brightness(1.2);
         }}
 
         /* Camera mask overlay (camera-detected features) */
@@ -1750,7 +1855,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
     <script>
         const config = {json.dumps(config)};
         let points = [];
-        let currentZoom = 1;
+        let kmlZoom = 1;  // Independent zoom for Tab 1 (KML Extractor)
+        let gcpZoom = 1;  // Independent zoom for Tab 2 (GCP Capture)
         let counters = {{ zebra: 1, arrow: 1, parking: 1, other: 1 }};
         let categoryVisibility = {{ zebra: true, arrow: true, parking: true, other: true }};
         let currentTab = 'kml';
@@ -1761,6 +1867,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let maskData = {{ kml: null, gcp: null }};
         let projectedMaskVisible = false;
         let projectedMaskData = null;
+        let projectedMaskOffset = null;  // [left, top] CSS offset for positioning mask overlay
         let cameraOverlayVisible = true;  // Camera visualization toggle state
 
         const img = document.getElementById('main-image');
@@ -1833,13 +1940,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 autoSaveAndProject();
             }}
 
-            // Reset zoom when switching TO GCP Capture tab (Bug 2 fix)
-            // This ensures full camera frame is visible when entering GCP tab
-            // Note: We do NOT reset zoom when switching away from GCP tab
-            if (tabName === 'gcp' && currentTab !== 'gcp') {{
-                resetZoom();
-            }}
-
             currentTab = tabName;
 
             // Update tab buttons
@@ -1872,35 +1972,74 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                     // Update camera frame if provided
                     if (data.camera_frame) {{
+                        // Set up onload to calculate fit-to-view zoom after image loads
+                        gcpImg.onload = function() {{
+                            // Calculate zoom to fit image within panel (Bug 2 fix)
+                            const gcpPanel = document.getElementById('gcp-image-panel');
+                            if (gcpPanel && gcpImg.naturalWidth > 0) {{
+                                const panelWidth = gcpPanel.clientWidth;
+                                const panelHeight = gcpPanel.clientHeight;
+                                const imgWidth = gcpImg.naturalWidth;
+                                const imgHeight = gcpImg.naturalHeight;
+
+                                // Calculate zoom to fit both dimensions
+                                const zoomX = panelWidth / imgWidth;
+                                const zoomY = panelHeight / imgHeight;
+                                gcpZoom = Math.min(zoomX, zoomY, 1);  // Don't zoom in beyond 1
+
+                                gcpImg.style.width = (imgWidth * gcpZoom) + 'px';
+
+                                // Reset scroll position
+                                gcpPanel.scrollTop = 0;
+                                gcpPanel.scrollLeft = 0;
+                            }}
+
+                            // Update view with new zoom
+                            updateGCPView();
+                            if (projectedMaskVisible) showProjectedMask();
+
+                            gcpImg.onload = null;
+                        }};
                         gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
                     }}
 
-                    // Handle projected mask (Bug 3 fix - improved visibility handling)
+                    // Handle projected mask data
                     console.log('Projected mask response:', {{
                         available: data.projected_mask_available,
                         hasData: !!data.projected_mask,
-                        dataLength: data.projected_mask ? data.projected_mask.length : 0
+                        dataLength: data.projected_mask ? data.projected_mask.length : 0,
+                        offset: data.projected_mask_offset,
+                        error: data.projection_error
                     }});
                     const maskBtn = document.getElementById('toggle-projected-mask-btn');
                     if (data.projected_mask_available && data.projected_mask) {{
                         projectedMaskData = data.projected_mask;
+                        projectedMaskOffset = data.projected_mask_offset;
                         if (maskBtn) {{
                             maskBtn.style.display = 'block';
                             console.log('Map Mask button set to visible');
                         }}
                     }} else {{
                         projectedMaskData = null;
+                        projectedMaskOffset = null;
                         if (maskBtn) {{
                             maskBtn.style.display = 'none';
+                        }}
+                        if (data.projection_error) {{
+                            console.warn('Mask projection failed:', data.projection_error);
                         }}
                     }}
 
                     updateCameraParamsDisplay();
-                    updateGCPView();
 
                     // Enable and update camera visualization on Tab 1
                     enableCameraToggle();
                     updateCameraVisualization();
+
+                    // If no camera frame update, apply fit-to-view zoom now
+                    if (!data.camera_frame) {{
+                        fitGcpToView();
+                    }}
 
                     updateStatus(`Captured frame and projected ${{data.projected_points.length}} points`);
                 }} else {{
@@ -1931,8 +2070,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 if (pt.visible) {{
                     const marker = document.createElement('div');
                     marker.className = 'gcp-marker';
-                    marker.style.left = (pt.pixel_u * currentZoom) + 'px';
-                    marker.style.top = (pt.pixel_v * currentZoom) + 'px';
+                    marker.style.left = (pt.pixel_u * gcpZoom) + 'px';
+                    marker.style.top = (pt.pixel_v * gcpZoom) + 'px';
                     marker.title = pt.name;
                     gcpContainer.appendChild(marker);
                 }}
@@ -1968,8 +2107,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (e.target !== img) return;
 
             const rect = img.getBoundingClientRect();
-            const px = (e.clientX - rect.left) / currentZoom;
-            const py = (e.clientY - rect.top) / currentZoom;
+            const px = (e.clientX - rect.left) / kmlZoom;
+            const py = (e.clientY - rect.top) / kmlZoom;
 
             const category = document.getElementById('category').value;
             const name = document.getElementById('point-name').value || (category + '_' + points.length);
@@ -2047,8 +2186,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const visiblePoints = points.filter(p => categoryVisibility[p.category]);
 
             visiblePoints.forEach((p) => {{
-                const pointX = p.pixel_x * currentZoom;
-                const pointY = p.pixel_y * currentZoom;
+                const pointX = p.pixel_x * kmlZoom;
+                const pointY = p.pixel_y * kmlZoom;
 
                 // Draw dot
                 const dot = document.createElement('div');
@@ -2122,35 +2261,62 @@ def generate_unified_html(session: UnifiedSession) -> str:
         loadExistingPoints();
 
         function zoom(factor) {{
-            currentZoom *= factor;
-            img.style.width = (img.naturalWidth * currentZoom) + 'px';
-            gcpImg.style.width = (gcpImg.naturalWidth * currentZoom) + 'px';
-            redrawMarkers();
-            updateGCPView();
-
-            // Update mask overlays
-            if (maskVisible.kml) showMask('kml');
-            if (maskVisible.gcp) showMask('gcp');
-            if (projectedMaskVisible) showProjectedMask();
-
-            // Update camera visualization
-            updateCameraVisualization();
+            // Each tab has independent zoom (Bug 2 fix)
+            if (currentTab === 'kml') {{
+                kmlZoom *= factor;
+                img.style.width = (img.naturalWidth * kmlZoom) + 'px';
+                redrawMarkers();
+                if (maskVisible.kml) showMask('kml');
+                updateCameraVisualization();
+            }} else {{
+                gcpZoom *= factor;
+                gcpImg.style.width = (gcpImg.naturalWidth * gcpZoom) + 'px';
+                updateGCPView();
+                if (maskVisible.gcp) showMask('gcp');
+                if (projectedMaskVisible) showProjectedMask();
+            }}
         }}
 
         function resetZoom() {{
-            currentZoom = 1;
-            img.style.width = '';
-            gcpImg.style.width = '';
-            redrawMarkers();
-            updateGCPView();
+            // Reset zoom for current tab only (Bug 2 fix)
+            if (currentTab === 'kml') {{
+                kmlZoom = 1;
+                img.style.width = '';
+                redrawMarkers();
+                if (maskVisible.kml) showMask('kml');
+                updateCameraVisualization();
+            }} else {{
+                fitGcpToView();
+            }}
+        }}
 
-            // Update mask overlays
-            if (maskVisible.kml) showMask('kml');
+        function fitGcpToView() {{
+            // Calculate zoom to fit GCP image within panel (Bug 2 fix)
+            const gcpPanel = document.getElementById('gcp-image-panel');
+            if (gcpPanel && gcpImg.naturalWidth > 0) {{
+                const panelWidth = gcpPanel.clientWidth;
+                const panelHeight = gcpPanel.clientHeight;
+                const imgWidth = gcpImg.naturalWidth;
+                const imgHeight = gcpImg.naturalHeight;
+
+                // Calculate zoom to fit both dimensions
+                const zoomX = panelWidth / imgWidth;
+                const zoomY = panelHeight / imgHeight;
+                gcpZoom = Math.min(zoomX, zoomY, 1);  // Don't zoom in beyond 1
+
+                gcpImg.style.width = (imgWidth * gcpZoom) + 'px';
+
+                // Reset scroll position
+                gcpPanel.scrollTop = 0;
+                gcpPanel.scrollLeft = 0;
+            }} else {{
+                gcpZoom = 1;
+                gcpImg.style.width = '';
+            }}
+
+            updateGCPView();
             if (maskVisible.gcp) showMask('gcp');
             if (projectedMaskVisible) showProjectedMask();
-
-            // Update camera visualization
-            updateCameraVisualization();
         }}
 
         function clearAll() {{
@@ -2269,11 +2435,13 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     console.log('Capture frame - projected mask response:', {{
                         available: data.projected_mask_available,
                         hasData: !!data.projected_mask,
-                        dataLength: data.projected_mask ? data.projected_mask.length : 0
+                        dataLength: data.projected_mask ? data.projected_mask.length : 0,
+                        offset: data.projected_mask_offset
                     }});
                     const captureMaskBtn = document.getElementById('toggle-projected-mask-btn');
                     if (data.projected_mask_available && data.projected_mask) {{
                         projectedMaskData = data.projected_mask;
+                        projectedMaskOffset = data.projected_mask_offset;
                         if (captureMaskBtn) {{
                             captureMaskBtn.style.display = 'block';
                         }}
@@ -2283,6 +2451,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         }}
                     }} else {{
                         projectedMaskData = null;
+                        projectedMaskOffset = null;
                         hideProjectedMask();
                         if (captureMaskBtn) {{
                             captureMaskBtn.style.display = 'none';
@@ -2365,6 +2534,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     // Update projected mask
                     if (data.projected_mask_available && data.projected_mask) {{
                         projectedMaskData = data.projected_mask;
+                        projectedMaskOffset = data.projected_mask_offset;
                         // If mask was visible, refresh it with new data
                         if (projectedMaskVisible) {{
                             showProjectedMask();
@@ -2455,8 +2625,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const maskImg = document.createElement('img');
             maskImg.className = 'mask-overlay' + (tab === 'gcp' ? ' camera' : '');
             maskImg.src = 'data:image/png;base64,' + maskData[tab];
-            maskImg.style.width = (targetImg.naturalWidth * currentZoom) + 'px';
-            maskImg.style.height = (targetImg.naturalHeight * currentZoom) + 'px';
+            const tabZoom = tab === 'gcp' ? gcpZoom : kmlZoom;
+            maskImg.style.width = (targetImg.naturalWidth * tabZoom) + 'px';
+            maskImg.style.height = (targetImg.naturalHeight * tabZoom) + 'px';
 
             targetContainer.appendChild(maskImg);
         }}
@@ -2486,16 +2657,54 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const existingMask = gcpContainer.querySelector('.mask-overlay.projected');
             if (existingMask) existingMask.remove();
 
-            if (!projectedMaskData) return;
+            if (!projectedMaskData) {{
+                console.warn('showProjectedMask: No mask data available');
+                return;
+            }}
 
-            // Create projected mask overlay with distinct styling
+            console.log('showProjectedMask: Creating mask overlay');
+            console.log('  gcpImg dimensions:', gcpImg.naturalWidth, 'x', gcpImg.naturalHeight);
+            console.log('  gcpZoom:', gcpZoom);
+            console.log('  projectedMaskOffset:', projectedMaskOffset);
+
+            // Create projected mask overlay
             const maskImg = document.createElement('img');
             maskImg.className = 'mask-overlay projected';
+
+            maskImg.onload = function() {{
+                console.log('Projected mask loaded:', maskImg.naturalWidth, 'x', maskImg.naturalHeight);
+
+                // Scale mask by zoom
+                const scaledMaskWidth = maskImg.naturalWidth * gcpZoom;
+                const scaledMaskHeight = maskImg.naturalHeight * gcpZoom;
+
+                maskImg.style.width = scaledMaskWidth + 'px';
+                maskImg.style.height = scaledMaskHeight + 'px';
+
+                // The offset tells us where camera (0,0) is within the mask canvas
+                // projectedMaskOffset = (-offset_x, -offset_y) where offset_x/y is camera position in mask
+                // So to position the mask relative to camera at (0,0), we use these values directly
+                if (projectedMaskOffset) {{
+                    const offsetLeft = projectedMaskOffset[0] * gcpZoom;
+                    const offsetTop = projectedMaskOffset[1] * gcpZoom;
+
+                    maskImg.style.left = offsetLeft + 'px';
+                    maskImg.style.top = offsetTop + 'px';
+
+                    console.log('  Mask positioned at: (' + offsetLeft + ', ' + offsetTop + ')');
+                }}
+
+                console.log('  Final mask dimensions:', scaledMaskWidth + 'x' + scaledMaskHeight);
+            }};
+
+            maskImg.onerror = function() {{
+                console.error('Failed to load projected mask image');
+            }};
+
             maskImg.src = 'data:image/png;base64,' + projectedMaskData;
-            maskImg.style.width = (gcpImg.naturalWidth * currentZoom) + 'px';
-            maskImg.style.height = (gcpImg.naturalHeight * currentZoom) + 'px';
 
             gcpContainer.appendChild(maskImg);
+            console.log('Projected mask appended to container');
         }}
 
         function hideProjectedMask() {{
@@ -2572,8 +2781,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
             // Draw camera position dot
             const cameraPixel = latLonToPixelProper(cameraLat, cameraLon);
-            const dotX = cameraPixel.x * currentZoom;
-            const dotY = cameraPixel.y * currentZoom;
+            const dotX = cameraPixel.x * kmlZoom;
+            const dotY = cameraPixel.y * kmlZoom;
 
             const dot = document.createElement('div');
             dot.className = 'camera-position-dot';
@@ -2587,7 +2796,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 // Convert footprint corners to pixel coordinates
                 const pixelCorners = footprint.map(corner => {{
                     const pixel = latLonToPixelProper(corner.lat, corner.lon);
-                    return {{ x: pixel.x * currentZoom, y: pixel.y * currentZoom }};
+                    return {{ x: pixel.x * kmlZoom, y: pixel.y * kmlZoom }};
                 }});
 
                 // Validate all coordinates are finite (not NaN or Infinity)
@@ -2599,8 +2808,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     // Create SVG for polygon
                     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                     svg.setAttribute('class', 'camera-footprint-polygon');
-                    svg.style.width = (img.naturalWidth * currentZoom) + 'px';
-                    svg.style.height = (img.naturalHeight * currentZoom) + 'px';
+                    svg.style.width = (img.naturalWidth * kmlZoom) + 'px';
+                    svg.style.height = (img.naturalHeight * kmlZoom) + 'px';
 
                     const points = pixelCorners.map(p => `${{p.x}},${{p.y}}`).join(' ');
 
