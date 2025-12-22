@@ -2303,7 +2303,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
             // Map parameter names to their storage keys
             function getParamKey(p) {{
-                if (p === 'zoom') return 'zoom';
                 if (p === 'height') return 'height_m';
                 if (p === 'camera_lat' || p === 'camera_lon') return p;
                 return p + '_deg';  // pan, tilt
@@ -2312,7 +2311,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const paramKey = getParamKey(param);
             const newValue = cameraParams[paramKey] + delta;
 
-            updateStatus(`Adjusting ${{param}}: ${{newValue.toFixed(6)}}...`);
+            // Use appropriate precision for display
+            const precision = (param === 'camera_lat' || param === 'camera_lon') ? 6 : 1;
+            updateStatus(`Adjusting ${{param}}: ${{newValue.toFixed(precision)}}...`);
 
             const updateData = {{}};
             updateData[paramKey] = newValue;
