@@ -73,6 +73,9 @@ except ImportError:
 # See tools/test_sam3_prompts.py for the testing script and prompt_test_results/ for data.
 DEFAULT_SAM3_PROMPT = "road lines"
 
+# Valid preprocessing options
+VALID_PREPROCESSING_TYPES = ('none', 'clahe', 'threshold')
+
 def apply_preprocessing(frame, preprocessing_type):
     """
     Apply preprocessing to frame for SAM3 detection.
@@ -1054,9 +1057,11 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     })
                     return
 
-                # Get preprocessing option (default to 'none')
+                # Get and validate preprocessing option
                 preprocessing = post_data.get('preprocessing', 'none')
-                
+                if preprocessing not in VALID_PREPROCESSING_TYPES:
+                    preprocessing = 'none'  # Default to none for invalid values
+
                 # Apply preprocessing to a copy of the frame (preserve original)
                 processed_frame = apply_preprocessing(frame.copy(), preprocessing)
                 

@@ -17,23 +17,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 # Import cv2 for testing
 import cv2
 
-# Import will be added after we add the function to unified_gcp_tool
-# For now, we'll define it locally for testing
-def apply_preprocessing(frame, preprocessing_type):
-    """Apply preprocessing to frame for SAM3 detection."""
-    if preprocessing_type == 'none' or preprocessing_type is None:
-        return frame
-    elif preprocessing_type == 'clahe':
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
-        return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
-    elif preprocessing_type == 'threshold':
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
-    else:
-        return frame
+# Import the preprocessing function from the main module
+from tools.unified_gcp_tool import apply_preprocessing
 
 
 class TestApplyPreprocessingNone(unittest.TestCase):
