@@ -1061,6 +1061,10 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     self.session.camera_params['K'] = K
                 if 'height_m' in post_data:
                     self.session.camera_params['height_m'] = float(post_data['height_m'])
+                if 'camera_lat' in post_data:
+                    self.session.camera_params['camera_lat'] = float(post_data['camera_lat'])
+                if 'camera_lon' in post_data:
+                    self.session.camera_params['camera_lon'] = float(post_data['camera_lon'])
 
                 # Reproject points
                 projected_points = self.session.project_points_to_image()
@@ -1681,20 +1685,26 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                     <h3>Camera Parameters</h3>
                     <div id="camera-params-display" style="font-size: 11px; color: #aaa; margin-bottom: 10px;">
+                        <div>Lat: <span id="param-lat">--</span>°</div>
+                        <div>Lon: <span id="param-lon">--</span>°</div>
                         <div>Pan: <span id="param-pan">--</span>°</div>
                         <div>Tilt: <span id="param-tilt">--</span>°</div>
-                        <div>Zoom: <span id="param-zoom">--</span>x</div>
                         <div>Height: <span id="param-height">--</span>m</div>
                     </div>
 
-                    <label>Adjust (1=Pan, 2=Tilt, 3=Zoom, 4=Height):</label>
+                    <label>Adjust (1=Lat/Lon arrows, 2=Pan, 3=Tilt, 4=Height):</label>
+                    <div id="latlon-mode-indicator" style="font-size: 11px; color: #888; margin-bottom: 5px; display: none;">
+                        Lat/Lon arrow key mode: <span id="latlon-mode-status">OFF</span>
+                    </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                        <button onclick="adjustParam('camera_lat', -0.000001)">Lat -</button>
+                        <button onclick="adjustParam('camera_lat', 0.000001)">Lat +</button>
+                        <button onclick="adjustParam('camera_lon', -0.000001)">Lon -</button>
+                        <button onclick="adjustParam('camera_lon', 0.000001)">Lon +</button>
                         <button onclick="adjustParam('pan', -1)">Pan -</button>
                         <button onclick="adjustParam('pan', 1)">Pan +</button>
                         <button onclick="adjustParam('tilt', -0.5)">Tilt -</button>
                         <button onclick="adjustParam('tilt', 0.5)">Tilt +</button>
-                        <button onclick="adjustParam('zoom', -0.1)">Zoom -</button>
-                        <button onclick="adjustParam('zoom', 0.1)">Zoom +</button>
                         <button onclick="adjustParam('height', -0.5)">Height -</button>
                         <button onclick="adjustParam('height', 0.5)">Height +</button>
                     </div>
@@ -1740,6 +1750,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let projectedMaskVisible = false;
         let projectedMaskData = null;
         let cameraOverlayVisible = true;  // Camera visualization toggle state
+        let latLonMode = false;  // Lat/Lon arrow key mode toggle state
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -1772,13 +1783,40 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
             if (currentTab === 'gcp') {{
-                // Parameter selection and adjustment
-                if (e.key >= '1' && e.key <= '4') {{
-                    const params = ['pan', 'tilt', 'zoom', 'height'];
-                    const param = params[parseInt(e.key) - 1];
+                // Key 1: Toggle lat/lon arrow key mode
+                if (e.key === '1') {{
+                    latLonMode = !latLonMode;
+                    document.getElementById('latlon-mode-indicator').style.display = 'block';
+                    document.getElementById('latlon-mode-status').textContent = latLonMode ? 'ON' : 'OFF';
+                    document.getElementById('latlon-mode-status').style.color = latLonMode ? '#0f0' : '#888';
+                    updateStatus(`Lat/Lon arrow key mode: ${{latLonMode ? 'ON' : 'OFF'}}`);
+                    return;
+                }}
+
+                // Keys 2-4: Parameter adjustment (also exit lat/lon mode)
+                if (e.key >= '2' && e.key <= '4') {{
+                    if (latLonMode) {{
+                        latLonMode = false;
+                        document.getElementById('latlon-mode-status').textContent = 'OFF';
+                        document.getElementById('latlon-mode-status').style.color = '#888';
+                        updateStatus('Lat/Lon mode disabled');
+                    }}
+                    const params = ['pan', 'tilt', 'height'];  // 2=pan, 3=tilt, 4=height
+                    const param = params[parseInt(e.key) - 2];
                     const delta = e.shiftKey ? -1 : 1;
-                    const amount = {{ pan: delta, tilt: delta * 0.5, zoom: delta * 0.1, height: delta * 0.5 }}[param];
+                    const amount = {{ pan: delta, tilt: delta * 0.5, height: delta * 0.5 }}[param];
                     adjustParam(param, amount);
+                    return;
+                }}
+
+                // Arrow keys: Control lat/lon when lat/lon mode is active
+                if (latLonMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {{
+                    e.preventDefault();  // Prevent page scrolling
+                    const step = e.shiftKey ? 0.00001 : 0.000001;
+                    if (e.key === 'ArrowUp') adjustParam('camera_lat', step);
+                    if (e.key === 'ArrowDown') adjustParam('camera_lat', -step);
+                    if (e.key === 'ArrowRight') adjustParam('camera_lon', step);
+                    if (e.key === 'ArrowLeft') adjustParam('camera_lon', -step);
                 }}
             }}
         }});
@@ -2250,9 +2288,10 @@ def generate_unified_html(session: UnifiedSession) -> str:
         function updateCameraParamsDisplay() {{
             if (!cameraParams) return;
 
+            document.getElementById('param-lat').textContent = cameraParams.camera_lat.toFixed(6);
+            document.getElementById('param-lon').textContent = cameraParams.camera_lon.toFixed(6);
             document.getElementById('param-pan').textContent = cameraParams.pan_deg.toFixed(1);
             document.getElementById('param-tilt').textContent = cameraParams.tilt_deg.toFixed(1);
-            document.getElementById('param-zoom').textContent = cameraParams.zoom.toFixed(1);
             document.getElementById('param-height').textContent = cameraParams.height_m.toFixed(1);
         }}
 
@@ -2262,12 +2301,21 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 return;
             }}
 
-            const newValue = cameraParams[param + (param === 'zoom' || param === 'height' ? '' : '_deg')] + delta;
+            // Map parameter names to their storage keys
+            function getParamKey(p) {{
+                if (p === 'zoom') return 'zoom';
+                if (p === 'height') return 'height_m';
+                if (p === 'camera_lat' || p === 'camera_lon') return p;
+                return p + '_deg';  // pan, tilt
+            }}
 
-            updateStatus(`Adjusting ${{param}}: ${{newValue.toFixed(1)}}...`);
+            const paramKey = getParamKey(param);
+            const newValue = cameraParams[paramKey] + delta;
+
+            updateStatus(`Adjusting ${{param}}: ${{newValue.toFixed(6)}}...`);
 
             const updateData = {{}};
-            updateData[param + (param === 'zoom' || param === 'height' ? '' : '_deg')] = newValue;
+            updateData[paramKey] = newValue;
 
             fetch('/api/update_camera_params', {{
                 method: 'POST',
