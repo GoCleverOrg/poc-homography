@@ -68,7 +68,39 @@ except ImportError:
     INTRINSICS_AVAILABLE = False
 
 # SAM3 detection prompt for road markings
-DEFAULT_SAM3_PROMPT = "road markings"
+# Testing showed "road lines" achieves better coverage (5.96% vs 2.33%) and higher
+# confidence (0.680 vs 0.542) compared to "road markings" on sample cartography images.
+# See tools/test_sam3_prompts.py for the testing script and prompt_test_results/ for data.
+DEFAULT_SAM3_PROMPT = "road lines"
+
+def apply_preprocessing(frame, preprocessing_type):
+    """
+    Apply preprocessing to frame for SAM3 detection.
+
+    Args:
+        frame: BGR image as numpy array
+        preprocessing_type: One of 'none', 'clahe', 'threshold', or None
+
+    Returns:
+        Preprocessed BGR image as numpy array
+    """
+    if preprocessing_type == 'none' or preprocessing_type is None:
+        return frame
+    elif preprocessing_type == 'clahe':
+        # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+    elif preprocessing_type == 'threshold':
+        # Apply Black/White threshold using Otsu's method
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+    else:
+        # Unknown type, return original frame
+        return frame
+
 
 # Import camera defaults
 try:
@@ -1022,8 +1054,14 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     })
                     return
 
-                # Encode frame to base64
-                success, buffer = cv2.imencode('.jpg', frame)
+                # Get preprocessing option (default to 'none')
+                preprocessing = post_data.get('preprocessing', 'none')
+                
+                # Apply preprocessing to a copy of the frame (preserve original)
+                processed_frame = apply_preprocessing(frame.copy(), preprocessing)
+                
+                # Encode processed frame to base64
+                success, buffer = cv2.imencode('.jpg', processed_frame)
                 if not success:
                     self.send_json_response({
                         'success': False,
@@ -1857,8 +1895,15 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     </div>
 
                     <h3>SAM3 Feature Detection</h3>
+                    <label>Preprocessing:</label>
+                    <select id="sam3-preprocessing-kml">
+                        <option value="none" selected>None</option>
+                        <option value="clahe">CLAHE</option>
+                        <option value="threshold">Black/White Threshold</option>
+                    </select>
+                    
                     <label>Prompt:</label>
-                    <input type="text" id="sam3-prompt-kml" placeholder="road markings" value="road markings">
+                    <input type="text" id="sam3-prompt-kml" placeholder="road lines" value="road lines">
                     <button onclick="detectFeatures('kml')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('kml')" id="toggle-mask-kml-btn" style="display: none;">Toggle Mask</button>
 
@@ -1945,8 +1990,15 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <div id="auto-calibrate-status" style="font-size: 11px; color: #666; margin-top: 5px;"></div>
 
                     <h3>SAM3 Feature Detection</h3>
+                    <label>Preprocessing:</label>
+                    <select id="sam3-preprocessing-gcp">
+                        <option value="none" selected>None</option>
+                        <option value="clahe">CLAHE</option>
+                        <option value="threshold">Black/White Threshold</option>
+                    </select>
+                    
                     <label>Prompt:</label>
-                    <input type="text" id="sam3-prompt-gcp" placeholder="road markings" value="road markings">
+                    <input type="text" id="sam3-prompt-gcp" placeholder="road lines" value="road lines">
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
 
@@ -2719,6 +2771,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 body: JSON.stringify({{
                     method: 'sam3',
                     prompt: prompt,
+                    preprocessing: document.getElementById('sam3-preprocessing-' + tab).value,
                     tab: tab
                 }})
             }})
