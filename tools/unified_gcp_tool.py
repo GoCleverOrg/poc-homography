@@ -1523,12 +1523,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
             mix-blend-mode: multiply;
         }}
 
-        /* Active mode button highlight */
-        .mode-active {{
-            background: #0ead69 !important;
-            border: 2px solid #fff !important;
-        }}
-
         /* Camera visualization */
         .camera-position-dot {{
             position: absolute;
@@ -1693,13 +1687,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         <div>Height: <span id="param-height">--</span>m</div>
                     </div>
 
-                    <label>Adjustment Mode (W/E/R):</label>
-                    <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-                        <button onclick="setAdjustmentMode('move')" id="mode-move-btn" style="flex: 1; padding: 6px;">Move (W)</button>
-                        <button onclick="setAdjustmentMode('rotate')" id="mode-rotate-btn" style="flex: 1; padding: 6px;">Rotate (E)</button>
-                        <button onclick="setAdjustmentMode('scale')" id="mode-scale-btn" style="flex: 1; padding: 6px;">Scale (R)</button>
-                    </div>
-
                     <label>Adjust (1=Pan, 2=Tilt, 3=Zoom, 4=Height):</label>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
                         <button onclick="adjustParam('pan', -1)">Pan -</button>
@@ -1748,7 +1735,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let currentTab = 'kml';
         let projectedPoints = [];
         let cameraParams = {json.dumps(initial_camera_params) if initial_camera_params else 'null'};
-        let adjustmentMode = 'move';  // 'move', 'rotate', 'scale'
         let maskVisible = {{ kml: false, gcp: false }};
         let maskData = {{ kml: null, gcp: null }};
         let projectedMaskVisible = false;
@@ -1786,19 +1772,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
             if (currentTab === 'gcp') {{
-                // Adjustment modes
-                if (e.key === 'w' || e.key === 'W') {{
-                    e.preventDefault();
-                    setAdjustmentMode('move');
-                }} else if (e.key === 'e' || e.key === 'E') {{
-                    e.preventDefault();
-                    setAdjustmentMode('rotate');
-                }} else if (e.key === 'r' || e.key === 'R') {{
-                    e.preventDefault();
-                    setAdjustmentMode('scale');
-                }}
                 // Parameter selection and adjustment
-                else if (e.key >= '1' && e.key <= '4') {{
+                if (e.key >= '1' && e.key <= '4') {{
                     const params = ['pan', 'tilt', 'zoom', 'height'];
                     const param = params[parseInt(e.key) - 1];
                     const delta = e.shiftKey ? -1 : 1;
@@ -2281,34 +2256,13 @@ def generate_unified_html(session: UnifiedSession) -> str:
             document.getElementById('param-height').textContent = cameraParams.height_m.toFixed(1);
         }}
 
-        function setAdjustmentMode(mode) {{
-            adjustmentMode = mode;
-
-            // Update button highlights
-            ['move', 'rotate', 'scale'].forEach(m => {{
-                const btn = document.getElementById('mode-' + m + '-btn');
-                if (m === mode) {{
-                    btn.classList.add('mode-active');
-                }} else {{
-                    btn.classList.remove('mode-active');
-                }}
-            }});
-
-            updateStatus('Adjustment mode: ' + mode.toUpperCase());
-        }}
-
         function adjustParam(param, delta) {{
             if (!cameraParams) {{
                 updateStatus('No camera parameters available');
                 return;
             }}
 
-            // Apply adjustment based on mode
-            let actualDelta = delta;
-            if (adjustmentMode === 'rotate') actualDelta *= 0.5;
-            if (adjustmentMode === 'scale') actualDelta *= 2;
-
-            const newValue = cameraParams[param + (param === 'zoom' || param === 'height' ? '' : '_deg')] + actualDelta;
+            const newValue = cameraParams[param + (param === 'zoom' || param === 'height' ? '' : '_deg')] + delta;
 
             updateStatus(`Adjusting ${{param}}: ${{newValue.toFixed(1)}}...`);
 
