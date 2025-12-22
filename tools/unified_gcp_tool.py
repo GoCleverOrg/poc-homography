@@ -67,11 +67,11 @@ try:
 except ImportError:
     INTRINSICS_AVAILABLE = False
 
-# SAM3 detection prompt for road markings
-# Testing showed "road lines" achieves better coverage (5.96% vs 2.33%) and higher
-# confidence (0.680 vs 0.542) compared to "road markings" on sample cartography images.
+# SAM3 detection prompt for ground markings
+# Testing showed "ground markings" detects both road lines AND parking spot lines with
+# best overall results: 12.12% coverage, 0.699 confidence on sample cartography images.
 # See tools/test_sam3_prompts.py for the testing script.
-DEFAULT_SAM3_PROMPT = "road lines"
+DEFAULT_SAM3_PROMPT = "ground markings"
 
 # Valid preprocessing options (CLAHE is default - provides ~3% confidence boost)
 VALID_PREPROCESSING_TYPES = ('none', 'clahe')
@@ -1903,7 +1903,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     </select>
                     
                     <label>Prompt:</label>
-                    <input type="text" id="sam3-prompt-kml" placeholder="road lines" value="road lines">
+                    <input type="text" id="sam3-prompt-kml" placeholder="ground markings" value="ground markings">
                     <button onclick="detectFeatures('kml')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('kml')" id="toggle-mask-kml-btn" style="display: none;">Toggle Mask</button>
 
@@ -1997,7 +1997,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     </select>
                     
                     <label>Prompt:</label>
-                    <input type="text" id="sam3-prompt-gcp" placeholder="road lines" value="road lines">
+                    <input type="text" id="sam3-prompt-gcp" placeholder="ground markings" value="ground markings">
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
 
@@ -2760,7 +2760,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         function detectFeatures(tab) {{
             const promptInput = document.getElementById('sam3-prompt-' + tab);
-            const prompt = promptInput.value.trim() || 'road markings';
+            const prompt = promptInput.value.trim() || 'ground markings';
 
             updateStatus('Detecting features with SAM3...');
 
