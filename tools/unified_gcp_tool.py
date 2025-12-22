@@ -2640,6 +2640,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     enableCameraToggle();
                     updateCameraVisualization();
 
+                    // Auto-trigger SAM3 detection for newly captured GCP frame
+                    detectFeatures('gcp');
+
                     updateStatus('Camera frame captured successfully');
                 }} else {{
                     updateStatus('Error: ' + data.error);
