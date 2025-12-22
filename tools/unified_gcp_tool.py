@@ -1233,16 +1233,20 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
                 # Create CameraGeometry from session camera_params
                 # Camera position is at origin (0, 0) in local coordinate system
-                geo = CameraGeometry()
+                image_width = self.session.camera_params.get('image_width', 1920)
+                image_height = self.session.camera_params.get('image_height', 1080)
+                geo = CameraGeometry(image_width, image_height)
                 geo.set_camera_parameters(
+                    K=self.session.camera_params['K'],
                     w_pos=np.array([
                         0.0,
                         0.0,
                         self.session.camera_params['height_m']
                     ]),
-                    K=self.session.camera_params['K'],
                     pan_deg=self.session.camera_params['pan_deg'],
-                    tilt_deg=self.session.camera_params['tilt_deg']
+                    tilt_deg=self.session.camera_params['tilt_deg'],
+                    map_width=640,
+                    map_height=640
                 )
 
                 # Store status messages
@@ -1261,6 +1265,21 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
                 result = calibrator.run()
 
+                # Helper function to convert numpy arrays to JSON-serializable format
+                def serialize_params(params):
+                    """Convert numpy arrays in params dict to lists for JSON serialization."""
+                    serialized = {}
+                    for key, value in params.items():
+                        if isinstance(value, np.ndarray):
+                            serialized[key] = value.tolist()
+                        elif isinstance(value, (np.float32, np.float64)):
+                            serialized[key] = float(value)
+                        elif isinstance(value, (np.int32, np.int64)):
+                            serialized[key] = int(value)
+                        else:
+                            serialized[key] = value
+                    return serialized
+
                 # Format response
                 response = {
                     'success': result.success,
@@ -1272,8 +1291,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'steps_completed': result.steps_completed,
                     'timeout_reached': result.timeout_reached,
                     'message': result.message,
-                    'original_params': result.original_params,
-                    'optimized_params': result.optimized_params,
+                    'original_params': serialize_params(result.original_params),
+                    'optimized_params': serialize_params(result.optimized_params),
                     'status_log': status_messages
                 }
 
@@ -2893,10 +2912,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         updateStatus('Auto-calibration rejected by user');
                     }}
                 }} else {{
-                    statusDiv.textContent = 'Error: ' + data.error;
+                    const errorMsg = data.error || data.message || 'Unknown error';
+                    statusDiv.textContent = 'Error: ' + errorMsg;
                     statusDiv.style.color = '#c60';
-                    updateStatus('Auto-calibration failed: ' + data.error);
-                    alert('Auto-calibration failed:\\n' + data.error);
+                    updateStatus('Auto-calibration failed: ' + errorMsg);
+                    alert('Auto-calibration failed:\\n' + errorMsg);
                 }}
             }})
             .catch(err => {{
