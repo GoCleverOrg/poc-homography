@@ -1685,16 +1685,16 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                     <h3>Camera Parameters</h3>
                     <div id="camera-params-display" style="font-size: 11px; color: #aaa; margin-bottom: 10px;">
-                        <div>Lat: <span id="param-lat">--</span>°</div>
-                        <div>Lon: <span id="param-lon">--</span>°</div>
-                        <div>Pan: <span id="param-pan">--</span>°</div>
-                        <div>Tilt: <span id="param-tilt">--</span>°</div>
+                        <div>Lat: <span id="param-lat">--</span>&deg;</div>
+                        <div>Lon: <span id="param-lon">--</span>&deg;</div>
+                        <div>Pan: <span id="param-pan">--</span>&deg;</div>
+                        <div>Tilt: <span id="param-tilt">--</span>&deg;</div>
                         <div>Height: <span id="param-height">--</span>m</div>
                     </div>
 
-                    <label>Adjust (1=Lat/Lon arrows, 2=Pan, 3=Tilt, 4=Height):</label>
+                    <label>Arrow key modes (1=Lat/Lon, 2=Pan, 3=Tilt, 4=Height):</label>
                     <div id="latlon-mode-indicator" style="font-size: 11px; color: #888; margin-bottom: 5px; display: none;">
-                        Lat/Lon arrow key mode: <span id="latlon-mode-status">OFF</span>
+                        Arrow key mode: <span id="latlon-mode-status">OFF</span>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
                         <button onclick="adjustParam('camera_lat', -0.000001)">Lat -</button>
@@ -1705,8 +1705,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         <button onclick="adjustParam('pan', 1)">Pan +</button>
                         <button onclick="adjustParam('tilt', -0.5)">Tilt -</button>
                         <button onclick="adjustParam('tilt', 0.5)">Tilt +</button>
-                        <button onclick="adjustParam('height', -0.5)">Height -</button>
-                        <button onclick="adjustParam('height', 0.5)">Height +</button>
+                        <button onclick="adjustParam('height', -0.01)">Height -</button>
+                        <button onclick="adjustParam('height', 0.01)">Height +</button>
                     </div>
 
                     <h3>Map Mask Projection</h3>
@@ -1750,7 +1750,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let projectedMaskVisible = false;
         let projectedMaskData = null;
         let cameraOverlayVisible = true;  // Camera visualization toggle state
-        let latLonMode = false;  // Lat/Lon arrow key mode toggle state
+        let activeMode = null;  // Arrow key mode: 'latlon', 'pan', 'tilt', 'height', or null
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -1783,40 +1783,64 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
             if (currentTab === 'gcp') {{
-                // Key 1: Toggle lat/lon arrow key mode
-                if (e.key === '1') {{
-                    latLonMode = !latLonMode;
-                    document.getElementById('latlon-mode-indicator').style.display = 'block';
-                    document.getElementById('latlon-mode-status').textContent = latLonMode ? 'ON' : 'OFF';
-                    document.getElementById('latlon-mode-status').style.color = latLonMode ? '#0f0' : '#888';
-                    updateStatus(`Lat/Lon arrow key mode: ${{latLonMode ? 'ON' : 'OFF'}}`);
-                    return;
-                }}
+                // Keys 1-4: Toggle arrow key modes
+                if (e.key >= '1' && e.key <= '4') {{
+                    const modes = ['latlon', 'pan', 'tilt', 'height'];
+                    const modeNames = ['Lat/Lon', 'Pan', 'Tilt', 'Height'];
+                    const selectedMode = modes[parseInt(e.key) - 1];
+                    const modeName = modeNames[parseInt(e.key) - 1];
 
-                // Keys 2-4: Parameter adjustment (also exit lat/lon mode)
-                if (e.key >= '2' && e.key <= '4') {{
-                    if (latLonMode) {{
-                        latLonMode = false;
-                        document.getElementById('latlon-mode-status').textContent = 'OFF';
-                        document.getElementById('latlon-mode-status').style.color = '#888';
-                        updateStatus('Lat/Lon mode disabled');
+                    // Toggle mode: if same mode, turn off; otherwise switch to new mode
+                    if (activeMode === selectedMode) {{
+                        activeMode = null;
+                        document.getElementById('latlon-mode-indicator').style.display = 'none';
+                        updateStatus(`${{modeName}} arrow key mode: OFF`);
+                    }} else {{
+                        activeMode = selectedMode;
+                        document.getElementById('latlon-mode-indicator').style.display = 'block';
+                        document.getElementById('latlon-mode-status').textContent = modeName;
+                        document.getElementById('latlon-mode-status').style.color = '#0f0';
+                        updateStatus(`${{modeName}} arrow key mode: ON`);
                     }}
-                    const params = ['pan', 'tilt', 'height'];  // 2=pan, 3=tilt, 4=height
-                    const param = params[parseInt(e.key) - 2];
-                    const delta = e.shiftKey ? -1 : 1;
-                    const amount = {{ pan: delta, tilt: delta * 0.5, height: delta * 0.5 }}[param];
-                    adjustParam(param, amount);
                     return;
                 }}
 
-                // Arrow keys: Control lat/lon when lat/lon mode is active
-                if (latLonMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {{
+                // Arrow keys: Control parameter based on active mode
+                if (activeMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {{
                     e.preventDefault();  // Prevent page scrolling
-                    const step = e.shiftKey ? 0.00001 : 0.000001;
-                    if (e.key === 'ArrowUp') adjustParam('camera_lat', step);
-                    if (e.key === 'ArrowDown') adjustParam('camera_lat', -step);
-                    if (e.key === 'ArrowRight') adjustParam('camera_lon', step);
-                    if (e.key === 'ArrowLeft') adjustParam('camera_lon', -step);
+
+                    // Define step sizes for each mode
+                    const stepSizes = {{
+                        latlon: e.shiftKey ? 0.00001 : 0.000001,
+                        pan: e.shiftKey ? 10 : 1,
+                        tilt: e.shiftKey ? 5 : 0.5,
+                        height: e.shiftKey ? 0.1 : 0.01  // 10cm / 1cm
+                    }};
+                    const step = stepSizes[activeMode];
+
+                    // Map mode to parameter names
+                    const paramMap = {{
+                        latlon: {{ up: 'camera_lat', down: 'camera_lat', left: 'camera_lon', right: 'camera_lon' }},
+                        pan: {{ up: 'pan', down: 'pan', left: 'pan', right: 'pan' }},
+                        tilt: {{ up: 'tilt', down: 'tilt', left: 'tilt', right: 'tilt' }},
+                        height: {{ up: 'height', down: 'height', left: 'height', right: 'height' }}
+                    }};
+
+                    // Determine direction (positive or negative)
+                    const isPositive = (e.key === 'ArrowUp' || e.key === 'ArrowRight');
+                    const delta = isPositive ? step : -step;
+
+                    // For latlon mode, use different params for different arrow directions
+                    if (activeMode === 'latlon') {{
+                        if (e.key === 'ArrowUp') adjustParam('camera_lat', step);
+                        else if (e.key === 'ArrowDown') adjustParam('camera_lat', -step);
+                        else if (e.key === 'ArrowRight') adjustParam('camera_lon', step);
+                        else if (e.key === 'ArrowLeft') adjustParam('camera_lon', -step);
+                    }} else {{
+                        // For pan/tilt/height, up/right = increase, down/left = decrease
+                        const param = paramMap[activeMode].up;
+                        adjustParam(param, delta);
+                    }}
                 }}
             }}
         }});
