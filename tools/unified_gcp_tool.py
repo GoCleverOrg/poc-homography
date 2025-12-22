@@ -816,16 +816,24 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 if success:
                     camera_frame_b64 = base64.b64encode(buffer).decode('utf-8')
 
-            # Project cartography mask to camera coordinates if available
+            # Project cartography mask to camera coordinates if available (Bug 3 fix - improved logging)
             projected_mask_b64 = None
             projected_mask_available = False
             if self.session.cartography_mask is not None:
+                print(f"Cartography mask exists, attempting projection...")
                 projected_mask = self.session.project_cartography_mask_to_camera()
                 if projected_mask is not None:
                     success, mask_buffer = cv2.imencode('.png', projected_mask)
                     if success:
                         projected_mask_b64 = base64.b64encode(mask_buffer).decode('utf-8')
                         projected_mask_available = True
+                        print(f"Mask projection successful, base64 length: {len(projected_mask_b64)}")
+                    else:
+                        print("Warning: Failed to encode projected mask as PNG")
+                else:
+                    print("Warning: Mask projection returned None")
+            else:
+                print("No cartography mask available for projection")
 
             self.send_json_response({
                 'success': True,
@@ -1825,6 +1833,13 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 autoSaveAndProject();
             }}
 
+            // Reset zoom when switching TO GCP Capture tab (Bug 2 fix)
+            // This ensures full camera frame is visible when entering GCP tab
+            // Note: We do NOT reset zoom when switching away from GCP tab
+            if (tabName === 'gcp' && currentTab !== 'gcp') {{
+                resetZoom();
+            }}
+
             currentTab = tabName;
 
             // Update tab buttons
@@ -1860,13 +1875,24 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
                     }}
 
-                    // Handle projected mask
+                    // Handle projected mask (Bug 3 fix - improved visibility handling)
+                    console.log('Projected mask response:', {{
+                        available: data.projected_mask_available,
+                        hasData: !!data.projected_mask,
+                        dataLength: data.projected_mask ? data.projected_mask.length : 0
+                    }});
+                    const maskBtn = document.getElementById('toggle-projected-mask-btn');
                     if (data.projected_mask_available && data.projected_mask) {{
                         projectedMaskData = data.projected_mask;
-                        document.getElementById('toggle-projected-mask-btn').style.display = 'block';
+                        if (maskBtn) {{
+                            maskBtn.style.display = 'block';
+                            console.log('Map Mask button set to visible');
+                        }}
                     }} else {{
                         projectedMaskData = null;
-                        document.getElementById('toggle-projected-mask-btn').style.display = 'none';
+                        if (maskBtn) {{
+                            maskBtn.style.display = 'none';
+                        }}
                     }}
 
                     updateCameraParamsDisplay();
@@ -2239,10 +2265,18 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     cameraParams = data.camera_params;
                     projectedPoints = data.projected_points;
 
-                    // Update projected mask
+                    // Update projected mask (consistent with switch_to_gcp handler)
+                    console.log('Capture frame - projected mask response:', {{
+                        available: data.projected_mask_available,
+                        hasData: !!data.projected_mask,
+                        dataLength: data.projected_mask ? data.projected_mask.length : 0
+                    }});
+                    const captureMaskBtn = document.getElementById('toggle-projected-mask-btn');
                     if (data.projected_mask_available && data.projected_mask) {{
                         projectedMaskData = data.projected_mask;
-                        document.getElementById('toggle-projected-mask-btn').style.display = 'block';
+                        if (captureMaskBtn) {{
+                            captureMaskBtn.style.display = 'block';
+                        }}
                         // If mask was visible, refresh it with new data
                         if (projectedMaskVisible) {{
                             showProjectedMask();
@@ -2250,7 +2284,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     }} else {{
                         projectedMaskData = null;
                         hideProjectedMask();
-                        document.getElementById('toggle-projected-mask-btn').style.display = 'none';
+                        if (captureMaskBtn) {{
+                            captureMaskBtn.style.display = 'none';
+                        }}
                     }}
 
                     updateCameraParamsDisplay();
@@ -2622,6 +2658,27 @@ def run_server(session: UnifiedSession, port: int = 8765):
     # Set up handler
     UnifiedHTTPHandler.session = session
     UnifiedHTTPHandler.temp_dir = temp_dir
+
+    # Pre-capture camera frame before browser opens (Bug 1 fix)
+    # This eliminates delay when user first switches to GCP Capture tab
+    if GEOMETRY_AVAILABLE and INTRINSICS_AVAILABLE:
+        try:
+            from tools.capture_gcps_web import grab_frame_from_camera, get_camera_params_for_projection
+            print("Pre-capturing camera frame...")
+            frame, ptz_status = grab_frame_from_camera(session.camera_name, wait_time=2.0)
+            session.camera_frame = frame
+            frame_height, frame_width = frame.shape[:2]
+            camera_params = get_camera_params_for_projection(
+                session.camera_name,
+                image_width=frame_width,
+                image_height=frame_height
+            )
+            session.camera_params = camera_params
+            print(f"Camera frame captured: {frame_width}x{frame_height}")
+            print(f"Camera params: pan={camera_params['pan_deg']:.1f}°, tilt={camera_params['tilt_deg']:.1f}°, zoom={camera_params['zoom']:.1f}x")
+        except Exception as e:
+            print(f"Warning: Failed to pre-capture camera frame: {e}")
+            print("Camera frame will be captured when switching to GCP Capture tab.")
 
     # Find available port
     port = find_available_port(start_port=port, max_attempts=10)
