@@ -1993,6 +1993,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (cameraParams) {{
                 enableCameraToggle();
                 updateCameraVisualization();
+                centerOnCamera();
             }}
         }};
 
@@ -2001,6 +2002,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (cameraParams) {{
                 enableCameraToggle();
                 updateCameraVisualization();
+                centerOnCamera();
             }}
         }}
 
@@ -3034,6 +3036,30 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const pixelY = (northing - config.origin_northing) / config.pixel_size_y;
 
             return {{ x: pixelX, y: pixelY }};
+        }}
+
+        // Center KML tab viewport on camera position
+        function centerOnCamera() {{
+            if (!cameraParams || !cameraParams.camera_lat || !cameraParams.camera_lon) {{
+                return; // No camera position available
+            }}
+
+            const panel = document.getElementById('kml-image-panel');
+            if (!panel) return;
+
+            const cameraPixel = latLonToPixelProper(cameraParams.camera_lat, cameraParams.camera_lon);
+
+            // Apply current zoom
+            const scaledX = cameraPixel.x * kmlZoom;
+            const scaledY = cameraPixel.y * kmlZoom;
+
+            // Calculate center offset
+            const scrollLeft = scaledX - (panel.clientWidth / 2);
+            const scrollTop = scaledY - (panel.clientHeight / 2);
+
+            // Apply scroll position
+            panel.scrollLeft = Math.max(0, scrollLeft);
+            panel.scrollTop = Math.max(0, scrollTop);
         }}
 
         function updateCameraVisualization() {{
