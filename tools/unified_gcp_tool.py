@@ -1982,6 +1982,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let projectedMaskOffset = null;  // [left, top] CSS offset for positioning mask overlay
         let cameraOverlayVisible = true;  // Camera visualization toggle state
         let activeMode = null;  // Arrow key mode: 'latlon', 'pan', 'tilt', 'height', or null
+        let kmlAutoDetected = false;  // Guard flag: auto-detection already triggered for KML tab
+        let gcpAutoDetected = false;  // Guard flag: auto-detection already triggered for GCP tab
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -1994,6 +1996,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 enableCameraToggle();
                 updateCameraVisualization();
             }}
+            // Auto-trigger SAM3 detection for KML tab
+            if (!kmlAutoDetected) {{
+                kmlAutoDetected = true;
+                detectFeatures('kml');
+            }}
         }};
 
         // Also check if image is already loaded (base64 inline images load synchronously)
@@ -2001,6 +2008,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
             if (cameraParams) {{
                 enableCameraToggle();
                 updateCameraVisualization();
+            }}
+            // Auto-trigger SAM3 detection for KML tab (synchronous load)
+            if (!kmlAutoDetected) {{
+                kmlAutoDetected = true;
+                detectFeatures('kml');
             }}
         }}
 
@@ -2152,6 +2164,12 @@ def generate_unified_html(session: UnifiedSession) -> str:
                             updateGCPView();
                             if (projectedMaskVisible) showProjectedMask();
 
+
+                            // Auto-trigger SAM3 detection for GCP tab
+                            if (!gcpAutoDetected) {{
+                                gcpAutoDetected = true;
+                                detectFeatures('gcp');
+                            }}
                             gcpImg.onload = null;
                         }};
                         gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
