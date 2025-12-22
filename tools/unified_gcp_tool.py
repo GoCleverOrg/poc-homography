@@ -70,7 +70,7 @@ except ImportError:
 # SAM3 detection prompt for road markings
 # Testing showed "road lines" achieves better coverage (5.96% vs 2.33%) and higher
 # confidence (0.680 vs 0.542) compared to "road markings" on sample cartography images.
-# See tools/test_sam3_prompts.py for the testing script and prompt_test_results/ for data.
+# See tools/test_sam3_prompts.py for the testing script.
 DEFAULT_SAM3_PROMPT = "road lines"
 
 # Valid preprocessing options (CLAHE is default - provides ~3% confidence boost)
