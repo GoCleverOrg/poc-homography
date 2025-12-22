@@ -2,7 +2,7 @@
 """
 Unit tests for SAM3 image preprocessing functions.
 
-Tests verify preprocessing presets: None, CLAHE, and Black/White Threshold.
+Tests verify preprocessing presets: None and CLAHE.
 """
 
 import unittest
@@ -123,81 +123,6 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         self.assertFalse(np.array_equal(result, frame))
 
 
-class TestApplyPreprocessingThreshold(unittest.TestCase):
-    """Test Black/White threshold preprocessing."""
-
-    def test_threshold_returns_bgr_frame(self):
-        """Test that threshold preprocessing returns a BGR frame."""
-        frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-
-        result = apply_preprocessing(frame, 'threshold')
-
-        # Should return BGR frame with 3 channels
-        self.assertEqual(result.shape, (100, 100, 3))
-        self.assertEqual(len(result.shape), 3)
-
-    def test_threshold_preserves_frame_dimensions(self):
-        """Test that threshold preprocessing preserves frame dimensions."""
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-
-        result = apply_preprocessing(frame, 'threshold')
-
-        self.assertEqual(result.shape, (480, 640, 3))
-
-    def test_threshold_preserves_dtype(self):
-        """Test that threshold preprocessing preserves uint8 dtype."""
-        frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-
-        result = apply_preprocessing(frame, 'threshold')
-
-        self.assertEqual(result.dtype, np.uint8)
-
-    def test_threshold_produces_binary_values(self):
-        """Test that threshold preprocessing produces only black (0) or white (255) values."""
-        frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-
-        result = apply_preprocessing(frame, 'threshold')
-        result_gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-        unique_values = np.unique(result_gray)
-
-        # Should only contain 0 and/or 255
-        self.assertTrue(all(val in [0, 255] for val in unique_values))
-
-    def test_threshold_on_half_black_half_white_image(self):
-        """Test threshold preprocessing on a half-black, half-white image."""
-        # Create image that's half black (0), half white (255)
-        frame = np.zeros((100, 100, 3), dtype=np.uint8)
-        frame[:, 50:] = 255
-
-        result = apply_preprocessing(frame, 'threshold')
-        result_gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-
-        # Should still be binary (0 and 255)
-        unique_values = np.unique(result_gray)
-        self.assertTrue(all(val in [0, 255] for val in unique_values))
-
-    def test_threshold_uses_otsu_method(self):
-        """Test that threshold uses Otsu's method for automatic threshold selection."""
-        # Create a bimodal image (two peaks in histogram)
-        frame = np.zeros((200, 200, 3), dtype=np.uint8)
-        frame[:100, :] = 80  # Dark region
-        frame[100:, :] = 180  # Bright region
-
-        result = apply_preprocessing(frame, 'threshold')
-        result_gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-
-        # Otsu's method should separate the two regions
-        # Count black and white pixels
-        black_pixels = np.sum(result_gray == 0)
-        white_pixels = np.sum(result_gray == 255)
-        total_pixels = result_gray.size
-
-        # Should have both black and white pixels
-        self.assertGreater(black_pixels, 0)
-        self.assertGreater(white_pixels, 0)
-        self.assertEqual(black_pixels + white_pixels, total_pixels)
-
-
 class TestApplyPreprocessingInvalidType(unittest.TestCase):
     """Test handling of invalid preprocessing types."""
 
@@ -218,6 +143,15 @@ class TestApplyPreprocessingInvalidType(unittest.TestCase):
 
         np.testing.assert_array_equal(result, frame)
 
+    def test_threshold_returns_original_frame(self):
+        """Test that removed 'threshold' option returns original frame."""
+        frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+
+        result = apply_preprocessing(frame, 'threshold')
+
+        # Threshold was removed, should return original frame
+        np.testing.assert_array_equal(result, frame)
+
 
 class TestApplyPreprocessingOriginalFramePreservation(unittest.TestCase):
     """Test that preprocessing does not modify the original frame."""
@@ -228,16 +162,6 @@ class TestApplyPreprocessingOriginalFramePreservation(unittest.TestCase):
         frame_copy = frame.copy()
 
         apply_preprocessing(frame, 'clahe')
-
-        # Original frame should be unchanged
-        np.testing.assert_array_equal(frame, frame_copy)
-
-    def test_threshold_does_not_modify_original_frame(self):
-        """Test that threshold preprocessing does not modify the original frame."""
-        frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-        frame_copy = frame.copy()
-
-        apply_preprocessing(frame, 'threshold')
 
         # Original frame should be unchanged
         np.testing.assert_array_equal(frame, frame_copy)

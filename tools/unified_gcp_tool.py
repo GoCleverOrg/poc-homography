@@ -73,8 +73,8 @@ except ImportError:
 # See tools/test_sam3_prompts.py for the testing script and prompt_test_results/ for data.
 DEFAULT_SAM3_PROMPT = "road lines"
 
-# Valid preprocessing options
-VALID_PREPROCESSING_TYPES = ('none', 'clahe', 'threshold')
+# Valid preprocessing options (CLAHE is default - provides ~3% confidence boost)
+VALID_PREPROCESSING_TYPES = ('none', 'clahe')
 
 def apply_preprocessing(frame, preprocessing_type):
     """
@@ -82,7 +82,7 @@ def apply_preprocessing(frame, preprocessing_type):
 
     Args:
         frame: BGR image as numpy array
-        preprocessing_type: One of 'none', 'clahe', 'threshold', or None
+        preprocessing_type: One of 'none', 'clahe', or None
 
     Returns:
         Preprocessed BGR image as numpy array
@@ -91,15 +91,11 @@ def apply_preprocessing(frame, preprocessing_type):
         return frame
     elif preprocessing_type == 'clahe':
         # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        # Testing showed CLAHE improves SAM3 confidence by ~3% on road marking detection
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
         return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
-    elif preprocessing_type == 'threshold':
-        # Apply Black/White threshold using Otsu's method
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
     else:
         # Unknown type, return original frame
         return frame
@@ -1902,9 +1898,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <h3>SAM3 Feature Detection</h3>
                     <label>Preprocessing:</label>
                     <select id="sam3-preprocessing-kml">
-                        <option value="none" selected>None</option>
-                        <option value="clahe">CLAHE</option>
-                        <option value="threshold">Black/White Threshold</option>
+                        <option value="none">None</option>
+                        <option value="clahe" selected>CLAHE (Recommended)</option>
                     </select>
                     
                     <label>Prompt:</label>
@@ -1997,9 +1992,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <h3>SAM3 Feature Detection</h3>
                     <label>Preprocessing:</label>
                     <select id="sam3-preprocessing-gcp">
-                        <option value="none" selected>None</option>
-                        <option value="clahe">CLAHE</option>
-                        <option value="threshold">Black/White Threshold</option>
+                        <option value="none">None</option>
+                        <option value="clahe" selected>CLAHE (Recommended)</option>
                     </select>
                     
                     <label>Prompt:</label>
