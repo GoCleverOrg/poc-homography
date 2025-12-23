@@ -51,7 +51,7 @@ References:
 import time
 import logging
 from dataclasses import dataclass
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, Tuple
 import cv2
 import numpy as np
 from scipy.optimize import minimize_scalar
@@ -166,7 +166,9 @@ class AutoCalibrator:
         height_bounds: float = DEFAULT_HEIGHT_BOUNDS_M,
         gps_bounds: float = DEFAULT_GPS_BOUNDS_DEG,
         camera_gps: Optional[tuple] = None,
-        coordinate_converter: Optional[Any] = None
+        coordinate_converter: Optional[Any] = None,
+        geotiff_params: Optional[Dict[str, float]] = None,
+        camera_utm_position: Optional[Tuple[float, float]] = None
     ):
         """
         Initialize AutoCalibrator.
@@ -184,6 +186,13 @@ class AutoCalibrator:
             gps_bounds: Relative GPS bounds in degrees (default: ±0.0001°)
             camera_gps: Optional tuple (lat, lon) for GPS optimization
             coordinate_converter: Optional coordinate converter with gps_to_local_xy() method
+            geotiff_params: Optional dict with GeoTIFF georeferencing parameters.
+                Required keys: 'pixel_size_x', 'pixel_size_y', 'origin_easting', 'origin_northing'.
+                If provided, enables complete cartography-pixel-to-camera transformation.
+                If None, falls back to using camera homography only (reduced accuracy).
+            camera_utm_position: Optional tuple (easting, northing) of camera position in UTM.
+                Required if geotiff_params is provided. Used to compute relative coordinates
+                for T_pixel_to_localXY transformation.
 
         Raises:
             ValueError: If masks are invalid or camera_geometry is not initialized
@@ -223,6 +232,11 @@ class AutoCalibrator:
         self.camera_gps = camera_gps
         self.coordinate_converter = coordinate_converter
         self.gps_enabled = (camera_gps is not None and coordinate_converter is not None)
+
+        # Geotiff transformation support
+        self.geotiff_params = geotiff_params
+        self.camera_utm_position = camera_utm_position
+        self._partial_geotiff_warned = False  # Track if warning already logged
 
         # State tracking
         self.start_time = None
@@ -283,20 +297,75 @@ class AutoCalibrator:
         """
         Project the cartography mask to camera frame coordinates.
 
-        This uses the current homography matrix (H) to warp the map mask
-        onto the camera frame.
+        This uses the complete transformation chain:
+        1. T_pixel_to_localXY: Cartography pixels → Local XY meters (from geotiff_params)
+        2. H_camera: Local XY meters → Camera pixels (from camera geometry)
+        3. H_total = H_camera @ T_pixel_to_localXY: Cartography pixels → Camera pixels
+
+        If geotiff_params is not provided, falls back to using H_camera only
+        (backwards compatibility, but reduced accuracy for georeferenced masks).
 
         Returns:
             Projected mask as binary uint8 array with same dimensions as camera_mask
         """
-        # Get current homography (Map -> Image)
-        H = self.camera_geometry.H
+        # Get current camera homography (regenerated when parameters change during optimization)
+        H_camera = self.camera_geometry.H
+
+        # Compute complete homography if geotiff parameters available
+        if self.geotiff_params is not None and self.camera_utm_position is not None:
+            # Build T_pixel_to_localXY: transforms cartography pixels to local XY
+            # Cartography pixel (px, py) → Local XY (x, y):
+            #   easting = origin_easting + px * pixel_size_x
+            #   northing = origin_northing + py * pixel_size_y
+            #   x = easting - camera_easting
+            #   y = northing - camera_northing
+            #
+            # In homogeneous coordinates:
+            #   [x]   [pixel_size_x  0            dx] [px]
+            #   [y] = [0             pixel_size_y dy] [py]
+            #   [1]   [0             0            1 ] [1 ]
+            # where dx = origin_easting - camera_easting
+            #       dy = origin_northing - camera_northing
+
+            pixel_size_x = self.geotiff_params['pixel_size_x']
+            pixel_size_y = self.geotiff_params['pixel_size_y']
+            origin_easting = self.geotiff_params['origin_easting']
+            origin_northing = self.geotiff_params['origin_northing']
+
+            camera_easting, camera_northing = self.camera_utm_position
+
+            dx = origin_easting - camera_easting
+            dy = origin_northing - camera_northing
+
+            T_pixel_to_localXY = np.array([
+                [pixel_size_x, 0,            dx],
+                [0,            pixel_size_y, dy],
+                [0,            0,            1 ]
+            ], dtype=np.float64)
+
+            # Compose complete homography
+            H_total = H_camera @ T_pixel_to_localXY
+        else:
+            # Fallback: use camera homography only (backwards compatibility)
+            # Log warning once if partial configuration detected
+            if not self._partial_geotiff_warned and (
+                self.geotiff_params is not None or self.camera_utm_position is not None
+            ):
+                logger.warning(
+                    "Partial geotiff configuration: geotiff_params=%s, camera_utm_position=%s. "
+                    "Both parameters are required for complete transformation. "
+                    "Falling back to camera homography only.",
+                    self.geotiff_params is not None,
+                    self.camera_utm_position is not None
+                )
+                self._partial_geotiff_warned = True
+            H_total = H_camera
 
         # Warp map mask to camera frame coordinates
         camera_height, camera_width = self.camera_mask.shape[:2]
         projected_mask = cv2.warpPerspective(
             self.map_mask,
-            H,
+            H_total,
             (camera_width, camera_height),
             flags=cv2.INTER_NEAREST
         )

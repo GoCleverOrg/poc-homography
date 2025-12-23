@@ -67,11 +67,16 @@ try:
 except ImportError:
     INTRINSICS_AVAILABLE = False
 
-# SAM3 detection prompt for ground markings
+# SAM3 detection prompts for ground markings
 # Testing showed "ground markings" detects both road lines AND parking spot lines with
 # best overall results: 12.12% coverage, 0.699 confidence on sample cartography images.
 # See tools/test_sam3_prompts.py for the testing script.
-DEFAULT_SAM3_PROMPT = "ground markings"
+DEFAULT_SAM3_PROMPT_CARTOGRAPHY = "ground markings"
+
+# For camera frames, "road marking" works better than "ground markings" which often
+# detects 0 features on live camera imagery. The singular form appears to be more
+# specific and reliable for real-world camera footage.
+DEFAULT_SAM3_PROMPT_CAMERA = "road marking"
 
 # Valid preprocessing options (CLAHE is default - provides ~3% confidence boost)
 VALID_PREPROCESSING_TYPES = ('none', 'clahe')
@@ -1071,8 +1076,9 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     return
                 image_base64 = base64.b64encode(buffer).decode('utf-8')
 
-                # Use default prompt or custom prompt
-                prompt = post_data.get('prompt', DEFAULT_SAM3_PROMPT)
+                # Use default prompt or custom prompt (different defaults for camera vs cartography)
+                default_prompt = DEFAULT_SAM3_PROMPT_CAMERA if tab == 'gcp' else DEFAULT_SAM3_PROMPT_CARTOGRAPHY
+                prompt = post_data.get('prompt', default_prompt)
 
                 # Call Roboflow SAM3 API
                 api_url = f"https://serverless.roboflow.com/sam3/concept_segment?api_key={api_key}"
@@ -1241,11 +1247,11 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path == '/api/auto_calibrate':
             # Auto-calibration via mask matching
             try:
-                # Validate both masks exist
-                if self.session.projected_cartography_mask is None:
+                # Validate cartography mask exists (use original unprojected mask)
+                if self.session.cartography_mask is None:
                     self.send_json_response({
                         'success': False,
-                        'error': 'Map mask not projected to camera. Please detect cartography mask first.'
+                        'error': 'Cartography mask not detected. Please detect cartography mask first.'
                     })
                     return
 
@@ -1294,12 +1300,22 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     status_messages.append(msg)
                     print(f"[AutoCalibrator] {msg}")
 
+                # Get camera UTM coordinates for geotiff transformation
+                camera_lat = self.session.camera_params['camera_lat']
+                camera_lon = self.session.camera_params['camera_lon']
+                utm_converter = UTMConverter(self.session.utm_crs)
+                utm_converter.set_reference(camera_lat, camera_lon)
+                camera_easting, camera_northing = utm_converter.gps_to_utm(camera_lat, camera_lon)
+
                 # Create AutoCalibrator and run optimization
+                # Pass original unprojected mask + geotiff params for complete transformation
                 calibrator = AutoCalibrator(
                     camera_geometry=geo,
-                    map_mask=self.session.projected_cartography_mask,
+                    map_mask=self.session.cartography_mask,  # Original unprojected mask
                     camera_mask=self.session.camera_mask,
-                    callback=status_callback
+                    callback=status_callback,
+                    geotiff_params=self.session.geotiff_params,  # Enable geotiff transformation
+                    camera_utm_position=(camera_easting, camera_northing)  # For T_pixel_to_localXY
                 )
 
                 result = calibrator.run()
@@ -1997,7 +2013,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     </select>
                     
                     <label>Prompt:</label>
-                    <input type="text" id="sam3-prompt-gcp" placeholder="ground markings" value="ground markings">
+                    <input type="text" id="sam3-prompt-gcp" placeholder="road marking" value="road marking">
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
 
@@ -2781,7 +2797,8 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         function detectFeatures(tab) {{
             const promptInput = document.getElementById('sam3-prompt-' + tab);
-            const prompt = promptInput.value.trim() || 'ground markings';
+            const defaultPrompt = tab === 'gcp' ? 'road marking' : 'ground markings';
+            const prompt = promptInput.value.trim() || defaultPrompt;
 
             updateStatus('Detecting features with SAM3...');
 
