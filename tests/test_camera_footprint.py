@@ -65,14 +65,18 @@ class TestCornerProjectionClassification(unittest.TestCase):
         self.assertIsNotNone(result['north_offset'])
 
     def test_classify_negative_w(self):
-        """Test classification when w is negative (behind camera)."""
-        # Point behind camera
+        """Test classification when w is negative (beyond horizon)."""
+        # Point beyond horizon (w < 0)
         pt_world = np.array([[10.0], [20.0], [-0.5]])
 
         result = _classify_corner_projection(pt_world, self.height_m)
 
-        self.assertEqual(result['status'], 'invalid')
-        self.assertFalse(result['needs_clamping'])
+        # Should be clampable with negated direction (forward projection)
+        self.assertEqual(result['status'], 'clampable')
+        self.assertTrue(result['needs_clamping'])
+        # Direction should be negated to point forward
+        self.assertAlmostEqual(result['east_offset'], -10.0)
+        self.assertAlmostEqual(result['north_offset'], -20.0)
 
     def test_classify_exceeds_max_distance(self):
         """Test classification when distance exceeds max (height * 20)."""

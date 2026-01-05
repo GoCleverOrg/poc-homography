@@ -126,43 +126,73 @@ except ImportError:
 
 # Helper functions for camera footprint calculation with partial projection handling
 
+def _compute_ray_ground_direction(u: float, v: float, K: np.ndarray, R: np.ndarray) -> dict:
+    """
+    Compute the direction a camera ray points on the ground plane (XY).
+
+    When homography projection fails (w <= 0), we need to compute the ray
+    direction directly from camera geometry to get the correct ground direction.
+
+    Args:
+        u, v: Image pixel coordinates
+        K: 3x3 camera intrinsic matrix
+        R: 3x3 rotation matrix (world to camera)
+
+    Returns:
+        Dictionary with 'east' and 'north' components (unit vector on ground plane)
+    """
+    # Convert pixel to normalized camera coordinates
+    K_inv = np.linalg.inv(K)
+    pixel = np.array([u, v, 1.0])
+    ray_cam = K_inv @ pixel  # Ray direction in camera frame
+
+    # Transform to world frame (R is world-to-camera, so R.T is camera-to-world)
+    ray_world = R.T @ ray_cam
+
+    # Extract XY components (ground plane direction)
+    east = ray_world[0]
+    north = ray_world[1]
+
+    # Normalize to unit vector
+    length = math.sqrt(east**2 + north**2)
+    if length > 1e-10:
+        east /= length
+        north /= length
+
+    return {'east': east, 'north': north}
+
+
 def _classify_corner_projection(pt_world: np.ndarray, height_m: float) -> dict:
     """
     Classify a corner projection based on homogeneous coordinates.
-    
+
     Args:
         pt_world: Homogeneous world coordinates [X, Y, w] from inverse homography
         height_m: Camera height in meters
-        
+
     Returns:
         Dictionary with:
-        - status: 'valid', 'clampable', or 'invalid'
+        - status: 'valid' or 'clampable'
         - needs_clamping: Boolean indicating if distance clamping needed
-        - east_offset: Normalized X coordinate (meters, None if invalid)
-        - north_offset: Normalized Y coordinate (meters, None if invalid)
-        - distance: Distance from camera (meters, None if invalid)
+        - east_offset: X coordinate in meters (unnormalized if clampable)
+        - north_offset: Y coordinate in meters (unnormalized if clampable)
+        - distance: Distance from camera (meters, inf if clampable)
     """
     w = pt_world[2, 0]
     max_distance = height_m * 20.0  # MAX_DISTANCE_HEIGHT_RATIO from CameraGeometry
-    
-    # Check for negative w (behind camera)
-    if w < 0:
-        return {
-            'status': 'invalid',
-            'needs_clamping': False,
-            'east_offset': None,
-            'north_offset': None,
-            'distance': None
-        }
-    
-    # Check for w near zero (near horizon)
-    if abs(w) < 1e-6:
-        # Near horizon - clampable, but use unnormalized direction for clamping
+
+    # Check for w near zero or negative (near/beyond horizon)
+    # When w <= 0, the point projects at or beyond the horizon
+    # We use the unnormalized direction and clamp to max distance
+    if abs(w) < 1e-6 or w < 0:
+        # Use unnormalized coordinates for direction
+        # If w < 0, negate to get forward direction (point is "behind" camera plane)
+        sign = 1.0 if w >= 0 else -1.0
         return {
             'status': 'clampable',
             'needs_clamping': True,
-            'east_offset': pt_world[0, 0],  # Unnormalized for direction
-            'north_offset': pt_world[1, 0],
+            'east_offset': pt_world[0, 0] * sign,  # Unnormalized, corrected direction
+            'north_offset': pt_world[1, 0] * sign,
             'distance': float('inf')
         }
     
@@ -585,14 +615,14 @@ CRS: {crs}</description>
         reasonable distance limits. Uses per-corner validation instead of all-or-nothing.
 
         Returns:
-            List of 2-4 dicts (one per valid/clampable corner) with keys:
+            List of 4 dicts (one per corner) with keys:
             - 'lat': Latitude in decimal degrees
             - 'lon': Longitude in decimal degrees
-            - 'valid': Boolean indicating if corner projected validly (w > 1e-6, w > 0)
+            - 'valid': Boolean indicating if corner projected within max distance
             - 'clamped': Boolean indicating if coordinates were clamped to max distance
 
-            Returns None if camera_params are not available or fewer than 2 corners are valid.
-            Invalid corners (w < 0, behind camera) are excluded from the list.
+            Returns None if camera_params are not available.
+            Corners near/beyond horizon are clamped to max_distance (height_m * 20).
         """
         if not GEOMETRY_AVAILABLE or self.camera_params is None:
             return None
@@ -643,35 +673,40 @@ CRS: {crs}</description>
 
             max_distance = height_m * 20.0  # MAX_DISTANCE_HEIGHT_RATIO from CameraGeometry
             footprint = []
-            valid_corner_count = 0
+
+            # Get rotation matrix for ray direction computation (needed for invalid corners)
+            R = geo._get_rotation_matrix()
 
             for u, v in corners:
                 # Project pixel to world coordinates (relative to camera position)
                 pt_img = np.array([[u], [v], [1.0]])
                 pt_world = geo.H_inv @ pt_img
 
-                # Classify corner projection
-                classification = _classify_corner_projection(pt_world, height_m)
+                w = pt_world[2, 0]
 
-                if classification['status'] == 'invalid':
-                    # Skip invalid corners (behind camera, w < 0)
-                    # Do not add to footprint - geometrically meaningless
-                    continue
+                # Check if homography projection is valid
+                if w > 1e-6:
+                    # Valid projection - use homography result
+                    east_offset = pt_world[0, 0] / w
+                    north_offset = pt_world[1, 0] / w
+                    distance = math.sqrt(east_offset**2 + north_offset**2)
 
-                # Count valid corners (not invalid, even if clamped)
-                if classification['status'] in ('valid', 'clampable'):
-                    valid_corner_count += 1
-
-                # Get normalized offsets
-                east_offset = classification['east_offset']
-                north_offset = classification['north_offset']
-
-                # Apply clamping if needed
-                clamped = False
-                if classification['needs_clamping']:
-                    clamped_coords = _clamp_to_max_distance(east_offset, north_offset, max_distance)
-                    east_offset = clamped_coords['east']
-                    north_offset = clamped_coords['north']
+                    if distance <= max_distance:
+                        # Valid corner within reasonable distance
+                        clamped = False
+                    else:
+                        # Valid direction but too far - clamp to max_distance
+                        clamped_coords = _clamp_to_max_distance(east_offset, north_offset, max_distance)
+                        east_offset = clamped_coords['east']
+                        north_offset = clamped_coords['north']
+                        clamped = True
+                else:
+                    # Invalid projection (w <= 0) - compute ray direction directly
+                    # This happens when the pixel ray doesn't intersect the ground plane
+                    ray_dir = _compute_ray_ground_direction(u, v, K, R)
+                    # Scale unit direction to max_distance
+                    east_offset = ray_dir['east'] * max_distance
+                    north_offset = ray_dir['north'] * max_distance
                     clamped = True
 
                 # Convert world offset to lat/lon
@@ -680,15 +715,11 @@ CRS: {crs}</description>
                 )
 
                 footprint.append({
-                    'lat': latlon['lat'],
-                    'lon': latlon['lon'],
-                    'valid': classification['status'] == 'valid',
-                    'clamped': clamped
+                    'lat': float(latlon['lat']),
+                    'lon': float(latlon['lon']),
+                    'valid': bool(w > 1e-6),
+                    'clamped': bool(clamped)
                 })
-
-            # Require at least 2 valid corners for meaningful footprint
-            if valid_corner_count < 2:
-                return None
 
             return footprint
 
