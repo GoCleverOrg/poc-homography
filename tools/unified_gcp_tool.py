@@ -34,6 +34,7 @@ import tempfile
 import webbrowser
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import math
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -120,6 +121,124 @@ except ImportError:
     DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9
     USERNAME = None
     PASSWORD = None
+
+
+
+# Helper functions for camera footprint calculation with partial projection handling
+
+def _classify_corner_projection(pt_world: np.ndarray, height_m: float) -> dict:
+    """
+    Classify a corner projection based on homogeneous coordinates.
+    
+    Args:
+        pt_world: Homogeneous world coordinates [X, Y, w] from inverse homography
+        height_m: Camera height in meters
+        
+    Returns:
+        Dictionary with:
+        - status: 'valid', 'clampable', or 'invalid'
+        - needs_clamping: Boolean indicating if distance clamping needed
+        - east_offset: Normalized X coordinate (meters, None if invalid)
+        - north_offset: Normalized Y coordinate (meters, None if invalid)
+        - distance: Distance from camera (meters, None if invalid)
+    """
+    w = pt_world[2, 0]
+    max_distance = height_m * 20.0  # MAX_DISTANCE_HEIGHT_RATIO from CameraGeometry
+    
+    # Check for negative w (behind camera)
+    if w < 0:
+        return {
+            'status': 'invalid',
+            'needs_clamping': False,
+            'east_offset': None,
+            'north_offset': None,
+            'distance': None
+        }
+    
+    # Check for w near zero (near horizon)
+    if abs(w) < 1e-6:
+        # Near horizon - clampable, but use unnormalized direction for clamping
+        return {
+            'status': 'clampable',
+            'needs_clamping': True,
+            'east_offset': pt_world[0, 0],  # Unnormalized for direction
+            'north_offset': pt_world[1, 0],
+            'distance': float('inf')
+        }
+    
+    # Valid w - normalize coordinates
+    east_offset = pt_world[0, 0] / w
+    north_offset = pt_world[1, 0] / w
+    distance = math.sqrt(east_offset**2 + north_offset**2)
+    
+    # Check if distance exceeds maximum
+    if distance > max_distance:
+        return {
+            'status': 'clampable',
+            'needs_clamping': True,
+            'east_offset': east_offset,
+            'north_offset': north_offset,
+            'distance': distance
+        }
+    
+    # Valid projection within reasonable distance
+    return {
+        'status': 'valid',
+        'needs_clamping': False,
+        'east_offset': east_offset,
+        'north_offset': north_offset,
+        'distance': distance
+    }
+
+
+def _clamp_to_max_distance(east_offset: float, north_offset: float, max_distance: float) -> dict:
+    """
+    Clamp world coordinates to maximum distance while preserving direction.
+    
+    Args:
+        east_offset: East offset in meters (may exceed max_distance)
+        north_offset: North offset in meters (may exceed max_distance)
+        max_distance: Maximum allowed distance in meters
+        
+    Returns:
+        Dictionary with clamped 'east' and 'north' coordinates
+    """
+    current_distance = math.sqrt(east_offset**2 + north_offset**2)
+    
+    if current_distance == 0:
+        # Degenerate case - camera directly overhead
+        return {'east': 0.0, 'north': max_distance}
+    
+    # Scale to max_distance while preserving direction
+    scale = max_distance / current_distance
+    return {
+        'east': east_offset * scale,
+        'north': north_offset * scale
+    }
+
+
+def _convert_world_offset_to_latlon(east_offset: float, north_offset: float, 
+                                     camera_lat: float, camera_lon: float) -> dict:
+    """
+    Convert world offset (meters) to lat/lon coordinates.
+    
+    Args:
+        east_offset: East offset from camera in meters
+        north_offset: North offset from camera in meters
+        camera_lat: Camera latitude in decimal degrees
+        camera_lon: Camera longitude in decimal degrees
+        
+    Returns:
+        Dictionary with 'lat' and 'lon' keys
+    """
+    # Use approximate conversion: 1 degree lat ≈ 111320m
+    lat_offset_deg = north_offset / 111320.0
+    lon_offset_deg = east_offset / (111320.0 * np.cos(np.radians(camera_lat)))
+    
+    return {
+        'lat': camera_lat + lat_offset_deg,
+        'lon': camera_lon + lon_offset_deg
+    }
 
 
 class UnifiedSession:
@@ -461,11 +580,18 @@ CRS: {crs}</description>
 
         Projects the four corners of the camera frame (0,0), (w,0), (w,h), (0,h) through
         the inverse homography to get world coordinates, then converts to lat/lon.
+        
+        Handles partial projections when some corners are near/beyond horizon or exceed
+        reasonable distance limits. Uses per-corner validation instead of all-or-nothing.
 
         Returns:
-            List of 4 dicts with 'lat' and 'lon' keys representing footprint corners,
-            ordered: top-left, top-right, bottom-right, bottom-left.
-            Returns None if camera_params are not available or projection fails.
+            List of 4 dicts with keys:
+            - 'lat': Latitude in decimal degrees
+            - 'lon': Longitude in decimal degrees
+            - 'valid': Boolean indicating if corner projected validly (w > 1e-6, w > 0)
+            - 'clamped': Boolean indicating if coordinates were clamped to max distance
+            
+            Returns None if camera_params are not available or fewer than 2 corners are valid.
         """
         if not GEOMETRY_AVAILABLE or self.camera_params is None:
             return None
@@ -514,35 +640,54 @@ CRS: {crs}</description>
                 (0, image_height - 1)            # bottom-left
             ]
 
+            max_distance = height_m * 20.0  # MAX_DISTANCE_HEIGHT_RATIO from CameraGeometry
             footprint = []
+            valid_corner_count = 0
+
             for u, v in corners:
                 # Project pixel to world coordinates (relative to camera position)
                 pt_img = np.array([[u], [v], [1.0]])
                 pt_world = geo.H_inv @ pt_img
 
-                # Check for valid projection (not near horizon)
-                if abs(pt_world[2, 0]) < 1e-6:
-                    # Point is near horizon, projection is invalid
-                    return None
+                # Classify corner projection
+                classification = _classify_corner_projection(pt_world, height_m)
 
-                # Normalize homogeneous coordinates
-                # H_inv returns world coordinates: X=East, Y=North (pan is already in the homography)
-                # Bug fix: Removed erroneous pan rotation that was double-applying pan
-                east_offset = pt_world[0, 0] / pt_world[2, 0]   # X = East
-                north_offset = pt_world[1, 0] / pt_world[2, 0]  # Y = North
+                if classification['status'] == 'invalid':
+                    # Skip invalid corners (behind camera, w < 0)
+                    # Do not add to footprint - geometrically meaningless
+                    continue
 
-                # Convert world offset (meters) to lat/lon
-                # Use approximate conversion: 1 degree lat ≈ 111320m
-                lat_offset_deg = north_offset / 111320.0
-                lon_offset_deg = east_offset / (111320.0 * np.cos(np.radians(camera_lat)))
+                # Count valid corners (not invalid, even if clamped)
+                if classification['status'] in ('valid', 'clampable'):
+                    valid_corner_count += 1
 
-                corner_lat = camera_lat + lat_offset_deg
-                corner_lon = camera_lon + lon_offset_deg
+                # Get normalized offsets
+                east_offset = classification['east_offset']
+                north_offset = classification['north_offset']
+
+                # Apply clamping if needed
+                clamped = False
+                if classification['needs_clamping']:
+                    clamped_coords = _clamp_to_max_distance(east_offset, north_offset, max_distance)
+                    east_offset = clamped_coords['east']
+                    north_offset = clamped_coords['north']
+                    clamped = True
+
+                # Convert world offset to lat/lon
+                latlon = _convert_world_offset_to_latlon(
+                    east_offset, north_offset, camera_lat, camera_lon
+                )
 
                 footprint.append({
-                    'lat': corner_lat,
-                    'lon': corner_lon
+                    'lat': latlon['lat'],
+                    'lon': latlon['lon'],
+                    'valid': classification['status'] == 'valid',
+                    'clamped': clamped
                 })
+
+            # Require at least 2 valid corners for meaningful footprint
+            if valid_corner_count < 2:
+                return None
 
             return footprint
 
