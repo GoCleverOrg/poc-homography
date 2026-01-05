@@ -14,7 +14,7 @@ Tests cover:
 
 import pytest
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import Mock
 import copy
 
@@ -124,7 +124,7 @@ class TestCalibrationResult:
 
     def test_default_timestamp(self):
         """Test that timestamp defaults to current time if not provided."""
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
 
         result = CalibrationResult(
             optimized_params=np.zeros(6),
@@ -137,7 +137,7 @@ class TestCalibrationResult:
             convergence_info={'success': True}
         )
 
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
 
         # Check timestamp is between before and after (within reasonable time window)
         assert before <= result.timestamp <= after
@@ -900,10 +900,10 @@ class TestCalibrateIntegration:
         """Test that calibration result includes timestamp."""
         gcps, _, _ = create_synthetic_gcps(num_gcps=5)
 
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
         calibrator = GCPCalibrator(real_camera_geometry, gcps)
         result = calibrator.calibrate()
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
 
         # Timestamp should be within test execution time
         assert before <= result.timestamp <= after

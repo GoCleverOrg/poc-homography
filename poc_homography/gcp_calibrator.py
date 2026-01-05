@@ -56,7 +56,7 @@ Usage Example:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import logging
@@ -75,8 +75,9 @@ except ImportError:
         import math
         R_EARTH = 6371000  # meters
         ref_lat_rad = math.radians(ref_lat)
-        x = (lon - ref_lon) * math.cos(ref_lat_rad) * math.radians(R_EARTH)
-        y = (lat - ref_lat) * math.radians(R_EARTH)
+        # Convert degree differences to radians, then scale by Earth radius
+        x = math.radians(lon - ref_lon) * math.cos(ref_lat_rad) * R_EARTH
+        y = math.radians(lat - ref_lat) * R_EARTH
         return x, y
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ class CalibrationResult:
     inlier_ratio: float
     per_gcp_errors: List[float]
     convergence_info: Dict[str, Any]
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class GCPCalibrator:
@@ -142,11 +143,15 @@ class GCPCalibrator:
     LOSS_CAUCHY = 'cauchy'
     VALID_LOSS_FUNCTIONS = [LOSS_HUBER, LOSS_CAUCHY]
 
+    # Large residual value for points projecting to infinity (horizon)
+    # This value is intentionally large to penalize such configurations during optimization
+    INFINITY_RESIDUAL = 1e6
+
     # Default parameter bounds (conservative ranges)
     DEFAULT_BOUNDS = {
         'pan': (-10.0, 10.0),      # ±10 degrees
         'tilt': (-10.0, 10.0),     # ±10 degrees
-        'roll': (-10.0, 10.0),     # ±10 degrees (currently unused in CameraGeometry)
+        'roll': (-10.0, 10.0),     # ±10 degrees (reserved for future CameraGeometry support)
         'X': (-5.0, 5.0),          # ±5 meters
         'Y': (-5.0, 5.0),          # ±5 meters
         'Z': (-5.0, 5.0),          # ±5 meters
@@ -323,9 +328,9 @@ class GCPCalibrator:
 
             # Normalize homogeneous coordinates (perspective division)
             if abs(predicted_homogeneous[2]) < 1e-10:
-                # Point is at infinity (horizon), use large residual
-                residuals[2*i] = 1e6
-                residuals[2*i + 1] = 1e6
+                # Point is at infinity (horizon), use large residual to penalize
+                residuals[2*i] = self.INFINITY_RESIDUAL
+                residuals[2*i + 1] = self.INFINITY_RESIDUAL
                 logger.warning(f"GCP {i} projects to infinity with params {params}")
                 continue
 
@@ -340,7 +345,11 @@ class GCPCalibrator:
 
     def _apply_robust_loss(self, residuals: np.ndarray) -> np.ndarray:
         """
-        Apply robust loss function to residuals.
+        Apply robust loss function to residuals (reference implementation).
+
+        This method provides an explicit implementation of the Huber and Cauchy
+        loss functions for reference and testing purposes. The actual optimization
+        uses scipy's built-in loss functions via the `loss` parameter.
 
         Transforms squared residuals using selected robust loss function to reduce
         the influence of outlier GCPs on the optimization.
@@ -359,9 +368,11 @@ class GCPCalibrator:
             loss_values: Array of same shape with robust loss applied
 
         Note:
-            This method applies the loss function element-wise. The loss values
-            are what scipy.optimize.least_squares minimizes when using the
-            'soft_l1' or similar robust loss options.
+            This method is NOT called during calibration (scipy handles the
+            robust loss internally). It is provided for:
+            - Understanding the loss function behavior
+            - Unit testing the loss function implementation
+            - Manual loss computation if needed
         """
         # Compute absolute values (robust losses are symmetric)
         abs_residuals = np.abs(residuals)
@@ -473,8 +484,10 @@ class GCPCalibrator:
         logger.info(f"Starting calibration optimization: initial RMS error = {initial_error:.3f}px")
 
         # Map loss function names to scipy loss strings
+        # Note: 'soft_l1' is scipy's pseudo-Huber loss: 2*((1+r²)^0.5 - 1)
+        # It behaves similarly to Huber (quadratic for small r, linear for large r)
         scipy_loss_map = {
-            'huber': 'soft_l1',  # soft_l1 is scipy's Huber-like loss
+            'huber': 'soft_l1',  # pseudo-Huber loss (smooth approximation)
             'cauchy': 'cauchy'
         }
         scipy_loss = scipy_loss_map.get(self.loss_function, 'linear')
