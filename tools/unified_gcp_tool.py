@@ -56,7 +56,6 @@ try:
     from poc_homography.camera_geometry import CameraGeometry
     from poc_homography.gps_distance_calculator import dms_to_dd
     from poc_homography.coordinate_converter import UTMConverter
-    from poc_homography.auto_calibrator import AutoCalibrator
     GEOMETRY_AVAILABLE = True
 except ImportError:
     GEOMETRY_AVAILABLE = False
@@ -1421,124 +1420,6 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'error': str(e)
                 })
 
-        elif self.path == '/api/auto_calibrate':
-            # Auto-calibration via mask matching
-            try:
-                # Validate cartography mask exists (use original unprojected mask)
-                if self.session.cartography_mask is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Cartography mask not detected. Please detect cartography mask first.'
-                    })
-                    return
-
-                if self.session.camera_mask is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Camera mask not detected. Please detect camera features first.'
-                    })
-                    return
-
-                if self.session.camera_params is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Camera parameters not available.'
-                    })
-                    return
-
-                if not GEOMETRY_AVAILABLE:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'AutoCalibrator not available. Camera geometry module required.'
-                    })
-                    return
-
-                # Create CameraGeometry from session camera_params
-                # Camera position is at origin (0, 0) in local coordinate system
-                image_width = self.session.camera_params.get('image_width', 1920)
-                image_height = self.session.camera_params.get('image_height', 1080)
-                geo = CameraGeometry(image_width, image_height)
-                geo.set_camera_parameters(
-                    K=self.session.camera_params['K'],
-                    w_pos=np.array([
-                        0.0,
-                        0.0,
-                        self.session.camera_params['height_m']
-                    ]),
-                    pan_deg=self.session.camera_params['pan_deg'],
-                    tilt_deg=self.session.camera_params['tilt_deg'],
-                    map_width=640,
-                    map_height=640
-                )
-
-                # Store status messages
-                status_messages = []
-                def status_callback(msg):
-                    status_messages.append(msg)
-                    print(f"[AutoCalibrator] {msg}")
-
-                # Get camera UTM coordinates for geotiff transformation
-                camera_lat = self.session.camera_params['camera_lat']
-                camera_lon = self.session.camera_params['camera_lon']
-                utm_converter = UTMConverter(self.session.utm_crs)
-                utm_converter.set_reference(camera_lat, camera_lon)
-                camera_easting, camera_northing = utm_converter.gps_to_utm(camera_lat, camera_lon)
-
-                # Create AutoCalibrator and run optimization
-                # Pass original unprojected mask + geotiff params for complete transformation
-                calibrator = AutoCalibrator(
-                    camera_geometry=geo,
-                    map_mask=self.session.cartography_mask,  # Original unprojected mask
-                    camera_mask=self.session.camera_mask,
-                    callback=status_callback,
-                    geotiff_params=self.session.geotiff_params,  # Enable geotiff transformation
-                    camera_utm_position=(camera_easting, camera_northing)  # For T_pixel_to_localXY
-                )
-
-                result = calibrator.run()
-
-                # Helper function to convert numpy arrays to JSON-serializable format
-                def serialize_params(params):
-                    """Convert numpy arrays in params dict to lists for JSON serialization."""
-                    serialized = {}
-                    for key, value in params.items():
-                        if isinstance(value, np.ndarray):
-                            serialized[key] = value.tolist()
-                        elif isinstance(value, (np.float32, np.float64)):
-                            serialized[key] = float(value)
-                        elif isinstance(value, (np.int32, np.int64)):
-                            serialized[key] = int(value)
-                        else:
-                            serialized[key] = value
-                    return serialized
-
-                # Format response
-                response = {
-                    'success': result.success,
-                    'initial_correlation': float(result.initial_correlation),
-                    'final_correlation': float(result.final_correlation),
-                    'improvement': float(result.improvement),
-                    'relative_improvement': float(result.relative_improvement),
-                    'elapsed_time': float(result.elapsed_time),
-                    'steps_completed': result.steps_completed,
-                    'timeout_reached': result.timeout_reached,
-                    'message': result.message,
-                    'original_params': serialize_params(result.original_params),
-                    'optimized_params': serialize_params(result.optimized_params),
-                    'status_log': status_messages
-                }
-
-                self.send_json_response(response)
-
-            except Exception as e:
-                import traceback
-                error_details = traceback.format_exc()
-                print(f"Auto-calibration error: {error_details}")
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Auto-calibration failed: {str(e)}'
-                })
-
         else:
             self.send_error(404)
 
@@ -2175,13 +2056,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     </div>
                     <button onclick="toggleProjectedMask()" id="toggle-projected-mask-btn" style="display: none;">Show Map Mask</button>
 
-                    <h3>Auto-Calibration</h3>
-                    <div style="font-size: 11px; color: #888; margin-bottom: 8px;">
-                        Automatically calibrate camera parameters by matching masks
-                    </div>
-                    <button onclick="autoCalibrate()" id="auto-calibrate-btn" style="display: none;">Auto-Calibrate</button>
-                    <div id="auto-calibrate-status" style="font-size: 11px; color: #666; margin-top: 5px;"></div>
-
                     <h3>SAM3 Feature Detection</h3>
                     <label>Preprocessing:</label>
                     <select id="sam3-preprocessing-gcp">
@@ -2226,8 +2100,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let projectedMaskOffset = null;  // [left, top] CSS offset for positioning mask overlay
         let cameraOverlayVisible = true;  // Camera visualization toggle state
         let activeMode = null;  // Arrow key mode: 'latlon', 'pan', 'tilt', 'height', or null
-        let kmlAutoDetected = false;  // Guard flag: auto-detection already triggered for KML tab
-        let gcpAutoDetected = false;  // Guard flag: auto-detection already triggered for GCP tab
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -2241,11 +2113,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 updateCameraVisualization();
                 centerOnCamera();
             }}
-            // Auto-trigger SAM3 detection for KML tab
-            if (!kmlAutoDetected) {{
-                kmlAutoDetected = true;
-                detectFeatures('kml');
-            }}
         }};
 
         // Also check if image is already loaded (base64 inline images load synchronously)
@@ -2255,17 +2122,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 updateCameraVisualization();
                 centerOnCamera();
             }}
-            // Auto-trigger SAM3 detection for KML tab (synchronous load)
-            if (!kmlAutoDetected) {{
-                kmlAutoDetected = true;
-                detectFeatures('kml');
-            }}
         }}
 
         // Initialize
         updatePointName();
         document.getElementById('category').addEventListener('change', updatePointName);
-        updateAutoCalibrateBtnVisibility();  // Set initial auto-calibrate button state
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {{
@@ -2410,12 +2271,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                             updateGCPView();
                             if (projectedMaskVisible) showProjectedMask();
 
-
-                            // Auto-trigger SAM3 detection for GCP tab
-                            if (!gcpAutoDetected) {{
-                                gcpAutoDetected = true;
-                                detectFeatures('gcp');
-                            }}
                             gcpImg.onload = null;
                         }};
                         gcpImg.src = 'data:image/jpeg;base64,' + data.camera_frame;
@@ -2447,9 +2302,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                             console.warn('Mask projection failed:', data.projection_error);
                         }}
                     }}
-
-                    // Update auto-calibrate button visibility when projected mask changes
-                    updateAutoCalibrateBtnVisibility();
 
                     updateCameraParamsDisplay();
 
@@ -3001,11 +2853,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     maskVisible[tab] = true;
                     showMask(tab);
 
-                    // Update auto-calibrate button visibility when camera mask is detected
-                    if (tab === 'gcp') {{
-                        updateAutoCalibrateBtnVisibility();
-                    }}
-
                     const meta = data.metadata;
                     updateStatus(`Detected ${{meta.total_predictions}} features (${{meta.total_polygons}} polygons)`);
                 }} else {{
@@ -3071,131 +2918,6 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
             document.getElementById('toggle-projected-mask-btn').textContent =
                 projectedMaskVisible ? 'Hide Map Mask' : 'Show Map Mask';
-        }}
-
-        function updateAutoCalibrateBtnVisibility() {{
-            // Show auto-calibrate button when BOTH masks are available:
-            // 1. projectedMaskData (map mask projected to camera)
-            // 2. maskData.gcp (camera mask detected via SAM3)
-            const btn = document.getElementById('auto-calibrate-btn');
-            if (btn) {{
-                const bothMasksAvailable = projectedMaskData && maskData.gcp;
-                btn.style.display = bothMasksAvailable ? 'block' : 'none';
-                console.log('Auto-calibrate button visibility:', {{
-                    projectedMaskData: !!projectedMaskData,
-                    cameraMask: !!maskData.gcp,
-                    visible: bothMasksAvailable
-                }});
-            }}
-        }}
-
-        function autoCalibrate() {{
-            const btn = document.getElementById('auto-calibrate-btn');
-            const statusDiv = document.getElementById('auto-calibrate-status');
-
-            // Disable button and show status
-            btn.disabled = true;
-            statusDiv.textContent = 'Starting auto-calibration...';
-            updateStatus('Running auto-calibration...');
-
-            fetch('/api/auto_calibrate', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{}})
-            }})
-            .then(r => r.json())
-            .then(data => {{
-                btn.disabled = false;
-                statusDiv.textContent = '';
-
-                if (data.success) {{
-                    const before = (data.initial_correlation * 100).toFixed(1);
-                    const after = (data.final_correlation * 100).toFixed(1);
-                    const improvement = (data.relative_improvement * 100).toFixed(1);
-
-                    // Show confirmation dialog
-                    let message = `Auto-calibration Complete\\n\\n`;
-                    message += `Correlation Score:\\n`;
-                    message += `  Before: ${{before}}%\\n`;
-                    message += `  After: ${{after}}%\\n`;
-                    message += `  Improvement: ${{improvement > 0 ? '+' : ''}}${{improvement}}%\\n\\n`;
-                    message += `Time: ${{data.elapsed_time.toFixed(1)}}s\\n`;
-                    message += `Steps: ${{data.steps_completed}}/5\\n\\n`;
-
-                    if (data.improvement < 0) {{
-                        message += `WARNING: Correlation decreased!\\n\\n`;
-                    }}
-
-                    message += `Accept new parameters?`;
-
-                    const accepted = confirm(message);
-
-                    if (accepted) {{
-                        // Update camera params with optimized values
-                        const optimized = data.optimized_params;
-
-                        // Send update request with new parameters
-                        fetch('/api/update_camera_params', {{
-                            method: 'POST',
-                            headers: {{ 'Content-Type': 'application/json' }},
-                            body: JSON.stringify({{
-                                pan_deg: optimized.pan_deg,
-                                tilt_deg: optimized.tilt_deg,
-                                height_m: optimized.height_m
-                            }})
-                        }})
-                        .then(r => r.json())
-                        .then(updateData => {{
-                            if (updateData.success) {{
-                                cameraParams = updateData.camera_params;
-                                projectedPoints = updateData.projected_points;
-
-                                // Update projected mask
-                                if (updateData.projected_mask_available && updateData.projected_mask) {{
-                                    projectedMaskData = updateData.projected_mask;
-                                    projectedMaskOffset = updateData.projected_mask_offset;
-                                    if (projectedMaskVisible) {{
-                                        showProjectedMask();
-                                    }}
-                                }}
-
-                                updateCameraParamsDisplay();
-                                updateGCPView();
-                                updateCameraVisualization();
-
-                                statusDiv.textContent = `Applied: ${{improvement > 0 ? '+' : ''}}${{improvement}}% improvement`;
-                                statusDiv.style.color = improvement > 0 ? '#0a0' : '#c60';
-                                updateStatus(`Auto-calibration accepted (improvement: ${{improvement > 0 ? '+' : ''}}${{improvement}}%)`);
-                            }} else {{
-                                alert('Failed to apply parameters: ' + updateData.error);
-                                updateStatus('Error applying calibration');
-                            }}
-                        }})
-                        .catch(err => {{
-                            console.error('Failed to apply parameters:', err);
-                            alert('Failed to apply parameters: ' + err.message);
-                        }});
-                    }} else {{
-                        statusDiv.textContent = 'Calibration rejected';
-                        statusDiv.style.color = '#888';
-                        updateStatus('Auto-calibration rejected by user');
-                    }}
-                }} else {{
-                    const errorMsg = data.error || data.message || 'Unknown error';
-                    statusDiv.textContent = 'Error: ' + errorMsg;
-                    statusDiv.style.color = '#c60';
-                    updateStatus('Auto-calibration failed: ' + errorMsg);
-                    alert('Auto-calibration failed:\\n' + errorMsg);
-                }}
-            }})
-            .catch(err => {{
-                btn.disabled = false;
-                statusDiv.textContent = 'Error: ' + err.message;
-                statusDiv.style.color = '#c60';
-                console.error('Auto-calibration failed:', err);
-                updateStatus('Auto-calibration failed: ' + err.message);
-                alert('Auto-calibration failed:\\n' + err.message);
-            }});
         }}
 
         function showProjectedMask() {{
