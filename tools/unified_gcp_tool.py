@@ -585,13 +585,14 @@ CRS: {crs}</description>
         reasonable distance limits. Uses per-corner validation instead of all-or-nothing.
 
         Returns:
-            List of 4 dicts with keys:
+            List of 2-4 dicts (one per valid/clampable corner) with keys:
             - 'lat': Latitude in decimal degrees
             - 'lon': Longitude in decimal degrees
             - 'valid': Boolean indicating if corner projected validly (w > 1e-6, w > 0)
             - 'clamped': Boolean indicating if coordinates were clamped to max distance
-            
+
             Returns None if camera_params are not available or fewer than 2 corners are valid.
+            Invalid corners (w < 0, behind camera) are excluded from the list.
         """
         if not GEOMETRY_AVAILABLE or self.camera_params is None:
             return None

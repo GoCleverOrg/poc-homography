@@ -227,18 +227,8 @@ class TestWorldOffsetConversion(unittest.TestCase):
         self.assertAlmostEqual(lat_change_meters, north_offset, places=0)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class TestFootprintCalculationIntegration(unittest.TestCase):
     """Test complete footprint calculation with real camera geometry."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        # Create a minimal session just for testing calculate_camera_footprint
-        # We'll monkey-patch the instance to avoid full initialization
-        pass
 
     def _create_test_session_with_params(self, tilt_deg, pan_deg=0.0, height_m=5.0):
         """Create a mock session with camera params for testing."""
@@ -465,5 +455,9 @@ class TestNoRegression(unittest.TestCase):
                     lat_diff = (corner['lat'] - camera_lat) * 111320.0
                     lon_diff = (corner['lon'] - camera_lon) * 111320.0 * np.cos(np.radians(camera_lat))
                     distance = np.sqrt(lat_diff**2 + lon_diff**2)
-                    self.assertLessEqual(distance, max_distance * 1.1, 
+                    self.assertLessEqual(distance, max_distance * 1.1,
                         f"Corner distance {distance:.1f}m should not exceed max {max_distance}m at tilt={tilt}°")
+
+
+if __name__ == '__main__':
+    unittest.main()
