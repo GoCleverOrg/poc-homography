@@ -60,6 +60,13 @@ try:
 except ImportError:
     GEOMETRY_AVAILABLE = False
 
+# Import GCP calibrator for reprojection error minimization
+try:
+    from poc_homography.gcp_calibrator import GCPCalibrator, CalibrationResult
+    CALIBRATOR_AVAILABLE = True
+except ImportError:
+    CALIBRATOR_AVAILABLE = False
+
 # Import intrinsics utility
 try:
     from tools.get_camera_intrinsics import get_ptz_status, compute_intrinsics
@@ -960,6 +967,244 @@ CRS: {crs}</description>
             traceback.print_exc()
             return None
 
+    def run_calibration(self, observed_pixels: Optional[List[Dict]] = None) -> Optional[Dict]:
+        """
+        Run GCP-based calibration to optimize camera parameters.
+
+        Uses reprojection error minimization to find optimal camera parameter
+        adjustments (pan, tilt, position) that minimize the difference between
+        observed and predicted GCP pixel locations.
+
+        Args:
+            observed_pixels: Optional list of observed pixel locations. If not provided,
+                           uses SAM3-detected centroids from camera_mask (if available)
+                           or falls back to projected pixels (which won't improve calibration).
+                           Format: [{'name': str, 'pixel_u': float, 'pixel_v': float}, ...]
+
+        Returns:
+            Dictionary with calibration results:
+            - 'success': bool
+            - 'optimized_params': list of 6 floats [Δpan, Δtilt, Δroll, ΔX, ΔY, ΔZ]
+            - 'initial_error': float (RMS error in pixels before calibration)
+            - 'final_error': float (RMS error in pixels after calibration)
+            - 'improvement_percent': float
+            - 'num_inliers': int
+            - 'num_outliers': int
+            - 'inlier_ratio': float
+            - 'per_gcp_errors': list of per-point errors
+            - 'convergence_info': dict with optimizer details
+            - 'suggested_params': dict with suggested new camera parameters
+
+            Returns None if calibration cannot be performed.
+        """
+        if not CALIBRATOR_AVAILABLE:
+            print("GCPCalibrator not available - cannot run calibration")
+            return None
+
+        if not GEOMETRY_AVAILABLE or self.camera_params is None:
+            print("Camera geometry not available - cannot run calibration")
+            return None
+
+        if not self.points:
+            print("No KML points loaded - cannot run calibration")
+            return None
+
+        # Get projected points if not already computed
+        if not hasattr(self, 'projected_points') or not self.projected_points:
+            self.projected_points = self.project_points_to_image()
+
+        if not self.projected_points:
+            print("No projected points available - cannot run calibration")
+            return None
+
+        # Determine observed pixel locations
+        if observed_pixels is not None:
+            # Use provided observed pixels
+            obs_by_name = {p['name']: p for p in observed_pixels}
+        elif self.camera_mask is not None:
+            # Extract centroids from SAM3 mask and match to nearest projected points
+            obs_by_name = self._extract_mask_centroids_for_calibration()
+            if not obs_by_name:
+                print("Could not extract centroids from mask - using projected pixels")
+                obs_by_name = None
+        else:
+            obs_by_name = None
+
+        # Build GCP list for calibrator
+        gcps = []
+        for proj_pt in self.projected_points:
+            if not proj_pt.get('visible', False):
+                continue
+
+            name = proj_pt.get('name', '')
+            gps_lat = proj_pt.get('latitude')
+            gps_lon = proj_pt.get('longitude')
+
+            if gps_lat is None or gps_lon is None:
+                continue
+
+            # Get observed pixel location
+            if obs_by_name and name in obs_by_name:
+                obs = obs_by_name[name]
+                pixel_u = obs.get('pixel_u', proj_pt.get('pixel_u'))
+                pixel_v = obs.get('pixel_v', proj_pt.get('pixel_v'))
+            else:
+                # Fall back to projected pixels (won't improve calibration much)
+                pixel_u = proj_pt.get('pixel_u')
+                pixel_v = proj_pt.get('pixel_v')
+
+            if pixel_u is None or pixel_v is None:
+                continue
+
+            gcps.append({
+                'gps': {'latitude': gps_lat, 'longitude': gps_lon},
+                'image': {'u': pixel_u, 'v': pixel_v}
+            })
+
+        if len(gcps) < 4:
+            print(f"Not enough valid GCPs for calibration (need 4, have {len(gcps)})")
+            return None
+
+        # Create CameraGeometry for calibrator
+        try:
+            K = self.camera_params.get('K')
+            if isinstance(K, list):
+                K = np.array(K)
+
+            image_width = self.camera_params.get('image_width', 1920)
+            image_height = self.camera_params.get('image_height', 1080)
+            height_m = self.camera_params.get('height_m', 5.0)
+            pan_deg = self.camera_params.get('pan_deg', 0.0)
+            tilt_deg = self.camera_params.get('tilt_deg', 45.0)
+
+            geo = CameraGeometry(image_width, image_height)
+            geo.set_camera_parameters(
+                K=K,
+                w_pos=np.array([0, 0, height_m]),
+                pan_deg=pan_deg,
+                tilt_deg=tilt_deg,
+                map_width=640,
+                map_height=640
+            )
+
+            # Run calibration
+            calibrator = GCPCalibrator(
+                camera_geometry=geo,
+                gcps=gcps,
+                loss_function='huber',
+                loss_scale=2.0  # 2 pixel threshold for outliers
+            )
+
+            result = calibrator.calibrate()
+
+            # Calculate improvement
+            if result.initial_error > 0:
+                improvement = (result.initial_error - result.final_error) / result.initial_error * 100
+            else:
+                improvement = 0.0
+
+            # Compute suggested new parameters
+            suggested_params = {
+                'pan_deg': pan_deg + result.optimized_params[0],
+                'tilt_deg': tilt_deg + result.optimized_params[1],
+                'height_m': height_m + result.optimized_params[5],
+                # Position adjustments (X, Y) would need coordinate conversion
+            }
+
+            return {
+                'success': True,
+                'optimized_params': result.optimized_params.tolist(),
+                'initial_error': result.initial_error,
+                'final_error': result.final_error,
+                'improvement_percent': improvement,
+                'num_inliers': result.num_inliers,
+                'num_outliers': result.num_outliers,
+                'inlier_ratio': result.inlier_ratio,
+                'per_gcp_errors': result.per_gcp_errors,
+                'convergence_info': result.convergence_info,
+                'suggested_params': suggested_params,
+                'num_gcps_used': len(gcps)
+            }
+
+        except Exception as e:
+            print(f"Calibration failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def _extract_mask_centroids_for_calibration(self) -> Optional[Dict[str, Dict]]:
+        """
+        Extract centroids from camera_mask and match to nearest projected points.
+
+        Returns:
+            Dictionary mapping point names to observed pixel locations:
+            {'point_name': {'pixel_u': float, 'pixel_v': float}, ...}
+            Returns None if extraction fails.
+        """
+        if self.camera_mask is None:
+            return None
+
+        if not self.projected_points:
+            return None
+
+        try:
+            # Find connected components in mask
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+                self.camera_mask, connectivity=8
+            )
+
+            if num_labels <= 1:  # Only background
+                return None
+
+            # Get centroids (skip background at index 0)
+            mask_centroids = []
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area > 10:  # Filter out noise
+                    cx, cy = centroids[i]
+                    mask_centroids.append({'x': cx, 'y': cy, 'area': area})
+
+            if not mask_centroids:
+                return None
+
+            # Match each projected point to nearest centroid
+            result = {}
+            for proj_pt in self.projected_points:
+                if not proj_pt.get('visible', False):
+                    continue
+
+                name = proj_pt.get('name', '')
+                pred_u = proj_pt.get('pixel_u')
+                pred_v = proj_pt.get('pixel_v')
+
+                if pred_u is None or pred_v is None:
+                    continue
+
+                # Find nearest centroid
+                min_dist = float('inf')
+                nearest = None
+                for centroid in mask_centroids:
+                    dist = math.sqrt((centroid['x'] - pred_u)**2 + (centroid['y'] - pred_v)**2)
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest = centroid
+
+                # Only match if reasonably close (within 100 pixels)
+                if nearest and min_dist < 100:
+                    result[name] = {
+                        'pixel_u': nearest['x'],
+                        'pixel_v': nearest['y']
+                    }
+
+            return result if result else None
+
+        except Exception as e:
+            print(f"Failed to extract mask centroids: {e}")
+            return None
+
 
 class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler for unified two-tab interface."""
@@ -1140,6 +1385,20 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 print("No cartography mask available for projection")
 
+            # Run initial calibration to get quality metrics
+            calibration_result = None
+            calibration_formatted = None
+            calibration_available = CALIBRATOR_AVAILABLE
+            if CALIBRATOR_AVAILABLE and len(projected_points) >= 4:
+                try:
+                    calibration_result = self.session.run_calibration()
+                    if calibration_result and calibration_result.get('success', False):
+                        print(f"Initial calibration: RMS error = {calibration_result.get('final_error', 0):.2f}px")
+                        # Format for frontend
+                        calibration_formatted = self._format_calibration_result(calibration_result)
+                except Exception as e:
+                    print(f"Initial calibration failed: {e}")
+
             self.send_json_response({
                 'success': True,
                 'projected_points': projected_points,
@@ -1150,8 +1409,39 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'projected_mask': projected_mask_b64,
                 'projected_mask_available': projected_mask_available,
                 'projected_mask_offset': self.session.projected_mask_offset,
-                'projection_error': projection_error
+                'projection_error': projection_error,
+                'calibration_available': calibration_available,
+                'calibration': calibration_formatted
             })
+
+        elif self.path == '/api/run_calibration':
+            # Run GCP-based calibration with optional observed pixel locations
+            try:
+                observed_pixels = post_data.get('observed_pixels', None)
+                calibration_result = self.session.run_calibration(observed_pixels)
+
+                if calibration_result is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'Calibration could not be performed (check console for details)'
+                    })
+                elif not calibration_result.get('success', False):
+                    self.send_json_response({
+                        'success': False,
+                        'error': calibration_result.get('error', 'Calibration failed')
+                    })
+                else:
+                    calibration_formatted = self._format_calibration_result(calibration_result)
+                    self.send_json_response({
+                        'success': True,
+                        'calibration': calibration_formatted
+                    })
+
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
 
         elif self.path == '/api/capture_frame':
             # Capture new camera frame
@@ -1483,6 +1773,36 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             'camera_footprint': footprint
         }
 
+    def _format_calibration_result(self, calibration_result: dict) -> dict:
+        """Format calibration result for frontend consumption."""
+        if not calibration_result or not calibration_result.get('success', False):
+            return None
+
+        sp = calibration_result.get('suggested_params', {})
+        current_pan = self.session.camera_params.get('pan_deg', 0) if self.session.camera_params else 0
+        current_tilt = self.session.camera_params.get('tilt_deg', 0) if self.session.camera_params else 0
+        current_height = self.session.camera_params.get('height_m', 0) if self.session.camera_params else 0
+
+        per_gcp_errors = calibration_result.get('per_gcp_errors', [0])
+        max_error = max(per_gcp_errors) if per_gcp_errors else 0
+
+        return {
+            'rms_error': calibration_result.get('final_error', 0),
+            'max_error': max_error,
+            'num_points': calibration_result.get('num_gcps_used', 0),
+            'num_inliers': calibration_result.get('num_inliers', 0),
+            'initial_error': calibration_result.get('initial_error', 0),
+            'improvement_percent': calibration_result.get('improvement_percent', 0),
+            'suggested_params': {
+                'pan': sp.get('pan_deg'),
+                'tilt': sp.get('tilt_deg'),
+                'height': sp.get('height_m'),
+                'delta_pan': sp.get('pan_deg', current_pan) - current_pan if sp.get('pan_deg') is not None else None,
+                'delta_tilt': sp.get('tilt_deg', current_tilt) - current_tilt if sp.get('tilt_deg') is not None else None,
+                'delta_height': sp.get('height_m', current_height) - current_height if sp.get('height_m') is not None else None,
+            } if sp else None
+        }
+
 
 def generate_unified_html(session: UnifiedSession) -> str:
     """Generate the unified two-tab HTML interface."""
@@ -1721,6 +2041,51 @@ def generate_unified_html(session: UnifiedSession) -> str:
             background: #555;
             cursor: not-allowed;
             opacity: 0.5;
+        }}
+
+        /* Calibration Panel */
+        .calibration-panel {{
+            background: #16213e;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }}
+        .calibration-metric {{
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }}
+        .calibration-metric:last-of-type {{
+            border-bottom: none;
+        }}
+        .metric-label {{
+            color: #aaa;
+            font-size: 12px;
+        }}
+        .metric-value {{
+            color: #0ead69;
+            font-weight: bold;
+        }}
+        .metric-value.error {{
+            color: #e94560;
+        }}
+        .metric-value.warning {{
+            color: #ffa500;
+        }}
+        .calibration-suggestion-header {{
+            color: #aaa;
+            font-size: 12px;
+            margin-bottom: 5px;
+            border-top: 1px solid #333;
+            padding-top: 8px;
+        }}
+        .suggestion-item {{
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+            font-size: 12px;
+            color: #e0e0e0;
         }}
 
         /* Point List */
@@ -2068,6 +2433,29 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
 
+                    <h3>Calibration Quality</h3>
+                    <div id="calibration-status" class="calibration-panel">
+                        <div id="calibration-not-available" style="display: none; color: #999;">
+                            Calibration not available (need 4+ visible GCPs)
+                        </div>
+                        <div id="calibration-results" style="display: none;">
+                            <div class="calibration-metric">
+                                <span class="metric-label">RMS Error:</span>
+                                <span id="calibration-rms-error" class="metric-value">--</span>
+                            </div>
+                            <div class="calibration-metric">
+                                <span class="metric-label">Max Error:</span>
+                                <span id="calibration-max-error" class="metric-value">--</span>
+                            </div>
+                            <div class="calibration-metric">
+                                <span class="metric-label">GCP Points:</span>
+                                <span id="calibration-num-points" class="metric-value">--</span>
+                            </div>
+                            <div id="calibration-suggestions" style="display: none; margin-top: 10px;"></div>
+                        </div>
+                        <button onclick="runCalibration()" class="secondary" id="recalibrate-btn">Re-run Calibration</button>
+                    </div>
+
                     <h3>Projected Points (<span id="gcp-point-count">0</span>)</h3>
                     <div id="gcp-points-list"></div>
                 </div>
@@ -2304,6 +2692,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     }}
 
                     updateCameraParamsDisplay();
+
+                    // Update calibration display
+                    updateCalibrationDisplay(data.calibration, data.calibration_available);
 
                     // Enable and update camera visualization on Tab 1
                     enableCameraToggle();
@@ -2761,6 +3152,164 @@ def generate_unified_html(session: UnifiedSession) -> str:
             document.getElementById('param-pan').textContent = cameraParams.pan_deg.toFixed(1);
             document.getElementById('param-tilt').textContent = cameraParams.tilt_deg.toFixed(1);
             document.getElementById('param-height').textContent = cameraParams.height_m.toFixed(1);
+        }}
+
+        // Calibration display and control functions
+        let calibrationResult = null;
+
+        function updateCalibrationDisplay(calibration, available) {{
+            const resultsDiv = document.getElementById('calibration-results');
+            const notAvailableDiv = document.getElementById('calibration-not-available');
+            const calibrateBtn = document.querySelector('#calibration-status button');
+
+            if (!available) {{
+                if (resultsDiv) resultsDiv.style.display = 'none';
+                if (notAvailableDiv) {{
+                    notAvailableDiv.style.display = 'block';
+                    notAvailableDiv.textContent = 'Calibrator not available (missing dependencies)';
+                }}
+                if (calibrateBtn) calibrateBtn.style.display = 'none';
+                return;
+            }}
+
+            if (!calibration) {{
+                if (resultsDiv) resultsDiv.style.display = 'none';
+                if (notAvailableDiv) {{
+                    notAvailableDiv.style.display = 'block';
+                    notAvailableDiv.textContent = 'Need at least 4 visible GCP points for calibration';
+                }}
+                if (calibrateBtn) calibrateBtn.style.display = 'block';
+                return;
+            }}
+
+            calibrationResult = calibration;
+
+            if (notAvailableDiv) notAvailableDiv.style.display = 'none';
+            if (resultsDiv) resultsDiv.style.display = 'block';
+            if (calibrateBtn) calibrateBtn.style.display = 'block';
+
+            // Update metrics
+            document.getElementById('calibration-rms-error').textContent =
+                calibration.rms_error.toFixed(2) + ' px';
+            document.getElementById('calibration-max-error').textContent =
+                calibration.max_error.toFixed(2) + ' px';
+            document.getElementById('calibration-num-points').textContent =
+                calibration.num_points;
+
+            // Update suggested adjustments if available
+            const suggestionsDiv = document.getElementById('calibration-suggestions');
+            if (calibration.suggested_params && suggestionsDiv) {{
+                const sp = calibration.suggested_params;
+                let suggestionsHtml = '<div class="calibration-suggestion-header">Suggested Adjustments:</div>';
+
+                // Show delta values with +/- formatting
+                if (sp.delta_pan !== undefined) {{
+                    const sign = sp.delta_pan >= 0 ? '+' : '';
+                    suggestionsHtml += `<div class="suggestion-item">Pan: ${{sign}}${{sp.delta_pan.toFixed(2)}}°</div>`;
+                }}
+                if (sp.delta_tilt !== undefined) {{
+                    const sign = sp.delta_tilt >= 0 ? '+' : '';
+                    suggestionsHtml += `<div class="suggestion-item">Tilt: ${{sign}}${{sp.delta_tilt.toFixed(2)}}°</div>`;
+                }}
+                if (sp.delta_height !== undefined) {{
+                    const sign = sp.delta_height >= 0 ? '+' : '';
+                    suggestionsHtml += `<div class="suggestion-item">Height: ${{sign}}${{sp.delta_height.toFixed(2)}}m</div>`;
+                }}
+
+                suggestionsHtml += '<button onclick="applyCalibration()" class="primary" style="margin-top: 8px;">Apply Suggestions</button>';
+                suggestionsDiv.innerHTML = suggestionsHtml;
+                suggestionsDiv.style.display = 'block';
+            }} else if (suggestionsDiv) {{
+                suggestionsDiv.style.display = 'none';
+            }}
+
+            // Set color based on RMS error quality
+            const rmsEl = document.getElementById('calibration-rms-error');
+            if (calibration.rms_error < 5) {{
+                rmsEl.style.color = '#4CAF50';  // Green - excellent
+            }} else if (calibration.rms_error < 15) {{
+                rmsEl.style.color = '#FF9800';  // Orange - acceptable
+            }} else {{
+                rmsEl.style.color = '#f44336';  // Red - needs improvement
+            }}
+        }}
+
+        function runCalibration() {{
+            updateStatus('Running GCP calibration...');
+
+            fetch('/api/run_calibration', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    updateCalibrationDisplay(data.calibration, true);
+                    updateStatus('Calibration complete: RMS error = ' + data.calibration.rms_error.toFixed(2) + ' px');
+                }} else {{
+                    updateStatus('Calibration failed: ' + data.error);
+                    alert('Calibration failed: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Calibration failed:', err);
+                updateStatus('Calibration failed: ' + err.message);
+            }});
+        }}
+
+        function applyCalibration() {{
+            if (!calibrationResult || !calibrationResult.suggested_params) {{
+                alert('No calibration suggestions available');
+                return;
+            }}
+
+            const sp = calibrationResult.suggested_params;
+
+            // Build update payload with new absolute values
+            const updateData = {{}};
+            if (sp.pan !== undefined) updateData.pan_deg = sp.pan;
+            if (sp.tilt !== undefined) updateData.tilt_deg = sp.tilt;
+            if (sp.height !== undefined) updateData.height_m = sp.height;
+
+            updateStatus('Applying calibration suggestions...');
+
+            fetch('/api/update_camera_params', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(updateData)
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    cameraParams = data.camera_params;
+                    projectedPoints = data.projected_points;
+
+                    // Update projected mask if available
+                    if (data.projected_mask_available && data.projected_mask) {{
+                        projectedMaskData = data.projected_mask;
+                        projectedMaskOffset = data.projected_mask_offset;
+                        if (projectedMaskVisible) {{
+                            showProjectedMask();
+                        }}
+                    }}
+
+                    updateCameraParamsDisplay();
+                    updateGCPView();
+                    updateCameraVisualization();
+
+                    // Re-run calibration to show new error metrics
+                    runCalibration();
+
+                    updateStatus('Calibration suggestions applied');
+                }} else {{
+                    updateStatus('Error applying calibration: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Apply calibration failed:', err);
+                updateStatus('Apply calibration failed: ' + err.message);
+            }});
         }}
 
         function adjustParam(param, delta) {{
