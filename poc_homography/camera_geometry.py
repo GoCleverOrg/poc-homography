@@ -261,6 +261,41 @@ class CameraGeometry:
         origin_northing = geotiff_params['origin_northing']
         camera_easting, camera_northing = camera_utm_position
 
+        # Validate numeric types and values
+        for name, value in [('pixel_size_x', pixel_size_x), ('pixel_size_y', pixel_size_y),
+                            ('origin_easting', origin_easting), ('origin_northing', origin_northing)]:
+            if not isinstance(value, (int, float)):
+                raise TypeError(
+                    f"geotiff_params['{name}'] must be numeric (int or float), "
+                    f"got {type(value).__name__}"
+                )
+            if not np.isfinite(value):
+                raise ValueError(
+                    f"geotiff_params['{name}'] must be finite, got {value}"
+                )
+
+        # Validate pixel sizes are non-zero (positive)
+        if pixel_size_x <= 0:
+            raise ValueError(
+                f"pixel_size_x must be positive, got {pixel_size_x}"
+            )
+        if pixel_size_y <= 0:
+            raise ValueError(
+                f"pixel_size_y must be positive, got {pixel_size_y}"
+            )
+
+        # Validate camera_utm_position values are numeric and finite
+        for i, (name, value) in enumerate([('easting', camera_easting), ('northing', camera_northing)]):
+            if not isinstance(value, (int, float)):
+                raise TypeError(
+                    f"camera_utm_position[{i}] ({name}) must be numeric (int or float), "
+                    f"got {type(value).__name__}"
+                )
+            if not np.isfinite(value):
+                raise ValueError(
+                    f"camera_utm_position[{i}] ({name}) must be finite, got {value}"
+                )
+
         # Compute translation components
         # t_x = origin_easting - camera_easting
         # t_y = origin_northing - camera_northing

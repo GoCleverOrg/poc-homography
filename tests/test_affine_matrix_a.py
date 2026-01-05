@@ -285,6 +285,97 @@ class TestSetGeotiffParamsValidation:
         with pytest.raises(ValueError, match="2.*elements|2-tuple"):
             geo.set_geotiff_params(geotiff_params, (500010.0, 4000020.0, 0.0))
 
+    def test_pixel_size_x_zero_raises_value_error(self):
+        """Test that zero pixel_size_x raises ValueError."""
+        geo = CameraGeometry(1920, 1080)
+
+        geotiff_params = {
+            'pixel_size_x': 0.0,  # Invalid: zero
+            'pixel_size_y': 0.5,
+            'origin_easting': 500000.0,
+            'origin_northing': 4000000.0
+        }
+        camera_utm_position = (500010.0, 4000020.0)
+
+        with pytest.raises(ValueError, match="pixel_size_x.*positive"):
+            geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+    def test_pixel_size_y_negative_raises_value_error(self):
+        """Test that negative pixel_size_y raises ValueError."""
+        geo = CameraGeometry(1920, 1080)
+
+        geotiff_params = {
+            'pixel_size_x': 0.5,
+            'pixel_size_y': -0.5,  # Invalid: negative
+            'origin_easting': 500000.0,
+            'origin_northing': 4000000.0
+        }
+        camera_utm_position = (500010.0, 4000020.0)
+
+        with pytest.raises(ValueError, match="pixel_size_y.*positive"):
+            geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+    def test_non_numeric_pixel_size_raises_type_error(self):
+        """Test that non-numeric pixel_size raises TypeError."""
+        geo = CameraGeometry(1920, 1080)
+
+        geotiff_params = {
+            'pixel_size_x': "0.5",  # Invalid: string
+            'pixel_size_y': 0.5,
+            'origin_easting': 500000.0,
+            'origin_northing': 4000000.0
+        }
+        camera_utm_position = (500010.0, 4000020.0)
+
+        with pytest.raises(TypeError, match="pixel_size_x.*numeric"):
+            geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+    def test_nan_pixel_size_raises_value_error(self):
+        """Test that NaN pixel_size raises ValueError."""
+        geo = CameraGeometry(1920, 1080)
+
+        geotiff_params = {
+            'pixel_size_x': float('nan'),  # Invalid: NaN
+            'pixel_size_y': 0.5,
+            'origin_easting': 500000.0,
+            'origin_northing': 4000000.0
+        }
+        camera_utm_position = (500010.0, 4000020.0)
+
+        with pytest.raises(ValueError, match="pixel_size_x.*finite"):
+            geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+    def test_infinity_origin_raises_value_error(self):
+        """Test that infinity origin raises ValueError."""
+        geo = CameraGeometry(1920, 1080)
+
+        geotiff_params = {
+            'pixel_size_x': 0.5,
+            'pixel_size_y': 0.5,
+            'origin_easting': float('inf'),  # Invalid: infinity
+            'origin_northing': 4000000.0
+        }
+        camera_utm_position = (500010.0, 4000020.0)
+
+        with pytest.raises(ValueError, match="origin_easting.*finite"):
+            geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+    def test_non_numeric_camera_position_raises_type_error(self):
+        """Test that non-numeric camera position raises TypeError."""
+        geo = CameraGeometry(1920, 1080)
+
+        geotiff_params = {
+            'pixel_size_x': 0.5,
+            'pixel_size_y': 0.5,
+            'origin_easting': 500000.0,
+            'origin_northing': 4000000.0
+        }
+        # First element is a string
+        camera_utm_position = ("500010.0", 4000020.0)
+
+        with pytest.raises(TypeError, match="easting.*numeric"):
+            geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
 
 class TestSetGeotiffParamsLogging:
     """Test logging behavior of set_geotiff_params."""
