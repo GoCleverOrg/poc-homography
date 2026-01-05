@@ -297,23 +297,43 @@ class TestSetGeotiffParamsValidation:
         }
         camera_utm_position = (500010.0, 4000020.0)
 
-        with pytest.raises(ValueError, match="pixel_size_x.*positive"):
+        with pytest.raises(ValueError, match="pixel_size_x.*non-zero"):
             geo.set_geotiff_params(geotiff_params, camera_utm_position)
 
-    def test_pixel_size_y_negative_raises_value_error(self):
-        """Test that negative pixel_size_y raises ValueError."""
+    def test_pixel_size_y_zero_raises_value_error(self):
+        """Test that zero pixel_size_y raises ValueError."""
         geo = CameraGeometry(1920, 1080)
 
         geotiff_params = {
             'pixel_size_x': 0.5,
-            'pixel_size_y': -0.5,  # Invalid: negative
+            'pixel_size_y': 0.0,  # Invalid: zero
             'origin_easting': 500000.0,
             'origin_northing': 4000000.0
         }
         camera_utm_position = (500010.0, 4000020.0)
 
-        with pytest.raises(ValueError, match="pixel_size_y.*positive"):
+        with pytest.raises(ValueError, match="pixel_size_y.*non-zero"):
             geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+    def test_pixel_size_y_negative_is_valid(self):
+        """Test that negative pixel_size_y is valid (common in GeoTIFF)."""
+        geo = CameraGeometry(1920, 1080)
+
+        # GeoTIFF commonly has negative Y pixel size because image Y goes down
+        # while geographic northing goes up
+        geotiff_params = {
+            'pixel_size_x': 0.5,
+            'pixel_size_y': -0.5,  # Valid: negative for GeoTIFF
+            'origin_easting': 500000.0,
+            'origin_northing': 4000000.0
+        }
+        camera_utm_position = (500010.0, 4000020.0)
+
+        # Should not raise - negative pixel_size_y is valid
+        geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+        # Verify A matrix was computed with negative Y scale
+        assert geo.A[1, 1] == -0.5
 
     def test_non_numeric_pixel_size_raises_type_error(self):
         """Test that non-numeric pixel_size raises TypeError."""

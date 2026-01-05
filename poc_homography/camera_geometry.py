@@ -274,14 +274,16 @@ class CameraGeometry:
                     f"geotiff_params['{name}'] must be finite, got {value}"
                 )
 
-        # Validate pixel sizes are non-zero (positive)
-        if pixel_size_x <= 0:
+        # Validate pixel sizes are non-zero (can be negative for GeoTIFF Y-axis)
+        # GeoTIFF commonly has negative pixel_size_y because image Y goes down
+        # while geographic northing goes up
+        if pixel_size_x == 0:
             raise ValueError(
-                f"pixel_size_x must be positive, got {pixel_size_x}"
+                f"pixel_size_x must be non-zero, got {pixel_size_x}"
             )
-        if pixel_size_y <= 0:
+        if pixel_size_y == 0:
             raise ValueError(
-                f"pixel_size_y must be positive, got {pixel_size_y}"
+                f"pixel_size_y must be non-zero, got {pixel_size_y}"
             )
 
         # Validate camera_utm_position values are numeric and finite
