@@ -98,6 +98,13 @@ class CameraGeometry:
         # Pixels per meter for mapping world coords to the side-panel map
         self.PPM = 100
 
+        # Affine transformation matrix A from reference image pixels to world coordinates
+        # For georeferenced ortho imagery (GeoTIFF), transforms reference pixels to UTM meters
+        # A = [[pixel_size_x, 0, t_x], [0, pixel_size_y, t_y], [0, 0, 1]]
+        # where t_x = origin_easting - camera_easting, t_y = origin_northing - camera_northing
+        # Defaults to identity when geotiff parameters not provided
+        self.A = np.eye(3)
+
         # Placeholder for real-world geometry parameters (to be set by user)
         self.K = None  # Intrinsic Matrix
         self.w_pos = None  # Camera World Position [Xw, Yw, Zw]
@@ -165,6 +172,117 @@ class CameraGeometry:
             [0, 0, 1]
         ])
         return K
+
+    def set_geotiff_params(
+        self,
+        geotiff_params: Optional[Dict[str, float]],
+        camera_utm_position: Optional[Tuple[float, float]]
+    ) -> None:
+        """
+        Set GeoTIFF parameters to compute the affine transformation matrix A.
+
+        The A matrix transforms reference image pixels to world ground plane coordinates
+        (UTM meters). For georeferenced ortho imagery (GeoTIFF), this transformation
+        consists of:
+        - Scale: meters per pixel (pixel_size_x, pixel_size_y from GeoTIFF metadata)
+        - Translation: offset from reference image origin to camera position in world coordinates
+
+        Mathematical Formula:
+            A = [[pixel_size_x, 0,           t_x],
+                 [0,            pixel_size_y, t_y],
+                 [0,            0,            1  ]]
+
+        Where:
+            t_x = origin_easting - camera_easting
+            t_y = origin_northing - camera_northing
+
+        Coordinate System Convention:
+            - World coordinates: UTM (easting, northing) in meters
+            - Reference image: Pixel coordinates with origin at top-left
+            - A matrix converts reference pixels to world UTM coordinates
+
+        Args:
+            geotiff_params: Dictionary containing GeoTIFF metadata with required keys:
+                - 'pixel_size_x': Pixel size in X direction (meters per pixel)
+                - 'pixel_size_y': Pixel size in Y direction (meters per pixel)
+                - 'origin_easting': UTM easting of reference image origin (meters)
+                - 'origin_northing': UTM northing of reference image origin (meters)
+                If None, A matrix is set to identity (backward compatibility).
+            camera_utm_position: Tuple of (easting, northing) for camera position in UTM (meters).
+                If None, A matrix is set to identity (backward compatibility).
+
+        Raises:
+            ValueError: If geotiff_params is missing required keys.
+            TypeError: If camera_utm_position is not a tuple.
+            ValueError: If camera_utm_position does not have exactly 2 elements.
+
+        Example:
+            >>> geo = CameraGeometry(1920, 1080)
+            >>> geotiff_params = {
+            ...     'pixel_size_x': 0.5,
+            ...     'pixel_size_y': 0.5,
+            ...     'origin_easting': 500000.0,
+            ...     'origin_northing': 4000000.0
+            ... }
+            >>> camera_utm_position = (500010.0, 4000020.0)
+            >>> geo.set_geotiff_params(geotiff_params, camera_utm_position)
+        """
+        # Backward compatibility: if either parameter is None, set A to identity
+        if geotiff_params is None or camera_utm_position is None:
+            self.A = np.eye(3)
+            return
+
+        # Validate geotiff_params contains required keys
+        required_keys = ['pixel_size_x', 'pixel_size_y', 'origin_easting', 'origin_northing']
+        for key in required_keys:
+            if key not in geotiff_params:
+                raise ValueError(
+                    f"geotiff_params missing required key: '{key}'. "
+                    f"Required keys: {required_keys}"
+                )
+
+        # Validate camera_utm_position is a tuple
+        if not isinstance(camera_utm_position, tuple):
+            raise TypeError(
+                f"camera_utm_position must be a tuple, got {type(camera_utm_position).__name__}"
+            )
+
+        # Validate camera_utm_position has exactly 2 elements
+        if len(camera_utm_position) != 2:
+            raise ValueError(
+                f"camera_utm_position must be a 2-tuple (easting, northing), "
+                f"got {len(camera_utm_position)} elements"
+            )
+
+        # Extract parameters
+        pixel_size_x = geotiff_params['pixel_size_x']
+        pixel_size_y = geotiff_params['pixel_size_y']
+        origin_easting = geotiff_params['origin_easting']
+        origin_northing = geotiff_params['origin_northing']
+        camera_easting, camera_northing = camera_utm_position
+
+        # Compute translation components
+        # t_x = origin_easting - camera_easting
+        # t_y = origin_northing - camera_northing
+        t_x = origin_easting - camera_easting
+        t_y = origin_northing - camera_northing
+
+        # Construct A matrix
+        self.A = np.array([
+            [pixel_size_x, 0.0, t_x],
+            [0.0, pixel_size_y, t_y],
+            [0.0, 0.0, 1.0]
+        ])
+
+        # Log A matrix computation at INFO level
+        logger.info(
+            f"Computed affine transformation matrix A from GeoTIFF parameters:\n"
+            f"  Pixel size: ({pixel_size_x}, {pixel_size_y}) meters/pixel\n"
+            f"  Reference origin: ({origin_easting}, {origin_northing}) UTM meters\n"
+            f"  Camera position: ({camera_easting}, {camera_northing}) UTM meters\n"
+            f"  Translation: ({t_x}, {t_y}) meters\n"
+            f"  A matrix:\n{self.A}"
+        )
 
     def set_distortion_coefficients(
         self,
