@@ -331,6 +331,12 @@ class UnifiedSession:
         self.projected_mask_offset = None  # CSS offset (left, top) for positioning mask overlay
         self.feature_mask_metadata = None
 
+        # FROZEN GCP observations for calibration
+        # These are captured ONCE when SAM3 detects features, then used for all calibrations
+        # Format: {'point_name': {'pixel_u': float, 'pixel_v': float}, ...}
+        # This prevents re-matching on every calibration which causes drift
+        self.frozen_gcp_observations = None
+
         # KML points storage (single source of truth)
         self.points = []
 
@@ -791,8 +797,12 @@ CRS: {crs}</description>
             )
 
             # Load and apply distortion coefficients from camera config
+            # Only apply distortion if image is NOT already undistorted
             distortion_applied = False
-            if self.camera_name:
+            is_undistorted = self.camera_params.get('undistorted', False)
+            if is_undistorted:
+                print("Image is already undistorted - not applying distortion in projection")
+            elif self.camera_name:
                 try:
                     cam_config = get_camera_by_name(self.camera_name)
                     if cam_config:
@@ -1018,22 +1028,44 @@ CRS: {crs}</description>
             return None
 
         # Determine observed pixel locations
+        # PRIORITY: frozen observations > provided observations > re-match from mask > fallback
         if observed_pixels is not None:
-            # Use provided observed pixels
+            # Use explicitly provided observed pixels
             obs_by_name = {p['name']: p for p in observed_pixels}
+            print("Using explicitly provided observed pixel locations")
+        elif self.frozen_gcp_observations is not None:
+            # Use FROZEN observations (captured when SAM3 first ran)
+            # This is the correct approach - observations should not change with params
+            obs_by_name = self.frozen_gcp_observations
+            print(f"Using FROZEN observations ({len(obs_by_name)} points) - these won't drift!")
         elif self.camera_mask is not None:
-            # Extract centroids from SAM3 mask and match to nearest projected points
+            # Fallback: Extract centroids from SAM3 mask (will be frozen after this)
+            print("WARNING: No frozen observations - extracting from mask and freezing now")
             obs_by_name = self._extract_mask_centroids_for_calibration()
-            if not obs_by_name:
-                print("Could not extract centroids from mask - using projected pixels")
+            if obs_by_name:
+                # Freeze these observations for future calibrations
+                self.frozen_gcp_observations = obs_by_name
+                print(f"Froze {len(obs_by_name)} observations for future calibrations")
+            else:
+                print("Could not extract centroids from mask - using projected pixels (BAD!)")
                 obs_by_name = None
         else:
+            print("ERROR: No SAM3 mask and no frozen observations!")
+            print("       Calibration will use projected pixels as 'observed' - THIS IS MEANINGLESS!")
+            print("       Run SAM3 feature detection first to capture real observations.")
             obs_by_name = None
 
-        # Build GCP list for calibrator
+        # Build GCP list for calibrator - ONLY use visible points
         gcps = []
+        skipped_not_visible = 0
+        skipped_no_gps = 0
+        skipped_no_pixel = 0
+
         for proj_pt in self.projected_points:
+            # Only use points that are explicitly marked as visible
+            # Points not visible in camera view should NOT be used for calibration
             if not proj_pt.get('visible', False):
+                skipped_not_visible += 1
                 continue
 
             name = proj_pt.get('name', '')
@@ -1041,6 +1073,7 @@ CRS: {crs}</description>
             gps_lon = proj_pt.get('longitude')
 
             if gps_lat is None or gps_lon is None:
+                skipped_no_gps += 1
                 continue
 
             # Get observed pixel location
@@ -1054,12 +1087,52 @@ CRS: {crs}</description>
                 pixel_v = proj_pt.get('pixel_v')
 
             if pixel_u is None or pixel_v is None:
+                skipped_no_pixel += 1
                 continue
+
+            # Track whether this GCP uses SAM3 observation or fallback
+            uses_sam3 = obs_by_name and name in obs_by_name
+
+            # Get UTM coordinates if available (more accurate than GPS conversion)
+            utm_easting = proj_pt.get('utm_easting')
+            utm_northing = proj_pt.get('utm_northing')
 
             gcps.append({
                 'gps': {'latitude': gps_lat, 'longitude': gps_lon},
-                'image': {'u': pixel_u, 'v': pixel_v}
+                'utm': {'easting': utm_easting, 'northing': utm_northing} if utm_easting and utm_northing else None,
+                'image': {'u': pixel_u, 'v': pixel_v},
+                '_name': name,
+                '_uses_sam3': uses_sam3
             })
+
+        # Count how many GCPs use SAM3 observations vs fallback projected pixels
+        sam3_count = sum(1 for g in gcps if g.get('_uses_sam3', False))
+        fallback_count = len(gcps) - sam3_count
+
+        # DEBUG: Print first GCP's coordinates for verification
+        if gcps:
+            g0 = gcps[0]
+            print(f"\n--- DEBUG: First GCP coordinates ---")
+            print(f"Name: {g0.get('_name')}")
+            print(f"GPS: lat={g0['gps']['latitude']:.6f}, lon={g0['gps']['longitude']:.6f}")
+            if g0.get('utm'):
+                print(f"UTM: E={g0['utm']['easting']:.2f}, N={g0['utm']['northing']:.2f}")
+            else:
+                print("UTM: None")
+            print(f"Image: u={g0['image']['u']:.1f}, v={g0['image']['v']:.1f}")
+            print(f"Uses SAM3: {g0.get('_uses_sam3')}")
+            print("---")
+
+        print(f"\n--- GCP FILTERING SUMMARY ---")
+        print(f"Total projected points: {len(self.projected_points)}")
+        print(f"Valid GCPs for calibration: {len(gcps)}")
+        print(f"  - Using SAM3 observations: {sam3_count if obs_by_name else 'N/A (no mask)'}")
+        print(f"  - Using fallback (projected pixels): {fallback_count if obs_by_name else len(gcps)}")
+        print(f"Skipped: {skipped_not_visible} not visible, {skipped_no_gps} no GPS, {skipped_no_pixel} no pixel")
+        if not obs_by_name:
+            print("WARNING: No SAM3 mask available - using projected pixels as 'observed'")
+            print("         This means calibration has nothing to optimize against!")
+        print(f"----------------------------\n")
 
         if len(gcps) < 4:
             print(f"Not enough valid GCPs for calibration (need 4, have {len(gcps)})")
@@ -1087,15 +1160,88 @@ CRS: {crs}</description>
                 map_height=640
             )
 
-            # Run calibration
+            # Apply distortion coefficients to match the projection model
+            # CRITICAL: Only apply if image is NOT already undistorted
+            # If image is undistorted, observed pixels are in undistorted coordinates
+            is_undistorted = self.camera_params.get('undistorted', False)
+            if is_undistorted:
+                print("Calibrator: Image is already undistorted - not applying distortion model")
+            elif self.camera_name:
+                try:
+                    cam_config = get_camera_by_name(self.camera_name)
+                    if cam_config:
+                        k1 = cam_config.get('k1', 0.0)
+                        k2 = cam_config.get('k2', 0.0)
+                        p1 = cam_config.get('p1', 0.0)
+                        p2 = cam_config.get('p2', 0.0)
+                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
+                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
+                            print(f"Calibrator using distortion: k1={k1:.6f}, k2={k2:.6f}, p1={p1:.6f}, p2={p2:.6f}")
+                except Exception as e:
+                    print(f"Warning: Could not load distortion coefficients for calibrator: {e}")
+
+            # Run calibration with dynamic bounds based on current height
+            # CameraGeometry requires height in [1.0, 50.0]m
+            # So ΔZ bounds must keep (height_m + ΔZ) within [1.0, 50.0]
+            min_height = 1.0
+            max_height = 50.0
+            z_lower_bound = max(-5.0, min_height - height_m)  # Don't go below 1.0m
+            z_upper_bound = min(5.0, max_height - height_m)   # Don't go above 50.0m
+
+            calibration_bounds = {
+                'pan': (-10.0, 10.0),
+                'tilt': (-10.0, 10.0),
+                'roll': (-5.0, 5.0),
+                'X': (-5.0, 5.0),
+                'Y': (-5.0, 5.0),
+                'Z': (z_lower_bound, z_upper_bound)
+            }
+
+            # Get camera GPS position for coordinate reference
+            camera_lat = self.camera_params.get('camera_lat')
+            camera_lon = self.camera_params.get('camera_lon')
+
+            print(f"Calibration: {len(gcps)} GCPs, camera at ({camera_lat:.6f}, {camera_lon:.6f}), height={height_m}m")
+            print(f"Calibration bounds for Z: ({z_lower_bound:.2f}, {z_upper_bound:.2f})")
+
+            # Use adaptive loss_scale based on median error to avoid all-outlier situation
+            # Start with a large scale (50px) for initial calibration, can be refined later
+            # This ensures the optimizer has meaningful gradients even with large initial errors
+            loss_scale = 50.0  # Large enough to include most points initially
+
             calibrator = GCPCalibrator(
                 camera_geometry=geo,
                 gcps=gcps,
                 loss_function='huber',
-                loss_scale=2.0  # 2 pixel threshold for outliers
+                loss_scale=loss_scale,
+                reference_lat=camera_lat,  # CRITICAL: Use camera position as reference
+                reference_lon=camera_lon,  # so world coordinates have camera at origin
+                utm_crs=self.utm_crs        # Use same UTM CRS as projection for consistency
             )
 
-            result = calibrator.calibrate()
+            result = calibrator.calibrate(bounds=calibration_bounds)
+
+            # DEBUG: Print calibration details
+            print(f"\n{'='*60}")
+            print("CALIBRATION DEBUG")
+            print(f"{'='*60}")
+            print(f"Current params: pan={pan_deg:.2f}°, tilt={tilt_deg:.2f}°, height={height_m:.2f}m")
+            print(f"Initial RMS error: {result.initial_error:.2f} px")
+            print(f"Final RMS error: {result.final_error:.2f} px")
+            print(f"Optimized deltas: Δpan={result.optimized_params[0]:.4f}°, Δtilt={result.optimized_params[1]:.4f}°, ΔZ={result.optimized_params[5]:.4f}m")
+            print(f"Convergence: {result.convergence_info.get('message', 'N/A')}")
+
+            # Show per-GCP errors with names, sorted by error (worst first)
+            if result.per_gcp_errors and len(gcps) == len(result.per_gcp_errors):
+                gcp_errors = [(gcps[i].get('_name', f'GCP{i}'), result.per_gcp_errors[i]) for i in range(len(gcps))]
+                gcp_errors.sort(key=lambda x: x[1], reverse=True)
+                print(f"\nPer-GCP errors (worst first):")
+                for name, error in gcp_errors[:10]:  # Show top 10 worst
+                    status = "⚠️ BAD" if error > 50 else "⚡ HIGH" if error > 30 else "✓"
+                    print(f"  {status} {name}: {error:.1f}px")
+                if len(gcp_errors) > 10:
+                    print(f"  ... and {len(gcp_errors) - 10} more")
+            print(f"{'='*60}\n")
 
             # Calculate improvement
             if result.initial_error > 0:
@@ -1104,10 +1250,16 @@ CRS: {crs}</description>
                 improvement = 0.0
 
             # Compute suggested new parameters
+            new_pan = pan_deg + result.optimized_params[0]
+            new_tilt = tilt_deg + result.optimized_params[1]
+            new_height = height_m + result.optimized_params[5]
+
+            print(f"Suggested new params: pan={new_pan:.2f}°, tilt={new_tilt:.2f}°, height={new_height:.2f}m")
+
             suggested_params = {
-                'pan_deg': pan_deg + result.optimized_params[0],
-                'tilt_deg': tilt_deg + result.optimized_params[1],
-                'height_m': height_m + result.optimized_params[5],
+                'pan_deg': new_pan,
+                'tilt_deg': new_tilt,
+                'height_m': new_height,
                 # Position adjustments (X, Y) would need coordinate conversion
             }
 
@@ -1135,9 +1287,391 @@ CRS: {crs}</description>
                 'error': str(e)
             }
 
-    def _extract_mask_centroids_for_calibration(self) -> Optional[Dict[str, Dict]]:
+    def run_pnp_calibration(self) -> Optional[Dict]:
         """
-        Extract centroids from camera_mask and match to nearest projected points.
+        Run PnP-based calibration to directly solve for camera pose.
+
+        Unlike iterative homography refinement, PnP directly solves for camera
+        rotation and translation given 3D-2D point correspondences.
+
+        This is more robust when initial camera parameters are significantly off.
+
+        Returns:
+            Dictionary with calibration results including new camera parameters.
+        """
+        if not GEOMETRY_AVAILABLE or self.camera_params is None:
+            print("Camera geometry not available - cannot run PnP calibration")
+            return None
+
+        if not self.points:
+            print("No KML points loaded - cannot run PnP calibration")
+            return None
+
+        # Get observed pixel locations (from manual matches or frozen observations)
+        if self.frozen_gcp_observations is None:
+            print("ERROR: No frozen observations! Run SAM3 detection or manual matching first.")
+            return None
+
+        obs_by_name = self.frozen_gcp_observations
+        print(f"PnP Calibration: Using {len(obs_by_name)} frozen observations")
+
+        # Get camera intrinsics
+        K = self.camera_params.get('K')
+        if K is None:
+            print("ERROR: No camera intrinsics matrix K")
+            return None
+        K = np.array(K)
+
+        # Check if image is already undistorted
+        is_undistorted = self.camera_params.get('undistorted', False)
+
+        # Get distortion coefficients
+        if is_undistorted:
+            # Image is already undistorted - use zero distortion for PnP
+            dist_coeffs = np.zeros(4)
+            print("Image is already undistorted - using zero distortion for PnP")
+        else:
+            dist_coeffs = np.zeros(4)  # Default: no distortion
+            if self.camera_name:
+                try:
+                    cam_config = get_camera_by_name(self.camera_name)
+                    if cam_config:
+                        k1 = cam_config.get('k1', 0.0)
+                        k2 = cam_config.get('k2', 0.0)
+                        p1 = cam_config.get('p1', 0.0)
+                        p2 = cam_config.get('p2', 0.0)
+                        dist_coeffs = np.array([k1, k2, p1, p2])
+                except Exception:
+                    pass
+
+        # Get camera position as reference for UTM conversion
+        camera_lat = self.camera_params.get('camera_lat')
+        camera_lon = self.camera_params.get('camera_lon')
+        camera_height = self.camera_params.get('height_m', 5.0)
+
+        if camera_lat is None or camera_lon is None:
+            print("ERROR: No camera GPS position")
+            return None
+
+        # Build 3D world points and 2D image points
+        world_points_3d = []
+        image_points_2d = []
+        point_names = []
+
+        # Set up UTM converter if available
+        utm_converter = None
+        if self.utm_crs and UTMConverter:
+            try:
+                utm_converter = UTMConverter(self.utm_crs)
+                utm_converter.set_reference(camera_lat, camera_lon)
+            except Exception as e:
+                print(f"Warning: Could not set up UTM converter: {e}")
+
+        # Get projected points for UTM coordinates
+        if not hasattr(self, 'projected_points') or not self.projected_points:
+            self.projected_points = self.project_points_to_image()
+
+        for proj_pt in self.projected_points:
+            name = proj_pt.get('name', '')
+
+            # Skip if no observation for this point
+            if name not in obs_by_name:
+                continue
+
+            # Get observed 2D pixel location
+            obs = obs_by_name[name]
+            u = obs.get('pixel_u')
+            v = obs.get('pixel_v')
+            if u is None or v is None:
+                continue
+
+            # Get 3D world coordinates
+            # Priority: UTM coordinates (more accurate)
+            utm_easting = proj_pt.get('utm_easting')
+            utm_northing = proj_pt.get('utm_northing')
+
+            if utm_converter and utm_easting is not None and utm_northing is not None:
+                # Convert UTM to local XY (camera at origin)
+                x, y = utm_converter.utm_to_local_xy(utm_easting, utm_northing)
+            else:
+                # Fall back to GPS conversion
+                gps_lat = proj_pt.get('latitude')
+                gps_lon = proj_pt.get('longitude')
+                if gps_lat is None or gps_lon is None:
+                    continue
+
+                # Simple equirectangular approximation
+                R_EARTH = 6371000
+                ref_lat_rad = math.radians(camera_lat)
+                x = (gps_lon - camera_lon) * math.radians(1) * R_EARTH * math.cos(ref_lat_rad)
+                y = (gps_lat - camera_lat) * math.radians(1) * R_EARTH
+
+            # Z coordinate: ground level relative to camera
+            # Ground is at -camera_height (camera is at Z=0 looking down)
+            # But for PnP, we use camera-centric coordinates where camera is at origin
+            # So ground points have Z = -height (below camera)
+            z = -camera_height  # Ground plane is below camera
+
+            world_points_3d.append([x, y, z])
+            image_points_2d.append([u, v])
+            point_names.append(name)
+
+        if len(world_points_3d) < 4:
+            print(f"ERROR: Need at least 4 point correspondences, have {len(world_points_3d)}")
+            return None
+
+        print(f"\nPnP Input:")
+        print(f"  - {len(world_points_3d)} point correspondences")
+        print(f"  - Camera height: {camera_height}m")
+        print(f"  - Intrinsics K:\n{K}")
+        print(f"  - Distortion: {dist_coeffs}")
+
+        # Convert to numpy arrays
+        world_points_3d = np.array(world_points_3d, dtype=np.float64)
+        image_points_2d = np.array(image_points_2d, dtype=np.float64)
+
+        # Debug: print first few points
+        print(f"\nFirst 3 correspondences:")
+        for i in range(min(3, len(point_names))):
+            print(f"  {point_names[i]}: 3D=({world_points_3d[i][0]:.2f}, {world_points_3d[i][1]:.2f}, {world_points_3d[i][2]:.2f}) -> 2D=({image_points_2d[i][0]:.1f}, {image_points_2d[i][1]:.1f})")
+
+        try:
+            # For coplanar points (all on ground plane), standard PnP can fail
+            # Try multiple solvers in order of preference
+
+            success = False
+            rvec = None
+            tvec = None
+            inliers = None
+
+            # Method 1: Try IPPE first (best for coplanar points, needs 4+ points)
+            if len(world_points_3d) >= 4:
+                try:
+                    print("Trying IPPE solver (optimized for coplanar points)...")
+                    success, rvec, tvec = cv2.solvePnP(
+                        world_points_3d,
+                        image_points_2d,
+                        K,
+                        dist_coeffs,
+                        flags=cv2.SOLVEPNP_IPPE
+                    )
+                    if success:
+                        print("  IPPE solver succeeded")
+                        inliers = np.arange(len(world_points_3d)).reshape(-1, 1)
+                except Exception as e:
+                    print(f"  IPPE solver failed: {e}")
+                    success = False
+
+            # Method 2: Try EPNP (works with 4+ points, handles some coplanar cases)
+            if not success and len(world_points_3d) >= 4:
+                try:
+                    print("Trying EPNP solver...")
+                    success, rvec, tvec = cv2.solvePnP(
+                        world_points_3d,
+                        image_points_2d,
+                        K,
+                        dist_coeffs,
+                        flags=cv2.SOLVEPNP_EPNP
+                    )
+                    if success:
+                        print("  EPNP solver succeeded")
+                        inliers = np.arange(len(world_points_3d)).reshape(-1, 1)
+                except Exception as e:
+                    print(f"  EPNP solver failed: {e}")
+                    success = False
+
+            # Method 3: Try RANSAC with more lenient threshold
+            if not success:
+                try:
+                    print("Trying RANSAC with ITERATIVE solver...")
+                    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+                        world_points_3d,
+                        image_points_2d,
+                        K,
+                        dist_coeffs,
+                        flags=cv2.SOLVEPNP_ITERATIVE,
+                        reprojectionError=30.0,  # More lenient for noisy matches
+                        confidence=0.99,
+                        iterationsCount=2000
+                    )
+                    if success:
+                        print("  RANSAC+ITERATIVE succeeded")
+                except Exception as e:
+                    print(f"  RANSAC+ITERATIVE failed: {e}")
+                    success = False
+
+            # Method 4: Try AP3P (needs exactly 4 points, very robust)
+            if not success and len(world_points_3d) >= 4:
+                try:
+                    print("Trying AP3P solver...")
+                    success, rvec, tvec = cv2.solvePnP(
+                        world_points_3d[:4],  # Use first 4 points
+                        image_points_2d[:4],
+                        K,
+                        dist_coeffs,
+                        flags=cv2.SOLVEPNP_AP3P
+                    )
+                    if success:
+                        print("  AP3P solver succeeded (using first 4 points)")
+                        inliers = np.arange(4).reshape(-1, 1)
+                except Exception as e:
+                    print(f"  AP3P solver failed: {e}")
+                    success = False
+
+            if not success:
+                print("\nERROR: All PnP solvers failed!")
+                print("Possible causes:")
+                print("  - Inconsistent point matches (verify manually)")
+                print("  - Wrong camera intrinsics (check focal length)")
+                print("  - Points too close together or collinear")
+                return None
+
+            num_inliers = len(inliers) if inliers is not None else 0
+            print(f"\nPnP Solution found: {num_inliers}/{len(world_points_3d)} inliers")
+
+            # Convert rotation vector to rotation matrix
+            R, _ = cv2.Rodrigues(rvec)
+
+            print(f"\nRotation matrix R:\n{R}")
+            print(f"Translation vector t: {tvec.flatten()}")
+
+            # Extract pan, tilt, roll from rotation matrix
+            # The rotation matrix R transforms from world to camera coordinates
+            # R = Rz(pan) @ Rx(tilt) @ Ry(roll) approximately
+            #
+            # For a camera looking at ground:
+            # - Pan (yaw): rotation around vertical axis (Z in world)
+            # - Tilt (pitch): rotation around horizontal axis (X in camera)
+            # - Roll: rotation around optical axis
+
+            # Extract Euler angles (assuming ZYX or similar convention)
+            # This depends on your coordinate system conventions
+            #
+            # Standard decomposition for R = Rz @ Ry @ Rx:
+            # tilt (x) = atan2(-R[1,2], R[2,2])
+            # pan (y) = asin(R[0,2])
+            # roll (z) = atan2(-R[0,1], R[0,0])
+
+            # Alternative: use cv2.decomposeProjectionMatrix or direct extraction
+            # Let's use a robust method
+
+            # For camera pointing roughly downward:
+            # The camera's Z-axis (optical axis) in world coords is R[:,2]
+            # Pan = angle of projection onto XY plane
+            # Tilt = angle from horizontal
+
+            optical_axis = R[2, :]  # Third row of R is camera Z in world frame
+            print(f"Optical axis in world frame: {optical_axis}")
+
+            # Pan: angle in XY plane (from Y axis, positive = clockwise from above)
+            pan_rad = math.atan2(optical_axis[0], optical_axis[1])
+            pan_deg = math.degrees(pan_rad)
+
+            # Tilt: angle from horizontal (0 = horizontal, 90 = straight down)
+            horizontal_component = math.sqrt(optical_axis[0]**2 + optical_axis[1]**2)
+            tilt_rad = math.atan2(-optical_axis[2], horizontal_component)
+            tilt_deg = math.degrees(tilt_rad)
+
+            # Roll: rotation around optical axis
+            # This is trickier - we need to look at the camera's X-axis
+            camera_x_in_world = R[0, :]  # First row of R
+            # Project onto plane perpendicular to optical axis
+            # For simplicity, assume roll is small and extract from R
+            roll_rad = math.atan2(R[2, 0], R[2, 1]) - pan_rad
+            roll_deg = math.degrees(roll_rad)
+
+            # Translation gives camera position in world frame
+            # tvec is the position of world origin in camera frame
+            # Camera position in world = -R^T @ tvec
+            camera_pos_world = -R.T @ tvec.flatten()
+
+            print(f"\nExtracted parameters:")
+            print(f"  Pan: {pan_deg:.2f}°")
+            print(f"  Tilt: {tilt_deg:.2f}°")
+            print(f"  Roll: {roll_deg:.2f}°")
+            print(f"  Camera position (local XY): ({camera_pos_world[0]:.2f}, {camera_pos_world[1]:.2f}, {camera_pos_world[2]:.2f})m")
+
+            # For coplanar points (all on ground plane), the Z/height from PnP is UNRELIABLE
+            # because PnP can't distinguish height from focal length scaling
+            # Keep the original camera height instead
+            pnp_derived_height = -camera_pos_world[2]  # What PnP thinks
+            print(f"  PnP derived height: {pnp_derived_height:.2f}m (UNRELIABLE for coplanar points)")
+            print(f"  Keeping original height: {camera_height:.2f}m")
+            pnp_height = camera_height  # Keep original height
+
+            # Compute reprojection error
+            projected_pts, _ = cv2.projectPoints(
+                world_points_3d, rvec, tvec, K, dist_coeffs
+            )
+            projected_pts = projected_pts.reshape(-1, 2)
+
+            errors = np.linalg.norm(image_points_2d - projected_pts, axis=1)
+            rms_error = np.sqrt(np.mean(errors**2))
+            max_error = np.max(errors)
+
+            print(f"\nReprojection errors:")
+            print(f"  RMS: {rms_error:.2f}px")
+            print(f"  Max: {max_error:.2f}px")
+            print(f"  Per-point: {[f'{e:.1f}' for e in errors[:10]]}{'...' if len(errors) > 10 else ''}")
+
+            # Prepare suggested parameters
+            # Note: We need to convert local XY offset to GPS offset
+            delta_x = camera_pos_world[0]
+            delta_y = camera_pos_world[1]
+
+            # Convert XY offset to lat/lon offset
+            R_EARTH = 6371000
+            ref_lat_rad = math.radians(camera_lat)
+            delta_lon = delta_x / (R_EARTH * math.cos(ref_lat_rad) * math.radians(1))
+            delta_lat = delta_y / (R_EARTH * math.radians(1))
+
+            new_camera_lat = camera_lat + delta_lat
+            new_camera_lon = camera_lon + delta_lon
+
+            return {
+                'success': True,
+                'method': 'PnP',
+                'rms_error': rms_error,
+                'max_error': max_error,
+                'num_inliers': num_inliers,
+                'num_points': len(world_points_3d),
+                'per_point_errors': errors.tolist(),
+                'rotation_matrix': R.tolist(),
+                'translation_vector': tvec.flatten().tolist(),
+                'suggested_params': {
+                    'pan_deg': pan_deg,
+                    'tilt_deg': tilt_deg,
+                    'roll_deg': roll_deg,
+                    'height_m': pnp_height,
+                    'camera_lat': new_camera_lat,
+                    'camera_lon': new_camera_lon,
+                    'delta_lat': delta_lat,
+                    'delta_lon': delta_lon
+                },
+                'current_params': {
+                    'pan_deg': self.camera_params.get('pan_deg'),
+                    'tilt_deg': self.camera_params.get('tilt_deg'),
+                    'height_m': camera_height,
+                    'camera_lat': camera_lat,
+                    'camera_lon': camera_lon
+                }
+            }
+
+        except Exception as e:
+            print(f"PnP calibration failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def _extract_mask_vertices_for_calibration(self) -> Optional[Dict[str, Dict]]:
+        """
+        Extract polygon VERTICES from camera_mask and match to nearest projected points.
+
+        For line features (parking spots, road markings), GCPs are typically at
+        corners/endpoints, not centroids. This extracts vertices from contours.
 
         Returns:
             Dictionary mapping point names to observed pixel locations:
@@ -1151,27 +1685,44 @@ CRS: {crs}</description>
             return None
 
         try:
-            # Find connected components in mask
-            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-                self.camera_mask, connectivity=8
+            # Find contours in the mask
+            contours, _ = cv2.findContours(
+                self.camera_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
-            if num_labels <= 1:  # Only background
+            if not contours:
+                print("No contours found in mask")
                 return None
 
-            # Get centroids (skip background at index 0)
-            mask_centroids = []
-            for i in range(1, num_labels):
-                area = stats[i, cv2.CC_STAT_AREA]
-                if area > 10:  # Filter out noise
-                    cx, cy = centroids[i]
-                    mask_centroids.append({'x': cx, 'y': cy, 'area': area})
+            # Extract vertices from all contours
+            all_vertices = []
+            for contour in contours:
+                # Filter out very small contours (noise)
+                area = cv2.contourArea(contour)
+                if area < 10:
+                    continue
 
-            if not mask_centroids:
+                # Approximate contour to polygon to get clean vertices
+                # epsilon controls simplification: smaller = more vertices
+                perimeter = cv2.arcLength(contour, True)
+                epsilon = 0.01 * perimeter  # 1% of perimeter
+                approx = cv2.approxPolyDP(contour, epsilon, True)
+
+                # Extract each vertex
+                for point in approx:
+                    x, y = point[0]
+                    all_vertices.append({'x': float(x), 'y': float(y)})
+
+            if not all_vertices:
+                print("No vertices extracted from contours")
                 return None
 
-            # Match each projected point to nearest centroid
+            print(f"Extracted {len(all_vertices)} vertices from {len(contours)} contours")
+
+            # Match each projected point to nearest vertex
             result = {}
+            used_vertices = set()  # Track which vertices are already matched
+
             for proj_pt in self.projected_points:
                 if not proj_pt.get('visible', False):
                     continue
@@ -1183,27 +1734,187 @@ CRS: {crs}</description>
                 if pred_u is None or pred_v is None:
                     continue
 
-                # Find nearest centroid
+                # Find nearest vertex that hasn't been used yet
                 min_dist = float('inf')
-                nearest = None
-                for centroid in mask_centroids:
-                    dist = math.sqrt((centroid['x'] - pred_u)**2 + (centroid['y'] - pred_v)**2)
+                nearest_idx = None
+                for i, vertex in enumerate(all_vertices):
+                    if i in used_vertices:
+                        continue
+                    dist = math.sqrt((vertex['x'] - pred_u)**2 + (vertex['y'] - pred_v)**2)
                     if dist < min_dist:
                         min_dist = dist
-                        nearest = centroid
+                        nearest_idx = i
 
-                # Only match if reasonably close (within 100 pixels)
-                if nearest and min_dist < 100:
+                # Only match if reasonably close
+                # Use tighter threshold (40px) to avoid bad matches
+                # Matches at 50-100px are likely wrong and will hurt calibration
+                MAX_MATCH_DISTANCE = 40.0
+                if nearest_idx is not None and min_dist < MAX_MATCH_DISTANCE:
+                    vertex = all_vertices[nearest_idx]
                     result[name] = {
-                        'pixel_u': nearest['x'],
-                        'pixel_v': nearest['y']
+                        'pixel_u': vertex['x'],
+                        'pixel_v': vertex['y'],
+                        'match_distance': min_dist
                     }
+                    used_vertices.add(nearest_idx)
+                    match_quality = "GOOD" if min_dist < 20 else "OK" if min_dist < 30 else "WEAK"
+                    print(f"  [{match_quality}] '{name}' -> vertex ({vertex['x']:.1f}, {vertex['y']:.1f}), dist={min_dist:.1f}px")
+                else:
+                    print(f"  [SKIP] '{name}' - nearest vertex at {min_dist:.1f}px (>{MAX_MATCH_DISTANCE}px)")
+
+            # Report match quality statistics
+            if result:
+                distances = [r['match_distance'] for r in result.values()]
+                good_count = sum(1 for d in distances if d < 20)
+                ok_count = sum(1 for d in distances if 20 <= d < 30)
+                weak_count = sum(1 for d in distances if d >= 30)
+                print(f"\nMatch quality: {good_count} GOOD (<20px), {ok_count} OK (20-30px), {weak_count} WEAK (30-{MAX_MATCH_DISTANCE}px)")
+                print(f"Average match distance: {np.mean(distances):.1f}px")
+                print(f"Total matched: {len(result)} points")
 
             return result if result else None
 
         except Exception as e:
-            print(f"Failed to extract mask centroids: {e}")
+            print(f"Failed to extract mask vertices: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+
+    # Keep old method name as alias for backwards compatibility
+    def _extract_mask_centroids_for_calibration(self) -> Optional[Dict[str, Dict]]:
+        """Alias for _extract_mask_vertices_for_calibration (uses vertices, not centroids)."""
+        return self._extract_mask_vertices_for_calibration()
+
+    def freeze_gcp_observations(self) -> int:
+        """
+        Capture and freeze GCP observations from current SAM3 mask.
+
+        This should be called ONCE when SAM3 detection runs on the GCP tab.
+        The frozen observations are then used for ALL subsequent calibrations,
+        preventing the drift caused by re-matching on every calibration.
+
+        Returns:
+            Number of observations frozen, or 0 if failed.
+        """
+        if self.camera_mask is None:
+            print("Cannot freeze observations: no camera mask available")
+            return 0
+
+        if not self.projected_points:
+            print("Cannot freeze observations: no projected points available")
+            return 0
+
+        # Extract centroids from mask
+        observations = self._extract_mask_centroids_for_calibration()
+
+        if not observations:
+            print("Cannot freeze observations: no centroids matched to projected points")
+            return 0
+
+        # Store as frozen observations
+        self.frozen_gcp_observations = observations
+
+        print(f"\n{'='*60}")
+        print("FROZEN GCP OBSERVATIONS")
+        print(f"{'='*60}")
+        print(f"Captured {len(observations)} observation(s) from SAM3 detection")
+        for name, obs in list(observations.items())[:5]:
+            print(f"  {name}: ({obs['pixel_u']:.1f}, {obs['pixel_v']:.1f})")
+        if len(observations) > 5:
+            print(f"  ... and {len(observations) - 5} more")
+        print("These observations are now FROZEN and will be used for all calibrations.")
+        print("Camera parameter changes will NOT affect these observed positions.")
+        print(f"{'='*60}\n")
+
+        return len(observations)
+
+    def clear_frozen_observations(self):
+        """Clear frozen observations, allowing re-capture."""
+        self.frozen_gcp_observations = None
+        print("Frozen GCP observations cleared. Run SAM3 detection to capture new observations.")
+
+    def get_detected_vertices(self) -> Optional[List[Dict]]:
+        """
+        Get all detected vertices from the camera mask.
+
+        Returns a list of vertices that can be used for manual matching.
+        Each vertex has an index, x, y coordinates.
+
+        Returns:
+            List of vertices: [{'idx': int, 'x': float, 'y': float}, ...]
+            Returns None if no mask is available.
+        """
+        if self.camera_mask is None:
+            return None
+
+        try:
+            # Find contours in the mask
+            contours, _ = cv2.findContours(
+                self.camera_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            if not contours:
+                return None
+
+            # Extract vertices from all contours
+            all_vertices = []
+            vertex_idx = 0
+            for contour in contours:
+                # Filter out very small contours (noise)
+                area = cv2.contourArea(contour)
+                if area < 10:
+                    continue
+
+                # Approximate contour to polygon to get clean vertices
+                perimeter = cv2.arcLength(contour, True)
+                epsilon = 0.01 * perimeter  # 1% of perimeter
+                approx = cv2.approxPolyDP(contour, epsilon, True)
+
+                # Extract each vertex
+                for point in approx:
+                    x, y = point[0]
+                    all_vertices.append({
+                        'idx': vertex_idx,
+                        'x': float(x),
+                        'y': float(y)
+                    })
+                    vertex_idx += 1
+
+            return all_vertices if all_vertices else None
+
+        except Exception as e:
+            print(f"Failed to get detected vertices: {e}")
+            return None
+
+    def set_manual_matches(self, matches: Dict[str, Dict]) -> int:
+        """
+        Set manual matches from user selection.
+
+        Args:
+            matches: Dictionary mapping GCP names to pixel coordinates:
+                     {'point_name': {'pixel_u': float, 'pixel_v': float}, ...}
+
+        Returns:
+            Number of matches stored.
+        """
+        if not matches:
+            return 0
+
+        # Store as frozen observations
+        self.frozen_gcp_observations = matches
+
+        print(f"\n{'='*60}")
+        print("MANUAL GCP MATCHES STORED")
+        print(f"{'='*60}")
+        print(f"Stored {len(matches)} manual match(es)")
+        for name, obs in list(matches.items())[:5]:
+            print(f"  {name}: ({obs['pixel_u']:.1f}, {obs['pixel_v']:.1f})")
+        if len(matches) > 5:
+            print(f"  ... and {len(matches) - 5} more")
+        print("These observations will be used for all calibrations.")
+        print(f"{'='*60}\n")
+
+        return len(matches)
 
 
 class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
@@ -1443,6 +2154,65 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'error': str(e)
                 })
 
+        elif self.path == '/api/run_pnp_calibration':
+            # Run PnP-based calibration (direct pose estimation)
+            try:
+                pnp_result = self.session.run_pnp_calibration()
+
+                if pnp_result is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'PnP calibration could not be performed (check console for details)'
+                    })
+                elif not pnp_result.get('success', False):
+                    self.send_json_response({
+                        'success': False,
+                        'error': pnp_result.get('error', 'PnP calibration failed')
+                    })
+                else:
+                    # Format result for frontend
+                    suggested = pnp_result.get('suggested_params', {})
+                    current = pnp_result.get('current_params', {})
+
+                    self.send_json_response({
+                        'success': True,
+                        'method': 'PnP',
+                        'rms_error': pnp_result.get('rms_error', 0),
+                        'max_error': pnp_result.get('max_error', 0),
+                        'num_inliers': pnp_result.get('num_inliers', 0),
+                        'num_points': pnp_result.get('num_points', 0),
+                        'suggested_params': {
+                            'pan': suggested.get('pan_deg'),
+                            'tilt': suggested.get('tilt_deg'),
+                            'roll': suggested.get('roll_deg'),
+                            'height': suggested.get('height_m'),
+                            'camera_lat': suggested.get('camera_lat'),
+                            'camera_lon': suggested.get('camera_lon')
+                        },
+                        'current_params': {
+                            'pan': current.get('pan_deg'),
+                            'tilt': current.get('tilt_deg'),
+                            'height': current.get('height_m'),
+                            'camera_lat': current.get('camera_lat'),
+                            'camera_lon': current.get('camera_lon')
+                        },
+                        'changes': {
+                            'pan': (suggested.get('pan_deg', 0) or 0) - (current.get('pan_deg', 0) or 0),
+                            'tilt': (suggested.get('tilt_deg', 0) or 0) - (current.get('tilt_deg', 0) or 0),
+                            'height': (suggested.get('height_m', 0) or 0) - (current.get('height_m', 0) or 0),
+                            'lat': suggested.get('delta_lat', 0),
+                            'lon': suggested.get('delta_lon', 0)
+                        }
+                    })
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
         elif self.path == '/api/capture_frame':
             # Capture new camera frame
             try:
@@ -1608,6 +2378,10 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 # Store mask
                 if tab == 'gcp':
                     self.session.camera_mask = mask
+                    # CRITICAL: Freeze GCP observations when SAM3 detects features on camera
+                    # This captures where features ACTUALLY are in the image
+                    num_frozen = self.session.freeze_gcp_observations()
+                    print(f"Froze {num_frozen} GCP observations from SAM3 detection")
                 else:
                     self.session.cartography_mask = mask
 
@@ -1630,6 +2404,9 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     return
                 mask_base64 = base64.b64encode(mask_buffer).decode('utf-8')
 
+                # Include frozen observations count for GCP tab
+                frozen_count = len(self.session.frozen_gcp_observations) if self.session.frozen_gcp_observations else 0
+
                 self.send_json_response({
                     'success': True,
                     'mask': mask_base64,
@@ -1639,7 +2416,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         'confidence_range': {
                             'min': min(confidence_scores) if confidence_scores else 0,
                             'max': max(confidence_scores) if confidence_scores else 0
-                        }
+                        },
+                        'frozen_observations': frozen_count if tab == 'gcp' else None
                     }
                 })
             except Exception as e:
@@ -1710,6 +2488,82 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'error': str(e)
                 })
 
+        elif self.path == '/api/get_vertices':
+            # Get all detected vertices for manual matching
+            try:
+                vertices = self.session.get_detected_vertices()
+                if vertices is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No detected features. Run SAM3 detection first.',
+                        'vertices': []
+                    })
+                    return
+
+                # Also return projected points for matching
+                projected_points = self.session.projected_points or []
+                visible_points = [p for p in projected_points if p.get('visible', False)]
+
+                self.send_json_response({
+                    'success': True,
+                    'vertices': vertices,
+                    'vertex_count': len(vertices),
+                    'projected_points': visible_points,
+                    'point_count': len(visible_points)
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/set_manual_matches':
+            # Save manual matches from user
+            try:
+                matches = post_data.get('matches', {})
+                if not matches:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No matches provided'
+                    })
+                    return
+
+                # Convert matches format if needed
+                # Expected format: {'point_name': {'pixel_u': float, 'pixel_v': float}, ...}
+                formatted_matches = {}
+                for name, coords in matches.items():
+                    formatted_matches[name] = {
+                        'pixel_u': float(coords.get('pixel_u', coords.get('x', 0))),
+                        'pixel_v': float(coords.get('pixel_v', coords.get('y', 0)))
+                    }
+
+                num_matches = self.session.set_manual_matches(formatted_matches)
+
+                self.send_json_response({
+                    'success': True,
+                    'num_matches': num_matches,
+                    'message': f'Stored {num_matches} manual matches'
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/clear_matches':
+            # Clear frozen observations
+            try:
+                self.session.clear_frozen_observations()
+                self.send_json_response({
+                    'success': True,
+                    'message': 'Cleared all frozen observations'
+                })
+            except Exception as e:
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
         else:
             self.send_error(404)
 
@@ -1733,7 +2587,6 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
         # Grab frame from camera
         frame, ptz_status = grab_frame_from_camera(self.session.camera_name, wait_time=2.0)
-        self.session.camera_frame = frame
 
         # Get camera parameters for projection
         frame_height, frame_width = frame.shape[:2]
@@ -1742,6 +2595,54 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             image_width=frame_width,
             image_height=frame_height
         )
+
+        # Undistort the frame using camera intrinsics and distortion coefficients
+        K = camera_params.get('K')
+        if K is not None:
+            K = np.array(K)
+
+            # Get distortion coefficients from camera config
+            dist_coeffs = np.zeros(4)
+            try:
+                cam_config = get_camera_by_name(self.session.camera_name)
+                if cam_config:
+                    k1 = cam_config.get('k1', 0.0)
+                    k2 = cam_config.get('k2', 0.0)
+                    p1 = cam_config.get('p1', 0.0)
+                    p2 = cam_config.get('p2', 0.0)
+                    dist_coeffs = np.array([k1, k2, p1, p2])
+            except Exception as e:
+                print(f"Warning: Could not load distortion coefficients: {e}")
+
+            if np.any(dist_coeffs != 0):
+                print(f"Undistorting frame with distortion coefficients: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}, p1={dist_coeffs[2]:.6f}, p2={dist_coeffs[3]:.6f}")
+
+                # Use getOptimalNewCameraMatrix for better results (preserves all pixels)
+                new_K, roi = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (frame_width, frame_height), 1, (frame_width, frame_height))
+
+                # Undistort the frame
+                frame = cv2.undistort(frame, K, dist_coeffs, None, new_K)
+
+                # Optionally crop to ROI (remove black borders)
+                # x, y, w, h = roi
+                # if w > 0 and h > 0:
+                #     frame = frame[y:y+h, x:x+w]
+
+                # Update K matrix in params to reflect undistorted image
+                camera_params['K'] = new_K
+                camera_params['K_original'] = K  # Keep original for reference
+                camera_params['dist_coeffs'] = dist_coeffs.tolist()
+                camera_params['undistorted'] = True
+
+                print(f"Frame undistorted successfully")
+            else:
+                print("No distortion coefficients - frame not undistorted")
+                camera_params['undistorted'] = False
+        else:
+            print("Warning: No K matrix available - frame not undistorted")
+            camera_params['undistorted'] = False
+
+        self.session.camera_frame = frame
         self.session.camera_params = camera_params
 
         print(f"Captured camera frame: {frame_width}x{frame_height}")
@@ -1786,6 +2687,10 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
         per_gcp_errors = calibration_result.get('per_gcp_errors', [0])
         max_error = max(per_gcp_errors) if per_gcp_errors else 0
 
+        # Check if using frozen observations
+        has_frozen = self.session.frozen_gcp_observations is not None
+        frozen_count = len(self.session.frozen_gcp_observations) if has_frozen else 0
+
         return {
             'rms_error': calibration_result.get('final_error', 0),
             'max_error': max_error,
@@ -1793,6 +2698,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             'num_inliers': calibration_result.get('num_inliers', 0),
             'initial_error': calibration_result.get('initial_error', 0),
             'improvement_percent': calibration_result.get('improvement_percent', 0),
+            'has_frozen_observations': has_frozen,
+            'frozen_observation_count': frozen_count,
             'suggested_params': {
                 'pan': sp.get('pan_deg'),
                 'tilt': sp.get('tilt_deg'),
@@ -1989,6 +2896,21 @@ def generate_unified_html(session: UnifiedSession) -> str:
             background: rgba(76, 175, 80, 0.3);
             transform: translate(-50%, -50%);
             z-index: 8;
+        }}
+
+        /* GCP Label */
+        .gcp-label {{
+            position: absolute;
+            font-size: 10px;
+            font-weight: bold;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 1px 4px;
+            border-radius: 3px;
+            white-space: nowrap;
+            z-index: 9;
+            pointer-events: none;
+            text-shadow: 1px 1px 1px #000;
         }}
 
         /* Sidebar Components */
@@ -2432,6 +3354,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <input type="text" id="sam3-prompt-gcp" placeholder="road marking" value="road marking">
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
+                    <button onclick="startManualMatching()" id="manual-match-btn" style="display: none;" class="secondary">Match Features Manually</button>
 
                     <h3>Calibration Quality</h3>
                     <div id="calibration-status" class="calibration-panel">
@@ -2451,9 +3374,12 @@ def generate_unified_html(session: UnifiedSession) -> str:
                                 <span class="metric-label">GCP Points:</span>
                                 <span id="calibration-num-points" class="metric-value">--</span>
                             </div>
+                            <div id="calibration-obs-status" style="display: none; margin-top: 8px; font-size: 11px;"></div>
                             <div id="calibration-suggestions" style="display: none; margin-top: 10px;"></div>
                         </div>
                         <button onclick="runCalibration()" class="secondary" id="recalibrate-btn">Re-run Calibration</button>
+                        <button onclick="runPnPCalibration()" class="secondary" id="pnp-calibrate-btn" style="background: #0ead69;">Run PnP Calibration</button>
+                        <div id="pnp-results" style="display: none; margin-top: 10px; padding: 10px; background: rgba(14, 173, 105, 0.1); border-radius: 4px;"></div>
                     </div>
 
                     <h3>Projected Points (<span id="gcp-point-count">0</span>)</h3>
@@ -2721,23 +3647,33 @@ def generate_unified_html(session: UnifiedSession) -> str:
         function updateGCPView() {{
             const listContainer = document.getElementById('gcp-points-list');
 
-            // Clear existing markers
+            // Clear existing markers and labels
             document.querySelectorAll('.gcp-marker').forEach(m => m.remove());
+            document.querySelectorAll('.gcp-label').forEach(l => l.remove());
 
             if (projectedPoints.length === 0) {{
                 listContainer.innerHTML = '<div style="color: #888; font-size: 12px;">No points to display</div>';
                 return;
             }}
 
-            // Draw markers
-            projectedPoints.forEach(pt => {{
+            // Draw markers with labels
+            projectedPoints.forEach((pt, idx) => {{
                 if (pt.visible) {{
                     const marker = document.createElement('div');
                     marker.className = 'gcp-marker';
                     marker.style.left = (pt.pixel_u * gcpZoom) + 'px';
                     marker.style.top = (pt.pixel_v * gcpZoom) + 'px';
                     marker.title = pt.name;
+                    marker.dataset.name = pt.name;
                     gcpContainer.appendChild(marker);
+
+                    // Add label showing the point name
+                    const label = document.createElement('div');
+                    label.className = 'gcp-label';
+                    label.textContent = pt.name;
+                    label.style.left = (pt.pixel_u * gcpZoom + 12) + 'px';
+                    label.style.top = (pt.pixel_v * gcpZoom - 6) + 'px';
+                    gcpContainer.appendChild(label);
                 }}
             }});
 
@@ -3196,6 +4132,17 @@ def generate_unified_html(session: UnifiedSession) -> str:
             document.getElementById('calibration-num-points').textContent =
                 calibration.num_points;
 
+            // Show observation status (frozen vs fallback)
+            const obsStatusEl = document.getElementById('calibration-obs-status');
+            if (obsStatusEl) {{
+                if (calibration.has_frozen_observations) {{
+                    obsStatusEl.innerHTML = `<span style="color: #4CAF50;">✓ Using ${{calibration.frozen_observation_count}} frozen observations</span>`;
+                }} else {{
+                    obsStatusEl.innerHTML = `<span style="color: #f44336;">⚠ No frozen observations - run SAM3 first!</span>`;
+                }}
+                obsStatusEl.style.display = 'block';
+            }}
+
             // Update suggested adjustments if available
             const suggestionsDiv = document.getElementById('calibration-suggestions');
             if (calibration.suggested_params && suggestionsDiv) {{
@@ -3258,6 +4205,109 @@ def generate_unified_html(session: UnifiedSession) -> str:
             }});
         }}
 
+        let pnpResult = null;
+
+        function runPnPCalibration() {{
+            updateStatus('Running PnP calibration (direct pose estimation)...');
+
+            fetch('/api/run_pnp_calibration', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    pnpResult = data;
+                    const resultsDiv = document.getElementById('pnp-results');
+                    resultsDiv.style.display = 'block';
+
+                    const sp = data.suggested_params;
+                    const cp = data.current_params;
+                    const ch = data.changes;
+
+                    resultsDiv.innerHTML = `
+                        <h4 style="margin: 0 0 8px 0; color: #0ead69;">PnP Calibration Results</h4>
+                        <div style="font-size: 11px;">
+                            <div><strong>RMS Error:</strong> ${{data.rms_error.toFixed(2)}}px (${{data.num_inliers}}/${{data.num_points}} inliers)</div>
+                            <div style="margin-top: 6px;"><strong>Suggested Parameters:</strong></div>
+                            <div>Pan: ${{sp.pan?.toFixed(2) || '--'}}° (Δ${{ch.pan >= 0 ? '+' : ''}}${{ch.pan?.toFixed(2) || '0'}}°)</div>
+                            <div>Tilt: ${{sp.tilt?.toFixed(2) || '--'}}° (Δ${{ch.tilt >= 0 ? '+' : ''}}${{ch.tilt?.toFixed(2) || '0'}}°)</div>
+                            <div>Height: ${{sp.height?.toFixed(2) || '--'}}m (Δ${{ch.height >= 0 ? '+' : ''}}${{ch.height?.toFixed(2) || '0'}}m)</div>
+                            <div>Lat: ${{sp.camera_lat?.toFixed(6) || '--'}}°</div>
+                            <div>Lon: ${{sp.camera_lon?.toFixed(6) || '--'}}°</div>
+                        </div>
+                        <button onclick="applyPnPCalibration()" class="primary" style="margin-top: 8px;">Apply PnP Results</button>
+                    `;
+
+                    updateStatus('PnP calibration complete: RMS error = ' + data.rms_error.toFixed(2) + ' px');
+                }} else {{
+                    updateStatus('PnP calibration failed: ' + data.error);
+                    alert('PnP calibration failed: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('PnP calibration failed:', err);
+                updateStatus('PnP calibration failed: ' + err.message);
+            }});
+        }}
+
+        function applyPnPCalibration() {{
+            if (!pnpResult || !pnpResult.suggested_params) {{
+                alert('No PnP calibration results available');
+                return;
+            }}
+
+            const sp = pnpResult.suggested_params;
+
+            // Build update payload with new absolute values from PnP
+            const updateData = {{}};
+            if (sp.pan !== undefined && sp.pan !== null) updateData.pan_deg = sp.pan;
+            if (sp.tilt !== undefined && sp.tilt !== null) updateData.tilt_deg = sp.tilt;
+            if (sp.height !== undefined && sp.height !== null) updateData.height_m = sp.height;
+            if (sp.camera_lat !== undefined && sp.camera_lat !== null) updateData.camera_lat = sp.camera_lat;
+            if (sp.camera_lon !== undefined && sp.camera_lon !== null) updateData.camera_lon = sp.camera_lon;
+
+            updateStatus('Applying PnP calibration results...');
+
+            fetch('/api/update_camera_params', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(updateData)
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    cameraParams = data.camera_params;
+                    projectedPoints = data.projected_points;
+
+                    // Update projected mask if available
+                    if (data.projected_mask_available && data.projected_mask) {{
+                        projectedMaskData = data.projected_mask;
+                        projectedMaskOffset = data.projected_mask_offset;
+                        if (projectedMaskVisible) {{
+                            showProjectedMask();
+                        }}
+                    }}
+
+                    updateCameraParamsDisplay();
+                    updateGCPView();
+                    updateCameraVisualization();
+
+                    // Hide PnP results panel
+                    document.getElementById('pnp-results').style.display = 'none';
+
+                    updateStatus('PnP calibration applied successfully!');
+                }} else {{
+                    updateStatus('Error applying PnP calibration: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Apply PnP calibration failed:', err);
+                updateStatus('Apply PnP calibration failed: ' + err.message);
+            }});
+        }}
+
         function applyCalibration() {{
             if (!calibrationResult || !calibrationResult.suggested_params) {{
                 alert('No calibration suggestions available');
@@ -3310,6 +4360,240 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 console.error('Apply calibration failed:', err);
                 updateStatus('Apply calibration failed: ' + err.message);
             }});
+        }}
+
+        // Manual matching state
+        let matchingMode = false;
+        let detectedVertices = [];
+        let manualMatches = {{}};  // GCP name -> vertex coords
+        let selectedGCP = null;
+        let vertexOverlay = null;
+
+        function startManualMatching() {{
+            updateStatus('Loading detected vertices...');
+
+            fetch('/api/get_vertices', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    detectedVertices = data.vertices;
+                    matchingMode = true;
+                    manualMatches = {{}};
+                    selectedGCP = null;
+
+                    // Show vertices on canvas
+                    createVertexOverlay();
+                    drawVertices();
+
+                    // Update button text
+                    const btn = document.getElementById('manual-match-btn');
+                    btn.textContent = 'Finish Matching';
+                    btn.onclick = finishManualMatching;
+
+                    updateStatus(`Manual matching mode: ${{detectedVertices.length}} vertices available. Click a GCP marker, then click a vertex.`);
+
+                    // Show matching instructions
+                    alert(`Manual Matching Mode\\n\\n` +
+                          `${{detectedVertices.length}} vertices detected.\\n` +
+                          `${{data.point_count}} GCP points available.\\n\\n` +
+                          `Instructions:\\n` +
+                          `1. Click on a GCP marker (colored circle)\\n` +
+                          `2. Click on the corresponding vertex (small green dot)\\n` +
+                          `3. Repeat for all GCPs you want to match\\n` +
+                          `4. Click "Finish Matching" when done`);
+                }} else {{
+                    updateStatus('Error: ' + data.error);
+                    alert('Could not load vertices: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Get vertices failed:', err);
+                updateStatus('Get vertices failed: ' + err.message);
+            }});
+        }}
+
+        function createVertexOverlay() {{
+            // Remove existing overlay if any
+            if (vertexOverlay) {{
+                vertexOverlay.remove();
+            }}
+
+            // Create canvas overlay for drawing vertices
+            const gcpContainer = document.getElementById('gcp-image-container');
+            const gcpImg = document.getElementById('gcp-image');
+
+            vertexOverlay = document.createElement('canvas');
+            vertexOverlay.id = 'vertex-overlay';
+            vertexOverlay.width = gcpImg.naturalWidth;
+            vertexOverlay.height = gcpImg.naturalHeight;
+            vertexOverlay.style.position = 'absolute';
+            vertexOverlay.style.left = '0';
+            vertexOverlay.style.top = '0';
+            vertexOverlay.style.width = gcpImg.clientWidth + 'px';
+            vertexOverlay.style.height = gcpImg.clientHeight + 'px';
+            vertexOverlay.style.pointerEvents = 'auto';
+            vertexOverlay.style.cursor = 'crosshair';
+            vertexOverlay.style.zIndex = '50';
+
+            gcpContainer.style.position = 'relative';
+            gcpContainer.appendChild(vertexOverlay);
+
+            // Add click handler for vertex selection
+            vertexOverlay.addEventListener('click', handleMatchingClick);
+        }}
+
+        function drawVertices() {{
+            if (!vertexOverlay) return;
+
+            const ctx = vertexOverlay.getContext('2d');
+            ctx.clearRect(0, 0, vertexOverlay.width, vertexOverlay.height);
+
+            // Draw all vertices as small dots
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+            ctx.strokeStyle = 'rgba(0, 100, 0, 1)';
+
+            for (const v of detectedVertices) {{
+                ctx.beginPath();
+                ctx.arc(v.x, v.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }}
+
+            // Highlight already matched vertices
+            ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
+            ctx.strokeStyle = 'rgba(200, 150, 0, 1)';
+            ctx.lineWidth = 2;
+
+            for (const [gcpName, coords] of Object.entries(manualMatches)) {{
+                ctx.beginPath();
+                ctx.arc(coords.pixel_u, coords.pixel_v, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw line to corresponding GCP
+                const gcp = projectedPoints.find(p => p.name === gcpName);
+                if (gcp) {{
+                    ctx.strokeStyle = 'rgba(255, 200, 0, 0.6)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(coords.pixel_u, coords.pixel_v);
+                    ctx.lineTo(gcp.pixel_u, gcp.pixel_v);
+                    ctx.stroke();
+                }}
+            }}
+
+            // Highlight selected GCP if any
+            if (selectedGCP) {{
+                const gcp = projectedPoints.find(p => p.name === selectedGCP);
+                if (gcp) {{
+                    ctx.strokeStyle = 'rgba(255, 0, 255, 1)';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(gcp.pixel_u, gcp.pixel_v, 15, 0, Math.PI * 2);
+                    ctx.stroke();
+                }}
+            }}
+        }}
+
+        function handleMatchingClick(e) {{
+            if (!matchingMode) return;
+
+            const rect = vertexOverlay.getBoundingClientRect();
+            const scaleX = vertexOverlay.width / rect.width;
+            const scaleY = vertexOverlay.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            // Check if clicking on a GCP marker (within 15px radius)
+            const clickedGCP = projectedPoints.find(p => {{
+                if (!p.visible) return false;
+                const dx = p.pixel_u - x;
+                const dy = p.pixel_v - y;
+                return Math.sqrt(dx*dx + dy*dy) < 15;
+            }});
+
+            if (clickedGCP) {{
+                // Select this GCP
+                selectedGCP = clickedGCP.name;
+                updateStatus(`Selected GCP: ${{selectedGCP}}. Now click on the corresponding vertex.`);
+                drawVertices();  // Redraw with highlight
+                return;
+            }}
+
+            // Check if clicking on a vertex (within 8px radius)
+            if (selectedGCP) {{
+                const clickedVertex = detectedVertices.find(v => {{
+                    const dx = v.x - x;
+                    const dy = v.y - y;
+                    return Math.sqrt(dx*dx + dy*dy) < 8;
+                }});
+
+                if (clickedVertex) {{
+                    // Match GCP to vertex
+                    manualMatches[selectedGCP] = {{
+                        pixel_u: clickedVertex.x,
+                        pixel_v: clickedVertex.y
+                    }};
+                    updateStatus(`Matched '${{selectedGCP}}' to vertex at (${{clickedVertex.x.toFixed(0)}}, ${{clickedVertex.y.toFixed(0)}}). ${{Object.keys(manualMatches).length}} matches total.`);
+                    selectedGCP = null;
+                    drawVertices();  // Redraw with match
+                }} else {{
+                    updateStatus('No vertex found near click. Try clicking closer to a green dot.');
+                }}
+            }} else {{
+                updateStatus('Click on a GCP marker first (colored circle), then click on a vertex.');
+            }}
+        }}
+
+        function finishManualMatching() {{
+            if (Object.keys(manualMatches).length === 0) {{
+                if (!confirm('No matches made. Exit matching mode anyway?')) {{
+                    return;
+                }}
+            }}
+
+            matchingMode = false;
+
+            // Remove vertex overlay
+            if (vertexOverlay) {{
+                vertexOverlay.remove();
+                vertexOverlay = null;
+            }}
+
+            // Reset button
+            const btn = document.getElementById('manual-match-btn');
+            btn.textContent = 'Match Features Manually';
+            btn.onclick = startManualMatching;
+
+            // Save matches if any
+            if (Object.keys(manualMatches).length > 0) {{
+                updateStatus(`Saving ${{Object.keys(manualMatches).length}} manual matches...`);
+
+                fetch('/api/set_manual_matches', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ matches: manualMatches }})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        updateStatus(`Saved ${{data.num_matches}} matches. Running calibration...`);
+                        runCalibration();
+                    }} else {{
+                        updateStatus('Error saving matches: ' + data.error);
+                    }}
+                }})
+                .catch(err => {{
+                    console.error('Save matches failed:', err);
+                    updateStatus('Save matches failed: ' + err.message);
+                }});
+            }} else {{
+                updateStatus('Matching mode cancelled. No matches saved.');
+            }}
         }}
 
         function adjustParam(param, delta) {{
@@ -3397,6 +4681,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
                     // Show toggle button
                     document.getElementById('toggle-mask-' + tab + '-btn').style.display = 'block';
+
+                    // Show manual matching button for GCP tab
+                    if (tab === 'gcp') {{
+                        document.getElementById('manual-match-btn').style.display = 'block';
+                    }}
 
                     // Auto-show mask
                     maskVisible[tab] = true;
@@ -3716,18 +5005,61 @@ def run_server(session: UnifiedSession, port: int = 8765):
             from tools.capture_gcps_web import grab_frame_from_camera, get_camera_params_for_projection
             print("Pre-capturing camera frame...")
             frame, ptz_status = grab_frame_from_camera(session.camera_name, wait_time=2.0)
-            session.camera_frame = frame
             frame_height, frame_width = frame.shape[:2]
             camera_params = get_camera_params_for_projection(
                 session.camera_name,
                 image_width=frame_width,
                 image_height=frame_height
             )
+
+            # Undistort the frame using camera intrinsics and distortion coefficients
+            K = camera_params.get('K')
+            if K is not None:
+                K = np.array(K)
+
+                # Get distortion coefficients from camera config
+                dist_coeffs = np.zeros(4)
+                try:
+                    cam_config = get_camera_by_name(session.camera_name)
+                    if cam_config:
+                        k1 = cam_config.get('k1', 0.0)
+                        k2 = cam_config.get('k2', 0.0)
+                        p1 = cam_config.get('p1', 0.0)
+                        p2 = cam_config.get('p2', 0.0)
+                        dist_coeffs = np.array([k1, k2, p1, p2])
+                except Exception as e:
+                    print(f"Warning: Could not load distortion coefficients: {e}")
+
+                if np.any(dist_coeffs != 0):
+                    print(f"Undistorting frame with distortion: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}")
+
+                    # Use getOptimalNewCameraMatrix for better results
+                    new_K, roi = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (frame_width, frame_height), 1, (frame_width, frame_height))
+
+                    # Undistort the frame
+                    frame = cv2.undistort(frame, K, dist_coeffs, None, new_K)
+
+                    # Update K matrix in params to reflect undistorted image
+                    camera_params['K'] = new_K
+                    camera_params['K_original'] = K
+                    camera_params['dist_coeffs'] = dist_coeffs.tolist()
+                    camera_params['undistorted'] = True
+                    print("Frame undistorted successfully")
+                else:
+                    print("No distortion coefficients - frame not undistorted")
+                    camera_params['undistorted'] = False
+            else:
+                print("Warning: No K matrix available - frame not undistorted")
+                camera_params['undistorted'] = False
+
+            session.camera_frame = frame
             session.camera_params = camera_params
             print(f"Camera frame captured: {frame_width}x{frame_height}")
             print(f"Camera params: pan={camera_params['pan_deg']:.1f}°, tilt={camera_params['tilt_deg']:.1f}°, zoom={camera_params['zoom']:.1f}x")
         except Exception as e:
             print(f"Warning: Failed to pre-capture camera frame: {e}")
+            import traceback
+            traceback.print_exc()
             print("Camera frame will be captured when switching to GCP Capture tab.")
 
     # Find available port

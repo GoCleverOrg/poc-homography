@@ -67,8 +67,10 @@ from scipy.optimize import least_squares
 
 # Import coordinate conversion for GPS to local metric
 try:
-    from poc_homography.coordinate_converter import gps_to_local_xy
+    from poc_homography.coordinate_converter import gps_to_local_xy, UTMConverter
+    UTM_CONVERTER_AVAILABLE = True
 except ImportError:
+    UTM_CONVERTER_AVAILABLE = False
     # Fallback if coordinate_converter is not available
     def gps_to_local_xy(ref_lat, ref_lon, lat, lon):
         """Simple equirectangular approximation for testing."""
@@ -162,7 +164,10 @@ class GCPCalibrator:
         camera_geometry: 'CameraGeometry',
         gcps: List[Dict[str, Any]],
         loss_function: str = 'huber',
-        loss_scale: float = 1.0
+        loss_scale: float = 1.0,
+        reference_lat: Optional[float] = None,
+        reference_lon: Optional[float] = None,
+        utm_crs: Optional[str] = None
     ):
         """
         Initialize GCP-based calibrator.
@@ -177,6 +182,12 @@ class GCPCalibrator:
                        threshold at which errors are considered outliers.
                        - For 'huber': transition from quadratic to linear at loss_scale
                        - For 'cauchy': scale of the Cauchy distribution
+            reference_lat: Reference latitude for GPS-to-local conversion (should be camera lat).
+                          If None, uses GCP centroid (not recommended - causes coordinate mismatch).
+            reference_lon: Reference longitude for GPS-to-local conversion (should be camera lon).
+                          If None, uses GCP centroid (not recommended - causes coordinate mismatch).
+            utm_crs: UTM coordinate reference system (e.g., "EPSG:25830"). If provided and GCPs
+                    have UTM coordinates, uses UTM for more accurate local XY conversion.
 
         Raises:
             ValueError: If parameters are invalid (empty GCPs, invalid loss function, etc.)
@@ -225,20 +236,68 @@ class GCPCalibrator:
         self.loss_function = loss_function.lower()
         self.loss_scale = loss_scale
 
-        # Compute reference GPS coordinates (use centroid of GCPs for stability)
-        gps_lats = [gcp['gps']['latitude'] for gcp in gcps]
-        gps_lons = [gcp['gps']['longitude'] for gcp in gcps]
-        self._reference_lat = np.mean(gps_lats)
-        self._reference_lon = np.mean(gps_lons)
+        # Set reference GPS coordinates for local coordinate conversion
+        # IMPORTANT: This should be the camera position so that world coordinates
+        # are relative to the camera (camera at origin), matching CameraGeometry expectations
+        if reference_lat is not None and reference_lon is not None:
+            self._reference_lat = reference_lat
+            self._reference_lon = reference_lon
+            logger.info(f"Using camera position as reference: ({reference_lat:.6f}, {reference_lon:.6f})")
+        else:
+            # Fallback to GCP centroid (NOT recommended - will cause coordinate mismatch)
+            gps_lats = [gcp['gps']['latitude'] for gcp in gcps]
+            gps_lons = [gcp['gps']['longitude'] for gcp in gcps]
+            self._reference_lat = np.mean(gps_lats)
+            self._reference_lon = np.mean(gps_lons)
+            logger.warning(
+                f"No reference coordinates provided, using GCP centroid ({self._reference_lat:.6f}, {self._reference_lon:.6f}). "
+                "This may cause large errors - pass camera GPS coordinates as reference_lat/reference_lon."
+            )
+
+        # Set up UTM converter if available and CRS provided
+        self._utm_converter = None
+        if utm_crs and UTM_CONVERTER_AVAILABLE:
+            try:
+                self._utm_converter = UTMConverter(utm_crs)
+                self._utm_converter.set_reference(self._reference_lat, self._reference_lon)
+                logger.info(f"Using UTM converter with CRS {utm_crs} for accurate coordinate conversion")
+            except Exception as e:
+                logger.warning(f"Failed to initialize UTM converter: {e}, falling back to GPS conversion")
+                self._utm_converter = None
 
         # Convert GCPs to world coordinates (cached for efficiency)
+        # PRIORITY: UTM coordinates > GPS coordinates
         self._world_coords = []
+        utm_count = 0
+        gps_count = 0
         for gcp in gcps:
+            # Try UTM coordinates first (more accurate)
+            if self._utm_converter and 'utm' in gcp and gcp['utm']:
+                utm = gcp['utm']
+                if utm.get('easting') is not None and utm.get('northing') is not None:
+                    x, y = self._utm_converter.utm_to_local_xy(utm['easting'], utm['northing'])
+                    self._world_coords.append([x, y])
+                    utm_count += 1
+                    continue
+
+            # Fall back to GPS conversion
             lat = gcp['gps']['latitude']
             lon = gcp['gps']['longitude']
-            x, y = gps_to_local_xy(self._reference_lat, self._reference_lon, lat, lon)
+            if self._utm_converter:
+                x, y = self._utm_converter.gps_to_local_xy(lat, lon)
+            else:
+                x, y = gps_to_local_xy(self._reference_lat, self._reference_lon, lat, lon)
             self._world_coords.append([x, y])
+            gps_count += 1
         self._world_coords = np.array(self._world_coords, dtype=np.float64)
+
+        # Log coordinate source breakdown
+        if utm_count > 0:
+            print(f"GCPCalibrator: Using {utm_count} UTM coordinates, {gps_count} GPS coordinates")
+
+        # DEBUG: Print first GCP's local XY for verification
+        if len(self._world_coords) > 0:
+            print(f"GCPCalibrator DEBUG: First GCP local XY = ({self._world_coords[0][0]:.2f}, {self._world_coords[0][1]:.2f}) meters")
 
         logger.info(
             f"GCPCalibrator initialized with {len(gcps)} GCPs, "
