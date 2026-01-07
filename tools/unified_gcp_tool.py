@@ -1060,13 +1060,17 @@ CRS: {crs}</description>
                 self.frozen_gcp_observations = obs_by_name
                 print(f"Froze {len(obs_by_name)} observations for future calibrations")
             else:
-                print("Could not extract centroids from mask - using projected pixels (BAD!)")
-                obs_by_name = None
+                raise ValueError(
+                    "Failed to extract GCP observations from SAM3 mask. "
+                    "The mask exists but no centroids could be detected. "
+                    "Try re-running SAM3 feature detection with different parameters."
+                )
         else:
-            print("ERROR: No SAM3 mask and no frozen observations!")
-            print("       Calibration will use projected pixels as 'observed' - THIS IS MEANINGLESS!")
-            print("       Run SAM3 feature detection first to capture real observations.")
-            obs_by_name = None
+            raise ValueError(
+                "Calibration requires real image observations. "
+                "No SAM3 mask, frozen observations, or explicit observations provided. "
+                "Run SAM3 feature detection or provide manual annotations before calibration."
+            )
 
         # Build GCP list for calibrator - ONLY use visible points
         gcps = []
@@ -1089,22 +1093,20 @@ CRS: {crs}</description>
                 skipped_no_gps += 1
                 continue
 
-            # Get observed pixel location
-            if obs_by_name and name in obs_by_name:
-                obs = obs_by_name[name]
-                pixel_u = obs.get('pixel_u', proj_pt.get('pixel_u'))
-                pixel_v = obs.get('pixel_v', proj_pt.get('pixel_v'))
-            else:
-                # Fall back to projected pixels (won't improve calibration much)
-                pixel_u = proj_pt.get('pixel_u')
-                pixel_v = proj_pt.get('pixel_v')
+            # Get observed pixel location - ONLY use GCPs with real observations
+            # obs_by_name is guaranteed to exist (we raise ValueError earlier if not)
+            if name not in obs_by_name:
+                # Skip GCPs without real observations - never use projected pixels
+                skipped_no_pixel += 1
+                continue
+
+            obs = obs_by_name[name]
+            pixel_u = obs.get('pixel_u')
+            pixel_v = obs.get('pixel_v')
 
             if pixel_u is None or pixel_v is None:
                 skipped_no_pixel += 1
                 continue
-
-            # Track whether this GCP uses SAM3 observation or fallback
-            uses_sam3 = obs_by_name and name in obs_by_name
 
             # Get UTM coordinates if available (more accurate than GPS conversion)
             utm_easting = proj_pt.get('utm_easting')
@@ -1114,13 +1116,8 @@ CRS: {crs}</description>
                 'gps': {'latitude': gps_lat, 'longitude': gps_lon},
                 'utm': {'easting': utm_easting, 'northing': utm_northing} if utm_easting and utm_northing else None,
                 'image': {'u': pixel_u, 'v': pixel_v},
-                '_name': name,
-                '_uses_sam3': uses_sam3
+                '_name': name
             })
-
-        # Count how many GCPs use SAM3 observations vs fallback projected pixels
-        sam3_count = sum(1 for g in gcps if g.get('_uses_sam3', False))
-        fallback_count = len(gcps) - sam3_count
 
         # DEBUG: Print first GCP's coordinates for verification
         if gcps:
@@ -1133,23 +1130,21 @@ CRS: {crs}</description>
             else:
                 print("UTM: None")
             print(f"Image: u={g0['image']['u']:.1f}, v={g0['image']['v']:.1f}")
-            print(f"Uses SAM3: {g0.get('_uses_sam3')}")
             print("---")
 
         print(f"\n--- GCP FILTERING SUMMARY ---")
         print(f"Total projected points: {len(self.projected_points)}")
-        print(f"Valid GCPs for calibration: {len(gcps)}")
-        print(f"  - Using SAM3 observations: {sam3_count if obs_by_name else 'N/A (no mask)'}")
-        print(f"  - Using fallback (projected pixels): {fallback_count if obs_by_name else len(gcps)}")
-        print(f"Skipped: {skipped_not_visible} not visible, {skipped_no_gps} no GPS, {skipped_no_pixel} no pixel")
-        if not obs_by_name:
-            print("WARNING: No SAM3 mask available - using projected pixels as 'observed'")
-            print("         This means calibration has nothing to optimize against!")
+        print(f"Valid GCPs with real observations: {len(gcps)}")
+        print(f"Skipped: {skipped_not_visible} not visible, {skipped_no_gps} no GPS, {skipped_no_pixel} no observation")
         print(f"----------------------------\n")
 
-        if len(gcps) < 4:
-            print(f"Not enough valid GCPs for calibration (need 4, have {len(gcps)})")
-            return None
+        MINIMUM_GCP_COUNT = 6  # Industry standard for 6-parameter optimization
+        if len(gcps) < MINIMUM_GCP_COUNT:
+            raise ValueError(
+                f"Insufficient GCP correspondences for calibration: "
+                f"{len(gcps)} provided, minimum {MINIMUM_GCP_COUNT} required with real observations. "
+                f"Add more Ground Control Points or ensure all points have SAM3 observations."
+            )
 
         # Create CameraGeometry for calibrator
         try:
