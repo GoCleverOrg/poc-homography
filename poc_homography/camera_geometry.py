@@ -951,7 +951,7 @@ class CameraGeometry:
         """
 
         if self.K is None:
-            print("Warning: K not set. Returning Identity Homography.")
+            logger.warning("K not set. Returning Identity Homography.")
             return np.eye(3)
 
         R = self._get_rotation_matrix()
@@ -971,14 +971,16 @@ class CameraGeometry:
 
         # Construct 3x3 extrinsic homography matrix (NOT 3x4 projection matrix)
         H_extrinsic = np.column_stack([r1, r2, t])
-        assert H_extrinsic.shape == (3, 3), f"H_extrinsic must be 3x3, got {H_extrinsic.shape}"
+        if H_extrinsic.shape != (3, 3):
+            raise ValueError(f"H_extrinsic must be 3x3, got {H_extrinsic.shape}")
 
         H = self.K @ H_extrinsic
-        assert H.shape == (3, 3), f"Homography must be 3x3, got {H.shape}"
+        if H.shape != (3, 3):
+            raise ValueError(f"Homography must be 3x3, got {H.shape}")
 
         # Normalize so H[2, 2] = 1 for consistent scale
         if abs(H[2, 2]) < 1e-10:
-            print("Warning: Homography normalization failed (H[2,2] near zero). Returning identity.")
+            logger.warning("Homography normalization failed (H[2,2] near zero). Returning identity.")
             return np.eye(3)
 
         H /= H[2, 2]

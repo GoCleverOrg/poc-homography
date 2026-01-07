@@ -373,10 +373,12 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Construct 3x3 extrinsic homography matrix (NOT 3x4 projection matrix)
         H_extrinsic = np.column_stack([r1, r2, t])
-        assert H_extrinsic.shape == (3, 3), f"H_extrinsic must be 3x3, got {H_extrinsic.shape}"
+        if H_extrinsic.shape != (3, 3):
+            raise ValueError(f"H_extrinsic must be 3x3, got {H_extrinsic.shape}")
 
         H = K @ H_extrinsic
-        assert H.shape == (3, 3), f"Homography must be 3x3, got {H.shape}"
+        if H.shape != (3, 3):
+            raise ValueError(f"Homography must be 3x3, got {H.shape}")
 
         # Normalize so H[2, 2] = 1 for consistent scale
         if abs(H[2, 2]) < self.MIN_DET_THRESHOLD:
