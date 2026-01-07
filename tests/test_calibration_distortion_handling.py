@@ -5,7 +5,6 @@ Verifies that the calibration pipeline operates entirely in distorted image spac
 with original K matrix, using cv2.projectPoints() and cv2.solvePnP() with
 distortion coefficients rather than undistorting frames.
 """
-import ast
 import re
 import pytest
 

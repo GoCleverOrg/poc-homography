@@ -849,9 +849,10 @@ CRS: {crs}</description>
                         k2 = cam_config.get('k2', 0.0)
                         p1 = cam_config.get('p1', 0.0)
                         p2 = cam_config.get('p2', 0.0)
+                        k3 = cam_config.get('k3', 0.0)
                         # Only apply if non-zero coefficients exist
-                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
-                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
+                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0 or k3 != 0.0:
+                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2, k3=k3)
                             distortion_applied = True
                 except Exception as e:
                     print(f"Warning: Could not load distortion coefficients: {e}")
@@ -1183,9 +1184,10 @@ CRS: {crs}</description>
                         k2 = cam_config.get('k2', 0.0)
                         p1 = cam_config.get('p1', 0.0)
                         p2 = cam_config.get('p2', 0.0)
-                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
-                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
-                            print(f"Calibrator using distortion: k1={k1:.6f}, k2={k2:.6f}, p1={p1:.6f}, p2={p2:.6f}")
+                        k3 = cam_config.get('k3', 0.0)
+                        if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0 or k3 != 0.0:
+                            geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2, k3=k3)
+                            print(f"Calibrator using distortion: k1={k1:.6f}, k2={k2:.6f}, p1={p1:.6f}, p2={p2:.6f}, k3={k3:.6f}")
                 except Exception as e:
                     print(f"Warning: Could not load distortion coefficients for calibrator: {e}")
 
@@ -1347,8 +1349,8 @@ CRS: {crs}</description>
                     p2 = cam_config.get('p2', 0.0)
                     k3 = cam_config.get('k3', 0.0)
                     dist_coeffs = np.array([k1, k2, p1, p2, k3])
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: Could not load distortion coefficients for PnP: {e}")
 
         print(f"Using distortion coefficients: {dist_coeffs}")
 
@@ -2629,7 +2631,10 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 print("No distortion coefficients - using zero distortion")
 
             camera_params['dist_coeffs'] = dist_coeffs.tolist()
-            camera_params['undistorted'] = False  # Always work in distorted space
+
+        # Always set undistorted=False regardless of K availability
+        # Issue #135: Calibration works in distorted image space
+        camera_params['undistorted'] = False
 
         self.session.camera_frame = frame
         self.session.camera_params = camera_params
@@ -5032,13 +5037,16 @@ def run_server(session: UnifiedSession, port: int = 8765):
                     print(f"Warning: Could not load distortion coefficients: {e}")
 
                 if np.any(dist_coeffs != 0):
-                    print(f"Distortion coefficients loaded: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}")
+                    print(f"Distortion coefficients loaded: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}, p1={dist_coeffs[2]:.6f}, p2={dist_coeffs[3]:.6f}, k3={dist_coeffs[4]:.6f}")
                     print("Frame NOT undistorted - calibration will use distorted image space")
                 else:
                     print("No distortion coefficients - using zero distortion")
 
                 camera_params['dist_coeffs'] = dist_coeffs.tolist()
-                camera_params['undistorted'] = False  # Always work in distorted space
+
+            # Always set undistorted=False regardless of K availability
+            # Issue #135: Calibration works in distorted image space
+            camera_params['undistorted'] = False
 
             session.camera_frame = frame
             session.camera_params = camera_params
