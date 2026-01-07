@@ -26,6 +26,24 @@ Accuracy Notes (UTM via pyproj):
     - High accuracy at all reasonable distances
     - Matches georeferenced imagery exactly
     - Recommended for GCP work with orthorectified maps
+
+Axis Order Convention (CRITICAL):
+    All pyproj.Transformer instances MUST use always_xy=True to enforce
+    traditional GIS axis ordering:
+    - EPSG:4326 (WGS84 GPS): (longitude, latitude) - NOT authority order
+    - EPSG:25830 (UTM 30N): (easting, northing)
+
+    Why always_xy=True is required:
+    - EPSG:4326 authority definition specifies (latitude, longitude) order
+    - GIS tools traditionally use (longitude, latitude) for consistency with (x,y)
+    - Without always_xy=True, axis order depends on CRS metadata (unpredictable)
+    - Axis swaps cause silent catastrophic calibration failures
+
+    Correct usage:
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
+        easting, northing = transformer.transform(longitude, latitude)
+
+    See: https://pyproj4.github.io/pyproj/stable/api/transformer.html#pyproj.transformer.Transformer.from_crs
 """
 
 import math
