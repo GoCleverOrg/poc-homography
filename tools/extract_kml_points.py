@@ -24,8 +24,10 @@ if parent_dir not in sys.path:
 
 from poc_homography.server_utils import find_available_port
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
+from poc_homography.geotiff_utils import apply_geotransform
 
-# Default georeferencing for the Valencia cartography
+# Default georeferencing for the Valencia cartography (legacy 4-parameter format)
+# NOTE: This is kept for backward compatibility with command-line overrides
 DEFAULT_CONFIG = {
     "origin_easting": 737575.05,
     "origin_northing": 4391595.45,
@@ -47,9 +49,14 @@ class PointExtractor:
         )
 
     def pixel_to_utm(self, px: float, py: float) -> tuple:
-        """Convert pixel coordinates to UTM."""
-        easting = self.config["origin_easting"] + (px * self.config["pixel_size_x"])
-        northing = self.config["origin_northing"] + (py * self.config["pixel_size_y"])
+        """
+        Convert pixel coordinates to UTM using 6-parameter affine geotransform.
+
+        Uses the GDAL GeoTransform formula:
+            easting = GT[0] + px*GT[1] + py*GT[2]
+            northing = GT[3] + px*GT[4] + py*GT[5]
+        """
+        easting, northing = apply_geotransform(px, py, self.config['geotransform'])
         return easting, northing
 
     def pixel_to_latlon(self, px: float, py: float) -> tuple:
@@ -64,10 +71,35 @@ class PointExtractor:
         return easting, northing
 
     def latlon_to_pixel(self, lat: float, lon: float) -> tuple:
-        """Convert lat/lon to pixel coordinates."""
+        """
+        Convert lat/lon to pixel coordinates using inverse affine transform.
+
+        For north-up images (GT[2]=0, GT[4]=0), this simplifies to:
+            px = (easting - GT[0]) / GT[1]
+            py = (northing - GT[3]) / GT[5]
+
+        For rotated images, we need to solve the 2x2 system.
+        """
         easting, northing = self.latlon_to_utm(lat, lon)
-        px = (easting - self.config["origin_easting"]) / self.config["pixel_size_x"]
-        py = (northing - self.config["origin_northing"]) / self.config["pixel_size_y"]
+        gt = self.config['geotransform']
+
+        # Inverse affine transform
+        # For general case (with rotation):
+        # [easting - GT[0]]   [GT[1]  GT[2]]   [px]
+        # [northing - GT[3]] = [GT[4]  GT[5]] * [py]
+        #
+        # Solve: [px, py] = inv([[GT[1], GT[2]], [GT[4], GT[5]]]) @ [easting-GT[0], northing-GT[3]]
+
+        det = gt[1] * gt[5] - gt[2] * gt[4]
+        if abs(det) < 1e-10:
+            raise ValueError("Geotransform matrix is singular (cannot invert)")
+
+        de = easting - gt[0]
+        dn = northing - gt[3]
+
+        px = (gt[5] * de - gt[2] * dn) / det
+        py = (-gt[4] * de + gt[1] * dn) / det
+
         return px, py
 
     def parse_kml(self, kml_text: str) -> list:
@@ -481,8 +513,12 @@ def create_html(image_path: str, config: dict) -> str:
         });
 
         function pixelToUTM(px, py) {
-            const easting = config.origin_easting + (px * config.pixel_size_x);
-            const northing = config.origin_northing + (py * config.pixel_size_y);
+            // Apply GDAL 6-parameter affine geotransform
+            // easting = GT[0] + px*GT[1] + py*GT[2]
+            // northing = GT[3] + px*GT[4] + py*GT[5]
+            const gt = config.geotransform;
+            const easting = gt[0] + px * gt[1] + py * gt[2];
+            const northing = gt[3] + px * gt[4] + py * gt[5];
             return { easting, northing };
         }
 
@@ -925,8 +961,7 @@ def run_server(image_path: str, config: dict, port: int = 8765):
         print(f"KML Point Extractor running at: {url}")
         print(f"Image: {image_path}")
         print(f"CRS: {config['crs']}")
-        print(f"Origin: E {config['origin_easting']}, N {config['origin_northing']}")
-        print(f"GSD: {abs(config['pixel_size_x'])}m")
+        print(f"Geotransform: {config['geotransform']}")
         print(f"{'='*60}")
         print("\nPress Ctrl+C to stop\n")
 
@@ -976,26 +1011,53 @@ def main():
 
         geotiff_params = camera_config['geotiff_params']
 
-        # Map camera config fields to DEFAULT_CONFIG format
-        # Note: camera config uses 'utm_crs' but we use 'crs' internally
-        config = {
-            "origin_easting": geotiff_params['origin_easting'],
-            "origin_northing": geotiff_params['origin_northing'],
-            "pixel_size_x": geotiff_params['pixel_size_x'],
-            "pixel_size_y": geotiff_params['pixel_size_y'],
-            "crs": geotiff_params['utm_crs']
-        }
+        # Check for new geotransform format vs old format
+        if 'geotransform' in geotiff_params:
+            # New format: use geotransform array directly
+            config = {
+                "geotransform": geotiff_params['geotransform'],
+                "crs": geotiff_params['utm_crs']
+            }
+            print(f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)")
+        else:
+            # Old format: build geotransform from separate parameters
+            config = {
+                "geotransform": [
+                    geotiff_params['origin_easting'],
+                    geotiff_params['pixel_size_x'],
+                    0,  # row_rotation (assumed 0 for legacy format)
+                    geotiff_params['origin_northing'],
+                    0,  # col_rotation (assumed 0 for legacy format)
+                    geotiff_params['pixel_size_y']
+                ],
+                "crs": geotiff_params['utm_crs']
+            }
+            print(f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)")
 
-        print(f"Loaded georeferencing parameters from camera: {args.camera}")
+    # Command-line arguments override camera config (build custom geotransform)
+    if args.origin_e is not None or args.origin_n is not None or args.gsd is not None:
+        # Start with current geotransform or default
+        gt = config.get('geotransform', [
+            DEFAULT_CONFIG['origin_easting'],
+            DEFAULT_CONFIG['pixel_size_x'],
+            0,
+            DEFAULT_CONFIG['origin_northing'],
+            0,
+            DEFAULT_CONFIG['pixel_size_y']
+        ])
 
-    # Command-line arguments override camera config
-    if args.origin_e is not None:
-        config['origin_easting'] = args.origin_e
-    if args.origin_n is not None:
-        config['origin_northing'] = args.origin_n
-    if args.gsd is not None:
-        config['pixel_size_x'] = args.gsd
-        config['pixel_size_y'] = -args.gsd
+        # Override specific values
+        if args.origin_e is not None:
+            gt[0] = args.origin_e
+        if args.origin_n is not None:
+            gt[3] = args.origin_n
+        if args.gsd is not None:
+            gt[1] = args.gsd
+            gt[5] = -args.gsd
+
+        config['geotransform'] = gt
+        print(f"Applied command-line overrides to geotransform")
+
     if args.crs is not None:
         config['crs'] = args.crs
 
