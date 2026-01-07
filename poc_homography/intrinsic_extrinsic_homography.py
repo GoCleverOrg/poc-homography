@@ -28,6 +28,7 @@ from poc_homography.homography_interface import (
     GPSPositionMixin
 )
 from poc_homography.coordinate_converter import local_xy_to_gps
+from poc_homography.types import Degrees, Meters, Pixels, Millimeters, Unitless
 
 logger = logging.getLogger(__name__)
 
@@ -105,11 +106,11 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
     def __init__(
         self,
-        width: int,
-        height: int,
-        pixels_per_meter: float = 100.0,
-        sensor_width_mm: float = 7.18,
-        base_focal_length_mm: float = 5.9,
+        width: Pixels,
+        height: Pixels,
+        pixels_per_meter: Unitless = Unitless(100.0),
+        sensor_width_mm: Millimeters = Millimeters(7.18),
+        base_focal_length_mm: Millimeters = Millimeters(5.9),
         **kwargs  # Accept and ignore other kwargs for forward compatibility
     ):
         """
@@ -157,10 +158,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
     def get_intrinsics(
         self,
-        zoom_factor: float,
-        width_px: Optional[int] = None,
-        height_px: Optional[int] = None,
-        sensor_width_mm: Optional[float] = None
+        zoom_factor: Unitless,
+        width_px: Optional[Pixels] = None,
+        height_px: Optional[Pixels] = None,
+        sensor_width_mm: Optional[Millimeters] = None
     ) -> np.ndarray:
         """
         Calculate camera intrinsic matrix K from zoom factor and sensor specs.
@@ -230,7 +231,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         ])
         return K
 
-    def _get_rotation_matrix(self, pan_deg: float, tilt_deg: float) -> np.ndarray:
+    def _get_rotation_matrix(self, pan_deg: Degrees, tilt_deg: Degrees) -> np.ndarray:
         """
         Calculate rotation matrix from world to camera coordinates.
 
@@ -301,8 +302,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self,
         K: np.ndarray,
         camera_position: np.ndarray,
-        pan_deg: float,
-        tilt_deg: float
+        pan_deg: Degrees,
+        tilt_deg: Degrees
     ) -> np.ndarray:
         """
         Calculate homography matrix mapping world ground plane (Z=0) to image.
@@ -478,7 +479,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         return base_confidence * edge_factor
 
-    def _local_to_gps(self, x_meters: float, y_meters: float) -> Tuple[float, float]:
+    def _local_to_gps(self, x_meters: Meters, y_meters: Meters) -> Tuple[Degrees, Degrees]:
         """
         Convert local metric coordinates to GPS coordinates.
 
@@ -510,7 +511,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     def _project_image_point_to_world(
         self,
         image_point: Tuple[float, float]
-    ) -> Tuple[float, float]:
+    ) -> Tuple[Meters, Meters]:
         """
         Project image point to world ground plane coordinates (meters).
 
@@ -540,10 +541,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
     def _world_to_map_pixels(
         self,
-        x_world: float,
-        y_world: float,
-        map_width: int,
-        map_height: int
+        x_world: Meters,
+        y_world: Meters,
+        map_width: Pixels,
+        map_height: Pixels
     ) -> Tuple[int, int]:
         """
         Convert world coordinates (meters) to map pixel coordinates.

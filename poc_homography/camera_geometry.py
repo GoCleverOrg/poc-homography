@@ -5,6 +5,10 @@ import math
 import logging
 from typing import List, Tuple, Union, Dict, Any, Optional
 
+from poc_homography.types import (
+    Degrees, Meters, Pixels, Millimeters, Unitless
+)
+
 logger = logging.getLogger(__name__)
 
 class CameraGeometry:
@@ -81,7 +85,7 @@ class CameraGeometry:
     # Beyond this, projections likely indicate near-horizontal viewing angles
     MAX_DISTANCE_HEIGHT_RATIO = 20.0
 
-    def __init__(self, w: int, h: int):
+    def __init__(self, w: Pixels, h: Pixels):
         """
         Initializes geometry class with image dimensions.
 
@@ -123,7 +127,12 @@ class CameraGeometry:
         self._use_distortion = False
 
     @staticmethod
-    def get_intrinsics(zoom_factor: float, W_px: int = 1920, H_px: int = 1080, sensor_width_mm: float = 6.78) -> np.ndarray:
+    def get_intrinsics(
+        zoom_factor: Unitless,
+        W_px: Pixels = Pixels(1920),
+        H_px: Pixels = Pixels(1080),
+        sensor_width_mm: Millimeters = Millimeters(6.78)
+    ) -> np.ndarray:
         """
         Calculates the 3x3 Intrinsic Matrix K based on camera specifications and zoom factor.
 
@@ -323,11 +332,11 @@ class CameraGeometry:
 
     def set_distortion_coefficients(
         self,
-        k1: float = 0.0,
-        k2: float = 0.0,
-        p1: float = 0.0,
-        p2: float = 0.0,
-        k3: float = 0.0
+        k1: Unitless = Unitless(0.0),
+        k2: Unitless = Unitless(0.0),
+        p1: Unitless = Unitless(0.0),
+        p2: Unitless = Unitless(0.0),
+        k3: Unitless = Unitless(0.0)
     ) -> None:
         """
         Set lens distortion coefficients using the OpenCV distortion model.
@@ -506,8 +515,13 @@ class CameraGeometry:
 
         return (u_dist, v_dist)
 
-    def _validate_parameters(self, K: np.ndarray, w_pos: np.ndarray,
-                            pan_deg: float, tilt_deg: float) -> None:
+    def _validate_parameters(
+        self,
+        K: np.ndarray,
+        w_pos: np.ndarray,
+        pan_deg: Degrees,
+        tilt_deg: Degrees
+    ) -> None:
         """
         Validates all camera parameters before setting them.
 
@@ -593,9 +607,15 @@ class CameraGeometry:
                 f"{self.FOV_WARN_MIN_DEG}° and {self.FOV_WARN_MAX_DEG}°."
             )
 
-    def set_camera_parameters(self, K: np.ndarray, w_pos: np.ndarray,
-                              pan_deg: float, tilt_deg: float,
-                              map_width: int, map_height: int):
+    def set_camera_parameters(
+        self,
+        K: np.ndarray,
+        w_pos: np.ndarray,
+        pan_deg: Degrees,
+        tilt_deg: Degrees,
+        map_width: Pixels,
+        map_height: Pixels
+    ):
         """
         Sets all required parameters and calculates the Homography matrix H.
 
@@ -854,7 +874,13 @@ class CameraGeometry:
 
         return pts_map
 
-    def world_to_map(self, Xw: float, Yw: float, sw: int = None, sh: int = None) -> Tuple[int, int]:
+    def world_to_map(
+        self,
+        Xw: Meters,
+        Yw: Meters,
+        sw: Optional[Pixels] = None,
+        sh: Optional[Pixels] = None
+    ) -> Tuple[Pixels, Pixels]:
         """
         Map a world coordinate (meters) to side-panel pixel coordinates.
 
@@ -873,12 +899,12 @@ class CameraGeometry:
         map_center_x = sw // 2
         map_bottom_y = sh
 
-        x_px = int((Xw * self.PPM) + map_center_x)
-        y_px = int(map_bottom_y - (Yw * self.PPM))
+        x_px = Pixels(int((Xw * self.PPM) + map_center_x))
+        y_px = Pixels(int(map_bottom_y - (Yw * self.PPM)))
 
         return x_px, y_px
 
-    def set_height_uncertainty(self, confidence_interval: Tuple[float, float]) -> None:
+    def set_height_uncertainty(self, confidence_interval: Tuple[Meters, Meters]) -> None:
         """
         Set height uncertainty for propagation to future projections.
 
