@@ -314,17 +314,31 @@ def load_geotiff_params(camera_name: str):
 
     geotiff_params = camera_config["geotiff_params"]
 
-    # Validate required parameters
-    required_params = ["origin_easting", "origin_northing", "pixel_size_x", "utm_crs"]
-    missing_params = [p for p in required_params if p not in geotiff_params]
+    # Handle both new (geotransform) and legacy (origin_easting, etc.) formats
+    if 'geotransform' in geotiff_params:
+        # New format: extract values from geotransform array
+        gt = geotiff_params['geotransform']
+        origin_easting = gt[0]
+        origin_northing = gt[3]
+        gsd = abs(gt[1])  # GSD is always positive (pixel width)
+    else:
+        # Legacy format: direct key access
+        required_params = ["origin_easting", "origin_northing", "pixel_size_x"]
+        missing_params = [p for p in required_params if p not in geotiff_params]
 
-    if missing_params:
-        print(f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}", file=sys.stderr)
+        if missing_params:
+            print(f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}", file=sys.stderr)
+            sys.exit(1)
+
+        origin_easting = geotiff_params["origin_easting"]
+        origin_northing = geotiff_params["origin_northing"]
+        gsd = abs(geotiff_params["pixel_size_x"])  # GSD is always positive
+
+    # Validate utm_crs (required in both formats)
+    if "utm_crs" not in geotiff_params:
+        print(f"Error: Camera '{camera_name}' geotiff_params missing 'utm_crs' field.", file=sys.stderr)
         sys.exit(1)
 
-    origin_easting = geotiff_params["origin_easting"]
-    origin_northing = geotiff_params["origin_northing"]
-    gsd = abs(geotiff_params["pixel_size_x"])  # GSD is always positive
     utm_crs = geotiff_params["utm_crs"]
 
     return origin_easting, origin_northing, gsd, utm_crs

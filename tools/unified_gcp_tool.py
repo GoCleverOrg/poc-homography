@@ -50,6 +50,7 @@ if parent_dir not in sys.path:
 
 from poc_homography.server_utils import find_available_port
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
+from poc_homography.geotiff_utils import apply_geotransform
 
 # Import for map-first mode projection
 try:
@@ -305,7 +306,23 @@ class UnifiedSession:
         self.image_path = Path(image_path)
         self.camera_config = camera_config
         self.camera_name = camera_config['name']
-        self.geotiff_params = geotiff_params
+        # Normalize geotiff_params to internal format with geotransform array
+        if 'geotransform' in geotiff_params:
+            # New format: already has geotransform
+            self.geotiff_params = geotiff_params
+        else:
+            # Legacy format: convert to geotransform format
+            self.geotiff_params = {
+                'geotransform': [
+                    geotiff_params['origin_easting'],
+                    geotiff_params['pixel_size_x'],
+                    0,  # row_rotation (assumed 0)
+                    geotiff_params['origin_northing'],
+                    0,  # col_rotation (assumed 0)
+                    geotiff_params['pixel_size_y']
+                ],
+                'utm_crs': geotiff_params['utm_crs']
+            }
 
         # Load cartography frame (georeferenced image for Tab 1)
         self.cartography_frame = cv2.imread(str(image_path))
@@ -350,9 +367,14 @@ class UnifiedSession:
         )
 
     def pixel_to_utm(self, px: float, py: float) -> tuple:
-        """Convert pixel coordinates to UTM."""
-        easting = self.geotiff_params['origin_easting'] + (px * self.geotiff_params['pixel_size_x'])
-        northing = self.geotiff_params['origin_northing'] + (py * self.geotiff_params['pixel_size_y'])
+        """
+        Convert pixel coordinates to UTM using 6-parameter affine geotransform.
+
+        Uses the GDAL GeoTransform formula:
+            easting = GT[0] + px*GT[1] + py*GT[2]
+            northing = GT[3] + px*GT[4] + py*GT[5]
+        """
+        easting, northing = apply_geotransform(px, py, self.geotiff_params['geotransform'])
         return easting, northing
 
     def pixel_to_latlon(self, px: float, py: float) -> tuple:
@@ -367,10 +389,29 @@ class UnifiedSession:
         return easting, northing
 
     def latlon_to_pixel(self, lat: float, lon: float) -> tuple:
-        """Convert lat/lon to pixel coordinates."""
+        """
+        Convert lat/lon to pixel coordinates using inverse affine transform.
+
+        For north-up images (GT[2]=0, GT[4]=0), this simplifies to:
+            px = (easting - GT[0]) / GT[1]
+            py = (northing - GT[3]) / GT[5]
+
+        For rotated images, we need to solve the 2x2 system.
+        """
         easting, northing = self.latlon_to_utm(lat, lon)
-        px = (easting - self.geotiff_params['origin_easting']) / self.geotiff_params['pixel_size_x']
-        py = (northing - self.geotiff_params['origin_northing']) / self.geotiff_params['pixel_size_y']
+        gt = self.geotiff_params['geotransform']
+
+        # Inverse affine transform
+        det = gt[1] * gt[5] - gt[2] * gt[4]
+        if abs(det) < 1e-10:
+            raise ValueError("Geotransform matrix is singular (cannot invert)")
+
+        de = easting - gt[0]
+        dn = northing - gt[3]
+
+        px = (gt[5] * de - gt[2] * dn) / det
+        py = (-gt[4] * de + gt[1] * dn) / det
+
         return px, py
 
     def _init_camera_params_from_config(self):
@@ -3694,8 +3735,12 @@ def generate_unified_html(session: UnifiedSession) -> str:
         }});
 
         function pixelToUTM(px, py) {{
-            const easting = config.origin_easting + (px * config.pixel_size_x);
-            const northing = config.origin_northing + (py * config.pixel_size_y);
+            // Apply GDAL 6-parameter affine geotransform
+            // easting = GT[0] + px*GT[1] + py*GT[2]
+            // northing = GT[3] + px*GT[4] + py*GT[5]
+            const gt = config.geotransform;
+            const easting = gt[0] + px * gt[1] + py * gt[2];
+            const northing = gt[3] + px * gt[4] + py * gt[5];
             return {{ easting, northing }};
         }}
 
@@ -4831,9 +4876,17 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         + (5-T+9*C+4*C*C)*A*A*A*A/24
                         + (61-58*T+T*T+600*C-330*e_prime2)*A*A*A*A*A*A/720));
 
-            // Convert UTM to pixel coordinates
-            const pixelX = (easting - config.origin_easting) / config.pixel_size_x;
-            const pixelY = (northing - config.origin_northing) / config.pixel_size_y;
+            // Convert UTM to pixel coordinates using inverse affine transform
+            const gt = config.geotransform;
+            const det = gt[1] * gt[5] - gt[2] * gt[4];
+            if (Math.abs(det) < 1e-10) {{
+                console.error('Geotransform matrix is singular');
+                return {{ x: 0, y: 0 }};
+            }}
+            const de = easting - gt[0];
+            const dn = northing - gt[3];
+            const pixelX = (gt[5] * de - gt[2] * dn) / det;
+            const pixelY = (-gt[4] * de + gt[1] * dn) / det;
 
             return {{ x: pixelX, y: pixelY }};
         }}
@@ -5046,8 +5099,9 @@ def run_server(session: UnifiedSession, port: int = 8765):
         print(f"Image: {session.image_path}")
         print(f"Size: {session.frame_width}x{session.frame_height}")
         print(f"CRS: {session.utm_crs}")
-        print(f"Origin: E {session.geotiff_params['origin_easting']}, N {session.geotiff_params['origin_northing']}")
-        print(f"GSD: {abs(session.geotiff_params['pixel_size_x'])}m")
+        gt = session.geotiff_params['geotransform']
+        print(f"Geotransform: {gt}")
+        print(f"GSD: {abs(gt[1])}m")
         print(f"{'='*60}")
         print("\nTab 1: KML Extractor - Click to add points")
         print("Tab 2: GCP Capture - View projected points (enabled after adding points)")
@@ -5121,8 +5175,14 @@ def main():
 
     print(f"Loaded configuration for camera: {args.camera}")
     print(f"  UTM CRS: {geotiff_params['utm_crs']}")
-    print(f"  Origin: E {geotiff_params['origin_easting']}, N {geotiff_params['origin_northing']}")
-    print(f"  Pixel size: {geotiff_params['pixel_size_x']} x {geotiff_params['pixel_size_y']} m")
+    if 'geotransform' in geotiff_params:
+        gt = geotiff_params['geotransform']
+        print(f"  Geotransform: {gt}")
+        print(f"  Origin: E {gt[0]}, N {gt[3]}")
+        print(f"  Pixel size: {gt[1]} x {gt[5]} m")
+    else:
+        print(f"  Origin: E {geotiff_params['origin_easting']}, N {geotiff_params['origin_northing']}")
+        print(f"  Pixel size: {geotiff_params['pixel_size_x']} x {geotiff_params['pixel_size_y']} m")
 
     # Create unified session
     try:

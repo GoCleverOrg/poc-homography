@@ -3,6 +3,7 @@
 import numpy as np
 import math
 import logging
+import warnings
 from typing import List, Tuple, Union, Dict, Any, Optional
 
 from poc_homography.types import (
@@ -184,71 +185,88 @@ class CameraGeometry:
 
     def set_geotiff_params(
         self,
-        geotiff_params: Optional[Dict[str, float]],
+        geotiff_params: Optional[Dict[str, Any]],
         camera_utm_position: Optional[Tuple[float, float]]
     ) -> None:
         """
         Set GeoTIFF parameters to compute the affine transformation matrix A.
 
         The A matrix transforms reference image pixels to world ground plane coordinates
-        (UTM meters). For georeferenced ortho imagery (GeoTIFF), this transformation
-        consists of:
-        - Scale: meters per pixel (pixel_size_x, pixel_size_y from GeoTIFF metadata)
-        - Translation: offset from reference image origin to camera position in world coordinates
+        (UTM meters). Supports GDAL's 6-parameter GeoTransform for full affine transformation
+        including rotation (e.g., for rotated rasters).
 
-        Mathematical Formula:
-            A = [[pixel_size_x, 0,           t_x],
-                 [0,            pixel_size_y, t_y],
-                 [0,            0,            1  ]]
+        GDAL GeoTransform Formula:
+            Xgeo = GT[0] + P*GT[1] + L*GT[2]
+            Ygeo = GT[3] + P*GT[4] + L*GT[5]
+
+        A Matrix Construction:
+            A = [[GT[1], GT[2], t_x],
+                 [GT[4], GT[5], t_y],
+                 [0,     0,     1  ]]
 
         Where:
-            t_x = origin_easting - camera_easting
-            t_y = origin_northing - camera_northing
+            GT[0]: X-coordinate of upper-left corner (origin easting)
+            GT[1]: Pixel width (meters per pixel in X direction)
+            GT[2]: Row rotation (typically 0 for north-up images)
+            GT[3]: Y-coordinate of upper-left corner (origin northing)
+            GT[4]: Column rotation (typically 0 for north-up images)
+            GT[5]: Pixel height (meters per pixel in Y direction, typically negative)
+            t_x = GT[0] - camera_easting
+            t_y = GT[3] - camera_northing
 
-        Coordinate System Convention:
-            - World coordinates: UTM (easting, northing) in meters
-            - Reference image: Pixel coordinates with origin at top-left
-            - A matrix converts reference pixels to world UTM coordinates
+        Pixel Origin Convention:
+            GDAL GeoTransform references the UPPER-LEFT CORNER of a pixel.
+            This is the standard convention for raster data.
 
         Args:
-            geotiff_params: Dictionary containing GeoTIFF metadata with required keys:
-                - 'pixel_size_x': Pixel size in X direction (meters per pixel)
-                - 'pixel_size_y': Pixel size in Y direction (meters per pixel)
-                - 'origin_easting': UTM easting of reference image origin (meters)
-                - 'origin_northing': UTM northing of reference image origin (meters)
+            geotiff_params: Dictionary containing GeoTIFF metadata. Supports two formats:
+
+                **New format (recommended):**
+                {
+                    'geotransform': [GT0, GT1, GT2, GT3, GT4, GT5]
+                }
+
+                **Legacy format (deprecated):**
+                {
+                    'pixel_size_x': float,
+                    'pixel_size_y': float,
+                    'origin_easting': float,
+                    'origin_northing': float
+                }
+                Note: Legacy format assumes no rotation (GT[2]=0, GT[4]=0).
+                A deprecation warning will be issued if legacy format is used.
+
                 If None, A matrix is set to identity (backward compatibility).
+
             camera_utm_position: Tuple of (easting, northing) for camera position in UTM (meters).
                 If None, A matrix is set to identity (backward compatibility).
 
         Raises:
-            ValueError: If geotiff_params is missing required keys.
-            TypeError: If camera_utm_position is not a tuple.
-            ValueError: If camera_utm_position does not have exactly 2 elements.
+            ValueError: If geotransform has incorrect length or missing required keys.
+            TypeError: If geotransform elements or camera_utm_position are not numeric.
+            ValueError: If geotransform elements are non-finite or pixel sizes are zero.
 
-        Example:
+        Examples:
             >>> geo = CameraGeometry(1920, 1080)
+
+            >>> # New format: north-up raster
             >>> geotiff_params = {
-            ...     'pixel_size_x': 0.5,
-            ...     'pixel_size_y': 0.5,
-            ...     'origin_easting': 500000.0,
-            ...     'origin_northing': 4000000.0
+            ...     'geotransform': [737575.05, 0.15, 0, 4391595.45, 0, -0.15]
             ... }
-            >>> camera_utm_position = (500010.0, 4000020.0)
+            >>> camera_utm_position = (737575.0, 4391595.0)
             >>> geo.set_geotiff_params(geotiff_params, camera_utm_position)
+
+            >>> # New format: rotated raster (22.5° clockwise)
+            >>> geotiff_params_rotated = {
+            ...     'geotransform': [500000, 0.1387, 0.0574, 4400000, 0.0574, -0.1387]
+            ... }
+            >>> camera_utm_position = (500000, 4400000)
+            >>> geo.set_geotiff_params(geotiff_params_rotated, camera_utm_position)
         """
         # Backward compatibility: if either parameter is None, set A to identity
         if geotiff_params is None or camera_utm_position is None:
             self.A = np.eye(3)
             return
-
-        # Validate geotiff_params contains required keys
-        required_keys = ['pixel_size_x', 'pixel_size_y', 'origin_easting', 'origin_northing']
-        for key in required_keys:
-            if key not in geotiff_params:
-                raise ValueError(
-                    f"geotiff_params missing required key: '{key}'. "
-                    f"Required keys: {required_keys}"
-                )
 
         # Validate camera_utm_position is a tuple
         if not isinstance(camera_utm_position, tuple):
@@ -263,37 +281,7 @@ class CameraGeometry:
                 f"got {len(camera_utm_position)} elements"
             )
 
-        # Extract parameters
-        pixel_size_x = geotiff_params['pixel_size_x']
-        pixel_size_y = geotiff_params['pixel_size_y']
-        origin_easting = geotiff_params['origin_easting']
-        origin_northing = geotiff_params['origin_northing']
         camera_easting, camera_northing = camera_utm_position
-
-        # Validate numeric types and values
-        for name, value in [('pixel_size_x', pixel_size_x), ('pixel_size_y', pixel_size_y),
-                            ('origin_easting', origin_easting), ('origin_northing', origin_northing)]:
-            if not isinstance(value, (int, float)):
-                raise TypeError(
-                    f"geotiff_params['{name}'] must be numeric (int or float), "
-                    f"got {type(value).__name__}"
-                )
-            if not np.isfinite(value):
-                raise ValueError(
-                    f"geotiff_params['{name}'] must be finite, got {value}"
-                )
-
-        # Validate pixel sizes are non-zero (can be negative for GeoTIFF Y-axis)
-        # GeoTIFF commonly has negative pixel_size_y because image Y goes down
-        # while geographic northing goes up
-        if pixel_size_x == 0:
-            raise ValueError(
-                f"pixel_size_x must be non-zero, got {pixel_size_x}"
-            )
-        if pixel_size_y == 0:
-            raise ValueError(
-                f"pixel_size_y must be non-zero, got {pixel_size_y}"
-            )
 
         # Validate camera_utm_position values are numeric and finite
         for i, (name, value) in enumerate([('easting', camera_easting), ('northing', camera_northing)]):
@@ -307,28 +295,151 @@ class CameraGeometry:
                     f"camera_utm_position[{i}] ({name}) must be finite, got {value}"
                 )
 
-        # Compute translation components
-        # t_x = origin_easting - camera_easting
-        # t_y = origin_northing - camera_northing
-        t_x = origin_easting - camera_easting
-        t_y = origin_northing - camera_northing
+        # Check format: new geotransform format vs legacy 4-parameter format
+        if 'geotransform' in geotiff_params:
+            # New format: 6-parameter GDAL GeoTransform
+            gt = geotiff_params['geotransform']
 
-        # Construct A matrix
-        self.A = np.array([
-            [pixel_size_x, 0.0, t_x],
-            [0.0, pixel_size_y, t_y],
-            [0.0, 0.0, 1.0]
-        ])
+            # Validate geotransform is a list/tuple
+            if not isinstance(gt, (list, tuple)):
+                raise TypeError(
+                    f"geotransform must be a list or tuple, got {type(gt).__name__}"
+                )
 
-        # Log A matrix computation at INFO level
-        logger.info(
-            f"Computed affine transformation matrix A from GeoTIFF parameters:\n"
-            f"  Pixel size: ({pixel_size_x}, {pixel_size_y}) meters/pixel\n"
-            f"  Reference origin: ({origin_easting}, {origin_northing}) UTM meters\n"
-            f"  Camera position: ({camera_easting}, {camera_northing}) UTM meters\n"
-            f"  Translation: ({t_x}, {t_y}) meters\n"
-            f"  A matrix:\n{self.A}"
-        )
+            # Validate geotransform has exactly 6 elements
+            if len(gt) != 6:
+                raise ValueError(
+                    f"geotransform must have exactly 6 elements (GDAL GeoTransform), "
+                    f"got {len(gt)} elements"
+                )
+
+            # Validate all elements are numeric and finite
+            for i, val in enumerate(gt):
+                if not isinstance(val, (int, float)):
+                    raise TypeError(
+                        f"geotransform[{i}] must be numeric (int or float), "
+                        f"got {type(val).__name__}"
+                    )
+                if not np.isfinite(val):
+                    raise ValueError(
+                        f"geotransform[{i}] must be finite, got {val}"
+                    )
+
+            # Validate pixel sizes (GT[1] and GT[5]) are non-zero
+            if gt[1] == 0:
+                raise ValueError(
+                    f"GT[1] (pixel width) must be non-zero, got {gt[1]}"
+                )
+            if gt[5] == 0:
+                raise ValueError(
+                    f"GT[5] (pixel height) must be non-zero, got {gt[5]}"
+                )
+
+            # Extract GeoTransform parameters
+            origin_easting = gt[0]
+            pixel_width = gt[1]
+            row_rotation = gt[2]
+            origin_northing = gt[3]
+            col_rotation = gt[4]
+            pixel_height = gt[5]
+
+            # Compute translation components
+            t_x = origin_easting - camera_easting
+            t_y = origin_northing - camera_northing
+
+            # Construct A matrix with rotation terms
+            self.A = np.array([
+                [pixel_width, row_rotation, t_x],
+                [col_rotation, pixel_height, t_y],
+                [0.0, 0.0, 1.0]
+            ])
+
+            # Log A matrix computation at INFO level
+            rotation_info = ""
+            if row_rotation != 0 or col_rotation != 0:
+                rotation_info = f"\n  Rotation: GT[2]={row_rotation}, GT[4]={col_rotation} (rotated raster)"
+
+            logger.info(
+                f"Computed affine transformation matrix A from GeoTransform:\n"
+                f"  GeoTransform: {gt}{rotation_info}\n"
+                f"  Reference origin: ({origin_easting}, {origin_northing}) UTM meters\n"
+                f"  Camera position: ({camera_easting}, {camera_northing}) UTM meters\n"
+                f"  Translation: ({t_x}, {t_y}) meters\n"
+                f"  A matrix:\n{self.A}"
+            )
+
+        else:
+            # Legacy format: 4-parameter (pixel_size_x, pixel_size_y, origin_easting, origin_northing)
+            # Issue deprecation warning
+            warnings.warn(
+                "Using legacy geotiff_params format with separate keys "
+                "(pixel_size_x, pixel_size_y, origin_easting, origin_northing) is deprecated. "
+                "Please use the new format with 'geotransform' key containing a 6-element array. "
+                "Legacy format assumes no rotation (GT[2]=0, GT[4]=0). "
+                "To convert: geotiff_params = {'geotransform': [origin_easting, pixel_size_x, 0, "
+                "origin_northing, 0, pixel_size_y]}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+
+            # Validate legacy format contains required keys
+            required_keys = ['pixel_size_x', 'pixel_size_y', 'origin_easting', 'origin_northing']
+            for key in required_keys:
+                if key not in geotiff_params:
+                    raise ValueError(
+                        f"geotiff_params missing required key: '{key}'. "
+                        f"Required keys: {required_keys}"
+                    )
+
+            # Extract legacy parameters
+            pixel_size_x = geotiff_params['pixel_size_x']
+            pixel_size_y = geotiff_params['pixel_size_y']
+            origin_easting = geotiff_params['origin_easting']
+            origin_northing = geotiff_params['origin_northing']
+
+            # Validate numeric types and values
+            for name, value in [('pixel_size_x', pixel_size_x), ('pixel_size_y', pixel_size_y),
+                                ('origin_easting', origin_easting), ('origin_northing', origin_northing)]:
+                if not isinstance(value, (int, float)):
+                    raise TypeError(
+                        f"geotiff_params['{name}'] must be numeric (int or float), "
+                        f"got {type(value).__name__}"
+                    )
+                if not np.isfinite(value):
+                    raise ValueError(
+                        f"geotiff_params['{name}'] must be finite, got {value}"
+                    )
+
+            # Validate pixel sizes are non-zero
+            if pixel_size_x == 0:
+                raise ValueError(
+                    f"pixel_size_x must be non-zero, got {pixel_size_x}"
+                )
+            if pixel_size_y == 0:
+                raise ValueError(
+                    f"pixel_size_y must be non-zero, got {pixel_size_y}"
+                )
+
+            # Compute translation components
+            t_x = origin_easting - camera_easting
+            t_y = origin_northing - camera_northing
+
+            # Construct A matrix (no rotation)
+            self.A = np.array([
+                [pixel_size_x, 0.0, t_x],
+                [0.0, pixel_size_y, t_y],
+                [0.0, 0.0, 1.0]
+            ])
+
+            # Log A matrix computation at INFO level
+            logger.info(
+                f"Computed affine transformation matrix A from legacy GeoTIFF parameters:\n"
+                f"  Pixel size: ({pixel_size_x}, {pixel_size_y}) meters/pixel\n"
+                f"  Reference origin: ({origin_easting}, {origin_northing}) UTM meters\n"
+                f"  Camera position: ({camera_easting}, {camera_northing}) UTM meters\n"
+                f"  Translation: ({t_x}, {t_y}) meters\n"
+                f"  A matrix:\n{self.A}"
+            )
 
     def set_distortion_coefficients(
         self,

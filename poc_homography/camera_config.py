@@ -63,11 +63,11 @@ CAMERAS = [
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
         # GeoTIFF reference parameters for georeferencing
+        # Updated to use GDAL 6-parameter GeoTransform format (Issue #133)
+        # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
+        # For north-up rasters, row_rotation=0 and col_rotation=0
         "geotiff_params": {
-            "origin_easting": 737575.05,
-            "origin_northing": 4391595.45,
-            "pixel_size_x": 0.15,
-            "pixel_size_y": -0.15,
+            "geotransform": [737575.05, 0.15, 0, 4391595.45, 0, -0.15],
             "utm_crs": "EPSG:25830"
         },
         "description": "Valte camera location"
