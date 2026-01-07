@@ -308,14 +308,43 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         """
         Calculate homography matrix mapping world ground plane (Z=0) to image.
 
-        Mathematical derivation:
-            - Camera position in world: C = [Xw, Yw, Zw]
-            - Rotation from world to camera: R (3x3)
-            - Translation: t = -R @ C (world origin position in camera frame)
-            - For ground plane (Z=0): P_world = [X, Y, 0]
-            - Projection: p_image = K @ [R @ P_world + t]
-            - Since Z=0, homography becomes: H = K @ [r1, r2, t]
-              where r1, r2 are first two columns of R
+        Coordinate Frame Conventions:
+            World Frame:
+                - Origin: Arbitrary reference point (camera position or scene center)
+                - Axes: X=East (meters), Y=North (meters), Z=Up (meters)
+                - Ground plane: Z=0
+                - Right-handed coordinate system
+
+            Camera Frame:
+                - Origin: Camera optical center
+                - Axes: X=Right (meters), Y=Down (meters), Z=Forward (meters, optical axis)
+                - Transformation: P_camera = R @ P_world + t, where t = -R @ C
+                - Right-handed coordinate system (standard computer vision)
+
+            Image Frame:
+                - Origin: Top-left corner of image
+                - Axes: u=horizontal (pixels, right), v=vertical (pixels, down)
+                - Projection: p_image = K @ P_camera
+
+        Mathematical Derivation (Planar Homography for Z=0 Ground Plane):
+            Step 1 - General 3D projection:
+                P_camera = R @ P_world + t
+                p_image ~ K @ P_camera = K @ (R @ P_world + t)
+
+            Step 2 - For ground plane Z=0, P_world = [X, Y, 0]^T:
+                Rotation matrix R = [r1, r2, r3] (columns)
+                R @ [X, Y, 0]^T = r1*X + r2*Y + r3*0 = r1*X + r2*Y
+
+            Step 3 - Substitute into projection:
+                p_image ~ K @ (r1*X + r2*Y + t)
+                        = K @ [r1, r2, t] @ [X, Y, 1]^T
+
+            Step 4 - Define homography:
+                H = K @ [r1, r2, t]
+                This is a 3x3 matrix (NOT 3x4 projection matrix)
+                Maps 2D ground plane [X, Y, 1] to 2D image [u, v, 1]
+
+            Normalization: H is normalized so H[2,2] = 1 for numerical stability.
 
         Args:
             K: 3x3 camera intrinsic matrix
@@ -324,7 +353,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             tilt_deg: Tilt angle in degrees
 
         Returns:
-            H: 3x3 homography matrix mapping [X_world, Y_world, 1] -> [u, v, 1]
+            H (np.ndarray): 3x3 homography matrix mapping [X_world, Y_world, 1] -> [u, v, 1]
         """
         # Get rotation matrix
         R = self._get_rotation_matrix(pan_deg, tilt_deg)
@@ -333,18 +362,23 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         C = camera_position
 
         # Translation from camera to world origin: t = -R @ C
+        # This gives the position of the world origin in camera frame
         t = -R @ C
 
         # Build homography: H = K @ [r1, r2, t]
-        # r1, r2 are the first two columns of R (corresponding to X and Y axes)
-        r1 = R[:, 0]
-        r2 = R[:, 1]
+        # r1, r2 are the first two COLUMNS of R (corresponding to world X and Y axes)
+        # This is correct because for Z=0: R @ [X, Y, 0]^T = r1*X + r2*Y
+        r1 = R[:, 0]  # Column 0: world X-axis in camera frame
+        r2 = R[:, 1]  # Column 1: world Y-axis in camera frame
 
+        # Construct 3x3 extrinsic homography matrix (NOT 3x4 projection matrix)
         H_extrinsic = np.column_stack([r1, r2, t])
+        assert H_extrinsic.shape == (3, 3), f"H_extrinsic must be 3x3, got {H_extrinsic.shape}"
 
         H = K @ H_extrinsic
+        assert H.shape == (3, 3), f"Homography must be 3x3, got {H.shape}"
 
-        # Normalize so H[2, 2] = 1
+        # Normalize so H[2, 2] = 1 for consistent scale
         if abs(H[2, 2]) < self.MIN_DET_THRESHOLD:
             logger.warning(
                 f"Homography normalization failed (H[2,2]={H[2,2]:.2e}). Returning identity."
