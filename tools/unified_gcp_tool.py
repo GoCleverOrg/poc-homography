@@ -823,54 +823,27 @@ CRS: {crs}</description>
             # The transformation chain is:
             #   Cartography pixels → UTM → Local XY → Camera pixels
             #
-            # This can be expressed as: H_total = H_camera @ T_pixel_to_localXY
-            # where T_pixel_to_localXY is an affine transformation (3x3 matrix)
+            # This can be expressed as: H_total = H_camera @ A
+            # where A is the affine transformation matrix (CameraGeometry.A)
             # =================================================================
 
             # Get camera's UTM coordinates
             camera_easting, camera_northing = utm_converter.gps_to_utm(camera_lat, camera_lon)
             print(f"Camera UTM: E={camera_easting:.2f}, N={camera_northing:.2f}")
 
-            # Build T_pixel_to_localXY: transforms cartography pixels to local XY
-            # Cartography pixel (px, py) → Local XY (x, y):
-            #   easting = origin_easting + px * pixel_size_x
-            #   northing = origin_northing + py * pixel_size_y
-            #   x = easting - camera_easting
-            #   y = northing - camera_northing
-            #
-            # Combined:
-            #   x = pixel_size_x * px + (origin_easting - camera_easting)
-            #   y = pixel_size_y * py + (origin_northing - camera_northing)
-            #
-            # In homogeneous coordinates:
-            #   [x]   [pixel_size_x  0            dx] [px]
-            #   [y] = [0             pixel_size_y dy] [py]
-            #   [1]   [0             0            1 ] [1 ]
-            # where dx = origin_easting - camera_easting
-            #       dy = origin_northing - camera_northing
 
-            pixel_size_x = self.geotiff_params['pixel_size_x']
-            pixel_size_y = self.geotiff_params['pixel_size_y']
-            origin_easting = self.geotiff_params['origin_easting']
-            origin_northing = self.geotiff_params['origin_northing']
+            # Set geotiff parameters to compute the A matrix
+            # A matrix transforms reference image pixels to world ground plane coordinates
+            geo.set_geotiff_params(self.geotiff_params, (camera_easting, camera_northing))
 
-            dx = origin_easting - camera_easting
-            dy = origin_northing - camera_northing
+            # A matrix computed during set_geotiff_params call above
+            print(f"A matrix (reference pixel to world):")
+            print(f"  pixel_size: ({geo.A[0,0]}, {geo.A[1,1]})")
+            print(f"  translation: ({geo.A[0,2]:.2f}, {geo.A[1,2]:.2f})")
 
-            T_pixel_to_localXY = np.array([
-                [pixel_size_x, 0,            dx],
-                [0,            pixel_size_y, dy],
-                [0,            0,            1 ]
-            ], dtype=np.float64)
-
-            print(f"T_pixel_to_localXY:")
-            print(f"  pixel_size: ({pixel_size_x}, {pixel_size_y})")
-            print(f"  translation: ({dx:.2f}, {dy:.2f})")
-
-            # Compose the total homography: H_total = H_camera @ T_pixel_to_localXY
+            # Compose the total homography: H_total = H_camera @ A
             # This maps cartography pixels directly to camera pixels
-            H_total = geo.H @ T_pixel_to_localXY
-
+            H_total = geo.H @ geo.A
             print(f"H_camera (geo.H):")
             print(geo.H)
             print(f"H_total (composed):")
