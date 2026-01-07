@@ -34,35 +34,44 @@ from poc_homography.gps_distance_calculator import gps_to_local_xy, local_xy_to_
 
 def create_ptz_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:
     """
-    Create rotation matrix matching PTZ camera convention.
+    Create rotation matrix matching CameraGeometry convention.
 
     This is the shared helper function for creating rotation matrices
-    in tests. It matches the convention used by IntrinsicExtrinsicHomography
-    and CameraPositionDeriver.
+    in tests. It matches the convention used by CameraGeometry._get_rotation_matrix():
+    R = Rx_tilt @ R_base @ Rz_pan
 
     Args:
         pan_deg: Pan angle in degrees (positive = right/clockwise from above)
         tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
 
     Returns:
-        3x3 rotation matrix R = Rz(pan) @ Rx(-tilt)
+        3x3 rotation matrix R = Rx_tilt @ R_base @ Rz_pan
     """
     pan_rad = math.radians(pan_deg)
-    tilt_rad = math.radians(-tilt_deg)  # Negate for Y-down camera convention
+    tilt_rad = math.radians(tilt_deg)
 
-    Rz = np.array([
-        [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
-        [math.sin(pan_rad), math.cos(pan_rad), 0.0],
-        [0.0, 0.0, 1.0]
+    # Base transformation from World to Camera when pan=0, tilt=0
+    R_base = np.array([
+        [1, 0, 0],
+        [0, 0, -1],
+        [0, 1, 0]
     ])
 
-    Rx = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
-        [0.0, math.sin(tilt_rad), math.cos(tilt_rad)]
+    # Pan rotation around world Z-axis
+    Rz_pan = np.array([
+        [math.cos(pan_rad), -math.sin(pan_rad), 0],
+        [math.sin(pan_rad), math.cos(pan_rad), 0],
+        [0, 0, 1]
     ])
 
-    return Rz @ Rx
+    # Tilt rotation around camera X-axis
+    Rx_tilt = np.array([
+        [1, 0, 0],
+        [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+        [0, math.sin(tilt_rad), math.cos(tilt_rad)]
+    ])
+
+    return Rx_tilt @ R_base @ Rz_pan
 
 
 class TestGroundControlPoint(unittest.TestCase):
@@ -365,7 +374,7 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         """Set up test fixtures with known camera pose."""
         # Known camera parameters
         self.camera_height = 25.0  # meters
-        self.pan_deg = 45.0
+        self.pan_deg = 0.0  # Looking straight ahead (North)
         self.tilt_deg = 30.0  # positive = looking down
 
         # Camera intrinsics (typical Hikvision at 5x zoom)

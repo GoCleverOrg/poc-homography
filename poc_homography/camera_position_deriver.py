@@ -339,29 +339,29 @@ class CameraPositionDeriver:
             - Tilt range: -90 to 90 degrees
             - Near gimbal lock (tilt ≈ ±90°), pan becomes ambiguous
         """
-        # For R = Rz(pan) @ Rx(tilt), the matrix is:
-        # R = [cos(pan), -sin(pan)*cos(tilt), sin(pan)*sin(tilt)]
-        #     [sin(pan),  cos(pan)*cos(tilt), -cos(pan)*sin(tilt)]
-        #     [0,         sin(tilt),          cos(tilt)]
+        # For R = Rx_tilt @ R_base @ Rz_pan (CameraGeometry convention):
+        # Where R_base converts world (X=East, Y=North, Z=Up) to camera (X=Right, Y=Down, Z=Forward)
         #
-        # However, due to the Y-down camera convention, we use -tilt internally
-        # (see _get_rotation_matrix which uses tilt_rad = math.radians(-tilt_deg))
+        # The rotation matrix elements are:
+        #   R[0,0] = cos(pan)
+        #   R[0,1] = -sin(pan)
+        #   R[2,2] = -sin(tilt)  <-- Independent of pan!
         #
-        # So the actual matrix is R = Rz(pan) @ Rx(-tilt_internal):
-        # R[2,1] = sin(-tilt_internal) = -sin(tilt_internal)
-        # R[2,2] = cos(-tilt_internal) = cos(tilt_internal)
-        #
-        # And we want tilt_deg (Hikvision convention, positive = down)
+        # Extract tilt directly from R[2,2]:
+        # sin(tilt) = -R[2,2], so tilt = asin(-R[2,2])
+        sin_tilt = -R[2, 2]
+        # Clamp to [-1, 1] to handle numerical errors
+        sin_tilt = max(-1.0, min(1.0, sin_tilt))
+        tilt_rad = math.asin(sin_tilt)
+        tilt_deg = math.degrees(tilt_rad)
 
-        # Extract tilt from R[2,1] and R[2,2]
-        # Note: tilt_internal = -tilt_deg (due to Y-down coordinate system)
-        # R[2,1] = sin(-tilt_deg) = -sin(tilt_deg)
-        # R[2,2] = cos(-tilt_deg) = cos(tilt_deg)
-        tilt_rad_internal = math.atan2(R[2, 1], R[2, 2])
-        tilt_deg = -math.degrees(tilt_rad_internal)  # Invert to get Hikvision convention
+        # Extract pan from R[0,0] and R[0,1]:
+        #   R[0,0] = cos(pan), R[0,1] = -sin(pan)
+        #   pan = atan2(-R[0,1], R[0,0]) = atan2(sin(pan), cos(pan))
+        pan_rad = math.atan2(-R[0, 1], R[0, 0])
 
         # Check for gimbal lock (tilt near ±90°)
-        cos_tilt = math.cos(tilt_rad_internal)
+        cos_tilt = math.cos(tilt_rad)
         if abs(cos_tilt) < self.GIMBAL_LOCK_COS_THRESHOLD:
             # Near gimbal lock - pan is mathematically ambiguous
             # At gimbal lock, pan and roll are coupled (only their sum/difference is defined)
@@ -370,14 +370,7 @@ class CameraPositionDeriver:
                 f"Near gimbal lock (tilt={tilt_deg:.1f}°), pan angle is mathematically "
                 f"ambiguous. Setting pan=0.0° (pan and roll are coupled at gimbal lock)."
             )
-            # At tilt = ±90°, R[0,0] = cos(pan±roll), R[1,0] = sin(pan±roll)
-            # Without additional constraints, we cannot separate pan from roll
-            # Convention: set pan to 0 at gimbal lock
             pan_rad = 0.0
-        else:
-            # Normal case: extract pan from R[0,0], R[1,0]
-            # R[0,0] = cos(pan), R[1,0] = sin(pan)
-            pan_rad = math.atan2(R[1, 0], R[0, 0])
 
         pan_deg = math.degrees(pan_rad)
 
@@ -514,6 +507,7 @@ class CameraPositionDeriver:
         # Handle planar PnP ambiguity: when all GCPs are on the ground plane (Z=0),
         # solvePnP may find an equivalent solution with camera below the plane.
         # For PTZ cameras, we know the camera is always above ground, so ensure Z > 0.
+        position_was_flipped = False
         if camera_position[2] < 0:
             logger.debug(
                 f"PnP returned camera below ground (Z={camera_position[2]:.2f}m), "
@@ -524,6 +518,7 @@ class CameraPositionDeriver:
             # The rotation matrix needs to be adjusted for the flipped coordinate
             # This is equivalent to applying a reflection across the XY plane
             R = R @ np.diag([1.0, 1.0, -1.0])
+            position_was_flipped = True
             # Note: rvec/tvec are NOT updated here. The original OpenCV solution
             # is mathematically correct for reprojection - we only flip the
             # interpretation of camera_position and R for the output values.
@@ -532,6 +527,10 @@ class CameraPositionDeriver:
 
         # Extract pan/tilt angles from rotation matrix
         pan_deg, tilt_deg = self._extract_pan_tilt_from_rotation(R)
+
+        # Note: When R is flipped with R @ diag([1,1,-1]), R'[2,2] = -R[2,2].
+        # Since _extract_pan_tilt_from_rotation uses tilt = asin(-R[2,2]),
+        # the flipped R already gives the correct tilt sign. No extra negation needed.
 
         # Compute reprojection errors for quality assessment
         mean_error, max_error, _ = self._compute_reprojection_errors(

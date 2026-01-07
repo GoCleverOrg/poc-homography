@@ -1599,6 +1599,38 @@ CRS: {crs}</description>
             # Camera position in world = -R^T @ tvec
             camera_pos_world = -R.T @ tvec.flatten()
 
+            print(f"\n=== DEBUG PnP ===")
+            print(f"camera_pos_world = ({camera_pos_world[0]:.2f}, {camera_pos_world[1]:.2f}, {camera_pos_world[2]:.2f})")
+            print(f"optical_axis (R[2,:]) = ({optical_axis[0]:.4f}, {optical_axis[1]:.4f}, {optical_axis[2]:.4f})")
+            print(f"Initial pan={pan_deg:.2f}°, tilt={tilt_deg:.2f}° (before flip check)")
+
+            # Handle planar PnP ambiguity: when all GCPs are on the ground plane (Z=0),
+            # solvePnP may find an equivalent solution with camera below the plane.
+            # For PTZ cameras, we know the camera is always above ground, so ensure Z > 0.
+            position_was_flipped = False
+            if camera_pos_world[2] < 0:
+                print(f"\nPnP returned camera below ground (Z={camera_pos_world[2]:.2f}m), flipping to above-ground solution")
+                # Flip the solution: negate Z and adjust rotation accordingly
+                camera_pos_world[2] = -camera_pos_world[2]
+                # The rotation matrix needs to be adjusted for the flipped coordinate
+                # This is equivalent to applying a reflection across the XY plane
+                R = R @ np.diag([1.0, 1.0, -1.0])
+                position_was_flipped = True
+                # Recompute optical axis after rotation adjustment
+                optical_axis = R[2, :]
+                # Recompute pan and tilt
+                pan_rad = math.atan2(optical_axis[0], optical_axis[1])
+                pan_deg = math.degrees(pan_rad)
+                horizontal_component = math.sqrt(optical_axis[0]**2 + optical_axis[1]**2)
+                tilt_rad = math.atan2(-optical_axis[2], horizontal_component)
+                tilt_deg = math.degrees(tilt_rad)
+
+            # Note: When we flip R with R @ diag([1,1,-1]), the optical_axis[2] sign is
+            # already inverted, so the recomputed tilt has the correct sign.
+            # No additional negation needed here.
+            if position_was_flipped:
+                print(f"After flip, tilt={tilt_deg:.1f}° (recomputed from flipped R)")
+
             print(f"\nExtracted parameters:")
             print(f"  Pan: {pan_deg:.2f}°")
             print(f"  Tilt: {tilt_deg:.2f}°")
