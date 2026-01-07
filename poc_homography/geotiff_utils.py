@@ -68,9 +68,12 @@ def apply_geotransform(px: float, py: float, gt: List[float]) -> Tuple[float, fl
         - GT[5] is typically negative because image rows increase downward (Y+)
           while northing increases upward in most projected coordinate systems.
 
-        - This function does NOT validate the geotransform array. Ensure gt has
-          exactly 6 elements before calling.
+        - This function validates that gt has exactly 6 elements and raises
+          ValueError otherwise.
     """
+    if len(gt) != 6:
+        raise ValueError(f"geotransform must have exactly 6 elements, got {len(gt)}")
+
     easting = gt[0] + px * gt[1] + py * gt[2]
     northing = gt[3] + px * gt[4] + py * gt[5]
     return easting, northing

@@ -3,6 +3,7 @@
 import numpy as np
 import math
 import logging
+import warnings
 from typing import List, Tuple, Union, Dict, Any, Optional
 
 from poc_homography.types import (
@@ -262,8 +263,6 @@ class CameraGeometry:
             >>> camera_utm_position = (500000, 4400000)
             >>> geo.set_geotiff_params(geotiff_params_rotated, camera_utm_position)
         """
-        import warnings
-
         # Backward compatibility: if either parameter is None, set A to identity
         if geotiff_params is None or camera_utm_position is None:
             self.A = np.eye(3)
