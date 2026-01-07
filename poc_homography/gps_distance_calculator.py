@@ -11,9 +11,11 @@ from poc_homography.coordinate_converter import (
     gps_to_local_xy,
     local_xy_to_gps
 )
+from poc_homography.types import Degrees, Meters
 
 
-def dms_to_dd(dms_str: str) -> float:
+
+def dms_to_dd(dms_str: str) -> Degrees:
     """
     Convert DMS string to decimal degrees.
 
@@ -42,7 +44,7 @@ def dms_to_dd(dms_str: str) -> float:
     return dd
 
 
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def haversine_distance(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: Degrees) -> Meters:
     """
     Calculate distance between two GPS coordinates using Haversine formula.
 
@@ -71,7 +73,7 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return distance
 
 
-def bearing_between_points(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def bearing_between_points(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: Degrees) -> Degrees:
     """
     Calculate bearing from point 1 to point 2.
 
@@ -95,7 +97,7 @@ def bearing_between_points(lat1: float, lon1: float, lat2: float, lon2: float) -
     return bearing_deg
 
 
-def dd_to_dms(dd: float, is_latitude: bool = True) -> str:
+def dd_to_dms(dd: Degrees, is_latitude: bool = True) -> str:
     """
     Convert decimal degrees to DMS string.
 

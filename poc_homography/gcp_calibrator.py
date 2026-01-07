@@ -58,6 +58,7 @@ Usage Example:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
+from poc_homography.types import Degrees, Meters
 import numpy as np
 import logging
 import copy
@@ -165,8 +166,8 @@ class GCPCalibrator:
         gcps: List[Dict[str, Any]],
         loss_function: str = 'huber',
         loss_scale: float = 1.0,
-        reference_lat: Optional[float] = None,
-        reference_lon: Optional[float] = None,
+        reference_lat: Optional[Degrees] = None,
+        reference_lon: Optional[Degrees] = None,
         utm_crs: Optional[str] = None
     ):
         """

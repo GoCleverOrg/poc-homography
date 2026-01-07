@@ -30,6 +30,7 @@ Accuracy Notes (UTM via pyproj):
 
 import math
 from typing import Tuple, Optional
+from poc_homography.types import Degrees, Meters
 
 try:
     from pyproj import Transformer
@@ -77,7 +78,7 @@ class UTMConverter:
         self._ref_lat: Optional[float] = None
         self._ref_lon: Optional[float] = None
 
-    def set_reference(self, lat: float, lon: float) -> Tuple[float, float]:
+    def set_reference(self, lat: Degrees, lon: Degrees) -> Tuple[Meters, Meters]:
         """
         Set the reference point for local coordinate conversion.
 
@@ -93,7 +94,7 @@ class UTMConverter:
         self._ref_easting, self._ref_northing = self._to_utm.transform(lon, lat)
         return self._ref_easting, self._ref_northing
 
-    def set_reference_utm(self, easting: float, northing: float):
+    def set_reference_utm(self, easting: Meters, northing: Meters):
         """
         Set the reference point directly in UTM coordinates.
 
@@ -107,7 +108,7 @@ class UTMConverter:
         self._ref_lat = lat
         self._ref_lon = lon
 
-    def gps_to_local_xy(self, lat: float, lon: float) -> Tuple[float, float]:
+    def gps_to_local_xy(self, lat: Degrees, lon: Degrees) -> Tuple[Meters, Meters]:
         """
         Convert GPS coordinates to local X, Y relative to reference point.
 
@@ -126,7 +127,7 @@ class UTMConverter:
         y = northing - self._ref_northing
         return x, y
 
-    def utm_to_local_xy(self, easting: float, northing: float) -> Tuple[float, float]:
+    def utm_to_local_xy(self, easting: Meters, northing: Meters) -> Tuple[Meters, Meters]:
         """
         Convert UTM coordinates to local X, Y relative to reference point.
 
@@ -144,7 +145,7 @@ class UTMConverter:
         y = northing - self._ref_northing
         return x, y
 
-    def local_xy_to_gps(self, x: float, y: float) -> Tuple[float, float]:
+    def local_xy_to_gps(self, x: Meters, y: Meters) -> Tuple[Degrees, Degrees]:
         """
         Convert local X, Y coordinates to GPS.
 
@@ -163,7 +164,7 @@ class UTMConverter:
         lon, lat = self._to_wgs84.transform(easting, northing)
         return lat, lon
 
-    def local_xy_to_utm(self, x: float, y: float) -> Tuple[float, float]:
+    def local_xy_to_utm(self, x: Meters, y: Meters) -> Tuple[Meters, Meters]:
         """
         Convert local X, Y coordinates to UTM.
 
@@ -181,7 +182,7 @@ class UTMConverter:
         northing = self._ref_northing + y
         return easting, northing
 
-    def gps_to_utm(self, lat: float, lon: float) -> Tuple[float, float]:
+    def gps_to_utm(self, lat: Degrees, lon: Degrees) -> Tuple[Meters, Meters]:
         """
         Convert GPS to UTM coordinates (no reference point needed).
 
@@ -195,7 +196,7 @@ class UTMConverter:
         easting, northing = self._to_utm.transform(lon, lat)
         return easting, northing
 
-    def utm_to_gps(self, easting: float, northing: float) -> Tuple[float, float]:
+    def utm_to_gps(self, easting: Meters, northing: Meters) -> Tuple[Degrees, Degrees]:
         """
         Convert UTM to GPS coordinates.
 
@@ -230,9 +231,9 @@ def get_utm_converter(utm_crs: str = DEFAULT_UTM_CRS) -> UTMConverter:
     return _utm_converter
 
 
-def gps_to_local_xy_utm(ref_lat: float, ref_lon: float,
-                        lat: float, lon: float,
-                        utm_crs: str = DEFAULT_UTM_CRS) -> Tuple[float, float]:
+def gps_to_local_xy_utm(ref_lat: Degrees, ref_lon: Degrees,
+                        lat: Degrees, lon: Degrees,
+                        utm_crs: str = DEFAULT_UTM_CRS) -> Tuple[Meters, Meters]:
     """
     Convert GPS to local XY using UTM projection (accurate method).
 
@@ -253,9 +254,9 @@ def gps_to_local_xy_utm(ref_lat: float, ref_lon: float,
     return converter.gps_to_local_xy(lat, lon)
 
 
-def local_xy_to_gps_utm(ref_lat: float, ref_lon: float,
-                        x: float, y: float,
-                        utm_crs: str = DEFAULT_UTM_CRS) -> Tuple[float, float]:
+def local_xy_to_gps_utm(ref_lat: Degrees, ref_lon: Degrees,
+                        x: Meters, y: Meters,
+                        utm_crs: str = DEFAULT_UTM_CRS) -> Tuple[Meters, Meters]:
     """
     Convert local XY to GPS using UTM projection (accurate method).
 
@@ -274,8 +275,8 @@ def local_xy_to_gps_utm(ref_lat: float, ref_lon: float,
     return converter.local_xy_to_gps(x, y)
 
 
-def gps_to_local_xy(ref_lat: float, ref_lon: float,
-                    lat: float, lon: float) -> Tuple[float, float]:
+def gps_to_local_xy(ref_lat: Degrees, ref_lon: Degrees,
+                    lat: Degrees, lon: Degrees) -> Tuple[Meters, Meters]:
     """
     Convert GPS coordinates to local X, Y coordinates relative to a reference point.
 
@@ -344,8 +345,8 @@ def gps_to_local_xy(ref_lat: float, ref_lon: float,
     return x, y
 
 
-def local_xy_to_gps(ref_lat: float, ref_lon: float,
-                    x_meters: float, y_meters: float) -> Tuple[float, float]:
+def local_xy_to_gps(ref_lat: Degrees, ref_lon: Degrees,
+                    x_meters: Meters, y_meters: Meters) -> Tuple[Degrees, Degrees]:
     """
     Convert local X, Y coordinates to GPS coordinates (inverse of gps_to_local_xy).
 
@@ -470,7 +471,7 @@ class GCPCoordinateConverter:
         """Return the name of the conversion method being used."""
         return f"UTM ({self.utm_crs})" if self.using_utm else "Equirectangular"
 
-    def set_reference_gps(self, lat: float, lon: float):
+    def set_reference_gps(self, lat: Degrees, lon: Degrees):
         """
         Set the reference point using GPS coordinates.
 
@@ -487,7 +488,7 @@ class GCPCoordinateConverter:
             self._ref_easting = None
             self._ref_northing = None
 
-    def set_reference_utm(self, easting: float, northing: float):
+    def set_reference_utm(self, easting: Meters, northing: Meters):
         """
         Set the reference point using UTM coordinates.
 
@@ -505,7 +506,7 @@ class GCPCoordinateConverter:
         else:
             raise ValueError("UTM reference requires pyproj. Install with: pip install pyproj")
 
-    def gps_to_local(self, lat: float, lon: float) -> Tuple[float, float]:
+    def gps_to_local(self, lat: Degrees, lon: Degrees) -> Tuple[Meters, Meters]:
         """
         Convert GPS coordinates to local X, Y relative to reference.
 
@@ -524,7 +525,7 @@ class GCPCoordinateConverter:
         else:
             return gps_to_local_xy(self._ref_lat, self._ref_lon, lat, lon)
 
-    def utm_to_local(self, easting: float, northing: float) -> Tuple[float, float]:
+    def utm_to_local(self, easting: Meters, northing: Meters) -> Tuple[Meters, Meters]:
         """
         Convert UTM coordinates to local X, Y relative to reference.
 
@@ -544,7 +545,7 @@ class GCPCoordinateConverter:
             # Direct calculation without pyproj
             return easting - self._ref_easting, northing - self._ref_northing
 
-    def local_to_gps(self, x: float, y: float) -> Tuple[float, float]:
+    def local_to_gps(self, x: Meters, y: Meters) -> Tuple[Degrees, Degrees]:
         """
         Convert local X, Y coordinates to GPS.
 
@@ -563,7 +564,7 @@ class GCPCoordinateConverter:
         else:
             return local_xy_to_gps(self._ref_lat, self._ref_lon, x, y)
 
-    def local_to_utm(self, x: float, y: float) -> Tuple[float, float]:
+    def local_to_utm(self, x: Meters, y: Meters) -> Tuple[Meters, Meters]:
         """
         Convert local X, Y coordinates to UTM.
 
@@ -582,7 +583,7 @@ class GCPCoordinateConverter:
         else:
             return self._ref_easting + x, self._ref_northing + y
 
-    def convert_point(self, point: dict) -> Tuple[float, float]:
+    def convert_point(self, point: dict) -> Tuple[Meters, Meters]:
         """
         Convert a GCP point to local X, Y coordinates.
 
