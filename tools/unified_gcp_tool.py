@@ -1000,8 +1000,8 @@ CRS: {crs}</description>
 
         Args:
             observed_pixels: Optional list of observed pixel locations. If not provided,
-                           uses SAM3-detected centroids from camera_mask (if available)
-                           or falls back to projected pixels (which won't improve calibration).
+                           uses frozen observations or SAM3-detected centroids from camera_mask.
+                           Raises ValueError if no real observations are available.
                            Format: [{'name': str, 'pixel_u': float, 'pixel_v': float}, ...]
 
         Returns:
@@ -1018,7 +1018,12 @@ CRS: {crs}</description>
             - 'convergence_info': dict with optimizer details
             - 'suggested_params': dict with suggested new camera parameters
 
-            Returns None if calibration cannot be performed.
+            Returns None if dependencies unavailable (calibrator, geometry, points).
+
+        Raises:
+            ValueError: If no real observations are available (no SAM3 mask, no frozen
+                       observations, no explicit observations), or if fewer than 6 valid
+                       GCPs with real observations are available.
         """
         if not CALIBRATOR_AVAILABLE:
             print("GCPCalibrator not available - cannot run calibration")
@@ -1041,7 +1046,8 @@ CRS: {crs}</description>
             return None
 
         # Determine observed pixel locations
-        # PRIORITY: frozen observations > provided observations > re-match from mask > fallback
+        # PRIORITY: provided observations > frozen observations > extract from mask
+        # Raises ValueError if no observation source is available
         if observed_pixels is not None:
             # Use explicitly provided observed pixels
             obs_by_name = {p['name']: p for p in observed_pixels}
