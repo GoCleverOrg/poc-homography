@@ -838,12 +838,10 @@ CRS: {crs}</description>
             )
 
             # Load and apply distortion coefficients from camera config
-            # Only apply distortion if image is NOT already undistorted
+            # Issue #135: Always work in distorted image space with original K matrix
+            # Distortion is applied via CameraGeometry for homography-based projection
             distortion_applied = False
-            is_undistorted = self.camera_params.get('undistorted', False)
-            if is_undistorted:
-                print("Image is already undistorted - not applying distortion in projection")
-            elif self.camera_name:
+            if self.camera_name:
                 try:
                     cam_config = get_camera_by_name(self.camera_name)
                     if cam_config:
@@ -1175,12 +1173,9 @@ CRS: {crs}</description>
             )
 
             # Apply distortion coefficients to match the projection model
-            # CRITICAL: Only apply if image is NOT already undistorted
-            # If image is undistorted, observed pixels are in undistorted coordinates
-            is_undistorted = self.camera_params.get('undistorted', False)
-            if is_undistorted:
-                print("Calibrator: Image is already undistorted - not applying distortion model")
-            elif self.camera_name:
+            # Issue #135: Always work in distorted image space with original K matrix
+            # CameraGeometry applies distortion for homography-based projection
+            if self.camera_name:
                 try:
                     cam_config = get_camera_by_name(self.camera_name)
                     if cam_config:
@@ -1336,27 +1331,26 @@ CRS: {crs}</description>
             return None
         K = np.array(K)
 
-        # Check if image is already undistorted
-        is_undistorted = self.camera_params.get('undistorted', False)
+        # Get distortion coefficients from camera_params (set during frame capture)
+        # Issue #135: Always use distortion coefficients with cv2.solvePnP/projectPoints
+        # This ensures calibration operates in distorted image space with original K
+        dist_coeffs = np.zeros(5)  # Default: [k1, k2, p1, p2, k3]
+        if 'dist_coeffs' in self.camera_params:
+            dist_coeffs = np.array(self.camera_params['dist_coeffs'])
+        elif self.camera_name:
+            try:
+                cam_config = get_camera_by_name(self.camera_name)
+                if cam_config:
+                    k1 = cam_config.get('k1', 0.0)
+                    k2 = cam_config.get('k2', 0.0)
+                    p1 = cam_config.get('p1', 0.0)
+                    p2 = cam_config.get('p2', 0.0)
+                    k3 = cam_config.get('k3', 0.0)
+                    dist_coeffs = np.array([k1, k2, p1, p2, k3])
+            except Exception:
+                pass
 
-        # Get distortion coefficients
-        if is_undistorted:
-            # Image is already undistorted - use zero distortion for PnP
-            dist_coeffs = np.zeros(4)
-            print("Image is already undistorted - using zero distortion for PnP")
-        else:
-            dist_coeffs = np.zeros(4)  # Default: no distortion
-            if self.camera_name:
-                try:
-                    cam_config = get_camera_by_name(self.camera_name)
-                    if cam_config:
-                        k1 = cam_config.get('k1', 0.0)
-                        k2 = cam_config.get('k2', 0.0)
-                        p1 = cam_config.get('p1', 0.0)
-                        p2 = cam_config.get('p2', 0.0)
-                        dist_coeffs = np.array([k1, k2, p1, p2])
-                except Exception:
-                    pass
+        print(f"Using distortion coefficients: {dist_coeffs}")
 
         # Get camera position as reference for UTM conversion
         camera_lat = self.camera_params.get('camera_lat')
@@ -2610,13 +2604,12 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             image_height=frame_height
         )
 
-        # Undistort the frame using camera intrinsics and distortion coefficients
+        # Store distortion coefficients for use in calibration (no frame undistortion)
+        # Issue #135: Work in distorted image space for consistent calibration
         K = camera_params.get('K')
         if K is not None:
-            K = np.array(K)
-
             # Get distortion coefficients from camera config
-            dist_coeffs = np.zeros(4)
+            dist_coeffs = np.zeros(5)  # [k1, k2, p1, p2, k3]
             try:
                 cam_config = get_camera_by_name(self.session.camera_name)
                 if cam_config:
@@ -2624,37 +2617,19 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     k2 = cam_config.get('k2', 0.0)
                     p1 = cam_config.get('p1', 0.0)
                     p2 = cam_config.get('p2', 0.0)
-                    dist_coeffs = np.array([k1, k2, p1, p2])
+                    k3 = cam_config.get('k3', 0.0)
+                    dist_coeffs = np.array([k1, k2, p1, p2, k3])
             except Exception as e:
                 print(f"Warning: Could not load distortion coefficients: {e}")
 
             if np.any(dist_coeffs != 0):
-                print(f"Undistorting frame with distortion coefficients: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}, p1={dist_coeffs[2]:.6f}, p2={dist_coeffs[3]:.6f}")
-
-                # Use getOptimalNewCameraMatrix for better results (preserves all pixels)
-                new_K, roi = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (frame_width, frame_height), 1, (frame_width, frame_height))
-
-                # Undistort the frame
-                frame = cv2.undistort(frame, K, dist_coeffs, None, new_K)
-
-                # Optionally crop to ROI (remove black borders)
-                # x, y, w, h = roi
-                # if w > 0 and h > 0:
-                #     frame = frame[y:y+h, x:x+w]
-
-                # Update K matrix in params to reflect undistorted image
-                camera_params['K'] = new_K
-                camera_params['K_original'] = K  # Keep original for reference
-                camera_params['dist_coeffs'] = dist_coeffs.tolist()
-                camera_params['undistorted'] = True
-
-                print(f"Frame undistorted successfully")
+                print(f"Distortion coefficients loaded: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}, p1={dist_coeffs[2]:.6f}, p2={dist_coeffs[3]:.6f}, k3={dist_coeffs[4]:.6f}")
+                print("Frame NOT undistorted - calibration will use distorted image space with cv2.projectPoints/solvePnP")
             else:
-                print("No distortion coefficients - frame not undistorted")
-                camera_params['undistorted'] = False
-        else:
-            print("Warning: No K matrix available - frame not undistorted")
-            camera_params['undistorted'] = False
+                print("No distortion coefficients - using zero distortion")
+
+            camera_params['dist_coeffs'] = dist_coeffs.tolist()
+            camera_params['undistorted'] = False  # Always work in distorted space
 
         self.session.camera_frame = frame
         self.session.camera_params = camera_params
@@ -5038,13 +5013,12 @@ def run_server(session: UnifiedSession, port: int = 8765):
                 image_height=frame_height
             )
 
-            # Undistort the frame using camera intrinsics and distortion coefficients
+            # Store distortion coefficients for use in calibration (no frame undistortion)
+            # Issue #135: Work in distorted image space for consistent calibration
             K = camera_params.get('K')
             if K is not None:
-                K = np.array(K)
-
                 # Get distortion coefficients from camera config
-                dist_coeffs = np.zeros(4)
+                dist_coeffs = np.zeros(5)  # [k1, k2, p1, p2, k3]
                 try:
                     cam_config = get_camera_by_name(session.camera_name)
                     if cam_config:
@@ -5052,31 +5026,19 @@ def run_server(session: UnifiedSession, port: int = 8765):
                         k2 = cam_config.get('k2', 0.0)
                         p1 = cam_config.get('p1', 0.0)
                         p2 = cam_config.get('p2', 0.0)
-                        dist_coeffs = np.array([k1, k2, p1, p2])
+                        k3 = cam_config.get('k3', 0.0)
+                        dist_coeffs = np.array([k1, k2, p1, p2, k3])
                 except Exception as e:
                     print(f"Warning: Could not load distortion coefficients: {e}")
 
                 if np.any(dist_coeffs != 0):
-                    print(f"Undistorting frame with distortion: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}")
-
-                    # Use getOptimalNewCameraMatrix for better results
-                    new_K, roi = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (frame_width, frame_height), 1, (frame_width, frame_height))
-
-                    # Undistort the frame
-                    frame = cv2.undistort(frame, K, dist_coeffs, None, new_K)
-
-                    # Update K matrix in params to reflect undistorted image
-                    camera_params['K'] = new_K
-                    camera_params['K_original'] = K
-                    camera_params['dist_coeffs'] = dist_coeffs.tolist()
-                    camera_params['undistorted'] = True
-                    print("Frame undistorted successfully")
+                    print(f"Distortion coefficients loaded: k1={dist_coeffs[0]:.6f}, k2={dist_coeffs[1]:.6f}")
+                    print("Frame NOT undistorted - calibration will use distorted image space")
                 else:
-                    print("No distortion coefficients - frame not undistorted")
-                    camera_params['undistorted'] = False
-            else:
-                print("Warning: No K matrix available - frame not undistorted")
-                camera_params['undistorted'] = False
+                    print("No distortion coefficients - using zero distortion")
+
+                camera_params['dist_coeffs'] = dist_coeffs.tolist()
+                camera_params['undistorted'] = False  # Always work in distorted space
 
             session.camera_frame = frame
             session.camera_params = camera_params
