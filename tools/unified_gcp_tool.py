@@ -774,7 +774,8 @@ CRS: {crs}</description>
             warnings.append(f'GCPs only cover {quadrants_covered}/4 quadrants')
 
         if warnings:
-            result['warning_message'] = 'GCPs are clustered. Add points in empty quadrants for better calibration.'
+            # Include specific warnings with actionable guidance
+            result['warning_message'] = '. '.join(warnings) + '. Add points in empty quadrants for better calibration.'
 
         return result
 
@@ -2267,6 +2268,10 @@ CRS: {crs}</description>
             - 'matched_pairs': List of matched point pairs (if both masks available)
             - 'metadata': Additional info about the suggestion process
         """
+        # Minimum spatial penalty score for accepting a suggested point (0.0 to 1.0)
+        # Points scoring below this are too close to already-selected points
+        MIN_SPATIAL_PENALTY_THRESHOLD = 0.3
+
         result = {
             'success': False,
             'cartography_suggestions': [],
@@ -2322,7 +2327,7 @@ CRS: {crs}</description>
                     pt, selected_carto, min_separation
                 )
                 # Only add if penalty allows
-                if spatial_penalty > 0.3:  # Threshold for acceptance
+                if spatial_penalty > MIN_SPATIAL_PENALTY_THRESHOLD:
                     pt['spatial_penalty'] = spatial_penalty
                     pt['final_score'] = pt['total_score'] * spatial_penalty
                     selected_carto.append(pt)
@@ -2350,7 +2355,7 @@ CRS: {crs}</description>
                 spatial_penalty = self._calculate_spatial_distribution_penalty(
                     pt, selected_camera, min_separation
                 )
-                if spatial_penalty > 0.3:
+                if spatial_penalty > MIN_SPATIAL_PENALTY_THRESHOLD:
                     pt['spatial_penalty'] = spatial_penalty
                     pt['final_score'] = pt['total_score'] * spatial_penalty
                     selected_camera.append(pt)
