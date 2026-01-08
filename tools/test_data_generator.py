@@ -447,19 +447,23 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
     return temp_path
 
 
-def generate_json_output(camera_info: Dict, gcps: List[Dict], camera_name: str, output_path: Optional[str] = None) -> str:
+def generate_json_output(camera_info: Dict, gcps: List[Dict], camera_name: str,
+                         output_path: Optional[str] = None, frame_path: Optional[str] = None) -> Dict[str, str]:
     """
-    Generate JSON output file with camera info and GCPs.
+    Generate JSON output file with camera info and GCPs, and copy the frame image.
 
     Args:
         camera_info: Dictionary with camera parameters (latitude, longitude, height_meters, pan_deg, tilt_deg, zoom_level)
         gcps: List of GCP dictionaries with pixel_x, pixel_y, latitude, longitude
         camera_name: Name of the camera
-        output_path: Optional custom output path
+        output_path: Optional custom output path for JSON
+        frame_path: Optional path to the captured frame image
 
     Returns:
-        Path to generated JSON file
+        Dictionary with 'json_path' and 'image_path' keys
     """
+    import shutil
+
     # Generate default filename if not provided
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -475,7 +479,16 @@ def generate_json_output(camera_info: Dict, gcps: List[Dict], camera_name: str, 
     with open(output_path, 'w') as f:
         json.dump(data, f, indent=2)
 
-    return output_path
+    result = {'json_path': output_path, 'image_path': None}
+
+    # Copy frame image with matching filename
+    if frame_path and os.path.exists(frame_path):
+        # Replace .json with .jpg for the image filename
+        image_output_path = output_path.rsplit('.json', 1)[0] + '.jpg'
+        shutil.copy2(frame_path, image_output_path)
+        result['image_path'] = image_output_path
+
+    return result
 
 
 # Global variables for server state
@@ -966,12 +979,27 @@ def create_html_interface() -> str:
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(exportData)
             })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP error! status: ${r.status}`);
+                }
+                return r.json();
+            })
             .then(data => {
-                document.getElementById('status-msg').textContent = `Exported to: ${data.path}`;
+                let msg = `Exported: ${data.json_path}`;
+                if (data.image_path) {
+                    msg += ` + ${data.image_path}`;
+                }
+                document.getElementById('status-msg').textContent = msg;
+                document.getElementById('status-msg').style.color = '#4CAF50';
                 setTimeout(() => {
                     document.getElementById('status-msg').textContent = '';
-                }, 5000);
+                }, 8000);
+            })
+            .catch(err => {
+                document.getElementById('status-msg').textContent = `Export failed: ${err.message}`;
+                document.getElementById('status-msg').style.color = '#f44336';
+                console.error('Export error:', err);
             });
         }
 
@@ -1133,18 +1161,19 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode())
 
-            # Generate JSON output
-            output_path = generate_json_output(
+            # Generate JSON output and copy image
+            result = generate_json_output(
                 camera_info=data['camera_info'],
                 gcps=data['gcps'],
                 camera_name=SERVER_STATE['camera_name'],
-                output_path=SERVER_STATE['output_path']
+                output_path=SERVER_STATE['output_path'],
+                frame_path=SERVER_STATE['frame_path']
             )
 
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({'path': output_path}).encode())
+            self.wfile.write(json.dumps(result).encode())
         else:
             self.send_response(404)
             self.end_headers()
