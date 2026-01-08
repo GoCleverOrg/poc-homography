@@ -116,6 +116,7 @@ class CameraGeometry:
         self.height_m = 5.0  # Camera Height (m)
         self.pan_deg = 0.0  # Camera Pan (Yaw)
         self.tilt_deg = 0.0  # Camera Tilt (Pitch)
+        self.roll_deg = 0.0  # Camera Roll (rotation around optical axis)
 
         # Height uncertainty for propagation (set via set_height_uncertainty)
         self.height_uncertainty_lower = None  # Lower bound of height confidence interval
@@ -626,12 +627,17 @@ class CameraGeometry:
 
         return (u_dist, v_dist)
 
+    # Roll validation thresholds
+    ROLL_WARN_THRESHOLD = 5.0   # Warning when |roll_deg| > 5.0
+    ROLL_ERROR_THRESHOLD = 15.0  # Error when |roll_deg| > 15.0
+
     def _validate_parameters(
         self,
         K: np.ndarray,
         w_pos: np.ndarray,
         pan_deg: Degrees,
-        tilt_deg: Degrees
+        tilt_deg: Degrees,
+        roll_deg: Degrees = Degrees(0.0)
     ) -> None:
         """
         Validates all camera parameters before setting them.
@@ -641,6 +647,7 @@ class CameraGeometry:
             w_pos: Camera position in world coordinates [X, Y, Z] (meters)
             pan_deg: Pan angle in degrees (positive = right)
             tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
 
         Raises:
             ValueError: If any parameter is invalid or out of acceptable range.
@@ -718,6 +725,21 @@ class CameraGeometry:
                 f"{self.FOV_WARN_MIN_DEG}° and {self.FOV_WARN_MAX_DEG}°."
             )
 
+        # Roll angle validation
+        if abs(roll_deg) > self.ROLL_ERROR_THRESHOLD:
+            raise ValueError(
+                f"Roll angle {roll_deg:.1f}° is outside valid range "
+                f"[-{self.ROLL_ERROR_THRESHOLD}°, {self.ROLL_ERROR_THRESHOLD}°]. "
+                f"Check camera mount alignment."
+            )
+
+        if abs(roll_deg) > self.ROLL_WARN_THRESHOLD:
+            warnings.warn(
+                f"Roll angle {roll_deg:.1f}° is unusually large (>{self.ROLL_WARN_THRESHOLD}°). "
+                f"Typical camera mount roll is ±2°. Verify configuration.",
+                UserWarning
+            )
+
     def set_camera_parameters(
         self,
         K: np.ndarray,
@@ -725,7 +747,8 @@ class CameraGeometry:
         pan_deg: Degrees,
         tilt_deg: Degrees,
         map_width: Pixels,
-        map_height: Pixels
+        map_height: Pixels,
+        roll_deg: Degrees = Degrees(0.0)
     ):
         """
         Sets all required parameters and calculates the Homography matrix H.
@@ -737,17 +760,19 @@ class CameraGeometry:
             tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
             map_width: Width of output map in pixels
             map_height: Height of output map in pixels
+            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
+                      Typical camera mount roll is ±2°
 
         Raises:
             ValueError: If any parameter is invalid or out of acceptable range.
         """
         # Validate all parameters before proceeding
-        self._validate_parameters(K, w_pos, pan_deg, tilt_deg)
+        self._validate_parameters(K, w_pos, pan_deg, tilt_deg, roll_deg)
 
         # Log all parameters at INFO level
         logger.info("Setting camera parameters:")
         logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
-        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
+        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°, Roll: {roll_deg:.1f}°")
         logger.info(f"  Intrinsic matrix K:\n{K}")
         logger.info(f"  Map dimensions: {map_width}x{map_height} pixels")
 
@@ -756,6 +781,7 @@ class CameraGeometry:
         self.height_m = w_pos[2]  # Z component is height
         self.pan_deg = pan_deg
         self.tilt_deg = tilt_deg
+        self.roll_deg = roll_deg
         self.map_width = map_width
         self.map_height = map_height
 
@@ -789,7 +815,7 @@ class CameraGeometry:
 
         logger.info("Geometry setup complete. Homography matrix H calculated.")
         logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
-        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°")
+        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°, Roll: {roll_deg:.1f}°")
         logger.info(f"  Homography det(H): {det_H:.2e}")
         logger.info(f"  Homography condition number: {cond_H:.2e}")
 
@@ -843,27 +869,48 @@ class CameraGeometry:
 
     # --- Core Geometry Methods (Unchanged from previous output) ---
 
-    def _get_rotation_matrix(self) -> np.ndarray:
+    def _get_rotation_matrix(
+        self,
+        roll_deg: Optional[Degrees] = None
+    ) -> np.ndarray:
         """
         Calculates the 3x3 rotation matrix R from world to camera coordinates
-        based on pan (Yaw) and tilt (Pitch). Assumes zero roll.
+        based on pan (Yaw), tilt (Pitch), and roll.
+
+        Rotation order: R = R_tilt @ R_roll @ R_base @ R_pan
 
         Coordinate System Convention:
         - World: X=East, Y=North, Z=Up
         - Camera: X=Right, Y=Down, Z=Forward (optical axis)
 
         The transformation consists of:
-        1. Base transform: Convert world coords to camera coords when pan=0, tilt=0
+        1. Pan rotation: Rotate around world Z-axis (yaw)
+        2. Base transform: Convert world coords to camera coords when pan=0, tilt=0
            (camera looking North, horizontal)
-        2. Pan rotation: Rotate around world Z-axis (yaw)
-        3. Tilt rotation: Rotate around camera X-axis (pitch)
+        3. Roll rotation: Rotate around camera Z-axis (optical axis)
+        4. Tilt rotation: Rotate around camera X-axis (pitch)
 
         Tilt Convention (Hikvision):
         - Positive tilt_deg = camera pointing downward
         - Negative tilt_deg = camera pointing upward
+
+        Roll Convention:
+        - Positive roll_deg = clockwise rotation when looking from behind camera
+          (along +Z axis, into the scene)
+        - Roll is applied in camera frame after base transformation but before tilt
+
+        Args:
+            roll_deg: Roll angle in degrees. If None, uses self.roll_deg (default 0.0)
+
+        Returns:
+            R: 3x3 rotation matrix transforming world coordinates to camera frame
         """
         pan_rad = math.radians(self.pan_deg)
         tilt_rad = math.radians(self.tilt_deg)
+
+        # Use provided roll_deg or fall back to instance attribute
+        roll = roll_deg if roll_deg is not None else self.roll_deg
+        roll_rad = math.radians(roll)
 
         # Base transformation from World to Camera when pan=0, tilt=0
         # (camera looking North, horizontal):
@@ -890,18 +937,27 @@ class CameraGeometry:
             [0,                  0,                 1]
         ])
 
+        # Roll rotation around camera Z-axis (optical axis)
+        # Positive roll = clockwise when looking from behind camera (along +Z axis)
+        # This rotates the image plane around the optical axis
+        Rz_roll = np.array([
+            [math.cos(roll_rad), -math.sin(roll_rad), 0],
+            [math.sin(roll_rad),  math.cos(roll_rad), 0],
+            [0,                   0,                  1]
+        ])
+
         # Tilt rotation around camera X-axis (pitch)
         # Positive tilt = camera looks down
-        # This is applied in camera coordinates after pan and base transform
+        # This is applied in camera coordinates after pan, base transform, and roll
         Rx_tilt = np.array([
             [1,  0,                   0],
             [0,  math.cos(tilt_rad), -math.sin(tilt_rad)],
             [0,  math.sin(tilt_rad),  math.cos(tilt_rad)]
         ])
 
-        # Full rotation: first pan in world, then base transform, then tilt in camera
-        # R_world_to_cam = R_tilt @ R_base @ R_pan
-        R = Rx_tilt @ R_base @ Rz_pan
+        # Full rotation: first pan in world, then base transform, then roll in camera, then tilt in camera
+        # R_world_to_cam = R_tilt @ R_roll @ R_base @ R_pan
+        R = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
         return R
 
     def _calculate_ground_homography(self) -> np.ndarray:
