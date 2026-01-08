@@ -657,6 +657,127 @@ CRS: {crs}</description>
 
         return projected
 
+    def calculate_spatial_distribution(self) -> Dict:
+        """
+        Calculate spatial distribution metrics for GCPs in camera image space.
+
+        Uses the same thresholds as FeatureMatchHomography for consistency:
+        - MIN_COVERAGE_RATIO = 0.15 (red if below)
+        - GOOD_COVERAGE_RATIO = 0.35 (green if >= this, yellow otherwise)
+        - MIN_QUADRANT_COVERAGE = 2 (red if below)
+        - GOOD_QUADRANT_COVERAGE = 3 (green if >= this, yellow otherwise)
+
+        Returns:
+            Dictionary with distribution metrics:
+                - coverage_ratio: Convex hull area / image area [0.0, 1.0]
+                - coverage_status: 'good', 'fair', or 'poor'
+                - quadrants_covered: Number of quadrants with GCPs [0-4]
+                - quadrant_status: 'good', 'fair', or 'poor'
+                - num_visible_gcps: Count of visible GCPs
+                - warning_message: Optional warning if distribution is insufficient
+                - thresholds: The threshold values used for reference
+        """
+        # Spatial distribution thresholds (from FeatureMatchHomography)
+        MIN_COVERAGE_RATIO = 0.15
+        GOOD_COVERAGE_RATIO = 0.35
+        MIN_QUADRANT_COVERAGE = 2
+        GOOD_QUADRANT_COVERAGE = 3
+
+        result = {
+            'coverage_ratio': 0.0,
+            'coverage_status': 'poor',
+            'quadrants_covered': 0,
+            'quadrant_status': 'poor',
+            'num_visible_gcps': 0,
+            'warning_message': None,
+            'thresholds': {
+                'min_coverage_ratio': MIN_COVERAGE_RATIO,
+                'good_coverage_ratio': GOOD_COVERAGE_RATIO,
+                'min_quadrant_coverage': MIN_QUADRANT_COVERAGE,
+                'good_quadrant_coverage': GOOD_QUADRANT_COVERAGE
+            }
+        }
+
+        # Get visible projected points
+        if not self.projected_points:
+            result['warning_message'] = 'No GCPs projected to camera view.'
+            return result
+
+        visible_points = [p for p in self.projected_points if p.get('visible', False)]
+        result['num_visible_gcps'] = len(visible_points)
+
+        if len(visible_points) < 3:
+            result['warning_message'] = f'Need at least 3 visible GCPs for distribution analysis (have {len(visible_points)}).'
+            return result
+
+        # Get image dimensions from camera_params
+        if not self.camera_params:
+            result['warning_message'] = 'Camera parameters not available.'
+            return result
+
+        image_width = self.camera_params.get('image_width', 1920)
+        image_height = self.camera_params.get('image_height', 1080)
+        image_area = image_width * image_height
+
+        # Extract pixel coordinates
+        pixel_coords = np.array([
+            [p['pixel_u'], p['pixel_v']]
+            for p in visible_points
+        ], dtype=np.float32)
+
+        # Calculate convex hull coverage
+        try:
+            hull = cv2.convexHull(pixel_coords)
+            hull_area = cv2.contourArea(hull)
+            coverage_ratio = hull_area / image_area if image_area > 0 else 0.0
+        except Exception:
+            coverage_ratio = 0.0
+
+        result['coverage_ratio'] = coverage_ratio
+
+        # Determine coverage status
+        if coverage_ratio >= GOOD_COVERAGE_RATIO:
+            result['coverage_status'] = 'good'
+        elif coverage_ratio >= MIN_COVERAGE_RATIO:
+            result['coverage_status'] = 'fair'
+        else:
+            result['coverage_status'] = 'poor'
+
+        # Calculate quadrant coverage
+        center_u = image_width / 2.0
+        center_v = image_height / 2.0
+        quadrants = set()
+        for u, v in pixel_coords:
+            q = 0
+            if u >= center_u:
+                q += 1
+            if v >= center_v:
+                q += 2
+            quadrants.add(q)
+
+        quadrants_covered = len(quadrants)
+        result['quadrants_covered'] = quadrants_covered
+
+        # Determine quadrant status
+        if quadrants_covered >= GOOD_QUADRANT_COVERAGE:
+            result['quadrant_status'] = 'good'
+        elif quadrants_covered >= MIN_QUADRANT_COVERAGE:
+            result['quadrant_status'] = 'fair'
+        else:
+            result['quadrant_status'] = 'poor'
+
+        # Generate warning message if distribution is insufficient
+        warnings = []
+        if coverage_ratio < MIN_COVERAGE_RATIO:
+            warnings.append(f'GCPs are clustered (coverage {coverage_ratio:.0%} < {MIN_COVERAGE_RATIO:.0%})')
+        if quadrants_covered < MIN_QUADRANT_COVERAGE:
+            warnings.append(f'GCPs only cover {quadrants_covered}/4 quadrants')
+
+        if warnings:
+            result['warning_message'] = 'GCPs are clustered. Add points in empty quadrants for better calibration.'
+
+        return result
+
     def calculate_camera_footprint(self) -> Optional[List[Dict]]:
         """
         Calculate the camera's visible ground footprint by projecting image frame corners.
@@ -1959,6 +2080,403 @@ CRS: {crs}</description>
 
         return len(matches)
 
+    def extract_corner_points_from_mask(
+        self,
+        mask: np.ndarray,
+        max_corners: int = 100,
+        quality_level: float = 0.01,
+        min_distance: int = 10
+    ) -> List[Dict]:
+        """
+        Extract corner/feature points from a binary mask using cv2.goodFeaturesToTrack.
+
+        This method identifies sharp corners and intersection points in binary masks
+        returned by SAM3 detection. It uses the Shi-Tomasi corner detection algorithm.
+
+        Args:
+            mask: Binary mask (uint8) with detected features
+            max_corners: Maximum number of corners to detect
+            quality_level: Minimum quality threshold (0-1). Points with quality below
+                          max_quality * quality_level are rejected.
+            min_distance: Minimum Euclidean distance between detected corners
+
+        Returns:
+            List of detected corner points:
+            [{'x': float, 'y': float, 'quality': float}, ...]
+            Returns empty list if no corners detected.
+        """
+        if mask is None or mask.size == 0:
+            return []
+
+        try:
+            # Ensure mask is uint8
+            if mask.dtype != np.uint8:
+                mask = mask.astype(np.uint8)
+
+            # Detect corners using Shi-Tomasi algorithm
+            corners = cv2.goodFeaturesToTrack(
+                mask,
+                maxCorners=max_corners,
+                qualityLevel=quality_level,
+                minDistance=min_distance,
+                blockSize=3,
+                useHarrisDetector=False
+            )
+
+            if corners is None or len(corners) == 0:
+                return []
+
+            # Convert to list of dicts with quality scores
+            # Quality is based on response value (normalized)
+            result = []
+            for corner in corners:
+                x, y = corner.ravel()
+                result.append({
+                    'x': float(x),
+                    'y': float(y),
+                    'quality': 1.0  # All corners from goodFeaturesToTrack pass quality threshold
+                })
+
+            return result
+
+        except Exception as e:
+            print(f"Failed to extract corners from mask: {e}")
+            return []
+
+    def _calculate_edge_distance_score(
+        self,
+        point: Dict,
+        mask: np.ndarray,
+        search_radius: int = 5
+    ) -> float:
+        """
+        Calculate score based on distance from mask edge.
+
+        Points at sharp corners (edges meet at a point) get higher scores
+        than points on smooth curves or in the interior.
+
+        Args:
+            point: Point dict with 'x', 'y' keys
+            mask: Binary mask
+            search_radius: Radius to search for edge proximity
+
+        Returns:
+            Score in range [0.0, 1.0] where 1.0 = sharp corner, 0.0 = interior
+        """
+        x, y = int(point['x']), int(point['y'])
+        h, w = mask.shape[:2]
+
+        # Check if point is on the edge (transition from 255 to 0 or vice versa)
+        # Sample points around the location
+        edge_count = 0
+        total_samples = 0
+
+        for dx in range(-search_radius, search_radius + 1):
+            for dy in range(-search_radius, search_radius + 1):
+                if dx == 0 and dy == 0:
+                    continue
+
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < w and 0 <= ny < h:
+                    total_samples += 1
+                    # Count transitions (edge = different values in neighborhood)
+                    if mask[ny, nx] != mask[y, x]:
+                        edge_count += 1
+
+        if total_samples == 0:
+            return 0.0
+
+        # Higher edge ratio = more likely to be at a corner
+        edge_ratio = edge_count / total_samples
+
+        # Sharp corners have about 50% edge ratio (half inside, half outside)
+        # Interior points have 0% edge ratio
+        # Points fully on edge have high edge ratio
+
+        # Normalize: peak at 0.5 ratio, decline towards 0 or 1
+        if edge_ratio <= 0.5:
+            return edge_ratio * 2.0  # 0-0.5 maps to 0-1
+        else:
+            return 1.0 - (edge_ratio - 0.5) * 2.0  # 0.5-1 maps to 1-0
+
+    def _calculate_spatial_distribution_penalty(
+        self,
+        point: Dict,
+        existing_points: List[Dict],
+        min_separation: float = 50.0
+    ) -> float:
+        """
+        Calculate penalty for points too close to existing suggestions.
+
+        Args:
+            point: Candidate point dict with 'x', 'y' keys
+            existing_points: List of already-selected points
+            min_separation: Minimum desired separation in pixels
+
+        Returns:
+            Penalty multiplier in range [0.0, 1.0] where:
+            1.0 = well separated, no penalty
+            0.0 = overlapping with existing point
+        """
+        if not existing_points:
+            return 1.0
+
+        x, y = point['x'], point['y']
+
+        # Find minimum distance to any existing point
+        min_dist = float('inf')
+        for ep in existing_points:
+            dx = ep['x'] - x
+            dy = ep['y'] - y
+            dist = math.sqrt(dx * dx + dy * dy)
+            min_dist = min(min_dist, dist)
+
+        if min_dist >= min_separation:
+            return 1.0
+        elif min_dist <= 0:
+            return 0.0
+        else:
+            # Linear penalty as distance decreases
+            return min_dist / min_separation
+
+    def auto_suggest_gcp_points(
+        self,
+        max_suggestions: int = 20,
+        min_separation: float = 50.0,
+        require_both_masks: bool = True
+    ) -> Dict:
+        """
+        Automatically suggest GCP correspondence points from SAM3 masks.
+
+        This method extracts corner points from detected masks and filters them
+        based on:
+        1. Edge sharpness (prefer corners over smooth curves)
+        2. Spatial distribution (avoid clustering)
+        3. Visibility in both reference and camera frames (if available)
+
+        Args:
+            max_suggestions: Maximum number of points to suggest
+            min_separation: Minimum distance between suggested points in pixels
+            require_both_masks: If True, only suggest points visible in both frames
+
+        Returns:
+            Dictionary with:
+            - 'success': bool
+            - 'cartography_suggestions': List of suggested points for cartography frame
+            - 'camera_suggestions': List of suggested points for camera frame
+            - 'matched_pairs': List of matched point pairs (if both masks available)
+            - 'metadata': Additional info about the suggestion process
+        """
+        result = {
+            'success': False,
+            'cartography_suggestions': [],
+            'camera_suggestions': [],
+            'matched_pairs': [],
+            'metadata': {}
+        }
+
+        # Extract corners from cartography mask
+        carto_corners = []
+        if self.cartography_mask is not None:
+            carto_corners = self.extract_corner_points_from_mask(
+                self.cartography_mask,
+                max_corners=max_suggestions * 3,  # Get more than needed for filtering
+                min_distance=int(min_separation / 2)
+            )
+            print(f"Extracted {len(carto_corners)} corners from cartography mask")
+
+        # Extract corners from camera mask
+        camera_corners = []
+        if self.camera_mask is not None:
+            camera_corners = self.extract_corner_points_from_mask(
+                self.camera_mask,
+                max_corners=max_suggestions * 3,
+                min_distance=int(min_separation / 2)
+            )
+            print(f"Extracted {len(camera_corners)} corners from camera mask")
+
+        # Check if we have at least one mask
+        if not carto_corners and not camera_corners:
+            result['metadata'] = {'error': 'No corners detected in any mask'}
+            return result
+
+        # Score and filter cartography corners
+        if carto_corners:
+            scored_carto = []
+            for pt in carto_corners:
+                edge_score = self._calculate_edge_distance_score(pt, self.cartography_mask)
+                pt['edge_score'] = edge_score
+                pt['total_score'] = edge_score
+                scored_carto.append(pt)
+
+            # Sort by score descending
+            scored_carto.sort(key=lambda p: p['total_score'], reverse=True)
+
+            # Greedily select well-distributed points
+            selected_carto = []
+            for pt in scored_carto:
+                if len(selected_carto) >= max_suggestions:
+                    break
+                # Apply spatial penalty based on already selected points
+                spatial_penalty = self._calculate_spatial_distribution_penalty(
+                    pt, selected_carto, min_separation
+                )
+                # Only add if penalty allows
+                if spatial_penalty > 0.3:  # Threshold for acceptance
+                    pt['spatial_penalty'] = spatial_penalty
+                    pt['final_score'] = pt['total_score'] * spatial_penalty
+                    selected_carto.append(pt)
+
+            result['cartography_suggestions'] = selected_carto
+            print(f"Selected {len(selected_carto)} cartography suggestions")
+
+        # Score and filter camera corners
+        if camera_corners:
+            scored_camera = []
+            for pt in camera_corners:
+                edge_score = self._calculate_edge_distance_score(pt, self.camera_mask)
+                pt['edge_score'] = edge_score
+                pt['total_score'] = edge_score
+                scored_camera.append(pt)
+
+            # Sort by score descending
+            scored_camera.sort(key=lambda p: p['total_score'], reverse=True)
+
+            # Greedily select well-distributed points
+            selected_camera = []
+            for pt in scored_camera:
+                if len(selected_camera) >= max_suggestions:
+                    break
+                spatial_penalty = self._calculate_spatial_distribution_penalty(
+                    pt, selected_camera, min_separation
+                )
+                if spatial_penalty > 0.3:
+                    pt['spatial_penalty'] = spatial_penalty
+                    pt['final_score'] = pt['total_score'] * spatial_penalty
+                    selected_camera.append(pt)
+
+            result['camera_suggestions'] = selected_camera
+            print(f"Selected {len(selected_camera)} camera suggestions")
+
+        # Try to match points between frames if both masks are available
+        if result['cartography_suggestions'] and result['camera_suggestions'] and self.camera_params:
+            matched_pairs = self._match_suggested_points(
+                result['cartography_suggestions'],
+                result['camera_suggestions']
+            )
+            result['matched_pairs'] = matched_pairs
+            print(f"Matched {len(matched_pairs)} point pairs between frames")
+
+        result['success'] = True
+        result['metadata'] = {
+            'cartography_corners_detected': len(carto_corners),
+            'camera_corners_detected': len(camera_corners),
+            'min_separation': min_separation,
+            'max_suggestions': max_suggestions
+        }
+
+        return result
+
+    def _match_suggested_points(
+        self,
+        carto_points: List[Dict],
+        camera_points: List[Dict],
+        max_match_distance: float = 50.0
+    ) -> List[Dict]:
+        """
+        Match cartography suggested points to camera suggested points.
+
+        Uses the camera projection to find corresponding points.
+
+        Args:
+            carto_points: Suggested points from cartography mask
+            camera_points: Suggested points from camera mask
+            max_match_distance: Maximum distance for a match in pixels
+
+        Returns:
+            List of matched pairs:
+            [{'cartography': {...}, 'camera': {...}, 'distance': float}, ...]
+        """
+        if not GEOMETRY_AVAILABLE or self.camera_params is None:
+            return []
+
+        matched = []
+        used_camera_indices = set()
+
+        try:
+            # Set up UTM converter and camera geometry
+            utm_converter = UTMConverter(self.utm_crs)
+            camera_lat = self.camera_params['camera_lat']
+            camera_lon = self.camera_params['camera_lon']
+            utm_converter.set_reference(camera_lat, camera_lon)
+
+            cam_height = self.camera_frame.shape[0] if self.camera_frame is not None else 1080
+            cam_width = self.camera_frame.shape[1] if self.camera_frame is not None else 1920
+
+            geo = CameraGeometry(w=cam_width, h=cam_height)
+            height_m = self.camera_params['height_m']
+            pan_deg = self.camera_params['pan_deg']
+            tilt_deg = self.camera_params['tilt_deg']
+            K = self.camera_params['K']
+            if isinstance(K, list):
+                K = np.array(K)
+
+            w_pos = np.array([0.0, 0.0, height_m])
+            geo.set_camera_parameters(
+                K=K, w_pos=w_pos, pan_deg=pan_deg, tilt_deg=tilt_deg,
+                map_width=640, map_height=640
+            )
+
+            # Get camera UTM position
+            camera_easting, camera_northing = utm_converter.gps_to_utm(camera_lat, camera_lon)
+            geo.set_geotiff_params(self.geotiff_params, (camera_easting, camera_northing))
+
+            # Project each cartography point to camera space
+            H_total = geo.H @ geo.A
+
+            for carto_pt in carto_points:
+                # Project cartography pixel to camera pixel
+                pt_h = np.array([carto_pt['x'], carto_pt['y'], 1.0])
+                proj = H_total @ pt_h
+                if proj[2] == 0:
+                    continue
+
+                cam_x, cam_y = proj[0] / proj[2], proj[1] / proj[2]
+
+                # Check if projected point is within camera frame
+                if not (0 <= cam_x < cam_width and 0 <= cam_y < cam_height):
+                    continue
+
+                # Find nearest camera point
+                min_dist = float('inf')
+                best_idx = None
+                for i, cam_pt in enumerate(camera_points):
+                    if i in used_camera_indices:
+                        continue
+                    dx = cam_pt['x'] - cam_x
+                    dy = cam_pt['y'] - cam_y
+                    dist = math.sqrt(dx * dx + dy * dy)
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_idx = i
+
+                # Accept match if close enough
+                if best_idx is not None and min_dist < max_match_distance:
+                    matched.append({
+                        'cartography': carto_pt,
+                        'camera': camera_points[best_idx],
+                        'projected_camera': {'x': cam_x, 'y': cam_y},
+                        'distance': min_dist
+                    })
+                    used_camera_indices.add(best_idx)
+
+        except Exception as e:
+            print(f"Failed to match suggested points: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return matched
+
 
 class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler for unified two-tab interface."""
@@ -2607,6 +3125,330 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     'error': str(e)
                 })
 
+        elif self.path == '/api/auto_suggest_points':
+            # Auto-suggest GCP points using SAM3 mask corner detection
+            try:
+                max_suggestions = post_data.get('max_suggestions', 20)
+                min_separation = post_data.get('min_separation', 50.0)
+
+                result = self.session.auto_suggest_gcp_points(
+                    max_suggestions=max_suggestions,
+                    min_separation=min_separation
+                )
+
+                if result['success']:
+                    self.send_json_response({
+                        'success': True,
+                        'cartography_suggestions': result['cartography_suggestions'],
+                        'camera_suggestions': result['camera_suggestions'],
+                        'matched_pairs': result['matched_pairs'],
+                        'metadata': result['metadata']
+                    })
+                else:
+                    self.send_json_response({
+                        'success': False,
+                        'error': result['metadata'].get('error', 'Auto-suggest failed'),
+                        'metadata': result['metadata']
+                    })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/accept_suggested_point':
+            # Accept a suggested point and add it as a GCP
+            try:
+                # Get point data from request
+                point_data = post_data.get('point', {})
+                name = post_data.get('name', '')
+                category = post_data.get('category', 'other')
+                frame_type = post_data.get('frame_type', 'camera')  # 'camera' or 'cartography'
+
+                if not name:
+                    # Auto-generate name
+                    prefix = {'zebra': 'Z', 'arrow': 'A', 'parking': 'P', 'other': 'X'}.get(category, 'X')
+                    existing_count = len([p for p in self.session.points if p['category'] == category])
+                    name = f"{prefix}{existing_count + 1}"
+
+                if frame_type == 'cartography':
+                    # Add point from cartography frame (Tab 1)
+                    px = point_data.get('x', 0)
+                    py = point_data.get('y', 0)
+                    new_point = self.session.add_point(px, py, name, category)
+
+                    self.send_json_response({
+                        'success': True,
+                        'point': new_point,
+                        'total_points': len(self.session.points),
+                        'message': f'Added point {name} from cartography at ({px:.1f}, {py:.1f})'
+                    })
+                else:
+                    # For camera frame points, we need matched pair data
+                    # Store as frozen observation
+                    camera_x = point_data.get('x', 0)
+                    camera_y = point_data.get('y', 0)
+
+                    # If there's a matched cartography point, add it
+                    carto_point = post_data.get('cartography_point')
+                    if carto_point:
+                        px = carto_point.get('x', 0)
+                        py = carto_point.get('y', 0)
+                        new_point = self.session.add_point(px, py, name, category)
+
+                        # Also store the camera observation
+                        if self.session.frozen_gcp_observations is None:
+                            self.session.frozen_gcp_observations = {}
+                        self.session.frozen_gcp_observations[name] = {
+                            'pixel_u': camera_x,
+                            'pixel_v': camera_y
+                        }
+
+                        self.send_json_response({
+                            'success': True,
+                            'point': new_point,
+                            'total_points': len(self.session.points),
+                            'message': f'Added matched point {name}'
+                        })
+                    else:
+                        self.send_json_response({
+                            'success': False,
+                            'error': 'Camera point without cartography match - use manual matching instead'
+                        })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/calculate_distribution':
+            # Calculate spatial distribution metrics for GCPs
+            try:
+                distribution = self.session.calculate_spatial_distribution()
+                self.send_json_response({
+                    'success': True,
+                    'distribution': distribution
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/get_verification_data':
+            # Get verification data for correspondence overlay
+            try:
+                correspondences = self._get_verification_correspondences()
+                self.send_json_response({
+                    'success': True,
+                    'correspondences': correspondences
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/delete_correspondence':
+            # Delete a frozen observation correspondence
+            try:
+                name = post_data.get('name')
+                if not name:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No correspondence name provided'
+                    })
+                    return
+
+                if self.session.frozen_gcp_observations is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No frozen observations to delete from'
+                    })
+                    return
+
+                if name not in self.session.frozen_gcp_observations:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Correspondence "{name}" not found in frozen observations'
+                    })
+                    return
+
+                # Delete the observation
+                del self.session.frozen_gcp_observations[name]
+                print(f"Deleted frozen observation: {name}")
+                print(f"Remaining observations: {len(self.session.frozen_gcp_observations)}")
+
+                self.send_json_response({
+                    'success': True,
+                    'message': f'Deleted correspondence "{name}"',
+                    'remaining_count': len(self.session.frozen_gcp_observations)
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        elif self.path == '/api/export_gcps':
+            # Export GCPs in FeatureMatchHomography-compatible JSON format
+            # Requires minimum 20 GCPs for export
+            MINIMUM_EXPORT_GCP_COUNT = 20
+            try:
+                # Check if we have frozen observations
+                if self.session.frozen_gcp_observations is None:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No GCP observations available. Run SAM3 detection first.',
+                        'gcp_count': 0
+                    })
+                    return
+
+                # Get visible projected points
+                if not self.session.projected_points:
+                    self.send_json_response({
+                        'success': False,
+                        'error': 'No projected points available. Switch to GCP tab first.',
+                        'gcp_count': 0
+                    })
+                    return
+
+                # Build GCP list matching FeatureMatchHomography format
+                gcps = []
+                for proj_pt in self.session.projected_points:
+                    if not proj_pt.get('visible', False):
+                        continue
+
+                    name = proj_pt.get('name', '')
+
+                    # Only include GCPs with frozen observations
+                    if name not in self.session.frozen_gcp_observations:
+                        continue
+
+                    obs = self.session.frozen_gcp_observations[name]
+                    pixel_u = obs.get('pixel_u')
+                    pixel_v = obs.get('pixel_v')
+
+                    if pixel_u is None or pixel_v is None:
+                        continue
+
+                    gps_lat = proj_pt.get('latitude')
+                    gps_lon = proj_pt.get('longitude')
+
+                    if gps_lat is None or gps_lon is None:
+                        continue
+
+                    # Get elevation from camera height as approximation (ground plane)
+                    # Default to 0.0 if not available
+                    elevation = 0.0
+
+                    gcps.append({
+                        'pixel': {'u': float(pixel_u), 'v': float(pixel_v)},
+                        'gps': {
+                            'latitude': float(gps_lat),
+                            'longitude': float(gps_lon),
+                            'elevation': elevation
+                        }
+                    })
+
+                gcp_count = len(gcps)
+
+                # Enforce minimum 20 GCPs for export
+                if gcp_count < MINIMUM_EXPORT_GCP_COUNT:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'Insufficient GCPs for export: {gcp_count} available, minimum {MINIMUM_EXPORT_GCP_COUNT} required.',
+                        'gcp_count': gcp_count,
+                        'minimum_required': MINIMUM_EXPORT_GCP_COUNT
+                    })
+                    return
+
+                # Validate GCPs using gcp_validation module
+                try:
+                    from poc_homography.gcp_validation import validate_ground_control_points
+
+                    # Convert to validation format (gps + image structure)
+                    validation_gcps = []
+                    for gcp in gcps:
+                        validation_gcps.append({
+                            'gps': gcp['gps'],
+                            'image': {'u': gcp['pixel']['u'], 'v': gcp['pixel']['v']}
+                        })
+
+                    # Validate with image dimensions if available
+                    image_width = self.session.camera_params.get('image_width') if self.session.camera_params else None
+                    image_height = self.session.camera_params.get('image_height') if self.session.camera_params else None
+
+                    validate_ground_control_points(
+                        validation_gcps,
+                        image_width=image_width,
+                        image_height=image_height,
+                        min_gcp_count=MINIMUM_EXPORT_GCP_COUNT
+                    )
+                except ValueError as ve:
+                    self.send_json_response({
+                        'success': False,
+                        'error': f'GCP validation failed: {str(ve)}',
+                        'gcp_count': gcp_count
+                    })
+                    return
+                except ImportError:
+                    print("Warning: gcp_validation module not available, skipping validation")
+
+                # Build export JSON
+                timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+                timestamp_filename = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+                # Get source image filename
+                source_image = 'camera_frame.jpg'
+                if hasattr(self.session, 'camera_frame_timestamp'):
+                    source_image = f'frame_{self.session.camera_frame_timestamp}.jpg'
+
+                export_data = {
+                    'metadata': {
+                        'camera_name': self.session.camera_name,
+                        'source_image': source_image,
+                        'timestamp': timestamp,
+                        'gcp_count': gcp_count
+                    },
+                    'gcps': gcps
+                }
+
+                # Save to file
+                output_filename = f'{self.session.camera_name}_gcps_{timestamp_filename}.json'
+                output_dir = os.path.dirname(str(self.session.image_path))
+                output_path = os.path.join(output_dir, output_filename)
+
+                with open(output_path, 'w') as f:
+                    json.dump(export_data, f, indent=2)
+
+                print(f"Exported {gcp_count} GCPs to: {output_path}")
+
+                self.send_json_response({
+                    'success': True,
+                    'path': output_path,
+                    'gcp_count': gcp_count,
+                    'filename': output_filename
+                })
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.send_json_response({
+                    'success': False,
+                    'error': str(e)
+                })
+
         else:
             self.send_error(404)
 
@@ -2616,6 +3458,67 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+    def _get_verification_correspondences(self) -> list:
+        """
+        Get verification data for the correspondence overlay.
+
+        Returns a list of correspondences with:
+        - name: GCP point name
+        - projected_u, projected_v: Expected pixel position from camera projection
+        - observed_u, observed_v: Actual observed pixel position from frozen observations
+        - error: Reprojection error (distance in pixels)
+
+        Color coding thresholds:
+        - Green (aligned): error < 5 pixels
+        - Yellow (questionable): 5 <= error <= 15 pixels
+        - Red (misaligned): error > 15 pixels
+        """
+        correspondences = []
+
+        # Check if we have frozen observations
+        if self.session.frozen_gcp_observations is None:
+            raise ValueError("No frozen observations available. Run SAM3 detection first.")
+
+        # Check if we have projected points
+        if not self.session.projected_points:
+            raise ValueError("No projected points available. Switch to GCP tab first.")
+
+        # Create a lookup dict for projected points by name
+        projected_by_name = {
+            pt['name']: pt for pt in self.session.projected_points if pt.get('visible', False)
+        }
+
+        # Build correspondence data for each frozen observation
+        for name, obs in self.session.frozen_gcp_observations.items():
+            if name not in projected_by_name:
+                # Point is not visible in camera view
+                continue
+
+            proj = projected_by_name[name]
+
+            # Get coordinates
+            projected_u = proj['pixel_u']
+            projected_v = proj['pixel_v']
+            observed_u = obs['pixel_u']
+            observed_v = obs['pixel_v']
+
+            # Calculate reprojection error
+            error = math.sqrt((projected_u - observed_u)**2 + (projected_v - observed_v)**2)
+
+            correspondences.append({
+                'name': name,
+                'projected_u': projected_u,
+                'projected_v': projected_v,
+                'observed_u': observed_u,
+                'observed_v': observed_v,
+                'error': error
+            })
+
+        # Sort by error (worst first) for better visibility
+        correspondences.sort(key=lambda x: x['error'], reverse=True)
+
+        return correspondences
 
     def capture_camera_frame(self):
         """Capture frame from live camera and get camera parameters."""
@@ -2940,6 +3843,49 @@ def generate_unified_html(session: UnifiedSession) -> str:
             text-shadow: 1px 1px 1px #000;
         }}
 
+        /* Suggested Point Marker */
+        .suggested-point {{
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 3px solid #FFD700;
+            background: rgba(255, 215, 0, 0.4);
+            transform: translate(-50%, -50%);
+            z-index: 15;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+        .suggested-point:hover {{
+            border-color: #FFA500;
+            background: rgba(255, 165, 0, 0.6);
+            transform: translate(-50%, -50%) scale(1.3);
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }}
+        .suggested-point.matched {{
+            border-color: #32CD32;
+            background: rgba(50, 205, 50, 0.4);
+        }}
+        .suggested-point.matched:hover {{
+            border-color: #228B22;
+            background: rgba(34, 139, 34, 0.6);
+        }}
+
+        /* Suggested Point Label */
+        .suggested-label {{
+            position: absolute;
+            font-size: 9px;
+            font-weight: bold;
+            color: #FFD700;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 2px 5px;
+            border-radius: 3px;
+            white-space: nowrap;
+            z-index: 16;
+            pointer-events: none;
+            text-shadow: 1px 1px 1px #000;
+        }}
+
         /* Sidebar Components */
         h2 {{
             margin-bottom: 15px;
@@ -3035,6 +3981,47 @@ def generate_unified_html(session: UnifiedSession) -> str:
             padding: 3px 0;
             font-size: 12px;
             color: #e0e0e0;
+        }}
+
+        /* Distribution Panel */
+        .distribution-panel {{
+            background: #16213e;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }}
+        .distribution-metric {{
+            display: flex;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }}
+        .distribution-metric:last-of-type {{
+            border-bottom: none;
+        }}
+        .status-indicator {{
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-left: 8px;
+        }}
+        .status-indicator.good {{
+            background: #0ead69;
+        }}
+        .status-indicator.fair {{
+            background: #ffa500;
+        }}
+        .status-indicator.poor {{
+            background: #e94560;
+        }}
+        .distribution-warning {{
+            background: rgba(255, 165, 0, 0.15);
+            border: 1px solid rgba(255, 165, 0, 0.3);
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 8px;
+            font-size: 11px;
+            color: #ffa500;
         }}
 
         /* Point List */
@@ -3174,6 +4161,29 @@ def generate_unified_html(session: UnifiedSession) -> str:
         .mask-overlay.camera {{
             opacity: 0.5;
             mix-blend-mode: multiply;
+        }}
+
+        /* Verification overlay canvas */
+        .verification-overlay {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: auto;
+            z-index: 100;
+        }}
+
+        /* Verification overlay tooltip */
+        .verification-tooltip {{
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            pointer-events: none;
+            z-index: 101;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }}
 
         /* Camera visualization */
@@ -3370,6 +4380,18 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     </div>
                     <button onclick="toggleProjectedMask()" id="toggle-projected-mask-btn" style="display: none;">Show Map Mask</button>
 
+                    <h3>Correspondence Verification</h3>
+                    <div style="font-size: 11px; color: #888; margin-bottom: 8px;">
+                        Visualize alignment between reference and observed points.
+                        Click a line to delete that correspondence.
+                    </div>
+                    <button onclick="toggleVerificationOverlay()" id="toggle-verification-btn" class="secondary">Show Verification Overlay</button>
+                    <div id="verification-legend" style="display: none; margin-top: 8px; font-size: 10px; padding: 6px; background: rgba(0,0,0,0.3); border-radius: 4px;">
+                        <div><span style="color: #4CAF50;">&#9632;</span> Green: &lt;5px error (aligned)</div>
+                        <div><span style="color: #FF9800;">&#9632;</span> Yellow: 5-15px error (questionable)</div>
+                        <div><span style="color: #f44336;">&#9632;</span> Red: &gt;15px error (misaligned)</div>
+                    </div>
+
                     <h3>SAM3 Feature Detection</h3>
                     <label>Preprocessing:</label>
                     <select id="sam3-preprocessing-gcp">
@@ -3382,6 +4404,27 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     <button onclick="detectFeatures('gcp')" class="secondary">Detect Features</button>
                     <button onclick="toggleMask('gcp')" id="toggle-mask-gcp-btn" style="display: none;">Toggle Camera Mask</button>
                     <button onclick="startManualMatching()" id="manual-match-btn" style="display: none;" class="secondary">Match Features Manually</button>
+                    <button onclick="autoSuggestPoints()" id="auto-suggest-btn" style="display: none;" class="secondary">Auto-Suggest Points</button>
+                    <div id="suggested-points-status" style="display: none; margin-top: 8px; font-size: 11px; padding: 8px; background: rgba(255, 200, 0, 0.1); border-radius: 4px;"></div>
+
+                    <h3>GCP Distribution</h3>
+                    <div id="distribution-panel" class="distribution-panel">
+                        <div class="distribution-metric">
+                            <span class="metric-label">Coverage:</span>
+                            <span id="dist-coverage-value" class="metric-value">--</span>
+                            <span id="dist-coverage-indicator" class="status-indicator"></span>
+                        </div>
+                        <div class="distribution-metric">
+                            <span class="metric-label">Quadrants:</span>
+                            <span id="dist-quadrant-value" class="metric-value">--</span>
+                            <span id="dist-quadrant-indicator" class="status-indicator"></span>
+                        </div>
+                        <div class="distribution-metric">
+                            <span class="metric-label">Visible GCPs:</span>
+                            <span id="dist-gcp-count" class="metric-value">--</span>
+                        </div>
+                        <div id="dist-warning" class="distribution-warning" style="display: none;"></div>
+                    </div>
 
                     <h3>Calibration Quality</h3>
                     <div id="calibration-status" class="calibration-panel">
@@ -3407,6 +4450,26 @@ def generate_unified_html(session: UnifiedSession) -> str:
                         <button onclick="runCalibration()" class="secondary" id="recalibrate-btn">Re-run Calibration</button>
                         <button onclick="runPnPCalibration()" class="secondary" id="pnp-calibrate-btn" style="background: #0ead69;">Run PnP Calibration</button>
                         <div id="pnp-results" style="display: none; margin-top: 10px; padding: 10px; background: rgba(14, 173, 105, 0.1); border-radius: 4px;"></div>
+                    </div>
+
+                    <h3>Export GCPs</h3>
+                    <div class="export-panel" style="background: #16213e; padding: 10px; border-radius: 4px; margin: 10px 0;">
+                        <div class="export-count-display" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="color: #aaa; font-size: 12px;">Matched GCPs:</span>
+                            <span id="export-gcp-count" class="metric-value" style="font-size: 18px; font-weight: bold;">0</span>
+                            <span style="color: #888; font-size: 11px;">/ 20 required</span>
+                        </div>
+                        <div id="export-progress-bar" style="height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-bottom: 10px;">
+                            <div id="export-progress-fill" style="height: 100%; width: 0%; background: #e94560; transition: width 0.3s, background 0.3s;"></div>
+                        </div>
+                        <div class="export-button-container" style="position: relative;">
+                            <button onclick="exportGCPs()" id="export-gcps-btn" class="secondary" disabled title="Need at least 20 matched GCPs to export">
+                                Export GCPs (JSON)
+                            </button>
+                            <div id="export-status" style="font-size: 11px; color: #e94560; margin-top: 5px;">
+                                Need at least 20 matched GCPs to export
+                            </div>
+                        </div>
                     </div>
 
                     <h3>Projected Points (<span id="gcp-point-count">0</span>)</h3>
@@ -3441,6 +4504,9 @@ def generate_unified_html(session: UnifiedSession) -> str:
         let projectedMaskOffset = null;  // [left, top] CSS offset for positioning mask overlay
         let cameraOverlayVisible = true;  // Camera visualization toggle state
         let activeMode = null;  // Arrow key mode: 'latlon', 'pan', 'tilt', 'height', or null
+        let verificationOverlayVisible = false;  // Verification overlay toggle state
+        let verificationCanvas = null;  // Canvas for verification overlay
+        let verificationData = null;  // Cached verification data from server
 
         const img = document.getElementById('main-image');
         const gcpImg = document.getElementById('gcp-image');
@@ -3721,6 +4787,165 @@ def generate_unified_html(session: UnifiedSession) -> str:
             `).join('');
 
             document.getElementById('gcp-point-count').textContent = projectedPoints.filter(p => p.visible).length;
+
+            // Update distribution metrics after updating the view
+            updateDistributionMetrics();
+
+            // Update export GCPs status
+            updateExportStatus();
+        }}
+
+        // Update spatial distribution metrics panel
+        function updateDistributionMetrics() {{
+            fetch('/api/calculate_distribution', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success && data.distribution) {{
+                    const dist = data.distribution;
+
+                    // Update coverage display
+                    const coverageValue = document.getElementById('dist-coverage-value');
+                    const coverageIndicator = document.getElementById('dist-coverage-indicator');
+                    coverageValue.textContent = (dist.coverage_ratio * 100).toFixed(1) + '%';
+                    coverageIndicator.className = 'status-indicator ' + dist.coverage_status;
+
+                    // Update quadrant display
+                    const quadrantValue = document.getElementById('dist-quadrant-value');
+                    const quadrantIndicator = document.getElementById('dist-quadrant-indicator');
+                    quadrantValue.textContent = dist.quadrants_covered + '/4';
+                    quadrantIndicator.className = 'status-indicator ' + dist.quadrant_status;
+
+                    // Update GCP count
+                    document.getElementById('dist-gcp-count').textContent = dist.num_visible_gcps;
+
+                    // Update warning message
+                    const warningEl = document.getElementById('dist-warning');
+                    if (dist.warning_message) {{
+                        warningEl.textContent = dist.warning_message;
+                        warningEl.style.display = 'block';
+                    }} else {{
+                        warningEl.style.display = 'none';
+                    }}
+                }}
+            }})
+            .catch(err => {{
+                console.error('Failed to fetch distribution metrics:', err);
+            }});
+        }}
+
+        // Export GCPs state
+        let matchedGcpCount = 0;
+        const MINIMUM_EXPORT_GCP_COUNT = 20;
+
+        // Update export status based on frozen observations count
+        function updateExportStatus() {{
+            // Get the current count from the API or track locally
+            fetch('/api/get_verification_data', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success && data.correspondences) {{
+                    matchedGcpCount = data.correspondences.length;
+                }} else {{
+                    matchedGcpCount = 0;
+                }}
+
+                // Update UI elements
+                const countEl = document.getElementById('export-gcp-count');
+                const progressFill = document.getElementById('export-progress-fill');
+                const exportBtn = document.getElementById('export-gcps-btn');
+                const statusEl = document.getElementById('export-status');
+
+                if (countEl) {{
+                    countEl.textContent = matchedGcpCount;
+
+                    // Color based on progress towards 20
+                    if (matchedGcpCount >= MINIMUM_EXPORT_GCP_COUNT) {{
+                        countEl.style.color = '#0ead69';  // Green - ready
+                    }} else if (matchedGcpCount >= 10) {{
+                        countEl.style.color = '#FF9800';  // Orange - getting there
+                    }} else {{
+                        countEl.style.color = '#e94560';  // Red - not enough
+                    }}
+                }}
+
+                if (progressFill) {{
+                    const percent = Math.min(100, (matchedGcpCount / MINIMUM_EXPORT_GCP_COUNT) * 100);
+                    progressFill.style.width = percent + '%';
+
+                    // Color based on progress
+                    if (matchedGcpCount >= MINIMUM_EXPORT_GCP_COUNT) {{
+                        progressFill.style.background = '#0ead69';  // Green
+                    }} else if (matchedGcpCount >= 10) {{
+                        progressFill.style.background = '#FF9800';  // Orange
+                    }} else {{
+                        progressFill.style.background = '#e94560';  // Red
+                    }}
+                }}
+
+                if (exportBtn) {{
+                    if (matchedGcpCount >= MINIMUM_EXPORT_GCP_COUNT) {{
+                        exportBtn.disabled = false;
+                        exportBtn.title = 'Export GCPs to JSON file';
+                    }} else {{
+                        exportBtn.disabled = true;
+                        exportBtn.title = `Need at least ${{MINIMUM_EXPORT_GCP_COUNT}} matched GCPs to export (have ${{matchedGcpCount}})`;
+                    }}
+                }}
+
+                if (statusEl) {{
+                    if (matchedGcpCount >= MINIMUM_EXPORT_GCP_COUNT) {{
+                        statusEl.textContent = 'Ready to export!';
+                        statusEl.style.color = '#0ead69';
+                    }} else {{
+                        const needed = MINIMUM_EXPORT_GCP_COUNT - matchedGcpCount;
+                        statusEl.textContent = `Need ${{needed}} more matched GCPs to export`;
+                        statusEl.style.color = '#e94560';
+                    }}
+                }}
+            }})
+            .catch(err => {{
+                console.error('Failed to get export status:', err);
+                matchedGcpCount = 0;
+            }});
+        }}
+
+        // Export GCPs to JSON file
+        function exportGCPs() {{
+            if (matchedGcpCount < MINIMUM_EXPORT_GCP_COUNT) {{
+                alert(`Cannot export: Need at least ${{MINIMUM_EXPORT_GCP_COUNT}} matched GCPs (have ${{matchedGcpCount}})`);
+                return;
+            }}
+
+            updateStatus('Exporting GCPs...');
+
+            fetch('/api/export_gcps', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    updateStatus(`Exported ${{data.gcp_count}} GCPs to: ${{data.filename}}`);
+                    alert(`Successfully exported ${{data.gcp_count}} GCPs!\\n\\nSaved to:\\n${{data.path}}`);
+                }} else {{
+                    updateStatus('Export failed: ' + data.error);
+                    alert('Export failed: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Export failed:', err);
+                updateStatus('Export failed: ' + err.message);
+                alert('Export failed: ' + err.message);
+            }});
         }}
 
         // KML Extractor functionality
@@ -3905,6 +5130,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 updateGCPView();
                 if (maskVisible.gcp) showMask('gcp');
                 if (projectedMaskVisible) showProjectedMask();
+                updateVerificationOverlayZoom();
             }}
         }}
 
@@ -3948,6 +5174,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
             updateGCPView();
             if (maskVisible.gcp) showMask('gcp');
             if (projectedMaskVisible) showProjectedMask();
+            updateVerificationOverlayZoom();
         }}
 
         function clearAll() {{
@@ -4325,6 +5552,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     updateGCPView();
                     updateCameraVisualization();
 
+                    // Refresh verification overlay if visible
+                    if (verificationOverlayVisible) {{
+                        fetchAndDrawVerificationOverlay();
+                    }}
+
                     // Hide PnP results panel
                     document.getElementById('pnp-results').style.display = 'none';
 
@@ -4378,6 +5610,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     updateCameraParamsDisplay();
                     updateGCPView();
                     updateCameraVisualization();
+
+                    // Refresh verification overlay if visible
+                    if (verificationOverlayVisible) {{
+                        fetchAndDrawVerificationOverlay();
+                    }}
 
                     // Re-run calibration to show new error metrics
                     runCalibration();
@@ -4677,6 +5914,11 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     // Update camera visualization on Tab 1 (real-time sync)
                     updateCameraVisualization();
 
+                    // Refresh verification overlay if visible
+                    if (verificationOverlayVisible) {{
+                        fetchAndDrawVerificationOverlay();
+                    }}
+
                     updateStatus(`${{param}} adjusted to ${{newValue.toFixed(1)}}`);
                 }} else {{
                     updateStatus('Error: ' + data.error);
@@ -4713,9 +5955,10 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     // Show toggle button
                     document.getElementById('toggle-mask-' + tab + '-btn').style.display = 'block';
 
-                    // Show manual matching button for GCP tab
+                    // Show manual matching and auto-suggest buttons for GCP tab
                     if (tab === 'gcp') {{
                         document.getElementById('manual-match-btn').style.display = 'block';
+                        document.getElementById('auto-suggest-btn').style.display = 'block';
                     }}
 
                     // Auto-show mask
@@ -4773,6 +6016,288 @@ def generate_unified_html(session: UnifiedSession) -> str:
             const targetContainer = tab === 'gcp' ? gcpContainer : container;
             const maskOverlay = targetContainer.querySelector('.mask-overlay:not(.projected)');
             if (maskOverlay) maskOverlay.remove();
+        }}
+
+        // Auto-suggest point functions
+        let suggestedPoints = [];  // Current suggested points
+        let suggestMode = false;   // Whether suggestion overlay is active
+
+        function autoSuggestPoints() {{
+            updateStatus('Auto-suggesting GCP points from detected features...');
+
+            fetch('/api/auto_suggest_points', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{
+                    max_suggestions: 20,
+                    min_separation: 50.0
+                }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    // Store suggested points
+                    suggestedPoints = data.camera_suggestions || [];
+                    const matchedPairs = data.matched_pairs || [];
+                    const cartoSuggestions = data.cartography_suggestions || [];
+                    const metadata = data.metadata || {{}};
+
+                    // Clear any existing suggestions
+                    clearSuggestedPoints();
+
+                    if (suggestedPoints.length === 0 && cartoSuggestions.length === 0) {{
+                        updateStatus('No corner points detected in masks. Try running SAM3 detection first.');
+                        document.getElementById('suggested-points-status').style.display = 'block';
+                        document.getElementById('suggested-points-status').innerHTML =
+                            '<span style="color: #f44336;">No corners detected. Run SAM3 feature detection first.</span>';
+                        return;
+                    }}
+
+                    // Draw suggested points on camera frame
+                    drawSuggestedPoints(suggestedPoints, matchedPairs);
+
+                    // Update status panel
+                    const statusDiv = document.getElementById('suggested-points-status');
+                    statusDiv.style.display = 'block';
+                    statusDiv.innerHTML = `
+                        <div style="color: #FFD700; font-weight: bold;">Suggested Points:</div>
+                        <div>Camera: ${{suggestedPoints.length}} corners</div>
+                        <div>Cartography: ${{cartoSuggestions.length}} corners</div>
+                        <div>Matched pairs: ${{matchedPairs.length}}</div>
+                        <div style="margin-top: 5px; color: #aaa;">
+                            Click on a yellow marker to accept it as a GCP.
+                            Green markers have matched pairs.
+                        </div>
+                        <button onclick="clearSuggestedPoints()" style="margin-top: 8px; background: #555;">Clear Suggestions</button>
+                        <button onclick="acceptAllMatched()" style="margin-top: 5px; background: #32CD32;">Accept All Matched (${{matchedPairs.length}})</button>
+                    `;
+
+                    suggestMode = true;
+                    updateStatus(`Found ${{suggestedPoints.length}} camera suggestions, ${{matchedPairs.length}} matched pairs`);
+                }} else {{
+                    updateStatus('Auto-suggest failed: ' + data.error);
+                    document.getElementById('suggested-points-status').style.display = 'block';
+                    document.getElementById('suggested-points-status').innerHTML =
+                        `<span style="color: #f44336;">Error: ${{data.error}}</span>`;
+                }}
+            }})
+            .catch(err => {{
+                console.error('Auto-suggest failed:', err);
+                updateStatus('Auto-suggest failed: ' + err.message);
+            }});
+        }}
+
+        function drawSuggestedPoints(cameraSuggestions, matchedPairs) {{
+            // Create a Set of matched camera point indices for quick lookup
+            const matchedCameraCoords = new Set();
+            matchedPairs.forEach(pair => {{
+                const cam = pair.camera;
+                matchedCameraCoords.add(`${{Math.round(cam.x)}},${{Math.round(cam.y)}}`);
+            }});
+
+            // Draw camera suggestions
+            cameraSuggestions.forEach((pt, idx) => {{
+                const coordKey = `${{Math.round(pt.x)}},${{Math.round(pt.y)}}`;
+                const isMatched = matchedCameraCoords.has(coordKey);
+
+                // Find matching pair if exists
+                let matchPair = null;
+                if (isMatched) {{
+                    matchPair = matchedPairs.find(p =>
+                        Math.round(p.camera.x) === Math.round(pt.x) &&
+                        Math.round(p.camera.y) === Math.round(pt.y)
+                    );
+                }}
+
+                const marker = document.createElement('div');
+                marker.className = 'suggested-point' + (isMatched ? ' matched' : '');
+                marker.style.left = (pt.x * gcpZoom) + 'px';
+                marker.style.top = (pt.y * gcpZoom) + 'px';
+                marker.title = isMatched ?
+                    `Matched point (dist: ${{matchPair ? matchPair.distance.toFixed(1) : '?'}}px) - Click to accept` :
+                    `Suggested point (${{pt.final_score ? pt.final_score.toFixed(2) : '?'}}) - Click to accept`;
+                marker.dataset.index = idx;
+                marker.dataset.x = pt.x;
+                marker.dataset.y = pt.y;
+                marker.dataset.matched = isMatched ? 'true' : 'false';
+
+                if (matchPair) {{
+                    marker.dataset.cartoX = matchPair.cartography.x;
+                    marker.dataset.cartoY = matchPair.cartography.y;
+                }}
+
+                // Add click handler
+                marker.onclick = function(e) {{
+                    e.stopPropagation();
+                    acceptSuggestedPoint(marker);
+                }};
+
+                gcpContainer.appendChild(marker);
+
+                // Add small label with index
+                const label = document.createElement('div');
+                label.className = 'suggested-label';
+                label.textContent = isMatched ? 'M' + (matchedPairs.findIndex(p =>
+                    Math.round(p.camera.x) === Math.round(pt.x) &&
+                    Math.round(p.camera.y) === Math.round(pt.y)) + 1) : (idx + 1);
+                label.style.left = (pt.x * gcpZoom + 12) + 'px';
+                label.style.top = (pt.y * gcpZoom - 6) + 'px';
+                gcpContainer.appendChild(label);
+            }});
+        }}
+
+        function acceptSuggestedPoint(marker) {{
+            const x = parseFloat(marker.dataset.x);
+            const y = parseFloat(marker.dataset.y);
+            const isMatched = marker.dataset.matched === 'true';
+
+            // Prepare request data
+            const requestData = {{
+                point: {{ x: x, y: y }},
+                category: document.getElementById('category').value || 'other',
+                frame_type: 'camera'
+            }};
+
+            // If it's a matched point, include cartography data
+            if (isMatched && marker.dataset.cartoX && marker.dataset.cartoY) {{
+                requestData.cartography_point = {{
+                    x: parseFloat(marker.dataset.cartoX),
+                    y: parseFloat(marker.dataset.cartoY)
+                }};
+            }}
+
+            updateStatus('Adding suggested point...');
+
+            fetch('/api/accept_suggested_point', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify(requestData)
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    // Remove the accepted marker
+                    const label = gcpContainer.querySelector(`.suggested-label[style*="left: ${{(x * gcpZoom + 12)}}px"]`);
+                    if (label) label.remove();
+                    marker.remove();
+
+                    // Refresh points list
+                    refreshPointsAfterAdd(data);
+                    updateStatus(data.message || `Added point at (${{x.toFixed(1)}}, ${{y.toFixed(1)}})`);
+                }} else {{
+                    updateStatus('Failed to add point: ' + data.error);
+                    if (!isMatched) {{
+                        alert('Camera-only points require a matched cartography point. Use manual matching for unmatched points.');
+                    }}
+                }}
+            }})
+            .catch(err => {{
+                console.error('Accept point failed:', err);
+                updateStatus('Accept point failed: ' + err.message);
+            }});
+        }}
+
+        function acceptAllMatched() {{
+            const matchedMarkers = gcpContainer.querySelectorAll('.suggested-point.matched');
+            if (matchedMarkers.length === 0) {{
+                updateStatus('No matched points to accept');
+                return;
+            }}
+
+            updateStatus(`Accepting ${{matchedMarkers.length}} matched points...`);
+
+            // Accept each matched point sequentially
+            let accepted = 0;
+            let total = matchedMarkers.length;
+
+            function acceptNext(index) {{
+                if (index >= total) {{
+                    updateStatus(`Accepted ${{accepted}}/${{total}} matched points`);
+                    clearSuggestedPoints();
+                    return;
+                }}
+
+                const marker = matchedMarkers[index];
+                const x = parseFloat(marker.dataset.x);
+                const y = parseFloat(marker.dataset.y);
+
+                const requestData = {{
+                    point: {{ x: x, y: y }},
+                    category: 'other',
+                    frame_type: 'camera'
+                }};
+
+                if (marker.dataset.cartoX && marker.dataset.cartoY) {{
+                    requestData.cartography_point = {{
+                        x: parseFloat(marker.dataset.cartoX),
+                        y: parseFloat(marker.dataset.cartoY)
+                    }};
+                }}
+
+                fetch('/api/accept_suggested_point', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(requestData)
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        accepted++;
+                        refreshPointsAfterAdd(data);
+                    }}
+                    // Continue to next point
+                    acceptNext(index + 1);
+                }})
+                .catch(err => {{
+                    console.error('Accept point failed:', err);
+                    acceptNext(index + 1);
+                }});
+            }}
+
+            acceptNext(0);
+        }}
+
+        function refreshPointsAfterAdd(data) {{
+            // Update local points array
+            if (data.point) {{
+                points.push(data.point);
+            }}
+            // Refresh displays
+            redrawMarkers();
+            updatePointsList();
+            updateTabStatus();
+
+            // Re-project points to camera view
+            if (currentTab === 'gcp') {{
+                fetch('/api/get_points', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{}})
+                }})
+                .then(r => r.json())
+                .then(pointsData => {{
+                    if (pointsData.points) {{
+                        points = pointsData.points;
+                        redrawMarkers();
+                        updatePointsList();
+                        updateTabStatus();
+                    }}
+                }});
+            }}
+        }}
+
+        function clearSuggestedPoints() {{
+            // Remove all suggested point markers and labels
+            gcpContainer.querySelectorAll('.suggested-point').forEach(m => m.remove());
+            gcpContainer.querySelectorAll('.suggested-label').forEach(l => l.remove());
+
+            suggestedPoints = [];
+            suggestMode = false;
+
+            // Hide status
+            document.getElementById('suggested-points-status').style.display = 'none';
+
+            updateStatus('Cleared suggested points');
         }}
 
         // Projected mask functions (Map mask projected onto camera view)
@@ -5009,6 +6534,330 @@ def generate_unified_html(session: UnifiedSession) -> str:
 
         // Attach toggle event listener immediately
         document.getElementById('camera-overlay-toggle').addEventListener('change', toggleCameraOverlay);
+
+        // ============================================================
+        // Verification Overlay Functions
+        // ============================================================
+
+        function toggleVerificationOverlay() {{
+            verificationOverlayVisible = !verificationOverlayVisible;
+            const btn = document.getElementById('toggle-verification-btn');
+            const legend = document.getElementById('verification-legend');
+
+            if (verificationOverlayVisible) {{
+                btn.textContent = 'Hide Verification Overlay';
+                legend.style.display = 'block';
+                fetchAndDrawVerificationOverlay();
+            }} else {{
+                btn.textContent = 'Show Verification Overlay';
+                legend.style.display = 'none';
+                removeVerificationOverlay();
+            }}
+        }}
+
+        function fetchAndDrawVerificationOverlay() {{
+            updateStatus('Loading verification data...');
+
+            fetch('/api/get_verification_data', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{}})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    verificationData = data.correspondences;
+                    drawVerificationOverlay();
+                    const aligned = data.correspondences.filter(c => c.error < 5).length;
+                    const questionable = data.correspondences.filter(c => c.error >= 5 && c.error <= 15).length;
+                    const misaligned = data.correspondences.filter(c => c.error > 15).length;
+                    updateStatus(`Verification: ${{aligned}} aligned, ${{questionable}} questionable, ${{misaligned}} misaligned`);
+                }} else {{
+                    updateStatus('Verification data not available: ' + (data.error || 'unknown error'));
+                    verificationOverlayVisible = false;
+                    document.getElementById('toggle-verification-btn').textContent = 'Show Verification Overlay';
+                    document.getElementById('verification-legend').style.display = 'none';
+                }}
+            }})
+            .catch(err => {{
+                console.error('Verification fetch failed:', err);
+                updateStatus('Verification fetch failed: ' + err.message);
+            }});
+        }}
+
+        function drawVerificationOverlay() {{
+            removeVerificationOverlay();
+
+            if (!verificationData || verificationData.length === 0) {{
+                updateStatus('No correspondences to verify');
+                return;
+            }}
+
+            const gcpImg = document.getElementById('gcp-image');
+            const gcpContainer = document.getElementById('gcp-image-container');
+
+            // Create canvas overlay
+            verificationCanvas = document.createElement('canvas');
+            verificationCanvas.className = 'verification-overlay';
+            verificationCanvas.width = gcpImg.naturalWidth;
+            verificationCanvas.height = gcpImg.naturalHeight;
+            verificationCanvas.style.width = (gcpImg.naturalWidth * gcpZoom) + 'px';
+            verificationCanvas.style.height = (gcpImg.naturalHeight * gcpZoom) + 'px';
+            gcpContainer.appendChild(verificationCanvas);
+
+            const ctx = verificationCanvas.getContext('2d');
+
+            // Draw each correspondence
+            verificationData.forEach((corr, idx) => {{
+                // Color based on reprojection error
+                let color;
+                if (corr.error < 5) {{
+                    color = '#4CAF50';  // Green - aligned
+                }} else if (corr.error <= 15) {{
+                    color = '#FF9800';  // Yellow - questionable
+                }} else {{
+                    color = '#f44336';  // Red - misaligned
+                }}
+
+                // Draw line from projected (expected) to observed (actual)
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(corr.projected_u, corr.projected_v);
+                ctx.lineTo(corr.observed_u, corr.observed_v);
+                ctx.stroke();
+
+                // Draw projected point (expected) as hollow circle
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(corr.projected_u, corr.projected_v, 8, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Draw observed point (actual) as filled circle
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(corr.observed_u, corr.observed_v, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw error label near the midpoint
+                const midX = (corr.projected_u + corr.observed_u) / 2;
+                const midY = (corr.projected_v + corr.observed_v) / 2;
+
+                ctx.font = '11px Arial';
+                ctx.fillStyle = '#fff';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+
+                const errorText = corr.error.toFixed(1) + 'px';
+                const textMetrics = ctx.measureText(errorText);
+                const textX = midX - textMetrics.width / 2;
+                const textY = midY - 10;
+
+                // Background for readability
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(textX - 3, textY - 11, textMetrics.width + 6, 14);
+
+                ctx.fillStyle = color;
+                ctx.fillText(errorText, textX, textY);
+
+                // Draw point name label
+                ctx.font = 'bold 10px Arial';
+                ctx.fillStyle = '#fff';
+                const nameX = corr.observed_u + 10;
+                const nameY = corr.observed_v - 5;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                const nameMetrics = ctx.measureText(corr.name);
+                ctx.fillRect(nameX - 2, nameY - 9, nameMetrics.width + 4, 12);
+                ctx.fillStyle = color;
+                ctx.fillText(corr.name, nameX, nameY);
+            }});
+
+            // Add click handler for deleting correspondences
+            verificationCanvas.onclick = function(e) {{
+                handleVerificationClick(e);
+            }};
+
+            // Add hover handler for tooltips
+            verificationCanvas.onmousemove = function(e) {{
+                handleVerificationHover(e);
+            }};
+
+            verificationCanvas.onmouseleave = function() {{
+                removeVerificationTooltip();
+            }};
+        }}
+
+        function handleVerificationClick(e) {{
+            if (!verificationData) return;
+
+            const rect = verificationCanvas.getBoundingClientRect();
+            const scaleX = verificationCanvas.width / rect.width;
+            const scaleY = verificationCanvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            // Find the closest correspondence line
+            let closestCorr = null;
+            let closestDist = 20;  // Max click distance (pixels in canvas space)
+
+            verificationData.forEach(corr => {{
+                const dist = pointToLineDistance(
+                    x, y,
+                    corr.projected_u, corr.projected_v,
+                    corr.observed_u, corr.observed_v
+                );
+                if (dist < closestDist) {{
+                    closestDist = dist;
+                    closestCorr = corr;
+                }}
+            }});
+
+            if (closestCorr) {{
+                if (confirm(`Delete correspondence "${{closestCorr.name}}"?\\n\\nThis will remove the frozen observation for this GCP.`)) {{
+                    deleteCorrespondence(closestCorr.name);
+                }}
+            }}
+        }}
+
+        function handleVerificationHover(e) {{
+            if (!verificationData) return;
+
+            const rect = verificationCanvas.getBoundingClientRect();
+            const scaleX = verificationCanvas.width / rect.width;
+            const scaleY = verificationCanvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            // Find the closest correspondence
+            let closestCorr = null;
+            let closestDist = 30;
+
+            verificationData.forEach(corr => {{
+                const dist = pointToLineDistance(
+                    x, y,
+                    corr.projected_u, corr.projected_v,
+                    corr.observed_u, corr.observed_v
+                );
+                if (dist < closestDist) {{
+                    closestDist = dist;
+                    closestCorr = corr;
+                }}
+            }});
+
+            if (closestCorr) {{
+                showVerificationTooltip(e.clientX, e.clientY, closestCorr);
+            }} else {{
+                removeVerificationTooltip();
+            }}
+        }}
+
+        function showVerificationTooltip(x, y, corr) {{
+            removeVerificationTooltip();
+
+            const tooltip = document.createElement('div');
+            tooltip.className = 'verification-tooltip';
+            tooltip.style.left = (x + 15) + 'px';
+            tooltip.style.top = (y - 10) + 'px';
+
+            let statusText;
+            if (corr.error < 5) {{
+                statusText = '<span style="color: #4CAF50;">Aligned</span>';
+            }} else if (corr.error <= 15) {{
+                statusText = '<span style="color: #FF9800;">Questionable</span>';
+            }} else {{
+                statusText = '<span style="color: #f44336;">Misaligned</span>';
+            }}
+
+            tooltip.innerHTML = `
+                <strong>${{corr.name}}</strong><br>
+                Error: ${{corr.error.toFixed(2)}}px<br>
+                Status: ${{statusText}}<br>
+                <span style="font-size: 10px; color: #aaa;">Click to delete</span>
+            `;
+            document.body.appendChild(tooltip);
+        }}
+
+        function removeVerificationTooltip() {{
+            const tooltip = document.querySelector('.verification-tooltip');
+            if (tooltip) tooltip.remove();
+        }}
+
+        function pointToLineDistance(px, py, x1, y1, x2, y2) {{
+            // Calculate distance from point (px, py) to line segment (x1,y1)-(x2,y2)
+            const A = px - x1;
+            const B = py - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+
+            if (lenSq !== 0) param = dot / lenSq;
+
+            let xx, yy;
+            if (param < 0) {{
+                xx = x1;
+                yy = y1;
+            }} else if (param > 1) {{
+                xx = x2;
+                yy = y2;
+            }} else {{
+                xx = x1 + param * C;
+                yy = y1 + param * D;
+            }}
+
+            const dx = px - xx;
+            const dy = py - yy;
+            return Math.sqrt(dx * dx + dy * dy);
+        }}
+
+        function deleteCorrespondence(name) {{
+            updateStatus(`Deleting correspondence "${{name}}"...`);
+
+            fetch('/api/delete_correspondence', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ name: name }})
+            }})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    updateStatus(`Deleted correspondence "${{name}}"`);
+                    // Refresh verification overlay
+                    if (verificationOverlayVisible) {{
+                        fetchAndDrawVerificationOverlay();
+                    }}
+                    // Re-run calibration to update error metrics
+                    runCalibration();
+                }} else {{
+                    updateStatus('Delete failed: ' + data.error);
+                }}
+            }})
+            .catch(err => {{
+                console.error('Delete correspondence failed:', err);
+                updateStatus('Delete failed: ' + err.message);
+            }});
+        }}
+
+        function removeVerificationOverlay() {{
+            if (verificationCanvas) {{
+                verificationCanvas.remove();
+                verificationCanvas = null;
+            }}
+            removeVerificationTooltip();
+        }}
+
+        // Update verification overlay when zoom changes
+        function updateVerificationOverlayZoom() {{
+            if (verificationOverlayVisible && verificationCanvas) {{
+                const gcpImg = document.getElementById('gcp-image');
+                verificationCanvas.style.width = (gcpImg.naturalWidth * gcpZoom) + 'px';
+                verificationCanvas.style.height = (gcpImg.naturalHeight * gcpZoom) + 'px';
+            }}
+        }}
     </script>
 </body>
 </html>'''
