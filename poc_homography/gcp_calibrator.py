@@ -27,6 +27,85 @@ Key Concepts:
     - Robust loss: Reduces influence of outlier GCPs on optimization
     - Parameter increments: Optimization adjusts camera parameters incrementally
 
+Regularization (Prior-Based Constraints):
+    When GCP data is noisy, sparse, or poorly distributed, the optimization may
+    produce implausible camera parameters. Regularization adds soft constraints
+    that pull parameters toward their initial sensor-based estimates.
+
+    Extended Objective Function:
+        E_total(p) = E_reproj(p) + E_prior(p)
+
+        where:
+        - E_reproj(p) = sum_i rho(||x_observed,i - pi(H_pred(p) * x_ref,i)||^2)
+          Measures geometric accuracy: how well predicted pixels match observations.
+
+        - E_prior(p) = lambda * ||p - p0||^2_Sigma
+                     = lambda * sum_j ((p_j - p0_j) / sigma_j)^2
+          Measures plausibility: how far parameters deviate from sensor readings.
+
+        - p0 = [0, 0, 0, 0, 0, 0] is the initial estimate (no adjustment)
+        - sigma_j is the prior uncertainty for parameter j
+        - lambda is the regularization weight balancing the two terms
+
+    Physical Interpretation:
+        - E_reproj: Captures how well the camera model explains the observed GCPs.
+          Lower values mean better geometric fit to the data.
+
+        - E_prior: Captures how plausible the parameters are given sensor accuracy.
+          Lower values mean parameters stay close to initial sensor readings.
+
+        - lambda (regularization_weight): Controls the trade-off between terms.
+          - lambda -> 0: Ignores priors, pure data fitting (may overfit noise)
+          - lambda -> inf: Forces parameters to stay at initial values (underfits)
+
+        - sigma_j: Sets the "trust" in sensor j. Smaller sigma means higher trust
+          (stronger pull toward initial value). Larger sigma means lower trust
+          (parameter can deviate more freely).
+
+    Prior Configuration (prior_sigmas dict):
+        Default values represent typical sensor uncertainties:
+
+        | Key              | Default | Unit    | Description                    |
+        |------------------|---------|---------|--------------------------------|
+        | gps_position_m   | 10.0    | meters  | X, Y position (horizontal GPS) |
+        | height_m         | 2.0     | meters  | Z position (barometer/GPS alt) |
+        | pan_deg          | 3.0     | degrees | Compass heading accuracy       |
+        | tilt_deg         | 3.0     | degrees | IMU pitch accuracy             |
+        | roll_deg         | 1.0     | degrees | IMU roll accuracy              |
+
+        Adjusting sigmas based on sensor quality:
+        - RTK GPS (cm accuracy): gps_position_m = 0.5 - 2.0
+        - Consumer GPS (5-15m):  gps_position_m = 10.0 - 20.0
+        - Survey-grade IMU:      pan_deg = 0.5, tilt_deg = 0.5
+        - Phone magnetometer:    pan_deg = 5.0 - 10.0 (high interference)
+
+    Regularization Weight Guidelines (regularization_weight / lambda):
+        | Value | Effect           | When to Use                          |
+        |-------|------------------|--------------------------------------|
+        | 0.0   | No regularization| Many high-quality GCPs (20+)         |
+        | 0.1   | Weak             | Good GCPs, trust data more           |
+        | 1.0   | Balanced         | Default, moderate GCP quality        |
+        | 10.0  | Strong           | Few/noisy GCPs, trust sensors more   |
+
+        Rule of thumb:
+        - With 20+ well-distributed GCPs: lambda = 0.0 to 0.1
+        - With 10-20 GCPs of moderate quality: lambda = 1.0 (default)
+        - With 5-10 sparse or noisy GCPs: lambda = 5.0 to 10.0
+        - With very few GCPs (< 5): Consider lambda = 10.0+ or collect more data
+
+    Example with Regularization:
+        >>> calibrator = GCPCalibrator(
+        ...     camera_geometry=geo,
+        ...     gcps=gcps,
+        ...     prior_sigmas={
+        ...         'gps_position_m': 2.0,   # RTK GPS, high accuracy
+        ...         'pan_deg': 5.0,          # Consumer compass, less trusted
+        ...     },
+        ...     regularization_weight=1.0    # Balanced trade-off
+        ... )
+        >>> result = calibrator.calibrate()
+        >>> print(f"Regularization penalty: {result.regularization_penalty:.2f}")
+
 Usage Example:
     >>> from poc_homography.camera_geometry import CameraGeometry
     >>>
@@ -139,6 +218,7 @@ class CalibrationResult:
     validation_metrics: Optional[Dict[str, Dict[str, float]]] = None
     train_indices: Optional[List[int]] = None
     test_indices: Optional[List[int]] = None
+    regularization_penalty: Optional[float] = None  # Weighted squared deviation from priors
 
 
 class GCPCalibrator:
@@ -159,6 +239,8 @@ class GCPCalibrator:
         loss_scale: Scale parameter for robust loss (pixels)
         validation_split: Fraction of GCPs to reserve for validation (0.0-0.5)
         random_seed: Random seed for reproducible train/test splitting
+        prior_sigmas: Dictionary of prior standard deviations for regularization
+        regularization_weight: Lambda parameter balancing reprojection vs prior penalty
     """
 
     # Supported loss functions
@@ -180,6 +262,16 @@ class GCPCalibrator:
         'Z': (-5.0, 5.0),          # ±5 meters
     }
 
+    # Default prior standard deviations for regularization
+    # These represent typical uncertainties in camera pose estimates
+    DEFAULT_PRIOR_SIGMAS: Dict[str, float] = {
+        'gps_position_m': 10.0,    # X, Y position uncertainty (meters)
+        'height_m': 2.0,           # Z position uncertainty (meters)
+        'pan_deg': 3.0,            # Pan angle uncertainty (degrees)
+        'tilt_deg': 3.0,           # Tilt angle uncertainty (degrees)
+        'roll_deg': 1.0,           # Roll angle uncertainty (degrees)
+    }
+
     def __init__(
         self,
         camera_geometry: 'CameraGeometry',
@@ -190,7 +282,9 @@ class GCPCalibrator:
         reference_lon: Optional[Degrees] = None,
         utm_crs: Optional[str] = None,
         validation_split: float = 0.0,
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        prior_sigmas: Optional[Dict[str, float]] = None,
+        regularization_weight: float = 1.0
     ):
         """
         Initialize GCP-based calibrator.
@@ -216,6 +310,19 @@ class GCPCalibrator:
                              If > 0, randomly splits GCPs into train and test sets.
             random_seed: Random seed for reproducible train/test splitting.
                         If None, uses non-deterministic splitting.
+            prior_sigmas: Dictionary of prior standard deviations for regularization.
+                         Keys and default values:
+                         - 'gps_position_m': X, Y position uncertainty (default: 10.0 meters)
+                         - 'height_m': Z position uncertainty (default: 2.0 meters)
+                         - 'pan_deg': Pan angle uncertainty (default: 3.0 degrees)
+                         - 'tilt_deg': Tilt angle uncertainty (default: 3.0 degrees)
+                         - 'roll_deg': Roll angle uncertainty (default: 1.0 degree)
+                         If None, uses DEFAULT_PRIOR_SIGMAS. If provided, merges with defaults
+                         (user values override defaults).
+            regularization_weight: Lambda parameter (>= 0.0) balancing reprojection error
+                                  vs prior penalty. Default 1.0.
+                                  - 0.0: No regularization (pure reprojection minimization)
+                                  - Higher values: Stronger pull towards prior estimates
 
         Raises:
             ValueError: If parameters are invalid (empty GCPs, invalid loss function, etc.)
@@ -264,6 +371,26 @@ class GCPCalibrator:
                 f"validation_split must be between 0.0 and 0.5, got {validation_split}"
             )
 
+        # Validate regularization_weight
+        if not np.isfinite(regularization_weight) or regularization_weight < 0.0:
+            raise ValueError(
+                f"regularization_weight must be >= 0.0 and finite, got {regularization_weight}"
+            )
+
+        # Process prior_sigmas: merge with defaults (user values override defaults)
+        if prior_sigmas is None:
+            merged_sigmas = self.DEFAULT_PRIOR_SIGMAS.copy()
+        else:
+            merged_sigmas = self.DEFAULT_PRIOR_SIGMAS.copy()
+            merged_sigmas.update(prior_sigmas)
+
+        # Validate prior_sigmas values (must be positive and finite)
+        for key, value in merged_sigmas.items():
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"prior_sigmas['{key}'] must be positive and finite, got {value}"
+                )
+
         # Store configuration
         self.camera_geometry = camera_geometry
         self.gcps = gcps
@@ -271,6 +398,19 @@ class GCPCalibrator:
         self.loss_scale = loss_scale
         self.validation_split = validation_split
         self.random_seed = random_seed
+        self._prior_sigmas = merged_sigmas
+        self._regularization_weight = regularization_weight
+
+        # Convert prior_sigmas to internal numpy array format for efficient computation
+        # Order: [sigma_pan, sigma_tilt, sigma_roll, sigma_X, sigma_Y, sigma_Z]
+        self._sigma_vector = np.array([
+            merged_sigmas['pan_deg'],           # sigma_pan (degrees)
+            merged_sigmas['tilt_deg'],          # sigma_tilt (degrees)
+            merged_sigmas['roll_deg'],          # sigma_roll (degrees)
+            merged_sigmas['gps_position_m'],    # sigma_X (meters)
+            merged_sigmas['gps_position_m'],    # sigma_Y (meters)
+            merged_sigmas['height_m'],          # sigma_Z (meters)
+        ], dtype=np.float64)
 
         # Set reference GPS coordinates for local coordinate conversion
         # IMPORTANT: This should be the camera position so that world coordinates
@@ -342,7 +482,8 @@ class GCPCalibrator:
         logger.info(
             f"GCPCalibrator initialized with {len(gcps)} GCPs, "
             f"loss={self.loss_function}, scale={self.loss_scale}, "
-            f"validation_split={self.validation_split}"
+            f"validation_split={self.validation_split}, "
+            f"regularization_weight={self._regularization_weight}"
         )
 
     def _compute_predicted_homography(self, params: np.ndarray) -> np.ndarray:
@@ -449,6 +590,44 @@ class GCPCalibrator:
             residuals[2*res_idx + 1] = v_observed - v_predicted
 
         return residuals
+
+    def _compute_regularization_residuals(
+        self,
+        params: np.ndarray
+    ) -> np.ndarray:
+        """
+        Compute regularization residuals for Tikhonov regularization.
+
+        The regularization penalizes parameter deviations from initial values (zeros)
+        weighted by prior uncertainties. This stabilizes optimization when GCP
+        data is noisy.
+
+        Mathematical formulation:
+            r_prior[j] = sqrt(lambda) * (params[j] - 0) / sigma[j]
+
+        When squared and summed by least_squares, this produces:
+            E_prior = lambda * sum_j((params[j] / sigma[j])^2)
+
+        Args:
+            params: Parameter vector [Δpan, Δtilt, Δroll, ΔX, ΔY, ΔZ]
+                    Units: [deg, deg, deg, m, m, m]
+
+        Returns:
+            Regularization residuals array of shape (6,)
+            Returns zeros if regularization_weight is 0.0
+        """
+        # Handle case where regularization is disabled
+        if self._regularization_weight == 0.0:
+            return np.zeros(6, dtype=np.float64)
+
+        # Compute regularization residuals:
+        # r_prior[j] = sqrt(lambda) * (params[j] - 0) / sigma[j]
+        # Since p₀ = 0 (initial parameters are zeros), this simplifies to:
+        # r_prior[j] = sqrt(lambda) * params[j] / sigma[j]
+        sqrt_lambda = np.sqrt(self._regularization_weight)
+        regularization_residuals = sqrt_lambda * params / self._sigma_vector
+
+        return regularization_residuals
 
     def _apply_robust_loss(self, residuals: np.ndarray) -> np.ndarray:
         """
@@ -693,8 +872,18 @@ class GCPCalibrator:
         scipy_loss = scipy_loss_map.get(self.loss_function, 'linear')
 
         # Define residual function for optimization (uses train indices)
+        # Returns reprojection residuals (2N elements) plus optional regularization
+        # residuals (6 elements) for a total of (2N + 6) elements when regularization
+        # is enabled
         def residual_fn(params):
-            return self._compute_residuals(params, gcp_indices=self._train_indices)
+            reproj_residuals = self._compute_residuals(params, gcp_indices=self._train_indices)
+
+            # Append regularization residuals if enabled
+            if self._regularization_weight > 0.0:
+                reg_residuals = self._compute_regularization_residuals(params)
+                return np.concatenate([reproj_residuals, reg_residuals])
+
+            return reproj_residuals
 
         # Run least-squares optimization
         try:
@@ -764,6 +953,13 @@ class GCPCalibrator:
         if not result.success:
             logger.warning(f"Optimization did not fully converge: {result.message}")
 
+        # Calculate regularization penalty if regularization is enabled
+        if self._regularization_weight > 0.0:
+            reg_residuals = self._compute_regularization_residuals(optimized_params)
+            regularization_penalty = float(np.sum(reg_residuals ** 2))
+        else:
+            regularization_penalty = None
+
         return CalibrationResult(
             optimized_params=optimized_params,
             initial_error=initial_error,
@@ -775,7 +971,8 @@ class GCPCalibrator:
             convergence_info=convergence_info,
             validation_metrics=validation_metrics,
             train_indices=self._train_indices,
-            test_indices=self._test_indices
+            test_indices=self._test_indices,
+            regularization_penalty=regularization_penalty
         )
 
 
