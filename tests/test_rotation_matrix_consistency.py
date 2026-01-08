@@ -334,6 +334,34 @@ class TestComputeHomographyWithRoll:
         assert result.metadata['roll_deg'] == 0.0, \
             f"Expected metadata roll_deg=0.0, got {result.metadata['roll_deg']}"
 
+    def test_compute_homography_rejects_invalid_roll(self):
+        """Verify compute_homography raises error for |roll_deg| > 15.0."""
+        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+
+        K = np.array([
+            [1000, 0, 960],
+            [0, 1000, 540],
+            [0, 0, 1]
+        ])
+
+        reference = {
+            'camera_matrix': K,
+            'camera_position': np.array([0.0, 0.0, 5.0]),
+            'pan_deg': 0.0,
+            'tilt_deg': 30.0,
+            'roll_deg': 16.0,  # Invalid: > 15.0
+            'map_width': 640,
+            'map_height': 640
+        }
+
+        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+        with pytest.raises(ValueError) as exc_info:
+            ieh.compute_homography(frame, reference)
+
+        assert "roll" in str(exc_info.value).lower(), \
+            "Error message should mention roll"
+
 
 class TestCameraViewingDirection:
     """Test that camera viewing direction is correct for various pan/tilt angles."""

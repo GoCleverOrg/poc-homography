@@ -104,6 +104,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     EDGE_FACTOR_CORNER_DECAY = 0.2       # Decay rate beyond edge radius
     EDGE_FACTOR_MIN = 0.3                # Minimum edge factor
 
+    # Roll validation thresholds (consistent with CameraGeometry)
+    ROLL_WARN_THRESHOLD = 5.0   # Warning when |roll_deg| > 5.0
+    ROLL_ERROR_THRESHOLD = 15.0  # Error when |roll_deg| > 15.0
+
     def __init__(
         self,
         width: Pixels,
@@ -149,6 +153,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # GPS reference point for WorldPoint conversion
         self._camera_gps_lat: Optional[float] = None
         self._camera_gps_lon: Optional[float] = None
+
+        # Current roll angle (degrees, default 0.0 for backward compatibility)
+        self.roll_deg: float = 0.0
 
         # Last used camera parameters (for metadata)
         self._last_camera_matrix: Optional[np.ndarray] = None
@@ -714,6 +721,21 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 "Tilt angle (%.2f degrees) is near ±90° gimbal lock zone. "
                 "Homography may be numerically unstable.",
                 tilt_deg
+            )
+
+        # Validate roll angle (consistent with CameraGeometry)
+        if abs(roll_deg) > self.ROLL_ERROR_THRESHOLD:
+            raise ValueError(
+                f"Roll angle {roll_deg:.1f}° is outside valid range "
+                f"[-{self.ROLL_ERROR_THRESHOLD}°, {self.ROLL_ERROR_THRESHOLD}°]. "
+                f"Check camera mount alignment."
+            )
+
+        if abs(roll_deg) > self.ROLL_WARN_THRESHOLD:
+            logger.warning(
+                "Roll angle (%.2f degrees) is unusually large (>%.1f degrees). "
+                "Typical camera mount roll is ±2 degrees.",
+                roll_deg, self.ROLL_WARN_THRESHOLD
             )
 
         # Store map dimensions

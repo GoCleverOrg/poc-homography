@@ -734,7 +734,6 @@ class CameraGeometry:
             )
 
         if abs(roll_deg) > self.ROLL_WARN_THRESHOLD:
-            import warnings
             warnings.warn(
                 f"Roll angle {roll_deg:.1f}° is unusually large (>{self.ROLL_WARN_THRESHOLD}°). "
                 f"Typical camera mount roll is ±2°. Verify configuration.",
