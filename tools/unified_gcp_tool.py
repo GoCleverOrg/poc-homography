@@ -2125,8 +2125,8 @@ CRS: {crs}</description>
             # Extract corner points from contours using polygon approximation
             all_corners = []
             for contour in contours:
-                # Skip very small contours
-                if cv2.contourArea(contour) < 100:
+                # Skip very small contours (same threshold as get_detected_vertices: 10)
+                if cv2.contourArea(contour) < 10:
                     continue
 
                 # Approximate polygon - epsilon controls accuracy
@@ -2322,15 +2322,17 @@ CRS: {crs}</description>
             )
             print(f"Extracted {len(carto_corners)} corners from cartography mask")
 
-        # Extract corners from camera mask
+        # Extract corners from camera mask using get_detected_vertices (same as manual matching)
         camera_corners = []
         if self.camera_mask is not None:
-            camera_corners = self.extract_corner_points_from_mask(
-                self.camera_mask,
-                max_corners=max_suggestions * 3,
-                min_distance=int(min_separation / 2)
-            )
-            print(f"Extracted {len(camera_corners)} corners from camera mask")
+            vertices = self.get_detected_vertices()
+            if vertices:
+                # Convert vertex format to corner format
+                camera_corners = [
+                    {'x': v['x'], 'y': v['y'], 'quality': 1.0}
+                    for v in vertices
+                ]
+            print(f"Extracted {len(camera_corners)} corners from camera mask (using get_detected_vertices)")
 
         # Check if we have at least one mask
         if not carto_corners and not camera_corners:
@@ -6086,15 +6088,18 @@ def generate_unified_html(session: UnifiedSession) -> str:
             }})
             .then(r => r.json())
             .then(data => {{
+                console.log('Auto-suggest response:', data);
                 if (data.success) {{
+                    // Clear any existing suggestions FIRST (before setting new data)
+                    gcpContainer.querySelectorAll('.suggested-point').forEach(m => m.remove());
+                    gcpContainer.querySelectorAll('.suggested-label').forEach(l => l.remove());
+
                     // Store suggested points
                     suggestedPoints = data.camera_suggestions || [];
+                    console.log('Camera suggestions:', suggestedPoints.length, suggestedPoints);
                     const matchedPairs = data.matched_pairs || [];
                     const cartoSuggestions = data.cartography_suggestions || [];
                     const metadata = data.metadata || {{}};
-
-                    // Clear any existing suggestions
-                    clearSuggestedPoints();
 
                     if (suggestedPoints.length === 0 && cartoSuggestions.length === 0) {{
                         updateStatus('No corner points detected in masks. Try running SAM3 detection first.');
