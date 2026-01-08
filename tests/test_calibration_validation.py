@@ -58,11 +58,11 @@ def valid_gcps_large():
     ref_lon = -0.230111
 
     gcps = []
-    np.random.seed(42)  # Reproducible
+    rng = np.random.default_rng(42)  # Reproducible without polluting global state
     for i in range(20):
         # Scatter GCPs around reference
-        lat_offset = np.random.uniform(-0.001, 0.001)
-        lon_offset = np.random.uniform(-0.001, 0.001)
+        lat_offset = rng.uniform(-0.001, 0.001)
+        lon_offset = rng.uniform(-0.001, 0.001)
 
         gcps.append({
             'gps': {'latitude': ref_lat + lat_offset, 'longitude': ref_lon + lon_offset},
@@ -980,19 +980,6 @@ class TestGenerateValidationReport:
         # Should include validation status
         assert "PASS" in report or "FAIL" in report or "Status" in report
 
-    def test_generate_validation_report_includes_systematic_errors(self, sample_calibration_result, sample_gcps_for_plot):
-        """Test report includes systematic error warnings if detected."""
-        # This test verifies that if systematic errors are detected,
-        # they appear in the report
-        report = generate_validation_report(
-            sample_calibration_result,
-            gcps=sample_gcps_for_plot,
-            image_width=1920,
-            image_height=1080
-        )
-
-        # Should include systematic error section
-        assert "Systematic" in report or "Warning" in report or len(report) > 0
 
 
 # ============================================================================
@@ -1057,10 +1044,7 @@ class TestCalibrationValidationIntegration:
         # Step 4: Generate report
         report = generate_validation_report(
             result,
-            validation_thresholds=thresholds,
-            gcps=valid_gcps_large,
-            image_width=1920,
-            image_height=1080
+            validation_thresholds=thresholds
         )
 
         assert isinstance(report, str)

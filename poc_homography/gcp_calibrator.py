@@ -825,6 +825,10 @@ def detect_systematic_errors(
     if residuals_2d.shape[1] != 2 or image_coords.shape[1] != 2:
         raise ValueError("residuals_2d and image_coords must be Nx2 arrays")
 
+    # Early return for insufficient points (need at least 2 for meaningful analysis)
+    if residuals_2d.shape[0] < 2:
+        return warnings
+
     # Compute image center if not provided
     if image_center is None:
         image_center = (np.mean(image_coords[:, 0]), np.mean(image_coords[:, 1]))
@@ -883,10 +887,9 @@ def generate_residual_plot(
     Generate scatter plot of calibration residuals on image plane.
 
     Creates visualization showing:
-    - GCP locations on image plane (scaled to fit plot)
-    - Residual vectors (observed - predicted) as arrows
-    - Color-coded by train/test split (if available)
-    - Error magnitude indicated by arrow size
+    - GCP locations on image plane
+    - Error magnitude indicated by point color (viridis colormap)
+    - Train/test split distinguished by marker shape (circles vs triangles)
 
     Args:
         calibration_result: CalibrationResult from calibration
@@ -926,27 +929,33 @@ def generate_residual_plot(
     u_coords = np.array([gcp['image']['u'] for gcp in gcps])
     v_coords = np.array([gcp['image']['v'] for gcp in gcps])
 
-    # Plot train points
+    # Compute unified color scale across all errors
+    all_errors = np.array(calibration_result.per_gcp_errors)
+    vmin, vmax = 0, np.max(all_errors) if len(all_errors) > 0 else 1
+
+    # Plot train points (circles)
     train_u = u_coords[train_indices]
     train_v = v_coords[train_indices]
-    train_errors = np.array(calibration_result.per_gcp_errors)[train_indices]
+    train_errors = all_errors[train_indices]
 
-    ax.scatter(train_u, train_v, c=train_errors, s=100, alpha=0.6,
-               cmap='viridis', edgecolors='black', linewidths=1,
-               label=f'Train ({len(train_indices)} GCPs)', vmin=0)
+    scatter_train = ax.scatter(train_u, train_v, c=train_errors, s=100, alpha=0.6,
+                               cmap='viridis', edgecolors='black', linewidths=1,
+                               label=f'Train ({len(train_indices)} GCPs)',
+                               vmin=vmin, vmax=vmax)
 
-    # Plot test points if available
+    # Plot test points if available (triangles with same colormap)
     if test_indices:
         test_u = u_coords[test_indices]
         test_v = v_coords[test_indices]
-        test_errors = np.array(calibration_result.per_gcp_errors)[test_indices]
+        test_errors = all_errors[test_indices]
 
         ax.scatter(test_u, test_v, c=test_errors, s=100, alpha=0.6,
-                   cmap='plasma', marker='^', edgecolors='red', linewidths=2,
-                   label=f'Test ({len(test_indices)} GCPs)', vmin=0)
+                   cmap='viridis', marker='^', edgecolors='red', linewidths=2,
+                   label=f'Test ({len(test_indices)} GCPs)',
+                   vmin=vmin, vmax=vmax)
 
-    # Add colorbar
-    cbar = plt.colorbar(ax.collections[0], ax=ax, label='Reprojection Error (px)')
+    # Add colorbar using unified scale
+    cbar = plt.colorbar(scatter_train, ax=ax, label='Reprojection Error (px)')
 
     # Set axis labels and title
     ax.set_xlabel('Image U (pixels)', fontsize=12)
@@ -1165,10 +1174,7 @@ def validate_calibration(
 
 def generate_validation_report(
     calibration_result: CalibrationResult,
-    validation_thresholds: Optional[Dict[str, float]] = None,
-    gcps: Optional[List[Dict[str, Any]]] = None,
-    image_width: Optional[int] = None,
-    image_height: Optional[int] = None
+    validation_thresholds: Optional[Dict[str, float]] = None
 ) -> str:
     """
     Generate comprehensive text report of calibration validation.
@@ -1178,14 +1184,10 @@ def generate_validation_report(
     - Error metrics (RMS, P90, max) for train/test sets
     - Convergence information
     - Validation pass/fail status (if thresholds provided)
-    - Systematic error warnings (if GCPs and image dimensions provided)
 
     Args:
         calibration_result: CalibrationResult from calibration
         validation_thresholds: Optional thresholds for pass/fail validation
-        gcps: Optional list of GCPs for systematic error detection
-        image_width: Optional camera image width for systematic error detection
-        image_height: Optional camera image height for systematic error detection
 
     Returns:
         Formatted validation report as string
@@ -1285,18 +1287,6 @@ def generate_validation_report(
             lines.append("  Failures:")
             for failure in failures:
                 lines.append(f"    - {failure}")
-        lines.append("")
-
-    # Systematic Error Detection (if GCPs and image dimensions provided)
-    if gcps and image_width and image_height:
-        lines.append("Systematic Error Analysis:")
-        lines.append("-" * 60)
-
-        # Compute residuals for systematic error detection
-        # Note: We would need the calibrator instance to compute residuals properly
-        # For now, we'll skip this if we don't have access to compute residuals
-        # This section can be enhanced if needed
-        lines.append("  (Requires residual computation - skipped in this report)")
         lines.append("")
 
     lines.append("=" * 60)

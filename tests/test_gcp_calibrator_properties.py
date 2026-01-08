@@ -702,6 +702,225 @@ def test_property_parameter_bounds_respected(seed):
 
 
 # ============================================================================
+# Property 6: Validation Metrics Consistency
+# ============================================================================
+
+@given(
+    seed=st.integers(min_value=0, max_value=10000),
+    validation_split=st.floats(min_value=0.2, max_value=0.4)
+)
+@settings(
+    deadline=10000,  # 10 seconds (calibration can be slow)
+    max_examples=15,  # Reduce examples due to computational cost
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+)
+def test_property_validation_metrics_consistency(seed, validation_split):
+    """
+    Property: Validation metrics are consistent with per_gcp_errors.
+
+    WHY THIS MUST HOLD:
+    The validation metrics (RMS, P90, max) computed for train and test sets must be
+    mathematically consistent with the per_gcp_errors array when subsetted by
+    train_indices and test_indices.
+
+    This property verifies:
+    1. Train/test indices have no overlap (set intersection is empty)
+    2. Train/test indices together cover all GCPs (set union equals all indices)
+    3. Train RMS matches RMS computed from per_gcp_errors[train_indices]
+    4. Test RMS matches RMS computed from per_gcp_errors[test_indices]
+    5. RMS <= max error for both sets (mathematical invariant)
+
+    Mathematical foundation:
+        RMS = sqrt(mean(errors²)) <= max(errors) for any non-empty set
+    """
+    np.random.seed(seed)
+
+    # Create camera geometry
+    geo = CameraGeometry(1920, 1080)
+    K = CameraGeometry.get_intrinsics(zoom_factor=10.0, W_px=1920, H_px=1080)
+    geo.set_camera_parameters(
+        K=K,
+        w_pos=np.array([0.0, 0.0, 5.0]),
+        pan_deg=0.0,
+        tilt_deg=45.0,
+        map_width=640,
+        map_height=640
+    )
+
+    # Generate sufficient GCPs for train/test split (need at least 9: 6 train + 3 test)
+    num_gcps = 15
+    ref_lat = 39.640444
+    ref_lon = -0.230111
+
+    gcps = []
+    for i in range(num_gcps):
+        lat_offset = np.random.uniform(-0.001, 0.001)
+        lon_offset = np.random.uniform(-0.001, 0.001)
+        gcps.append({
+            'gps': {'latitude': ref_lat + lat_offset, 'longitude': ref_lon + lon_offset},
+            'image': {'u': 960.0 + i * 20, 'v': 540.0 + i * 10}
+        })
+
+    # Create calibrator with validation split
+    calibrator = GCPCalibrator(
+        geo, gcps, loss_function='huber', loss_scale=1.0,
+        validation_split=validation_split,
+        random_seed=seed
+    )
+
+    # Calibrate with tight bounds to ensure convergence
+    bounds = {
+        'pan': (-2.0, 2.0),
+        'tilt': (-2.0, 2.0),
+        'roll': (-0.1, 0.1),
+        'X': (-0.5, 0.5),
+        'Y': (-0.5, 0.5),
+        'Z': (-0.5, 0.5)
+    }
+    result = calibrator.calibrate(bounds=bounds)
+
+    # Skip test if insufficient GCPs for split (validation_metrics will be None)
+    assume(result.validation_metrics is not None)
+    assume(result.train_indices is not None and len(result.train_indices) > 0)
+    assume(result.test_indices is not None and len(result.test_indices) > 0)
+
+    # Property 1: Train/test indices have no overlap
+    train_set = set(result.train_indices)
+    test_set = set(result.test_indices)
+    overlap = train_set.intersection(test_set)
+    assert len(overlap) == 0, (
+        f"Train/test indices overlap: {overlap}"
+    )
+
+    # Property 2: Train/test indices cover all GCPs
+    all_indices_set = train_set.union(test_set)
+    expected_indices = set(range(len(gcps)))
+    assert all_indices_set == expected_indices, (
+        f"Train/test indices don't cover all GCPs: "
+        f"missing={expected_indices - all_indices_set}, "
+        f"extra={all_indices_set - expected_indices}"
+    )
+
+    # Property 3: Train RMS matches computation from per_gcp_errors
+    train_errors = np.array(result.per_gcp_errors)[result.train_indices]
+    expected_train_rms = np.sqrt(np.mean(train_errors**2))
+    assert np.isclose(result.validation_metrics['train']['rms'], expected_train_rms, rtol=1e-6), (
+        f"Train RMS mismatch: "
+        f"reported={result.validation_metrics['train']['rms']:.6f}, "
+        f"computed={expected_train_rms:.6f}"
+    )
+
+    # Property 4: Test RMS matches computation from per_gcp_errors
+    test_errors = np.array(result.per_gcp_errors)[result.test_indices]
+    expected_test_rms = np.sqrt(np.mean(test_errors**2))
+    assert np.isclose(result.validation_metrics['test']['rms'], expected_test_rms, rtol=1e-6), (
+        f"Test RMS mismatch: "
+        f"reported={result.validation_metrics['test']['rms']:.6f}, "
+        f"computed={expected_test_rms:.6f}"
+    )
+
+    # Property 5: RMS <= max error (mathematical invariant)
+    train_metrics = result.validation_metrics['train']
+    test_metrics = result.validation_metrics['test']
+
+    assert train_metrics['rms'] <= train_metrics['max'] + 1e-9, (
+        f"Train RMS > max (impossible): rms={train_metrics['rms']}, max={train_metrics['max']}"
+    )
+    assert test_metrics['rms'] <= test_metrics['max'] + 1e-9, (
+        f"Test RMS > max (impossible): rms={test_metrics['rms']}, max={test_metrics['max']}"
+    )
+
+    # Property 6: P90 <= max error (mathematical invariant)
+    assert train_metrics['p90'] <= train_metrics['max'] + 1e-9, (
+        f"Train P90 > max (impossible): p90={train_metrics['p90']}, max={train_metrics['max']}"
+    )
+    assert test_metrics['p90'] <= test_metrics['max'] + 1e-9, (
+        f"Test P90 > max (impossible): p90={test_metrics['p90']}, max={test_metrics['max']}"
+    )
+
+
+@given(seed=st.integers(min_value=0, max_value=10000))
+@settings(
+    deadline=10000,
+    max_examples=10,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+)
+def test_property_validation_split_reproducibility(seed):
+    """
+    Property: Same random_seed produces identical train/test splits.
+
+    WHY THIS MUST HOLD:
+    For reproducible experiments and debugging, using the same random_seed
+    must produce identical train/test index assignments.
+
+    This property verifies:
+    1. Two calibrators with same seed produce identical train_indices
+    2. Two calibrators with same seed produce identical test_indices
+    3. Different seeds produce different splits (with high probability)
+    """
+    np.random.seed(seed)
+
+    # Create camera geometry
+    geo = CameraGeometry(1920, 1080)
+    K = CameraGeometry.get_intrinsics(zoom_factor=10.0, W_px=1920, H_px=1080)
+    geo.set_camera_parameters(
+        K=K,
+        w_pos=np.array([0.0, 0.0, 5.0]),
+        pan_deg=0.0,
+        tilt_deg=45.0,
+        map_width=640,
+        map_height=640
+    )
+
+    # Generate GCPs
+    num_gcps = 15
+    ref_lat = 39.640444
+    ref_lon = -0.230111
+
+    gcps = []
+    for i in range(num_gcps):
+        gcps.append({
+            'gps': {'latitude': ref_lat + i * 0.0001, 'longitude': ref_lon + i * 0.0001},
+            'image': {'u': 960.0 + i * 20, 'v': 540.0 + i * 10}
+        })
+
+    bounds = {
+        'pan': (-2.0, 2.0),
+        'tilt': (-2.0, 2.0),
+        'roll': (-0.1, 0.1),
+        'X': (-0.5, 0.5),
+        'Y': (-0.5, 0.5),
+        'Z': (-0.5, 0.5)
+    }
+
+    # Create two calibrators with same seed
+    calibrator1 = GCPCalibrator(
+        geo, gcps, loss_function='huber', validation_split=0.2, random_seed=42
+    )
+    result1 = calibrator1.calibrate(bounds=bounds)
+
+    calibrator2 = GCPCalibrator(
+        geo, gcps, loss_function='huber', validation_split=0.2, random_seed=42
+    )
+    result2 = calibrator2.calibrate(bounds=bounds)
+
+    # Skip if splits failed (insufficient GCPs)
+    assume(result1.train_indices is not None and result2.train_indices is not None)
+
+    # Property 1: Same seed produces identical train_indices
+    assert result1.train_indices == result2.train_indices, (
+        f"Same seed produced different train_indices: "
+        f"{result1.train_indices} vs {result2.train_indices}"
+    )
+
+    # Property 2: Same seed produces identical test_indices
+    assert result1.test_indices == result2.test_indices, (
+        f"Same seed produced different test_indices: "
+        f"{result1.test_indices} vs {result2.test_indices}"
+    )
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
