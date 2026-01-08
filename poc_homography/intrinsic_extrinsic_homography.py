@@ -60,6 +60,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         map_width: Width of map visualization in pixels
         map_height: Height of map visualization in pixels
         pixels_per_meter: Scale factor for map visualization (default: 100)
+        calibration_table: Optional dict mapping zoom_factor to intrinsic parameters
         _camera_gps_lat: Camera GPS latitude for WorldPoint conversion
         _camera_gps_lon: Camera GPS longitude for WorldPoint conversion
 
@@ -115,6 +116,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         pixels_per_meter: Unitless = Unitless(100.0),
         sensor_width_mm: Millimeters = Millimeters(7.18),
         base_focal_length_mm: Millimeters = Millimeters(5.9),
+        calibration_table: Optional[Dict[float, Dict[str, float]]] = None,
         **kwargs  # Accept and ignore other kwargs for forward compatibility
     ):
         """
@@ -127,8 +129,19 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             sensor_width_mm: Physical sensor width in millimeters (default: 7.18)
             base_focal_length_mm: Base focal length at 1x zoom in mm (default: 5.9).
                 This value is used by get_intrinsics() to calculate the camera
-                intrinsic matrix. It represents the physical focal length when
-                zoom_factor=1.0, and scales linearly with zoom.
+                intrinsic matrix when calibration_table is None. It represents the
+                physical focal length when zoom_factor=1.0, and scales linearly with zoom.
+            calibration_table: Optional dictionary mapping zoom_factor (float) to
+                intrinsic parameters (dict). When provided, get_intrinsics() will
+                interpolate K(zoom) from the calibration table instead of using
+                linear approximation. Format:
+                {
+                    1.0: {"fx": ..., "fy": ..., "cx": ..., "cy": ...,
+                          "k1": ..., "k2": ..., "p1": ..., "p2": ..., "k3": ...},
+                    5.0: {"fx": ..., "fy": ..., "cx": ..., "cy": ...,
+                          "k1": ..., "k2": ..., "p1": ..., "p2": ..., "k3": ...},
+                    ...
+                }
             **kwargs: Additional parameters (ignored, for forward compatibility)
         """
         # Validate image dimensions
@@ -140,6 +153,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self.pixels_per_meter = pixels_per_meter
         self.sensor_width_mm = sensor_width_mm
         self.base_focal_length_mm = base_focal_length_mm
+        self.calibration_table = calibration_table
 
         # Homography state
         self.H = np.eye(3)
@@ -164,6 +178,90 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self._last_tilt_deg: Optional[float] = None
         self._last_roll_deg: Optional[float] = None
 
+    def _interpolate_calibration_params(
+        self,
+        zoom_factor: float
+    ) -> Optional[Dict[str, float]]:
+        """
+        Interpolate intrinsic parameters from calibration table for given zoom factor.
+
+        Uses linear interpolation between discrete calibrated zoom levels.
+        For zoom values outside the calibrated range, clamps to nearest endpoint
+        (no extrapolation).
+
+        Args:
+            zoom_factor: Zoom factor to interpolate parameters for
+
+        Returns:
+            Dict with keys: "fx", "fy", "cx", "cy", or None if no calibration table
+
+        Raises:
+            ValueError: If calibration table is empty or contains invalid data
+        """
+        if self.calibration_table is None or len(self.calibration_table) == 0:
+            return None
+
+        # Get sorted list of calibrated zoom levels
+        try:
+            zoom_levels = sorted([float(z) for z in self.calibration_table.keys()])
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Calibration table keys must be numeric zoom factors: {e}")
+
+        # Single zoom level: use that value for all zooms
+        if len(zoom_levels) == 1:
+            single_zoom = zoom_levels[0]
+            params = self.calibration_table[single_zoom]
+            return {
+                "fx": float(params["fx"]),
+                "fy": float(params["fy"]),
+                "cx": float(params["cx"]),
+                "cy": float(params["cy"])
+            }
+
+        # Clamp to valid range (no extrapolation)
+        if zoom_factor <= zoom_levels[0]:
+            # Below minimum: use lowest calibrated zoom
+            params = self.calibration_table[zoom_levels[0]]
+            return {
+                "fx": float(params["fx"]),
+                "fy": float(params["fy"]),
+                "cx": float(params["cx"]),
+                "cy": float(params["cy"])
+            }
+
+        if zoom_factor >= zoom_levels[-1]:
+            # Above maximum: use highest calibrated zoom
+            params = self.calibration_table[zoom_levels[-1]]
+            return {
+                "fx": float(params["fx"]),
+                "fy": float(params["fy"]),
+                "cx": float(params["cx"]),
+                "cy": float(params["cy"])
+            }
+
+        # Find bracketing zoom levels
+        for i in range(len(zoom_levels) - 1):
+            z_low = zoom_levels[i]
+            z_high = zoom_levels[i + 1]
+
+            if z_low <= zoom_factor <= z_high:
+                # Linear interpolation parameter
+                t = (zoom_factor - z_low) / (z_high - z_low)
+
+                params_low = self.calibration_table[z_low]
+                params_high = self.calibration_table[z_high]
+
+                # Interpolate fx, fy, cx, cy
+                return {
+                    "fx": params_low["fx"] + (params_high["fx"] - params_low["fx"]) * t,
+                    "fy": params_low["fy"] + (params_high["fy"] - params_low["fy"]) * t,
+                    "cx": params_low["cx"] + (params_high["cx"] - params_low["cx"]) * t,
+                    "cy": params_low["cy"] + (params_high["cy"] - params_low["cy"]) * t
+                }
+
+        # Should never reach here, but return None as fallback
+        return None
+
     def get_intrinsics(
         self,
         zoom_factor: Unitless,
@@ -174,25 +272,23 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         """
         Calculate camera intrinsic matrix K from zoom factor and sensor specs.
 
-        This is a convenience method for computing the camera matrix based on
-        physical camera specifications. The focal length is computed as a linear
-        function of zoom factor based on the base focal length configured for
-        this instance.
+        If calibration_table is provided, interpolates K(zoom) from calibrated values.
+        Otherwise, uses linear focal length approximation based on base_focal_length_mm.
 
         Args:
             zoom_factor: Digital or optical zoom multiplier (1.0 = no zoom)
             width_px: Image width in pixels (default: uses instance's width)
             height_px: Image height in pixels (default: uses instance's height)
             sensor_width_mm: Physical sensor width in millimeters
-                (default: uses instance's sensor_width_mm)
+                (default: uses instance's sensor_width_mm, only used for linear approx)
 
         Returns:
             K: 3x3 camera intrinsic matrix with:
                 [[fx,  0, cx],
                  [ 0, fy, cy],
                  [ 0,  0,  1]]
-                where fx=fy is the focal length in pixels, and (cx, cy) is
-                the principal point (typically image center).
+                where fx, fy are focal lengths in pixels, and (cx, cy) is
+                the principal point.
 
         Example:
             >>> homography = IntrinsicExtrinsicHomography(1920, 1080)
@@ -214,6 +310,25 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         if width_px <= 0 or height_px <= 0:
             raise ValueError("Image dimensions must be positive")
 
+        # Try calibration table first
+        calibration_params = self._interpolate_calibration_params(zoom_factor)
+
+        if calibration_params is not None:
+            # Use calibrated intrinsic parameters
+            fx = calibration_params["fx"]
+            fy = calibration_params["fy"]
+            cx = calibration_params["cx"]
+            cy = calibration_params["cy"]
+
+            # Construct intrinsic matrix from calibrated values
+            K = np.array([
+                [fx, 0.0, cx],
+                [0.0, fy, cy],
+                [0.0, 0.0, 1.0]
+            ])
+            return K
+
+        # Fallback to linear approximation
         # Use instance sensor_width_mm if not provided
         if sensor_width_mm is None:
             sensor_width_mm = self.sensor_width_mm
@@ -238,6 +353,106 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             [0.0, 0.0, 1.0]
         ])
         return K
+
+    def get_distortion_coefficients(
+        self,
+        zoom_factor: Unitless
+    ) -> Optional[np.ndarray]:
+        """
+        Get distortion coefficients for given zoom factor from calibration table.
+
+        If calibration_table is provided, interpolates distortion coefficients
+        [k1, k2, p1, p2, k3] from calibrated values. Otherwise returns None.
+
+        Uses linear interpolation between discrete calibrated zoom levels.
+        For zoom values outside the calibrated range, clamps to nearest endpoint
+        (no extrapolation).
+
+        Args:
+            zoom_factor: Zoom factor to get distortion coefficients for
+
+        Returns:
+            Numpy array [k1, k2, p1, p2, k3] or None if no calibration table
+
+        Example:
+            >>> homography = IntrinsicExtrinsicHomography(
+            ...     width=2560, height=1440,
+            ...     calibration_table={
+            ...         1.0: {"fx": 1825.3, "fy": 1823.1, "cx": 1280.0, "cy": 720.0,
+            ...               "k1": -0.341, "k2": 0.788, "p1": 0.0, "p2": 0.0, "k3": 0.0}
+            ...     }
+            ... )
+            >>> dist_coeffs = homography.get_distortion_coefficients(zoom_factor=1.0)
+            >>> print(dist_coeffs)
+            [-0.341  0.788  0.     0.     0.   ]
+        """
+        if self.calibration_table is None or len(self.calibration_table) == 0:
+            return None
+
+        # Get sorted list of calibrated zoom levels
+        try:
+            zoom_levels = sorted([float(z) for z in self.calibration_table.keys()])
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Calibration table keys must be numeric zoom factors: {e}")
+
+        # Single zoom level: use that value for all zooms
+        if len(zoom_levels) == 1:
+            single_zoom = zoom_levels[0]
+            params = self.calibration_table[single_zoom]
+            return np.array([
+                float(params["k1"]),
+                float(params["k2"]),
+                float(params["p1"]),
+                float(params["p2"]),
+                float(params["k3"])
+            ])
+
+        # Clamp to valid range (no extrapolation)
+        if zoom_factor <= zoom_levels[0]:
+            # Below minimum: use lowest calibrated zoom
+            params = self.calibration_table[zoom_levels[0]]
+            return np.array([
+                float(params["k1"]),
+                float(params["k2"]),
+                float(params["p1"]),
+                float(params["p2"]),
+                float(params["k3"])
+            ])
+
+        if zoom_factor >= zoom_levels[-1]:
+            # Above maximum: use highest calibrated zoom
+            params = self.calibration_table[zoom_levels[-1]]
+            return np.array([
+                float(params["k1"]),
+                float(params["k2"]),
+                float(params["p1"]),
+                float(params["p2"]),
+                float(params["k3"])
+            ])
+
+        # Find bracketing zoom levels and interpolate
+        for i in range(len(zoom_levels) - 1):
+            z_low = zoom_levels[i]
+            z_high = zoom_levels[i + 1]
+
+            if z_low <= zoom_factor <= z_high:
+                # Linear interpolation parameter
+                t = (zoom_factor - z_low) / (z_high - z_low)
+
+                params_low = self.calibration_table[z_low]
+                params_high = self.calibration_table[z_high]
+
+                # Interpolate all distortion coefficients
+                k1 = params_low["k1"] + (params_high["k1"] - params_low["k1"]) * t
+                k2 = params_low["k2"] + (params_high["k2"] - params_low["k2"]) * t
+                p1 = params_low["p1"] + (params_high["p1"] - params_low["p1"]) * t
+                p2 = params_low["p2"] + (params_high["p2"] - params_low["p2"]) * t
+                k3 = params_low["k3"] + (params_high["k3"] - params_low["k3"]) * t
+
+                return np.array([k1, k2, p1, p2, k3])
+
+        # Should never reach here, but return None as fallback
+        return None
 
     def _get_rotation_matrix(
         self,

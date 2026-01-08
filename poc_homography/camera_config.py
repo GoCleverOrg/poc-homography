@@ -35,6 +35,48 @@ DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9  # Minimum focal length at 1x zoom
 DEFAULT_MAX_FOCAL_LENGTH_MM = 147.5  # Maximum focal length at 25x zoom
 DEFAULT_MAX_ZOOM = 25.0  # Maximum optical zoom factor
 
+# =============================================================================
+# CALIBRATION TABLE FORMAT (Optional)
+# =============================================================================
+# The calibration_table field allows defining zoom-dependent intrinsic parameters
+# to replace the linear focal length approximation. Real lenses exhibit non-linear
+# zoom-to-focal-length relationships and zoom-dependent distortion coefficients.
+#
+# Format: Dictionary mapping zoom_factor (float) to intrinsic parameters (dict)
+#
+# Example:
+# "calibration_table": {
+#     1.0: {
+#         "fx": 1825.3,      # Focal length in pixels (horizontal)
+#         "fy": 1823.1,      # Focal length in pixels (vertical)
+#         "cx": 1280.0,      # Principal point x-coordinate (pixels)
+#         "cy": 720.0,       # Principal point y-coordinate (pixels)
+#         "k1": -0.341,      # Radial distortion coefficient 1
+#         "k2": 0.788,       # Radial distortion coefficient 2
+#         "p1": 0.0,         # Tangential distortion coefficient 1
+#         "p2": 0.0,         # Tangential distortion coefficient 2
+#         "k3": 0.0          # Radial distortion coefficient 3
+#     },
+#     5.0: {
+#         "fx": 9120.5, "fy": 9115.2, "cx": 1282.1, "cy": 721.3,
+#         "k1": -0.298, "k2": 0.654, "p1": 0.001, "p2": 0.0, "k3": 0.0
+#     },
+#     # ... additional zoom levels
+# }
+#
+# Calibration Procedure:
+# 1. Capture checkerboard images at multiple zoom levels (e.g., 1.0, 5.0, 10.0, 15.0, 20.0, 25.0)
+# 2. Use OpenCV calibrateCamera() for each zoom level to obtain intrinsic matrix and distortion coefficients
+# 3. Populate calibration_table with results
+# 4. IntrinsicExtrinsicHomography will linearly interpolate between discrete zoom levels
+#
+# Interpolation Behavior:
+# - Zoom values between calibrated points: linear interpolation of fx, fy, cx, cy, k1-k3, p1-p2
+# - Zoom values below minimum: uses lowest calibrated zoom level (no extrapolation)
+# - Zoom values above maximum: uses highest calibrated zoom level (no extrapolation)
+# - If calibration_table is None: falls back to linear focal length approximation
+# =============================================================================
+
 # Camera configurations
 CAMERAS = [
     {
@@ -62,6 +104,10 @@ CAMERAS = [
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
         # GeoTIFF reference parameters for georeferencing
         # Updated to use GDAL 6-parameter GeoTransform format (Issue #133)
         # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
@@ -88,6 +134,8 @@ CAMERAS = [
         "p2": 0.0,
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        "calibration_table": None,
         "description": "Setram camera location"
     },
 ]
