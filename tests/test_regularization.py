@@ -357,6 +357,66 @@ class TestRegularization:
         assert "regularization_weight" in str(exc_info.value)
         assert ">= 0.0" in str(exc_info.value)
 
+    def test_inf_regularization_weight_raises(self, sample_camera_geometry, sample_gcps):
+        """Test that infinite regularization_weight raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            GCPCalibrator(
+                camera_geometry=sample_camera_geometry,
+                gcps=sample_gcps,
+                regularization_weight=np.inf
+            )
+
+        assert "regularization_weight" in str(exc_info.value)
+        assert "finite" in str(exc_info.value)
+
+    def test_nan_regularization_weight_raises(self, sample_camera_geometry, sample_gcps):
+        """Test that NaN regularization_weight raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            GCPCalibrator(
+                camera_geometry=sample_camera_geometry,
+                gcps=sample_gcps,
+                regularization_weight=np.nan
+            )
+
+        assert "regularization_weight" in str(exc_info.value)
+        assert "finite" in str(exc_info.value)
+
+    def test_zero_prior_sigma_raises(self, sample_camera_geometry, sample_gcps):
+        """Test that zero prior sigma raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            GCPCalibrator(
+                camera_geometry=sample_camera_geometry,
+                gcps=sample_gcps,
+                prior_sigmas={'pan_deg': 0.0}
+            )
+
+        assert "prior_sigmas" in str(exc_info.value)
+        assert "positive" in str(exc_info.value)
+
+    def test_negative_prior_sigma_raises(self, sample_camera_geometry, sample_gcps):
+        """Test that negative prior sigma raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            GCPCalibrator(
+                camera_geometry=sample_camera_geometry,
+                gcps=sample_gcps,
+                prior_sigmas={'height_m': -5.0}
+            )
+
+        assert "prior_sigmas" in str(exc_info.value)
+        assert "positive" in str(exc_info.value)
+
+    def test_inf_prior_sigma_raises(self, sample_camera_geometry, sample_gcps):
+        """Test that infinite prior sigma raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            GCPCalibrator(
+                camera_geometry=sample_camera_geometry,
+                gcps=sample_gcps,
+                prior_sigmas={'gps_position_m': np.inf}
+            )
+
+        assert "prior_sigmas" in str(exc_info.value)
+        assert "finite" in str(exc_info.value)
+
     def test_regularization_residual_formula(self, sample_camera_geometry, sample_gcps):
         """Verify the exact formula: r_prior[j] = sqrt(lambda) * params[j] / sigma[j]."""
         lambda_val = 2.5

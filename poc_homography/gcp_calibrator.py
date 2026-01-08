@@ -372,9 +372,9 @@ class GCPCalibrator:
             )
 
         # Validate regularization_weight
-        if regularization_weight < 0.0:
+        if not np.isfinite(regularization_weight) or regularization_weight < 0.0:
             raise ValueError(
-                f"regularization_weight must be >= 0.0, got {regularization_weight}"
+                f"regularization_weight must be >= 0.0 and finite, got {regularization_weight}"
             )
 
         # Process prior_sigmas: merge with defaults (user values override defaults)
@@ -383,6 +383,13 @@ class GCPCalibrator:
         else:
             merged_sigmas = self.DEFAULT_PRIOR_SIGMAS.copy()
             merged_sigmas.update(prior_sigmas)
+
+        # Validate prior_sigmas values (must be positive and finite)
+        for key, value in merged_sigmas.items():
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"prior_sigmas['{key}'] must be positive and finite, got {value}"
+                )
 
         # Store configuration
         self.camera_geometry = camera_geometry
