@@ -558,13 +558,12 @@ class GCPCalibrator:
             )
             return all_indices, []
 
-        # Set random seed for reproducibility
-        if self.random_seed is not None:
-            np.random.seed(self.random_seed)
+        # Use local random generator for reproducibility without polluting global state
+        rng = np.random.default_rng(self.random_seed)
 
         # Randomly shuffle indices
         shuffled_indices = all_indices.copy()
-        np.random.shuffle(shuffled_indices)
+        rng.shuffle(shuffled_indices)
 
         # Split into train and test
         train_indices = sorted(shuffled_indices[:n_train])
@@ -855,16 +854,20 @@ def detect_systematic_errors(
     error_magnitudes = np.linalg.norm(residuals_2d, axis=1)
 
     # Compute correlation between distance and error magnitude
-    if len(distances) > 2:  # Need at least 3 points for meaningful correlation
-        correlation = np.corrcoef(distances, error_magnitudes)[0, 1]
+    # Need at least 5 points for statistically meaningful correlation
+    MIN_POINTS_FOR_CORRELATION = 5
+    if len(distances) >= MIN_POINTS_FOR_CORRELATION:
+        # Check for zero variance (all distances or errors identical)
+        if np.std(distances) > 1e-10 and np.std(error_magnitudes) > 1e-10:
+            correlation = np.corrcoef(distances, error_magnitudes)[0, 1]
 
-        # Threshold: flag if correlation > 0.5
-        RADIAL_CORRELATION_THRESHOLD = 0.5
-        if not np.isnan(correlation) and correlation > RADIAL_CORRELATION_THRESHOLD:
-            warnings.append(
-                f"Radial error growth detected: correlation between distance from center "
-                f"and error magnitude is {correlation:.3f} (threshold: {RADIAL_CORRELATION_THRESHOLD})"
-            )
+            # Threshold: flag if correlation > 0.5
+            RADIAL_CORRELATION_THRESHOLD = 0.5
+            if not np.isnan(correlation) and correlation > RADIAL_CORRELATION_THRESHOLD:
+                warnings.append(
+                    f"Radial error growth detected: correlation between distance from center "
+                    f"and error magnitude is {correlation:.3f} (threshold: {RADIAL_CORRELATION_THRESHOLD})"
+                )
 
     return warnings
 
@@ -1219,8 +1222,12 @@ def generate_validation_report(
     lines.append("-" * 60)
     lines.append(f"  Initial RMS error: {calibration_result.initial_error:.2f} px")
     lines.append(f"  Final RMS error:   {calibration_result.final_error:.2f} px")
-    lines.append(f"  Improvement:       {calibration_result.initial_error - calibration_result.final_error:.2f} px "
-                 f"({(1 - calibration_result.final_error/calibration_result.initial_error)*100:.1f}%)")
+    improvement_px = calibration_result.initial_error - calibration_result.final_error
+    if calibration_result.initial_error > 0:
+        improvement_pct = (1 - calibration_result.final_error / calibration_result.initial_error) * 100
+        lines.append(f"  Improvement:       {improvement_px:.2f} px ({improvement_pct:.1f}%)")
+    else:
+        lines.append(f"  Improvement:       {improvement_px:.2f} px (N/A%)")
     lines.append("")
     lines.append(f"  Inliers:  {calibration_result.num_inliers} / {calibration_result.num_inliers + calibration_result.num_outliers} "
                  f"({calibration_result.inlier_ratio*100:.1f}%)")
