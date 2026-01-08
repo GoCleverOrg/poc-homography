@@ -289,7 +289,8 @@ class UnifiedSession:
     - Coordinate conversion methods
     """
 
-    def __init__(self, image_path: str, camera_config: dict, geotiff_params: dict):
+    def __init__(self, image_path: str, camera_config: dict, geotiff_params: dict,
+                 regularization_weight: float = 1.0):
         """
         Initialize unified session.
 
@@ -302,7 +303,10 @@ class UnifiedSession:
                 - pixel_size_x: Pixel size in X direction (meters)
                 - pixel_size_y: Pixel size in Y direction (meters, typically negative)
                 - utm_crs: UTM coordinate reference system (e.g., "EPSG:25830")
+            regularization_weight: Lambda parameter for calibration regularization.
+                0.0=disabled, 0.1=weak, 1.0=balanced (default), 10.0=strong
         """
+        self.regularization_weight = regularization_weight
         self.image_path = Path(image_path)
         self.camera_config = camera_config
         self.camera_name = camera_config['name']
@@ -1350,7 +1354,8 @@ CRS: {crs}</description>
                 loss_scale=loss_scale,
                 reference_lat=camera_lat,  # CRITICAL: Use camera position as reference
                 reference_lon=camera_lon,  # so world coordinates have camera at origin
-                utm_crs=self.utm_crs        # Use same UTM CRS as projection for consistency
+                utm_crs=self.utm_crs,       # Use same UTM CRS as projection for consistency
+                regularization_weight=self.regularization_weight  # Regularization for stability
             )
 
             result = calibrator.calibrate(bounds=calibration_bounds)
@@ -1364,6 +1369,8 @@ CRS: {crs}</description>
             print(f"Final RMS error: {result.final_error:.2f} px")
             print(f"Optimized deltas: Δpan={result.optimized_params[0]:.4f}°, Δtilt={result.optimized_params[1]:.4f}°, ΔZ={result.optimized_params[5]:.4f}m")
             print(f"Convergence: {result.convergence_info.get('message', 'N/A')}")
+            if result.regularization_penalty is not None:
+                print(f"Regularization: λ={self.regularization_weight}, penalty={result.regularization_penalty:.4f}")
 
             # Show per-GCP errors with names, sorted by error (worst first)
             if result.per_gcp_errors and len(gcps) == len(result.per_gcp_errors):
@@ -7052,6 +7059,13 @@ def main():
         type=str,
         help='Path to KML file to pre-load points on startup'
     )
+    parser.add_argument(
+        '--regularization',
+        type=float,
+        default=1.0,
+        help='Regularization weight for calibration (default: 1.0). '
+             '0.0=disabled, 0.1=weak, 1.0=balanced, 10.0=strong'
+    )
 
     args = parser.parse_args()
 
@@ -7094,7 +7108,12 @@ def main():
 
     # Create unified session
     try:
-        session = UnifiedSession(args.image, camera_config, geotiff_params)
+        session = UnifiedSession(
+            args.image, camera_config, geotiff_params,
+            regularization_weight=args.regularization
+        )
+        print(f"  Regularization: λ={args.regularization} "
+              f"({'disabled' if args.regularization == 0.0 else 'weak' if args.regularization < 0.5 else 'balanced' if args.regularization <= 2.0 else 'strong'})")
     except Exception as e:
         print(f"Error creating session: {e}")
         sys.exit(1)
