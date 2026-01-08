@@ -95,6 +95,246 @@ class TestRotationMatrixConsistency:
             assert identity_diff < 1e-10, f"{name}: R @ R.T differs from identity by {identity_diff}"
 
 
+class TestRollRotation:
+    """Test roll parameter rotation matrix behavior."""
+
+    @pytest.fixture
+    def geometry_instances(self):
+        """Create instances of both geometry classes."""
+        geo = CameraGeometry(w=1920, h=1080)
+        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+        return geo, ieh
+
+    @pytest.mark.parametrize("roll_deg", [-5.0, 0.0, 5.0])
+    def test_roll_rotation_matrix_correctness(self, geometry_instances, roll_deg):
+        """Verify roll rotation matrix is correct for various roll angles."""
+        _, ieh = geometry_instances
+
+        # Test with simple pan=0, tilt=30 case
+        pan_deg = 0.0
+        tilt_deg = 30.0
+
+        R = ieh._get_rotation_matrix(pan_deg, tilt_deg, roll_deg)
+
+        # Roll rotation should be orthogonal
+        det = np.linalg.det(R)
+        assert abs(det - 1.0) < 1e-10, f"det(R) = {det}, expected 1.0"
+
+        RRT = R @ R.T
+        identity_diff = np.max(np.abs(RRT - np.eye(3)))
+        assert identity_diff < 1e-10, f"R @ R.T differs from identity by {identity_diff}"
+
+    @pytest.mark.parametrize("pan_deg,tilt_deg,roll_deg", [
+        (0, 30, 0),
+        (45, 30, 0),
+        (0, 30, 5),
+        (45, 30, -5),
+        (90, 45, 2),
+    ])
+    def test_rotation_matrices_with_roll_match(self, geometry_instances, pan_deg, tilt_deg, roll_deg):
+        """Verify rotation matrices match between both classes when roll is specified."""
+        geo, ieh = geometry_instances
+
+        # CameraGeometry
+        geo.pan_deg = pan_deg
+        geo.tilt_deg = tilt_deg
+        geo.roll_deg = roll_deg
+        R_geo = geo._get_rotation_matrix(roll_deg=roll_deg)
+
+        # IntrinsicExtrinsicHomography
+        R_ieh = ieh._get_rotation_matrix(pan_deg, tilt_deg, roll_deg)
+
+        # Check they're equal
+        max_diff = np.max(np.abs(R_geo - R_ieh))
+        assert max_diff < 1e-10, (
+            f"Rotation matrices differ at pan={pan_deg}, tilt={tilt_deg}, roll={roll_deg}. "
+            f"Max difference: {max_diff}"
+        )
+
+    def test_backward_compatibility_roll_defaults_to_zero(self, geometry_instances):
+        """Verify roll defaults to 0.0 for backward compatibility."""
+        geo, ieh = geometry_instances
+
+        pan_deg = 45.0
+        tilt_deg = 30.0
+
+        # Call without roll parameter (should default to 0)
+        R_ieh_no_roll = ieh._get_rotation_matrix(pan_deg, tilt_deg)
+        R_ieh_with_zero_roll = ieh._get_rotation_matrix(pan_deg, tilt_deg, roll_deg=0.0)
+
+        max_diff = np.max(np.abs(R_ieh_no_roll - R_ieh_with_zero_roll))
+        assert max_diff < 1e-10, "Roll should default to 0.0"
+
+        # CameraGeometry should also default to 0
+        geo.pan_deg = pan_deg
+        geo.tilt_deg = tilt_deg
+        geo.roll_deg = 0.0
+        R_geo_default = geo._get_rotation_matrix()
+
+        max_diff = np.max(np.abs(R_geo_default - R_ieh_no_roll))
+        assert max_diff < 1e-10, "Default roll=0 should match between implementations"
+
+    def test_homography_differs_with_roll(self, geometry_instances):
+        """Verify homography changes when roll != 0."""
+        _, ieh = geometry_instances
+
+        K = np.array([
+            [1000, 0, 960],
+            [0, 1000, 540],
+            [0, 0, 1]
+        ])
+        camera_position = np.array([0.0, 0.0, 5.0])
+        pan_deg = 0.0
+        tilt_deg = 30.0
+
+        # Calculate homography with roll=0
+        H_no_roll = ieh._calculate_ground_homography(K, camera_position, pan_deg, tilt_deg)
+
+        # Calculate homography with roll=5
+        R_with_roll = ieh._get_rotation_matrix(pan_deg, tilt_deg, roll_deg=5.0)
+
+        # Build homography manually with roll
+        C = camera_position
+        t = -R_with_roll @ C
+        r1 = R_with_roll[:, 0]
+        r2 = R_with_roll[:, 1]
+        H_extrinsic = np.column_stack([r1, r2, t])
+        H_with_roll = K @ H_extrinsic
+        H_with_roll = H_with_roll / H_with_roll[2, 2]
+
+        # Homographies should differ
+        max_diff = np.max(np.abs(H_no_roll - H_with_roll))
+        assert max_diff > 1e-3, "Homography should change significantly when roll != 0"
+
+
+class TestRollValidation:
+    """Test roll validation in CameraGeometry."""
+
+    def test_roll_warning_threshold(self):
+        """Verify warning is issued when |roll_deg| > 5.0."""
+        geo = CameraGeometry(w=1920, h=1080)
+        K = CameraGeometry.get_intrinsics(1.0, 1920, 1080, 7.18)
+        w_pos = np.array([0.0, 0.0, 5.0])
+
+        # This should trigger a warning but not raise an error
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=6.0)
+
+            # Should have at least one warning
+            assert len(w) > 0, "Expected warning for |roll_deg| > 5.0"
+            assert any("roll" in str(warning.message).lower() for warning in w), \
+                "Warning should mention roll"
+
+    def test_roll_error_threshold(self):
+        """Verify error is raised when |roll_deg| > 15.0."""
+        geo = CameraGeometry(w=1920, h=1080)
+        K = CameraGeometry.get_intrinsics(1.0, 1920, 1080, 7.18)
+        w_pos = np.array([0.0, 0.0, 5.0])
+
+        # This should raise ValueError
+        with pytest.raises(ValueError) as exc_info:
+            geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=16.0)
+
+        assert "roll" in str(exc_info.value).lower(), \
+            "Error message should mention roll"
+
+    def test_roll_negative_threshold(self):
+        """Verify error is raised when roll_deg < -15.0."""
+        geo = CameraGeometry(w=1920, h=1080)
+        K = CameraGeometry.get_intrinsics(1.0, 1920, 1080, 7.18)
+        w_pos = np.array([0.0, 0.0, 5.0])
+
+        # This should raise ValueError
+        with pytest.raises(ValueError) as exc_info:
+            geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=-16.0)
+
+        assert "roll" in str(exc_info.value).lower(), \
+            "Error message should mention roll"
+
+    def test_roll_within_limits_accepted(self):
+        """Verify roll values within limits are accepted."""
+        geo = CameraGeometry(w=1920, h=1080)
+        K = CameraGeometry.get_intrinsics(1.0, 1920, 1080, 7.18)
+        w_pos = np.array([0.0, 0.0, 5.0])
+
+        # These should not raise
+        geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=0.0)
+        geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=5.0)
+        geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=-5.0)
+        geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=10.0)
+        geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=-10.0)
+
+
+class TestComputeHomographyWithRoll:
+    """Test compute_homography with roll parameter."""
+
+    def test_compute_homography_extracts_roll(self):
+        """Verify compute_homography extracts roll_deg from reference dict."""
+        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+
+        K = np.array([
+            [1000, 0, 960],
+            [0, 1000, 540],
+            [0, 0, 1]
+        ])
+
+        reference = {
+            'camera_matrix': K,
+            'camera_position': np.array([0.0, 0.0, 5.0]),
+            'pan_deg': 0.0,
+            'tilt_deg': 30.0,
+            'roll_deg': 2.5,
+            'map_width': 640,
+            'map_height': 640
+        }
+
+        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        result = ieh.compute_homography(frame, reference)
+
+        # Check that roll_deg is stored
+        assert hasattr(ieh, 'roll_deg'), "roll_deg should be stored as instance attribute"
+        assert ieh.roll_deg == 2.5, f"Expected roll_deg=2.5, got {ieh.roll_deg}"
+
+        # Check that roll_deg is in metadata
+        assert 'roll_deg' in result.metadata, "roll_deg should be in metadata"
+        assert result.metadata['roll_deg'] == 2.5, \
+            f"Expected metadata roll_deg=2.5, got {result.metadata['roll_deg']}"
+
+    def test_compute_homography_roll_defaults_to_zero(self):
+        """Verify compute_homography defaults roll_deg to 0.0 when not in reference."""
+        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+
+        K = np.array([
+            [1000, 0, 960],
+            [0, 1000, 540],
+            [0, 0, 1]
+        ])
+
+        reference = {
+            'camera_matrix': K,
+            'camera_position': np.array([0.0, 0.0, 5.0]),
+            'pan_deg': 0.0,
+            'tilt_deg': 30.0,
+            # Note: no 'roll_deg' key
+            'map_width': 640,
+            'map_height': 640
+        }
+
+        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        result = ieh.compute_homography(frame, reference)
+
+        # Should default to 0.0
+        assert hasattr(ieh, 'roll_deg'), "roll_deg should be stored as instance attribute"
+        assert ieh.roll_deg == 0.0, f"Expected default roll_deg=0.0, got {ieh.roll_deg}"
+
+        # Check metadata
+        assert 'roll_deg' in result.metadata, "roll_deg should be in metadata"
+        assert result.metadata['roll_deg'] == 0.0, \
+            f"Expected metadata roll_deg=0.0, got {result.metadata['roll_deg']}"
+
+
 class TestCameraViewingDirection:
     """Test that camera viewing direction is correct for various pan/tilt angles."""
 

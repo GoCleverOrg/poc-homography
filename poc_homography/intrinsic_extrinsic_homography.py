@@ -39,7 +39,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
     This implementation computes homography for a ground plane (Z=0) using:
     - Camera intrinsic matrix K (focal length, principal point)
-    - Camera extrinsic parameters (position, rotation via pan/tilt)
+    - Camera extrinsic parameters (position, rotation via pan/tilt/roll)
 
     The homography H maps world ground plane points to image pixels:
         [u]       [X_world]
@@ -155,6 +155,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self._last_camera_position: Optional[np.ndarray] = None
         self._last_pan_deg: Optional[float] = None
         self._last_tilt_deg: Optional[float] = None
+        self._last_roll_deg: Optional[float] = None
 
     def get_intrinsics(
         self,
@@ -231,35 +232,50 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         ])
         return K
 
-    def _get_rotation_matrix(self, pan_deg: Degrees, tilt_deg: Degrees) -> np.ndarray:
+    def _get_rotation_matrix(
+        self,
+        pan_deg: Degrees,
+        tilt_deg: Degrees,
+        roll_deg: Degrees = Degrees(0.0)
+    ) -> np.ndarray:
         """
         Calculate rotation matrix from world to camera coordinates.
 
-        Computes the 3x3 rotation matrix based on pan (yaw) and tilt (pitch).
-        Assumes zero roll. The transformation consists of:
+        Computes the 3x3 rotation matrix based on pan (yaw), tilt (pitch), and roll.
+        The transformation consists of:
         1. Pan rotation around world Z-axis (yaw)
         2. Base transform from world to camera coordinates
-        3. Tilt rotation around camera X-axis (pitch)
+        3. Roll rotation around camera Z-axis (optical axis)
+        4. Tilt rotation around camera X-axis (pitch)
+
+        Rotation order: R = R_tilt @ R_roll @ R_base @ R_pan
 
         Coordinate System Convention:
             - World: X=East, Y=North, Z=Up
             - Camera: X=Right, Y=Down, Z=Forward (optical axis)
 
-        At pan=0, tilt=0, the camera looks North (world +Y direction).
+        At pan=0, tilt=0, roll=0, the camera looks North (world +Y direction).
 
         Tilt Convention (Hikvision):
             - Positive tilt_deg = camera pointing downward
             - Negative tilt_deg = camera pointing upward
 
+        Roll Convention:
+            - Positive roll_deg = clockwise rotation when looking from behind camera
+              (along +Z axis, into the scene)
+            - Roll is applied in camera frame after base transformation but before tilt
+
         Args:
             pan_deg: Pan angle in degrees (positive = right/clockwise from above)
             tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
 
         Returns:
             R: 3x3 rotation matrix transforming world coordinates to camera frame
         """
         pan_rad = math.radians(pan_deg)
         tilt_rad = math.radians(tilt_deg)
+        roll_rad = math.radians(roll_deg)
 
         # Base transformation from World to Camera when pan=0, tilt=0
         # (camera looking North, horizontal):
@@ -285,6 +301,15 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             [0.0,                0.0,               1.0]
         ])
 
+        # Roll rotation around camera Z-axis (optical axis)
+        # Positive roll = clockwise when looking from behind camera (along +Z axis)
+        # This rotates the image plane around the optical axis
+        Rz_roll = np.array([
+            [math.cos(roll_rad), -math.sin(roll_rad), 0.0],
+            [math.sin(roll_rad),  math.cos(roll_rad), 0.0],
+            [0.0,                 0.0,                1.0]
+        ])
+
         # Tilt rotation around camera X-axis (pitch)
         # Positive tilt = camera looks down
         Rx_tilt = np.array([
@@ -293,9 +318,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             [0.0,  math.sin(tilt_rad),  math.cos(tilt_rad)]
         ])
 
-        # Full rotation: first pan in world, then base transform, then tilt in camera
-        # R_world_to_cam = R_tilt @ R_base @ R_pan
-        R = Rx_tilt @ R_base @ Rz_pan
+        # Full rotation: first pan in world, then base transform, then roll in camera, then tilt in camera
+        # R_world_to_cam = R_tilt @ R_roll @ R_base @ R_pan
+        R = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
         return R
 
     def _calculate_ground_homography(
@@ -303,7 +328,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         K: np.ndarray,
         camera_position: np.ndarray,
         pan_deg: Degrees,
-        tilt_deg: Degrees
+        tilt_deg: Degrees,
+        roll_deg: Degrees = Degrees(0.0)
     ) -> np.ndarray:
         """
         Calculate homography matrix mapping world ground plane (Z=0) to image.
@@ -351,12 +377,13 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             camera_position: Camera position [X, Y, Z] in world coordinates (meters)
             pan_deg: Pan angle in degrees
             tilt_deg: Tilt angle in degrees
+            roll_deg: Roll angle in degrees (default = 0.0)
 
         Returns:
             H (np.ndarray): 3x3 homography matrix mapping [X_world, Y_world, 1] -> [u, v, 1]
         """
-        # Get rotation matrix
-        R = self._get_rotation_matrix(pan_deg, tilt_deg)
+        # Get rotation matrix (includes roll if specified)
+        R = self._get_rotation_matrix(pan_deg, tilt_deg, roll_deg)
 
         # Camera position C in world coordinates
         C = camera_position
@@ -629,6 +656,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 - 'camera_position': Camera position [X, Y, Z] in meters
                 - 'pan_deg': Pan angle in degrees
                 - 'tilt_deg': Tilt angle in degrees
+                - 'roll_deg': Roll angle in degrees (optional, defaults to 0.0)
                 - 'map_width': Output map width in pixels
                 - 'map_height': Output map height in pixels
 
@@ -651,6 +679,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         camera_position = reference['camera_position']
         pan_deg = reference['pan_deg']
         tilt_deg = reference['tilt_deg']
+        roll_deg = reference.get('roll_deg', 0.0)  # Default to 0.0 for backward compatibility
         map_width = reference['map_width']
         map_height = reference['map_height']
 
@@ -691,8 +720,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self.map_width = map_width
         self.map_height = map_height
 
-        # Calculate homography
-        self.H = self._calculate_ground_homography(K, camera_position, pan_deg, tilt_deg)
+        # Calculate homography (includes roll rotation)
+        self.H = self._calculate_ground_homography(K, camera_position, pan_deg, tilt_deg, roll_deg)
 
         # Calculate inverse homography
         det_H = np.linalg.det(self.H)
@@ -712,6 +741,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self._last_camera_position = camera_position.copy()
         self._last_pan_deg = pan_deg
         self._last_tilt_deg = tilt_deg
+        self._last_roll_deg = roll_deg
+        self.roll_deg = roll_deg
 
         # Build metadata
         metadata = {
@@ -719,6 +750,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             'camera_position': camera_position.tolist(),
             'pan_deg': pan_deg,
             'tilt_deg': tilt_deg,
+            'roll_deg': roll_deg,
             'determinant': det_H,
             'map_dimensions': (map_width, map_height)
         }
