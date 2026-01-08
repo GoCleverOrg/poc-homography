@@ -2089,16 +2089,17 @@ CRS: {crs}</description>
         min_distance: int = 10
     ) -> List[Dict]:
         """
-        Extract corner/feature points from a binary mask using cv2.goodFeaturesToTrack.
+        Extract corner/feature points from a binary mask using contour-based detection.
 
         This method identifies sharp corners and intersection points in binary masks
-        returned by SAM3 detection. It uses the Shi-Tomasi corner detection algorithm.
+        returned by SAM3 detection. It uses contour detection with polygon approximation
+        to find vertices, which works better than gradient-based methods on binary masks.
 
         Args:
             mask: Binary mask (uint8) with detected features
             max_corners: Maximum number of corners to detect
-            quality_level: Minimum quality threshold (0-1). Points with quality below
-                          max_quality * quality_level are rejected.
+            quality_level: Epsilon factor for polygon approximation (0-1). Lower values
+                          produce more vertices (more detail).
             min_distance: Minimum Euclidean distance between detected corners
 
         Returns:
@@ -2114,34 +2115,65 @@ CRS: {crs}</description>
             if mask.dtype != np.uint8:
                 mask = mask.astype(np.uint8)
 
-            # Detect corners using Shi-Tomasi algorithm
-            corners = cv2.goodFeaturesToTrack(
-                mask,
-                maxCorners=max_corners,
-                qualityLevel=quality_level,
-                minDistance=min_distance,
-                blockSize=3,
-                useHarrisDetector=False
-            )
+            # Find contours in the mask
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            if corners is None or len(corners) == 0:
+            if not contours:
+                print("No contours found in mask")
                 return []
 
-            # Convert to list of dicts with quality scores
-            # Quality is based on response value (normalized)
-            result = []
-            for corner in corners:
-                x, y = corner.ravel()
-                result.append({
-                    'x': float(x),
-                    'y': float(y),
-                    'quality': 1.0  # All corners from goodFeaturesToTrack pass quality threshold
-                })
+            # Extract corner points from contours using polygon approximation
+            all_corners = []
+            for contour in contours:
+                # Skip very small contours
+                if cv2.contourArea(contour) < 100:
+                    continue
 
-            return result
+                # Approximate polygon - epsilon controls accuracy
+                # Lower epsilon = more points (more detail)
+                epsilon = quality_level * cv2.arcLength(contour, True)
+                approx = cv2.approxPolyDP(contour, epsilon, True)
+
+                # Add each vertex as a corner point
+                for point in approx:
+                    x, y = point[0]
+                    all_corners.append({
+                        'x': float(x),
+                        'y': float(y),
+                        'quality': 1.0
+                    })
+
+            print(f"Found {len(all_corners)} corners from {len(contours)} contours")
+
+            if not all_corners:
+                return []
+
+            # Filter corners by minimum distance
+            # Use greedy selection to ensure spatial separation
+            filtered_corners = []
+            for corner in all_corners:
+                # Check distance to all already-selected corners
+                too_close = False
+                for selected in filtered_corners:
+                    dx = corner['x'] - selected['x']
+                    dy = corner['y'] - selected['y']
+                    dist = math.sqrt(dx * dx + dy * dy)
+                    if dist < min_distance:
+                        too_close = True
+                        break
+
+                if not too_close:
+                    filtered_corners.append(corner)
+                    if len(filtered_corners) >= max_corners:
+                        break
+
+            print(f"After min_distance filtering: {len(filtered_corners)} corners")
+            return filtered_corners
 
         except Exception as e:
             print(f"Failed to extract corners from mask: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _calculate_edge_distance_score(
@@ -2666,7 +2698,17 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
             calibration_result = None
             calibration_formatted = None
             calibration_available = CALIBRATOR_AVAILABLE
-            if CALIBRATOR_AVAILABLE and len(projected_points) >= 4:
+            calibration_message = None
+            visible_points = [p for p in projected_points if p.get('visible', False)]
+            has_observations = self.session.frozen_gcp_observations is not None
+
+            if not CALIBRATOR_AVAILABLE:
+                calibration_message = 'Calibrator not available (missing dependencies)'
+            elif len(visible_points) < 4:
+                calibration_message = f'Need at least 4 visible GCP points (have {len(visible_points)})'
+            elif not has_observations:
+                calibration_message = 'Run SAM3 detection on camera frame to enable calibration'
+            else:
                 try:
                     calibration_result = self.session.run_calibration()
                     if calibration_result and calibration_result.get('success', False):
@@ -2675,6 +2717,7 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         calibration_formatted = self._format_calibration_result(calibration_result)
                 except Exception as e:
                     print(f"Initial calibration failed: {e}")
+                    calibration_message = f'Calibration failed: {str(e)}'
 
             self.send_json_response({
                 'success': True,
@@ -2688,7 +2731,10 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 'projected_mask_offset': self.session.projected_mask_offset,
                 'projection_error': projection_error,
                 'calibration_available': calibration_available,
-                'calibration': calibration_formatted
+                'calibration': calibration_formatted,
+                'calibration_message': calibration_message,
+                'visible_gcp_count': len(visible_points),
+                'has_observations': has_observations
             })
 
         elif self.path == '/api/run_calibration':
@@ -4718,7 +4764,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                     updateCameraParamsDisplay();
 
                     // Update calibration display
-                    updateCalibrationDisplay(data.calibration, data.calibration_available);
+                    updateCalibrationDisplay(data.calibration, data.calibration_available, data.calibration_message);
 
                     // Enable and update camera visualization on Tab 1
                     enableCameraToggle();
@@ -5356,7 +5402,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
         // Calibration display and control functions
         let calibrationResult = null;
 
-        function updateCalibrationDisplay(calibration, available) {{
+        function updateCalibrationDisplay(calibration, available, message) {{
             const resultsDiv = document.getElementById('calibration-results');
             const notAvailableDiv = document.getElementById('calibration-not-available');
             const calibrateBtn = document.querySelector('#calibration-status button');
@@ -5365,7 +5411,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 if (resultsDiv) resultsDiv.style.display = 'none';
                 if (notAvailableDiv) {{
                     notAvailableDiv.style.display = 'block';
-                    notAvailableDiv.textContent = 'Calibrator not available (missing dependencies)';
+                    notAvailableDiv.textContent = message || 'Calibrator not available (missing dependencies)';
                 }}
                 if (calibrateBtn) calibrateBtn.style.display = 'none';
                 return;
@@ -5375,7 +5421,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                 if (resultsDiv) resultsDiv.style.display = 'none';
                 if (notAvailableDiv) {{
                     notAvailableDiv.style.display = 'block';
-                    notAvailableDiv.textContent = 'Need at least 4 visible GCP points for calibration';
+                    notAvailableDiv.textContent = message || 'Run SAM3 detection to enable calibration';
                 }}
                 if (calibrateBtn) calibrateBtn.style.display = 'block';
                 return;
