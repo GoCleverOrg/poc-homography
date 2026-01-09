@@ -26,16 +26,6 @@ from poc_homography.server_utils import find_available_port
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 from poc_homography.geotiff_utils import apply_geotransform
 
-# Default georeferencing for the Valencia cartography (legacy 4-parameter format)
-# NOTE: This is kept for backward compatibility with command-line overrides
-DEFAULT_CONFIG = {
-    "origin_easting": 737575.05,
-    "origin_northing": 4391595.45,
-    "pixel_size_x": 0.15,
-    "pixel_size_y": -0.15,  # Negative because Y increases downward in image
-    "crs": "EPSG:25830"  # ETRS89 / UTM Zone 30N
-}
-
 class PointExtractor:
     def __init__(self, image_path: str, config: dict):
         self.image_path = Path(image_path)
@@ -991,60 +981,48 @@ def main():
 
     args = parser.parse_args()
 
-    # Start with DEFAULT_CONFIG as fallback
-    config = DEFAULT_CONFIG.copy()
+    # Load camera configuration (required - single source of truth)
+    camera_config = get_camera_by_name(args.camera)
 
-    # Try to load camera configuration
-    if args.camera:
-        camera_config = get_camera_by_name(args.camera)
+    if camera_config is None:
+        print(f"Error: Camera '{args.camera}' not found in configuration.")
+        print(f"Available cameras: {', '.join([c['name'] for c in get_camera_configs()])}")
+        sys.exit(1)
 
-        if camera_config is None:
-            print(f"Error: Camera '{args.camera}' not found in configuration.")
-            print(f"Available cameras: {', '.join([c['name'] for c in get_camera_configs()])}")
-            sys.exit(1)
+    # Check if camera has geotiff_params
+    if 'geotiff_params' not in camera_config:
+        print(f"Error: Camera '{args.camera}' does not have 'geotiff_params' defined.")
+        print(f"Please update the camera configuration in poc_homography/camera_config.py")
+        sys.exit(1)
 
-        # Check if camera has geotiff_params
-        if 'geotiff_params' not in camera_config:
-            print(f"Error: Camera '{args.camera}' does not have 'geotiff_params' defined.")
-            print(f"Please update the camera configuration in poc_homography/camera_config.py")
-            sys.exit(1)
+    geotiff_params = camera_config['geotiff_params']
 
-        geotiff_params = camera_config['geotiff_params']
+    # Check for new geotransform format vs old format
+    if 'geotransform' in geotiff_params:
+        # New format: use geotransform array directly
+        config = {
+            "geotransform": geotiff_params['geotransform'],
+            "crs": geotiff_params['utm_crs']
+        }
+        print(f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)")
+    else:
+        # Old format: build geotransform from separate parameters
+        config = {
+            "geotransform": [
+                geotiff_params['origin_easting'],
+                geotiff_params['pixel_size_x'],
+                0,  # row_rotation (assumed 0 for legacy format)
+                geotiff_params['origin_northing'],
+                0,  # col_rotation (assumed 0 for legacy format)
+                geotiff_params['pixel_size_y']
+            ],
+            "crs": geotiff_params['utm_crs']
+        }
+        print(f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)")
 
-        # Check for new geotransform format vs old format
-        if 'geotransform' in geotiff_params:
-            # New format: use geotransform array directly
-            config = {
-                "geotransform": geotiff_params['geotransform'],
-                "crs": geotiff_params['utm_crs']
-            }
-            print(f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)")
-        else:
-            # Old format: build geotransform from separate parameters
-            config = {
-                "geotransform": [
-                    geotiff_params['origin_easting'],
-                    geotiff_params['pixel_size_x'],
-                    0,  # row_rotation (assumed 0 for legacy format)
-                    geotiff_params['origin_northing'],
-                    0,  # col_rotation (assumed 0 for legacy format)
-                    geotiff_params['pixel_size_y']
-                ],
-                "crs": geotiff_params['utm_crs']
-            }
-            print(f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)")
-
-    # Command-line arguments override camera config (build custom geotransform)
+    # Command-line arguments override camera config
     if args.origin_e is not None or args.origin_n is not None or args.gsd is not None:
-        # Start with current geotransform or default
-        gt = config.get('geotransform', [
-            DEFAULT_CONFIG['origin_easting'],
-            DEFAULT_CONFIG['pixel_size_x'],
-            0,
-            DEFAULT_CONFIG['origin_northing'],
-            0,
-            DEFAULT_CONFIG['pixel_size_y']
-        ])
+        gt = list(config['geotransform'])  # Make a copy
 
         # Override specific values
         if args.origin_e is not None:
