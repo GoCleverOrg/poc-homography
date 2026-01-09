@@ -19,7 +19,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.kml import GeoConfig, GeoPointRegistry, Kml
+from poc_homography.kml import GeoConfig, GeoPointRegistry, Kml, KmlPoint, PixelPoint
 from poc_homography.server_utils import find_available_port
 
 
@@ -662,7 +662,6 @@ def create_html(image_path: str, config: dict) -> str:
 def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
     """Run the web server."""
 
-    extractor = GeoPointRegistry(geo_config)
     # Convert to dict for JavaScript JSON serialization
     config_dict = {"crs": geo_config.crs, "geotransform": list(geo_config.geotransform)}
     html_content = create_html(image_path, config_dict)
@@ -682,14 +681,28 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
             post_data = json.loads(self.rfile.read(content_length))
 
             if self.path == "/export":
-                # Clear and re-add points
-                extractor.points = {}
+                # Group points by category and create registry
+                points_by_category: dict[str, dict[str, PixelPoint]] = {}
                 for p in post_data["points"]:
-                    extractor.add_point(p["px"], p["py"], p["name"], p["category"])
+                    category = p["category"]
+                    if category not in points_by_category:
+                        points_by_category[category] = {}
+                    points_by_category[category][p["name"]] = PixelPoint(x=p["px"], y=p["py"])
+
+                # Create registries per category and merge points
+                all_points: dict[str, tuple[PixelPoint, KmlPoint]] = {}
+                for category, pixel_points in points_by_category.items():
+                    registry = GeoPointRegistry.from_pixel_points(
+                        geo_config, pixel_points, category
+                    )
+                    all_points.update(registry.points)
+
+                # Create final registry for rendering
+                final_registry = GeoPointRegistry(geo_config=geo_config, points=all_points)
 
                 # Export
                 output_path = str(Path(image_path).with_suffix(".kml"))
-                kml_content = extractor.render_kml()
+                kml_content = final_registry.render_kml()
                 with open(output_path, "w") as f:
                     f.write(kml_content)
 
@@ -698,15 +711,15 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
                 self.end_headers()
                 self.wfile.write(
                     json.dumps(
-                        {"success": True, "path": output_path, "count": len(extractor.points)}
+                        {"success": True, "path": output_path, "count": len(final_registry.points)}
                     ).encode()
                 )
 
             elif self.path == "/import":
                 try:
                     kml_text = post_data.get("kml", "")
-                    kml = Kml(kml_text)
-                    imported = extractor.add_kml_points(kml.points)
+                    kml_doc = Kml(kml_text)
+                    registry = GeoPointRegistry.from_kml_points(geo_config, kml_doc.points)
 
                     # Convert to list format expected by frontend
                     points_list = [
@@ -714,9 +727,9 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
                             "px": pixel.x,
                             "py": pixel.y,
                             "name": name,
-                            "category": kml.category,
+                            "category": kml_point.category,
                         }
-                        for name, (pixel, kml) in imported.items()
+                        for name, (pixel, kml_point) in registry.points.items()
                     ]
 
                     self.send_response(200)
