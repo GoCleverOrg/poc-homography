@@ -1,5 +1,4 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.analysis.extraPaths": ["${workspaceFolder}"],
     "python.analysis.typeCheckingMode": "basic",
     "[python]": {
@@ -10,5 +9,8 @@
             "source.organizeImports": "explicit"
         }
     },
-    "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"]
+    "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": ["tests"]
 }
