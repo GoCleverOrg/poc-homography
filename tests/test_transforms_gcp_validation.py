@@ -25,6 +25,8 @@ Transforms Tested:
 import pytest
 import numpy as np
 import math
+import json
+from pathlib import Path
 from typing import List, Tuple, Dict, Any
 
 # Import modules under test
@@ -39,38 +41,39 @@ from poc_homography.camera_geometry import CameraGeometry
 
 
 # =============================================================================
-# TEST DATA: Ground Control Points from Valte Camera
+# TEST DATA: Ground Control Points from Valte Camera (loaded from fixture file)
 # =============================================================================
 
-# Camera parameters from unified_gcp_tool collection
-CAMERA_INFO = {
-    "latitude": 39.640477777777775,
-    "longitude": -0.23017500000000002,
-    "height_meters": 4.71,
-    "pan_deg": 30.8,
-    "tilt_deg": 13.1,
-    "zoom_level": 1,
-}
+# Path to fixture data
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+VALTE_GCP_DATA_FILE = FIXTURE_DIR / "valte_gcp_data.json"
 
-# Image dimensions (inferred from GCP pixel ranges: max_x=1679, max_y=931)
-IMAGE_WIDTH = 1920
-IMAGE_HEIGHT = 1080
 
-# Ground Control Points: (pixel_x, pixel_y, gps_lat, gps_lon)
-# Each point is a verified correspondence between image and world coordinates
-GCPS = [
-    {"pixel_x": 805, "pixel_y": 583.125, "latitude": 39.64050439015013, "longitude": -0.22998479032275593},
-    {"pixel_x": 1083, "pixel_y": 392.125, "latitude": 39.64048911025965, "longitude": -0.2298384901090573},
-    {"pixel_x": 410, "pixel_y": 778.125, "latitude": 39.64051795978542, "longitude": -0.23005022042273737},
-    {"pixel_x": 770, "pixel_y": 931.125, "latitude": 39.64049148020613, "longitude": -0.2300709304832974},
-    {"pixel_x": 1679, "pixel_y": 417.125, "latitude": 39.64040090032585, "longitude": -0.229828230446174},
-    {"pixel_x": 1259, "pixel_y": 363.125, "latitude": 39.640462559734374, "longitude": -0.22978032003840246},
-    {"pixel_x": 928, "pixel_y": 323.125, "latitude": 39.640524219705625, "longitude": -0.2297330002606455},
-    {"pixel_x": 665, "pixel_y": 292.125, "latitude": 39.640586290340345, "longitude": -0.22968360048224282},
-    {"pixel_x": 471, "pixel_y": 273.125, "latitude": 39.640648189632124, "longitude": -0.2296362698068392},
-    {"pixel_x": 685, "pixel_y": 220.125, "latitude": 39.64063637033206, "longitude": -0.22937841056525055},
-    {"pixel_x": 261, "pixel_y": 250.125, "latitude": 39.64073234977806, "longitude": -0.2295625305451824},
-]
+def load_gcp_test_data(filepath: Path = VALTE_GCP_DATA_FILE) -> Dict[str, Any]:
+    """Load GCP test data from JSON fixture file.
+
+    Args:
+        filepath: Path to the JSON file containing GCP data
+
+    Returns:
+        Dictionary with camera_info, image_dimensions, and gcps
+    """
+    with open(filepath, "r") as f:
+        return json.load(f)
+
+
+# Load test data from fixture file
+_TEST_DATA = load_gcp_test_data()
+
+# Camera parameters from fixture
+CAMERA_INFO = _TEST_DATA["camera_info"]
+
+# Image dimensions from fixture
+IMAGE_WIDTH = _TEST_DATA["image_dimensions"]["width"]
+IMAGE_HEIGHT = _TEST_DATA["image_dimensions"]["height"]
+
+# Ground Control Points from fixture
+GCPS = _TEST_DATA["gcps"]
 
 # Split into training (8) and validation (3) sets
 TRAIN_GCPS = GCPS[:8]
