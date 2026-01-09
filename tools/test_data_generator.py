@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Standalone test data generator tool for camera calibration GCPs.
 
@@ -6,12 +5,6 @@ This tool captures full-resolution camera frames from PTZ cameras and enables
 interactive marking of Ground Control Points (GCPs) with GPS coordinates.
 Automatically fetches camera parameters (pan/tilt/zoom, GPS, height) and exports
 test data in JSON format.
-
-Usage:
-    python tools/test_data_generator.py Valte
-    python tools/test_data_generator.py Setram --output /tmp/test_data.json
-    python tools/test_data_generator.py Valte --kml gcps.kml
-    python tools/test_data_generator.py --list-cameras
 """
 
 import argparse

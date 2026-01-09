@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Debug tool to analyze coordinate transformation discrepancies between:
 1. extract_kml_points.py: pyproj UTM (EPSG:25830) ↔ WGS84
@@ -7,7 +6,6 @@ Debug tool to analyze coordinate transformation discrepancies between:
 This helps identify the root cause of translation and scaling mismatches.
 """
 
-import argparse
 import math
 import sys
 from pathlib import Path
@@ -349,38 +347,3 @@ def load_geotiff_params(camera_name: str):
     utm_crs = geotiff_params["utm_crs"]
 
     return origin_easting, origin_northing, gsd, utm_crs
-
-
-if __name__ == "__main__":
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Debug tool to analyze coordinate transformation discrepancies"
-    )
-    parser.add_argument(
-        "--camera",
-        type=str,
-        default="Valte",
-        help="Camera name to load georeferencing parameters from (default: Valte)",
-    )
-    parser.add_argument(
-        "px", type=float, nargs="?", help="Pixel X coordinate for specific point test (optional)"
-    )
-    parser.add_argument(
-        "py", type=float, nargs="?", help="Pixel Y coordinate for specific point test (optional)"
-    )
-    args = parser.parse_args()
-
-    # Load georeferencing parameters from camera config
-    ORIGIN_EASTING, ORIGIN_NORTHING, GSD, UTM_CRS = load_geotiff_params(args.camera)
-
-    print(f"Loaded georeferencing parameters from camera '{args.camera}':")
-    print(f"  Origin Easting: {ORIGIN_EASTING}")
-    print(f"  Origin Northing: {ORIGIN_NORTHING}")
-    print(f"  GSD: {GSD} m/pixel")
-    print(f"  UTM CRS: {UTM_CRS}")
-    print()
-
-    errors = analyze_transformation_discrepancy()
-
-    if args.px is not None and args.py is not None:
-        test_specific_point(args.px, args.py)
