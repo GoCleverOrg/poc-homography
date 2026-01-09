@@ -58,11 +58,58 @@ class KmlPoint:
             style = "other"
         object.__setattr__(self, "style", style)
 
+    @classmethod
+    def from_placemark(cls, placemark: ET.Element) -> "KmlPoint | None":
+        """Create KmlPoint from a KML Placemark element.
+
+        Args:
+            placemark: XML Element representing a KML Placemark.
+
+        Returns:
+            KmlPoint if coordinates found, None otherwise.
+        """
+        # Extract category from styleUrl or description
+        category = cls._parse_category(placemark)
+
+        # Get coordinates
+        coords_elem = placemark.find(".//coordinates")
+        if coords_elem is None or not coords_elem.text:
+            return None
+
+        parts = coords_elem.text.strip().split(",")
+        if len(parts) < 2:
+            return None
+
+        lon = float(parts[0])
+        lat = float(parts[1])
+        return cls(category=category, lat=lat, lon=lon)
+
+    @staticmethod
+    def _parse_category(placemark: ET.Element) -> str:
+        """Extract category from Placemark's styleUrl or description."""
+        # Try styleUrl first
+        style_elem = placemark.find("styleUrl")
+        if style_elem is not None and style_elem.text:
+            style = style_elem.text.replace("#", "")
+            if style in ["zebra", "arrow", "parking"]:
+                return style
+
+        # Fall back to description
+        desc_elem = placemark.find("description")
+        if desc_elem is not None and desc_elem.text:
+            desc_lower = desc_elem.text.lower()
+            if "category: zebra" in desc_lower:
+                return "zebra"
+            if "category: arrow" in desc_lower:
+                return "arrow"
+            if "category: parking" in desc_lower:
+                return "parking"
+
+        return "other"
+
 
 class Kml:
     """Parser for KML files containing geographic points.
-
-    Parses KML text and extracts points as a cached property.
 
     Args:
         kml_text: KML file content as string.
@@ -74,7 +121,8 @@ class Kml:
     """
 
     def __init__(self, kml_text: str):
-        self._kml_text = kml_text
+        text = re.sub(r'\sxmlns="[^"]+"', "", kml_text, count=1)
+        self._root = ET.fromstring(text)
 
     @cached_property
     def points(self) -> dict[str, KmlPoint]:
@@ -83,14 +131,14 @@ class Kml:
         Returns:
             Dict mapping point names to KmlPoint objects.
         """
-        # Remove namespace for easier parsing
-        text = re.sub(r'\sxmlns="[^"]+"', "", self._kml_text, count=1)
-
-        root = ET.fromstring(text)
         points: dict[str, KmlPoint] = {}
         unnamed_count = 0
 
-        for placemark in root.iter("Placemark"):
+        for placemark in self._root.iter("Placemark"):
+            point = KmlPoint.from_placemark(placemark)
+            if point is None:
+                continue
+
             name_elem = placemark.find("name")
             if name_elem is not None and name_elem.text:
                 name = name_elem.text
@@ -98,35 +146,7 @@ class Kml:
                 unnamed_count += 1
                 name = f"Point_{unnamed_count}"
 
-            # Try to extract category from styleUrl or description
-            style_elem = placemark.find("styleUrl")
-            desc_elem = placemark.find("description")
-
-            category = "other"
-            if style_elem is not None and style_elem.text:
-                style = style_elem.text.replace("#", "")
-                if style in ["zebra", "arrow", "parking"]:
-                    category = style
-
-            # Also check description for category
-            if desc_elem is not None and desc_elem.text:
-                desc_lower = desc_elem.text.lower()
-                if "category: zebra" in desc_lower:
-                    category = "zebra"
-                elif "category: arrow" in desc_lower:
-                    category = "arrow"
-                elif "category: parking" in desc_lower:
-                    category = "parking"
-
-            # Get coordinates
-            coords_elem = placemark.find(".//coordinates")
-            if coords_elem is not None and coords_elem.text:
-                coords_text = coords_elem.text.strip()
-                parts = coords_text.split(",")
-                if len(parts) >= 2:
-                    lon = float(parts[0])
-                    lat = float(parts[1])
-                    points[name] = KmlPoint(category=category, lat=lat, lon=lon)
+            points[name] = point
 
         return points
 
