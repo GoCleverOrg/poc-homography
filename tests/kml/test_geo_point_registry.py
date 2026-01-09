@@ -266,3 +266,123 @@ class TestGeoPointRegistryRenderKml:
         assert 'id="arrow"' in kml_str
         assert 'id="parking"' in kml_str
         assert 'id="other"' in kml_str
+
+
+# Data extracted from Cartografia_valencia.kml - each tuple represents one placemark
+# Format: (name, pixel_x, pixel_y, utm_easting, utm_northing, lat, lon, category)
+VALENCIA_PLACEMARKS = [
+    ("Z1", 848.59, 649.7, 737702.3385, 4391497.995, 39.64025855, -0.22997144, "zebra"),
+    ("Z25", 692.4, 680.73, 737678.91, 4391493.3405, 39.64022316, -0.23024584, "zebra"),
+    ("Z48", 818.06, 734.42, 737697.759, 4391485.287, 39.64014545, -0.23002932, "zebra"),
+    ("A1", 733.5, 649.2, 737685.075, 4391498.07, 39.64026402, -0.23017237, "arrow"),
+    ("A4", 971.9, 815.29, 737720.835, 4391473.1565, 39.64002987, -0.22976506, "arrow"),
+    ("A7", 835.34, 468.0, 737700.351, 4391525.25, 39.64050439, -0.22998478, "arrow"),
+    ("P1", 822.59, 728.21, 737698.4385, 4391486.2185, 39.64015364, -0.23002107, "parking"),
+    ("P10", 1068.54, 560.45, 737735.331, 4391511.3825, 39.64036987, -0.22958258, "parking"),
+    ("P18", 1173.74, 373.88, 737751.111, 4391539.368, 39.64061734, -0.22938883, "parking"),
+    ("X1", 1179.27, 359.62, 737751.9405, 4391541.507, 39.64063636, -0.22937841, "other"),
+    ("X12", 1057.8, 309.29, 737733.72, 4391549.0565, 39.64070937, -0.22958779, "other"),
+    ("X23", 739.71, 561.95, 737686.0065, 4391511.1575, 39.64038154, -0.23015683, "other"),
+]
+
+
+class TestGeoPointRegistryValenciaData:
+    """Data-driven tests using real placemarks from Cartografia_valencia.kml.
+
+    Each test validates coordinate conversions against known ground-truth data
+    extracted from the Valencia cartography KML file.
+
+    Geotransform derived from KML data:
+        origin_x=737575.05, pixel_width=0.15, origin_y=4391595.45, pixel_height=-0.15
+    """
+
+    @pytest.fixture
+    def valencia_geo_config(self) -> GeoConfig:
+        """GeoConfig for Cartografia_valencia.tif (EPSG:25830)."""
+        return GeoConfig(
+            crs="EPSG:25830",
+            geotransform=(737575.05, 0.15, 0.0, 4391595.45, 0.0, -0.15),
+        )
+
+    @pytest.mark.parametrize(
+        "name,pixel_x,pixel_y,utm_easting,utm_northing,lat,lon,category",
+        VALENCIA_PLACEMARKS,
+        ids=[p[0] for p in VALENCIA_PLACEMARKS],
+    )
+    def test_latlon_to_pixel_conversion(
+        self,
+        valencia_geo_config: GeoConfig,
+        name: str,
+        pixel_x: float,
+        pixel_y: float,
+        utm_easting: float,
+        utm_northing: float,
+        lat: float,
+        lon: float,
+        category: str,
+    ) -> None:
+        """Test from_kml_points converts lat/lon to correct pixel coordinates."""
+        kml_point = KmlPoint(name=name, category=category, lat=lat, lon=lon)
+        registry = GeoPointRegistry.from_kml_points(valencia_geo_config, {name: kml_point})
+
+        recovered_pixel, _ = registry.points[name]
+
+        assert recovered_pixel.x == pytest.approx(pixel_x, abs=0.5)
+        assert recovered_pixel.y == pytest.approx(pixel_y, abs=0.5)
+
+    @pytest.mark.parametrize(
+        "name,pixel_x,pixel_y,utm_easting,utm_northing,lat,lon,category",
+        VALENCIA_PLACEMARKS,
+        ids=[p[0] for p in VALENCIA_PLACEMARKS],
+    )
+    def test_pixel_to_latlon_conversion(
+        self,
+        valencia_geo_config: GeoConfig,
+        name: str,
+        pixel_x: float,
+        pixel_y: float,
+        utm_easting: float,
+        utm_northing: float,
+        lat: float,
+        lon: float,
+        category: str,
+    ) -> None:
+        """Test from_pixel_points converts pixel to correct lat/lon coordinates."""
+        pixel_point = PixelPoint(x=pixel_x, y=pixel_y)
+        registry = GeoPointRegistry.from_pixel_points(
+            valencia_geo_config, {name: pixel_point}, category=category
+        )
+
+        _, recovered_kml = registry.points[name]
+
+        # Lat/lon tolerance ~0.00001 degrees ≈ ~1m at this latitude
+        assert recovered_kml.lat == pytest.approx(lat, abs=1e-5)
+        assert recovered_kml.lon == pytest.approx(lon, abs=1e-5)
+
+    @pytest.mark.parametrize(
+        "name,pixel_x,pixel_y,utm_easting,utm_northing,lat,lon,category",
+        VALENCIA_PLACEMARKS,
+        ids=[p[0] for p in VALENCIA_PLACEMARKS],
+    )
+    def test_pixel_to_utm_conversion(
+        self,
+        valencia_geo_config: GeoConfig,
+        name: str,
+        pixel_x: float,
+        pixel_y: float,
+        utm_easting: float,
+        utm_northing: float,
+        lat: float,
+        lon: float,
+        category: str,
+    ) -> None:
+        """Test pixel to UTM conversion matches expected easting/northing."""
+        from poc_homography.geotiff_utils import apply_geotransform
+
+        easting, northing = apply_geotransform(
+            pixel_x, pixel_y, list(valencia_geo_config.geotransform)
+        )
+
+        # UTM tolerance 0.01m (1cm)
+        assert easting == pytest.approx(utm_easting, abs=0.01)
+        assert northing == pytest.approx(utm_northing, abs=0.01)
