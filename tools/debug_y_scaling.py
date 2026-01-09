@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Debug tool to trace Y scaling issues in the coordinate transformation pipeline.
 
@@ -6,7 +5,6 @@ This traces a point through every step of the transformation to identify
 where the Y scaling mismatch occurs.
 """
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -360,37 +358,3 @@ def load_geotiff_params(camera_name: str):
     utm_crs = geotiff_params["utm_crs"]
 
     return origin_easting, origin_northing, gsd, utm_crs
-
-
-if __name__ == "__main__":
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Debug tool to trace Y scaling issues in coordinate transformations"
-    )
-    parser.add_argument(
-        "--camera",
-        type=str,
-        default="Valte",
-        help="Camera name to load georeferencing parameters from (default: Valte)",
-    )
-    args = parser.parse_args()
-
-    # Load georeferencing parameters from camera config
-    ORIGIN_EASTING, ORIGIN_NORTHING, GSD, UTM_CRS = load_geotiff_params(args.camera)
-
-    print(f"Loaded georeferencing parameters from camera '{args.camera}':")
-    print(f"  Origin Easting: {ORIGIN_EASTING}")
-    print(f"  Origin Northing: {ORIGIN_NORTHING}")
-    print(f"  GSD: {GSD} m/pixel")
-    print(f"  UTM CRS: {UTM_CRS}")
-    print()
-
-    check_origin_interpretation()
-    analyze_gsd_sign()
-
-    # Trace specific pixels
-    trace_pixel_to_all(0, 0)  # Top-left
-    trace_pixel_to_all(840, 458)  # Center
-    trace_pixel_to_all(100, 100)  # Near top-left
-
-    check_capture_gcps_local_xy()

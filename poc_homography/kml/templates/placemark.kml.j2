@@ -1,0 +1,8 @@
+<Placemark>
+    <name>{{ point.name }}</name>
+    <description>Category: {{ point.category }}</description>
+    <styleUrl>#{{ point.style }}</styleUrl>
+    <Point>
+        <coordinates>{{ "%.8f"|format(point.lon) }},{{ "%.8f"|format(point.lat) }},0</coordinates>
+    </Point>
+</Placemark>

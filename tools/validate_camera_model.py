@@ -1,16 +1,10 @@
-#!/usr/bin/env python3
 """
 Simple camera model validation script.
 
 Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
-
-Usage:
-    python validate_camera_model.py --camera Valte --gcps gcps.yaml
-    python validate_camera_model.py --camera Valte --gcp LAT LON U V PAN TILT
 """
 
-import argparse
 import math
 import os
 import sys
@@ -263,51 +257,3 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
         return mean_error, results
 
     return None, []
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Validate camera projection model")
-    parser.add_argument("--camera", "-c", required=True, help="Camera name (e.g., Valte)")
-    parser.add_argument("--gcps", "-g", help="Path to YAML file with GCPs")
-    parser.add_argument(
-        "--gcp",
-        "-p",
-        action="append",
-        nargs=6,
-        metavar=("LAT", "LON", "U", "V", "PAN", "TILT"),
-        help="Single GCP: LAT LON PIXEL_U PIXEL_V PAN_DEG TILT_DEG",
-    )
-    parser.add_argument("--zoom", type=float, default=1.0, help="Zoom factor (default: 1.0)")
-
-    args = parser.parse_args()
-
-    gcps = []
-
-    if args.gcps:
-        gcps = load_gcps_from_yaml(args.gcps)
-
-    if args.gcp:
-        for gcp_args in args.gcp:
-            lat, lon, u, v, pan, tilt = map(float, gcp_args)
-            gcps.append(
-                {
-                    "lat": lat,
-                    "lon": lon,
-                    "pixel_u": u,
-                    "pixel_v": v,
-                    "pan": pan,
-                    "tilt": tilt,
-                    "zoom": args.zoom,
-                    "name": f"Manual ({lat:.4f}, {lon:.4f})",
-                }
-            )
-
-    if not gcps:
-        print("Error: No GCPs provided. Use --gcps FILE or --gcp LAT LON U V PAN TILT")
-        sys.exit(1)
-
-    validate_model(args.camera, gcps)
-
-
-if __name__ == "__main__":
-    main()

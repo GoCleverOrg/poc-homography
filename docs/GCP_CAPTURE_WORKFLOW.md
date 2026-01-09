@@ -20,9 +20,9 @@ The accuracy of your homography depends entirely on the accuracy of these coordi
    - Lens distortion (k1, k2)
 
 2. **Tools**:
-   - `tools/capture_gcps_web.py` - Web-based GCP capture tool
-   - `tools/verify_gcp_gps.py` - GPS verification map tool
-   - `tools/validate_camera_model.py` - Projection error validation
+   - `tools/cli/capture_gcps_web.py` - Web-based GCP capture tool
+   - `tools/cli/verify_gcp_gps.py` - GPS verification map tool
+   - `tools/cli/validate_camera_model.py` - Projection error validation
 
 ## Workflow
 
@@ -76,7 +76,7 @@ Before capturing GCPs, verify your GPS coordinates are accurate:
 
 ```bash
 # Create a verification map
-python tools/verify_gcp_gps.py --gcps your_gcps.yaml --camera Valte
+python tools/cli/verify_gcp_gps.py --gcps your_gcps.yaml --camera Valte
 
 # Opens browser with GCPs plotted on satellite imagery
 # Switch to "Satellite" view to check alignment
@@ -92,7 +92,7 @@ python tools/verify_gcp_gps.py --gcps your_gcps.yaml --camera Valte
 Use the web capture tool:
 
 ```bash
-python tools/capture_gcps_web.py \
+python tools/cli/capture_gcps_web.py \
     --camera Valte \
     --map-image your_map.png \
     --kml your_reference.kml
@@ -115,7 +115,7 @@ python tools/capture_gcps_web.py \
 After capturing GCPs, validate the projection model:
 
 ```bash
-python tools/validate_camera_model.py --camera Valte --gcps your_gcps.yaml
+python tools/cli/validate_camera_model.py --camera Valte --gcps your_gcps.yaml
 ```
 
 **Interpreting results:**
@@ -147,7 +147,7 @@ If errors are high:
 **Solution**:
 ```bash
 # Run parameter sweep to find optimal offset
-python tools/validate_camera_model.py --camera Valte --gcps your_gcps.yaml --sweep
+python tools/cli/validate_camera_model.py --camera Valte --gcps your_gcps.yaml --sweep
 ```
 
 ### Issue: Near points accurate, far points have large errors

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Web-based GCP Capture Tool - Interactive Ground Control Point collection.
 
@@ -10,19 +9,6 @@ This utility provides a browser-based interface for capturing Ground Control Poi
 - Interactive GPS coordinate entry
 - Drag-to-reposition existing GCPs for fine-tuning
 - Load existing YAML configs and continue adding points
-
-Usage:
-    # Capture from live camera
-    python tools/capture_gcps_web.py Valte
-
-    # Use existing frame image
-    python tools/capture_gcps_web.py --frame path/to/frame.jpg
-
-    # Load existing YAML and continue editing
-    python tools/capture_gcps_web.py --frame path/to/frame.jpg --load existing_gcps.yaml
-
-    # Specify output file
-    python tools/capture_gcps_web.py Valte --output my_gcps.yaml
 """
 
 import argparse

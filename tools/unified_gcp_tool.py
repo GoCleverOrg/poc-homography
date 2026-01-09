@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Unified GCP Tool - Combines KML extraction and GCP capture in a two-tab interface.
 
@@ -7,19 +6,6 @@ This tool provides a unified workflow for:
 2. Capturing GCPs with map-first mode (Tab 2)
 
 The two tabs share a unified session with automatic point synchronization.
-
-Usage:
-    python tools/unified_gcp_tool.py <image> --camera <camera_name> [--port <port>] [--kml <kml_file>]
-
-Examples:
-    # Basic usage
-    python tools/unified_gcp_tool.py frame.jpg --camera Valte
-
-    # Custom port
-    python tools/unified_gcp_tool.py frame.jpg --camera Valte --port 8080
-
-    # Pre-load KML points on startup
-    python tools/unified_gcp_tool.py frame.jpg --camera Valte --kml exported_points.kml
 """
 from __future__ import annotations
 

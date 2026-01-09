@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 """
-Interactive tool to extract reference points from a georeferenced image and export to KML.
+Web server for extracting reference points from a georeferenced image and exporting to KML.
 Click on features (zebra crossings, arrows, parking corners) and save as KML.
 """
 
-import argparse
 import base64
 import http.server
 import json
@@ -18,8 +16,7 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.kml import GeoConfig, GeoPointRegistry, Kml
+from poc_homography.kml import GeoConfig, GeoPointRegistry, Kml, KmlPoint, PixelPoint
 from poc_homography.server_utils import find_available_port
 
 
@@ -662,7 +659,6 @@ def create_html(image_path: str, config: dict) -> str:
 def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
     """Run the web server."""
 
-    extractor = GeoPointRegistry(geo_config)
     # Convert to dict for JavaScript JSON serialization
     config_dict = {"crs": geo_config.crs, "geotransform": list(geo_config.geotransform)}
     html_content = create_html(image_path, config_dict)
@@ -682,14 +678,28 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
             post_data = json.loads(self.rfile.read(content_length))
 
             if self.path == "/export":
-                # Clear and re-add points
-                extractor.points = {}
+                # Group points by category and create registry
+                points_by_category: dict[str, dict[str, PixelPoint]] = {}
                 for p in post_data["points"]:
-                    extractor.add_point(p["px"], p["py"], p["name"], p["category"])
+                    category = p["category"]
+                    if category not in points_by_category:
+                        points_by_category[category] = {}
+                    points_by_category[category][p["name"]] = PixelPoint(x=p["px"], y=p["py"])
+
+                # Create registries per category and merge points
+                all_points: dict[str, tuple[PixelPoint, KmlPoint]] = {}
+                for category, pixel_points in points_by_category.items():
+                    registry = GeoPointRegistry.from_pixel_points(
+                        geo_config, pixel_points, category
+                    )
+                    all_points.update(registry.points)
+
+                # Create final registry for rendering
+                final_registry = GeoPointRegistry(geo_config=geo_config, points=all_points)
 
                 # Export
                 output_path = str(Path(image_path).with_suffix(".kml"))
-                kml_content = extractor.render_kml()
+                kml_content = final_registry.render_kml()
                 with open(output_path, "w") as f:
                     f.write(kml_content)
 
@@ -698,15 +708,15 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
                 self.end_headers()
                 self.wfile.write(
                     json.dumps(
-                        {"success": True, "path": output_path, "count": len(extractor.points)}
+                        {"success": True, "path": output_path, "count": len(final_registry.points)}
                     ).encode()
                 )
 
             elif self.path == "/import":
                 try:
                     kml_text = post_data.get("kml", "")
-                    kml = Kml(kml_text)
-                    imported = extractor.add_kml_points(kml.points)
+                    kml_doc = Kml(kml_text)
+                    registry = GeoPointRegistry.from_kml_points(geo_config, kml_doc.points)
 
                     # Convert to list format expected by frontend
                     points_list = [
@@ -714,9 +724,9 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
                             "px": pixel.x,
                             "py": pixel.y,
                             "name": name,
-                            "category": kml.category,
+                            "category": kml_point.category,
                         }
-                        for name, (pixel, kml) in imported.items()
+                        for name, (pixel, kml_point) in registry.points.items()
                     ]
 
                     self.send_response(200)
@@ -753,104 +763,3 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nServer stopped.")
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Extract reference points from georeferenced image to KML"
-    )
-    parser.add_argument("image", help="Path to the image file")
-    parser.add_argument(
-        "--camera",
-        type=str,
-        default="Valte",
-        help="Camera name to load configuration from (default: Valte)",
-    )
-    parser.add_argument(
-        "--origin-e",
-        type=float,
-        default=None,
-        help="Origin easting (UTM) - overrides camera config",
-    )
-    parser.add_argument(
-        "--origin-n",
-        type=float,
-        default=None,
-        help="Origin northing (UTM) - overrides camera config",
-    )
-    parser.add_argument(
-        "--gsd",
-        type=float,
-        default=None,
-        help="Ground sample distance in meters - overrides camera config",
-    )
-    parser.add_argument(
-        "--crs", default=None, help="Coordinate reference system - overrides camera config"
-    )
-    parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
-
-    args = parser.parse_args()
-
-    # Load camera configuration (required - single source of truth)
-    camera_config = get_camera_by_name(args.camera)
-
-    if camera_config is None:
-        print(f"Error: Camera '{args.camera}' not found in configuration.")
-        print(f"Available cameras: {', '.join([c['name'] for c in get_camera_configs()])}")
-        sys.exit(1)
-
-    # Check if camera has geotiff_params
-    if "geotiff_params" not in camera_config:
-        print(f"Error: Camera '{args.camera}' does not have 'geotiff_params' defined.")
-        print("Please update the camera configuration in poc_homography/camera_config.py")
-        sys.exit(1)
-
-    geotiff_params = camera_config["geotiff_params"]
-
-    # Check for new geotransform format vs old format
-    if "geotransform" in geotiff_params:
-        # New format: use geotransform array directly
-        gt = list(geotiff_params["geotransform"])
-        crs = geotiff_params["utm_crs"]
-        print(
-            f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)"
-        )
-    else:
-        # Old format: build geotransform from separate parameters
-        gt = [
-            geotiff_params["origin_easting"],
-            geotiff_params["pixel_size_x"],
-            0.0,  # row_rotation (assumed 0 for legacy format)
-            geotiff_params["origin_northing"],
-            0.0,  # col_rotation (assumed 0 for legacy format)
-            geotiff_params["pixel_size_y"],
-        ]
-        crs = geotiff_params["utm_crs"]
-        print(
-            f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)"
-        )
-
-    # Command-line arguments override camera config
-    if args.origin_e is not None or args.origin_n is not None or args.gsd is not None:
-        # Override specific values
-        if args.origin_e is not None:
-            gt[0] = args.origin_e
-        if args.origin_n is not None:
-            gt[3] = args.origin_n
-        if args.gsd is not None:
-            gt[1] = args.gsd
-            gt[5] = -args.gsd
-        print("Applied command-line overrides to geotransform")
-
-    if args.crs is not None:
-        crs = args.crs
-
-    geo_config = GeoConfig(
-        crs=crs,
-        geotransform=(gt[0], gt[1], gt[2], gt[3], gt[4], gt[5]),
-    )
-    run_server(args.image, geo_config, args.port)
-
-
-if __name__ == "__main__":
-    main()

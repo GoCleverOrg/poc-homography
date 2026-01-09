@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Calibration tool to verify and fix projection parameters.
 
@@ -7,16 +6,12 @@ This tool helps identify which parameter is causing projection misalignment:
 2. Camera height
 3. Focal length / intrinsics
 
-Usage:
-    python calibrate_projection.py --reference-point LAT,LON --pixel U,V --camera Valte
-
 The tool will:
 1. Take a known GPS point that you've manually marked in the image
 2. Calculate what parameters would make that projection correct
 3. Compare against current parameters to identify the error
 """
 
-import argparse
 import math
 import os
 import sys
@@ -216,62 +211,3 @@ def analyze_projection_error(
         print("  - Camera GPS position may be inaccurate")
         print("  - Tilt angle may be incorrectly reported by camera")
         print("  - Reference point GPS may be inaccurate")
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Calibrate projection parameters using a known reference point"
-    )
-    parser.add_argument("--camera", "-c", type=str, required=True, help="Camera name (e.g., Valte)")
-    parser.add_argument(
-        "--reference-point",
-        "-r",
-        type=str,
-        required=True,
-        help="GPS coordinates of reference point: LAT,LON",
-    )
-    parser.add_argument(
-        "--pixel",
-        "-p",
-        type=str,
-        required=True,
-        help="Actual pixel location of reference point in image: U,V",
-    )
-    parser.add_argument(
-        "--pan-raw", type=float, default=0.0, help="Raw pan value from camera PTZ (default: 0)"
-    )
-    parser.add_argument(
-        "--tilt", type=float, default=30.0, help="Tilt angle in degrees (default: 30)"
-    )
-    parser.add_argument("--zoom", type=float, default=1.0, help="Zoom factor (default: 1.0)")
-
-    args = parser.parse_args()
-
-    # Parse reference point
-    try:
-        ref_lat, ref_lon = map(float, args.reference_point.split(","))
-    except ValueError:
-        print("Error: Invalid reference point format. Use: LAT,LON")
-        sys.exit(1)
-
-    # Parse pixel
-    try:
-        actual_u, actual_v = map(float, args.pixel.split(","))
-    except ValueError:
-        print("Error: Invalid pixel format. Use: U,V")
-        sys.exit(1)
-
-    # Get camera config
-    if args.camera not in CAMERA_CONFIGS:
-        print(f"Error: Unknown camera '{args.camera}'. Available: {list(CAMERA_CONFIGS.keys())}")
-        sys.exit(1)
-
-    camera_config = CAMERA_CONFIGS[args.camera]
-
-    analyze_projection_error(
-        camera_config, ref_lat, ref_lon, actual_u, actual_v, args.pan_raw, args.tilt, args.zoom
-    )
-
-
-if __name__ == "__main__":
-    main()

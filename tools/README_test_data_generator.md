@@ -31,7 +31,7 @@ No additional installation required beyond project dependencies:
 ### List Available Cameras
 
 ```bash
-python tools/test_data_generator.py --list-cameras
+python tools/cli/test_data_generator.py --list-cameras
 ```
 
 Output:
@@ -45,10 +45,10 @@ Available cameras:
 
 ```bash
 # Basic usage - auto-generate output filename
-python tools/test_data_generator.py Valte
+python tools/cli/test_data_generator.py Valte
 
 # Specify custom output path
-python tools/test_data_generator.py Valte --output /path/to/output.json
+python tools/cli/test_data_generator.py Valte --output /path/to/output.json
 ```
 
 ### Workflow
@@ -222,7 +222,7 @@ From existing codebase:
 ## Example Session
 
 ```bash
-$ python tools/test_data_generator.py Valte
+$ python tools/cli/test_data_generator.py Valte
 
 === Test Data Generator for Valte ===
 

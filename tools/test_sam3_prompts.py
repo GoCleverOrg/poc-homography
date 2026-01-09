@@ -1,19 +1,14 @@
-#!/usr/bin/env python3
 """
 SAM3 Prompt Testing Script
 
 Tests alternative prompts for road marking detection and compares results.
 Produces a comparison table as required by issue #105.
 
-Usage:
-    ROBOFLOW_API_KEY=<key> python3 tools/test_sam3_prompts.py ./Cartografia_valencia.png
-
 Output:
     - Console table with prompt comparison results
     - Mask images saved to ./prompt_test_results/
 """
 
-import argparse
 import base64
 import json
 import os
@@ -261,39 +256,3 @@ def save_results_json(results: list, output_path: str):
     with open(output_path, "w") as f:
         json.dump(output, f, indent=2)
     print(f"\nResults saved to: {output_path}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Test SAM3 prompts for road marking detection")
-    parser.add_argument("image", help="Path to test image")
-    parser.add_argument(
-        "--output-dir",
-        "-o",
-        default="./prompt_test_results",
-        help="Directory to save mask images (default: ./prompt_test_results)",
-    )
-    parser.add_argument("--json", "-j", help="Save results to JSON file")
-    args = parser.parse_args()
-
-    # Get API key from environment
-    api_key = os.environ.get("ROBOFLOW_API_KEY", "")
-    if not api_key:
-        print("Error: ROBOFLOW_API_KEY environment variable not set")
-        sys.exit(1)
-
-    # Run tests
-    results = test_prompts(args.image, api_key, args.output_dir)
-
-    # Print results table
-    print_results_table(results)
-
-    # Save JSON if requested
-    if args.json:
-        save_results_json(results, args.json)
-    elif args.output_dir:
-        json_path = os.path.join(args.output_dir, "results.json")
-        save_results_json(results, json_path)
-
-
-if __name__ == "__main__":
-    main()
