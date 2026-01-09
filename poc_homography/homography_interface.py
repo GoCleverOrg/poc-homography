@@ -14,6 +14,7 @@ The interface supports multiple homography computation approaches:
     - FEATURE_MATCH: Feature matching with known ground control points
     - LEARNED: Machine learning-based homography estimation
 """
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

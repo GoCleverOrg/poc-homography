@@ -2,6 +2,7 @@
 Camera configuration file.
 Central location for all camera settings and credentials.
 """
+from __future__ import annotations
 
 import os
 

@@ -29,6 +29,7 @@ Coordinate Systems:
 Reference:
     ptz_intrinsics_and_pose.md Section 2 Method B (PnP Solver)
 """
+from __future__ import annotations
 
 import logging
 import math

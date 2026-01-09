@@ -133,19 +133,23 @@ Usage Example:
     >>> print(f"Final error: {result.final_error:.2f}px")
     >>> print(f"Inliers: {result.num_inliers}/{result.num_inliers + result.num_outliers}")
 """
+from __future__ import annotations
 
 import copy
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from poc_homography.camera_geometry import CameraGeometry
 
 # Import scipy for optimization
 from scipy.optimize import least_squares
 
-from poc_homography.types import Degrees
+from poc_homography.types import Degrees, Pixels
 
 # Import matplotlib for visualization (optional, lazy import)
 try:
@@ -164,8 +168,12 @@ try:
 except ImportError:
     UTM_CONVERTER_AVAILABLE = False
 
+    from poc_homography.types import Meters
+
     # Fallback if coordinate_converter is not available
-    def gps_to_local_xy(ref_lat, ref_lon, lat, lon):
+    def gps_to_local_xy(
+        ref_lat: Degrees, ref_lon: Degrees, lat: Degrees, lon: Degrees
+    ) -> tuple[Meters, Meters]:
         """Simple equirectangular approximation for testing."""
         import math
 
@@ -174,7 +182,7 @@ except ImportError:
         # Convert degree differences to radians, then scale by Earth radius
         x = math.radians(lon - ref_lon) * math.cos(ref_lat_rad) * R_EARTH
         y = math.radians(lat - ref_lat) * R_EARTH
-        return x, y
+        return Meters(x), Meters(y)
 
 
 logger = logging.getLogger(__name__)
@@ -282,7 +290,7 @@ class GCPCalibrator:
 
     def __init__(
         self,
-        camera_geometry: "CameraGeometry",
+        camera_geometry: CameraGeometry,
         gcps: list[dict[str, Any]],
         loss_function: str = "huber",
         loss_scale: float = 1.0,
@@ -456,7 +464,7 @@ class GCPCalibrator:
 
         # Convert GCPs to world coordinates (cached for efficiency)
         # PRIORITY: UTM coordinates > GPS coordinates
-        self._world_coords = []
+        world_coords_list: list[list[float]] = []
         utm_count = 0
         gps_count = 0
         for gcp in gcps:
@@ -465,7 +473,7 @@ class GCPCalibrator:
                 utm = gcp["utm"]
                 if utm.get("easting") is not None and utm.get("northing") is not None:
                     x, y = self._utm_converter.utm_to_local_xy(utm["easting"], utm["northing"])
-                    self._world_coords.append([x, y])
+                    world_coords_list.append([float(x), float(y)])
                     utm_count += 1
                     continue
 
@@ -476,9 +484,9 @@ class GCPCalibrator:
                 x, y = self._utm_converter.gps_to_local_xy(lat, lon)
             else:
                 x, y = gps_to_local_xy(self._reference_lat, self._reference_lon, lat, lon)
-            self._world_coords.append([x, y])
+            world_coords_list.append([float(x), float(y)])
             gps_count += 1
-        self._world_coords = np.array(self._world_coords, dtype=np.float64)
+        self._world_coords: np.ndarray = np.array(world_coords_list, dtype=np.float64)
 
         # Log coordinate source breakdown
         if utm_count > 0:
@@ -491,8 +499,8 @@ class GCPCalibrator:
             )
 
         # Initialize train/test split indices (will be set in calibrate() if validation_split > 0)
-        self._train_indices = None
-        self._test_indices = None
+        self._train_indices: list[int] | None = None
+        self._test_indices: list[int] | None = None
 
         logger.info(
             f"GCPCalibrator initialized with {len(gcps)} GCPs, "
@@ -532,16 +540,19 @@ class GCPCalibrator:
         # Create temporary CameraGeometry with updated parameters
         # We need to create a fresh instance to avoid modifying the original
         temp_geo = copy.copy(self.camera_geometry)
+        K = self.camera_geometry.K
+        if K is None:
+            raise ValueError("Camera intrinsic matrix K is not set")
         temp_geo.set_camera_parameters(
-            K=self.camera_geometry.K,
+            K=K,
             w_pos=updated_pos,
             pan_deg=updated_pan,
             tilt_deg=updated_tilt,
-            map_width=self.camera_geometry.map_width,
-            map_height=self.camera_geometry.map_height,
+            map_width=Pixels(self.camera_geometry.map_width),
+            map_height=Pixels(self.camera_geometry.map_height),
         )
 
-        return temp_geo.H
+        return np.asarray(temp_geo.H)
 
     def _compute_residuals(
         self, params: np.ndarray, gcp_indices: list[int] | None = None
@@ -639,7 +650,7 @@ class GCPCalibrator:
         # Since p₀ = 0 (initial parameters are zeros), this simplifies to:
         # r_prior[j] = sqrt(lambda) * params[j] / sigma[j]
         sqrt_lambda = np.sqrt(self._regularization_weight)
-        regularization_residuals = sqrt_lambda * params / self._sigma_vector
+        regularization_residuals: np.ndarray = sqrt_lambda * params / self._sigma_vector
 
         return regularization_residuals
 
@@ -712,7 +723,7 @@ class GCPCalibrator:
         # Compute Euclidean distance for each point
         per_point_errors = np.linalg.norm(residuals_2d, axis=1)
         # Return RMS
-        return np.sqrt(np.mean(per_point_errors**2))
+        return float(np.sqrt(np.mean(per_point_errors**2)))
 
     def _split_train_test(self) -> tuple[list[int], list[int]]:
         """
@@ -1018,7 +1029,7 @@ def detect_systematic_errors(
         ...     print(w)
         Directional bias detected: mean residual magnitude 2.1px
     """
-    warnings = []
+    warnings: list[str] = []
 
     # Validate inputs
     if residuals_2d.shape[0] != image_coords.shape[0]:

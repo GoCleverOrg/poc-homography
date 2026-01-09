@@ -1,5 +1,6 @@
-# camera_geometry.py
+from __future__ import annotations
 
+# camera_geometry.py
 import logging
 import math
 import warnings

@@ -13,6 +13,7 @@ Coordinate Systems:
     - Camera Frame: X=Right, Y=Down, Z=Forward (standard CV, right-handed)
     - Image Frame: origin top-left, u=right, v=down (pixels)
 """
+from __future__ import annotations
 
 import logging
 import math
@@ -536,7 +537,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Full rotation: first pan in world, then base transform, then roll in camera, then tilt in camera
         # R_world_to_cam = R_tilt @ R_roll @ R_base @ R_pan
-        R = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
+        R: np.ndarray = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
         return R
 
     def _calculate_ground_homography(
@@ -632,7 +633,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         H = H / H[2, 2]
 
-        return H
+        return np.asarray(H)
 
     def _calculate_confidence(
         self,
@@ -781,7 +782,12 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         if self._camera_gps_lat is None or self._camera_gps_lon is None:
             raise RuntimeError("Camera GPS position not set. Call set_camera_gps_position() first.")
 
-        return local_xy_to_gps(self._camera_gps_lat, self._camera_gps_lon, x_meters, y_meters)
+        return local_xy_to_gps(
+            Degrees(self._camera_gps_lat),
+            Degrees(self._camera_gps_lon),
+            Meters(x_meters),
+            Meters(y_meters),
+        )
 
     def _project_image_point_to_world(
         self, image_point: tuple[float, float]
@@ -952,7 +958,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             self.H_inv = np.eye(3)
             self.confidence = 0.0
         else:
-            self.H_inv = np.linalg.inv(self.H)
+            self.H_inv = np.asarray(np.linalg.inv(self.H))
             self.confidence = self._calculate_confidence(self.H, camera_position, tilt_deg)
 
         # Store parameters for metadata
@@ -1222,7 +1228,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         if sh is None:
             sh = self.map_height
 
-        return self._world_to_map_pixels(Xw, Yw, sw, sh)
+        return self._world_to_map_pixels(Meters(Xw), Meters(Yw), Pixels(sw), Pixels(sh))
 
     def get_camera_position(self) -> np.ndarray | None:
         """

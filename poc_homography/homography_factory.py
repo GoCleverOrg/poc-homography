@@ -10,6 +10,7 @@ from configuration. It supports:
 """
 
 import logging
+from typing import Any, cast
 
 from poc_homography.feature_match_homography import FeatureMatchHomography
 from poc_homography.homography_config import HomographyConfig
@@ -141,7 +142,9 @@ class HomographyFactory:
         provider_class = cls._registry[approach]
 
         try:
-            provider = provider_class(width=width, height=height, **kwargs)
+            provider: HomographyProvider = cast("Any", provider_class)(
+                width=width, height=height, **kwargs
+            )
             logger.info(
                 f"Created {approach.value} provider "
                 f"(class: {provider_class.__name__}, "

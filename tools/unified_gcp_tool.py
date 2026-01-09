@@ -21,6 +21,7 @@ Examples:
     # Pre-load KML points on startup
     python tools/unified_gcp_tool.py frame.jpg --camera Valte --kml exported_points.kml
 """
+from __future__ import annotations
 
 import argparse
 import base64

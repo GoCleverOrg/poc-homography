@@ -5,11 +5,12 @@ Provides validation functions for GCP coordinates used in feature-based
 homography and camera pose estimation. Validates GPS coordinates, elevation,
 pixel coordinates, and detects duplicates.
 """
+from __future__ import annotations
 
 import logging
 import math
 import numbers
-from typing import Any
+from typing import Any, SupportsFloat, cast
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +228,8 @@ def _is_valid_finite_number(value: Any) -> bool:
 
     # Check for NaN and Infinity
     try:
-        if math.isnan(value) or math.isinf(value):
+        float_value = float(cast("SupportsFloat", value))
+        if math.isnan(float_value) or math.isinf(float_value):
             return False
     except (TypeError, ValueError):
         return False

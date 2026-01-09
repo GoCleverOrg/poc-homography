@@ -5,8 +5,25 @@ Calculate ground distance between GPS coordinates using Haversine formula.
 
 import math
 
-from poc_homography.coordinate_converter import EARTH_RADIUS_M, gps_to_local_xy
+from poc_homography.coordinate_converter import (
+    EARTH_RADIUS_M,
+    gps_to_local_xy,
+    local_xy_to_gps,
+)
 from poc_homography.types import Degrees, Meters
+
+# Re-export coordinate conversion functions for API compatibility
+__all__ = [
+    "EARTH_RADIUS_M",
+    "gps_to_local_xy",
+    "local_xy_to_gps",
+    "dms_to_dd",
+    "haversine_distance",
+    "bearing_between_points",
+    "dd_to_dms",
+    "compare_distances",
+    "get_cardinal_direction",
+]
 
 
 def dms_to_dd(dms_str: str) -> Degrees:
@@ -35,7 +52,7 @@ def dms_to_dd(dms_str: str) -> Degrees:
     if direction in ["W", "S"]:
         dd = -dd
 
-    return dd
+    return Degrees(dd)
 
 
 def haversine_distance(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: Degrees) -> Meters:
@@ -66,7 +83,7 @@ def haversine_distance(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: Degree
 
     distance = R * c
 
-    return distance
+    return Meters(distance)
 
 
 def bearing_between_points(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: Degrees) -> Degrees:
@@ -91,7 +108,7 @@ def bearing_between_points(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: De
     # Normalize to 0-360
     bearing_deg = (bearing_deg + 360) % 360
 
-    return bearing_deg
+    return Degrees(bearing_deg)
 
 
 def dd_to_dms(dd: Degrees, is_latitude: bool = True) -> str:

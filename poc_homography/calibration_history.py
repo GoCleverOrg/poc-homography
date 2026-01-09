@@ -37,6 +37,7 @@ Usage Example:
     >>> if latest:
     ...     print(f"Last calibration: {latest.estimated_height}m")
 """
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -89,7 +90,7 @@ class CalibrationHistoryEntry:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CalibrationHistoryEntry":
+    def from_dict(cls, data: dict) -> CalibrationHistoryEntry:
         """
         Create entry from dictionary loaded from YAML.
 
