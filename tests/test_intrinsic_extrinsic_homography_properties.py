@@ -10,22 +10,24 @@ catching edge cases and validating fundamental mathematical relationships.
 Run with: python -m pytest tests/test_intrinsic_extrinsic_homography_properties.py -v
 """
 
-import numpy as np
 import math
-import sys
 import os
-import pytest
-from hypothesis import given, strategies as st, assume
+import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import numpy as np
+import pytest
+from hypothesis import assume, given
+from hypothesis import strategies as st
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 
-
 # ============================================================================
 # Hypothesis Strategies for Camera Parameters
 # ============================================================================
+
 
 @st.composite
 def camera_dimensions(draw):
@@ -145,6 +147,7 @@ def base_focal_length(draw):
 # Property Tests
 # ============================================================================
 
+
 class TestRotationMatrixProperties:
     """
     Property-based tests for rotation matrix calculation consistency.
@@ -154,11 +157,7 @@ class TestRotationMatrixProperties:
     verify that both implementations produce identical results.
     """
 
-    @given(
-        pan_deg=pan_angle(),
-        tilt_deg=tilt_angle(),
-        dimensions=camera_dimensions()
-    )
+    @given(pan_deg=pan_angle(), tilt_deg=tilt_angle(), dimensions=camera_dimensions())
     def test_rotation_matrix_consistency(self, pan_deg, tilt_deg, dimensions):
         """
         Property: Rotation matrices must be identical between implementations.
@@ -204,11 +203,7 @@ class TestRotationMatrixProperties:
             f"IntrinsicExtrinsic:\n{R_ieh}"
         )
 
-    @given(
-        pan_deg=pan_angle(),
-        tilt_deg=tilt_angle(),
-        dimensions=camera_dimensions()
-    )
+    @given(pan_deg=pan_angle(), tilt_deg=tilt_angle(), dimensions=camera_dimensions())
     def test_rotation_matrix_orthogonality(self, pan_deg, tilt_deg, dimensions):
         """
         Property: Rotation matrices must be orthogonal (R @ R.T = I, det(R) = 1).
@@ -273,7 +268,7 @@ class TestFocalLengthProperties:
         zoom2=zoom_factor(),
         dimensions=camera_dimensions(),
         sensor_w=sensor_width(),
-        base_f=base_focal_length()
+        base_f=base_focal_length(),
     )
     def test_focal_length_linearity(self, zoom1, zoom2, dimensions, sensor_w, base_f):
         """
@@ -305,10 +300,7 @@ class TestFocalLengthProperties:
 
         width, height = dimensions
         ieh = IntrinsicExtrinsicHomography(
-            width=width,
-            height=height,
-            sensor_width_mm=sensor_w,
-            base_focal_length_mm=base_f
+            width=width, height=height, sensor_width_mm=sensor_w, base_focal_length_mm=base_f
         )
 
         # Get intrinsic matrices at two different zoom levels
@@ -335,7 +327,7 @@ class TestFocalLengthProperties:
         zoom=zoom_factor(),
         dimensions=camera_dimensions(),
         sensor_w=sensor_width(),
-        base_f=base_focal_length()
+        base_f=base_focal_length(),
     )
     def test_focal_length_formula(self, zoom, dimensions, sensor_w, base_f):
         """
@@ -364,10 +356,7 @@ class TestFocalLengthProperties:
         """
         width, height = dimensions
         ieh = IntrinsicExtrinsicHomography(
-            width=width,
-            height=height,
-            sensor_width_mm=sensor_w,
-            base_focal_length_mm=base_f
+            width=width, height=height, sensor_width_mm=sensor_w, base_focal_length_mm=base_f
         )
 
         K = ieh.get_intrinsics(zoom_factor=zoom)
@@ -401,7 +390,7 @@ class TestConfidenceProperties:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     def test_confidence_bounds(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """
@@ -434,13 +423,13 @@ class TestConfidenceProperties:
         result = ieh.compute_homography(
             frame=np.zeros((height, width, 3), dtype=np.uint8),  # Dummy frame
             reference={
-                'camera_matrix': K,
-                'camera_position': pos,
-                'pan_deg': pan_deg,
-                'tilt_deg': tilt_deg,
-                'map_width': 640,
-                'map_height': 640
-            }
+                "camera_matrix": K,
+                "camera_position": pos,
+                "pan_deg": pan_deg,
+                "tilt_deg": tilt_deg,
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         confidence = result.confidence
@@ -457,7 +446,7 @@ class TestConfidenceProperties:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     def test_point_confidence_bounds(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """
@@ -495,33 +484,30 @@ class TestConfidenceProperties:
         result = ieh.compute_homography(
             frame=np.zeros((height, width, 3), dtype=np.uint8),
             reference={
-                'camera_matrix': K,
-                'camera_position': pos,
-                'pan_deg': pan_deg,
-                'tilt_deg': tilt_deg,
-                'map_width': 640,
-                'map_height': 640
-            }
+                "camera_matrix": K,
+                "camera_position": pos,
+                "pan_deg": pan_deg,
+                "tilt_deg": tilt_deg,
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         # Test points at various locations (center, edges, corners)
         test_points = [
             (width / 2.0, height / 2.0),  # Center
-            (0.0, 0.0),                    # Top-left corner
-            (width - 1.0, 0.0),            # Top-right corner
-            (0.0, height - 1.0),           # Bottom-left corner
-            (width - 1.0, height - 1.0),   # Bottom-right corner
-            (width / 2.0, 0.0),            # Top edge center
-            (width / 2.0, height - 1.0),   # Bottom edge center
-            (0.0, height / 2.0),           # Left edge center
-            (width - 1.0, height / 2.0),   # Right edge center
+            (0.0, 0.0),  # Top-left corner
+            (width - 1.0, 0.0),  # Top-right corner
+            (0.0, height - 1.0),  # Bottom-left corner
+            (width - 1.0, height - 1.0),  # Bottom-right corner
+            (width / 2.0, 0.0),  # Top edge center
+            (width / 2.0, height - 1.0),  # Bottom edge center
+            (0.0, height / 2.0),  # Left edge center
+            (width - 1.0, height / 2.0),  # Right edge center
         ]
 
         for u, v in test_points:
-            point_confidence = ieh._calculate_point_confidence(
-                (u, v),
-                result.confidence
-            )
+            point_confidence = ieh._calculate_point_confidence((u, v), result.confidence)
 
             assert 0.0 <= point_confidence <= 1.0, (
                 f"Point confidence {point_confidence:.4f} is outside [0.0, 1.0]\n"
@@ -550,7 +536,7 @@ class TestHomographyConsistencyProperties:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     def test_homography_matrix_consistency(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """
@@ -618,7 +604,7 @@ class TestHomographyConsistencyProperties:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     def test_projection_consistency(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """
@@ -655,13 +641,7 @@ class TestHomographyConsistencyProperties:
         H_ieh = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
 
         # Test several world points at different positions
-        world_points = [
-            (5.0, 5.0),
-            (10.0, 0.0),
-            (0.0, 10.0),
-            (-5.0, 8.0),
-            (3.0, -3.0)
-        ]
+        world_points = [(5.0, 5.0), (10.0, 0.0), (0.0, 10.0), (-5.0, 8.0), (3.0, -3.0)]
 
         for X, Y in world_points:
             # Project with CameraGeometry
@@ -676,7 +656,7 @@ class TestHomographyConsistencyProperties:
             v_ieh = p_ieh[1, 0] / p_ieh[2, 0]
 
             # Calculate pixel difference
-            pixel_diff = math.sqrt((u_geo - u_ieh)**2 + (v_geo - v_ieh)**2)
+            pixel_diff = math.sqrt((u_geo - u_ieh) ** 2 + (v_geo - v_ieh) ** 2)
 
             # Projections should match within sub-pixel accuracy
             assert pixel_diff < 0.01, (
@@ -688,5 +668,5 @@ class TestHomographyConsistencyProperties:
             )
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

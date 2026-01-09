@@ -9,15 +9,13 @@ from configuration. It supports:
 - Fallback chain handling for robustness
 """
 
-from typing import Optional, Type, Dict, Any, List
 import logging
 
-from poc_homography.homography_interface import HomographyProvider, HomographyApproach
-from poc_homography.homography_config import HomographyConfig
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.feature_match_homography import FeatureMatchHomography
+from poc_homography.homography_config import HomographyConfig
+from poc_homography.homography_interface import HomographyApproach, HomographyProvider
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.learned_homography import LearnedHomography
-
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,7 +55,7 @@ class HomographyFactory:
         _registry: Dictionary mapping HomographyApproach to provider classes
     """
 
-    _registry: Dict[HomographyApproach, Type[HomographyProvider]] = {
+    _registry: dict[HomographyApproach, type[HomographyProvider]] = {
         HomographyApproach.INTRINSIC_EXTRINSIC: IntrinsicExtrinsicHomography,
         HomographyApproach.FEATURE_MATCH: FeatureMatchHomography,
         HomographyApproach.LEARNED: LearnedHomography,
@@ -75,15 +73,11 @@ class HomographyFactory:
             >>> print(formatted)
             'intrinsic_extrinsic, feature_match, learned'
         """
-        return ', '.join(a.value for a in cls._registry.keys())
+        return ", ".join(a.value for a in cls._registry.keys())
 
     @classmethod
     def create(
-        cls,
-        approach: HomographyApproach,
-        width: int,
-        height: int,
-        **kwargs
+        cls, approach: HomographyApproach, width: int, height: int, **kwargs
     ) -> HomographyProvider:
         """Create a homography provider for the specified approach.
 
@@ -161,17 +155,11 @@ class HomographyFactory:
                 f"Parameters: width={width}, height={height}, kwargs={kwargs}"
             ) from e
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to create {approach.value} provider: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to create {approach.value} provider: {e}") from e
 
     @classmethod
     def from_config(
-        cls,
-        config: HomographyConfig,
-        width: int,
-        height: int,
-        try_fallbacks: bool = True
+        cls, config: HomographyConfig, width: int, height: int, try_fallbacks: bool = True
     ) -> HomographyProvider:
         """Create a provider from configuration.
 
@@ -214,24 +202,16 @@ class HomographyFactory:
         primary_config = config.get_approach_config(primary_approach)
 
         logger.info(
-            f"Attempting to create provider with primary approach: "
-            f"{primary_approach.value}"
+            f"Attempting to create provider with primary approach: {primary_approach.value}"
         )
 
         try:
-            provider = cls.create(
-                primary_approach,
-                width=width,
-                height=height,
-                **primary_config
-            )
+            provider = cls.create(primary_approach, width=width, height=height, **primary_config)
             logger.info(f"Successfully created {primary_approach.value} provider")
             return provider
 
         except (ValueError, RuntimeError, TypeError) as e:
-            logger.warning(
-                f"Failed to create {primary_approach.value} provider: {e}"
-            )
+            logger.warning(f"Failed to create {primary_approach.value} provider: {e}")
 
             if not try_fallbacks or not config.fallback_approaches:
                 raise RuntimeError(
@@ -241,35 +221,28 @@ class HomographyFactory:
 
             # Try fallback approaches in order
             for fallback_approach in config.fallback_approaches:
-                logger.info(
-                    f"Attempting fallback approach: {fallback_approach.value}"
-                )
+                logger.info(f"Attempting fallback approach: {fallback_approach.value}")
 
                 fallback_config = config.get_approach_config(fallback_approach)
 
                 try:
                     provider = cls.create(
-                        fallback_approach,
-                        width=width,
-                        height=height,
-                        **fallback_config
+                        fallback_approach, width=width, height=height, **fallback_config
                     )
                     logger.info(
-                        f"Successfully created fallback provider: "
-                        f"{fallback_approach.value}"
+                        f"Successfully created fallback provider: {fallback_approach.value}"
                     )
                     return provider
 
                 except (ValueError, RuntimeError, TypeError) as fallback_error:
                     logger.warning(
-                        f"Fallback approach {fallback_approach.value} also failed: "
-                        f"{fallback_error}"
+                        f"Fallback approach {fallback_approach.value} also failed: {fallback_error}"
                     )
                     continue
 
             # All approaches failed
             attempted = [primary_approach] + config.fallback_approaches
-            attempted_str = ', '.join(a.value for a in attempted)
+            attempted_str = ", ".join(a.value for a in attempted)
             raise ValueError(
                 f"Failed to create provider with any configured approach. "
                 f"Attempted: {attempted_str}. "
@@ -278,9 +251,7 @@ class HomographyFactory:
 
     @classmethod
     def register(
-        cls,
-        approach: HomographyApproach,
-        provider_class: Type[HomographyProvider]
+        cls, approach: HomographyApproach, provider_class: type[HomographyProvider]
     ) -> None:
         """Register a new provider class for an approach.
 
@@ -312,9 +283,7 @@ class HomographyFactory:
             ... )
         """
         if not isinstance(provider_class, type):
-            raise ValueError(
-                f"provider_class must be a class, got {type(provider_class)}"
-            )
+            raise ValueError(f"provider_class must be a class, got {type(provider_class)}")
 
         if not issubclass(provider_class, HomographyProvider):
             raise ValueError(
@@ -331,12 +300,10 @@ class HomographyFactory:
             )
 
         cls._registry[approach] = provider_class
-        logger.info(
-            f"Registered {provider_class.__name__} for approach {approach.value}"
-        )
+        logger.info(f"Registered {provider_class.__name__} for approach {approach.value}")
 
     @classmethod
-    def get_registered_approaches(cls) -> List[HomographyApproach]:
+    def get_registered_approaches(cls) -> list[HomographyApproach]:
         """Get list of registered approaches.
 
         Returns:
@@ -350,7 +317,7 @@ class HomographyFactory:
         return list(cls._registry.keys())
 
     @classmethod
-    def get_provider_class(cls, approach: HomographyApproach) -> Type[HomographyProvider]:
+    def get_provider_class(cls, approach: HomographyApproach) -> type[HomographyProvider]:
         """Get the provider class registered for an approach.
 
         Args:

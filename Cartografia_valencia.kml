@@ -46,8 +46,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">848.59</SimpleData>
                 <SimpleData name="pixel_y">649.70</SimpleData>
-                <SimpleData name="utm_easting">737702.3387</SimpleData>
-                <SimpleData name="utm_northing">4391497.9954</SimpleData>
+                <SimpleData name="utm_easting">737702.3385</SimpleData>
+                <SimpleData name="utm_northing">4391497.9950</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -68,20 +68,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">839.36</SimpleData>
                 <SimpleData name="pixel_y">659.26</SimpleData>
-                <SimpleData name="utm_easting">737700.9543</SimpleData>
-                <SimpleData name="utm_northing">4391496.5604</SimpleData>
+                <SimpleData name="utm_easting">737700.9540</SimpleData>
+                <SimpleData name="utm_northing">4391496.5610</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22998807,39.64024602,0</coordinates>
+            <coordinates>-0.22998807,39.64024603,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>Z3</name>
         <description>Category: zebra
-Pixel: (843.1, 646.3)
+Pixel: (843.0, 646.3)
 UTM: E 737701.51, N 4391498.50
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
@@ -90,8 +90,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">843.05</SimpleData>
                 <SimpleData name="pixel_y">646.34</SimpleData>
-                <SimpleData name="utm_easting">737701.5079</SimpleData>
-                <SimpleData name="utm_northing">4391498.4987</SimpleData>
+                <SimpleData name="utm_easting">737701.5075</SimpleData>
+                <SimpleData name="utm_northing">4391498.4990</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -112,13 +112,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">833.32</SimpleData>
                 <SimpleData name="pixel_y">656.24</SimpleData>
-                <SimpleData name="utm_easting">737700.0486</SimpleData>
-                <SimpleData name="utm_northing">4391497.0136</SimpleData>
+                <SimpleData name="utm_easting">737700.0480</SimpleData>
+                <SimpleData name="utm_northing">4391497.0140</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22999845,39.64025035,0</coordinates>
+            <coordinates>-0.22999846,39.64025035,0</coordinates>
         </Point>
     </Placemark>
 
@@ -134,13 +134,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">837.35</SimpleData>
                 <SimpleData name="pixel_y">642.98</SimpleData>
-                <SimpleData name="utm_easting">737700.6530</SimpleData>
-                <SimpleData name="utm_northing">4391499.0023</SimpleData>
+                <SimpleData name="utm_easting">737700.6525</SimpleData>
+                <SimpleData name="utm_northing">4391499.0030</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22999070,39.64026808,0</coordinates>
+            <coordinates>-0.22999071,39.64026809,0</coordinates>
         </Point>
     </Placemark>
 
@@ -156,13 +156,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">827.45</SimpleData>
                 <SimpleData name="pixel_y">653.22</SimpleData>
-                <SimpleData name="utm_easting">737699.1679</SimpleData>
-                <SimpleData name="utm_northing">4391497.4664</SimpleData>
+                <SimpleData name="utm_easting">737699.1675</SimpleData>
+                <SimpleData name="utm_northing">4391497.4670</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23000854,39.64025467,0</coordinates>
+            <coordinates>-0.23000854,39.64025468,0</coordinates>
         </Point>
     </Placemark>
 
@@ -178,13 +178,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">813.86</SimpleData>
                 <SimpleData name="pixel_y">630.07</SimpleData>
-                <SimpleData name="utm_easting">737697.1295</SimpleData>
-                <SimpleData name="utm_northing">4391500.9402</SimpleData>
+                <SimpleData name="utm_easting">737697.1290</SimpleData>
+                <SimpleData name="utm_northing">4391500.9395</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23003102,39.64028650,0</coordinates>
+            <coordinates>-0.23003103,39.64028649,0</coordinates>
         </Point>
     </Placemark>
 
@@ -200,8 +200,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">804.30</SimpleData>
                 <SimpleData name="pixel_y">640.14</SimpleData>
-                <SimpleData name="utm_easting">737695.6951</SimpleData>
-                <SimpleData name="utm_northing">4391499.4293</SimpleData>
+                <SimpleData name="utm_easting">737695.6950</SimpleData>
+                <SimpleData name="utm_northing">4391499.4290</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -222,13 +222,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">767.56</SimpleData>
                 <SimpleData name="pixel_y">603.23</SimpleData>
-                <SimpleData name="utm_easting">737690.1834</SimpleData>
-                <SimpleData name="utm_northing">4391504.9659</SimpleData>
+                <SimpleData name="utm_easting">737690.1840</SimpleData>
+                <SimpleData name="utm_northing">4391504.9655</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23011043,39.64032466,0</coordinates>
+            <coordinates>-0.23011042,39.64032466,0</coordinates>
         </Point>
     </Placemark>
 
@@ -245,7 +245,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">757.66</SimpleData>
                 <SimpleData name="pixel_y">613.46</SimpleData>
                 <SimpleData name="utm_easting">737688.6990</SimpleData>
-                <SimpleData name="utm_northing">4391503.4312</SimpleData>
+                <SimpleData name="utm_northing">4391503.4310</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -266,8 +266,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">733.50</SimpleData>
                 <SimpleData name="pixel_y">649.20</SimpleData>
-                <SimpleData name="utm_easting">737685.0751</SimpleData>
-                <SimpleData name="utm_northing">4391498.0704</SimpleData>
+                <SimpleData name="utm_easting">737685.0750</SimpleData>
+                <SimpleData name="utm_northing">4391498.0700</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -288,7 +288,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">838.69</SimpleData>
                 <SimpleData name="pixel_y">764.62</SimpleData>
-                <SimpleData name="utm_easting">737700.8537</SimpleData>
+                <SimpleData name="utm_easting">737700.8535</SimpleData>
                 <SimpleData name="utm_northing">4391480.7570</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
@@ -301,7 +301,7 @@ CRS: EPSG:25830</description>
     <Placemark>
         <name>A3</name>
         <description>Category: arrow
-Pixel: (897.1, 798.8)
+Pixel: (897.1, 798.9)
 UTM: E 737709.61, N 4391475.62
 CRS: EPSG:25830</description>
         <styleUrl>#arrow</styleUrl>
@@ -310,13 +310,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">897.08</SimpleData>
                 <SimpleData name="pixel_y">798.85</SimpleData>
-                <SimpleData name="utm_easting">737709.6114</SimpleData>
-                <SimpleData name="utm_northing">4391475.6228</SimpleData>
+                <SimpleData name="utm_easting">737709.6120</SimpleData>
+                <SimpleData name="utm_northing">4391475.6225</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22989482,39.64005518,0</coordinates>
+            <coordinates>-0.22989481,39.64005518,0</coordinates>
         </Point>
     </Placemark>
 
@@ -332,13 +332,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">971.90</SimpleData>
                 <SimpleData name="pixel_y">815.29</SimpleData>
-                <SimpleData name="utm_easting">737720.8357</SimpleData>
-                <SimpleData name="utm_northing">4391473.1570</SimpleData>
+                <SimpleData name="utm_easting">737720.8350</SimpleData>
+                <SimpleData name="utm_northing">4391473.1565</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22976505,39.64002987,0</coordinates>
+            <coordinates>-0.22976506,39.64002987,0</coordinates>
         </Point>
     </Placemark>
 
@@ -354,8 +354,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">1094.04</SimpleData>
                 <SimpleData name="pixel_y">597.52</SimpleData>
-                <SimpleData name="utm_easting">737739.1563</SimpleData>
-                <SimpleData name="utm_northing">4391505.8221</SimpleData>
+                <SimpleData name="utm_easting">737739.1560</SimpleData>
+                <SimpleData name="utm_northing">4391505.8220</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -376,13 +376,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">919.39</SimpleData>
                 <SimpleData name="pixel_y">476.72</SimpleData>
-                <SimpleData name="utm_easting">737712.9590</SimpleData>
-                <SimpleData name="utm_northing">4391523.9416</SimpleData>
+                <SimpleData name="utm_easting">737712.9585</SimpleData>
+                <SimpleData name="utm_northing">4391523.9420</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22983849,39.64048911,0</coordinates>
+            <coordinates>-0.22983850,39.64048911,0</coordinates>
         </Point>
     </Placemark>
 
@@ -398,13 +398,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">arrow</SimpleData>
                 <SimpleData name="pixel_x">835.34</SimpleData>
                 <SimpleData name="pixel_y">468.00</SimpleData>
-                <SimpleData name="utm_easting">737700.3505</SimpleData>
-                <SimpleData name="utm_northing">4391525.2502</SimpleData>
+                <SimpleData name="utm_easting">737700.3510</SimpleData>
+                <SimpleData name="utm_northing">4391525.2500</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22998479,39.64050439,0</coordinates>
+            <coordinates>-0.22998478,39.64050439,0</coordinates>
         </Point>
     </Placemark>
 
@@ -420,13 +420,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">822.59</SimpleData>
                 <SimpleData name="pixel_y">728.21</SimpleData>
-                <SimpleData name="utm_easting">737698.4378</SimpleData>
-                <SimpleData name="utm_northing">4391486.2181</SimpleData>
+                <SimpleData name="utm_easting">737698.4385</SimpleData>
+                <SimpleData name="utm_northing">4391486.2185</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23002108,39.64015364,0</coordinates>
+            <coordinates>-0.23002107,39.64015364,0</coordinates>
         </Point>
     </Placemark>
 
@@ -442,13 +442,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">964.35</SimpleData>
                 <SimpleData name="pixel_y">745.83</SimpleData>
-                <SimpleData name="utm_easting">737719.7031</SimpleData>
-                <SimpleData name="utm_northing">4391483.5756</SimpleData>
+                <SimpleData name="utm_easting">737719.7025</SimpleData>
+                <SimpleData name="utm_northing">4391483.5755</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22977449,39.64012395,0</coordinates>
+            <coordinates>-0.22977450,39.64012395,0</coordinates>
         </Point>
     </Placemark>
 
@@ -465,7 +465,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">847.92</SimpleData>
                 <SimpleData name="pixel_y">681.58</SimpleData>
                 <SimpleData name="utm_easting">737702.2380</SimpleData>
-                <SimpleData name="utm_northing">4391493.2133</SimpleData>
+                <SimpleData name="utm_northing">4391493.2130</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -486,8 +486,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">989.86</SimpleData>
                 <SimpleData name="pixel_y">700.03</SimpleData>
-                <SimpleData name="utm_easting">737723.5286</SimpleData>
-                <SimpleData name="utm_northing">4391490.4460</SimpleData>
+                <SimpleData name="utm_easting">737723.5290</SimpleData>
+                <SimpleData name="utm_northing">4391490.4455</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -508,13 +508,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">874.60</SimpleData>
                 <SimpleData name="pixel_y">634.60</SimpleData>
-                <SimpleData name="utm_easting">737706.2394</SimpleData>
-                <SimpleData name="utm_northing">4391500.2603</SimpleData>
+                <SimpleData name="utm_easting">737706.2400</SimpleData>
+                <SimpleData name="utm_northing">4391500.2600</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22992522,39.64027785,0</coordinates>
+            <coordinates>-0.22992521,39.64027785,0</coordinates>
         </Point>
     </Placemark>
 
@@ -530,13 +530,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">1017.37</SimpleData>
                 <SimpleData name="pixel_y">653.72</SimpleData>
-                <SimpleData name="utm_easting">737727.6559</SimpleData>
-                <SimpleData name="utm_northing">4391497.3914</SimpleData>
+                <SimpleData name="utm_easting">737727.6555</SimpleData>
+                <SimpleData name="utm_northing">4391497.3920</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22967695,39.64024608,0</coordinates>
+            <coordinates>-0.22967695,39.64024609,0</coordinates>
         </Point>
     </Placemark>
 
@@ -552,8 +552,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">900.77</SimpleData>
                 <SimpleData name="pixel_y">588.29</SimpleData>
-                <SimpleData name="utm_easting">737710.1656</SimpleData>
-                <SimpleData name="utm_northing">4391507.2061</SimpleData>
+                <SimpleData name="utm_easting">737710.1655</SimpleData>
+                <SimpleData name="utm_northing">4391507.2065</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -574,13 +574,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">1043.21</SimpleData>
                 <SimpleData name="pixel_y">606.92</SimpleData>
-                <SimpleData name="utm_easting">737731.5309</SimpleData>
-                <SimpleData name="utm_northing">4391504.4122</SimpleData>
+                <SimpleData name="utm_easting">737731.5315</SimpleData>
+                <SimpleData name="utm_northing">4391504.4120</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22962932,39.64030819,0</coordinates>
+            <coordinates>-0.22962931,39.64030819,0</coordinates>
         </Point>
     </Placemark>
 
@@ -596,8 +596,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">927.28</SimpleData>
                 <SimpleData name="pixel_y">541.82</SimpleData>
-                <SimpleData name="utm_easting">737714.1418</SimpleData>
-                <SimpleData name="utm_northing">4391514.1768</SimpleData>
+                <SimpleData name="utm_easting">737714.1420</SimpleData>
+                <SimpleData name="utm_northing">4391514.1770</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -609,7 +609,7 @@ CRS: EPSG:25830</description>
     <Placemark>
         <name>P10</name>
         <description>Category: parking
-Pixel: (1068.5, 560.4)
+Pixel: (1068.5, 560.5)
 UTM: E 737735.33, N 4391511.38
 CRS: EPSG:25830</description>
         <styleUrl>#parking</styleUrl>
@@ -619,7 +619,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">1068.54</SimpleData>
                 <SimpleData name="pixel_y">560.45</SimpleData>
                 <SimpleData name="utm_easting">737735.3310</SimpleData>
-                <SimpleData name="utm_northing">4391511.3830</SimpleData>
+                <SimpleData name="utm_northing">4391511.3825</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -640,13 +640,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">953.28</SimpleData>
                 <SimpleData name="pixel_y">495.34</SimpleData>
-                <SimpleData name="utm_easting">737718.0424</SimpleData>
-                <SimpleData name="utm_northing">4391521.1484</SimpleData>
+                <SimpleData name="utm_easting">737718.0420</SimpleData>
+                <SimpleData name="utm_northing">4391521.1490</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22978032,39.64046256,0</coordinates>
+            <coordinates>-0.22978032,39.64046257,0</coordinates>
         </Point>
     </Placemark>
 
@@ -662,8 +662,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">1094.88</SimpleData>
                 <SimpleData name="pixel_y">513.80</SimpleData>
-                <SimpleData name="utm_easting">737739.2823</SimpleData>
-                <SimpleData name="utm_northing">4391518.3796</SimpleData>
+                <SimpleData name="utm_easting">737739.2820</SimpleData>
+                <SimpleData name="utm_northing">4391518.3800</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -675,7 +675,7 @@ CRS: EPSG:25830</description>
     <Placemark>
         <name>P13</name>
         <description>Category: parking
-Pixel: (978.9, 448.9)
+Pixel: (979.0, 448.9)
 UTM: E 737721.89, N 4391528.12
 CRS: EPSG:25830</description>
         <styleUrl>#parking</styleUrl>
@@ -684,8 +684,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">978.95</SimpleData>
                 <SimpleData name="pixel_y">448.88</SimpleData>
-                <SimpleData name="utm_easting">737721.8923</SimpleData>
-                <SimpleData name="utm_northing">4391528.1185</SimpleData>
+                <SimpleData name="utm_easting">737721.8925</SimpleData>
+                <SimpleData name="utm_northing">4391528.1180</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -707,7 +707,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">1121.39</SimpleData>
                 <SimpleData name="pixel_y">467.33</SimpleData>
                 <SimpleData name="utm_easting">737743.2585</SimpleData>
-                <SimpleData name="utm_northing">4391525.3503</SimpleData>
+                <SimpleData name="utm_northing">4391525.3505</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -728,20 +728,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">1005.80</SimpleData>
                 <SimpleData name="pixel_y">402.07</SimpleData>
-                <SimpleData name="utm_easting">737725.9193</SimpleData>
-                <SimpleData name="utm_northing">4391535.1397</SimpleData>
+                <SimpleData name="utm_easting">737725.9200</SimpleData>
+                <SimpleData name="utm_northing">4391535.1395</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22968360,39.64058629,0</coordinates>
+            <coordinates>-0.22968359,39.64058629,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>P16</name>
         <description>Category: parking
-Pixel: (1146.1, 421.9)
+Pixel: (1146.0, 421.9)
 UTM: E 737746.96, N 4391532.17
 CRS: EPSG:25830</description>
         <styleUrl>#parking</styleUrl>
@@ -751,12 +751,12 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">1146.05</SimpleData>
                 <SimpleData name="pixel_y">421.87</SimpleData>
                 <SimpleData name="utm_easting">737746.9575</SimpleData>
-                <SimpleData name="utm_northing">4391532.1702</SimpleData>
+                <SimpleData name="utm_northing">4391532.1695</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22943977,39.64055372,0</coordinates>
+            <coordinates>-0.22943977,39.64055371,0</coordinates>
         </Point>
     </Placemark>
 
@@ -772,13 +772,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">1031.46</SimpleData>
                 <SimpleData name="pixel_y">355.42</SimpleData>
-                <SimpleData name="utm_easting">737729.7693</SimpleData>
-                <SimpleData name="utm_northing">4391542.1364</SimpleData>
+                <SimpleData name="utm_easting">737729.7690</SimpleData>
+                <SimpleData name="utm_northing">4391542.1370</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22963627,39.64064819,0</coordinates>
+            <coordinates>-0.22963627,39.64064820,0</coordinates>
         </Point>
     </Placemark>
 
@@ -794,13 +794,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">parking</SimpleData>
                 <SimpleData name="pixel_x">1173.74</SimpleData>
                 <SimpleData name="pixel_y">373.88</SimpleData>
-                <SimpleData name="utm_easting">737751.1105</SimpleData>
-                <SimpleData name="utm_northing">4391539.3675</SimpleData>
+                <SimpleData name="utm_easting">737751.1110</SimpleData>
+                <SimpleData name="utm_northing">4391539.3680</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22938884,39.64061734,0</coordinates>
+            <coordinates>-0.22938883,39.64061734,0</coordinates>
         </Point>
     </Placemark>
 
@@ -816,13 +816,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1179.27</SimpleData>
                 <SimpleData name="pixel_y">359.62</SimpleData>
-                <SimpleData name="utm_easting">737751.9404</SimpleData>
-                <SimpleData name="utm_northing">4391541.5076</SimpleData>
+                <SimpleData name="utm_easting">737751.9405</SimpleData>
+                <SimpleData name="utm_northing">4391541.5070</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22937841,39.64063637,0</coordinates>
+            <coordinates>-0.22937841,39.64063636,0</coordinates>
         </Point>
     </Placemark>
 
@@ -838,13 +838,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1145.71</SimpleData>
                 <SimpleData name="pixel_y">365.16</SimpleData>
-                <SimpleData name="utm_easting">737746.9071</SimpleData>
-                <SimpleData name="utm_northing">4391540.6766</SimpleData>
+                <SimpleData name="utm_easting">737746.9065</SimpleData>
+                <SimpleData name="utm_northing">4391540.6760</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22943730,39.64063029,0</coordinates>
+            <coordinates>-0.22943731,39.64063028,0</coordinates>
         </Point>
     </Placemark>
 
@@ -861,12 +861,12 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">1182.46</SimpleData>
                 <SimpleData name="pixel_y">336.64</SimpleData>
                 <SimpleData name="utm_easting">737752.4190</SimpleData>
-                <SimpleData name="utm_northing">4391544.9546</SimpleData>
+                <SimpleData name="utm_northing">4391544.9540</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22937160,39.64066726,0</coordinates>
+            <coordinates>-0.22937160,39.64066725,0</coordinates>
         </Point>
     </Placemark>
 
@@ -882,20 +882,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1121.06</SimpleData>
                 <SimpleData name="pixel_y">357.27</SimpleData>
-                <SimpleData name="utm_easting">737743.2084</SimpleData>
-                <SimpleData name="utm_northing">4391541.8591</SimpleData>
+                <SimpleData name="utm_easting">737743.2090</SimpleData>
+                <SimpleData name="utm_northing">4391541.8595</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22947993,39.64064196,0</coordinates>
+            <coordinates>-0.22947992,39.64064196,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>X5</name>
         <description>Category: other
-Pixel: (1177.3, 317.8)
+Pixel: (1177.3, 317.9)
 UTM: E 737751.64, N 4391547.77
 CRS: EPSG:25830</description>
         <styleUrl>#other</styleUrl>
@@ -904,8 +904,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1177.26</SimpleData>
                 <SimpleData name="pixel_y">317.85</SimpleData>
-                <SimpleData name="utm_easting">737751.6388</SimpleData>
-                <SimpleData name="utm_northing">4391547.7728</SimpleData>
+                <SimpleData name="utm_easting">737751.6390</SimpleData>
+                <SimpleData name="utm_northing">4391547.7725</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -926,13 +926,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1096.89</SimpleData>
                 <SimpleData name="pixel_y">348.71</SimpleData>
-                <SimpleData name="utm_easting">737739.5839</SimpleData>
-                <SimpleData name="utm_northing">4391543.1428</SimpleData>
+                <SimpleData name="utm_easting">737739.5835</SimpleData>
+                <SimpleData name="utm_northing">4391543.1435</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22952166,39.64065452,0</coordinates>
+            <coordinates>-0.22952166,39.64065453,0</coordinates>
         </Point>
     </Placemark>
 
@@ -948,7 +948,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1169.54</SimpleData>
                 <SimpleData name="pixel_y">304.76</SimpleData>
-                <SimpleData name="utm_easting">737750.4811</SimpleData>
+                <SimpleData name="utm_easting">737750.4810</SimpleData>
                 <SimpleData name="utm_northing">4391549.7360</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
@@ -962,7 +962,7 @@ CRS: EPSG:25830</description>
         <name>X8</name>
         <description>Category: other
 Pixel: (1077.1, 341.5)
-UTM: E 737736.61, N 4391544.22
+UTM: E 737736.61, N 4391544.23
 CRS: EPSG:25830</description>
         <styleUrl>#other</styleUrl>
         <ExtendedData>
@@ -970,13 +970,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1077.09</SimpleData>
                 <SimpleData name="pixel_y">341.50</SimpleData>
-                <SimpleData name="utm_easting">737736.6142</SimpleData>
-                <SimpleData name="utm_northing">4391544.2245</SimpleData>
+                <SimpleData name="utm_easting">737736.6135</SimpleData>
+                <SimpleData name="utm_northing">4391544.2250</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22955584,39.64066508,0</coordinates>
+            <coordinates>-0.22955585,39.64066509,0</coordinates>
         </Point>
     </Placemark>
 
@@ -992,13 +992,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1156.12</SimpleData>
                 <SimpleData name="pixel_y">290.66</SimpleData>
-                <SimpleData name="utm_easting">737748.4675</SimpleData>
-                <SimpleData name="utm_northing">4391551.8506</SimpleData>
+                <SimpleData name="utm_easting">737748.4680</SimpleData>
+                <SimpleData name="utm_northing">4391551.8510</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22941512,39.64073042,0</coordinates>
+            <coordinates>-0.22941511,39.64073042,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1014,13 +1014,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1051.60</SimpleData>
                 <SimpleData name="pixel_y">333.45</SimpleData>
-                <SimpleData name="utm_easting">737732.7893</SimpleData>
-                <SimpleData name="utm_northing">4391545.4331</SimpleData>
+                <SimpleData name="utm_easting">737732.7900</SimpleData>
+                <SimpleData name="utm_northing">4391545.4325</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22959993,39.64067702,0</coordinates>
+            <coordinates>-0.22959992,39.64067701,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1036,13 +1036,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1136.66</SimpleData>
                 <SimpleData name="pixel_y">279.43</SimpleData>
-                <SimpleData name="utm_easting">737745.5488</SimpleData>
-                <SimpleData name="utm_northing">4391553.5360</SimpleData>
+                <SimpleData name="utm_easting">737745.5490</SimpleData>
+                <SimpleData name="utm_northing">4391553.5355</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22944849,39.64074640,0</coordinates>
+            <coordinates>-0.22944849,39.64074639,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1058,8 +1058,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1057.80</SimpleData>
                 <SimpleData name="pixel_y">309.29</SimpleData>
-                <SimpleData name="utm_easting">737733.7204</SimpleData>
-                <SimpleData name="utm_northing">4391549.0563</SimpleData>
+                <SimpleData name="utm_easting">737733.7200</SimpleData>
+                <SimpleData name="utm_northing">4391549.0565</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1080,13 +1080,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">1114.68</SimpleData>
                 <SimpleData name="pixel_y">276.24</SimpleData>
-                <SimpleData name="utm_easting">737742.2516</SimpleData>
-                <SimpleData name="utm_northing">4391554.0143</SimpleData>
+                <SimpleData name="utm_easting">737742.2520</SimpleData>
+                <SimpleData name="utm_northing">4391554.0140</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.22948670,39.64075162,0</coordinates>
+            <coordinates>-0.22948669,39.64075162,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1103,7 +1103,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">1071.73</SimpleData>
                 <SimpleData name="pixel_y">291.84</SimpleData>
                 <SimpleData name="utm_easting">737735.8095</SimpleData>
-                <SimpleData name="utm_northing">4391551.6742</SimpleData>
+                <SimpleData name="utm_northing">4391551.6740</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1125,7 +1125,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">797.59</SimpleData>
                 <SimpleData name="pixel_y">459.11</SimpleData>
                 <SimpleData name="utm_easting">737694.6885</SimpleData>
-                <SimpleData name="utm_northing">4391526.5832</SimpleData>
+                <SimpleData name="utm_northing">4391526.5835</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1146,20 +1146,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">791.72</SimpleData>
                 <SimpleData name="pixel_y">469.17</SimpleData>
-                <SimpleData name="utm_easting">737693.8073</SimpleData>
-                <SimpleData name="utm_northing">4391525.0738</SimpleData>
+                <SimpleData name="utm_easting">737693.8080</SimpleData>
+                <SimpleData name="utm_northing">4391525.0745</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23006102,39.64050462,0</coordinates>
+            <coordinates>-0.23006101,39.64050463,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>X17</name>
         <description>Category: other
-Pixel: (786.3, 479.1)
+Pixel: (786.4, 479.1)
 UTM: E 737693.00, N 4391523.59
 CRS: EPSG:25830</description>
         <styleUrl>#other</styleUrl>
@@ -1168,13 +1168,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">786.35</SimpleData>
                 <SimpleData name="pixel_y">479.07</SimpleData>
-                <SimpleData name="utm_easting">737693.0018</SimpleData>
-                <SimpleData name="utm_northing">4391523.5889</SimpleData>
+                <SimpleData name="utm_easting">737693.0025</SimpleData>
+                <SimpleData name="utm_northing">4391523.5895</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23007093,39.64049148,0</coordinates>
+            <coordinates>-0.23007092,39.64049149,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1182,7 +1182,7 @@ CRS: EPSG:25830</description>
         <name>X18</name>
         <description>Category: other
 Pixel: (780.8, 489.3)
-UTM: E 737692.17, N 4391522.05
+UTM: E 737692.17, N 4391522.06
 CRS: EPSG:25830</description>
         <styleUrl>#other</styleUrl>
         <ExtendedData>
@@ -1190,13 +1190,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">780.81</SimpleData>
                 <SimpleData name="pixel_y">489.30</SimpleData>
-                <SimpleData name="utm_easting">737692.1721</SimpleData>
-                <SimpleData name="utm_northing">4391522.0543</SimpleData>
+                <SimpleData name="utm_easting">737692.1715</SimpleData>
+                <SimpleData name="utm_northing">4391522.0550</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23008114,39.64047790,0</coordinates>
+            <coordinates>-0.23008115,39.64047791,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1213,12 +1213,12 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">775.61</SimpleData>
                 <SimpleData name="pixel_y">499.21</SimpleData>
                 <SimpleData name="utm_easting">737691.3915</SimpleData>
-                <SimpleData name="utm_northing">4391520.5691</SimpleData>
+                <SimpleData name="utm_northing">4391520.5685</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23009076,39.64046475,0</coordinates>
+            <coordinates>-0.23009076,39.64046474,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1234,20 +1234,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">770.24</SimpleData>
                 <SimpleData name="pixel_y">507.76</SimpleData>
-                <SimpleData name="utm_easting">737690.5867</SimpleData>
-                <SimpleData name="utm_northing">4391519.2854</SimpleData>
+                <SimpleData name="utm_easting">737690.5860</SimpleData>
+                <SimpleData name="utm_northing">4391519.2860</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23010059,39.64045342,0</coordinates>
+            <coordinates>-0.23010060,39.64045343,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>X21</name>
         <description>Category: other
-Pixel: (759.8, 526.6)
+Pixel: (759.8, 526.5)
 UTM: E 737689.03, N 4391516.47
 CRS: EPSG:25830</description>
         <styleUrl>#other</styleUrl>
@@ -1257,7 +1257,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">759.84</SimpleData>
                 <SimpleData name="pixel_y">526.55</SimpleData>
                 <SimpleData name="utm_easting">737689.0260</SimpleData>
-                <SimpleData name="utm_northing">4391516.4671</SimpleData>
+                <SimpleData name="utm_northing">4391516.4675</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1278,13 +1278,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">750.61</SimpleData>
                 <SimpleData name="pixel_y">544.00</SimpleData>
-                <SimpleData name="utm_easting">737687.6421</SimpleData>
-                <SimpleData name="utm_northing">4391513.8499</SimpleData>
+                <SimpleData name="utm_easting">737687.6415</SimpleData>
+                <SimpleData name="utm_northing">4391513.8500</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23013682,39.64040532,0</coordinates>
+            <coordinates>-0.23013683,39.64040532,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1300,8 +1300,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">other</SimpleData>
                 <SimpleData name="pixel_x">739.71</SimpleData>
                 <SimpleData name="pixel_y">561.95</SimpleData>
-                <SimpleData name="utm_easting">737686.0062</SimpleData>
-                <SimpleData name="utm_northing">4391511.1571</SimpleData>
+                <SimpleData name="utm_easting">737686.0065</SimpleData>
+                <SimpleData name="utm_northing">4391511.1575</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1322,8 +1322,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">755.81</SimpleData>
                 <SimpleData name="pixel_y">597.02</SimpleData>
-                <SimpleData name="utm_easting">737688.4219</SimpleData>
-                <SimpleData name="utm_northing">4391505.8971</SimpleData>
+                <SimpleData name="utm_easting">737688.4215</SimpleData>
+                <SimpleData name="utm_northing">4391505.8970</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1344,13 +1344,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">746.08</SimpleData>
                 <SimpleData name="pixel_y">606.91</SimpleData>
-                <SimpleData name="utm_easting">737686.9626</SimpleData>
-                <SimpleData name="utm_northing">4391504.4132</SimpleData>
+                <SimpleData name="utm_easting">737686.9620</SimpleData>
+                <SimpleData name="utm_northing">4391504.4135</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23014812,39.64032058,0</coordinates>
+            <coordinates>-0.23014813,39.64032058,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1366,8 +1366,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">750.11</SimpleData>
                 <SimpleData name="pixel_y">593.83</SimpleData>
-                <SimpleData name="utm_easting">737687.5661</SimpleData>
-                <SimpleData name="utm_northing">4391506.3752</SimpleData>
+                <SimpleData name="utm_easting">737687.5665</SimpleData>
+                <SimpleData name="utm_northing">4391506.3755</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1388,8 +1388,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">739.54</SimpleData>
                 <SimpleData name="pixel_y">603.56</SimpleData>
-                <SimpleData name="utm_easting">737685.9806</SimpleData>
-                <SimpleData name="utm_northing">4391504.9162</SimpleData>
+                <SimpleData name="utm_easting">737685.9810</SimpleData>
+                <SimpleData name="utm_northing">4391504.9160</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1410,8 +1410,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">651.12</SimpleData>
                 <SimpleData name="pixel_y">647.85</SimpleData>
-                <SimpleData name="utm_easting">737672.7181</SimpleData>
-                <SimpleData name="utm_northing">4391498.2723</SimpleData>
+                <SimpleData name="utm_easting">737672.7180</SimpleData>
+                <SimpleData name="utm_northing">4391498.2725</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1432,20 +1432,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">645.75</SimpleData>
                 <SimpleData name="pixel_y">661.78</SimpleData>
-                <SimpleData name="utm_easting">737671.9132</SimpleData>
+                <SimpleData name="utm_easting">737671.9125</SimpleData>
                 <SimpleData name="utm_northing">4391496.1830</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23032626,39.64025069,0</coordinates>
+            <coordinates>-0.23032627,39.64025069,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>Z17</name>
         <description>Category: zebra
-Pixel: (656.3, 652.6)
+Pixel: (656.3, 652.5)
 UTM: E 737673.50, N 4391497.57
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
@@ -1454,13 +1454,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">656.32</SimpleData>
                 <SimpleData name="pixel_y">652.55</SimpleData>
-                <SimpleData name="utm_easting">737673.4984</SimpleData>
+                <SimpleData name="utm_easting">737673.4980</SimpleData>
                 <SimpleData name="utm_northing">4391497.5675</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23030731,39.64026271,0</coordinates>
+            <coordinates>-0.23030732,39.64026271,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1476,13 +1476,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">650.95</SimpleData>
                 <SimpleData name="pixel_y">665.47</SimpleData>
-                <SimpleData name="utm_easting">737672.6932</SimpleData>
-                <SimpleData name="utm_northing">4391495.6293</SimpleData>
+                <SimpleData name="utm_easting">737672.6925</SimpleData>
+                <SimpleData name="utm_northing">4391495.6295</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23031738,39.64024549,0</coordinates>
+            <coordinates>-0.23031739,39.64024549,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1498,13 +1498,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">660.86</SimpleData>
                 <SimpleData name="pixel_y">656.74</SimpleData>
-                <SimpleData name="utm_easting">737674.1785</SimpleData>
-                <SimpleData name="utm_northing">4391496.9385</SimpleData>
+                <SimpleData name="utm_easting">737674.1790</SimpleData>
+                <SimpleData name="utm_northing">4391496.9390</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23029962,39.64025686,0</coordinates>
+            <coordinates>-0.23029961,39.64025686,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1520,13 +1520,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">656.33</SimpleData>
                 <SimpleData name="pixel_y">668.99</SimpleData>
-                <SimpleData name="utm_easting">737673.4990</SimpleData>
-                <SimpleData name="utm_northing">4391495.1008</SimpleData>
+                <SimpleData name="utm_easting">737673.4995</SimpleData>
+                <SimpleData name="utm_northing">4391495.1015</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23030819,39.64024051,0</coordinates>
+            <coordinates>-0.23030818,39.64024052,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1542,20 +1542,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">671.26</SimpleData>
                 <SimpleData name="pixel_y">664.30</SimpleData>
-                <SimpleData name="utm_easting">737675.7383</SimpleData>
-                <SimpleData name="utm_northing">4391495.8055</SimpleData>
+                <SimpleData name="utm_easting">737675.7390</SimpleData>
+                <SimpleData name="utm_northing">4391495.8050</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23028187,39.64024623,0</coordinates>
+            <coordinates>-0.23028186,39.64024623,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>Z22</name>
         <description>Category: zebra
-Pixel: (666.4, 678.1)
+Pixel: (666.4, 678.0)
 UTM: E 737675.01, N 4391493.74
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
@@ -1564,13 +1564,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">666.39</SimpleData>
                 <SimpleData name="pixel_y">678.05</SimpleData>
-                <SimpleData name="utm_easting">737675.0091</SimpleData>
-                <SimpleData name="utm_northing">4391493.7418</SimpleData>
+                <SimpleData name="utm_easting">737675.0085</SimpleData>
+                <SimpleData name="utm_northing">4391493.7425</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23029110,39.64022786,0</coordinates>
+            <coordinates>-0.23029111,39.64022787,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1586,13 +1586,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">681.83</SimpleData>
                 <SimpleData name="pixel_y">673.19</SimpleData>
-                <SimpleData name="utm_easting">737677.3240</SimpleData>
-                <SimpleData name="utm_northing">4391494.4722</SimpleData>
+                <SimpleData name="utm_easting">737677.3245</SimpleData>
+                <SimpleData name="utm_northing">4391494.4715</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23026389,39.64023379,0</coordinates>
+            <coordinates>-0.23026388,39.64023378,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1600,7 +1600,7 @@ CRS: EPSG:25830</description>
         <name>Z24</name>
         <description>Category: zebra
 Pixel: (676.8, 686.1)
-UTM: E 737676.57, N 4391492.53
+UTM: E 737676.57, N 4391492.54
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
         <ExtendedData>
@@ -1608,13 +1608,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">676.79</SimpleData>
                 <SimpleData name="pixel_y">686.10</SimpleData>
-                <SimpleData name="utm_easting">737676.5686</SimpleData>
-                <SimpleData name="utm_northing">4391492.5344</SimpleData>
+                <SimpleData name="utm_easting">737676.5685</SimpleData>
+                <SimpleData name="utm_northing">4391492.5350</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23027338,39.64021656,0</coordinates>
+            <coordinates>-0.23027338,39.64021657,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1630,8 +1630,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">692.40</SimpleData>
                 <SimpleData name="pixel_y">680.73</SimpleData>
-                <SimpleData name="utm_easting">737678.9096</SimpleData>
-                <SimpleData name="utm_northing">4391493.3400</SimpleData>
+                <SimpleData name="utm_easting">737678.9100</SimpleData>
+                <SimpleData name="utm_northing">4391493.3405</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1652,13 +1652,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">687.19</SimpleData>
                 <SimpleData name="pixel_y">693.82</SimpleData>
-                <SimpleData name="utm_easting">737678.1292</SimpleData>
-                <SimpleData name="utm_northing">4391491.3769</SimpleData>
+                <SimpleData name="utm_easting">737678.1285</SimpleData>
+                <SimpleData name="utm_northing">4391491.3770</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23025563,39.64020571,0</coordinates>
+            <coordinates>-0.23025564,39.64020571,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1675,7 +1675,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">744.74</SimpleData>
                 <SimpleData name="pixel_y">722.01</SimpleData>
                 <SimpleData name="utm_easting">737686.7610</SimpleData>
-                <SimpleData name="utm_northing">4391487.1488</SimpleData>
+                <SimpleData name="utm_northing">4391487.1485</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1696,13 +1696,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">739.20</SimpleData>
                 <SimpleData name="pixel_y">735.09</SimpleData>
-                <SimpleData name="utm_easting">737685.9307</SimpleData>
+                <SimpleData name="utm_easting">737685.9300</SimpleData>
                 <SimpleData name="utm_northing">4391485.1865</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23016704,39.64014783,0</coordinates>
+            <coordinates>-0.23016705,39.64014783,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1718,8 +1718,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">760.34</SimpleData>
                 <SimpleData name="pixel_y">733.92</SimpleData>
-                <SimpleData name="utm_easting">737689.1012</SimpleData>
-                <SimpleData name="utm_northing">4391485.3621</SimpleData>
+                <SimpleData name="utm_easting">737689.1010</SimpleData>
+                <SimpleData name="utm_northing">4391485.3620</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1741,7 +1741,7 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">754.47</SimpleData>
                 <SimpleData name="pixel_y">746.67</SimpleData>
                 <SimpleData name="utm_easting">737688.2205</SimpleData>
-                <SimpleData name="utm_northing">4391483.4493</SimpleData>
+                <SimpleData name="utm_northing">4391483.4495</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1762,13 +1762,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">775.94</SimpleData>
                 <SimpleData name="pixel_y">745.83</SimpleData>
-                <SimpleData name="utm_easting">737691.4415</SimpleData>
-                <SimpleData name="utm_northing">4391483.5754</SimpleData>
+                <SimpleData name="utm_easting">737691.4410</SimpleData>
+                <SimpleData name="utm_northing">4391483.5755</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23010347,39.64013180,0</coordinates>
+            <coordinates>-0.23010348,39.64013180,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1784,8 +1784,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">770.91</SimpleData>
                 <SimpleData name="pixel_y">758.92</SimpleData>
-                <SimpleData name="utm_easting">737690.6868</SimpleData>
-                <SimpleData name="utm_northing">4391481.6121</SimpleData>
+                <SimpleData name="utm_easting">737690.6865</SimpleData>
+                <SimpleData name="utm_northing">4391481.6120</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1807,12 +1807,12 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">786.18</SimpleData>
                 <SimpleData name="pixel_y">753.89</SimpleData>
                 <SimpleData name="utm_easting">737692.9770</SimpleData>
-                <SimpleData name="utm_northing">4391482.3672</SimpleData>
+                <SimpleData name="utm_northing">4391482.3665</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23008603,39.64012050,0</coordinates>
+            <coordinates>-0.23008603,39.64012049,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1828,13 +1828,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">781.31</SimpleData>
                 <SimpleData name="pixel_y">767.47</SimpleData>
-                <SimpleData name="utm_easting">737692.2470</SimpleData>
-                <SimpleData name="utm_northing">4391480.3291</SimpleData>
+                <SimpleData name="utm_easting">737692.2465</SimpleData>
+                <SimpleData name="utm_northing">4391480.3295</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23009526,39.64010236,0</coordinates>
+            <coordinates>-0.23009527,39.64010236,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1850,13 +1850,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">796.75</SimpleData>
                 <SimpleData name="pixel_y">762.94</SimpleData>
-                <SimpleData name="utm_easting">737694.5627</SimpleData>
-                <SimpleData name="utm_northing">4391481.0084</SimpleData>
+                <SimpleData name="utm_easting">737694.5625</SimpleData>
+                <SimpleData name="utm_northing">4391481.0090</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23006806,39.64010783,0</coordinates>
+            <coordinates>-0.23006806,39.64010784,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1872,8 +1872,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">791.38</SimpleData>
                 <SimpleData name="pixel_y">775.36</SimpleData>
-                <SimpleData name="utm_easting">737693.7568</SimpleData>
-                <SimpleData name="utm_northing">4391479.1457</SimpleData>
+                <SimpleData name="utm_easting">737693.7570</SimpleData>
+                <SimpleData name="utm_northing">4391479.1460</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1894,20 +1894,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">807.32</SimpleData>
                 <SimpleData name="pixel_y">770.83</SimpleData>
-                <SimpleData name="utm_easting">737696.1481</SimpleData>
-                <SimpleData name="utm_northing">4391479.8262</SimpleData>
+                <SimpleData name="utm_easting">737696.1480</SimpleData>
+                <SimpleData name="utm_northing">4391479.8255</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23005003,39.64009675,0</coordinates>
+            <coordinates>-0.23005003,39.64009674,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>Z38</name>
         <description>Category: zebra
-Pixel: (802.1, 783.7)
+Pixel: (802.1, 783.8)
 UTM: E 737695.37, N 4391477.89
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
@@ -1916,8 +1916,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">802.12</SimpleData>
                 <SimpleData name="pixel_y">783.75</SimpleData>
-                <SimpleData name="utm_easting">737695.3678</SimpleData>
-                <SimpleData name="utm_northing">4391477.8876</SimpleData>
+                <SimpleData name="utm_easting">737695.3680</SimpleData>
+                <SimpleData name="utm_northing">4391477.8875</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -1939,12 +1939,12 @@ CRS: EPSG:25830</description>
                 <SimpleData name="pixel_x">817.89</SimpleData>
                 <SimpleData name="pixel_y">778.71</SimpleData>
                 <SimpleData name="utm_easting">737697.7335</SimpleData>
-                <SimpleData name="utm_northing">4391478.6429</SimpleData>
+                <SimpleData name="utm_northing">4391478.6435</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23003200,39.64008566,0</coordinates>
+            <coordinates>-0.23003200,39.64008567,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1960,13 +1960,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">812.86</SimpleData>
                 <SimpleData name="pixel_y">792.47</SimpleData>
-                <SimpleData name="utm_easting">737696.9785</SimpleData>
+                <SimpleData name="utm_easting">737696.9790</SimpleData>
                 <SimpleData name="utm_northing">4391476.5795</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23004153,39.64006730,0</coordinates>
+            <coordinates>-0.23004152,39.64006730,0</coordinates>
         </Point>
     </Placemark>
 
@@ -1982,8 +1982,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">828.46</SimpleData>
                 <SimpleData name="pixel_y">787.11</SimpleData>
-                <SimpleData name="utm_easting">737699.3187</SimpleData>
-                <SimpleData name="utm_northing">4391477.3840</SimpleData>
+                <SimpleData name="utm_easting">737699.3190</SimpleData>
+                <SimpleData name="utm_northing">4391477.3835</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -2004,13 +2004,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">823.43</SimpleData>
                 <SimpleData name="pixel_y">799.68</SimpleData>
-                <SimpleData name="utm_easting">737698.5642</SimpleData>
-                <SimpleData name="utm_northing">4391475.4973</SimpleData>
+                <SimpleData name="utm_easting">737698.5645</SimpleData>
+                <SimpleData name="utm_northing">4391475.4980</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23002346,39.64005712,0</coordinates>
+            <coordinates>-0.23002346,39.64005713,0</coordinates>
         </Point>
     </Placemark>
 
@@ -2026,8 +2026,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">794.74</SimpleData>
                 <SimpleData name="pixel_y">747.84</SimpleData>
-                <SimpleData name="utm_easting">737694.2608</SimpleData>
-                <SimpleData name="utm_northing">4391483.2736</SimpleData>
+                <SimpleData name="utm_easting">737694.2610</SimpleData>
+                <SimpleData name="utm_northing">4391483.2740</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -2048,13 +2048,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">805.31</SimpleData>
                 <SimpleData name="pixel_y">758.24</SimpleData>
-                <SimpleData name="utm_easting">737695.8459</SimpleData>
-                <SimpleData name="utm_northing">4391481.7136</SimpleData>
+                <SimpleData name="utm_easting">737695.8465</SimpleData>
+                <SimpleData name="utm_northing">4391481.7140</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23005287,39.64011382,0</coordinates>
+            <coordinates>-0.23005286,39.64011382,0</coordinates>
         </Point>
     </Placemark>
 
@@ -2070,20 +2070,20 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">800.77</SimpleData>
                 <SimpleData name="pixel_y">735.77</SimpleData>
-                <SimpleData name="utm_easting">737695.1662</SimpleData>
-                <SimpleData name="utm_northing">4391485.0849</SimpleData>
+                <SimpleData name="utm_easting">737695.1655</SimpleData>
+                <SimpleData name="utm_northing">4391485.0845</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23005957,39.64014435,0</coordinates>
+            <coordinates>-0.23005958,39.64014435,0</coordinates>
         </Point>
     </Placemark>
 
     <Placemark>
         <name>Z46</name>
         <description>Category: zebra
-Pixel: (811.3, 746.2)
+Pixel: (811.4, 746.2)
 UTM: E 737696.75, N 4391483.52
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
@@ -2092,8 +2092,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">811.35</SimpleData>
                 <SimpleData name="pixel_y">746.17</SimpleData>
-                <SimpleData name="utm_easting">737696.7521</SimpleData>
-                <SimpleData name="utm_northing">4391483.5249</SimpleData>
+                <SimpleData name="utm_easting">737696.7525</SimpleData>
+                <SimpleData name="utm_northing">4391483.5245</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
@@ -2105,7 +2105,7 @@ CRS: EPSG:25830</description>
     <Placemark>
         <name>Z47</name>
         <description>Category: zebra
-Pixel: (807.2, 724.2)
+Pixel: (807.1, 724.2)
 UTM: E 737696.12, N 4391486.82
 CRS: EPSG:25830</description>
         <styleUrl>#zebra</styleUrl>
@@ -2114,13 +2114,13 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">807.15</SimpleData>
                 <SimpleData name="pixel_y">724.19</SimpleData>
-                <SimpleData name="utm_easting">737696.1229</SimpleData>
-                <SimpleData name="utm_northing">4391486.8222</SimpleData>
+                <SimpleData name="utm_easting">737696.1225</SimpleData>
+                <SimpleData name="utm_northing">4391486.8215</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>
         <Point>
-            <coordinates>-0.23004781,39.64015972,0</coordinates>
+            <coordinates>-0.23004781,39.64015971,0</coordinates>
         </Point>
     </Placemark>
 
@@ -2136,8 +2136,8 @@ CRS: EPSG:25830</description>
                 <SimpleData name="category">zebra</SimpleData>
                 <SimpleData name="pixel_x">818.06</SimpleData>
                 <SimpleData name="pixel_y">734.42</SimpleData>
-                <SimpleData name="utm_easting">737697.7587</SimpleData>
-                <SimpleData name="utm_northing">4391485.2871</SimpleData>
+                <SimpleData name="utm_easting">737697.7590</SimpleData>
+                <SimpleData name="utm_northing">4391485.2870</SimpleData>
                 <SimpleData name="utm_crs">EPSG:25830</SimpleData>
             </SchemaData>
         </ExtendedData>

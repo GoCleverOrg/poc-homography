@@ -33,18 +33,18 @@ Potential Model Architectures:
     - Custom models trained on domain-specific data
 """
 
-from typing import List, Tuple, Dict, Any, Optional
-import numpy as np
 import logging
+from typing import Any
+
+import numpy as np
 
 from poc_homography.homography_interface import (
+    GPSPositionMixin,
     HomographyProviderExtended,
     HomographyResult,
-    WorldPoint,
     MapCoordinate,
-    HomographyApproach,
+    WorldPoint,
     validate_homography_matrix,
-    GPSPositionMixin
 )
 
 logger = logging.getLogger(__name__)
@@ -102,11 +102,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         self,
         width: int,
         height: int,
-        model_path: Optional[str] = None,
-        model_type: str = 'homography_net',
+        model_path: str | None = None,
+        model_type: str = "homography_net",
         confidence_threshold: float = 0.6,
-        device: str = 'cpu',
-        input_size: Optional[Tuple[int, int]] = None
+        device: str = "cpu",
+        input_size: tuple[int, int] | None = None,
     ):
         """
         Initialize learned homography provider.
@@ -139,21 +139,16 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         """
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError(
-                f"confidence_threshold must be in range [0.0, 1.0], "
-                f"got {confidence_threshold}"
+                f"confidence_threshold must be in range [0.0, 1.0], got {confidence_threshold}"
             )
 
-        valid_model_types = ['homography_net', 'superpoint', 'loftr', 'custom']
+        valid_model_types = ["homography_net", "superpoint", "loftr", "custom"]
         if model_type not in valid_model_types:
-            raise ValueError(
-                f"model_type must be one of {valid_model_types}, got '{model_type}'"
-            )
+            raise ValueError(f"model_type must be one of {valid_model_types}, got '{model_type}'")
 
-        valid_devices = ['cpu', 'cuda', 'mps']
+        valid_devices = ["cpu", "cuda", "mps"]
         if device not in valid_devices:
-            raise ValueError(
-                f"device must be one of {valid_devices}, got '{device}'"
-            )
+            raise ValueError(f"device must be one of {valid_devices}, got '{device}'")
 
         self.width = width
         self.height = height
@@ -164,23 +159,23 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         self.input_size = input_size if input_size is not None else (width, height)
 
         # Homography state (to be computed)
-        self._homography_matrix: Optional[np.ndarray] = None
+        self._homography_matrix: np.ndarray | None = None
         self._confidence: float = 0.0
-        self._last_metadata: Dict[str, Any] = {}
+        self._last_metadata: dict[str, Any] = {}
 
         # Model state (to be loaded on first use)
-        self._model: Optional[Any] = None  # Will be PyTorch/TF model object
+        self._model: Any | None = None  # Will be PyTorch/TF model object
         self._model_loaded: bool = False
 
         # GPS reference point for WorldPoint conversion (to be set)
-        self._camera_gps_lat: Optional[float] = None
-        self._camera_gps_lon: Optional[float] = None
+        self._camera_gps_lat: float | None = None
+        self._camera_gps_lon: float | None = None
 
         # Preprocessing parameters (model-specific)
-        self._mean: Optional[np.ndarray] = None  # Normalization mean
-        self._std: Optional[np.ndarray] = None   # Normalization std
+        self._mean: np.ndarray | None = None  # Normalization mean
+        self._std: np.ndarray | None = None  # Normalization std
 
-    def load_model(self, model_path: Optional[str] = None) -> None:
+    def load_model(self, model_path: str | None = None) -> None:
         """
         Load neural network model from file.
 
@@ -200,10 +195,9 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             NotImplementedError: Currently not implemented (issue #14)
         """
         logger.warning(
-            "Learned homography model loading not implemented. "
-            "Model path: %s, model type: %s",
+            "Learned homography model loading not implemented. Model path: %s, model type: %s",
             model_path or self.model_path,
-            self.model_type
+            self.model_type,
         )
         raise NotImplementedError(
             "Model loading not yet implemented. "
@@ -216,11 +210,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
     # HomographyProvider Interface Implementation (Stubs)
     # =========================================================================
 
-    def compute_homography(
-        self,
-        frame: np.ndarray,
-        reference: Dict[str, Any]
-    ) -> HomographyResult:
+    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """
         Compute homography using neural network inference.
 
@@ -260,9 +250,9 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         logger.warning(
             "Learned homography computation not implemented. "
             "Frame shape: %s, model type: %s, device: %s",
-            frame.shape if hasattr(frame, 'shape') else 'unknown',
+            frame.shape if hasattr(frame, "shape") else "unknown",
             self.model_type,
-            self.device
+            self.device,
         )
         raise NotImplementedError(
             "Learned homography computation not yet implemented. "
@@ -271,7 +261,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             "(HomographyNet, SuperPoint, LoFTR, etc.) for homography prediction."
         )
 
-    def project_point(self, image_point: Tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
         """
         Project single image coordinate to world coordinate (GPS).
 
@@ -299,9 +289,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             Call is_valid() first to ensure homography is ready for projection.
         """
         logger.warning(
-            "Learned homography point projection not implemented. "
-            "Image point: %s",
-            image_point
+            "Learned homography point projection not implemented. Image point: %s", image_point
         )
         raise NotImplementedError(
             "Point projection not yet implemented. "
@@ -310,10 +298,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             "transform image coordinates to GPS via ground plane projection."
         )
 
-    def project_points(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[WorldPoint]:
+    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
         """
         Project multiple image points to world coordinates (GPS).
 
@@ -337,9 +322,8 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             May incorporate per-point uncertainty from model predictions.
         """
         logger.warning(
-            "Learned homography batch projection not implemented. "
-            "Number of points: %d",
-            len(image_points)
+            "Learned homography batch projection not implemented. Number of points: %d",
+            len(image_points),
         )
         raise NotImplementedError(
             "Batch point projection not yet implemented. "
@@ -395,19 +379,14 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             to avoid runtime errors.
         """
         return validate_homography_matrix(
-            self._homography_matrix,
-            self._confidence,
-            self.confidence_threshold
+            self._homography_matrix, self._confidence, self.confidence_threshold
         )
 
     # =========================================================================
     # HomographyProviderExtended Interface Implementation (Stubs)
     # =========================================================================
 
-    def project_point_to_map(
-        self,
-        image_point: Tuple[float, float]
-    ) -> MapCoordinate:
+    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
         """
         Project image coordinate to local map coordinate system.
 
@@ -426,9 +405,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             NotImplementedError: Currently not implemented (issue #14)
         """
         logger.warning(
-            "Learned homography map projection not implemented. "
-            "Image point: %s",
-            image_point
+            "Learned homography map projection not implemented. Image point: %s", image_point
         )
         raise NotImplementedError(
             "Map projection not yet implemented. "
@@ -437,10 +414,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             "using learned homography."
         )
 
-    def project_points_to_map(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[MapCoordinate]:
+    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
         """
         Project multiple image points to local map coordinates.
 
@@ -458,9 +432,8 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             NotImplementedError: Currently not implemented (issue #14)
         """
         logger.warning(
-            "Learned homography batch map projection not implemented. "
-            "Number of points: %d",
-            len(image_points)
+            "Learned homography batch map projection not implemented. Number of points: %d",
+            len(image_points),
         )
         raise NotImplementedError(
             "Batch map projection not yet implemented. "

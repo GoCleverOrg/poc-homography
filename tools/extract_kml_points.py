@@ -4,279 +4,44 @@ Interactive tool to extract reference points from a georeferenced image and expo
 Click on features (zebra crossings, arrows, parking corners) and save as KML.
 """
 
+import argparse
+import base64
 import http.server
-import socketserver
 import json
+import socketserver
 import sys
 import webbrowser
-import urllib.parse
 from pathlib import Path
-from pyproj import Transformer
-import base64
-import argparse
-import xml.etree.ElementTree as ET
-import re
 
 # Add parent directory to path for imports
 parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from poc_homography.server_utils import find_available_port
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.geotiff_utils import apply_geotransform
-
-# Default georeferencing for the Valencia cartography (legacy 4-parameter format)
-# NOTE: This is kept for backward compatibility with command-line overrides
-DEFAULT_CONFIG = {
-    "origin_easting": 737575.05,
-    "origin_northing": 4391595.45,
-    "pixel_size_x": 0.15,
-    "pixel_size_y": -0.15,  # Negative because Y increases downward in image
-    "crs": "EPSG:25830"  # ETRS89 / UTM Zone 30N
-}
-
-class PointExtractor:
-    def __init__(self, image_path: str, config: dict):
-        self.image_path = Path(image_path)
-        self.config = config
-        self.points = []
-        self.transformer = Transformer.from_crs(
-            config["crs"], "EPSG:4326", always_xy=True
-        )
-        self.reverse_transformer = Transformer.from_crs(
-            "EPSG:4326", config["crs"], always_xy=True
-        )
-
-    def pixel_to_utm(self, px: float, py: float) -> tuple:
-        """
-        Convert pixel coordinates to UTM using 6-parameter affine geotransform.
-
-        Uses the GDAL GeoTransform formula:
-            easting = GT[0] + px*GT[1] + py*GT[2]
-            northing = GT[3] + px*GT[4] + py*GT[5]
-        """
-        easting, northing = apply_geotransform(px, py, self.config['geotransform'])
-        return easting, northing
-
-    def pixel_to_latlon(self, px: float, py: float) -> tuple:
-        """Convert pixel coordinates to lat/lon."""
-        easting, northing = self.pixel_to_utm(px, py)
-        lon, lat = self.transformer.transform(easting, northing)
-        return lat, lon
-
-    def latlon_to_utm(self, lat: float, lon: float) -> tuple:
-        """Convert lat/lon to UTM."""
-        easting, northing = self.reverse_transformer.transform(lon, lat)
-        return easting, northing
-
-    def latlon_to_pixel(self, lat: float, lon: float) -> tuple:
-        """
-        Convert lat/lon to pixel coordinates using inverse affine transform.
-
-        For north-up images (GT[2]=0, GT[4]=0), this simplifies to:
-            px = (easting - GT[0]) / GT[1]
-            py = (northing - GT[3]) / GT[5]
-
-        For rotated images, we need to solve the 2x2 system.
-        """
-        easting, northing = self.latlon_to_utm(lat, lon)
-        gt = self.config['geotransform']
-
-        # Inverse affine transform
-        # For general case (with rotation):
-        # [easting - GT[0]]   [GT[1]  GT[2]]   [px]
-        # [northing - GT[3]] = [GT[4]  GT[5]] * [py]
-        #
-        # Solve: [px, py] = inv([[GT[1], GT[2]], [GT[4], GT[5]]]) @ [easting-GT[0], northing-GT[3]]
-
-        det = gt[1] * gt[5] - gt[2] * gt[4]
-        if abs(det) < 1e-10:
-            raise ValueError("Geotransform matrix is singular (cannot invert)")
-
-        de = easting - gt[0]
-        dn = northing - gt[3]
-
-        px = (gt[5] * de - gt[2] * dn) / det
-        py = (-gt[4] * de + gt[1] * dn) / det
-
-        return px, py
-
-    def parse_kml(self, kml_text: str) -> list:
-        """Parse KML file and extract points with pixel coordinates."""
-        # Remove namespace for easier parsing
-        kml_text = re.sub(r'\sxmlns="[^"]+"', '', kml_text, count=1)
-
-        root = ET.fromstring(kml_text)
-        points = []
-
-        for placemark in root.iter('Placemark'):
-            name_elem = placemark.find('name')
-            name = name_elem.text if name_elem is not None else f"Point_{len(points)+1}"
-
-            # Try to extract category from styleUrl or description
-            style_elem = placemark.find('styleUrl')
-            desc_elem = placemark.find('description')
-
-            category = 'other'
-            if style_elem is not None:
-                style = style_elem.text.replace('#', '')
-                if style in ['zebra', 'arrow', 'parking']:
-                    category = style
-
-            # Also check description for category
-            if desc_elem is not None and desc_elem.text:
-                desc_lower = desc_elem.text.lower()
-                if 'category: zebra' in desc_lower:
-                    category = 'zebra'
-                elif 'category: arrow' in desc_lower:
-                    category = 'arrow'
-                elif 'category: parking' in desc_lower:
-                    category = 'parking'
-
-            # Get coordinates
-            coords_elem = placemark.find('.//coordinates')
-            if coords_elem is not None and coords_elem.text:
-                coords_text = coords_elem.text.strip()
-                parts = coords_text.split(',')
-                if len(parts) >= 2:
-                    lon = float(parts[0])
-                    lat = float(parts[1])
-                    px, py = self.latlon_to_pixel(lat, lon)
-                    points.append({
-                        'name': name,
-                        'category': category,
-                        'px': px,
-                        'py': py,
-                        'lat': lat,
-                        'lon': lon
-                    })
-
-        return points
-
-    def add_point(self, px: float, py: float, name: str, category: str):
-        """Add a reference point."""
-        lat, lon = self.pixel_to_latlon(px, py)
-        easting, northing = self.pixel_to_utm(px, py)
-        self.points.append({
-            "name": name,
-            "category": category,
-            "pixel_x": px,
-            "pixel_y": py,
-            "easting": easting,
-            "northing": northing,
-            "lat": lat,
-            "lon": lon
-        })
-        return self.points[-1]
-
-    def export_kml(self, output_path: str):
-        """Export points to KML file with both GPS and UTM coordinates."""
-        kml_content = '''<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-<Document>
-    <name>Reference Points</name>
-    <description>Extracted from {}</description>
-
-    <Schema name="GCPData" id="GCPData">
-        <SimpleField type="string" name="category"/>
-        <SimpleField type="float" name="pixel_x"/>
-        <SimpleField type="float" name="pixel_y"/>
-        <SimpleField type="float" name="utm_easting"/>
-        <SimpleField type="float" name="utm_northing"/>
-        <SimpleField type="string" name="utm_crs"/>
-    </Schema>
-
-    <Style id="zebra">
-        <IconStyle><color>ff0000ff</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-    <Style id="arrow">
-        <IconStyle><color>ff00ff00</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-    <Style id="parking">
-        <IconStyle><color>ffff0000</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-    <Style id="other">
-        <IconStyle><color>ff00ffff</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-'''.format(self.image_path.name)
-
-        for i, pt in enumerate(self.points):
-            style = pt["category"].lower().replace(" ", "_")
-            if style not in ["zebra", "arrow", "parking"]:
-                style = "other"
-
-            kml_content += '''
-    <Placemark>
-        <name>{name}</name>
-        <description>Category: {category}
-Pixel: ({pixel_x:.1f}, {pixel_y:.1f})
-UTM: E {easting:.2f}, N {northing:.2f}
-CRS: {crs}</description>
-        <styleUrl>#{style}</styleUrl>
-        <ExtendedData>
-            <SchemaData schemaUrl="#GCPData">
-                <SimpleData name="category">{category}</SimpleData>
-                <SimpleData name="pixel_x">{pixel_x:.2f}</SimpleData>
-                <SimpleData name="pixel_y">{pixel_y:.2f}</SimpleData>
-                <SimpleData name="utm_easting">{easting:.4f}</SimpleData>
-                <SimpleData name="utm_northing">{northing:.4f}</SimpleData>
-                <SimpleData name="utm_crs">{crs}</SimpleData>
-            </SchemaData>
-        </ExtendedData>
-        <Point>
-            <coordinates>{lon:.8f},{lat:.8f},0</coordinates>
-        </Point>
-    </Placemark>
-'''.format(
-                name=pt["name"],
-                category=pt["category"],
-                pixel_x=pt["pixel_x"],
-                pixel_y=pt["pixel_y"],
-                easting=pt["easting"],
-                northing=pt["northing"],
-                crs=self.config["crs"],
-                style=style,
-                lon=pt["lon"],
-                lat=pt["lat"]
-            )
-
-        kml_content += '''
-</Document>
-</kml>'''
-
-        with open(output_path, 'w') as f:
-            f.write(kml_content)
-
-        return output_path
+from poc_homography.kml import GeoConfig, GeoPointRegistry, Kml
+from poc_homography.server_utils import find_available_port
 
 
 def create_html(image_path: str, config: dict) -> str:
     """Create the HTML interface."""
 
     # Read and encode image
-    with open(image_path, 'rb') as f:
+    with open(image_path, "rb") as f:
         img_data = base64.b64encode(f.read()).decode()
 
     # Determine image type
     suffix = Path(image_path).suffix.lower()
     mime_type = {
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.tif': 'image/tiff',
-        '.tiff': 'image/tiff'
-    }.get(suffix, 'image/png')
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".tif": "image/tiff",
+        ".tiff": "image/tiff",
+    }.get(suffix, "image/png")
 
-    return '''<!DOCTYPE html>
+    return (
+        """<!DOCTYPE html>
 <html>
 <head>
     <title>KML Point Extractor</title>
@@ -418,7 +183,11 @@ def create_html(image_path: str, config: dict) -> str:
     <div class="container">
         <div class="image-panel" id="image-panel">
             <div id="image-container">
-                <img id="main-image" src="data:''' + mime_type + ''';base64,''' + img_data + '''">
+                <img id="main-image" src="data:"""
+        + mime_type
+        + """;base64,"""
+        + img_data
+        + """">
                 <svg id="connectors-svg"></svg>
             </div>
         </div>
@@ -476,7 +245,9 @@ def create_html(image_path: str, config: dict) -> str:
     </div>
 
     <script>
-        const config = ''' + json.dumps(config) + ''';
+        const config = """
+        + json.dumps(config)
+        + """;
         let points = [];
         let currentZoom = 1;
         let counters = { zebra: 1, arrow: 1, parking: 1, other: 1 };
@@ -884,68 +655,79 @@ def create_html(image_path: str, config: dict) -> str:
         }
     </script>
 </body>
-</html>'''
+</html>"""
+    )
 
 
-def run_server(image_path: str, config: dict, port: int = 8765):
+def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
     """Run the web server."""
 
-    extractor = PointExtractor(image_path, config)
-    html_content = create_html(image_path, config)
+    extractor = GeoPointRegistry(geo_config)
+    # Convert to dict for JavaScript JSON serialization
+    config_dict = {"crs": geo_config.crs, "geotransform": list(geo_config.geotransform)}
+    html_content = create_html(image_path, config_dict)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
-            if self.path == '/' or self.path == '/index.html':
+            if self.path == "/" or self.path == "/index.html":
                 self.send_response(200)
-                self.send_header('Content-type', 'text/html')
+                self.send_header("Content-type", "text/html")
                 self.end_headers()
                 self.wfile.write(html_content.encode())
             else:
                 self.send_error(404)
 
         def do_POST(self):
-            content_length = int(self.headers['Content-Length'])
+            content_length = int(self.headers["Content-Length"])
             post_data = json.loads(self.rfile.read(content_length))
 
-            if self.path == '/export':
+            if self.path == "/export":
                 # Clear and re-add points
-                extractor.points = []
-                for p in post_data['points']:
-                    extractor.add_point(p['px'], p['py'], p['name'], p['category'])
+                extractor.points = {}
+                for p in post_data["points"]:
+                    extractor.add_point(p["px"], p["py"], p["name"], p["category"])
 
                 # Export
-                output_path = str(Path(image_path).with_suffix('.kml'))
-                extractor.export_kml(output_path)
+                output_path = str(Path(image_path).with_suffix(".kml"))
+                kml_content = extractor.render_kml()
+                with open(output_path, "w") as f:
+                    f.write(kml_content)
 
                 self.send_response(200)
-                self.send_header('Content-type', 'application/json')
+                self.send_header("Content-type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'path': output_path,
-                    'count': len(extractor.points)
-                }).encode())
+                self.wfile.write(
+                    json.dumps(
+                        {"success": True, "path": output_path, "count": len(extractor.points)}
+                    ).encode()
+                )
 
-            elif self.path == '/import':
+            elif self.path == "/import":
                 try:
-                    kml_text = post_data.get('kml', '')
-                    points = extractor.parse_kml(kml_text)
+                    kml_text = post_data.get("kml", "")
+                    kml = Kml(kml_text)
+                    imported = extractor.add_kml_points(kml.points)
+
+                    # Convert to list format expected by frontend
+                    points_list = [
+                        {
+                            "px": pixel.x,
+                            "py": pixel.y,
+                            "name": name,
+                            "category": kml.category,
+                        }
+                        for name, (pixel, kml) in imported.items()
+                    ]
 
                     self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
+                    self.send_header("Content-type", "application/json")
                     self.end_headers()
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'points': points
-                    }).encode())
+                    self.wfile.write(json.dumps({"success": True, "points": points_list}).encode())
                 except Exception as e:
                     self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
+                    self.send_header("Content-type", "application/json")
                     self.end_headers()
-                    self.wfile.write(json.dumps({
-                        'success': False,
-                        'error': str(e)
-                    }).encode())
+                    self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode())
             else:
                 self.send_error(404)
 
@@ -957,12 +739,12 @@ def run_server(image_path: str, config: dict, port: int = 8765):
 
     with socketserver.TCPServer(("", port), Handler) as httpd:
         url = f"http://localhost:{port}"
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"KML Point Extractor running at: {url}")
         print(f"Image: {image_path}")
-        print(f"CRS: {config['crs']}")
-        print(f"Geotransform: {config['geotransform']}")
-        print(f"{'='*60}")
+        print(f"CRS: {geo_config.crs}")
+        print(f"Geotransform: {geo_config.geotransform}")
+        print(f"{'=' * 60}")
         print("\nPress Ctrl+C to stop\n")
 
         webbrowser.open(url)
@@ -974,78 +756,82 @@ def run_server(image_path: str, config: dict, port: int = 8765):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Extract reference points from georeferenced image to KML')
-    parser.add_argument('image', help='Path to the image file')
-    parser.add_argument('--camera', type=str, default='Valte',
-                        help='Camera name to load configuration from (default: Valte)')
-    parser.add_argument('--origin-e', type=float, default=None,
-                        help='Origin easting (UTM) - overrides camera config')
-    parser.add_argument('--origin-n', type=float, default=None,
-                        help='Origin northing (UTM) - overrides camera config')
-    parser.add_argument('--gsd', type=float, default=None,
-                        help='Ground sample distance in meters - overrides camera config')
-    parser.add_argument('--crs', default=None,
-                        help='Coordinate reference system - overrides camera config')
-    parser.add_argument('--port', type=int, default=8765,
-                        help='Server port (default: 8765)')
+    parser = argparse.ArgumentParser(
+        description="Extract reference points from georeferenced image to KML"
+    )
+    parser.add_argument("image", help="Path to the image file")
+    parser.add_argument(
+        "--camera",
+        type=str,
+        default="Valte",
+        help="Camera name to load configuration from (default: Valte)",
+    )
+    parser.add_argument(
+        "--origin-e",
+        type=float,
+        default=None,
+        help="Origin easting (UTM) - overrides camera config",
+    )
+    parser.add_argument(
+        "--origin-n",
+        type=float,
+        default=None,
+        help="Origin northing (UTM) - overrides camera config",
+    )
+    parser.add_argument(
+        "--gsd",
+        type=float,
+        default=None,
+        help="Ground sample distance in meters - overrides camera config",
+    )
+    parser.add_argument(
+        "--crs", default=None, help="Coordinate reference system - overrides camera config"
+    )
+    parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
 
     args = parser.parse_args()
 
-    # Start with DEFAULT_CONFIG as fallback
-    config = DEFAULT_CONFIG.copy()
+    # Load camera configuration (required - single source of truth)
+    camera_config = get_camera_by_name(args.camera)
 
-    # Try to load camera configuration
-    if args.camera:
-        camera_config = get_camera_by_name(args.camera)
+    if camera_config is None:
+        print(f"Error: Camera '{args.camera}' not found in configuration.")
+        print(f"Available cameras: {', '.join([c['name'] for c in get_camera_configs()])}")
+        sys.exit(1)
 
-        if camera_config is None:
-            print(f"Error: Camera '{args.camera}' not found in configuration.")
-            print(f"Available cameras: {', '.join([c['name'] for c in get_camera_configs()])}")
-            sys.exit(1)
+    # Check if camera has geotiff_params
+    if "geotiff_params" not in camera_config:
+        print(f"Error: Camera '{args.camera}' does not have 'geotiff_params' defined.")
+        print("Please update the camera configuration in poc_homography/camera_config.py")
+        sys.exit(1)
 
-        # Check if camera has geotiff_params
-        if 'geotiff_params' not in camera_config:
-            print(f"Error: Camera '{args.camera}' does not have 'geotiff_params' defined.")
-            print(f"Please update the camera configuration in poc_homography/camera_config.py")
-            sys.exit(1)
+    geotiff_params = camera_config["geotiff_params"]
 
-        geotiff_params = camera_config['geotiff_params']
+    # Check for new geotransform format vs old format
+    if "geotransform" in geotiff_params:
+        # New format: use geotransform array directly
+        gt = list(geotiff_params["geotransform"])
+        crs = geotiff_params["utm_crs"]
+        print(
+            f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)"
+        )
+    else:
+        # Old format: build geotransform from separate parameters
+        gt = [
+            geotiff_params["origin_easting"],
+            geotiff_params["pixel_size_x"],
+            0.0,  # row_rotation (assumed 0 for legacy format)
+            geotiff_params["origin_northing"],
+            0.0,  # col_rotation (assumed 0 for legacy format)
+            geotiff_params["pixel_size_y"],
+        ]
+        crs = geotiff_params["utm_crs"]
+        print(
+            f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)"
+        )
 
-        # Check for new geotransform format vs old format
-        if 'geotransform' in geotiff_params:
-            # New format: use geotransform array directly
-            config = {
-                "geotransform": geotiff_params['geotransform'],
-                "crs": geotiff_params['utm_crs']
-            }
-            print(f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)")
-        else:
-            # Old format: build geotransform from separate parameters
-            config = {
-                "geotransform": [
-                    geotiff_params['origin_easting'],
-                    geotiff_params['pixel_size_x'],
-                    0,  # row_rotation (assumed 0 for legacy format)
-                    geotiff_params['origin_northing'],
-                    0,  # col_rotation (assumed 0 for legacy format)
-                    geotiff_params['pixel_size_y']
-                ],
-                "crs": geotiff_params['utm_crs']
-            }
-            print(f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)")
-
-    # Command-line arguments override camera config (build custom geotransform)
+    # Command-line arguments override camera config
     if args.origin_e is not None or args.origin_n is not None or args.gsd is not None:
-        # Start with current geotransform or default
-        gt = config.get('geotransform', [
-            DEFAULT_CONFIG['origin_easting'],
-            DEFAULT_CONFIG['pixel_size_x'],
-            0,
-            DEFAULT_CONFIG['origin_northing'],
-            0,
-            DEFAULT_CONFIG['pixel_size_y']
-        ])
-
         # Override specific values
         if args.origin_e is not None:
             gt[0] = args.origin_e
@@ -1054,15 +840,17 @@ def main():
         if args.gsd is not None:
             gt[1] = args.gsd
             gt[5] = -args.gsd
-
-        config['geotransform'] = gt
-        print(f"Applied command-line overrides to geotransform")
+        print("Applied command-line overrides to geotransform")
 
     if args.crs is not None:
-        config['crs'] = args.crs
+        crs = args.crs
 
-    run_server(args.image, config, args.port)
+    geo_config = GeoConfig(
+        crs=crs,
+        geotransform=(gt[0], gt[1], gt[2], gt[3], gt[4], gt[5]),
+    )
+    run_server(args.image, geo_config, args.port)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -17,12 +17,12 @@ Where:
     GT[5]: Pixel height (meters per pixel in Y direction, typically negative)
 """
 
-import numpy as np
-import sys
 import os
+import sys
+
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.geotiff_utils import apply_geotransform
 
@@ -39,10 +39,10 @@ class TestApplyGeotransform:
         # At pixel (0, 0), should return origin coordinates
         easting, northing = apply_geotransform(0, 0, gt)
 
-        assert easting == pytest.approx(737575.05, abs=0.01), \
-            "Easting at origin should match GT[0]"
-        assert northing == pytest.approx(4391595.45, abs=0.01), \
+        assert easting == pytest.approx(737575.05, abs=0.01), "Easting at origin should match GT[0]"
+        assert northing == pytest.approx(4391595.45, abs=0.01), (
             "Northing at origin should match GT[3]"
+        )
 
     def test_north_up_raster_offset_pixel(self):
         """Test north-up raster transform at offset pixel."""
@@ -54,10 +54,12 @@ class TestApplyGeotransform:
         # Expected northing = 4391595.45 + 10*0 + 20*(-0.15) = 4391592.45
         easting, northing = apply_geotransform(10, 20, gt)
 
-        assert easting == pytest.approx(737576.55, abs=0.01), \
+        assert easting == pytest.approx(737576.55, abs=0.01), (
             "Easting should offset by px * pixel_size_x"
-        assert northing == pytest.approx(4391592.45, abs=0.01), \
+        )
+        assert northing == pytest.approx(4391592.45, abs=0.01), (
             "Northing should offset by py * pixel_size_y (negative for GeoTIFF)"
+        )
 
     def test_north_up_raster_large_offset(self):
         """Test north-up raster transform with large pixel offset."""
@@ -105,10 +107,12 @@ class TestApplyGeotransform:
         # Expected easting = 500000 + 50*0.1387 + 75*0.0574 = 500011.24
         # Expected northing = 4400000 + 50*0.0574 + 75*(-0.1387) = 4399992.4675
         easting, northing = apply_geotransform(50, 75, gt)
-        assert easting == pytest.approx(500011.24, abs=0.1), \
+        assert easting == pytest.approx(500011.24, abs=0.1), (
             "Rotated raster should handle combined offsets with rotation tolerance"
-        assert northing == pytest.approx(4399992.47, abs=0.1), \
+        )
+        assert northing == pytest.approx(4399992.47, abs=0.1), (
             "Rotated raster northing should reflect rotation effects"
+        )
 
     def test_half_pixel_center_offset(self):
         """Test pixel center offset convention (GDAL uses pixel corner)."""
@@ -123,10 +127,12 @@ class TestApplyGeotransform:
         center_e, center_n = apply_geotransform(0.5, 0.5, gt)
 
         # Center should be 0.5 pixels (0.075m) offset from corner
-        assert center_e == pytest.approx(corner_e + 0.075, abs=0.001), \
+        assert center_e == pytest.approx(corner_e + 0.075, abs=0.001), (
             "Pixel center should be +0.5 pixels east of corner"
-        assert center_n == pytest.approx(corner_n - 0.075, abs=0.001), \
+        )
+        assert center_n == pytest.approx(corner_n - 0.075, abs=0.001), (
             "Pixel center should be -0.5 pixels north of corner (negative pixel_size_y)"
+        )
 
     def test_negative_pixel_coordinates(self):
         """Test that negative pixel coordinates work correctly."""
@@ -198,10 +204,12 @@ class TestGeotransformEquivalence:
             # 6-parameter formula
             affine_easting, affine_northing = apply_geotransform(px, py, gt)
 
-            assert affine_easting == pytest.approx(simple_easting, abs=0.001), \
+            assert affine_easting == pytest.approx(simple_easting, abs=0.001), (
                 f"6-param should match simplified for north-up at ({px}, {py})"
-            assert affine_northing == pytest.approx(simple_northing, abs=0.001), \
+            )
+            assert affine_northing == pytest.approx(simple_northing, abs=0.001), (
                 f"6-param should match simplified for north-up at ({px}, {py})"
+            )
 
 
 class TestGeotransformEdgeCases:
@@ -232,5 +240,5 @@ class TestGeotransformEdgeCases:
         assert northing == pytest.approx(4400000, abs=0.01)
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

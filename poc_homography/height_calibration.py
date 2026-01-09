@@ -40,14 +40,13 @@ Usage Example:
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Tuple, Union
+
 import numpy as np
 from scipy.optimize import least_squares
 from scipy.stats import t as t_dist
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gps_distance_calculator import dms_to_dd, haversine_distance
-
 
 # Numerical threshold for detecting near-zero values (used for horizon detection
 # and invalid homography distances). Values below this are considered effectively zero.
@@ -74,6 +73,7 @@ class CalibrationPoint:
         homography_distance: Distance from camera to point via homography (meters)
         current_height: Camera height setting when this point was collected (meters)
     """
+
     pixel_x: float
     pixel_y: float
     gps_lat: float
@@ -101,12 +101,13 @@ class CalibrationResult:
         timestamp: When the calibration was performed
         calibration_points: List of calibration points used in estimation
     """
+
     estimated_height: float
-    confidence_interval: Tuple[float, float]
+    confidence_interval: tuple[float, float]
     inlier_count: int
     outlier_count: int
     timestamp: datetime
-    calibration_points: List[CalibrationPoint] = field(default_factory=list)
+    calibration_points: list[CalibrationPoint] = field(default_factory=list)
 
 
 class HeightCalibrator:
@@ -150,7 +151,7 @@ class HeightCalibrator:
 
         self.camera_gps = camera_gps
         self.min_points = min_points
-        self.calibration_points: List[CalibrationPoint] = []
+        self.calibration_points: list[CalibrationPoint] = []
 
         # Convert camera GPS to decimal degrees if needed
         if isinstance(camera_gps["lat"], str):
@@ -167,7 +168,7 @@ class HeightCalibrator:
         gps_lat: float,
         gps_lon: float,
         current_height: float,
-        geo: CameraGeometry
+        geo: CameraGeometry,
     ) -> CalibrationPoint:
         """
         Add a calibration point by clicking on image and providing GPS coordinates.
@@ -195,9 +196,7 @@ class HeightCalibrator:
         """
         # Validate current_height to prevent division by zero in calibration
         if current_height <= 0:
-            raise ValueError(
-                f"current_height must be positive, got {current_height}m"
-            )
+            raise ValueError(f"current_height must be positive, got {current_height}m")
 
         # Project image point to world coordinates using homography
         pt_img = np.array([[pixel_x], [pixel_y], [1.0]])
@@ -218,12 +217,7 @@ class HeightCalibrator:
         homography_distance = np.sqrt(world_x**2 + world_y**2)
 
         # Calculate actual GPS distance using haversine formula
-        gps_distance = haversine_distance(
-            self.camera_lat_dd,
-            self.camera_lon_dd,
-            gps_lat,
-            gps_lon
-        )
+        gps_distance = haversine_distance(self.camera_lat_dd, self.camera_lon_dd, gps_lat, gps_lon)
 
         # Create and store calibration point
         point = CalibrationPoint(
@@ -235,7 +229,7 @@ class HeightCalibrator:
             world_y=world_y,
             gps_distance=gps_distance,
             homography_distance=homography_distance,
-            current_height=current_height
+            current_height=current_height,
         )
 
         self.calibration_points.append(point)
@@ -260,10 +254,7 @@ class HeightCalibrator:
         """
         return len(self.calibration_points)
 
-    def estimate_height_from_point(
-        self,
-        point: CalibrationPoint
-    ) -> float:
+    def estimate_height_from_point(self, point: CalibrationPoint) -> float:
         """
         Estimate camera height from a single calibration point.
 
@@ -298,7 +289,7 @@ class HeightCalibrator:
 
         return estimated_height
 
-    def get_all_height_estimates(self) -> List[float]:
+    def get_all_height_estimates(self) -> list[float]:
         """
         Get height estimates from all calibration points.
 
@@ -346,7 +337,7 @@ class HeightCalibrator:
         """
         return len(self.calibration_points) >= self.min_points
 
-    def _compute_residual(self, height: Union[float, np.ndarray]) -> np.ndarray:
+    def _compute_residual(self, height: float | np.ndarray) -> np.ndarray:
         """
         Compute residuals for all calibration points at a given height.
 
@@ -378,7 +369,9 @@ class HeightCalibrator:
 
             # Scale the homography distance based on the proposed height
             # If height increases, homography distances increase proportionally
-            expected_homography_distance = point.homography_distance * (height / point.current_height)
+            expected_homography_distance = point.homography_distance * (
+                height / point.current_height
+            )
 
             # Residual = GPS distance - expected homography distance
             # Positive residual: GPS distance is larger (height is too low)
@@ -389,11 +382,8 @@ class HeightCalibrator:
         return np.array(residuals)
 
     def _compute_confidence_interval(
-        self,
-        height_estimates: List[float],
-        estimated_height: float,
-        confidence_level: float = 0.95
-    ) -> Tuple[float, float]:
+        self, height_estimates: list[float], estimated_height: float, confidence_level: float = 0.95
+    ) -> tuple[float, float]:
         """
         Compute confidence interval using t-distribution for small samples.
 
@@ -438,7 +428,7 @@ class HeightCalibrator:
         # degrees of freedom = n - 1
         # alpha/2 for two-tailed test
         alpha = 1 - confidence_level
-        t_critical = t_dist.ppf(1 - alpha/2, df=n-1)
+        t_critical = t_dist.ppf(1 - alpha / 2, df=n - 1)
 
         # Calculate margin of error
         margin_of_error = t_critical * std_error
@@ -487,8 +477,7 @@ class HeightCalibrator:
 
         # Filter out points with invalid homography distance
         valid_points = [
-            p for p in self.calibration_points
-            if abs(p.homography_distance) >= NEAR_ZERO_THRESHOLD
+            p for p in self.calibration_points if abs(p.homography_distance) >= NEAR_ZERO_THRESHOLD
         ]
 
         if not valid_points:
@@ -510,7 +499,7 @@ class HeightCalibrator:
         result = least_squares(
             fun=self._compute_residual,
             x0=[initial_guess],
-            method='lm'  # Levenberg-Marquardt algorithm
+            method="lm",  # Levenberg-Marquardt algorithm
         )
 
         # Extract optimized height
@@ -521,7 +510,7 @@ class HeightCalibrator:
         confidence_interval = self._compute_confidence_interval(
             height_estimates=individual_estimates,
             estimated_height=optimized_height,
-            confidence_level=0.95
+            confidence_level=0.95,
         )
 
         return CalibrationResult(
@@ -530,14 +519,12 @@ class HeightCalibrator:
             inlier_count=len(valid_points),
             outlier_count=0,  # No outlier detection yet
             timestamp=datetime.now(),
-            calibration_points=self.calibration_points.copy()
+            calibration_points=self.calibration_points.copy(),
         )
 
     def _detect_outliers_mad(
-        self,
-        height_estimates: List[float],
-        threshold: float = 2.5
-    ) -> Tuple[List[float], List[int]]:
+        self, height_estimates: list[float], threshold: float = 2.5
+    ) -> tuple[list[float], list[int]]:
         """
         Detect outliers using MAD (Median Absolute Deviation) method.
 
@@ -588,10 +575,7 @@ class HeightCalibrator:
         # Handle case where MAD is zero (all estimates are identical)
         if mad < 1e-10:
             # All points are inliers if they're all the same
-            return (
-                height_estimates.copy(),
-                list(range(len(height_estimates)))
-            )
+            return (height_estimates.copy(), list(range(len(height_estimates))))
 
         # Scale factor for normal distribution comparison
         scale_factor = 1.4826
@@ -608,11 +592,11 @@ class HeightCalibrator:
 
     def _detect_outliers_ransac(
         self,
-        height_estimates: List[float],
+        height_estimates: list[float],
         min_samples: int = 3,
         max_trials: int = 100,
-        threshold_ratio: float = 0.1
-    ) -> Tuple[List[float], List[int]]:
+        threshold_ratio: float = 0.1,
+    ) -> tuple[list[float], list[int]]:
         """
         Detect outliers using RANSAC (Random Sample Consensus) method.
 
@@ -694,18 +678,11 @@ class HeightCalibrator:
         # If no inliers were found (shouldn't happen with reasonable parameters),
         # return all estimates
         if not best_inliers:
-            return (
-                height_estimates.copy(),
-                list(range(len(height_estimates)))
-            )
+            return (height_estimates.copy(), list(range(len(height_estimates))))
 
         return best_inliers, best_inlier_indices
 
-    def optimize_height_with_outliers(
-        self,
-        method: str = 'mad',
-        **kwargs
-    ) -> CalibrationResult:
+    def optimize_height_with_outliers(self, method: str = "mad", **kwargs) -> CalibrationResult:
         """
         Estimate optimal camera height with outlier detection and removal.
 
@@ -758,10 +735,9 @@ class HeightCalibrator:
         """
         # Validate method parameter
         method_lower = method.lower()
-        if method_lower not in ['mad', 'ransac']:
+        if method_lower not in ["mad", "ransac"]:
             raise ValueError(
-                f"Invalid outlier detection method: '{method}'. "
-                f"Must be 'mad' or 'ransac'"
+                f"Invalid outlier detection method: '{method}'. Must be 'mad' or 'ransac'"
             )
 
         # Check if we have enough calibration points
@@ -795,10 +771,8 @@ class HeightCalibrator:
                     continue
 
         # Detect outliers using specified method
-        if method_lower == 'mad':
-            inlier_estimates, inlier_indices = self._detect_outliers_mad(
-                height_estimates, **kwargs
-            )
+        if method_lower == "mad":
+            inlier_estimates, inlier_indices = self._detect_outliers_mad(height_estimates, **kwargs)
         else:  # method_lower == 'ransac'
             inlier_estimates, inlier_indices = self._detect_outliers_ransac(
                 height_estimates, **kwargs
@@ -829,7 +803,8 @@ class HeightCalibrator:
 
             # Filter out points with invalid homography distance
             valid_points = [
-                p for p in self.calibration_points
+                p
+                for p in self.calibration_points
                 if abs(p.homography_distance) >= NEAR_ZERO_THRESHOLD
             ]
 
@@ -852,7 +827,7 @@ class HeightCalibrator:
             result = least_squares(
                 fun=self._compute_residual,
                 x0=[initial_guess],
-                method='lm'  # Levenberg-Marquardt algorithm
+                method="lm",  # Levenberg-Marquardt algorithm
             )
 
             # Extract optimized height
@@ -863,7 +838,7 @@ class HeightCalibrator:
             confidence_interval = self._compute_confidence_interval(
                 height_estimates=individual_estimates,
                 estimated_height=optimized_height,
-                confidence_level=0.95
+                confidence_level=0.95,
             )
 
             # Calculate outlier count
@@ -875,7 +850,7 @@ class HeightCalibrator:
                 inlier_count=len(valid_points),
                 outlier_count=outlier_count,
                 timestamp=datetime.now(),
-                calibration_points=self.calibration_points.copy()
+                calibration_points=self.calibration_points.copy(),
             )
 
         finally:

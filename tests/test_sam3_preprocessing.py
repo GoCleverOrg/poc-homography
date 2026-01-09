@@ -5,14 +5,14 @@ Unit tests for SAM3 image preprocessing functions.
 Tests verify preprocessing presets: None and CLAHE.
 """
 
-import unittest
-import sys
 import os
+import sys
+import unittest
+
 import numpy as np
-from pathlib import Path
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Import cv2 for testing
 import cv2
@@ -29,7 +29,7 @@ class TestApplyPreprocessingNone(unittest.TestCase):
         # Create a test frame with varying intensities
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'none')
+        result = apply_preprocessing(frame, "none")
 
         # Should return exactly the same frame
         np.testing.assert_array_equal(result, frame)
@@ -46,7 +46,7 @@ class TestApplyPreprocessingNone(unittest.TestCase):
         """Test that 'none' preprocessing preserves frame shape."""
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'none')
+        result = apply_preprocessing(frame, "none")
 
         self.assertEqual(result.shape, (480, 640, 3))
 
@@ -54,7 +54,7 @@ class TestApplyPreprocessingNone(unittest.TestCase):
         """Test that 'none' preprocessing preserves frame dtype."""
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'none')
+        result = apply_preprocessing(frame, "none")
 
         self.assertEqual(result.dtype, np.uint8)
 
@@ -66,7 +66,7 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         """Test that CLAHE preprocessing returns a BGR frame."""
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'clahe')
+        result = apply_preprocessing(frame, "clahe")
 
         # Should return BGR frame with 3 channels
         self.assertEqual(result.shape, (100, 100, 3))
@@ -76,7 +76,7 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         """Test that CLAHE preprocessing preserves frame dimensions."""
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'clahe')
+        result = apply_preprocessing(frame, "clahe")
 
         self.assertEqual(result.shape, (480, 640, 3))
 
@@ -84,7 +84,7 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         """Test that CLAHE preprocessing preserves uint8 dtype."""
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'clahe')
+        result = apply_preprocessing(frame, "clahe")
 
         self.assertEqual(result.dtype, np.uint8)
 
@@ -94,7 +94,7 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         frame = np.random.randint(100, 150, (256, 256, 3), dtype=np.uint8)
         original_std = np.std(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
 
-        result = apply_preprocessing(frame, 'clahe')
+        result = apply_preprocessing(frame, "clahe")
         result_gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
         enhanced_std = np.std(result_gray)
 
@@ -105,7 +105,7 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         """Test that CLAHE output values are in valid range [0, 255]."""
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'clahe')
+        result = apply_preprocessing(frame, "clahe")
 
         self.assertGreaterEqual(result.min(), 0)
         self.assertLessEqual(result.max(), 255)
@@ -117,7 +117,7 @@ class TestApplyPreprocessingCLAHE(unittest.TestCase):
         frame[:128, :] = 100  # Top half darker
         frame[128:, :] = 200  # Bottom half brighter
 
-        result = apply_preprocessing(frame, 'clahe')
+        result = apply_preprocessing(frame, "clahe")
 
         # Should produce different output
         self.assertFalse(np.array_equal(result, frame))
@@ -130,7 +130,7 @@ class TestApplyPreprocessingInvalidType(unittest.TestCase):
         """Test that invalid preprocessing type returns the original frame."""
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'invalid_type')
+        result = apply_preprocessing(frame, "invalid_type")
 
         # Should return the original frame unchanged
         np.testing.assert_array_equal(result, frame)
@@ -139,7 +139,7 @@ class TestApplyPreprocessingInvalidType(unittest.TestCase):
         """Test that empty string preprocessing type returns the original frame."""
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, '')
+        result = apply_preprocessing(frame, "")
 
         np.testing.assert_array_equal(result, frame)
 
@@ -147,7 +147,7 @@ class TestApplyPreprocessingInvalidType(unittest.TestCase):
         """Test that removed 'threshold' option returns original frame."""
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-        result = apply_preprocessing(frame, 'threshold')
+        result = apply_preprocessing(frame, "threshold")
 
         # Threshold was removed, should return original frame
         np.testing.assert_array_equal(result, frame)
@@ -161,11 +161,11 @@ class TestApplyPreprocessingOriginalFramePreservation(unittest.TestCase):
         frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
         frame_copy = frame.copy()
 
-        apply_preprocessing(frame, 'clahe')
+        apply_preprocessing(frame, "clahe")
 
         # Original frame should be unchanged
         np.testing.assert_array_equal(frame, frame_copy)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

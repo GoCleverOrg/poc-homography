@@ -39,8 +39,7 @@ Example Usage:
 import math
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
+from xml.etree.ElementTree import Element, ElementTree, SubElement, indent
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -71,8 +70,10 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     delta_phi = math.radians(lat2 - lat1)
     delta_lambda = math.radians(lon2 - lon1)
 
-    a = math.sin(delta_phi / 2) ** 2 + \
-        math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return R * c
@@ -96,7 +97,7 @@ def create_output_directory() -> str:
     # Get the project root (parent of poc_homography module)
     module_dir = Path(__file__).parent
     project_root = module_dir.parent
-    output_dir = project_root / 'output'
+    output_dir = project_root / "output"
 
     # Create directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -104,8 +105,9 @@ def create_output_directory() -> str:
     return str(output_dir)
 
 
-def _create_style(style_id: str, color: str, icon_scale: float = 1.0,
-                  line_width: float = 2.0) -> Element:
+def _create_style(
+    style_id: str, color: str, icon_scale: float = 1.0, line_width: float = 2.0
+) -> Element:
     """
     Create a KML Style element with specified color and properties.
 
@@ -118,25 +120,24 @@ def _create_style(style_id: str, color: str, icon_scale: float = 1.0,
     Returns:
         XML Element representing the Style
     """
-    style = Element('Style', {'id': style_id})
+    style = Element("Style", {"id": style_id})
 
     # Icon style
-    icon_style = SubElement(style, 'IconStyle')
-    SubElement(icon_style, 'color').text = color
-    SubElement(icon_style, 'scale').text = str(icon_scale)
-    icon = SubElement(icon_style, 'Icon')
-    SubElement(icon, 'href').text = 'http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png'
+    icon_style = SubElement(style, "IconStyle")
+    SubElement(icon_style, "color").text = color
+    SubElement(icon_style, "scale").text = str(icon_scale)
+    icon = SubElement(icon_style, "Icon")
+    SubElement(icon, "href").text = "http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png"
 
     # Line style
-    line_style = SubElement(style, 'LineStyle')
-    SubElement(line_style, 'color').text = color
-    SubElement(line_style, 'width').text = str(line_width)
+    line_style = SubElement(style, "LineStyle")
+    SubElement(line_style, "color").text = color
+    SubElement(line_style, "width").text = str(line_width)
 
     return style
 
 
-def _create_placemark(name: str, description: str, coordinates: str,
-                      style_url: str) -> Element:
+def _create_placemark(name: str, description: str, coordinates: str, style_url: str) -> Element:
     """
     Create a KML Placemark element for a point.
 
@@ -149,21 +150,24 @@ def _create_placemark(name: str, description: str, coordinates: str,
     Returns:
         XML Element representing the Placemark
     """
-    placemark = Element('Placemark')
-    SubElement(placemark, 'name').text = name
-    SubElement(placemark, 'description').text = description
-    SubElement(placemark, 'styleUrl').text = style_url
+    placemark = Element("Placemark")
+    SubElement(placemark, "name").text = name
+    SubElement(placemark, "description").text = description
+    SubElement(placemark, "styleUrl").text = style_url
 
-    point = SubElement(placemark, 'Point')
-    SubElement(point, 'coordinates').text = coordinates
+    point = SubElement(placemark, "Point")
+    SubElement(point, "coordinates").text = coordinates
 
     return placemark
 
 
-def _create_line_placemark(name: str, description: str,
-                          coord1: Tuple[float, float],
-                          coord2: Tuple[float, float],
-                          style_url: str) -> Element:
+def _create_line_placemark(
+    name: str,
+    description: str,
+    coord1: tuple[float, float],
+    coord2: tuple[float, float],
+    style_url: str,
+) -> Element:
     """
     Create a KML Placemark element for a line connecting two points.
 
@@ -177,28 +181,24 @@ def _create_line_placemark(name: str, description: str,
     Returns:
         XML Element representing the Placemark with LineString geometry
     """
-    placemark = Element('Placemark')
-    SubElement(placemark, 'name').text = name
-    SubElement(placemark, 'description').text = description
-    SubElement(placemark, 'styleUrl').text = style_url
+    placemark = Element("Placemark")
+    SubElement(placemark, "name").text = name
+    SubElement(placemark, "description").text = description
+    SubElement(placemark, "styleUrl").text = style_url
 
-    line_string = SubElement(placemark, 'LineString')
-    SubElement(line_string, 'tessellate').text = '1'
+    line_string = SubElement(placemark, "LineString")
+    SubElement(line_string, "tessellate").text = "1"
 
     # KML format: longitude,latitude,altitude
-    coordinates_text = (
-        f"{coord1[1]},{coord1[0]},0 "
-        f"{coord2[1]},{coord2[0]},0"
-    )
-    SubElement(line_string, 'coordinates').text = coordinates_text
+    coordinates_text = f"{coord1[1]},{coord1[0]},0 {coord2[1]},{coord2[0]},0"
+    SubElement(line_string, "coordinates").text = coordinates_text
 
     return placemark
 
 
-def generate_kml(gcps: List[Dict],
-                 validation_results: Dict,
-                 camera_gps: Dict[str, float],
-                 output_path: str) -> None:
+def generate_kml(
+    gcps: list[dict], validation_results: dict, camera_gps: dict[str, float], output_path: str
+) -> None:
     """
     Generate a KML 2.2 compliant XML file from GCP data and validation results.
 
@@ -259,29 +259,31 @@ def generate_kml(gcps: List[Dict],
     # Validate inputs
     if not gcps:
         raise ValueError("GCPs list cannot be empty")
-    if not validation_results or 'details' not in validation_results:
+    if not validation_results or "details" not in validation_results:
         raise ValueError("validation_results must contain 'details' key")
-    if not camera_gps or 'latitude' not in camera_gps or 'longitude' not in camera_gps:
+    if not camera_gps or "latitude" not in camera_gps or "longitude" not in camera_gps:
         raise ValueError("camera_gps must contain 'latitude' and 'longitude' keys")
 
     # Warn if GCPs and validation details have different lengths
-    details = validation_results['details']
+    details = validation_results["details"]
     if len(gcps) != len(details):
-        print(f"Warning: GCPs list ({len(gcps)} items) and validation details "
-              f"({len(details)} items) have different lengths. "
-              f"Only {min(len(gcps), len(details))} pairs will be processed.")
+        print(
+            f"Warning: GCPs list ({len(gcps)} items) and validation details "
+            f"({len(details)} items) have different lengths. "
+            f"Only {min(len(gcps), len(details))} pairs will be processed."
+        )
 
     # Create root KML element
-    kml = Element('kml', {'xmlns': 'http://www.opengis.net/kml/2.2'})
-    document = SubElement(kml, 'Document')
-    SubElement(document, 'name').text = 'GCP Round-Trip Validation'
+    kml = Element("kml", {"xmlns": "http://www.opengis.net/kml/2.2"})
+    document = SubElement(kml, "Document")
+    SubElement(document, "name").text = "GCP Round-Trip Validation"
 
     # Create styles
     styles = {
-        'camera-position': ('ff00ff00', 1.2, 3.0),  # Green, larger icon
-        'original-gcp': ('ff00ff00', 1.0, 2.0),     # Green
-        'projected-gcp': ('ff0000ff', 1.0, 2.0),    # Blue
-        'error-line': ('ff00ffff', 1.0, 2.0),       # Yellow
+        "camera-position": ("ff00ff00", 1.2, 3.0),  # Green, larger icon
+        "original-gcp": ("ff00ff00", 1.0, 2.0),  # Green
+        "projected-gcp": ("ff0000ff", 1.0, 2.0),  # Blue
+        "error-line": ("ff00ffff", 1.0, 2.0),  # Yellow
     }
 
     for style_id, (color, icon_scale, line_width) in styles.items():
@@ -289,38 +291,33 @@ def generate_kml(gcps: List[Dict],
         document.append(style)
 
     # Create Camera Position folder
-    camera_folder = Element('Folder')
-    SubElement(camera_folder, 'name').text = 'Camera Position'
+    camera_folder = Element("Folder")
+    SubElement(camera_folder, "name").text = "Camera Position"
 
-    camera_lat = camera_gps['latitude']
-    camera_lon = camera_gps['longitude']
+    camera_lat = camera_gps["latitude"]
+    camera_lon = camera_gps["longitude"]
     camera_coords = f"{camera_lon},{camera_lat},0"
     camera_desc = f"Camera GPS position\nLatitude: {camera_lat:.6f}\nLongitude: {camera_lon:.6f}"
 
-    camera_placemark = _create_placemark(
-        'Camera',
-        camera_desc,
-        camera_coords,
-        '#camera-position'
-    )
+    camera_placemark = _create_placemark("Camera", camera_desc, camera_coords, "#camera-position")
     camera_folder.append(camera_placemark)
 
     # Create Original GCPs folder
-    original_folder = Element('Folder')
-    SubElement(original_folder, 'name').text = 'Original GCPs'
+    original_folder = Element("Folder")
+    SubElement(original_folder, "name").text = "Original GCPs"
 
     for i, gcp in enumerate(gcps):
-        gps = gcp['gps']
-        image = gcp['image']
-        metadata = gcp.get('metadata', {})
+        gps = gcp["gps"]
+        image = gcp["image"]
+        metadata = gcp.get("metadata", {})
 
-        lat = gps['latitude']
-        lon = gps['longitude']
-        u = image['u']
-        v = image['v']
+        lat = gps["latitude"]
+        lon = gps["longitude"]
+        u = image["u"]
+        v = image["v"]
 
-        name = metadata.get('description', f'GCP {i+1}')
-        accuracy = metadata.get('accuracy', 'unknown')
+        name = metadata.get("description", f"GCP {i + 1}")
+        accuracy = metadata.get("accuracy", "unknown")
 
         coords = f"{lon},{lat},0"
         desc = (
@@ -331,24 +328,24 @@ def generate_kml(gcps: List[Dict],
             f"Accuracy: {accuracy}"
         )
 
-        placemark = _create_placemark(name, desc, coords, '#original-gcp')
+        placemark = _create_placemark(name, desc, coords, "#original-gcp")
         original_folder.append(placemark)
 
     # Create Projected GCPs folder
-    projected_folder = Element('Folder')
-    SubElement(projected_folder, 'name').text = 'Projected GCPs'
+    projected_folder = Element("Folder")
+    SubElement(projected_folder, "name").text = "Projected GCPs"
 
     for i, (gcp, detail) in enumerate(zip(gcps, details)):
-        if 'projected_gps' not in detail:
+        if "projected_gps" not in detail:
             continue
 
-        proj_lat, proj_lon = detail['projected_gps']
-        image = gcp['image']
-        u = image['u']
-        v = image['v']
+        proj_lat, proj_lon = detail["projected_gps"]
+        image = gcp["image"]
+        u = image["u"]
+        v = image["v"]
 
-        metadata = gcp.get('metadata', {})
-        original_name = metadata.get('description', f'GCP {i+1}')
+        metadata = gcp.get("metadata", {})
+        original_name = metadata.get("description", f"GCP {i + 1}")
         name = f"{original_name} (projected)"
 
         coords = f"{proj_lon},{proj_lat},0"
@@ -358,36 +355,32 @@ def generate_kml(gcps: List[Dict],
             f"Projected Longitude: {proj_lon:.6f}"
         )
 
-        placemark = _create_placemark(name, desc, coords, '#projected-gcp')
+        placemark = _create_placemark(name, desc, coords, "#projected-gcp")
         projected_folder.append(placemark)
 
     # Create Error Lines folder
-    error_folder = Element('Folder')
-    SubElement(error_folder, 'name').text = 'Error Lines'
+    error_folder = Element("Folder")
+    SubElement(error_folder, "name").text = "Error Lines"
 
     for i, (gcp, detail) in enumerate(zip(gcps, details)):
-        if 'projected_gps' not in detail or 'error_meters' not in detail:
+        if "projected_gps" not in detail or "error_meters" not in detail:
             continue
 
-        gps = gcp['gps']
-        orig_lat = gps['latitude']
-        orig_lon = gps['longitude']
+        gps = gcp["gps"]
+        orig_lat = gps["latitude"]
+        orig_lon = gps["longitude"]
 
-        proj_lat, proj_lon = detail['projected_gps']
-        error_m = detail['error_meters']
+        proj_lat, proj_lon = detail["projected_gps"]
+        error_m = detail["error_meters"]
 
-        metadata = gcp.get('metadata', {})
-        original_name = metadata.get('description', f'GCP {i+1}')
+        metadata = gcp.get("metadata", {})
+        original_name = metadata.get("description", f"GCP {i + 1}")
         name = f"{original_name} Error"
 
         desc = f"Error distance: {error_m:.2f}m"
 
         line_placemark = _create_line_placemark(
-            name,
-            desc,
-            (orig_lat, orig_lon),
-            (proj_lat, proj_lon),
-            '#error-line'
+            name, desc, (orig_lat, orig_lon), (proj_lat, proj_lon), "#error-line"
         )
         error_folder.append(line_placemark)
 
@@ -401,11 +394,11 @@ def generate_kml(gcps: List[Dict],
     tree = ElementTree(kml)
 
     # Pretty print the XML
-    indent(tree, space='  ', level=0)
+    indent(tree, space="  ", level=0)
 
     # Write to file with XML declaration
-    with open(output_path, 'wb') as f:
-        tree.write(f, encoding='UTF-8', xml_declaration=True)
+    with open(output_path, "wb") as f:
+        tree.write(f, encoding="UTF-8", xml_declaration=True)
 
     print(f"KML file generated successfully: {output_path}")
     print(f"  Camera position: ({camera_lat:.6f}, {camera_lon:.6f})")
@@ -414,57 +407,54 @@ def generate_kml(gcps: List[Dict],
     print(f"  Error lines: {len([d for d in details if 'error_meters' in d])}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """
     Example usage and test of the KML generator.
     """
     # Create sample data
     sample_gcps = [
         {
-            'gps': {'latitude': 39.640600, 'longitude': -0.230200},
-            'image': {'u': 400.0, 'v': 300.0},
-            'metadata': {'description': 'P#01 - Top Left', 'accuracy': 'high'}
+            "gps": {"latitude": 39.640600, "longitude": -0.230200},
+            "image": {"u": 400.0, "v": 300.0},
+            "metadata": {"description": "P#01 - Top Left", "accuracy": "high"},
         },
         {
-            'gps': {'latitude': 39.640620, 'longitude': -0.229800},
-            'image': {'u': 2100.0, 'v': 320.0},
-            'metadata': {'description': 'P#02 - Top Right', 'accuracy': 'high'}
+            "gps": {"latitude": 39.640620, "longitude": -0.229800},
+            "image": {"u": 2100.0, "v": 320.0},
+            "metadata": {"description": "P#02 - Top Right", "accuracy": "high"},
         },
         {
-            'gps': {'latitude': 39.640400, 'longitude': -0.230000},
-            'image': {'u': 1280.0, 'v': 720.0},
-            'metadata': {'description': 'P#03 - Center', 'accuracy': 'medium'}
+            "gps": {"latitude": 39.640400, "longitude": -0.230000},
+            "image": {"u": 1280.0, "v": 720.0},
+            "metadata": {"description": "P#03 - Center", "accuracy": "medium"},
         },
     ]
 
     sample_results = {
-        'details': [
+        "details": [
             {
-                'projected_gps': (39.640605, -0.230205),
-                'error_meters': 0.56,
-                'image_point': (400.0, 300.0)
+                "projected_gps": (39.640605, -0.230205),
+                "error_meters": 0.56,
+                "image_point": (400.0, 300.0),
             },
             {
-                'projected_gps': (39.640618, -0.229805),
-                'error_meters': 0.45,
-                'image_point': (2100.0, 320.0)
+                "projected_gps": (39.640618, -0.229805),
+                "error_meters": 0.45,
+                "image_point": (2100.0, 320.0),
             },
             {
-                'projected_gps': (39.640398, -0.230002),
-                'error_meters': 0.23,
-                'image_point': (1280.0, 720.0)
+                "projected_gps": (39.640398, -0.230002),
+                "error_meters": 0.23,
+                "image_point": (1280.0, 720.0),
             },
         ]
     }
 
-    sample_camera = {
-        'latitude': 39.640500,
-        'longitude': -0.230000
-    }
+    sample_camera = {"latitude": 39.640500, "longitude": -0.230000}
 
     # Generate KML
     output_dir = create_output_directory()
-    output_file = os.path.join(output_dir, 'example_gcp_validation.kml')
+    output_file = os.path.join(output_dir, "example_gcp_validation.kml")
 
     print("Generating example KML file...")
     generate_kml(sample_gcps, sample_results, sample_camera, output_file)

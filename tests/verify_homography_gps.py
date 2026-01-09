@@ -5,13 +5,25 @@ Click points, enter their GPS coordinates, and compare with homography.
 """
 
 import sys
+
 import cv2
 import numpy as np
-from poc_homography.camera_config import get_camera_by_name, get_camera_gps, get_rtsp_url, USERNAME, PASSWORD
-from poc_homography.camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
-from poc_homography.gps_distance_calculator import (dms_to_dd, haversine_distance, bearing_between_points,
-                                      compare_distances, local_xy_to_gps, dd_to_dms)
+
+from poc_homography.camera_config import (
+    PASSWORD,
+    USERNAME,
+    get_camera_by_name,
+    get_camera_gps,
+    get_rtsp_url,
+)
+from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.gps_distance_calculator import (
+    compare_distances,
+    dd_to_dms,
+    dms_to_dd,
+    local_xy_to_gps,
+)
 
 
 class GPSHomographyVerifier:
@@ -29,10 +41,7 @@ class GPSHomographyVerifier:
 
         # Get camera status
         self.camera = HikvisionPTZ(
-            ip=self.cam_info["ip"],
-            username=USERNAME,
-            password=PASSWORD,
-            name=self.cam_info["name"]
+            ip=self.cam_info["ip"], username=USERNAME, password=PASSWORD, name=self.cam_info["name"]
         )
         self.status = self.camera.get_status()
 
@@ -66,11 +75,7 @@ class GPSHomographyVerifier:
 
         # Setup geometry
         self.geo = CameraGeometry(w, h)
-        K = self.geo.get_intrinsics(
-            zoom_factor=self.status["zoom"],
-            W_px=w,
-            H_px=h
-        )
+        K = self.geo.get_intrinsics(zoom_factor=self.status["zoom"], W_px=w, H_px=h)
 
         w_pos = np.array([0.0, 0.0, height])
 
@@ -82,7 +87,7 @@ class GPSHomographyVerifier:
             pan_deg=self.status["pan"],
             tilt_deg=self.status["tilt"],
             map_width=640,
-            map_height=h
+            map_height=h,
         )
 
         print(f"\n✓ Geometry initialized for {self.camera_name}")
@@ -98,7 +103,7 @@ class GPSHomographyVerifier:
             pt_world = self.geo.H_inv @ pt_img
 
             if abs(pt_world[2, 0]) < 1e-6:
-                print(f"\n⚠️  Invalid point (near horizon)")
+                print("\n⚠️  Invalid point (near horizon)")
                 return
 
             Xw = pt_world[0, 0] / pt_world[2, 0]
@@ -115,22 +120,22 @@ class GPSHomographyVerifier:
             estimated_lat_dms = dd_to_dms(estimated_lat, is_latitude=True)
             estimated_lon_dms = dd_to_dms(estimated_lon, is_latitude=False)
 
-            print(f"\n" + "="*70)
+            print("\n" + "=" * 70)
             print(f"📍 POINT {len(self.validation_points) + 1} CLICKED")
-            print("="*70)
+            print("=" * 70)
             print(f"\nImage coordinates: ({x}, {y}) pixels")
             print(f"Homography world: ({Xw:.2f}, {Yw:.2f}) meters")
             print(f"Homography distance: {dist_homography:.2f}m")
             print(f"Angle from camera: {angle:.1f}°")
 
-            print(f"\n🌍 ESTIMATED GPS (from homography):")
+            print("\n🌍 ESTIMATED GPS (from homography):")
             print(f"  Latitude:  {estimated_lat_dms} ({estimated_lat:.6f}°)")
             print(f"  Longitude: {estimated_lon_dms} ({estimated_lon:.6f}°)")
 
             # Ask for GPS coordinates
-            print(f"\nEnter ACTUAL GPS coordinates of this point:")
-            print(f"(Press Enter without coordinates to skip validation)")
-            print(f"(Copy estimated GPS if it looks correct)")
+            print("\nEnter ACTUAL GPS coordinates of this point:")
+            print("(Press Enter without coordinates to skip validation)")
+            print("(Copy estimated GPS if it looks correct)")
 
             try:
                 lat_input = input("  Latitude (e.g., 39°38'25.6\"N): ").strip()
@@ -145,17 +150,13 @@ class GPSHomographyVerifier:
                 point_gps = {"lat": lat_input, "lon": lon_input}
 
                 results = compare_distances(
-                    self.camera_gps,
-                    point_gps,
-                    dist_homography,
-                    verbose=True
+                    self.camera_gps, point_gps, dist_homography, verbose=True
                 )
 
                 # Store validation point
-                self.validation_points.append((
-                    x, y, Xw, Yw,
-                    results["point_dd"][0], results["point_dd"][1]
-                ))
+                self.validation_points.append(
+                    (x, y, Xw, Yw, results["point_dd"][0], results["point_dd"][1])
+                )
 
                 # Estimate better height
                 gps_dist = results["gps_distance_m"]
@@ -164,11 +165,13 @@ class GPSHomographyVerifier:
                     scale_factor = gps_dist / dist_homography
                     estimated_height = self.current_height * scale_factor
 
-                    print(f"\n💡 HEIGHT CALIBRATION HINT:")
+                    print("\n💡 HEIGHT CALIBRATION HINT:")
                     print(f"   Current height: {self.current_height:.2f}m")
                     print(f"   Distance scale factor: {scale_factor:.2f}x")
                     print(f"   Suggested height: {estimated_height:.2f}m")
-                    print(f"   (Try: python verify_homography_gps.py {self.camera_name} {estimated_height:.1f})")
+                    print(
+                        f"   (Try: python verify_homography_gps.py {self.camera_name} {estimated_height:.1f})"
+                    )
 
                     self.height_estimates.append(estimated_height)
 
@@ -192,22 +195,42 @@ class GPSHomographyVerifier:
 
             # Draw label
             dist = np.sqrt(Xw**2 + Yw**2)
-            label = f"P{i+1}: {dist:.1f}m"
+            label = f"P{i + 1}: {dist:.1f}m"
             if lat is not None:
                 label += " ✓"
 
-            cv2.putText(annotated, label, (x + 15, y - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            cv2.putText(annotated, label, (x + 15, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         # Draw instructions
-        cv2.putText(annotated, "Click point, enter GPS to validate homography",
-                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(annotated, "Press 'q' to quit, 'c' to clear, 's' to save, 'r' to recalibrate",
-                   (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(
+            annotated,
+            "Click point, enter GPS to validate homography",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+        )
+        cv2.putText(
+            annotated,
+            "Press 'q' to quit, 'c' to clear, 's' to save, 'r' to recalibrate",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            1,
+        )
 
         # Show current height
-        cv2.putText(annotated, f"Height: {self.current_height:.1f}m",
-                   (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        cv2.putText(
+            annotated,
+            f"Height: {self.current_height:.1f}m",
+            (10, 90),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+        )
 
         return annotated
 
@@ -220,19 +243,19 @@ class GPSHomographyVerifier:
         avg_height = np.mean(self.height_estimates)
         std_height = np.std(self.height_estimates)
 
-        print(f"\n" + "="*70)
+        print("\n" + "=" * 70)
         print("HEIGHT RECALIBRATION")
-        print("="*70)
+        print("=" * 70)
         print(f"\nCurrent height: {self.current_height:.2f}m")
         print(f"Estimated heights from {len(self.height_estimates)} points:")
         for i, h in enumerate(self.height_estimates):
-            print(f"  Point {i+1}: {h:.2f}m")
+            print(f"  Point {i + 1}: {h:.2f}m")
 
         print(f"\nAverage: {avg_height:.2f}m ± {std_height:.2f}m")
-        print(f"\nRecalibrate to {avg_height:.2f}m? (y/n): ", end='')
+        print(f"\nRecalibrate to {avg_height:.2f}m? (y/n): ", end="")
 
         response = input().strip().lower()
-        if response == 'y':
+        if response == "y":
             self.setup_geometry(height=avg_height)
             self.validation_points.clear()
             self.height_estimates.clear()
@@ -248,14 +271,18 @@ class GPSHomographyVerifier:
             return
 
         filename = f"gps_validation_{self.camera_name}.txt"
-        with open(filename, 'w') as f:
-            f.write(f"GPS Homography Validation Results\n")
+        with open(filename, "w") as f:
+            f.write("GPS Homography Validation Results\n")
             f.write(f"Camera: {self.camera_name}\n")
             f.write(f"Camera GPS: {self.camera_gps['lat']}, {self.camera_gps['lon']}\n")
             f.write(f"Height: {self.current_height:.2f}m\n")
-            f.write(f"Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}x\n\n")
+            f.write(
+                f"Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}x\n\n"
+            )
 
-            f.write(f"{'Point':<8} {'Image (px)':<20} {'Homography (m)':<25} {'GPS':<30} {'Status':<10}\n")
+            f.write(
+                f"{'Point':<8} {'Image (px)':<20} {'Homography (m)':<25} {'GPS':<30} {'Status':<10}\n"
+            )
             f.write("-" * 100 + "\n")
 
             for i, point in enumerate(self.validation_points):
@@ -267,18 +294,20 @@ class GPSHomographyVerifier:
                 else:
                     status = "No GPS"
 
-                f.write(f"P{i+1:<7} ({x:>4}, {y:>4}){' '*8} ({Xw:>6.2f}, {Yw:>6.2f}) {dist:>6.2f}m{' '*5} {status}\n")
+                f.write(
+                    f"P{i + 1:<7} ({x:>4}, {y:>4}){' ' * 8} ({Xw:>6.2f}, {Yw:>6.2f}) {dist:>6.2f}m{' ' * 5} {status}\n"
+                )
 
         print(f"\n✓ Results saved to {filename}")
 
     def run(self):
         """Run interactive verification with GPS validation."""
-        cv2.namedWindow('GPS Homography Verification')
-        cv2.setMouseCallback('GPS Homography Verification', self.mouse_callback)
+        cv2.namedWindow("GPS Homography Verification")
+        cv2.setMouseCallback("GPS Homography Verification", self.mouse_callback)
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("GPS-VALIDATED HOMOGRAPHY VERIFICATION")
-        print("="*70)
+        print("=" * 70)
         print(f"\nCamera: {self.camera_name}")
         print(f"Camera GPS: {self.camera_gps['lat']}, {self.camera_gps['lon']}")
         print("\nInstructions:")
@@ -293,7 +322,7 @@ class GPSHomographyVerifier:
         print("  's': Save results")
         print("  'r': Recalibrate height")
         print("  'q': Quit")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
         while True:
             ret, frame = self.cap.read()
@@ -306,18 +335,18 @@ class GPSHomographyVerifier:
             self.current_frame = frame
             annotated = self.draw_annotations(frame)
 
-            cv2.imshow('GPS Homography Verification', annotated)
+            cv2.imshow("GPS Homography Verification", annotated)
 
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
+            if key == ord("q"):
                 break
-            elif key == ord('c'):
+            elif key == ord("c"):
                 self.validation_points.clear()
                 self.height_estimates.clear()
                 print("\n✓ Points cleared")
-            elif key == ord('s'):
+            elif key == ord("s"):
                 self.save_results()
-            elif key == ord('r'):
+            elif key == ord("r"):
                 self.recalibrate_height()
 
         self.cleanup()
@@ -332,7 +361,7 @@ class GPSHomographyVerifier:
 def main():
     if len(sys.argv) < 2:
         print("Usage: python verify_homography_gps.py CAMERA_NAME [HEIGHT]")
-        print('Example: python verify_homography_gps.py Valte 5.0')
+        print("Example: python verify_homography_gps.py Valte 5.0")
         print("\nCamera GPS coordinates are automatically loaded from camera_config.py")
         print("Available cameras: Valte, Setram")
         sys.exit(1)
@@ -344,7 +373,7 @@ def main():
         height = float(sys.argv[2])
     else:
         cam_info = get_camera_by_name(camera_name)
-        height = cam_info.get('height_m', 5.0) if cam_info else 5.0
+        height = cam_info.get("height_m", 5.0) if cam_info else 5.0
 
     # GPS coordinates loaded automatically from config
     verifier = GPSHomographyVerifier(camera_name)

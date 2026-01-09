@@ -11,14 +11,12 @@ Usage:
     js_code = generate_satellite_layers_js(google_api_key='your-key', default_layer='google')
 """
 
-from typing import Optional
-
 
 def generate_satellite_layers_js(
-    google_api_key: Optional[str] = None,
-    default_layer: str = 'google',
+    google_api_key: str | None = None,
+    default_layer: str = "google",
     max_zoom: int = 23,
-    max_native_zoom: int = 19
+    max_native_zoom: int = 19,
 ) -> str:
     """
     Generate JavaScript code for Leaflet.js satellite layer definitions.
@@ -49,26 +47,26 @@ def generate_satellite_layers_js(
     """
     # Map layer names to JavaScript variable names
     layer_var_names = {
-        'osm': 'osm',
-        'esri': 'satellite',
-        'pnoa': 'pnoa',
-        'google': 'google',
-        'hybrid': 'hybrid'
+        "osm": "osm",
+        "esri": "satellite",
+        "pnoa": "pnoa",
+        "google": "google",
+        "hybrid": "hybrid",
     }
 
     # Get JavaScript variable name for default layer (no fallback - Google works without API key)
-    default_js_var = layer_var_names.get(default_layer, 'google')
+    default_js_var = layer_var_names.get(default_layer, "google")
 
     # Build JavaScript code
     js_parts = []
 
     # OSM Street Map
-    js_parts.append(f"""
+    js_parts.append("""
         // OSM Street Map
-        var osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+        var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19
-        }});""")
+        });""")
 
     # ESRI Satellite with over-zoom support
     js_parts.append(f"""
@@ -137,4 +135,4 @@ def generate_satellite_layers_js(
 
         L.control.layers(baseLayers).addTo(map);""")
 
-    return '\n'.join(js_parts)
+    return "\n".join(js_parts)

@@ -4,31 +4,18 @@ Configuration for homography approach selection.
 Supports runtime selection and fallback chains for robust operation.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
-from pathlib import Path
-import yaml
 import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
-from poc_homography.homography_interface import HomographyApproach, CoordinateSystemMode
+import yaml
 
 # Import GCP validation from dedicated module
 from poc_homography.gcp_validation import (
     validate_ground_control_points,
-    validate_gcp_gps_coordinates,
-    validate_gcp_elevation,
-    validate_gcp_pixel_coordinates,
-    detect_duplicate_gcps,
-    GPS_EPSILON,
-    PIXEL_EPSILON,
-    MIN_LATITUDE,
-    MAX_LATITUDE,
-    MIN_LONGITUDE,
-    MAX_LONGITUDE,
-    MIN_ELEVATION,
-    MAX_ELEVATION,
-    MAX_GCP_COUNT,
 )
+from poc_homography.homography_interface import CoordinateSystemMode, HomographyApproach
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +33,14 @@ class HomographyConfig:
             or derived from GPS coordinates (GPS_BASED_ORIGIN). Default is
             ORIGIN_AT_CAMERA for backward compatibility and single-camera use.
     """
+
     approach: HomographyApproach = HomographyApproach.INTRINSIC_EXTRINSIC
-    fallback_approaches: List[HomographyApproach] = field(default_factory=list)
-    approach_specific_config: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    fallback_approaches: list[HomographyApproach] = field(default_factory=list)
+    approach_specific_config: dict[str, dict[str, Any]] = field(default_factory=dict)
     coordinate_system_mode: CoordinateSystemMode = CoordinateSystemMode.ORIGIN_AT_CAMERA
 
     @classmethod
-    def from_yaml(cls, path: str) -> 'HomographyConfig':
+    def from_yaml(cls, path: str) -> "HomographyConfig":
         """Load configuration from YAML file.
 
         Args:
@@ -80,7 +68,7 @@ class HomographyConfig:
             )
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValueError(f"Failed to parse YAML configuration file: {e}") from e
@@ -92,13 +80,13 @@ class HomographyConfig:
             )
 
         # Extract homography configuration section
-        if 'homography' not in data:
+        if "homography" not in data:
             raise ValueError(
                 f"Configuration file missing 'homography' section: {path}\n"
                 f"Expected structure: homography:\n  approach: ...\n  ..."
             )
 
-        homography_config = data['homography']
+        homography_config = data["homography"]
 
         return cls.from_dict(homography_config)
 
@@ -120,8 +108,7 @@ class HomographyConfig:
         except ValueError:
             valid_approaches = [a.value for a in HomographyApproach]
             raise ValueError(
-                f"Invalid approach '{approach_str}'. "
-                f"Must be one of: {', '.join(valid_approaches)}"
+                f"Invalid approach '{approach_str}'. Must be one of: {', '.join(valid_approaches)}"
             ) from None
 
     @staticmethod
@@ -147,7 +134,7 @@ class HomographyConfig:
             ) from None
 
     @classmethod
-    def from_dict(cls, config: dict) -> 'HomographyConfig':
+    def from_dict(cls, config: dict) -> "HomographyConfig":
         """Create configuration from dictionary.
 
         Args:
@@ -174,23 +161,21 @@ class HomographyConfig:
             raise ValueError(f"Configuration must be a dictionary, got {type(config)}")
 
         # Parse primary approach
-        if 'approach' not in config:
+        if "approach" not in config:
             raise ValueError(
                 "Configuration missing required 'approach' field. "
                 "Must specify one of: 'intrinsic_extrinsic', 'feature_match', 'learned'"
             )
 
-        approach_str = config['approach']
+        approach_str = config["approach"]
         approach = cls._parse_approach(approach_str)
 
         # Parse fallback approaches
         fallback_approaches = []
-        if 'fallback_approaches' in config:
-            fallback_list = config['fallback_approaches']
+        if "fallback_approaches" in config:
+            fallback_list = config["fallback_approaches"]
             if not isinstance(fallback_list, list):
-                raise ValueError(
-                    f"'fallback_approaches' must be a list, got {type(fallback_list)}"
-                )
+                raise ValueError(f"'fallback_approaches' must be a list, got {type(fallback_list)}")
 
             for fallback_str in fallback_list:
                 fallback_approach = cls._parse_approach(fallback_str)
@@ -198,8 +183,8 @@ class HomographyConfig:
 
         # Parse coordinate system mode (optional, defaults to ORIGIN_AT_CAMERA)
         coordinate_system_mode = CoordinateSystemMode.ORIGIN_AT_CAMERA
-        if 'coordinate_system_mode' in config:
-            mode_str = config['coordinate_system_mode']
+        if "coordinate_system_mode" in config:
+            mode_str = config["coordinate_system_mode"]
             coordinate_system_mode = cls._parse_coordinate_system_mode(mode_str)
 
         # Extract approach-specific configuration
@@ -207,32 +192,32 @@ class HomographyConfig:
 
         # Look for configuration keys matching approach names
         approach_keys = [a.value for a in HomographyApproach]
-        for key in config.keys():
+        for key in config:
             if key in approach_keys and isinstance(config[key], dict):
                 approach_specific_config[key] = config[key]
 
         # Validate ground control points if present in feature_match config
-        if 'feature_match' in approach_specific_config:
-            feature_match_config = approach_specific_config['feature_match']
+        if "feature_match" in approach_specific_config:
+            feature_match_config = approach_specific_config["feature_match"]
 
-            if 'ground_control_points' in feature_match_config:
-                gcps = feature_match_config['ground_control_points']
+            if "ground_control_points" in feature_match_config:
+                gcps = feature_match_config["ground_control_points"]
 
                 # Extract optional image dimensions for pixel validation
                 # Check directly under feature_match first, then in camera_capture_context
-                image_width = feature_match_config.get('image_width')
-                image_height = feature_match_config.get('image_height')
+                image_width = feature_match_config.get("image_width")
+                image_height = feature_match_config.get("image_height")
 
                 # Fall back to camera_capture_context if dimensions not found directly
                 if image_width is None or image_height is None:
-                    camera_ctx = feature_match_config.get('camera_capture_context', {})
+                    camera_ctx = feature_match_config.get("camera_capture_context", {})
                     if image_width is None:
-                        image_width = camera_ctx.get('image_width')
+                        image_width = camera_ctx.get("image_width")
                     if image_height is None:
-                        image_height = camera_ctx.get('image_height')
+                        image_height = camera_ctx.get("image_height")
 
                 # Extract optional minimum GCP count
-                min_gcp_count = feature_match_config.get('min_gcp_count', 6)
+                min_gcp_count = feature_match_config.get("min_gcp_count", 6)
 
                 # Validate and normalize GCPs
                 try:
@@ -240,20 +225,18 @@ class HomographyConfig:
                         gcps,
                         image_width=image_width,
                         image_height=image_height,
-                        min_gcp_count=min_gcp_count
+                        min_gcp_count=min_gcp_count,
                     )
                     # Update config with validated GCPs (normalized to list format)
-                    feature_match_config['ground_control_points'] = validated_gcps
+                    feature_match_config["ground_control_points"] = validated_gcps
                 except ValueError as e:
-                    raise ValueError(
-                        f"Ground control points validation failed: {e}"
-                    ) from e
+                    raise ValueError(f"Ground control points validation failed: {e}") from e
 
         return cls(
             approach=approach,
             fallback_approaches=fallback_approaches,
             approach_specific_config=approach_specific_config,
-            coordinate_system_mode=coordinate_system_mode
+            coordinate_system_mode=coordinate_system_mode,
         )
 
     def to_dict(self) -> dict:
@@ -269,12 +252,12 @@ class HomographyConfig:
             'intrinsic_extrinsic'
         """
         result = {
-            'approach': self.approach.value,
-            'coordinate_system_mode': self.coordinate_system_mode.value,
+            "approach": self.approach.value,
+            "coordinate_system_mode": self.coordinate_system_mode.value,
         }
 
         if self.fallback_approaches:
-            result['fallback_approaches'] = [
+            result["fallback_approaches"] = [
                 approach.value for approach in self.fallback_approaches
             ]
 
@@ -284,7 +267,7 @@ class HomographyConfig:
 
         return result
 
-    def get_approach_config(self, approach: HomographyApproach) -> Dict[str, Any]:
+    def get_approach_config(self, approach: HomographyApproach) -> dict[str, Any]:
         """Get configuration for a specific approach.
 
         Args:
@@ -336,13 +319,13 @@ class HomographyConfig:
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Wrap in 'homography' section for consistency with from_yaml
-        output = {'homography': self.to_dict()}
+        output = {"homography": self.to_dict()}
 
         try:
-            with open(config_path, 'w') as f:
+            with open(config_path, "w") as f:
                 yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False)
-        except IOError as e:
-            raise IOError(f"Failed to write configuration file: {e}") from e
+        except OSError as e:
+            raise OSError(f"Failed to write configuration file: {e}") from e
 
 
 def get_default_config() -> HomographyConfig:
@@ -366,19 +349,19 @@ def get_default_config() -> HomographyConfig:
         approach=HomographyApproach.INTRINSIC_EXTRINSIC,
         fallback_approaches=[HomographyApproach.FEATURE_MATCH],
         approach_specific_config={
-            'intrinsic_extrinsic': {
-                'sensor_width_mm': 7.18,
-                'base_focal_length_mm': 5.9,
-                'pixels_per_meter': 100.0,
+            "intrinsic_extrinsic": {
+                "sensor_width_mm": 7.18,
+                "base_focal_length_mm": 5.9,
+                "pixels_per_meter": 100.0,
             },
-            'feature_match': {
-                'detector': 'sift',
-                'min_matches': 4,
-                'ransac_threshold': 5.0,
+            "feature_match": {
+                "detector": "sift",
+                "min_matches": 4,
+                "ransac_threshold": 5.0,
             },
-            'learned': {
-                'model_path': None,
-                'confidence_threshold': 0.5,
-            }
-        }
+            "learned": {
+                "model_path": None,
+                "confidence_threshold": 0.5,
+            },
+        },
     )

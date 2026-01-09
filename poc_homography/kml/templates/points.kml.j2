@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+    <name>Reference Points</name>
+
+    {# Style definitions for each category #}
+    <Style id="zebra">
+        <IconStyle><color>ff0000ff</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+    <Style id="arrow">
+        <IconStyle><color>ff00ff00</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+    <Style id="parking">
+        <IconStyle><color>ffff0000</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+    <Style id="other">
+        <IconStyle><color>ff00ffff</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+
+    {# Placemarks for each point #}
+    {% for point in points %}
+    <Placemark>
+        <name>{{ point.name }}</name>
+        <description>Category: {{ point.category }}</description>
+        <styleUrl>#{{ point.style }}</styleUrl>
+        <Point>
+            <coordinates>{{ "%.8f"|format(point.lon) }},{{ "%.8f"|format(point.lat) }},0</coordinates>
+        </Point>
+    </Placemark>
+    {% endfor %}
+
+</Document>
+</kml>

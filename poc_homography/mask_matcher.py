@@ -6,9 +6,9 @@ and concrete implementations including distance transform-based edge alignment.
 """
 
 from abc import ABC, abstractmethod
-import numpy as np
+
 import cv2
-from typing import Tuple
+import numpy as np
 
 
 class MaskMatcher(ABC):
@@ -64,7 +64,7 @@ class DistanceTransformMatcher(MaskMatcher):
         canny_threshold2: int = 150,
         distance_type: int = cv2.DIST_L2,
         mask_size: int = 5,
-        target_size: Tuple[int, int] = (512, 512)
+        target_size: tuple[int, int] = (512, 512),
     ):
         """
         Initialize DistanceTransformMatcher.
@@ -118,11 +118,7 @@ class DistanceTransformMatcher(MaskMatcher):
         Returns:
             Binary edge map (uint8, 0/255 values)
         """
-        edges = cv2.Canny(
-            mask,
-            self.canny_threshold1,
-            self.canny_threshold2
-        )
+        edges = cv2.Canny(mask, self.canny_threshold1, self.canny_threshold2)
         return edges
 
     def _compute_distance_transform(self, edges: np.ndarray) -> np.ndarray:
@@ -140,11 +136,7 @@ class DistanceTransformMatcher(MaskMatcher):
         inverted_edges = cv2.bitwise_not(edges)
 
         # Compute distance transform
-        dist_transform = cv2.distanceTransform(
-            inverted_edges,
-            self.distance_type,
-            self.mask_size
-        )
+        dist_transform = cv2.distanceTransform(inverted_edges, self.distance_type, self.mask_size)
 
         return dist_transform
 

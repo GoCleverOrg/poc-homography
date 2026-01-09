@@ -33,13 +33,11 @@ import os
 import socketserver
 import sys
 import tempfile
-import threading
 import webbrowser
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
@@ -56,8 +54,13 @@ from poc_homography.server_utils import find_available_port
 # Camera config is optional
 try:
     from poc_homography.camera_config import (
-        get_camera_by_name, get_rtsp_url, USERNAME, PASSWORD, CAMERAS
+        CAMERAS,
+        PASSWORD,
+        USERNAME,
+        get_camera_by_name,
+        get_rtsp_url,
     )
+
     CAMERA_CONFIG_AVAILABLE = True
 except (ValueError, ImportError) as e:
     CAMERA_CONFIG_AVAILABLE = False
@@ -66,17 +69,15 @@ except (ValueError, ImportError) as e:
 
 # Import the intrinsics utility if available
 try:
-    from tools.get_camera_intrinsics import get_ptz_status, compute_intrinsics
+    from tools.get_camera_intrinsics import compute_intrinsics, get_ptz_status
+
     INTRINSICS_AVAILABLE = True
 except ImportError:
     INTRINSICS_AVAILABLE = False
 
 # Import camera defaults from config
 try:
-    from poc_homography.camera_config import (
-        DEFAULT_SENSOR_WIDTH_MM,
-        DEFAULT_BASE_FOCAL_LENGTH_MM
-    )
+    from poc_homography.camera_config import DEFAULT_BASE_FOCAL_LENGTH_MM, DEFAULT_SENSOR_WIDTH_MM
 except ImportError:
     # Fallback values if config import fails
     DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8° FOV at 5.9mm focal length
@@ -99,10 +100,11 @@ DEFAULT_SAM3_PROMPT = "road markings"
 # Import for reprojection error calculation
 try:
     from poc_homography.coordinate_converter import (
-        gps_to_local_xy,
+        DEFAULT_UTM_CRS,
         GCPCoordinateConverter,
-        DEFAULT_UTM_CRS
+        gps_to_local_xy,
     )
+
     COORDINATE_CONVERTER_AVAILABLE = True
 except ImportError:
     COORDINATE_CONVERTER_AVAILABLE = False
@@ -112,14 +114,16 @@ except ImportError:
 # Import for GPS precision analysis and duplicate detection
 try:
     from poc_homography.gcp_validation import analyze_gps_precision, detect_duplicate_gcps
+
     GCP_VALIDATION_AVAILABLE = True
 except ImportError:
     GCP_VALIDATION_AVAILABLE = False
 
 # Import for map-first mode camera parameter retrieval
 try:
-    from poc_homography.gps_distance_calculator import dms_to_dd
     from poc_homography.camera_geometry import CameraGeometry
+    from poc_homography.gps_distance_calculator import dms_to_dd
+
     GPS_CONVERTER_AVAILABLE = True
 except ImportError:
     GPS_CONVERTER_AVAILABLE = False
@@ -127,6 +131,7 @@ except ImportError:
 # Import for height calibration verification
 try:
     from poc_homography.height_calibration import HeightCalibrator
+
     HEIGHT_CALIBRATOR_AVAILABLE = True
 except ImportError:
     HEIGHT_CALIBRATOR_AVAILABLE = False
@@ -135,7 +140,7 @@ except ImportError:
 GEOMETRY_AVAILABLE = GPS_CONVERTER_AVAILABLE
 
 
-def parse_kml_points(kml_path: str) -> List[Dict]:
+def parse_kml_points(kml_path: str) -> list[dict]:
     """
     Parse KML file and extract Point placemarks with GPS and optional UTM coordinates.
 
@@ -175,7 +180,7 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
         - Empty KML file: returns empty list
     """
     # KML 2.2 namespace
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    ns = {"kml": "http://www.opengis.net/kml/2.2"}
 
     try:
         tree = ET.parse(kml_path)
@@ -192,25 +197,25 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
     has_utm = False
 
     # Find all Placemark elements (handles both with and without namespace)
-    placemarks = root.findall('.//kml:Placemark', ns)
+    placemarks = root.findall(".//kml:Placemark", ns)
     if not placemarks:
         # Try without namespace (for KML files without proper namespace)
-        placemarks = root.findall('.//Placemark')
+        placemarks = root.findall(".//Placemark")
 
     for placemark in placemarks:
         # Check if this placemark contains a Point (not LineString or Polygon)
-        point_elem = placemark.find('.//kml:Point', ns)
+        point_elem = placemark.find(".//kml:Point", ns)
         if point_elem is None:
-            point_elem = placemark.find('.//Point')
+            point_elem = placemark.find(".//Point")
 
         if point_elem is None:
             # Skip placemarks without Point geometry (LineString, Polygon, etc.)
             continue
 
         # Extract name
-        name_elem = placemark.find('.//kml:name', ns)
+        name_elem = placemark.find(".//kml:name", ns)
         if name_elem is None:
-            name_elem = placemark.find('.//name')
+            name_elem = placemark.find(".//name")
 
         if name_elem is not None and name_elem.text:
             name = name_elem.text.strip()
@@ -219,9 +224,9 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
             unnamed_counter += 1
 
         # Extract coordinates
-        coords_elem = point_elem.find('.//kml:coordinates', ns)
+        coords_elem = point_elem.find(".//kml:coordinates", ns)
         if coords_elem is None:
-            coords_elem = point_elem.find('.//coordinates')
+            coords_elem = point_elem.find(".//coordinates")
 
         if coords_elem is None or not coords_elem.text:
             print(f"Warning: Skipping placemark '{name}' - missing coordinates")
@@ -230,7 +235,7 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
         # Parse coordinates string: "longitude,latitude,altitude" or "longitude,latitude"
         coords_text = coords_elem.text.strip()
         try:
-            parts = coords_text.split(',')
+            parts = coords_text.split(",")
             if len(parts) < 2:
                 raise ValueError("Not enough coordinate values")
 
@@ -238,40 +243,38 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
             latitude = float(parts[1])
             # Altitude (parts[2]) is ignored if present
 
-            point_data = {
-                'name': name,
-                'latitude': latitude,
-                'longitude': longitude
-            }
+            point_data = {"name": name, "latitude": latitude, "longitude": longitude}
 
             # Try to extract UTM coordinates from ExtendedData
-            extended_data = placemark.find('.//kml:ExtendedData', ns)
+            extended_data = placemark.find(".//kml:ExtendedData", ns)
             if extended_data is None:
-                extended_data = placemark.find('.//ExtendedData')
+                extended_data = placemark.find(".//ExtendedData")
 
             if extended_data is not None:
                 # Look for SimpleData elements with UTM coordinates
-                simple_data_elems = extended_data.findall('.//kml:SimpleData', ns)
+                simple_data_elems = extended_data.findall(".//kml:SimpleData", ns)
                 if not simple_data_elems:
-                    simple_data_elems = extended_data.findall('.//SimpleData')
+                    simple_data_elems = extended_data.findall(".//SimpleData")
 
                 for sd in simple_data_elems:
-                    sd_name = sd.get('name')
+                    sd_name = sd.get("name")
                     sd_value = sd.text
                     if sd_name and sd_value:
-                        if sd_name == 'utm_easting':
-                            point_data['utm_easting'] = float(sd_value)
+                        if sd_name == "utm_easting":
+                            point_data["utm_easting"] = float(sd_value)
                             has_utm = True
-                        elif sd_name == 'utm_northing':
-                            point_data['utm_northing'] = float(sd_value)
+                        elif sd_name == "utm_northing":
+                            point_data["utm_northing"] = float(sd_value)
                             has_utm = True
-                        elif sd_name == 'utm_crs':
-                            point_data['utm_crs'] = sd_value
+                        elif sd_name == "utm_crs":
+                            point_data["utm_crs"] = sd_value
 
             points.append(point_data)
 
         except (ValueError, IndexError) as e:
-            print(f"Warning: Skipping placemark '{name}' - invalid coordinates format: {coords_text} ({e})")
+            print(
+                f"Warning: Skipping placemark '{name}' - invalid coordinates format: {coords_text} ({e})"
+            )
             continue
 
     # Debug: Print parsed KML points
@@ -284,15 +287,19 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
     print("-" * 60)
     for i, p in enumerate(points):
         utm_str = ""
-        if 'utm_easting' in p and 'utm_northing' in p:
+        if "utm_easting" in p and "utm_northing" in p:
             utm_str = f" UTM: E={p['utm_easting']:.2f}, N={p['utm_northing']:.2f}"
-        print(f"  {i+1}. {p['name']:<20} lat={p['latitude']:.6f}, lon={p['longitude']:.6f}{utm_str}")
+        print(
+            f"  {i + 1}. {p['name']:<20} lat={p['latitude']:.6f}, lon={p['longitude']:.6f}{utm_str}"
+        )
     print("=" * 60 + "\n")
 
     return points
 
 
-def get_camera_params_for_projection(camera_name: str, image_width: int = None, image_height: int = None) -> Dict:
+def get_camera_params_for_projection(
+    camera_name: str, image_width: int = None, image_height: int = None
+) -> dict:
     """
     Retrieve camera parameters for map-first mode projection.
 
@@ -353,31 +360,28 @@ def get_camera_params_for_projection(camera_name: str, image_width: int = None, 
     # Get camera configuration
     cam_config = get_camera_by_name(camera_name)
     if not cam_config:
-        available = [c['name'] for c in CAMERAS]
+        available = [c["name"] for c in CAMERAS]
         raise ValueError(
-            f"Camera '{camera_name}' not found. "
-            f"Available cameras: {', '.join(available)}"
+            f"Camera '{camera_name}' not found. Available cameras: {', '.join(available)}"
         )
 
     # Convert GPS coordinates from DMS to decimal degrees
     try:
-        camera_lat = dms_to_dd(cam_config['lat'])
-        camera_lon = dms_to_dd(cam_config['lon'])
+        camera_lat = dms_to_dd(cam_config["lat"])
+        camera_lon = dms_to_dd(cam_config["lon"])
     except (KeyError, ValueError) as e:
-        raise ValueError(
-            f"Failed to parse GPS coordinates for camera '{camera_name}': {e}"
-        )
+        raise ValueError(f"Failed to parse GPS coordinates for camera '{camera_name}': {e}")
 
     # Get camera height
-    height_m = cam_config.get('height_m', 5.0)
+    height_m = cam_config.get("height_m", 5.0)
 
     # Get pan offset (angle from north when pan=0)
     # Positive offset means pan=0 points east of north
-    pan_offset_deg = cam_config.get('pan_offset_deg', 0.0)
+    pan_offset_deg = cam_config.get("pan_offset_deg", 0.0)
 
     # Get current PTZ status from live camera
     try:
-        ptz_status = get_ptz_status(cam_config['ip'], USERNAME, PASSWORD, timeout=5.0)
+        ptz_status = get_ptz_status(cam_config["ip"], USERNAME, PASSWORD, timeout=5.0)
     except RuntimeError as e:
         raise RuntimeError(
             f"Failed to retrieve PTZ status from camera '{camera_name}' "
@@ -388,10 +392,10 @@ def get_camera_params_for_projection(camera_name: str, image_width: int = None, 
     # Extract PTZ values and apply pan offset
     # True bearing = reported_pan + pan_offset
     # This converts camera-relative pan to world bearing (degrees from north)
-    pan_deg_raw = ptz_status['pan']
+    pan_deg_raw = ptz_status["pan"]
     pan_deg = pan_deg_raw + pan_offset_deg
-    tilt_deg = ptz_status['tilt']
-    zoom = ptz_status['zoom']
+    tilt_deg = ptz_status["tilt"]
+    zoom = ptz_status["zoom"]
 
     # Use provided image dimensions or defaults
     if image_width is None:
@@ -400,33 +404,32 @@ def get_camera_params_for_projection(camera_name: str, image_width: int = None, 
         image_height = 1080  # Default HD resolution
 
     # Get camera-specific sensor width or use default
-    sensor_width_mm = cam_config.get('sensor_width_mm', DEFAULT_SENSOR_WIDTH_MM)
+    sensor_width_mm = cam_config.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM)
 
     # Compute intrinsic matrix from current zoom level
     K = CameraGeometry.get_intrinsics(
-        zoom_factor=zoom,
-        W_px=image_width,
-        H_px=image_height,
-        sensor_width_mm=sensor_width_mm
+        zoom_factor=zoom, W_px=image_width, H_px=image_height, sensor_width_mm=sensor_width_mm
     )
 
     return {
-        'camera_lat': camera_lat,
-        'camera_lon': camera_lon,
-        'height_m': height_m,
-        'pan_deg': pan_deg,
-        'pan_deg_raw': pan_deg_raw,
-        'pan_offset_deg': pan_offset_deg,
-        'tilt_deg': tilt_deg,
-        'zoom': zoom,
-        'K': K,
-        'image_width': image_width,
-        'image_height': image_height,
-        'sensor_width_mm': sensor_width_mm
+        "camera_lat": camera_lat,
+        "camera_lon": camera_lon,
+        "height_m": height_m,
+        "pan_deg": pan_deg,
+        "pan_deg_raw": pan_deg_raw,
+        "pan_offset_deg": pan_offset_deg,
+        "tilt_deg": tilt_deg,
+        "zoom": zoom,
+        "K": K,
+        "image_width": image_width,
+        "image_height": image_height,
+        "sensor_width_mm": sensor_width_mm,
     }
 
 
-def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_name: str = None) -> List[Dict]:
+def project_gps_to_image(
+    gps_points: list[dict], camera_params: dict, camera_name: str = None
+) -> list[dict]:
     """
     Project GPS points to image pixel coordinates using camera homography.
 
@@ -469,7 +472,6 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
         ...     if pt['visible']:
         ...         print(f"{pt['name']}: ({pt['pixel_u']:.1f}, {pt['pixel_v']:.1f})")
     """
-    from math import cos, radians
 
     # Check required modules
     if not COORDINATE_CONVERTER_AVAILABLE:
@@ -485,16 +487,16 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
         )
 
     # Extract camera parameters
-    camera_lat = camera_params['camera_lat']
-    camera_lon = camera_params['camera_lon']
-    height_m = camera_params['height_m']
-    pan_deg = camera_params['pan_deg']
-    pan_deg_raw = camera_params.get('pan_deg_raw', pan_deg)
-    pan_offset_deg = camera_params.get('pan_offset_deg', 0.0)
-    tilt_deg = camera_params['tilt_deg']
-    K = camera_params['K']
-    image_width = camera_params['image_width']
-    image_height = camera_params['image_height']
+    camera_lat = camera_params["camera_lat"]
+    camera_lon = camera_params["camera_lon"]
+    height_m = camera_params["height_m"]
+    pan_deg = camera_params["pan_deg"]
+    pan_deg_raw = camera_params.get("pan_deg_raw", pan_deg)
+    pan_offset_deg = camera_params.get("pan_offset_deg", 0.0)
+    tilt_deg = camera_params["tilt_deg"]
+    K = camera_params["K"]
+    image_width = camera_params["image_width"]
+    image_height = camera_params["image_height"]
 
     # Debug: Print camera parameters
     print("\n" + "=" * 60)
@@ -503,7 +505,9 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
     print(f"Camera Position: lat={camera_lat:.6f}, lon={camera_lon:.6f}")
     print(f"Camera Height: {height_m:.2f} m")
     if pan_offset_deg != 0:
-        print(f"Camera PTZ: pan={pan_deg_raw:.1f}° (raw) + {pan_offset_deg:.1f}° (offset) = {pan_deg:.1f}° (true bearing)")
+        print(
+            f"Camera PTZ: pan={pan_deg_raw:.1f}° (raw) + {pan_offset_deg:.1f}° (offset) = {pan_deg:.1f}° (true bearing)"
+        )
     else:
         print(f"Camera PTZ: pan={pan_deg:.1f}°")
     print(f"Camera Tilt: {tilt_deg:.1f}°")
@@ -524,7 +528,7 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
         pan_deg=pan_deg,
         tilt_deg=tilt_deg,
         map_width=640,  # Default map size (not critical for projection)
-        map_height=640
+        map_height=640,
     )
 
     # Load and apply distortion coefficients from camera config
@@ -533,15 +537,17 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
         try:
             cam_config = get_camera_by_name(camera_name)
             if cam_config:
-                k1 = cam_config.get('k1', 0.0)
-                k2 = cam_config.get('k2', 0.0)
-                p1 = cam_config.get('p1', 0.0)
-                p2 = cam_config.get('p2', 0.0)
+                k1 = cam_config.get("k1", 0.0)
+                k2 = cam_config.get("k2", 0.0)
+                p1 = cam_config.get("p1", 0.0)
+                p2 = cam_config.get("p2", 0.0)
                 # Only apply if non-zero coefficients exist
                 if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
                     geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
                     distortion_applied = True
-                    print(f"Distortion coefficients applied: k1={k1:.6f}, k2={k2:.6f}, p1={p1:.6f}, p2={p2:.6f}")
+                    print(
+                        f"Distortion coefficients applied: k1={k1:.6f}, k2={k2:.6f}, p1={p1:.6f}, p2={p2:.6f}"
+                    )
         except Exception as e:
             print(f"Warning: Could not load distortion coefficients: {e}")
 
@@ -551,19 +557,24 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
     # Debug: Print homography matrix
     print(f"Homography Matrix H:\n{geo.H}")
     print("-" * 60)
-    print(f"\n{'Point Name':<20} {'GPS (lat,lon)':<25} {'Local XY (m)':<20} {'Pixel (u,v)':<20} {'W':<10} {'Result':<15}")
+    print(
+        f"\n{'Point Name':<20} {'GPS (lat,lon)':<25} {'Local XY (m)':<20} {'Pixel (u,v)':<20} {'W':<10} {'Result':<15}"
+    )
     print("-" * 110)
 
     # Check if any points have UTM coordinates
-    has_utm_points = any('utm_easting' in p and 'utm_northing' in p for p in gps_points)
+    has_utm_points = any("utm_easting" in p and "utm_northing" in p for p in gps_points)
 
     # If we have UTM points, set up UTM converter with camera position as reference
     utm_converter = None
     if has_utm_points:
         try:
             from poc_homography.coordinate_converter import UTMConverter
+
             # Get UTM CRS from first point that has it, or use default
-            utm_crs = next((p.get('utm_crs', 'EPSG:25830') for p in gps_points if 'utm_crs' in p), 'EPSG:25830')
+            utm_crs = next(
+                (p.get("utm_crs", "EPSG:25830") for p in gps_points if "utm_crs" in p), "EPSG:25830"
+            )
             utm_converter = UTMConverter(utm_crs)
             utm_converter.set_reference(camera_lat, camera_lon)
             print(f"Using UTM coordinates (CRS: {utm_crs}) for accurate conversion")
@@ -576,15 +587,15 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
     projected_points = []
 
     for point in gps_points:
-        gps_lat = point['latitude']
-        gps_lon = point['longitude']
-        name = point['name']
+        gps_lat = point["latitude"]
+        gps_lon = point["longitude"]
+        name = point["name"]
 
         # Convert to local XY meters relative to camera
         # Prefer UTM coordinates if available (more accurate)
-        if utm_converter and 'utm_easting' in point and 'utm_northing' in point:
+        if utm_converter and "utm_easting" in point and "utm_northing" in point:
             # Use UTM coordinates directly - more accurate
-            x_m, y_m = utm_converter.utm_to_local_xy(point['utm_easting'], point['utm_northing'])
+            x_m, y_m = utm_converter.utm_to_local_xy(point["utm_easting"], point["utm_northing"])
         elif utm_converter:
             # UTM converter available but point only has GPS - convert via UTM
             x_m, y_m = utm_converter.gps_to_local_xy(gps_lat, gps_lon)
@@ -607,18 +618,22 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
         # Check if point is behind camera (w <= 0)
         if w <= 0:
             # Debug output for behind_camera
-            print(f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) {'N/A':<20} {w:<10.3f} BEHIND_CAMERA")
-            projected_points.append({
-                'name': name,
-                'latitude': gps_lat,
-                'longitude': gps_lon,
-                'utm_easting': point.get('utm_easting'),
-                'utm_northing': point.get('utm_northing'),
-                'pixel_u': None,
-                'pixel_v': None,
-                'visible': False,
-                'reason': 'behind_camera'
-            })
+            print(
+                f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) {'N/A':<20} {w:<10.3f} BEHIND_CAMERA"
+            )
+            projected_points.append(
+                {
+                    "name": name,
+                    "latitude": gps_lat,
+                    "longitude": gps_lon,
+                    "utm_easting": point.get("utm_easting"),
+                    "utm_northing": point.get("utm_northing"),
+                    "pixel_u": None,
+                    "pixel_v": None,
+                    "visible": False,
+                    "reason": "behind_camera",
+                }
+            )
             continue
 
         # Normalize to get pixel coordinates (undistorted pinhole model)
@@ -635,45 +650,57 @@ def project_gps_to_image(gps_points: List[Dict], camera_params: Dict, camera_nam
         # Check if point is within image bounds
         if 0 <= u_px < image_width and 0 <= v_px < image_height:
             # Debug output for visible
-            print(f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) ({u_px:>8.1f},{v_px:>8.1f}) {w:<10.3f} VISIBLE")
-            projected_points.append({
-                'name': name,
-                'latitude': gps_lat,
-                'longitude': gps_lon,
-                'utm_easting': point.get('utm_easting'),
-                'utm_northing': point.get('utm_northing'),
-                'pixel_u': u_px,
-                'pixel_v': v_px,
-                'visible': True,
-                'reason': 'visible'
-            })
+            print(
+                f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) ({u_px:>8.1f},{v_px:>8.1f}) {w:<10.3f} VISIBLE"
+            )
+            projected_points.append(
+                {
+                    "name": name,
+                    "latitude": gps_lat,
+                    "longitude": gps_lon,
+                    "utm_easting": point.get("utm_easting"),
+                    "utm_northing": point.get("utm_northing"),
+                    "pixel_u": u_px,
+                    "pixel_v": v_px,
+                    "visible": True,
+                    "reason": "visible",
+                }
+            )
         else:
             # Debug output for outside_bounds
-            print(f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) ({u_px:>8.1f},{v_px:>8.1f}) {w:<10.3f} OUTSIDE_BOUNDS")
-            projected_points.append({
-                'name': name,
-                'latitude': gps_lat,
-                'longitude': gps_lon,
-                'utm_easting': point.get('utm_easting'),
-                'utm_northing': point.get('utm_northing'),
-                'pixel_u': u_px,
-                'pixel_v': v_px,
-                'visible': False,
-                'reason': 'outside_bounds'
-            })
+            print(
+                f"{name:<20} ({gps_lat:.6f},{gps_lon:.6f}) ({x_m:>8.1f},{y_m:>8.1f}) ({u_px:>8.1f},{v_px:>8.1f}) {w:<10.3f} OUTSIDE_BOUNDS"
+            )
+            projected_points.append(
+                {
+                    "name": name,
+                    "latitude": gps_lat,
+                    "longitude": gps_lon,
+                    "utm_easting": point.get("utm_easting"),
+                    "utm_northing": point.get("utm_northing"),
+                    "pixel_u": u_px,
+                    "pixel_v": v_px,
+                    "visible": False,
+                    "reason": "outside_bounds",
+                }
+            )
 
     # Debug summary
-    visible_count = sum(1 for p in projected_points if p['visible'])
-    behind_count = sum(1 for p in projected_points if p.get('reason') == 'behind_camera')
-    outside_count = sum(1 for p in projected_points if p.get('reason') == 'outside_bounds')
+    visible_count = sum(1 for p in projected_points if p["visible"])
+    behind_count = sum(1 for p in projected_points if p.get("reason") == "behind_camera")
+    outside_count = sum(1 for p in projected_points if p.get("reason") == "outside_bounds")
     print("-" * 110)
-    print(f"SUMMARY: {len(projected_points)} total, {visible_count} visible, {behind_count} behind_camera, {outside_count} outside_bounds")
+    print(
+        f"SUMMARY: {len(projected_points)} total, {visible_count} visible, {behind_count} behind_camera, {outside_count} outside_bounds"
+    )
     print("=" * 60 + "\n")
 
     return projected_points
 
 
-def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: CameraGeometry, camera_name: str = None) -> Dict:
+def verify_camera_height(
+    kml_points: list[dict], camera_params: dict, geo: CameraGeometry, camera_name: str = None
+) -> dict:
     """
     Verify camera height accuracy using HeightCalibrator and KML reference points.
 
@@ -714,39 +741,36 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
     # Check if HeightCalibrator is available
     if not HEIGHT_CALIBRATOR_AVAILABLE:
         return {
-            'configured_height': camera_params['height_m'],
-            'estimated_height': None,
-            'confidence_interval': (None, None),
-            'height_valid': True,  # Assume valid if we can't verify
-            'height_difference_percent': 0.0,
-            'inlier_count': 0,
-            'warning': 'Height calibrator module not available - skipping verification'
+            "configured_height": camera_params["height_m"],
+            "estimated_height": None,
+            "confidence_interval": (None, None),
+            "height_valid": True,  # Assume valid if we can't verify
+            "height_difference_percent": 0.0,
+            "inlier_count": 0,
+            "warning": "Height calibrator module not available - skipping verification",
         }
 
     # Check minimum points requirement
     if len(kml_points) < 5:
         return {
-            'configured_height': camera_params['height_m'],
-            'estimated_height': None,
-            'confidence_interval': (None, None),
-            'height_valid': True,  # Assume valid if we can't verify
-            'height_difference_percent': 0.0,
-            'inlier_count': len(kml_points),
-            'warning': f'Insufficient points for height verification (need 5, have {len(kml_points)})'
+            "configured_height": camera_params["height_m"],
+            "estimated_height": None,
+            "confidence_interval": (None, None),
+            "height_valid": True,  # Assume valid if we can't verify
+            "height_difference_percent": 0.0,
+            "inlier_count": len(kml_points),
+            "warning": f"Insufficient points for height verification (need 5, have {len(kml_points)})",
         }
 
     # Extract camera parameters
-    camera_lat = camera_params['camera_lat']
-    camera_lon = camera_params['camera_lon']
-    height_m = camera_params['height_m']
-    image_width = camera_params['image_width']
-    image_height = camera_params['image_height']
+    camera_lat = camera_params["camera_lat"]
+    camera_lon = camera_params["camera_lon"]
+    height_m = camera_params["height_m"]
+    image_width = camera_params["image_width"]
+    image_height = camera_params["image_height"]
 
     # Create camera GPS dict for HeightCalibrator
-    camera_gps = {
-        'lat': camera_lat,
-        'lon': camera_lon
-    }
+    camera_gps = {"lat": camera_lat, "lon": camera_lon}
 
     try:
         # Initialize HeightCalibrator
@@ -759,35 +783,35 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
         points_added = 0
         for point in projected:
             # Only use visible points that have valid pixel coordinates
-            if point['visible'] and point['pixel_u'] is not None and point['pixel_v'] is not None:
+            if point["visible"] and point["pixel_u"] is not None and point["pixel_v"] is not None:
                 try:
                     calibrator.add_point(
-                        pixel_x=point['pixel_u'],
-                        pixel_y=point['pixel_v'],
-                        gps_lat=point['latitude'],
-                        gps_lon=point['longitude'],
+                        pixel_x=point["pixel_u"],
+                        pixel_y=point["pixel_v"],
+                        gps_lat=point["latitude"],
+                        gps_lon=point["longitude"],
                         current_height=height_m,
-                        geo=geo
+                        geo=geo,
                     )
                     points_added += 1
-                except (ValueError, RuntimeError) as e:
+                except (ValueError, RuntimeError):
                     # Skip points that can't be added (e.g., near horizon)
                     continue
 
         # Check if we have enough points after filtering
         if points_added < 5:
             return {
-                'configured_height': height_m,
-                'estimated_height': None,
-                'confidence_interval': (None, None),
-                'height_valid': True,  # Assume valid if we can't verify
-                'height_difference_percent': 0.0,
-                'inlier_count': points_added,
-                'warning': f'Insufficient valid points for height verification (need 5, have {points_added})'
+                "configured_height": height_m,
+                "estimated_height": None,
+                "confidence_interval": (None, None),
+                "height_valid": True,  # Assume valid if we can't verify
+                "height_difference_percent": 0.0,
+                "inlier_count": points_added,
+                "warning": f"Insufficient valid points for height verification (need 5, have {points_added})",
             }
 
         # Optimize height using outlier detection
-        result = calibrator.optimize_height_with_outliers(method='mad', threshold=2.5)
+        result = calibrator.optimize_height_with_outliers(method="mad", threshold=2.5)
 
         # Calculate percentage difference
         estimated_height = result.estimated_height
@@ -806,34 +830,31 @@ def verify_camera_height(kml_points: List[Dict], camera_params: Dict, geo: Camer
             )
 
         return {
-            'configured_height': height_m,
-            'estimated_height': estimated_height,
-            'confidence_interval': result.confidence_interval,
-            'height_valid': height_valid,
-            'height_difference_percent': height_diff_percent,
-            'inlier_count': result.inlier_count,
-            'warning': warning
+            "configured_height": height_m,
+            "estimated_height": estimated_height,
+            "confidence_interval": result.confidence_interval,
+            "height_valid": height_valid,
+            "height_difference_percent": height_diff_percent,
+            "inlier_count": result.inlier_count,
+            "warning": warning,
         }
 
     except ValueError as e:
         # Handle calibration errors
         return {
-            'configured_height': height_m,
-            'estimated_height': None,
-            'confidence_interval': (None, None),
-            'height_valid': True,  # Assume valid if verification failed
-            'height_difference_percent': 0.0,
-            'inlier_count': 0,
-            'warning': f'Height verification failed: {str(e)}'
+            "configured_height": height_m,
+            "estimated_height": None,
+            "confidence_interval": (None, None),
+            "height_valid": True,  # Assume valid if verification failed
+            "height_difference_percent": 0.0,
+            "inlier_count": 0,
+            "warning": f"Height verification failed: {e!s}",
         }
 
 
 def verify_camera_height_with_projected(
-    projected_points: List[Dict],
-    kml_points: List[Dict],
-    camera_params: Dict,
-    geo: 'CameraGeometry'
-) -> Dict:
+    projected_points: list[dict], kml_points: list[dict], camera_params: dict, geo: "CameraGeometry"
+) -> dict:
     """
     Verify camera height using already-projected points.
 
@@ -852,37 +873,34 @@ def verify_camera_height_with_projected(
     # Check if HeightCalibrator is available
     if not HEIGHT_CALIBRATOR_AVAILABLE:
         return {
-            'configured_height': camera_params['height_m'],
-            'estimated_height': None,
-            'confidence_interval': (None, None),
-            'height_valid': True,
-            'height_difference_percent': 0.0,
-            'inlier_count': 0,
-            'warning': 'Height calibrator module not available - skipping verification'
+            "configured_height": camera_params["height_m"],
+            "estimated_height": None,
+            "confidence_interval": (None, None),
+            "height_valid": True,
+            "height_difference_percent": 0.0,
+            "inlier_count": 0,
+            "warning": "Height calibrator module not available - skipping verification",
         }
 
     # Extract camera parameters
-    camera_lat = camera_params['camera_lat']
-    camera_lon = camera_params['camera_lon']
-    height_m = camera_params['height_m']
+    camera_lat = camera_params["camera_lat"]
+    camera_lon = camera_params["camera_lon"]
+    height_m = camera_params["height_m"]
 
     # Create camera GPS dict for HeightCalibrator
-    camera_gps = {
-        'lat': camera_lat,
-        'lon': camera_lon
-    }
+    camera_gps = {"lat": camera_lat, "lon": camera_lon}
 
     # Count visible points
-    visible_count = sum(1 for p in projected_points if p['visible'])
+    visible_count = sum(1 for p in projected_points if p["visible"])
     if visible_count < 5:
         return {
-            'configured_height': height_m,
-            'estimated_height': None,
-            'confidence_interval': (None, None),
-            'height_valid': True,
-            'height_difference_percent': 0.0,
-            'inlier_count': visible_count,
-            'warning': f'Insufficient valid points for height verification (need 5, have {visible_count})'
+            "configured_height": height_m,
+            "estimated_height": None,
+            "confidence_interval": (None, None),
+            "height_valid": True,
+            "height_difference_percent": 0.0,
+            "inlier_count": visible_count,
+            "warning": f"Insufficient valid points for height verification (need 5, have {visible_count})",
         }
 
     try:
@@ -892,15 +910,15 @@ def verify_camera_height_with_projected(
         # Add each visible point to the calibrator
         points_added = 0
         for point in projected_points:
-            if point['visible'] and point['pixel_u'] is not None and point['pixel_v'] is not None:
+            if point["visible"] and point["pixel_u"] is not None and point["pixel_v"] is not None:
                 try:
                     calibrator.add_point(
-                        pixel_x=point['pixel_u'],
-                        pixel_y=point['pixel_v'],
-                        gps_lat=point['latitude'],
-                        gps_lon=point['longitude'],
+                        pixel_x=point["pixel_u"],
+                        pixel_y=point["pixel_v"],
+                        gps_lat=point["latitude"],
+                        gps_lon=point["longitude"],
                         current_height=height_m,
-                        geo=geo
+                        geo=geo,
                     )
                     points_added += 1
                 except (ValueError, RuntimeError):
@@ -908,17 +926,17 @@ def verify_camera_height_with_projected(
 
         if points_added < 5:
             return {
-                'configured_height': height_m,
-                'estimated_height': None,
-                'confidence_interval': (None, None),
-                'height_valid': True,
-                'height_difference_percent': 0.0,
-                'inlier_count': points_added,
-                'warning': f'Insufficient valid points for height verification (need 5, have {points_added})'
+                "configured_height": height_m,
+                "estimated_height": None,
+                "confidence_interval": (None, None),
+                "height_valid": True,
+                "height_difference_percent": 0.0,
+                "inlier_count": points_added,
+                "warning": f"Insufficient valid points for height verification (need 5, have {points_added})",
             }
 
         # Optimize height using outlier detection
-        result = calibrator.optimize_height_with_outliers(method='mad', threshold=2.5)
+        result = calibrator.optimize_height_with_outliers(method="mad", threshold=2.5)
 
         # Calculate percentage difference
         estimated_height = result.estimated_height
@@ -935,24 +953,24 @@ def verify_camera_height_with_projected(
             )
 
         return {
-            'configured_height': height_m,
-            'estimated_height': estimated_height,
-            'confidence_interval': result.confidence_interval,
-            'height_valid': height_valid,
-            'height_difference_percent': height_diff_percent,
-            'inlier_count': result.inlier_count,
-            'warning': warning
+            "configured_height": height_m,
+            "estimated_height": estimated_height,
+            "confidence_interval": result.confidence_interval,
+            "height_valid": height_valid,
+            "height_difference_percent": height_diff_percent,
+            "inlier_count": result.inlier_count,
+            "warning": warning,
         }
 
     except ValueError as e:
         return {
-            'configured_height': height_m,
-            'estimated_height': None,
-            'confidence_interval': (None, None),
-            'height_valid': True,
-            'height_difference_percent': 0.0,
-            'inlier_count': 0,
-            'warning': f'Height verification failed: {str(e)}'
+            "configured_height": height_m,
+            "estimated_height": None,
+            "confidence_interval": (None, None),
+            "height_valid": True,
+            "height_difference_percent": 0.0,
+            "inlier_count": 0,
+            "warning": f"Height verification failed: {e!s}",
         }
 
 
@@ -973,10 +991,10 @@ class GCPCaptureWebSession:
         sensor_width_mm: float = DEFAULT_SENSOR_WIDTH_MM,
         base_focal_length_mm: float = DEFAULT_BASE_FOCAL_LENGTH_MM,
         map_first_mode: bool = False,
-        kml_points: List[Dict] = None,
-        projected_points: List[Dict] = None,
+        kml_points: list[dict] = None,
+        projected_points: list[dict] = None,
         kml_file_name: str = None,
-        height_verification: Dict = None
+        height_verification: dict = None,
     ):
         self.frame = frame
         self.camera_name = camera_name or "Unknown"
@@ -985,10 +1003,10 @@ class GCPCaptureWebSession:
         self.base_focal_length_mm = base_focal_length_mm
 
         self.frame_height, self.frame_width = frame.shape[:2]
-        self.gcps: List[Dict] = []
+        self.gcps: list[dict] = []
         self.capture_timestamp = datetime.now().isoformat()
         # Coordinate system: 'image_v' (V=0 at top) or None (legacy leaflet_y format)
-        self.coordinate_system = 'image_v'
+        self.coordinate_system = "image_v"
 
         # Homography and reprojection error state
         self.current_homography = None
@@ -1016,7 +1034,7 @@ class GCPCaptureWebSession:
         self.intrinsics = None
         if INTRINSICS_AVAILABLE and ptz_status:
             self.intrinsics = compute_intrinsics(
-                zoom=ptz_status.get('zoom', 1.0),
+                zoom=ptz_status.get("zoom", 1.0),
                 image_width=self.frame_width,
                 image_height=self.frame_height,
                 sensor_width_mm=sensor_width_mm,
@@ -1027,24 +1045,24 @@ class GCPCaptureWebSession:
         self.feature_mask = None  # Binary mask as numpy array (uint8)
         self.feature_mask_metadata = None  # Metadata about the last detection
 
-    def calculate_distribution(self) -> Dict:
+    def calculate_distribution(self) -> dict:
         """Calculate distribution metrics for current GCPs."""
         n_points = len(self.gcps)
 
         if n_points < 3:
             return {
-                'coverage_ratio': 0.0,
-                'quadrants_covered': 0,
-                'quadrants': [False, False, False, False],
-                'spread_x': 0.0,
-                'spread_y': 0.0,
-                'distribution_score': 0.0,
-                'quality': 'Insufficient',
-                'warnings': ['Need at least 3 GCPs for distribution analysis']
+                "coverage_ratio": 0.0,
+                "quadrants_covered": 0,
+                "quadrants": [False, False, False, False],
+                "spread_x": 0.0,
+                "spread_y": 0.0,
+                "distribution_score": 0.0,
+                "quality": "Insufficient",
+                "warnings": ["Need at least 3 GCPs for distribution analysis"],
             }
 
         # Extract image points
-        image_points = np.array([[gcp['image']['u'], gcp['image']['v']] for gcp in self.gcps])
+        image_points = np.array([[gcp["image"]["u"], gcp["image"]["v"]] for gcp in self.gcps])
 
         # Calculate convex hull coverage
         try:
@@ -1076,25 +1094,25 @@ class GCPCaptureWebSession:
         warnings = []
         if coverage_ratio < self.MIN_COVERAGE_RATIO:
             warnings.append(
-                f'GCPs are clustered (coverage {coverage_ratio:.1%} < {self.MIN_COVERAGE_RATIO:.0%}). '
-                'Add GCPs in different areas.'
+                f"GCPs are clustered (coverage {coverage_ratio:.1%} < {self.MIN_COVERAGE_RATIO:.0%}). "
+                "Add GCPs in different areas."
             )
         if quadrants_covered < self.MIN_QUADRANT_COVERAGE:
             warnings.append(
-                f'GCPs only cover {quadrants_covered}/4 quadrants. '
-                'Add GCPs to cover more of the image.'
+                f"GCPs only cover {quadrants_covered}/4 quadrants. "
+                "Add GCPs to cover more of the image."
             )
         if spread_x < 0.15 or spread_y < 0.15:
-            warnings.append('GCPs have low spatial variance. Spread points across the image.')
+            warnings.append("GCPs have low spatial variance. Spread points across the image.")
 
         # Check for GPS precision issues and duplicates
         if GCP_VALIDATION_AVAILABLE and len(self.gcps) >= 2:
             # Analyze GPS precision
             try:
                 precision_result = analyze_gps_precision(self.gcps)
-                if precision_result.get('warnings'):
-                    warnings.extend(precision_result['warnings'])
-            except Exception as e:
+                if precision_result.get("warnings"):
+                    warnings.extend(precision_result["warnings"])
+            except Exception:
                 pass  # Don't fail if precision analysis fails
 
             # Check for duplicate GCPs
@@ -1112,24 +1130,24 @@ class GCPCaptureWebSession:
 
         # Quality label
         if distribution_score > 0.7:
-            quality = 'Good'
+            quality = "Good"
         elif distribution_score > 0.5:
-            quality = 'Fair'
+            quality = "Fair"
         else:
-            quality = 'Poor'
+            quality = "Poor"
 
         return {
-            'coverage_ratio': coverage_ratio,
-            'quadrants_covered': quadrants_covered,
-            'quadrants': quadrants,
-            'spread_x': spread_x,
-            'spread_y': spread_y,
-            'distribution_score': distribution_score,
-            'quality': quality,
-            'warnings': warnings
+            "coverage_ratio": coverage_ratio,
+            "quadrants_covered": quadrants_covered,
+            "quadrants": quadrants,
+            "spread_x": spread_x,
+            "spread_y": spread_y,
+            "distribution_score": distribution_score,
+            "quality": quality,
+            "warnings": warnings,
         }
 
-    def update_homography(self) -> Dict:
+    def update_homography(self) -> dict:
         """
         Compute homography from current GCPs and calculate per-GCP reprojection errors.
 
@@ -1137,20 +1155,17 @@ class GCPCaptureWebSession:
             Dictionary with homography quality metrics and per-GCP errors.
         """
         if not COORDINATE_CONVERTER_AVAILABLE:
-            return {
-                'available': False,
-                'message': 'Coordinate converter not available'
-            }
+            return {"available": False, "message": "Coordinate converter not available"}
 
         if len(self.gcps) < 4:
             self.current_homography = None
             self.last_reproj_errors = []
             self.inlier_mask = None
             return {
-                'available': True,
-                'num_gcps': len(self.gcps),
-                'errors': [],
-                'message': 'Need at least 4 GCPs for homography'
+                "available": True,
+                "num_gcps": len(self.gcps),
+                "errors": [],
+                "message": "Need at least 4 GCPs for homography",
             }
 
         # Set reference point from camera GPS, UTM centroid, or GPS centroid
@@ -1159,40 +1174,52 @@ class GCPCaptureWebSession:
                 # Try to get camera GPS from config
                 try:
                     cam_info = get_camera_by_name(self.camera_name)
-                    if cam_info and 'gps' in cam_info:
-                        self.reference_lat = cam_info['gps'].get('latitude')
-                        self.reference_lon = cam_info['gps'].get('longitude')
+                    if cam_info and "gps" in cam_info:
+                        self.reference_lat = cam_info["gps"].get("latitude")
+                        self.reference_lon = cam_info["gps"].get("longitude")
                 except Exception:
                     pass
 
             # Fall back to GCP centroid (prefer UTM if available)
             if self.reference_lat is None:
                 # Check if GCPs have UTM coordinates
-                has_utm = any('utm_easting' in g.get('gps', {}) for g in self.gcps)
+                has_utm = any("utm_easting" in g.get("gps", {}) for g in self.gcps)
                 if has_utm:
                     # Use UTM centroid
-                    eastings = [g['gps']['utm_easting'] for g in self.gcps if 'utm_easting' in g.get('gps', {})]
-                    northings = [g['gps']['utm_northing'] for g in self.gcps if 'utm_northing' in g.get('gps', {})]
+                    eastings = [
+                        g["gps"]["utm_easting"]
+                        for g in self.gcps
+                        if "utm_easting" in g.get("gps", {})
+                    ]
+                    northings = [
+                        g["gps"]["utm_northing"]
+                        for g in self.gcps
+                        if "utm_northing" in g.get("gps", {})
+                    ]
                     if eastings and northings:
                         self.reference_utm_easting = sum(eastings) / len(eastings)
                         self.reference_utm_northing = sum(northings) / len(northings)
                         # Also compute GPS reference for compatibility
                         if self.coord_converter:
-                            self.coord_converter.set_reference_utm(self.reference_utm_easting, self.reference_utm_northing)
+                            self.coord_converter.set_reference_utm(
+                                self.reference_utm_easting, self.reference_utm_northing
+                            )
                             self.reference_lat = self.coord_converter._ref_lat
                             self.reference_lon = self.coord_converter._ref_lon
 
                 # Fall back to GPS centroid
                 if self.reference_lat is None:
-                    lats = [g['gps']['latitude'] for g in self.gcps]
-                    lons = [g['gps']['longitude'] for g in self.gcps]
+                    lats = [g["gps"]["latitude"] for g in self.gcps]
+                    lons = [g["gps"]["longitude"] for g in self.gcps]
                     self.reference_lat = sum(lats) / len(lats)
                     self.reference_lon = sum(lons) / len(lons)
 
         # Set up the coordinate converter reference point
         if self.coord_converter and self.reference_lat is not None:
             if self.reference_utm_easting is not None:
-                self.coord_converter.set_reference_utm(self.reference_utm_easting, self.reference_utm_northing)
+                self.coord_converter.set_reference_utm(
+                    self.reference_utm_easting, self.reference_utm_northing
+                )
             else:
                 self.coord_converter.set_reference_gps(self.reference_lat, self.reference_lon)
 
@@ -1201,20 +1228,20 @@ class GCPCaptureWebSession:
         local_points = []
 
         for gcp in self.gcps:
-            u, v = gcp['image']['u'], gcp['image']['v']
+            u, v = gcp["image"]["u"], gcp["image"]["v"]
             image_points.append([u, v])
 
             # Use the unified converter if available (handles both UTM and GPS)
             if self.coord_converter:
                 # Build point dict for converter
-                point = {'latitude': gcp['gps']['latitude'], 'longitude': gcp['gps']['longitude']}
-                if 'utm_easting' in gcp['gps']:
-                    point['utm_easting'] = gcp['gps']['utm_easting']
-                    point['utm_northing'] = gcp['gps']['utm_northing']
+                point = {"latitude": gcp["gps"]["latitude"], "longitude": gcp["gps"]["longitude"]}
+                if "utm_easting" in gcp["gps"]:
+                    point["utm_easting"] = gcp["gps"]["utm_easting"]
+                    point["utm_northing"] = gcp["gps"]["utm_northing"]
                 x, y = self.coord_converter.convert_point(point)
             else:
                 # Fall back to equirectangular
-                lat, lon = gcp['gps']['latitude'], gcp['gps']['longitude']
+                lat, lon = gcp["gps"]["latitude"], gcp["gps"]["longitude"]
                 x, y = gps_to_local_xy(self.reference_lat, self.reference_lon, lat, lon)
 
             local_points.append([x, y])
@@ -1223,26 +1250,26 @@ class GCPCaptureWebSession:
         local_points = np.array(local_points, dtype=np.float32)
 
         # Compute homography with RANSAC
-        H, mask = cv2.findHomography(local_points, image_points, cv2.RANSAC, RANSAC_REPROJ_THRESHOLD)
+        H, mask = cv2.findHomography(
+            local_points, image_points, cv2.RANSAC, RANSAC_REPROJ_THRESHOLD
+        )
 
         if H is None:
             self.current_homography = None
             self.last_reproj_errors = []
             self.inlier_mask = None
             return {
-                'available': True,
-                'num_gcps': len(self.gcps),
-                'errors': [],
-                'message': 'Failed to compute homography'
+                "available": True,
+                "num_gcps": len(self.gcps),
+                "errors": [],
+                "message": "Failed to compute homography",
             }
 
         self.current_homography = H
         self.inlier_mask = mask.ravel().tolist() if mask is not None else [1] * len(self.gcps)
 
         # Calculate reprojection errors for ALL points
-        projected = cv2.perspectiveTransform(
-            local_points.reshape(-1, 1, 2), H
-        ).reshape(-1, 2)
+        projected = cv2.perspectiveTransform(local_points.reshape(-1, 1, 2), H).reshape(-1, 2)
 
         errors = np.linalg.norm(projected - image_points, axis=1)
         self.last_reproj_errors = errors.tolist()
@@ -1254,38 +1281,46 @@ class GCPCaptureWebSession:
         # Build per-GCP error info
         gcp_errors = []
         for i, (gcp, error, is_inlier) in enumerate(zip(self.gcps, errors, self.inlier_mask)):
-            status = 'good' if error < REPROJ_ERROR_GOOD else 'warning' if error < REPROJ_ERROR_WARNING else 'bad'
-            gcp_errors.append({
-                'index': i,
-                'description': gcp.get('metadata', {}).get('description', f'GCP {i+1}'),
-                'error_px': float(error),
-                'is_inlier': bool(is_inlier),
-                'status': status
-            })
+            status = (
+                "good"
+                if error < REPROJ_ERROR_GOOD
+                else "warning"
+                if error < REPROJ_ERROR_WARNING
+                else "bad"
+            )
+            gcp_errors.append(
+                {
+                    "index": i,
+                    "description": gcp.get("metadata", {}).get("description", f"GCP {i + 1}"),
+                    "error_px": float(error),
+                    "is_inlier": bool(is_inlier),
+                    "status": status,
+                }
+            )
 
         # Sort by error (highest first) for outlier identification
-        sorted_by_error = sorted(gcp_errors, key=lambda x: x['error_px'], reverse=True)
+        sorted_by_error = sorted(gcp_errors, key=lambda x: x["error_px"], reverse=True)
 
         return {
-            'available': True,
-            'num_gcps': len(self.gcps),
-            'num_inliers': num_inliers,
-            'inlier_ratio': num_inliers / len(self.gcps),
-            'mean_error_px': float(np.mean(errors)),
-            'max_error_px': float(np.max(errors)),
-            'inlier_mean_error_px': float(np.mean(inlier_errors)) if len(inlier_errors) > 0 else 0,
-            'errors': gcp_errors,
-            'outliers': [e for e in sorted_by_error if not e['is_inlier']],
-            'worst_gcps': sorted_by_error[:3],
-            'thresholds': {
-                'good': REPROJ_ERROR_GOOD,
-                'warning': REPROJ_ERROR_WARNING,
-                'bad': REPROJ_ERROR_BAD,
-                'ransac': RANSAC_REPROJ_THRESHOLD
-            }
+            "available": True,
+            "num_gcps": len(self.gcps),
+            "num_inliers": num_inliers,
+            "inlier_ratio": num_inliers / len(self.gcps),
+            "mean_error_px": float(np.mean(errors)),
+            "max_error_px": float(np.max(errors)),
+            "inlier_mean_error_px": float(np.mean(inlier_errors)) if len(inlier_errors) > 0 else 0,
+            "errors": gcp_errors,
+            "outliers": [e for e in sorted_by_error if not e["is_inlier"]],
+            "worst_gcps": sorted_by_error[:3],
+            "thresholds": {
+                "good": REPROJ_ERROR_GOOD,
+                "warning": REPROJ_ERROR_WARNING,
+                "bad": REPROJ_ERROR_BAD,
+                "ransac": RANSAC_REPROJ_THRESHOLD,
+            },
         }
 
-    def get_outliers(self) -> List[int]:
+    def get_outliers(self) -> list[int]:
         """
         Get indices of GCPs marked as outliers by RANSAC.
 
@@ -1316,7 +1351,7 @@ class GCPCaptureWebSession:
 
         return outliers
 
-    def remove_outliers(self) -> Dict:
+    def remove_outliers(self) -> dict:
         """
         Remove all GCPs marked as outliers by RANSAC.
 
@@ -1330,17 +1365,13 @@ class GCPCaptureWebSession:
         outlier_indices = self.get_outliers()
 
         if not outlier_indices:
-            return {
-                'removed_count': 0,
-                'removed_indices': [],
-                'remaining_gcps': len(self.gcps)
-            }
+            return {"removed_count": 0, "removed_indices": [], "remaining_gcps": len(self.gcps)}
 
         # Remove in reverse order to preserve indices
         removed_descriptions = []
         for i in sorted(outlier_indices, reverse=True):
             if i < len(self.gcps):
-                desc = self.gcps[i].get('metadata', {}).get('description', f'GCP {i+1}')
+                desc = self.gcps[i].get("metadata", {}).get("description", f"GCP {i + 1}")
                 removed_descriptions.append(desc)
                 self.gcps.pop(i)
 
@@ -1348,16 +1379,21 @@ class GCPCaptureWebSession:
         self.update_homography()
 
         return {
-            'removed_count': len(outlier_indices),
-            'removed_indices': outlier_indices,
-            'removed_descriptions': removed_descriptions,
-            'remaining_gcps': len(self.gcps)
+            "removed_count": len(outlier_indices),
+            "removed_indices": outlier_indices,
+            "removed_descriptions": removed_descriptions,
+            "remaining_gcps": len(self.gcps),
         }
 
     def predict_new_gcp_error(
-        self, u: float, v: float, lat: float, lon: float,
-        utm_easting: float = None, utm_northing: float = None
-    ) -> Dict:
+        self,
+        u: float,
+        v: float,
+        lat: float,
+        lon: float,
+        utm_easting: float = None,
+        utm_northing: float = None,
+    ) -> dict:
         """
         Predict reprojection error for a potential new GCP before adding it.
 
@@ -1380,30 +1416,21 @@ class GCPCaptureWebSession:
                 - message: Human-readable assessment
         """
         if not COORDINATE_CONVERTER_AVAILABLE:
-            return {
-                'available': False,
-                'message': 'Coordinate converter not available'
-            }
+            return {"available": False, "message": "Coordinate converter not available"}
 
         if self.current_homography is None:
-            return {
-                'available': False,
-                'message': 'Need at least 4 GCPs to predict error'
-            }
+            return {"available": False, "message": "Need at least 4 GCPs to predict error"}
 
         if self.reference_lat is None or self.reference_lon is None:
-            return {
-                'available': False,
-                'message': 'Reference point not set'
-            }
+            return {"available": False, "message": "Reference point not set"}
 
         try:
             # Convert to local coordinates using the unified converter if available
             if self.coord_converter:
-                point = {'latitude': lat, 'longitude': lon}
+                point = {"latitude": lat, "longitude": lon}
                 if utm_easting is not None and utm_northing is not None:
-                    point['utm_easting'] = utm_easting
-                    point['utm_northing'] = utm_northing
+                    point["utm_easting"] = utm_easting
+                    point["utm_northing"] = utm_northing
                 x, y = self.coord_converter.convert_point(point)
             else:
                 # Fall back to equirectangular
@@ -1416,43 +1443,48 @@ class GCPCaptureWebSession:
             ).reshape(2)
 
             # Calculate error
-            error = float(np.sqrt((projected[0] - u)**2 + (projected[1] - v)**2))
+            error = float(np.sqrt((projected[0] - u) ** 2 + (projected[1] - v) ** 2))
 
             # Determine status
             if error < REPROJ_ERROR_GOOD:
-                status = 'good'
-                message = f'Good fit ({error:.1f}px)'
+                status = "good"
+                message = f"Good fit ({error:.1f}px)"
             elif error < REPROJ_ERROR_WARNING:
-                status = 'warning'
-                message = f'Moderate error ({error:.1f}px) - consider verifying coordinates'
+                status = "warning"
+                message = f"Moderate error ({error:.1f}px) - consider verifying coordinates"
             else:
-                status = 'bad'
-                message = f'High error ({error:.1f}px) - likely outlier, verify GPS and pixel position'
+                status = "bad"
+                message = (
+                    f"High error ({error:.1f}px) - likely outlier, verify GPS and pixel position"
+                )
 
             return {
-                'available': True,
-                'predicted_error_px': error,
-                'status': status,
-                'message': message,
-                'thresholds': {
-                    'good': REPROJ_ERROR_GOOD,
-                    'warning': REPROJ_ERROR_WARNING,
-                    'bad': REPROJ_ERROR_BAD
-                }
+                "available": True,
+                "predicted_error_px": error,
+                "status": status,
+                "message": message,
+                "thresholds": {
+                    "good": REPROJ_ERROR_GOOD,
+                    "warning": REPROJ_ERROR_WARNING,
+                    "bad": REPROJ_ERROR_BAD,
+                },
             }
 
         except Exception as e:
-            return {
-                'available': False,
-                'message': f'Prediction failed: {str(e)}'
-            }
+            return {"available": False, "message": f"Prediction failed: {e!s}"}
 
     def add_gcp(
-        self, u: float, v: float, lat: float, lon: float,
-        description: str = "", accuracy: str = "medium",
-        utm_easting: float = None, utm_northing: float = None,
-        utm_crs: str = None
-    ) -> Dict:
+        self,
+        u: float,
+        v: float,
+        lat: float,
+        lon: float,
+        description: str = "",
+        accuracy: str = "medium",
+        utm_easting: float = None,
+        utm_northing: float = None,
+        utm_crs: str = None,
+    ) -> dict:
         """
         Add a new GCP with optional UTM coordinates.
 
@@ -1471,26 +1503,26 @@ class GCPCaptureWebSession:
             The created GCP dictionary.
         """
         gcp = {
-            'gps': {
-                'latitude': lat,
-                'longitude': lon,
+            "gps": {
+                "latitude": lat,
+                "longitude": lon,
             },
-            'image': {
-                'u': u,
-                'v': v,
+            "image": {
+                "u": u,
+                "v": v,
             },
-            'metadata': {
-                'description': description or f"GCP {len(self.gcps) + 1}",
-                'accuracy': accuracy,
-                'timestamp': datetime.now().isoformat(),
-            }
+            "metadata": {
+                "description": description or f"GCP {len(self.gcps) + 1}",
+                "accuracy": accuracy,
+                "timestamp": datetime.now().isoformat(),
+            },
         }
 
         # Add UTM coordinates if provided
         if utm_easting is not None and utm_northing is not None:
-            gcp['gps']['utm_easting'] = utm_easting
-            gcp['gps']['utm_northing'] = utm_northing
-            gcp['gps']['utm_crs'] = utm_crs or self.utm_crs
+            gcp["gps"]["utm_easting"] = utm_easting
+            gcp["gps"]["utm_northing"] = utm_northing
+            gcp["gps"]["utm_crs"] = utm_crs or self.utm_crs
 
         self.gcps.append(gcp)
         return gcp
@@ -1505,8 +1537,8 @@ class GCPCaptureWebSession:
     def update_gcp_position(self, index: int, u: float, v: float) -> bool:
         """Update the pixel position of a GCP (for drag-to-reposition)."""
         if 0 <= index < len(self.gcps):
-            self.gcps[index]['image']['u'] = u
-            self.gcps[index]['image']['v'] = v
+            self.gcps[index]["image"]["u"] = u
+            self.gcps[index]["image"]["v"] = v
             return True
         return False
 
@@ -1527,34 +1559,34 @@ class GCPCaptureWebSession:
         try:
             data = yaml.safe_load(yaml_content)
         except yaml.YAMLError as e:
-            return {'gcps_loaded': 0, 'warnings': [f'YAML parse error: {e}'], 'loaded_ptz': None}
+            return {"gcps_loaded": 0, "warnings": [f"YAML parse error: {e}"], "loaded_ptz": None}
 
         # Navigate to GCPs
         gcps_data = None
-        if 'homography' in data:
-            if 'feature_match' in data['homography']:
-                fm = data['homography']['feature_match']
-                gcps_data = fm.get('ground_control_points', [])
+        if "homography" in data:
+            if "feature_match" in data["homography"]:
+                fm = data["homography"]["feature_match"]
+                gcps_data = fm.get("ground_control_points", [])
 
                 # Also extract camera context if present
-                if 'camera_capture_context' in fm:
-                    ctx = fm['camera_capture_context']
-                    if ctx.get('camera_name'):
-                        loaded_camera_name = ctx['camera_name']
+                if "camera_capture_context" in fm:
+                    ctx = fm["camera_capture_context"]
+                    if ctx.get("camera_name"):
+                        loaded_camera_name = ctx["camera_name"]
                         self.camera_name = loaded_camera_name
-                    if 'ptz_position' in ctx:
-                        loaded_ptz = ctx['ptz_position']
+                    if "ptz_position" in ctx:
+                        loaded_ptz = ctx["ptz_position"]
                         self.ptz_status = loaded_ptz
-                    if ctx.get('capture_timestamp'):
-                        self.capture_timestamp = ctx['capture_timestamp']
+                    if ctx.get("capture_timestamp"):
+                        self.capture_timestamp = ctx["capture_timestamp"]
                     # Check coordinate system - old files won't have this field
-                    coordinate_system = ctx.get('coordinate_system')
+                    coordinate_system = ctx.get("coordinate_system")
                     # Get source image dimensions for scaling
-                    loaded_image_width = ctx.get('image_width')
-                    loaded_image_height = ctx.get('image_height')
+                    loaded_image_width = ctx.get("image_width")
+                    loaded_image_height = ctx.get("image_height")
 
         if not gcps_data:
-            return {'gcps_loaded': 0, 'warnings': ['No GCPs found in YAML'], 'loaded_ptz': None}
+            return {"gcps_loaded": 0, "warnings": ["No GCPs found in YAML"], "loaded_ptz": None}
 
         # Set session coordinate system based on loaded data
         self.coordinate_system = coordinate_system  # None for legacy, 'image_v' for new
@@ -1562,9 +1594,9 @@ class GCPCaptureWebSession:
         # Warn about legacy format
         if coordinate_system is None:
             warnings.append(
-                'Legacy format detected (no coordinate_system flag). '
-                'V coordinates are treated as Leaflet Y values. '
-                'Save will convert to standard image_v format.'
+                "Legacy format detected (no coordinate_system flag). "
+                "V coordinates are treated as Leaflet Y values. "
+                "Save will convert to standard image_v format."
             )
 
         # Check for resolution mismatch and calculate scale factors
@@ -1575,50 +1607,54 @@ class GCPCaptureWebSession:
                 scale_u = self.frame_width / loaded_image_width
                 scale_v = self.frame_height / loaded_image_height
                 warnings.append(
-                    f'Resolution mismatch: GCPs were captured at {loaded_image_width}x{loaded_image_height}, '
-                    f'current frame is {self.frame_width}x{self.frame_height}. '
-                    f'Scaling coordinates by ({scale_u:.3f}, {scale_v:.3f}).'
+                    f"Resolution mismatch: GCPs were captured at {loaded_image_width}x{loaded_image_height}, "
+                    f"current frame is {self.frame_width}x{self.frame_height}. "
+                    f"Scaling coordinates by ({scale_u:.3f}, {scale_v:.3f})."
                 )
 
         # Load GCPs
         loaded_count = 0
         for gcp in gcps_data:
             try:
-                lat = gcp['gps']['latitude']
-                lon = gcp['gps']['longitude']
-                u = gcp['image']['u'] * scale_u
-                v = gcp['image']['v'] * scale_v
-                desc = gcp.get('metadata', {}).get('description', f'GCP {len(self.gcps) + 1}')
-                accuracy = gcp.get('metadata', {}).get('accuracy', 'medium')
+                lat = gcp["gps"]["latitude"]
+                lon = gcp["gps"]["longitude"]
+                u = gcp["image"]["u"] * scale_u
+                v = gcp["image"]["v"] * scale_v
+                desc = gcp.get("metadata", {}).get("description", f"GCP {len(self.gcps) + 1}")
+                accuracy = gcp.get("metadata", {}).get("accuracy", "medium")
 
                 # Build GPS dict with latitude/longitude
-                gps_data = {'latitude': lat, 'longitude': lon}
+                gps_data = {"latitude": lat, "longitude": lon}
 
                 # Preserve UTM coordinates if present
-                if 'utm_easting' in gcp['gps']:
-                    gps_data['utm_easting'] = gcp['gps']['utm_easting']
-                    gps_data['utm_northing'] = gcp['gps']['utm_northing']
-                    gps_data['utm_crs'] = gcp['gps'].get('utm_crs', self.utm_crs)
+                if "utm_easting" in gcp["gps"]:
+                    gps_data["utm_easting"] = gcp["gps"]["utm_easting"]
+                    gps_data["utm_northing"] = gcp["gps"]["utm_northing"]
+                    gps_data["utm_crs"] = gcp["gps"].get("utm_crs", self.utm_crs)
 
-                self.gcps.append({
-                    'gps': gps_data,
-                    'image': {'u': u, 'v': v},
-                    'metadata': {
-                        'description': desc,
-                        'accuracy': accuracy,
-                        'timestamp': gcp.get('metadata', {}).get('timestamp', datetime.now().isoformat())
+                self.gcps.append(
+                    {
+                        "gps": gps_data,
+                        "image": {"u": u, "v": v},
+                        "metadata": {
+                            "description": desc,
+                            "accuracy": accuracy,
+                            "timestamp": gcp.get("metadata", {}).get(
+                                "timestamp", datetime.now().isoformat()
+                            ),
+                        },
                     }
-                })
+                )
                 loaded_count += 1
             except (KeyError, TypeError) as e:
-                warnings.append(f'Skipped invalid GCP: {e}')
+                warnings.append(f"Skipped invalid GCP: {e}")
 
         return {
-            'gcps_loaded': loaded_count,
-            'warnings': warnings,
-            'loaded_ptz': loaded_ptz,
-            'loaded_camera_name': loaded_camera_name,
-            'coordinate_system': coordinate_system
+            "gcps_loaded": loaded_count,
+            "warnings": warnings,
+            "loaded_ptz": loaded_ptz,
+            "loaded_camera_name": loaded_camera_name,
+            "coordinate_system": coordinate_system,
         }
 
     def move_camera_to_ptz(self, ptz_position: dict, wait_time: float = 3.0) -> dict:
@@ -1635,23 +1671,25 @@ class GCPCaptureWebSession:
         import time
 
         if not CAMERA_CONFIG_AVAILABLE:
-            return {'success': False, 'message': 'Camera config not available'}
+            return {"success": False, "message": "Camera config not available"}
 
         cam_info = get_camera_by_name(self.camera_name)
         if not cam_info:
-            return {'success': False, 'message': f"Camera '{self.camera_name}' not found in config"}
+            return {"success": False, "message": f"Camera '{self.camera_name}' not found in config"}
 
         try:
             from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-            ptz = HikvisionPTZ(cam_info['ip'], USERNAME, PASSWORD)
+            ptz = HikvisionPTZ(cam_info["ip"], USERNAME, PASSWORD)
 
             # Move to absolute position
-            ptz.send_ptz_return({
-                'pan': ptz_position.get('pan', 0),
-                'tilt': ptz_position.get('tilt', 0),
-                'zoom': ptz_position.get('zoom', 1.0)
-            })
+            ptz.send_ptz_return(
+                {
+                    "pan": ptz_position.get("pan", 0),
+                    "tilt": ptz_position.get("tilt", 0),
+                    "zoom": ptz_position.get("zoom", 1.0),
+                }
+            )
 
             # Wait for camera to reach position
             time.sleep(wait_time)
@@ -1660,14 +1698,14 @@ class GCPCaptureWebSession:
             self.ptz_status = ptz_position
 
             return {
-                'success': True,
-                'message': f"Camera moved to P={ptz_position.get('pan', 0):.1f} T={ptz_position.get('tilt', 0):.1f} Z={ptz_position.get('zoom', 1):.1f}x"
+                "success": True,
+                "message": f"Camera moved to P={ptz_position.get('pan', 0):.1f} T={ptz_position.get('tilt', 0):.1f} Z={ptz_position.get('zoom', 1):.1f}x",
             }
 
         except ImportError as e:
-            return {'success': False, 'message': f'PTZ control not available: {e}'}
+            return {"success": False, "message": f"PTZ control not available: {e}"}
         except Exception as e:
-            return {'success': False, 'message': f'Failed to move camera: {e}'}
+            return {"success": False, "message": f"Failed to move camera: {e}"}
 
     def generate_yaml(self) -> str:
         """Generate YAML config content."""
@@ -1689,7 +1727,7 @@ class GCPCaptureWebSession:
             "",
             "    # Camera Capture Context",
             "    camera_capture_context:",
-            f"      camera_name: \"{self.camera_name}\"",
+            f'      camera_name: "{self.camera_name}"',
             f"      image_width: {self.frame_width}",
             f"      image_height: {self.frame_height}",
         ]
@@ -1698,54 +1736,62 @@ class GCPCaptureWebSession:
         if CAMERA_CONFIG_AVAILABLE and GPS_CONVERTER_AVAILABLE:
             try:
                 cam_info = get_camera_by_name(self.camera_name)
-                if cam_info and 'lat' in cam_info and 'lon' in cam_info:
-                    camera_lat = dms_to_dd(cam_info['lat'])
-                    camera_lon = dms_to_dd(cam_info['lon'])
-                    lines.extend([
-                        "      camera_gps:",
-                        f"        latitude: {camera_lat}",
-                        f"        longitude: {camera_lon}",
-                    ])
+                if cam_info and "lat" in cam_info and "lon" in cam_info:
+                    camera_lat = dms_to_dd(cam_info["lat"])
+                    camera_lon = dms_to_dd(cam_info["lon"])
+                    lines.extend(
+                        [
+                            "      camera_gps:",
+                            f"        latitude: {camera_lat}",
+                            f"        longitude: {camera_lon}",
+                        ]
+                    )
             except Exception:
                 pass
 
         if self.ptz_status:
-            lines.extend([
-                "      ptz_position:",
-                f"        pan: {self.ptz_status.get('pan', 0):.1f}",
-                f"        tilt: {self.ptz_status.get('tilt', 0):.1f}",
-                f"        zoom: {self.ptz_status.get('zoom', 1.0):.1f}",
-            ])
+            lines.extend(
+                [
+                    "      ptz_position:",
+                    f"        pan: {self.ptz_status.get('pan', 0):.1f}",
+                    f"        tilt: {self.ptz_status.get('tilt', 0):.1f}",
+                    f"        zoom: {self.ptz_status.get('zoom', 1.0):.1f}",
+                ]
+            )
 
         if self.intrinsics:
-            lines.extend([
-                "      intrinsics:",
-                f"        focal_length_px: {self.intrinsics['focal_length_px']:.2f}",
-                "        principal_point:",
-                f"          cx: {self.intrinsics['principal_point']['cx']:.1f}",
-                f"          cy: {self.intrinsics['principal_point']['cy']:.1f}",
-            ])
+            lines.extend(
+                [
+                    "      intrinsics:",
+                    f"        focal_length_px: {self.intrinsics['focal_length_px']:.2f}",
+                    "        principal_point:",
+                    f"          cx: {self.intrinsics['principal_point']['cx']:.1f}",
+                    f"          cy: {self.intrinsics['principal_point']['cy']:.1f}",
+                ]
+            )
 
         notes = ""
         if self.map_first_mode and self.kml_file_name:
             notes = f"Generated from KML using --map-first mode (source: {self.kml_file_name})"
 
-        lines.extend([
-            f"      capture_timestamp: \"{self.capture_timestamp}\"",
-            "      # Coordinate system: image_v means V=0 at top (standard image coords)",
-            "      # Old files without this field used leaflet_y format (V=0 at bottom)",
-            "      coordinate_system: image_v",
-            f"      notes: \"{notes}\"",
-            "",
-            "    # Ground Control Points",
-            "    ground_control_points:",
-        ])
+        lines.extend(
+            [
+                f'      capture_timestamp: "{self.capture_timestamp}"',
+                "      # Coordinate system: image_v means V=0 at top (standard image coords)",
+                "      # Old files without this field used leaflet_y format (V=0 at bottom)",
+                "      coordinate_system: image_v",
+                f'      notes: "{notes}"',
+                "",
+                "    # Ground Control Points",
+                "    ground_control_points:",
+            ]
+        )
 
         for i, gcp in enumerate(self.gcps):
-            lat = gcp['gps']['latitude']
-            lon = gcp['gps']['longitude']
-            u = gcp['image']['u']
-            v = gcp['image']['v']
+            lat = gcp["gps"]["latitude"]
+            lon = gcp["gps"]["longitude"]
+            u = gcp["image"]["u"]
+            v = gcp["image"]["v"]
 
             # Convert V to image_v format if loaded from legacy (leaflet_y) format
             # Legacy: v was stored as leaflet_y (0 at bottom)
@@ -1754,45 +1800,49 @@ class GCPCaptureWebSession:
             if self.coordinate_system is None:  # Legacy format
                 v = self.frame_height - v
 
-            desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
-            accuracy = gcp.get('metadata', {}).get('accuracy', 'medium')
-            timestamp = gcp.get('metadata', {}).get('timestamp', '')
-            source = gcp.get('metadata', {}).get('source', 'manual')
+            desc = gcp.get("metadata", {}).get("description", f"GCP {i + 1}")
+            accuracy = gcp.get("metadata", {}).get("accuracy", "medium")
+            timestamp = gcp.get("metadata", {}).get("timestamp", "")
+            source = gcp.get("metadata", {}).get("source", "manual")
 
             gcp_lines = [
-                f"      # GCP {i+1}: {desc}",
+                f"      # GCP {i + 1}: {desc}",
                 "      - gps:",
                 f"          latitude: {lat}",
                 f"          longitude: {lon}",
             ]
 
             # Include UTM coordinates if available
-            if 'utm_easting' in gcp['gps'] and 'utm_northing' in gcp['gps']:
-                utm_e = gcp['gps']['utm_easting']
-                utm_n = gcp['gps']['utm_northing']
-                utm_crs = gcp['gps'].get('utm_crs', self.utm_crs)
-                gcp_lines.extend([
-                    f"          utm_easting: {utm_e}",
-                    f"          utm_northing: {utm_n}",
-                    f"          utm_crs: \"{utm_crs}\"",
-                ])
+            if "utm_easting" in gcp["gps"] and "utm_northing" in gcp["gps"]:
+                utm_e = gcp["gps"]["utm_easting"]
+                utm_n = gcp["gps"]["utm_northing"]
+                utm_crs = gcp["gps"].get("utm_crs", self.utm_crs)
+                gcp_lines.extend(
+                    [
+                        f"          utm_easting: {utm_e}",
+                        f"          utm_northing: {utm_n}",
+                        f'          utm_crs: "{utm_crs}"',
+                    ]
+                )
 
-            gcp_lines.extend([
-                "        image:",
-                f"          u: {u}",
-                f"          v: {v}",
-                "        metadata:",
-                f"          description: \"{desc}\"",
-                f"          accuracy: {accuracy}",
-                f"          timestamp: \"{timestamp}\"",
-                f"          source: {source}",
-                "",
-            ])
+            gcp_lines.extend(
+                [
+                    "        image:",
+                    f"          u: {u}",
+                    f"          v: {v}",
+                    "        metadata:",
+                    f'          description: "{desc}"',
+                    f"          accuracy: {accuracy}",
+                    f'          timestamp: "{timestamp}"',
+                    f"          source: {source}",
+                    "",
+                ]
+            )
             lines.extend(gcp_lines)
 
         return "\n".join(lines)
 
-    def generate_gcps_from_map_first(self, projected_points_data: List[Dict]) -> List[Dict]:
+    def generate_gcps_from_map_first(self, projected_points_data: list[dict]) -> list[dict]:
         """
         Generate GCP list from map-first projected points.
 
@@ -1807,11 +1857,11 @@ class GCPCaptureWebSession:
 
         for point_data in projected_points_data:
             # Skip non-visible (discarded) points
-            if not point_data.get('visible', True):
+            if not point_data.get("visible", True):
                 continue
 
             # Get KML data for this point
-            kml_index = point_data.get('kml_index', -1)
+            kml_index = point_data.get("kml_index", -1)
             if kml_index < 0 or kml_index >= len(self.kml_points):
                 continue
 
@@ -1819,20 +1869,20 @@ class GCPCaptureWebSession:
 
             # Create GCP entry
             gcp = {
-                'gps': {
-                    'latitude': kml_point['latitude'],
-                    'longitude': kml_point['longitude'],
+                "gps": {
+                    "latitude": kml_point["latitude"],
+                    "longitude": kml_point["longitude"],
                 },
-                'image': {
-                    'u': float(point_data['pixel_u']),
-                    'v': float(point_data['pixel_v']),
+                "image": {
+                    "u": float(point_data["pixel_u"]),
+                    "v": float(point_data["pixel_v"]),
                 },
-                'metadata': {
-                    'description': kml_point.get('name', f"Point {kml_index}"),
-                    'accuracy': 'medium',
-                    'timestamp': datetime.now().isoformat(),
-                    'source': 'kml'
-                }
+                "metadata": {
+                    "description": kml_point.get("name", f"Point {kml_index}"),
+                    "accuracy": "medium",
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "kml",
+                },
             }
             gcps.append(gcp)
 
@@ -4598,41 +4648,45 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        if parsed.path == '/':
+        if parsed.path == "/":
             # Serve main HTML
-            html = generate_capture_html(self.session, f'/{self.frame_filename}')
+            html = generate_capture_html(self.session, f"/{self.frame_filename}")
             self.send_response(200)
-            self.send_header('Content-type', 'text/html')
+            self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(html.encode())
 
-        elif parsed.path == f'/{self.frame_filename}':
+        elif parsed.path == f"/{self.frame_filename}":
             # Serve the frame image
             frame_path = os.path.join(self.temp_dir, self.frame_filename)
-            with open(frame_path, 'rb') as f:
+            with open(frame_path, "rb") as f:
                 content = f.read()
             self.send_response(200)
-            self.send_header('Content-type', 'image/jpeg')
-            self.send_header('Content-Length', len(content))
+            self.send_header("Content-type", "image/jpeg")
+            self.send_header("Content-Length", len(content))
             self.end_headers()
             self.wfile.write(content)
 
-        elif parsed.path == '/api/save':
+        elif parsed.path == "/api/save":
             # Generate and serve YAML
             yaml_content = self.session.generate_yaml()
 
             # Save to file if output path specified
             if self.output_path:
-                with open(self.output_path, 'w') as f:
+                with open(self.output_path, "w") as f:
                     f.write(yaml_content)
                 print(f"\nSaved configuration to: {self.output_path}")
                 print(f"  GCPs: {len(self.session.gcps)}")
 
             # Serve as download
-            filename = os.path.basename(self.output_path) if self.output_path else f"gcps_{self.session.camera_name}.yaml"
+            filename = (
+                os.path.basename(self.output_path)
+                if self.output_path
+                else f"gcps_{self.session.camera_name}.yaml"
+            )
             self.send_response(200)
-            self.send_header('Content-type', 'application/x-yaml')
-            self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+            self.send_header("Content-type", "application/x-yaml")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.end_headers()
             self.wfile.write(yaml_content.encode())
 
@@ -4641,162 +4695,170 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        content_length = int(self.headers['Content-Length'])
+        content_length = int(self.headers["Content-Length"])
         post_data = self.rfile.read(content_length)
 
-        if parsed.path == '/api/delete_gcp':
+        if parsed.path == "/api/delete_gcp":
             data = json.loads(post_data)
-            self.session.remove_gcp(data['index'])
-            self.send_json_response({
-                'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution(),
-                'homography': self.session.update_homography()
-            })
+            self.session.remove_gcp(data["index"])
+            self.send_json_response(
+                {
+                    "gcps": self.session.gcps,
+                    "distribution": self.session.calculate_distribution(),
+                    "homography": self.session.update_homography(),
+                }
+            )
 
-        elif parsed.path == '/api/clear_gcps':
+        elif parsed.path == "/api/clear_gcps":
             self.session.gcps.clear()
             self.session.current_homography = None
             self.session.last_reproj_errors = []
             self.session.inlier_mask = None
-            self.send_json_response({
-                'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution(),
-                'homography': self.session.update_homography()
-            })
+            self.send_json_response(
+                {
+                    "gcps": self.session.gcps,
+                    "distribution": self.session.calculate_distribution(),
+                    "homography": self.session.update_homography(),
+                }
+            )
 
-        elif parsed.path == '/api/update_gcp_position':
+        elif parsed.path == "/api/update_gcp_position":
             data = json.loads(post_data)
             success = self.session.update_gcp_position(
-                index=data['index'],
-                u=data['u'],
-                v=data['v']
+                index=data["index"], u=data["u"], v=data["v"]
             )
-            self.send_json_response({
-                'success': success,
-                'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution(),
-                'homography': self.session.update_homography()
-            })
+            self.send_json_response(
+                {
+                    "success": success,
+                    "gcps": self.session.gcps,
+                    "distribution": self.session.calculate_distribution(),
+                    "homography": self.session.update_homography(),
+                }
+            )
 
-        elif parsed.path == '/api/remove_outliers':
+        elif parsed.path == "/api/remove_outliers":
             result = self.session.remove_outliers()
-            self.send_json_response({
-                'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution(),
-                'homography': self.session.update_homography(),
-                'removed_count': result['removed_count'],
-                'removed_indices': result['removed_indices'],
-                'removed_descriptions': result.get('removed_descriptions', []),
-                'remaining_gcps': result['remaining_gcps']
-            })
+            self.send_json_response(
+                {
+                    "gcps": self.session.gcps,
+                    "distribution": self.session.calculate_distribution(),
+                    "homography": self.session.update_homography(),
+                    "removed_count": result["removed_count"],
+                    "removed_indices": result["removed_indices"],
+                    "removed_descriptions": result.get("removed_descriptions", []),
+                    "remaining_gcps": result["remaining_gcps"],
+                }
+            )
 
-        elif parsed.path == '/api/predict_error':
+        elif parsed.path == "/api/predict_error":
             data = json.loads(post_data)
             result = self.session.predict_new_gcp_error(
-                u=data['u'],
-                v=data['v'],
-                lat=data['lat'],
-                lon=data['lon'],
-                utm_easting=data.get('utm_easting'),
-                utm_northing=data.get('utm_northing')
+                u=data["u"],
+                v=data["v"],
+                lat=data["lat"],
+                lon=data["lon"],
+                utm_easting=data.get("utm_easting"),
+                utm_northing=data.get("utm_northing"),
             )
             self.send_json_response(result)
 
-        elif parsed.path == '/api/load_yaml':
+        elif parsed.path == "/api/load_yaml":
             data = json.loads(post_data)
             # Store current PTZ before loading
             current_ptz = self.session.ptz_status.copy() if self.session.ptz_status else None
-            result = self.session.load_from_yaml(data['yaml_content'])
-            self.send_json_response({
-                'success': True,
-                'gcps_loaded': result['gcps_loaded'],
-                'warnings': result['warnings'],
-                'gcps': self.session.gcps,
-                'distribution': self.session.calculate_distribution(),
-                'homography': self.session.update_homography(),
-                'loaded_ptz': result.get('loaded_ptz'),
-                'loaded_camera_name': result.get('loaded_camera_name'),
-                'current_ptz': current_ptz,
-                'has_live_camera': self.has_live_camera,
-                'coordinate_system': result.get('coordinate_system')
-            })
+            result = self.session.load_from_yaml(data["yaml_content"])
+            self.send_json_response(
+                {
+                    "success": True,
+                    "gcps_loaded": result["gcps_loaded"],
+                    "warnings": result["warnings"],
+                    "gcps": self.session.gcps,
+                    "distribution": self.session.calculate_distribution(),
+                    "homography": self.session.update_homography(),
+                    "loaded_ptz": result.get("loaded_ptz"),
+                    "loaded_camera_name": result.get("loaded_camera_name"),
+                    "current_ptz": current_ptz,
+                    "has_live_camera": self.has_live_camera,
+                    "coordinate_system": result.get("coordinate_system"),
+                }
+            )
 
-        elif parsed.path == '/api/move_camera':
+        elif parsed.path == "/api/move_camera":
             data = json.loads(post_data)
-            ptz_position = data.get('ptz_position', {})
-            wait_time = data.get('wait_time', 3.0)
+            ptz_position = data.get("ptz_position", {})
+            wait_time = data.get("wait_time", 3.0)
             result = self.session.move_camera_to_ptz(ptz_position, wait_time)
-            self.send_json_response({
-                'success': result['success'],
-                'message': result['message'],
-                'ptz_status': self.session.ptz_status
-            })
+            self.send_json_response(
+                {
+                    "success": result["success"],
+                    "message": result["message"],
+                    "ptz_status": self.session.ptz_status,
+                }
+            )
 
-        elif parsed.path == '/api/convert_kml_to_gcps':
+        elif parsed.path == "/api/convert_kml_to_gcps":
             # Convert KML points to GCPs without saving to file
             try:
                 data = json.loads(post_data)
-                projected_points_data = data.get('projected_points', [])
+                projected_points_data = data.get("projected_points", [])
 
                 if not projected_points_data:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No projected points provided for conversion'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "No projected points provided for conversion"}
+                    )
                     return
 
                 # Generate GCPs from projected points
                 self.session.gcps = self.session.generate_gcps_from_map_first(projected_points_data)
 
                 if not self.session.gcps:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No visible GCPs to convert. All points may have been discarded.'
-                    })
+                    self.send_json_response(
+                        {
+                            "success": False,
+                            "error": "No visible GCPs to convert. All points may have been discarded.",
+                        }
+                    )
                     return
 
                 # Update homography with new GCPs
                 homography_result = self.session.update_homography()
 
-                self.send_json_response({
-                    'success': True,
-                    'gcps_converted': len(self.session.gcps),
-                    'gcps': self.session.gcps,
-                    'distribution': self.session.calculate_distribution(),
-                    'homography': homography_result
-                })
+                self.send_json_response(
+                    {
+                        "success": True,
+                        "gcps_converted": len(self.session.gcps),
+                        "gcps": self.session.gcps,
+                        "distribution": self.session.calculate_distribution(),
+                        "homography": homography_result,
+                    }
+                )
             except json.JSONDecodeError as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Invalid JSON data: {str(e)}'
-                })
+                self.send_json_response({"success": False, "error": f"Invalid JSON data: {e!s}"})
             except Exception as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Conversion failed: {str(e)}'
-                })
+                self.send_json_response({"success": False, "error": f"Conversion failed: {e!s}"})
 
-        elif parsed.path == '/api/export_map_first':
+        elif parsed.path == "/api/export_map_first":
             # Export map-first mode GCPs
             try:
                 data = json.loads(post_data)
-                projected_points_data = data.get('projected_points', [])
+                projected_points_data = data.get("projected_points", [])
 
                 if not projected_points_data:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No projected points provided for export'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "No projected points provided for export"}
+                    )
                     return
 
                 # Generate GCPs from projected points
                 self.session.gcps = self.session.generate_gcps_from_map_first(projected_points_data)
 
                 if not self.session.gcps:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No visible GCPs to export. All points may have been discarded.'
-                    })
+                    self.send_json_response(
+                        {
+                            "success": False,
+                            "error": "No visible GCPs to export. All points may have been discarded.",
+                        }
+                    )
                     return
 
                 # Generate YAML content
@@ -4805,93 +4867,82 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 # Save to file if output path specified
                 if self.output_path:
                     try:
-                        with open(self.output_path, 'w') as f:
+                        with open(self.output_path, "w") as f:
                             f.write(yaml_content)
                         print(f"\nSaved map-first configuration to: {self.output_path}")
                         print(f"  GCPs: {len(self.session.gcps)}")
                         print(f"  Source: {self.session.kml_file_name}")
-                    except IOError as e:
-                        self.send_json_response({
-                            'success': False,
-                            'error': f'Failed to save file: {str(e)}'
-                        })
+                    except OSError as e:
+                        self.send_json_response(
+                            {"success": False, "error": f"Failed to save file: {e!s}"}
+                        )
                         return
 
-                self.send_json_response({
-                    'success': True,
-                    'gcps_saved': len(self.session.gcps),
-                    'yaml_content': yaml_content,
-                    'gcps': self.session.gcps,
-                    'distribution': self.session.calculate_distribution()
-                })
+                self.send_json_response(
+                    {
+                        "success": True,
+                        "gcps_saved": len(self.session.gcps),
+                        "yaml_content": yaml_content,
+                        "gcps": self.session.gcps,
+                        "distribution": self.session.calculate_distribution(),
+                    }
+                )
             except json.JSONDecodeError as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Invalid JSON data: {str(e)}'
-                })
+                self.send_json_response({"success": False, "error": f"Invalid JSON data: {e!s}"})
             except Exception as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Export failed: {str(e)}'
-                })
+                self.send_json_response({"success": False, "error": f"Export failed: {e!s}"})
 
-        elif parsed.path == '/api/update_homography':
+        elif parsed.path == "/api/update_homography":
             # Update homography with new camera parameters and reproject all KML points
             try:
                 data = json.loads(post_data)
 
                 # Extract camera parameters from request
-                camera_lat = data.get('camera_lat')
-                camera_lon = data.get('camera_lon')
-                height_m = data.get('height_m')
-                pan_deg = data.get('pan_deg')
-                tilt_deg = data.get('tilt_deg')
-                image_width = data.get('image_width', 1920)
-                image_height = data.get('image_height', 1080)
-                kml_points = data.get('kml_points', [])
+                camera_lat = data.get("camera_lat")
+                camera_lon = data.get("camera_lon")
+                height_m = data.get("height_m")
+                pan_deg = data.get("pan_deg")
+                tilt_deg = data.get("tilt_deg")
+                image_width = data.get("image_width", 1920)
+                image_height = data.get("image_height", 1080)
+                kml_points = data.get("kml_points", [])
 
                 # Validate required parameters
                 if camera_lat is None or camera_lon is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Missing required camera GPS coordinates'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Missing required camera GPS coordinates"}
+                    )
                     return
 
                 if height_m is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Missing required camera height'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Missing required camera height"}
+                    )
                     return
 
                 if pan_deg is None or tilt_deg is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Missing required pan/tilt angles'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Missing required pan/tilt angles"}
+                    )
                     return
 
                 if not kml_points:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No KML points provided for reprojection'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "No KML points provided for reprojection"}
+                    )
                     return
 
                 # Check if required modules are available
                 if not GPS_CONVERTER_AVAILABLE:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'GPS converter modules not available'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "GPS converter modules not available"}
+                    )
                     return
 
                 if not COORDINATE_CONVERTER_AVAILABLE:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Coordinate converter not available'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Coordinate converter not available"}
+                    )
                     return
 
                 # Get sensor width from camera config or use default
@@ -4900,7 +4951,9 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                     try:
                         cam_config = get_camera_by_name(self.session.camera_name)
                         if cam_config:
-                            sensor_width_mm = cam_config.get('sensor_width_mm', DEFAULT_SENSOR_WIDTH_MM)
+                            sensor_width_mm = cam_config.get(
+                                "sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM
+                            )
                     except Exception:
                         pass
 
@@ -4908,14 +4961,14 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 zoom = 1.0
                 if self.session.height_verification:
                     # Use stored zoom if available
-                    zoom = self.session.height_verification.get('zoom', 1.0)
+                    zoom = self.session.height_verification.get("zoom", 1.0)
 
                 # Compute intrinsic matrix K from zoom level
                 K = CameraGeometry.get_intrinsics(
                     zoom_factor=zoom,
                     W_px=image_width,
                     H_px=image_height,
-                    sensor_width_mm=sensor_width_mm
+                    sensor_width_mm=sensor_width_mm,
                 )
 
                 # Initialize CameraGeometry with image dimensions
@@ -4932,13 +4985,12 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                         pan_deg=pan_deg,
                         tilt_deg=tilt_deg,
                         map_width=640,
-                        map_height=640
+                        map_height=640,
                     )
                 except ValueError as e:
-                    self.send_json_response({
-                        'success': False,
-                        'error': f'Invalid camera parameters: {str(e)}'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": f"Invalid camera parameters: {e!s}"}
+                    )
                     return
 
                 # Load distortion coefficients if available
@@ -4946,10 +4998,10 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                     try:
                         cam_config = get_camera_by_name(self.session.camera_name)
                         if cam_config:
-                            k1 = cam_config.get('k1', 0.0)
-                            k2 = cam_config.get('k2', 0.0)
-                            p1 = cam_config.get('p1', 0.0)
-                            p2 = cam_config.get('p2', 0.0)
+                            k1 = cam_config.get("k1", 0.0)
+                            k2 = cam_config.get("k2", 0.0)
+                            p1 = cam_config.get("p1", 0.0)
+                            p2 = cam_config.get("p2", 0.0)
                             if k1 != 0.0 or k2 != 0.0 or p1 != 0.0 or p2 != 0.0:
                                 geo.set_distortion_coefficients(k1=k1, k2=k2, p1=p1, p2=p2)
                     except Exception:
@@ -4957,13 +5009,17 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
 
                 # Set up coordinate converter for GPS to local XY
                 # Check if any points have UTM coordinates
-                has_utm_points = any('utm_easting' in p and 'utm_northing' in p for p in kml_points)
+                has_utm_points = any("utm_easting" in p and "utm_northing" in p for p in kml_points)
                 utm_converter = None
 
                 if has_utm_points:
                     try:
                         from poc_homography.coordinate_converter import UTMConverter
-                        utm_crs = next((p.get('utm_crs', 'EPSG:25830') for p in kml_points if 'utm_crs' in p), 'EPSG:25830')
+
+                        utm_crs = next(
+                            (p.get("utm_crs", "EPSG:25830") for p in kml_points if "utm_crs" in p),
+                            "EPSG:25830",
+                        )
                         utm_converter = UTMConverter(utm_crs)
                         utm_converter.set_reference(camera_lat, camera_lon)
                     except Exception:
@@ -4973,13 +5029,15 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 projected_points = []
 
                 for point in kml_points:
-                    gps_lat = point.get('latitude', 0)
-                    gps_lon = point.get('longitude', 0)
-                    name = point.get('name', 'Unknown')
+                    gps_lat = point.get("latitude", 0)
+                    gps_lon = point.get("longitude", 0)
+                    name = point.get("name", "Unknown")
 
                     # Convert GPS to local XY meters relative to camera
-                    if utm_converter and 'utm_easting' in point and 'utm_northing' in point:
-                        x_m, y_m = utm_converter.utm_to_local_xy(point['utm_easting'], point['utm_northing'])
+                    if utm_converter and "utm_easting" in point and "utm_northing" in point:
+                        x_m, y_m = utm_converter.utm_to_local_xy(
+                            point["utm_easting"], point["utm_northing"]
+                        )
                     elif utm_converter:
                         x_m, y_m = utm_converter.gps_to_local_xy(gps_lat, gps_lon)
                     else:
@@ -4998,17 +5056,19 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
 
                     # Check if point is behind camera (w <= 0)
                     if w <= 0:
-                        projected_points.append({
-                            'name': name,
-                            'latitude': gps_lat,
-                            'longitude': gps_lon,
-                            'utm_easting': point.get('utm_easting'),
-                            'utm_northing': point.get('utm_northing'),
-                            'pixel_u': None,
-                            'pixel_v': None,
-                            'visible': False,
-                            'reason': 'behind_camera'
-                        })
+                        projected_points.append(
+                            {
+                                "name": name,
+                                "latitude": gps_lat,
+                                "longitude": gps_lon,
+                                "utm_easting": point.get("utm_easting"),
+                                "utm_northing": point.get("utm_northing"),
+                                "pixel_u": None,
+                                "pixel_v": None,
+                                "visible": False,
+                                "reason": "behind_camera",
+                            }
+                        )
                         continue
 
                     # Normalize to get pixel coordinates
@@ -5023,133 +5083,126 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
 
                     # Check if point is within image bounds
                     if 0 <= u_px < image_width and 0 <= v_px < image_height:
-                        projected_points.append({
-                            'name': name,
-                            'latitude': gps_lat,
-                            'longitude': gps_lon,
-                            'utm_easting': point.get('utm_easting'),
-                            'utm_northing': point.get('utm_northing'),
-                            'pixel_u': float(u_px),
-                            'pixel_v': float(v_px),
-                            'visible': True,
-                            'reason': 'visible'
-                        })
+                        projected_points.append(
+                            {
+                                "name": name,
+                                "latitude": gps_lat,
+                                "longitude": gps_lon,
+                                "utm_easting": point.get("utm_easting"),
+                                "utm_northing": point.get("utm_northing"),
+                                "pixel_u": float(u_px),
+                                "pixel_v": float(v_px),
+                                "visible": True,
+                                "reason": "visible",
+                            }
+                        )
                     else:
-                        projected_points.append({
-                            'name': name,
-                            'latitude': gps_lat,
-                            'longitude': gps_lon,
-                            'utm_easting': point.get('utm_easting'),
-                            'utm_northing': point.get('utm_northing'),
-                            'pixel_u': float(u_px),
-                            'pixel_v': float(v_px),
-                            'visible': False,
-                            'reason': 'outside_bounds'
-                        })
+                        projected_points.append(
+                            {
+                                "name": name,
+                                "latitude": gps_lat,
+                                "longitude": gps_lon,
+                                "utm_easting": point.get("utm_easting"),
+                                "utm_northing": point.get("utm_northing"),
+                                "pixel_u": float(u_px),
+                                "pixel_v": float(v_px),
+                                "visible": False,
+                                "reason": "outside_bounds",
+                            }
+                        )
 
-                self.send_json_response({
-                    'success': True,
-                    'projected_points': projected_points,
-                    'camera_params': {
-                        'camera_lat': camera_lat,
-                        'camera_lon': camera_lon,
-                        'height_m': height_m,
-                        'pan_deg': pan_deg,
-                        'tilt_deg': tilt_deg
+                self.send_json_response(
+                    {
+                        "success": True,
+                        "projected_points": projected_points,
+                        "camera_params": {
+                            "camera_lat": camera_lat,
+                            "camera_lon": camera_lon,
+                            "height_m": height_m,
+                            "pan_deg": pan_deg,
+                            "tilt_deg": tilt_deg,
+                        },
                     }
-                })
+                )
 
             except json.JSONDecodeError as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Invalid JSON data: {str(e)}'
-                })
+                self.send_json_response({"success": False, "error": f"Invalid JSON data: {e!s}"})
             except Exception as e:
                 import traceback
-                traceback.print_exc()
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Homography update failed: {str(e)}'
-                })
 
-        elif parsed.path == '/api/detect_features':
+                traceback.print_exc()
+                self.send_json_response(
+                    {"success": False, "error": f"Homography update failed: {e!s}"}
+                )
+
+        elif parsed.path == "/api/detect_features":
             # SAM3 feature detection endpoint for generating binary masks
             try:
                 data = json.loads(post_data)
-                method = data.get('method', 'sam3')
+                method = data.get("method", "sam3")
 
-                if method != 'sam3':
-                    self.send_json_response({
-                        'success': False,
-                        'error': f'Unknown detection method: {method}'
-                    })
+                if method != "sam3":
+                    self.send_json_response(
+                        {"success": False, "error": f"Unknown detection method: {method}"}
+                    )
                     return
 
                 # Get API key from environment
-                api_key = os.environ.get('ROBOFLOW_API_KEY', '')
+                api_key = os.environ.get("ROBOFLOW_API_KEY", "")
                 if not api_key:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'ROBOFLOW_API_KEY environment variable not set'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "ROBOFLOW_API_KEY environment variable not set"}
+                    )
                     return
 
                 # Get the current camera frame
                 if self.session.frame is None:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'No camera frame available'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "No camera frame available"}
+                    )
                     return
 
                 # Encode frame to base64
-                success, buffer = cv2.imencode('.jpg', self.session.frame)
+                success, buffer = cv2.imencode(".jpg", self.session.frame)
                 if not success:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Failed to encode camera frame'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Failed to encode camera frame"}
+                    )
                     return
-                image_base64 = base64.b64encode(buffer).decode('utf-8')
+                image_base64 = base64.b64encode(buffer).decode("utf-8")
 
                 # Use default prompt or custom prompt
-                prompt = data.get('prompt', DEFAULT_SAM3_PROMPT)
+                prompt = data.get("prompt", DEFAULT_SAM3_PROMPT)
 
                 # Call Roboflow SAM3 concept segmentation API
                 api_url = f"https://serverless.roboflow.com/sam3/concept_segment?api_key={api_key}"
 
                 request_body = {
                     "format": "polygon",
-                    "image": {
-                        "type": "base64",
-                        "value": image_base64
-                    },
-                    "prompts": [
-                        {"type": "text", "text": prompt}
-                    ]
+                    "image": {"type": "base64", "value": image_base64},
+                    "prompts": [{"type": "text", "text": prompt}],
                 }
 
-                headers = {
-                    'Content-Type': 'application/json'
-                }
+                headers = {"Content-Type": "application/json"}
 
                 response = requests.post(api_url, json=request_body, headers=headers, timeout=120)
 
                 if response.status_code != 200:
-                    self.send_json_response({
-                        'success': False,
-                        'error': f'SAM3 API request failed: {response.status_code}'
-                    })
+                    self.send_json_response(
+                        {
+                            "success": False,
+                            "error": f"SAM3 API request failed: {response.status_code}",
+                        }
+                    )
                     return
 
                 # Parse JSON response
                 try:
                     api_response = response.json()
                 except json.JSONDecodeError:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Invalid JSON response from SAM3 API'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Invalid JSON response from SAM3 API"}
+                    )
                     return
 
                 # Create binary mask from polygon response
@@ -5157,25 +5210,28 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 mask = np.zeros((frame_height, frame_width), dtype=np.uint8)
 
                 # Parse response structure: prompt_results[].predictions[].masks[]
-                prompt_results = api_response.get('prompt_results', [])
+                prompt_results = api_response.get("prompt_results", [])
                 total_predictions = 0
                 total_polygons = 0
                 confidence_scores = []
 
                 for prompt_result in prompt_results:
-                    predictions = prompt_result.get('predictions', [])
+                    predictions = prompt_result.get("predictions", [])
                     total_predictions += len(predictions)
 
                     for prediction in predictions:
-                        confidence = prediction.get('confidence', 0)
+                        confidence = prediction.get("confidence", 0)
                         confidence_scores.append(confidence)
-                        masks = prediction.get('masks', [])
+                        masks = prediction.get("masks", [])
 
                         for polygon in masks:
                             # Each polygon is an array of [x, y] coordinate pairs
                             if isinstance(polygon, list) and len(polygon) >= 3:
                                 # Convert to numpy array for cv2.fillPoly
-                                pts = np.array([[int(pt[0]), int(pt[1])] for pt in polygon if len(pt) >= 2], dtype=np.int32)
+                                pts = np.array(
+                                    [[int(pt[0]), int(pt[1])] for pt in polygon if len(pt) >= 2],
+                                    dtype=np.int32,
+                                )
                                 if len(pts) >= 3:
                                     cv2.fillPoly(mask, [pts], 255)
                                     total_polygons += 1
@@ -5183,65 +5239,56 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
                 # Store mask in session
                 self.session.feature_mask = mask
                 self.session.feature_mask_metadata = {
-                    'timestamp': datetime.now().isoformat(),
-                    'prompt': prompt,
-                    'total_predictions': total_predictions,
-                    'total_polygons': total_polygons,
-                    'confidence_scores': confidence_scores,
-                    'frame_width': frame_width,
-                    'frame_height': frame_height
+                    "timestamp": datetime.now().isoformat(),
+                    "prompt": prompt,
+                    "total_predictions": total_predictions,
+                    "total_polygons": total_polygons,
+                    "confidence_scores": confidence_scores,
+                    "frame_width": frame_width,
+                    "frame_height": frame_height,
                 }
 
                 # Encode mask as base64 PNG for frontend
-                success, mask_buffer = cv2.imencode('.png', mask)
+                success, mask_buffer = cv2.imencode(".png", mask)
                 if not success:
-                    self.send_json_response({
-                        'success': False,
-                        'error': 'Failed to encode detection mask'
-                    })
+                    self.send_json_response(
+                        {"success": False, "error": "Failed to encode detection mask"}
+                    )
                     return
-                mask_base64 = base64.b64encode(mask_buffer).decode('utf-8')
+                mask_base64 = base64.b64encode(mask_buffer).decode("utf-8")
 
-                self.send_json_response({
-                    'success': True,
-                    'mask': mask_base64,
-                    'metadata': {
-                        'total_predictions': total_predictions,
-                        'total_polygons': total_polygons,
-                        'confidence_range': {
-                            'min': min(confidence_scores) if confidence_scores else 0,
-                            'max': max(confidence_scores) if confidence_scores else 0
+                self.send_json_response(
+                    {
+                        "success": True,
+                        "mask": mask_base64,
+                        "metadata": {
+                            "total_predictions": total_predictions,
+                            "total_polygons": total_polygons,
+                            "confidence_range": {
+                                "min": min(confidence_scores) if confidence_scores else 0,
+                                "max": max(confidence_scores) if confidence_scores else 0,
+                            },
+                            "frame_dimensions": {"width": frame_width, "height": frame_height},
+                            "prompt": prompt,
                         },
-                        'frame_dimensions': {
-                            'width': frame_width,
-                            'height': frame_height
-                        },
-                        'prompt': prompt
                     }
-                })
+                )
 
             except json.JSONDecodeError as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Invalid JSON data: {str(e)}'
-                })
+                self.send_json_response({"success": False, "error": f"Invalid JSON data: {e!s}"})
             except requests.Timeout:
-                self.send_json_response({
-                    'success': False,
-                    'error': 'SAM3 API request timed out'
-                })
+                self.send_json_response({"success": False, "error": "SAM3 API request timed out"})
             except requests.RequestException as e:
-                self.send_json_response({
-                    'success': False,
-                    'error': f'SAM3 API network error: {str(e)}'
-                })
+                self.send_json_response(
+                    {"success": False, "error": f"SAM3 API network error: {e!s}"}
+                )
             except Exception as e:
                 import traceback
+
                 traceback.print_exc()
-                self.send_json_response({
-                    'success': False,
-                    'error': f'Feature detection failed: {str(e)}'
-                })
+                self.send_json_response(
+                    {"success": False, "error": f"Feature detection failed: {e!s}"}
+                )
 
         else:
             self.send_error(404)
@@ -5249,8 +5296,8 @@ class GCPCaptureHandler(http.server.SimpleHTTPRequestHandler):
     def send_json_response(self, data):
         content = json.dumps(data).encode()
         self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Content-Length', len(content))
+        self.send_header("Content-type", "application/json")
+        self.send_header("Content-Length", len(content))
         self.end_headers()
         self.wfile.write(content)
 
@@ -5260,13 +5307,13 @@ def start_capture_server(
     output_path: str = None,
     port: int = 8765,
     auto_open: bool = True,
-    has_live_camera: bool = False
+    has_live_camera: bool = False,
 ):
     """Start the web server for GCP capture."""
 
     # Create temp directory for frame
-    temp_dir = tempfile.mkdtemp(prefix='gcp_capture_')
-    frame_filename = 'frame.jpg'
+    temp_dir = tempfile.mkdtemp(prefix="gcp_capture_")
+    frame_filename = "frame.jpg"
     frame_path = os.path.join(temp_dir, frame_filename)
     cv2.imwrite(frame_path, session.frame)
 
@@ -5317,10 +5364,8 @@ def grab_frame_from_camera(camera_name: str, wait_time: float = 2.0) -> tuple:
 
     cam_info = get_camera_by_name(camera_name)
     if not cam_info:
-        available = [c['name'] for c in CAMERAS]
-        raise ValueError(
-            f"Camera '{camera_name}' not found. Available: {', '.join(available)}"
-        )
+        available = [c["name"] for c in CAMERAS]
+        raise ValueError(f"Camera '{camera_name}' not found. Available: {', '.join(available)}")
 
     rtsp_url = get_rtsp_url(camera_name)
 
@@ -5334,14 +5379,17 @@ def grab_frame_from_camera(camera_name: str, wait_time: float = 2.0) -> tuple:
     ptz_status = None
     if INTRINSICS_AVAILABLE:
         try:
-            ptz_status = get_ptz_status(cam_info['ip'], USERNAME, PASSWORD)
-            print(f"PTZ: pan={ptz_status['pan']:.1f}, tilt={ptz_status['tilt']:.1f}, zoom={ptz_status['zoom']:.1f}x")
+            ptz_status = get_ptz_status(cam_info["ip"], USERNAME, PASSWORD)
+            print(
+                f"PTZ: pan={ptz_status['pan']:.1f}, tilt={ptz_status['tilt']:.1f}, zoom={ptz_status['zoom']:.1f}x"
+            )
         except Exception as e:
             print(f"Warning: Could not get PTZ status: {e}")
 
     # Grab frame
     print("Grabbing frame...")
     import time
+
     time.sleep(wait_time)  # Wait for camera to stabilize
 
     frame = None
@@ -5361,54 +5409,28 @@ def grab_frame_from_camera(camera_name: str, wait_time: float = 2.0) -> tuple:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Web-based GCP Capture Tool',
+        description="Web-based GCP Capture Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
+    )
+    parser.add_argument("camera", nargs="?", type=str, help="Camera name (e.g., Valte, Setram)")
+    parser.add_argument(
+        "--frame", "-f", type=str, help="Path to an existing frame image (skips camera connection)"
+    )
+    parser.add_argument("--output", "-o", type=str, default=None, help="Output YAML file path")
+    parser.add_argument(
+        "--output-dir", type=str, default=None, help="Output directory (filename auto-generated)"
+    )
+    parser.add_argument("--port", "-p", type=int, default=8765, help="Server port (default: 8765)")
+    parser.add_argument("--no-open", action="store_true", help="Do not automatically open browser")
+    parser.add_argument(
+        "--list-cameras", action="store_true", help="List available cameras and exit"
     )
     parser.add_argument(
-        'camera',
-        nargs='?',
+        "--map-first",
         type=str,
-        help='Camera name (e.g., Valte, Setram)'
-    )
-    parser.add_argument(
-        '--frame', '-f',
-        type=str,
-        help='Path to an existing frame image (skips camera connection)'
-    )
-    parser.add_argument(
-        '--output', '-o',
-        type=str,
-        default=None,
-        help='Output YAML file path'
-    )
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default=None,
-        help='Output directory (filename auto-generated)'
-    )
-    parser.add_argument(
-        '--port', '-p',
-        type=int,
-        default=8765,
-        help='Server port (default: 8765)'
-    )
-    parser.add_argument(
-        '--no-open',
-        action='store_true',
-        help='Do not automatically open browser'
-    )
-    parser.add_argument(
-        '--list-cameras',
-        action='store_true',
-        help='List available cameras and exit'
-    )
-    parser.add_argument(
-        '--map-first',
-        type=str,
-        metavar='KML_FILE',
-        help='Load GPS points from KML file and project onto camera image (GPS-to-image workflow)'
+        metavar="KML_FILE",
+        help="Load GPS points from KML file and project onto camera image (GPS-to-image workflow)",
     )
 
     args = parser.parse_args()
@@ -5467,10 +5489,10 @@ def main():
     # Determine output path
     output_path = args.output
     if output_path is None and args.output_dir:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = str(Path(args.output_dir) / f"gcps_{camera_name}_{timestamp}.yaml")
     elif output_path is None:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"gcps_{camera_name}_{timestamp}.yaml"
 
     # Handle map-first mode
@@ -5508,9 +5530,7 @@ def main():
 
         try:
             camera_params = get_camera_params_for_projection(
-                camera_name,
-                image_width=frame_width,
-                image_height=frame_height
+                camera_name, image_width=frame_width, image_height=frame_height
             )
         except ValueError as e:
             print(f"Error: {e}")
@@ -5521,7 +5541,9 @@ def main():
 
         # Project GPS points to image first (needed by both height verification and display)
         try:
-            projected_points = project_gps_to_image(kml_points, camera_params, camera_name=camera_name)
+            projected_points = project_gps_to_image(
+                kml_points, camera_params, camera_name=camera_name
+            )
         except ValueError as e:
             print(f"Error: Failed to project GPS points: {e}")
             sys.exit(1)
@@ -5530,52 +5552,54 @@ def main():
         if GEOMETRY_AVAILABLE:
             try:
                 from poc_homography.camera_geometry import CameraGeometry
+
                 # Initialize CameraGeometry with image dimensions
                 geo = CameraGeometry(
-                    w=camera_params['image_width'],
-                    h=camera_params['image_height']
+                    w=camera_params["image_width"], h=camera_params["image_height"]
                 )
                 # Camera position in world coordinates (X=0, Y=0 at camera location, Z=height)
-                w_pos = np.array([0.0, 0.0, camera_params['height_m']])
+                w_pos = np.array([0.0, 0.0, camera_params["height_m"]])
                 # Set up homography with camera parameters
                 geo.set_camera_parameters(
-                    K=camera_params['K'],
+                    K=camera_params["K"],
                     w_pos=w_pos,
-                    pan_deg=camera_params['pan_deg'],
-                    tilt_deg=camera_params['tilt_deg'],
+                    pan_deg=camera_params["pan_deg"],
+                    tilt_deg=camera_params["tilt_deg"],
                     map_width=640,
-                    map_height=640
+                    map_height=640,
                 )
                 # Pass already projected points to avoid duplicate projection
                 height_verification = verify_camera_height_with_projected(
                     projected_points, kml_points, camera_params, geo
                 )
-                if height_verification.get('warning'):
+                if height_verification.get("warning"):
                     print(f"Height verification warning: {height_verification['warning']}")
                 # Add camera GPS and parameters for drift-based GPS estimation
-                height_verification['camera_lat'] = camera_params['camera_lat']
-                height_verification['camera_lon'] = camera_params['camera_lon']
-                height_verification['tilt_deg'] = camera_params['tilt_deg']
-                height_verification['pan_deg'] = camera_params['pan_deg']
-                height_verification['image_width'] = camera_params['image_width']
-                height_verification['image_height'] = camera_params['image_height']
-                height_verification['zoom'] = camera_params['zoom']
+                height_verification["camera_lat"] = camera_params["camera_lat"]
+                height_verification["camera_lon"] = camera_params["camera_lon"]
+                height_verification["tilt_deg"] = camera_params["tilt_deg"]
+                height_verification["pan_deg"] = camera_params["pan_deg"]
+                height_verification["image_width"] = camera_params["image_width"]
+                height_verification["image_height"] = camera_params["image_height"]
+                height_verification["zoom"] = camera_params["zoom"]
             except Exception as e:
                 print(f"Warning: Height verification failed: {e}")
                 height_verification = {
-                    'configured_height': camera_params['height_m'],
-                    'camera_lat': camera_params['camera_lat'],
-                    'camera_lon': camera_params['camera_lon'],
-                    'tilt_deg': camera_params['tilt_deg'],
-                    'pan_deg': camera_params['pan_deg'],
-                    'image_width': camera_params['image_width'],
-                    'image_height': camera_params['image_height'],
-                    'zoom': camera_params['zoom'],
-                    'warning': f'Verification failed: {str(e)}'
+                    "configured_height": camera_params["height_m"],
+                    "camera_lat": camera_params["camera_lat"],
+                    "camera_lon": camera_params["camera_lon"],
+                    "tilt_deg": camera_params["tilt_deg"],
+                    "pan_deg": camera_params["pan_deg"],
+                    "image_width": camera_params["image_width"],
+                    "image_height": camera_params["image_height"],
+                    "zoom": camera_params["zoom"],
+                    "warning": f"Verification failed: {e!s}",
                 }
 
         # Count visible points
-        visible_count = sum(1 for p in projected_points if p['visible'] and p['reason'] == 'visible')
+        visible_count = sum(
+            1 for p in projected_points if p["visible"] and p["reason"] == "visible"
+        )
         print(f"Projected {visible_count} visible points onto image")
 
         if visible_count == 0:
@@ -5592,7 +5616,7 @@ def main():
         kml_points=kml_points or [],
         projected_points=projected_points or [],
         kml_file_name=kml_file_name,
-        height_verification=height_verification
+        height_verification=height_verification,
     )
 
     start_capture_server(
@@ -5600,9 +5624,9 @@ def main():
         output_path=output_path,
         port=args.port,
         auto_open=not args.no_open,
-        has_live_camera=has_live_camera
+        has_live_camera=has_live_camera,
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

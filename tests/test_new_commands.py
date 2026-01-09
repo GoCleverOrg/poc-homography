@@ -12,12 +12,15 @@ environment variable RUN_3D is set to '1'. This prevents accidental camera movem
 
 import os
 import time
-from hikvision_ptz_discovery import HikvisionPTZ, CAMERAS, USERNAME, PASSWORD
+
+from hikvision_ptz_discovery import CAMERAS, PASSWORD, USERNAME, HikvisionPTZ
 
 
 def main():
     cam_info = CAMERAS[0]
-    camera = HikvisionPTZ(ip=cam_info['ip'], username=USERNAME, password=PASSWORD, name=cam_info.get('name', 'Camera'))
+    camera = HikvisionPTZ(
+        ip=cam_info["ip"], username=USERNAME, password=PASSWORD, name=cam_info.get("name", "Camera")
+    )
 
     print(f"Connecting to {camera.name} ({camera.ip})")
     status = camera.get_status()
@@ -34,9 +37,8 @@ def main():
     print("Result:", "OK" if ok else "FAILED")
 
     # Optional: 3D zoom/position test — only run when explicitly allowed
-    run_3d = os.environ.get('RUN_3D', '0') == '1'
+    run_3d = os.environ.get("RUN_3D", "0") == "1"
     if run_3d:
-
         # For the valte camera this will zoom in on the light pole to the left
         status["pan"] = 56.5
         status["tilt"] = -3.7
@@ -55,5 +57,5 @@ def main():
         print("Skipping 3D command. To enable, set RUN_3D=1 in the environment.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

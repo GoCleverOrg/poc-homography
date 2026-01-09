@@ -7,7 +7,6 @@ where the Y scaling mismatch occurs.
 """
 
 import argparse
-import math
 import sys
 from pathlib import Path
 
@@ -17,6 +16,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from pyproj import Transformer
+
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 
 # Image dimensions
@@ -33,9 +33,9 @@ UTM_CRS = None
 def trace_pixel_to_all(px: float, py: float):
     """Trace a pixel coordinate through all transformations."""
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"TRACING PIXEL ({px}, {py})")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # Step 1: Pixel to UTM
     print("\n1. PIXEL → UTM")
@@ -48,7 +48,7 @@ def trace_pixel_to_all(px: float, py: float):
     easting_a = ORIGIN_EASTING + (px * GSD)
     northing_a = ORIGIN_NORTHING + (py * -GSD)
 
-    print(f"   Method A (current - negative Y GSD):")
+    print("   Method A (current - negative Y GSD):")
     print(f"   easting  = {ORIGIN_EASTING} + ({px} * {GSD}) = {easting_a:.4f}")
     print(f"   northing = {ORIGIN_NORTHING} + ({py} * -{GSD}) = {northing_a:.4f}")
 
@@ -56,15 +56,17 @@ def trace_pixel_to_all(px: float, py: float):
     # What if the origin is at BOTTOM-left, not TOP-left?
     northing_b = ORIGIN_NORTHING - (IMAGE_HEIGHT * GSD) + (py * GSD)
 
-    print(f"\n   Method B (if origin is image extent bottom-left):")
+    print("\n   Method B (if origin is image extent bottom-left):")
     print(f"   northing = {ORIGIN_NORTHING} - ({IMAGE_HEIGHT} * {GSD}) + ({py} * {GSD})")
-    print(f"   northing = {ORIGIN_NORTHING - IMAGE_HEIGHT * GSD:.4f} + {py * GSD:.4f} = {northing_b:.4f}")
+    print(
+        f"   northing = {ORIGIN_NORTHING - IMAGE_HEIGHT * GSD:.4f} + {py * GSD:.4f} = {northing_b:.4f}"
+    )
 
     # Method C: What if Y=0 is at bottom of image?
     py_from_bottom = IMAGE_HEIGHT - py
     northing_c = ORIGIN_NORTHING + (py_from_bottom * -GSD)
 
-    print(f"\n   Method C (if pixel Y=0 is at bottom):")
+    print("\n   Method C (if pixel Y=0 is at bottom):")
     print(f"   py_from_bottom = {IMAGE_HEIGHT} - {py} = {py_from_bottom}")
     print(f"   northing = {ORIGIN_NORTHING} + ({py_from_bottom} * -{GSD}) = {northing_c:.4f}")
 
@@ -106,11 +108,11 @@ def trace_pixel_to_all(px: float, py: float):
 def check_origin_interpretation():
     """Check what the origin coordinates actually mean."""
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("ORIGIN INTERPRETATION ANALYSIS")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
-    print(f"\nGiven:")
+    print("\nGiven:")
     print(f"  Origin Easting:  {ORIGIN_EASTING}")
     print(f"  Origin Northing: {ORIGIN_NORTHING}")
     print(f"  GSD: {GSD} m/pixel")
@@ -121,17 +123,17 @@ def check_origin_interpretation():
     extent_north_if_topleft = ORIGIN_NORTHING - (IMAGE_HEIGHT * GSD)
     extent_north_if_bottomleft = ORIGIN_NORTHING + (IMAGE_HEIGHT * GSD)
 
-    print(f"\nImage extent (E-W):")
+    print("\nImage extent (E-W):")
     print(f"  West edge:  E = {ORIGIN_EASTING:.2f}")
     print(f"  East edge:  E = {extent_east:.2f}")
     print(f"  Width: {extent_east - ORIGIN_EASTING:.2f} m")
 
-    print(f"\nImage extent (N-S) - IF origin is TOP-LEFT:")
+    print("\nImage extent (N-S) - IF origin is TOP-LEFT:")
     print(f"  North edge: N = {ORIGIN_NORTHING:.2f}")
     print(f"  South edge: N = {extent_north_if_topleft:.2f}")
     print(f"  Height: {ORIGIN_NORTHING - extent_north_if_topleft:.2f} m")
 
-    print(f"\nImage extent (N-S) - IF origin is BOTTOM-LEFT:")
+    print("\nImage extent (N-S) - IF origin is BOTTOM-LEFT:")
     print(f"  South edge: N = {ORIGIN_NORTHING:.2f}")
     print(f"  North edge: N = {extent_north_if_bottomleft:.2f}")
     print(f"  Height: {extent_north_if_bottomleft - ORIGIN_NORTHING:.2f} m")
@@ -139,7 +141,7 @@ def check_origin_interpretation():
     # Convert corners to GPS
     transformer = Transformer.from_crs(UTM_CRS, "EPSG:4326", always_xy=True)
 
-    print(f"\nCorner coordinates (assuming TOP-LEFT origin):")
+    print("\nCorner coordinates (assuming TOP-LEFT origin):")
     corners = [
         (0, 0, "Top-Left"),
         (IMAGE_WIDTH, 0, "Top-Right"),
@@ -151,15 +153,17 @@ def check_origin_interpretation():
         e = ORIGIN_EASTING + (px * GSD)
         n = ORIGIN_NORTHING + (py * -GSD)
         lon, lat = transformer.transform(e, n)
-        print(f"  {name:15s} pixel({px:4d},{py:4d}) → UTM({e:.2f}, {n:.2f}) → GPS({lat:.6f}, {lon:.6f})")
+        print(
+            f"  {name:15s} pixel({px:4d},{py:4d}) → UTM({e:.2f}, {n:.2f}) → GPS({lat:.6f}, {lon:.6f})"
+        )
 
 
 def analyze_gsd_sign():
     """Analyze the effect of GSD sign on Y coordinates."""
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("GSD SIGN ANALYSIS")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     print("""
 In GeoTIFF/raster conventions:
@@ -192,15 +196,15 @@ Current implementation:
     print(f"For center pixel ({px}, {py}):")
     print(f"  With -GSD: northing = {n_neg:.2f}")
     print(f"  With +GSD: northing = {n_pos:.2f}")
-    print(f"  Difference: {abs(n_pos - n_neg):.2f} m ({abs(n_pos - n_neg)/GSD:.0f} pixels)")
+    print(f"  Difference: {abs(n_pos - n_neg):.2f} m ({abs(n_pos - n_neg) / GSD:.0f} pixels)")
 
 
 def check_capture_gcps_local_xy():
     """Check how capture_gcps_web.py computes local XY from GPS."""
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("CAPTURE_GCPS_WEB.PY LOCAL XY COMPUTATION")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # Simulate what capture_gcps_web.py does
     # It converts GPS to local XY relative to camera position
@@ -213,7 +217,7 @@ def check_capture_gcps_local_xy():
     transformer = Transformer.from_crs(UTM_CRS, "EPSG:4326", always_xy=True)
     cam_lon, cam_lat = transformer.transform(cam_e, cam_n)
 
-    print(f"\nCamera position (image center):")
+    print("\nCamera position (image center):")
     print(f"  Pixel: ({cam_px}, {cam_py})")
     print(f"  UTM: E={cam_e:.2f}, N={cam_n:.2f}")
     print(f"  GPS: ({cam_lat:.6f}, {cam_lon:.6f})")
@@ -224,7 +228,7 @@ def check_capture_gcps_local_xy():
     test_n = ORIGIN_NORTHING + test_py * (-GSD)
     test_lon, test_lat = transformer.transform(test_e, test_n)
 
-    print(f"\nTest point (100px right, 100px down from camera):")
+    print("\nTest point (100px right, 100px down from camera):")
     print(f"  Pixel: ({test_px}, {test_py})")
     print(f"  UTM: E={test_e:.2f}, N={test_n:.2f}")
     print(f"  GPS: ({test_lat:.6f}, {test_lon:.6f})")
@@ -233,12 +237,13 @@ def check_capture_gcps_local_xy():
     expected_x = test_e - cam_e  # Should be +15m (100 * 0.15)
     expected_y = test_n - cam_n  # Should be -15m (100 * -0.15)
 
-    print(f"\nExpected local XY (UTM difference):")
+    print("\nExpected local XY (UTM difference):")
     print(f"  X = {test_e:.2f} - {cam_e:.2f} = {expected_x:.2f} m")
     print(f"  Y = {test_n:.2f} - {cam_n:.2f} = {expected_y:.2f} m")
 
     # What equirectangular gives us
-    from math import radians, cos
+    from math import cos, radians
+
     EARTH_RADIUS = 6371000.0
 
     delta_lat = radians(test_lat - cam_lat)
@@ -248,16 +253,20 @@ def check_capture_gcps_local_xy():
     equirect_x = delta_lon * cos(avg_lat) * EARTH_RADIUS
     equirect_y = delta_lat * EARTH_RADIUS
 
-    print(f"\nEquirectangular local XY:")
+    print("\nEquirectangular local XY:")
     print(f"  X = {equirect_x:.2f} m")
     print(f"  Y = {equirect_y:.2f} m")
 
-    print(f"\nDiscrepancy (Equirect - UTM):")
-    print(f"  ΔX = {equirect_x - expected_x:.4f} m ({(equirect_x - expected_x) / expected_x * 100:.2f}%)")
-    print(f"  ΔY = {equirect_y - expected_y:.4f} m ({(equirect_y - expected_y) / expected_y * 100:.2f}%)")
+    print("\nDiscrepancy (Equirect - UTM):")
+    print(
+        f"  ΔX = {equirect_x - expected_x:.4f} m ({(equirect_x - expected_x) / expected_x * 100:.2f}%)"
+    )
+    print(
+        f"  ΔY = {equirect_y - expected_y:.4f} m ({(equirect_y - expected_y) / expected_y * 100:.2f}%)"
+    )
 
     # Now check what UTMConverter gives us
-    print(f"\n--- Using UTMConverter ---")
+    print("\n--- Using UTMConverter ---")
 
     reverse_transformer = Transformer.from_crs("EPSG:4326", UTM_CRS, always_xy=True)
 
@@ -277,11 +286,11 @@ def check_capture_gcps_local_xy():
     utm_local_x = test_e_from_gps - ref_e
     utm_local_y = test_n_from_gps - ref_n
 
-    print(f"\nUTM local XY (from GPS round-trip):")
+    print("\nUTM local XY (from GPS round-trip):")
     print(f"  X = {utm_local_x:.4f} m")
     print(f"  Y = {utm_local_y:.4f} m")
 
-    print(f"\nFinal comparison:")
+    print("\nFinal comparison:")
     print(f"  Expected (direct UTM):  X={expected_x:.4f}, Y={expected_y:.4f}")
     print(f"  UTM from GPS:           X={utm_local_x:.4f}, Y={utm_local_y:.4f}")
     print(f"  Equirectangular:        X={equirect_x:.4f}, Y={equirect_y:.4f}")
@@ -309,15 +318,18 @@ def load_geotiff_params(camera_name: str):
         sys.exit(1)
 
     if "geotiff_params" not in camera_config:
-        print(f"Error: Camera '{camera_name}' does not have 'geotiff_params' configured.", file=sys.stderr)
+        print(
+            f"Error: Camera '{camera_name}' does not have 'geotiff_params' configured.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     geotiff_params = camera_config["geotiff_params"]
 
     # Handle both new (geotransform) and legacy (origin_easting, etc.) formats
-    if 'geotransform' in geotiff_params:
+    if "geotransform" in geotiff_params:
         # New format: extract values from geotransform array
-        gt = geotiff_params['geotransform']
+        gt = geotiff_params["geotransform"]
         origin_easting = gt[0]
         origin_northing = gt[3]
         gsd = abs(gt[1])  # GSD is always positive (pixel width)
@@ -327,7 +339,10 @@ def load_geotiff_params(camera_name: str):
         missing_params = [p for p in required_params if p not in geotiff_params]
 
         if missing_params:
-            print(f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}", file=sys.stderr)
+            print(
+                f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         origin_easting = geotiff_params["origin_easting"]
@@ -336,7 +351,10 @@ def load_geotiff_params(camera_name: str):
 
     # Validate utm_crs (required in both formats)
     if "utm_crs" not in geotiff_params:
-        print(f"Error: Camera '{camera_name}' geotiff_params missing 'utm_crs' field.", file=sys.stderr)
+        print(
+            f"Error: Camera '{camera_name}' geotiff_params missing 'utm_crs' field.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     utm_crs = geotiff_params["utm_crs"]
@@ -344,7 +362,7 @@ def load_geotiff_params(camera_name: str):
     return origin_easting, origin_northing, gsd, utm_crs
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Debug tool to trace Y scaling issues in coordinate transformations"
@@ -353,7 +371,7 @@ if __name__ == '__main__':
         "--camera",
         type=str,
         default="Valte",
-        help="Camera name to load georeferencing parameters from (default: Valte)"
+        help="Camera name to load georeferencing parameters from (default: Valte)",
     )
     args = parser.parse_args()
 
@@ -371,7 +389,7 @@ if __name__ == '__main__':
     analyze_gsd_sign()
 
     # Trace specific pixels
-    trace_pixel_to_all(0, 0)      # Top-left
+    trace_pixel_to_all(0, 0)  # Top-left
     trace_pixel_to_all(840, 458)  # Center
     trace_pixel_to_all(100, 100)  # Near top-left
 

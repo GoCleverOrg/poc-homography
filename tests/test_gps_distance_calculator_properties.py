@@ -62,28 +62,31 @@ latitude/distance combinations, making it unsuitable for property-based testing
 across the full coordinate space.
 """
 
-import unittest
-import sys
-import os
 import math
+import os
+import sys
+import unittest
+
 import numpy as np
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from hypothesis import given, strategies as st, settings, assume
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
+
 from poc_homography.coordinate_converter import EARTH_RADIUS_M
-from poc_homography.gps_distance_calculator import (
-    haversine_distance,
-    bearing_between_points
-)
-
+from poc_homography.gps_distance_calculator import bearing_between_points, haversine_distance
 
 # Hypothesis strategies for generating GPS coordinates
 # Latitude: -85 to 85 degrees (avoid polar regions where formulas break down)
 # Longitude: -180 to 180 degrees (full range)
-latitude_strategy = st.floats(min_value=-85.0, max_value=85.0, allow_nan=False, allow_infinity=False)
-longitude_strategy = st.floats(min_value=-180.0, max_value=180.0, allow_nan=False, allow_infinity=False)
+latitude_strategy = st.floats(
+    min_value=-85.0, max_value=85.0, allow_nan=False, allow_infinity=False
+)
+longitude_strategy = st.floats(
+    min_value=-180.0, max_value=180.0, allow_nan=False, allow_infinity=False
+)
 
 
 def gps_coordinate_strategy():
@@ -99,9 +102,7 @@ def gps_coordinate_pair_strategy():
 def gps_coordinate_triple_strategy():
     """Generate three GPS coordinates for testing triangle inequality."""
     return st.tuples(
-        gps_coordinate_strategy(),
-        gps_coordinate_strategy(),
-        gps_coordinate_strategy()
+        gps_coordinate_strategy(), gps_coordinate_strategy(), gps_coordinate_strategy()
     )
 
 
@@ -142,8 +143,8 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
             rtol=1e-10,
             atol=1e-6,  # 1 micrometer absolute tolerance
             err_msg=f"Distance symmetry violated: "
-                    f"d({lat1:.6f},{lon1:.6f} → {lat2:.6f},{lon2:.6f}) = {dist_forward:.6f}m, "
-                    f"d({lat2:.6f},{lon2:.6f} → {lat1:.6f},{lon1:.6f}) = {dist_reverse:.6f}m"
+            f"d({lat1:.6f},{lon1:.6f} → {lat2:.6f},{lon2:.6f}) = {dist_forward:.6f}m, "
+            f"d({lat2:.6f},{lon2:.6f} → {lat1:.6f},{lon1:.6f}) = {dist_reverse:.6f}m",
         )
 
     @given(gps_coordinate_triple_strategy())
@@ -187,12 +188,12 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
             dist_ac,
             detour_distance + tolerance,
             msg=f"Triangle inequality violated:\n"
-                f"  A=({lat_a:.6f}, {lon_a:.6f})\n"
-                f"  B=({lat_b:.6f}, {lon_b:.6f})\n"
-                f"  C=({lat_c:.6f}, {lon_c:.6f})\n"
-                f"  Direct A→C: {dist_ac:.6f}m\n"
-                f"  Detour A→B→C: {detour_distance:.6f}m\n"
-                f"  Violation: {dist_ac - detour_distance:.6f}m > tolerance {tolerance:.6f}m"
+            f"  A=({lat_a:.6f}, {lon_a:.6f})\n"
+            f"  B=({lat_b:.6f}, {lon_b:.6f})\n"
+            f"  C=({lat_c:.6f}, {lon_c:.6f})\n"
+            f"  Direct A→C: {dist_ac:.6f}m\n"
+            f"  Detour A→B→C: {detour_distance:.6f}m\n"
+            f"  Violation: {dist_ac - detour_distance:.6f}m > tolerance {tolerance:.6f}m",
         )
 
     @given(gps_coordinate_strategy())
@@ -225,7 +226,7 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
             0.0,
             rtol=0,
             atol=1e-10,  # Essentially zero, allowing only for floating point noise
-            err_msg=f"Distance from ({lat:.6f}, {lon:.6f}) to itself is {distance:.10e}, expected 0.0"
+            err_msg=f"Distance from ({lat:.6f}, {lon:.6f}) to itself is {distance:.10e}, expected 0.0",
         )
 
     @given(gps_coordinate_pair_strategy())
@@ -259,11 +260,14 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
         self.assertGreaterEqual(
             distance,
             0.0,
-            msg=f"Distance is negative: d({lat1:.6f},{lon1:.6f} → {lat2:.6f},{lon2:.6f}) = {distance:.6f}m"
+            msg=f"Distance is negative: d({lat1:.6f},{lon1:.6f} → {lat2:.6f},{lon2:.6f}) = {distance:.6f}m",
         )
 
-    @given(latitude_strategy, st.floats(min_value=-180, max_value=180),
-           st.floats(min_value=0.001, max_value=10.0))
+    @given(
+        latitude_strategy,
+        st.floats(min_value=-180, max_value=180),
+        st.floats(min_value=0.001, max_value=10.0),
+    )
     @settings(max_examples=100)
     def test_meridian_distance_property(self, lat1, lon, lat_offset_deg):
         """
@@ -302,15 +306,14 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
             rtol=1e-6,
             atol=1e-3,  # 1mm tolerance
             err_msg=f"Meridian distance incorrect:\n"
-                    f"  From: ({lat1:.6f}, {lon:.6f})\n"
-                    f"  To:   ({lat2:.6f}, {lon:.6f})\n"
-                    f"  Calculated: {distance:.6f}m\n"
-                    f"  Expected:   {expected_distance:.6f}m\n"
-                    f"  Difference: {abs(distance - expected_distance):.6f}m"
+            f"  From: ({lat1:.6f}, {lon:.6f})\n"
+            f"  To:   ({lat2:.6f}, {lon:.6f})\n"
+            f"  Calculated: {distance:.6f}m\n"
+            f"  Expected:   {expected_distance:.6f}m\n"
+            f"  Difference: {abs(distance - expected_distance):.6f}m",
         )
 
-    @given(st.floats(min_value=-180, max_value=180),
-           st.floats(min_value=0.001, max_value=10.0))
+    @given(st.floats(min_value=-180, max_value=180), st.floats(min_value=0.001, max_value=10.0))
     @settings(max_examples=100)
     def test_equator_distance_property(self, lon1, lon_offset_deg):
         """
@@ -357,12 +360,12 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
             rtol=1e-6,
             atol=1e-3,  # 1mm tolerance
             err_msg=f"Equator distance incorrect:\n"
-                    f"  From: ({lat:.6f}, {lon1:.6f})\n"
-                    f"  To:   ({lat:.6f}, {lon2:.6f})\n"
-                    f"  Longitude difference: {lon_diff:.6f}°\n"
-                    f"  Calculated: {distance:.6f}m\n"
-                    f"  Expected:   {expected_distance:.6f}m\n"
-                    f"  Difference: {abs(distance - expected_distance):.6f}m"
+            f"  From: ({lat:.6f}, {lon1:.6f})\n"
+            f"  To:   ({lat:.6f}, {lon2:.6f})\n"
+            f"  Longitude difference: {lon_diff:.6f}°\n"
+            f"  Calculated: {distance:.6f}m\n"
+            f"  Expected:   {expected_distance:.6f}m\n"
+            f"  Difference: {abs(distance - expected_distance):.6f}m",
         )
 
     @given(gps_coordinate_strategy())
@@ -399,9 +402,9 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
         self.assertTrue(
             is_north,
             msg=f"Bearing due north incorrect:\n"
-                f"  From: ({lat:.6f}, {lon:.6f})\n"
-                f"  To:   ({lat_north:.6f}, {lon:.6f})\n"
-                f"  Bearing: {bearing:.4f}° (expected ~0° or ~360°)"
+            f"  From: ({lat:.6f}, {lon:.6f})\n"
+            f"  To:   ({lat_north:.6f}, {lon:.6f})\n"
+            f"  Bearing: {bearing:.4f}° (expected ~0° or ~360°)",
         )
 
     @given(gps_coordinate_strategy())
@@ -441,12 +444,12 @@ class TestGPSDistanceCalculatorProperties(unittest.TestCase):
             rtol=0,
             atol=0.05,  # 0.05 degree tolerance (spherical geometry effects)
             err_msg=f"Bearing due east incorrect:\n"
-                    f"  From: ({lat:.6f}, {lon:.6f})\n"
-                    f"  To:   ({lat:.6f}, {lon_east:.6f})\n"
-                    f"  Bearing: {bearing:.4f}° (expected 90.0°)"
+            f"  From: ({lat:.6f}, {lon:.6f})\n"
+            f"  To:   ({lat:.6f}, {lon_east:.6f})\n"
+            f"  Bearing: {bearing:.4f}° (expected 90.0°)",
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run tests with verbose output
     unittest.main(verbosity=2)

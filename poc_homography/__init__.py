@@ -59,46 +59,44 @@ Available Classes:
 """
 
 # Core interface and data structures
-from poc_homography.homography_interface import (
-    HomographyProvider,
-    HomographyProviderExtended,
-    HomographyApproach,
-    HomographyResult,
-    WorldPoint,
-    MapCoordinate
-)
-
-# Homography provider implementations
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.feature_match_homography import FeatureMatchHomography
-from poc_homography.learned_homography import LearnedHomography
 
 # Configuration and factory
 from poc_homography.homography_config import HomographyConfig, get_default_config
 from poc_homography.homography_factory import HomographyFactory
+from poc_homography.homography_interface import (
+    HomographyApproach,
+    HomographyProvider,
+    HomographyProviderExtended,
+    HomographyResult,
+    MapCoordinate,
+    WorldPoint,
+)
+
+# Homography provider implementations
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.learned_homography import LearnedHomography
 
 # Define public API
 __all__ = [
     # Core interface
-    'HomographyProvider',
-    'HomographyProviderExtended',
-    'HomographyApproach',
-    'HomographyResult',
-    'WorldPoint',
-    'MapCoordinate',
-
+    "HomographyProvider",
+    "HomographyProviderExtended",
+    "HomographyApproach",
+    "HomographyResult",
+    "WorldPoint",
+    "MapCoordinate",
     # Implementations
-    'IntrinsicExtrinsicHomography',
-    'FeatureMatchHomography',
-    'LearnedHomography',
-
+    "IntrinsicExtrinsicHomography",
+    "FeatureMatchHomography",
+    "LearnedHomography",
     # Configuration and factory
-    'HomographyConfig',
-    'HomographyFactory',
-    'get_default_config',
+    "HomographyConfig",
+    "HomographyFactory",
+    "get_default_config",
 ]
 
 # Package metadata
-__version__ = '0.1.0'
-__author__ = 'SmartTerminal Team'
-__description__ = 'Unified interface for homography computation with multiple approaches'
+__version__ = "0.1.0"
+__author__ = "SmartTerminal Team"
+__description__ = "Unified interface for homography computation with multiple approaches"

@@ -6,40 +6,38 @@ Tests verify homography computation, GPS coordinate conversion, point projection
 and validation logic for the feature match approach using Ground Control Points.
 """
 
-import unittest
-import sys
 import os
-import math
+import sys
+import unittest
+
 import numpy as np
-from typing import List, Dict, Any
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.feature_match_homography import FeatureMatchHomography
 from poc_homography.homography_interface import (
-    WorldPoint,
-    MapCoordinate,
-    HomographyResult,
     HomographyApproach,
+    HomographyResult,
+    MapCoordinate,
+    WorldPoint,
 )
-
 
 # Test data: 4 corners of a 100m x 100m square centered around reference point
 # Reference: (39.640, -0.230)
 TEST_GCPS_SQUARE = [
-    {'gps': {'latitude': 39.6405, 'longitude': -0.2305}, 'image': {'u': 500, 'v': 500}},
-    {'gps': {'latitude': 39.6405, 'longitude': -0.2295}, 'image': {'u': 2000, 'v': 500}},
-    {'gps': {'latitude': 39.6395, 'longitude': -0.2305}, 'image': {'u': 500, 'v': 1000}},
-    {'gps': {'latitude': 39.6395, 'longitude': -0.2295}, 'image': {'u': 2000, 'v': 1000}},
+    {"gps": {"latitude": 39.6405, "longitude": -0.2305}, "image": {"u": 500, "v": 500}},
+    {"gps": {"latitude": 39.6405, "longitude": -0.2295}, "image": {"u": 2000, "v": 500}},
+    {"gps": {"latitude": 39.6395, "longitude": -0.2305}, "image": {"u": 500, "v": 1000}},
+    {"gps": {"latitude": 39.6395, "longitude": -0.2295}, "image": {"u": 2000, "v": 1000}},
 ]
 
 # Test data: More realistic GCPs with some spread
 TEST_GCPS_REALISTIC = [
-    {'gps': {'latitude': 39.640583, 'longitude': -0.230194}, 'image': {'u': 1250.5, 'v': 680.0}},
-    {'gps': {'latitude': 39.640612, 'longitude': -0.229856}, 'image': {'u': 2456.2, 'v': 695.5}},
-    {'gps': {'latitude': 39.640245, 'longitude': -0.230301}, 'image': {'u': 1180.0, 'v': 1820.3}},
-    {'gps': {'latitude': 39.640271, 'longitude': -0.229934}, 'image': {'u': 2380.7, 'v': 1835.2}},
+    {"gps": {"latitude": 39.640583, "longitude": -0.230194}, "image": {"u": 1250.5, "v": 680.0}},
+    {"gps": {"latitude": 39.640612, "longitude": -0.229856}, "image": {"u": 2456.2, "v": 695.5}},
+    {"gps": {"latitude": 39.640245, "longitude": -0.230301}, "image": {"u": 1180.0, "v": 1820.3}},
+    {"gps": {"latitude": 39.640271, "longitude": -0.229934}, "image": {"u": 2380.7, "v": 1835.2}},
 ]
 
 
@@ -60,11 +58,7 @@ class TestFeatureMatchHomographyInit(unittest.TestCase):
     def test_custom_initialization(self):
         """Test initialization with custom parameters."""
         provider = FeatureMatchHomography(
-            width=1920,
-            height=1080,
-            min_matches=6,
-            ransac_threshold=5.0,
-            confidence_threshold=0.7
+            width=1920, height=1080, min_matches=6, ransac_threshold=5.0, confidence_threshold=0.7
         )
         self.assertEqual(provider.width, 1920)
         self.assertEqual(provider.height, 1080)
@@ -109,7 +103,9 @@ class TestGCPExtraction(unittest.TestCase):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         reference = {}
 
-        with self.assertRaisesRegex(ValueError, "Missing required reference key: 'ground_control_points'"):
+        with self.assertRaisesRegex(
+            ValueError, "Missing required reference key: 'ground_control_points'"
+        ):
             provider.compute_homography(frame, reference)
 
     def test_insufficient_gcps_raises_error(self):
@@ -117,7 +113,7 @@ class TestGCPExtraction(unittest.TestCase):
         provider = FeatureMatchHomography(width=2560, height=1440, min_matches=4)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         reference = {
-            'ground_control_points': TEST_GCPS_SQUARE[:3]  # Only 3 GCPs
+            "ground_control_points": TEST_GCPS_SQUARE[:3]  # Only 3 GCPs
         }
 
         with self.assertRaisesRegex(ValueError, "Need at least 4 ground control points"):
@@ -128,9 +124,10 @@ class TestGCPExtraction(unittest.TestCase):
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         reference = {
-            'ground_control_points': [
-                {'image': {'u': 100, 'v': 200}},  # Missing 'gps'
-            ] * 4
+            "ground_control_points": [
+                {"image": {"u": 100, "v": 200}},  # Missing 'gps'
+            ]
+            * 4
         }
 
         with self.assertRaisesRegex(ValueError, "Each GCP must have 'gps' and 'image' keys"):
@@ -141,9 +138,10 @@ class TestGCPExtraction(unittest.TestCase):
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         reference = {
-            'ground_control_points': [
-                {'gps': {'latitude': 39.64, 'longitude': -0.23}},  # Missing 'image'
-            ] * 4
+            "ground_control_points": [
+                {"gps": {"latitude": 39.64, "longitude": -0.23}},  # Missing 'image'
+            ]
+            * 4
         }
 
         with self.assertRaisesRegex(ValueError, "Each GCP must have 'gps' and 'image' keys"):
@@ -154,12 +152,13 @@ class TestGCPExtraction(unittest.TestCase):
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         reference = {
-            'ground_control_points': [
+            "ground_control_points": [
                 {
-                    'gps': {'longitude': -0.23},  # Missing latitude
-                    'image': {'u': 100, 'v': 200}
+                    "gps": {"longitude": -0.23},  # Missing latitude
+                    "image": {"u": 100, "v": 200},
                 }
-            ] * 4
+            ]
+            * 4
         }
 
         with self.assertRaisesRegex(ValueError, "GPS must have 'latitude' and 'longitude' keys"):
@@ -170,12 +169,13 @@ class TestGCPExtraction(unittest.TestCase):
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         reference = {
-            'ground_control_points': [
+            "ground_control_points": [
                 {
-                    'gps': {'latitude': 39.64, 'longitude': -0.23},
-                    'image': {'v': 200}  # Missing u
+                    "gps": {"latitude": 39.64, "longitude": -0.23},
+                    "image": {"v": 200},  # Missing u
                 }
-            ] * 4
+            ]
+            * 4
         }
 
         with self.assertRaisesRegex(ValueError, "Image must have 'u' and 'v' keys"):
@@ -189,7 +189,7 @@ class TestGPSToLocalConversion(unittest.TestCase):
         """Set up test provider with computed homography."""
         self.provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
         self.provider.compute_homography(frame, reference)
 
     def test_gps_to_local_converts_correctly(self):
@@ -271,12 +271,12 @@ class TestGPSToLocalConversion(unittest.TestCase):
         # Create GCPs very close to north pole (89.99999 degrees)
         # This should trigger the cos(lat) ~ 0 check during compute_homography
         gcps_at_pole = [
-            {'gps': {'latitude': 89.99999, 'longitude': 0}, 'image': {'u': 500, 'v': 500}},
-            {'gps': {'latitude': 89.99999, 'longitude': 90}, 'image': {'u': 2000, 'v': 500}},
-            {'gps': {'latitude': 89.99998, 'longitude': 0}, 'image': {'u': 500, 'v': 1000}},
-            {'gps': {'latitude': 89.99998, 'longitude': 90}, 'image': {'u': 2000, 'v': 1000}},
+            {"gps": {"latitude": 89.99999, "longitude": 0}, "image": {"u": 500, "v": 500}},
+            {"gps": {"latitude": 89.99999, "longitude": 90}, "image": {"u": 2000, "v": 500}},
+            {"gps": {"latitude": 89.99998, "longitude": 0}, "image": {"u": 500, "v": 1000}},
+            {"gps": {"latitude": 89.99998, "longitude": 90}, "image": {"u": 2000, "v": 1000}},
         ]
-        reference = {'ground_control_points': gcps_at_pole}
+        reference = {"ground_control_points": gcps_at_pole}
 
         # Homography computation will set reference to pole latitude
         # This should cause ValueError during GPS->local conversion
@@ -292,7 +292,7 @@ class TestComputeHomography(unittest.TestCase):
         """Test that homography computation succeeds with valid GCPs."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         result = provider.compute_homography(frame, reference)
 
@@ -305,7 +305,7 @@ class TestComputeHomography(unittest.TestCase):
         """Test that compute_homography sets reference GPS position."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         provider.compute_homography(frame, reference)
 
@@ -318,7 +318,7 @@ class TestComputeHomography(unittest.TestCase):
         """Test that compute_homography updates H and H_inv."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         # Initial state is identity
         np.testing.assert_array_equal(provider.H, np.eye(3))
@@ -333,7 +333,7 @@ class TestComputeHomography(unittest.TestCase):
         """Test that confidence score is within [0, 1] range."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_REALISTIC}
+        reference = {"ground_control_points": TEST_GCPS_REALISTIC}
 
         result = provider.compute_homography(frame, reference)
 
@@ -345,20 +345,20 @@ class TestComputeHomography(unittest.TestCase):
         """Test that result includes approach and metadata."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         result = provider.compute_homography(frame, reference)
 
-        self.assertIn('approach', result.metadata)
-        self.assertEqual(result.metadata['approach'], HomographyApproach.FEATURE_MATCH.value)
-        self.assertIn('method', result.metadata)
-        self.assertEqual(result.metadata['method'], 'gcp_based')
-        self.assertIn('num_gcps', result.metadata)
-        self.assertEqual(result.metadata['num_gcps'], 4)
-        self.assertIn('num_inliers', result.metadata)
-        self.assertIn('inlier_ratio', result.metadata)
-        self.assertIn('determinant', result.metadata)
-        self.assertIn('reference_gps', result.metadata)
+        self.assertIn("approach", result.metadata)
+        self.assertEqual(result.metadata["approach"], HomographyApproach.FEATURE_MATCH.value)
+        self.assertIn("method", result.metadata)
+        self.assertEqual(result.metadata["method"], "gcp_based")
+        self.assertIn("num_gcps", result.metadata)
+        self.assertEqual(result.metadata["num_gcps"], 4)
+        self.assertIn("num_inliers", result.metadata)
+        self.assertIn("inlier_ratio", result.metadata)
+        self.assertIn("determinant", result.metadata)
+        self.assertIn("reference_gps", result.metadata)
 
     def test_compute_with_many_inliers_high_confidence(self):
         """Test that high inlier ratio produces high confidence."""
@@ -369,18 +369,14 @@ class TestComputeHomography(unittest.TestCase):
         gcps = []
         for i in range(10):
             for j in range(10):
-                gcps.append({
-                    'gps': {
-                        'latitude': 39.64 + i * 0.0001,
-                        'longitude': -0.23 + j * 0.0001
-                    },
-                    'image': {
-                        'u': 500 + i * 150,
-                        'v': 500 + j * 80
+                gcps.append(
+                    {
+                        "gps": {"latitude": 39.64 + i * 0.0001, "longitude": -0.23 + j * 0.0001},
+                        "image": {"u": 500 + i * 150, "v": 500 + j * 80},
                     }
-                })
+                )
 
-        reference = {'ground_control_points': gcps}
+        reference = {"ground_control_points": gcps}
         result = provider.compute_homography(frame, reference)
 
         # With synthetic clean data, should have high confidence
@@ -395,7 +391,7 @@ class TestComputeHomography(unittest.TestCase):
         """Test that is_valid returns True after successful computation."""
         provider = FeatureMatchHomography(width=2560, height=1440, confidence_threshold=0.1)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         provider.compute_homography(frame, reference)
 
@@ -411,7 +407,7 @@ class TestPointProjection(unittest.TestCase):
         """Set up provider with computed homography."""
         self.provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
         self.provider.compute_homography(frame, reference)
 
     def test_project_point_returns_world_point(self):
@@ -438,12 +434,12 @@ class TestPointProjection(unittest.TestCase):
         """Test that projecting a GCP's image point returns approximately the same GPS."""
         # Project the first GCP's image point
         gcp = TEST_GCPS_SQUARE[0]
-        world_point = self.provider.project_point((gcp['image']['u'], gcp['image']['v']))
+        world_point = self.provider.project_point((gcp["image"]["u"], gcp["image"]["v"]))
 
         # Should be close to original GPS coordinates
         # Allow some tolerance due to homography approximation
-        self.assertAlmostEqual(world_point.latitude, gcp['gps']['latitude'], places=3)
-        self.assertAlmostEqual(world_point.longitude, gcp['gps']['longitude'], places=3)
+        self.assertAlmostEqual(world_point.latitude, gcp["gps"]["latitude"], places=3)
+        self.assertAlmostEqual(world_point.longitude, gcp["gps"]["longitude"], places=3)
 
     def test_project_points_batch(self):
         """Test batch projection of multiple points."""
@@ -495,7 +491,7 @@ class TestMapCoordinateProjection(unittest.TestCase):
         """Set up provider with computed homography."""
         self.provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
         self.provider.compute_homography(frame, reference)
 
     def test_project_point_to_map_returns_map_coordinate(self):
@@ -549,10 +545,10 @@ class TestValidationMethods(unittest.TestCase):
         provider = FeatureMatchHomography(
             width=2560,
             height=1440,
-            confidence_threshold=0.1  # Low threshold
+            confidence_threshold=0.1,  # Low threshold
         )
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         provider.compute_homography(frame, reference)
 
@@ -569,7 +565,7 @@ class TestValidationMethods(unittest.TestCase):
         """Test that get_confidence returns valid value after computation."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_REALISTIC}
+        reference = {"ground_control_points": TEST_GCPS_REALISTIC}
 
         provider.compute_homography(frame, reference)
         confidence = provider.get_confidence()
@@ -580,13 +576,9 @@ class TestValidationMethods(unittest.TestCase):
     def test_is_valid_checks_confidence_threshold(self):
         """Test that is_valid respects confidence threshold."""
         # High threshold
-        provider_high = FeatureMatchHomography(
-            width=2560,
-            height=1440,
-            confidence_threshold=0.99
-        )
+        provider_high = FeatureMatchHomography(width=2560, height=1440, confidence_threshold=0.99)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         provider_high.compute_homography(frame, reference)
 
@@ -655,11 +647,14 @@ class TestEdgeCases(unittest.TestCase):
 
         # Create collinear points (all on a line)
         collinear_gcps = [
-            {'gps': {'latitude': 39.64 + i * 0.0001, 'longitude': -0.23}, 'image': {'u': 500 + i * 500, 'v': 500}}
+            {
+                "gps": {"latitude": 39.64 + i * 0.0001, "longitude": -0.23},
+                "image": {"u": 500 + i * 500, "v": 500},
+            }
             for i in range(4)
         ]
 
-        reference = {'ground_control_points': collinear_gcps}
+        reference = {"ground_control_points": collinear_gcps}
 
         # May raise RuntimeError or compute with very low confidence
         try:
@@ -673,7 +668,7 @@ class TestEdgeCases(unittest.TestCase):
         """Test that projecting point at horizon raises ValueError."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
         provider.compute_homography(frame, reference)
 
         # Point very close to top of image (near horizon for typical scenes)
@@ -692,13 +687,13 @@ class TestEdgeCases(unittest.TestCase):
 
         # Scale GCPs to small image
         small_gcps = [
-            {'gps': {'latitude': 39.6405, 'longitude': -0.2305}, 'image': {'u': 10, 'v': 10}},
-            {'gps': {'latitude': 39.6405, 'longitude': -0.2295}, 'image': {'u': 90, 'v': 10}},
-            {'gps': {'latitude': 39.6395, 'longitude': -0.2305}, 'image': {'u': 10, 'v': 90}},
-            {'gps': {'latitude': 39.6395, 'longitude': -0.2295}, 'image': {'u': 90, 'v': 90}},
+            {"gps": {"latitude": 39.6405, "longitude": -0.2305}, "image": {"u": 10, "v": 10}},
+            {"gps": {"latitude": 39.6405, "longitude": -0.2295}, "image": {"u": 90, "v": 10}},
+            {"gps": {"latitude": 39.6395, "longitude": -0.2305}, "image": {"u": 10, "v": 90}},
+            {"gps": {"latitude": 39.6395, "longitude": -0.2295}, "image": {"u": 90, "v": 90}},
         ]
 
-        reference = {'ground_control_points': small_gcps}
+        reference = {"ground_control_points": small_gcps}
         result = provider.compute_homography(frame, reference)
 
         self.assertIsInstance(result, HomographyResult)
@@ -713,7 +708,7 @@ class TestEdgeCases(unittest.TestCase):
         """Test that non-list GCPs raises appropriate error."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': "not a list"}
+        reference = {"ground_control_points": "not a list"}
 
         with self.assertRaisesRegex(ValueError, "Need at least"):
             provider.compute_homography(frame, reference)
@@ -726,7 +721,7 @@ class TestHomographyConsistency(unittest.TestCase):
         """Set up provider with computed homography."""
         self.provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_REALISTIC}
+        reference = {"ground_control_points": TEST_GCPS_REALISTIC}
         self.provider.compute_homography(frame, reference)
 
     def test_map_and_world_coordinates_consistent(self):
@@ -779,18 +774,18 @@ class TestGCPRoundTrip(unittest.TestCase):
         """Test that all GCPs round-trip with reasonable accuracy."""
         provider = FeatureMatchHomography(width=2560, height=1440)
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        reference = {'ground_control_points': TEST_GCPS_SQUARE}
+        reference = {"ground_control_points": TEST_GCPS_SQUARE}
 
         result = provider.compute_homography(frame, reference)
 
         # Project each GCP's image point back to GPS
         for i, gcp in enumerate(TEST_GCPS_SQUARE):
-            image_point = (gcp['image']['u'], gcp['image']['v'])
+            image_point = (gcp["image"]["u"], gcp["image"]["v"])
             world_point = provider.project_point(image_point)
 
             # Check accuracy (should be very close for inliers)
-            lat_error = abs(world_point.latitude - gcp['gps']['latitude'])
-            lon_error = abs(world_point.longitude - gcp['gps']['longitude'])
+            lat_error = abs(world_point.latitude - gcp["gps"]["latitude"])
+            lon_error = abs(world_point.longitude - gcp["gps"]["longitude"])
 
             # Allow larger tolerance since homography is approximate
             self.assertLess(lat_error, 0.001, f"GCP {i} latitude error too large")
@@ -799,7 +794,7 @@ class TestGCPRoundTrip(unittest.TestCase):
 
 def main():
     """Run all tests."""
-    unittest.main(argv=[''], verbosity=2, exit=False)
+    unittest.main(argv=[""], verbosity=2, exit=False)
 
 
 if __name__ == "__main__":

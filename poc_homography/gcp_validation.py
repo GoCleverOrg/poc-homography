@@ -9,7 +9,7 @@ pixel coordinates, and detects duplicates.
 import logging
 import math
 import numbers
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +36,8 @@ METERS_PER_ARC_SECOND_LAT = METERS_PER_DEGREE_LAT / 3600  # ~30.9 meters
 
 
 def analyze_gps_precision(
-    gcps: List[Dict[str, Any]],
-    reference_lat: Optional[float] = None
-) -> Dict[str, Any]:
+    gcps: list[dict[str, Any]], reference_lat: float | None = None
+) -> dict[str, Any]:
     """Analyze GPS coordinate precision and detect potential quantization issues.
 
     This function detects common GPS precision issues:
@@ -62,20 +61,20 @@ def analyze_gps_precision(
     """
     if not gcps:
         return {
-            'estimated_precision_m': None,
-            'decimal_places': None,
-            'quantization_detected': False,
-            'spacing_analysis': None,
-            'warnings': [],
-            'recommendations': []
+            "estimated_precision_m": None,
+            "decimal_places": None,
+            "quantization_detected": False,
+            "spacing_analysis": None,
+            "warnings": [],
+            "recommendations": [],
         }
 
     warnings = []
     recommendations = []
 
     # Extract GPS coordinates
-    latitudes = [gcp['gps']['latitude'] for gcp in gcps]
-    longitudes = [gcp['gps']['longitude'] for gcp in gcps]
+    latitudes = [gcp["gps"]["latitude"] for gcp in gcps]
+    longitudes = [gcp["gps"]["longitude"] for gcp in gcps]
 
     # Use centroid if no reference provided
     if reference_lat is None:
@@ -84,9 +83,9 @@ def analyze_gps_precision(
     # Analyze decimal places
     def count_decimal_places(value: float) -> int:
         """Count significant decimal places in a float."""
-        s = f"{value:.15f}".rstrip('0')
-        if '.' in s:
-            return len(s.split('.')[1])
+        s = f"{value:.15f}".rstrip("0")
+        if "." in s:
+            return len(s.split(".")[1])
         return 0
 
     lat_decimals = [count_decimal_places(lat) for lat in latitudes]
@@ -95,16 +94,16 @@ def analyze_gps_precision(
 
     # Check for arc-second quantization
     # Arc-second values have specific patterns like X.XXXYYY where YYY is 000, 278, 556, 833
-    arc_second_fractions = [0, 1/3600, 2/3600, 3/3600]  # 0, ~0.000278, etc.
+    arc_second_fractions = [0, 1 / 3600, 2 / 3600, 3 / 3600]  # 0, ~0.000278, etc.
 
-    def is_arc_second_quantized(coords: List[float]) -> bool:
+    def is_arc_second_quantized(coords: list[float]) -> bool:
         """Check if coordinates appear to be arc-second quantized."""
         quantized_count = 0
         for coord in coords:
             # Get fractional part of coordinate
-            frac = abs(coord) % (1/60)  # Fractional part within a minute
+            frac = abs(coord) % (1 / 60)  # Fractional part within a minute
             # Check if close to arc-second boundary
-            for arc_frac in [i/3600 for i in range(60)]:
+            for arc_frac in [i / 3600 for i in range(60)]:
                 if abs(frac - arc_frac) < 1e-7:
                     quantized_count += 1
                     break
@@ -117,12 +116,12 @@ def analyze_gps_precision(
     # Calculate estimated precision in meters
     # Based on decimal places: 6 decimals ≈ 0.1m, 5 decimals ≈ 1m, etc.
     precision_by_decimals = {
-        8: 0.001,   # 8 decimals ≈ 1mm
-        7: 0.01,    # 7 decimals ≈ 1cm
-        6: 0.1,     # 6 decimals ≈ 10cm
-        5: 1.0,     # 5 decimals ≈ 1m
-        4: 11.0,    # 4 decimals ≈ 11m
-        3: 111.0,   # 3 decimals ≈ 111m
+        8: 0.001,  # 8 decimals ≈ 1mm
+        7: 0.01,  # 7 decimals ≈ 1cm
+        6: 0.1,  # 6 decimals ≈ 10cm
+        5: 1.0,  # 5 decimals ≈ 1m
+        4: 11.0,  # 4 decimals ≈ 11m
+        3: 111.0,  # 3 decimals ≈ 111m
     }
     estimated_precision = precision_by_decimals.get(min_decimals, 1000.0)
 
@@ -136,7 +135,7 @@ def analyze_gps_precision(
         spacings = []
         cos_lat = math.cos(math.radians(reference_lat))
         for i in range(1, len(gcps)):
-            lat1, lon1 = latitudes[i-1], longitudes[i-1]
+            lat1, lon1 = latitudes[i - 1], longitudes[i - 1]
             lat2, lon2 = latitudes[i], longitudes[i]
             # Approximate distance in meters
             dlat = (lat2 - lat1) * METERS_PER_DEGREE_LAT
@@ -147,21 +146,21 @@ def analyze_gps_precision(
 
         if spacings:
             import statistics
+
             spacing_analysis = {
-                'min_m': min(spacings),
-                'max_m': max(spacings),
-                'mean_m': statistics.mean(spacings),
-                'std_m': statistics.stdev(spacings) if len(spacings) > 1 else 0,
-                'count': len(spacings)
+                "min_m": min(spacings),
+                "max_m": max(spacings),
+                "mean_m": statistics.mean(spacings),
+                "std_m": statistics.stdev(spacings) if len(spacings) > 1 else 0,
+                "count": len(spacings),
             }
 
             # Check for suspiciously regular spacing (may indicate manual entry)
-            if spacing_analysis['std_m'] > 0:
-                cv = spacing_analysis['std_m'] / spacing_analysis['mean_m']
+            if spacing_analysis["std_m"] > 0:
+                cv = spacing_analysis["std_m"] / spacing_analysis["mean_m"]
                 if cv > 0.5:
                     warnings.append(
-                        f"Inconsistent GCP spacing (CV={cv:.2f}). "
-                        "Check GPS coordinate accuracy."
+                        f"Inconsistent GCP spacing (CV={cv:.2f}). Check GPS coordinate accuracy."
                     )
 
     # Generate warnings
@@ -193,19 +192,19 @@ def analyze_gps_precision(
             "Avoid converting to degrees-minutes-seconds format. "
             "Use decimal degrees directly from GPS source."
         )
-    if spacing_analysis and spacing_analysis['min_m'] < estimated_precision:
+    if spacing_analysis and spacing_analysis["min_m"] < estimated_precision:
         recommendations.append(
             f"Some GCPs are closer ({spacing_analysis['min_m']:.2f}m) than GPS precision "
             f"({estimated_precision:.1f}m). Consider using more widely spaced points."
         )
 
     return {
-        'estimated_precision_m': estimated_precision,
-        'decimal_places': min_decimals,
-        'quantization_detected': quantization_detected,
-        'spacing_analysis': spacing_analysis,
-        'warnings': warnings,
-        'recommendations': recommendations
+        "estimated_precision_m": estimated_precision,
+        "decimal_places": min_decimals,
+        "quantization_detected": quantization_detected,
+        "spacing_analysis": spacing_analysis,
+        "warnings": warnings,
+        "recommendations": recommendations,
     }
 
 
@@ -236,7 +235,7 @@ def _is_valid_finite_number(value: Any) -> bool:
     return True
 
 
-def _get_gcp_description(gcp: Dict[str, Any], index: int) -> str:
+def _get_gcp_description(gcp: dict[str, Any], index: int) -> str:
     """Get a sanitized description for a GCP for use in error messages.
 
     Args:
@@ -246,20 +245,17 @@ def _get_gcp_description(gcp: Dict[str, Any], index: int) -> str:
     Returns:
         Sanitized description string
     """
-    raw_description = gcp.get('metadata', {}).get('description', f'index {index}')
+    raw_description = gcp.get("metadata", {}).get("description", f"index {index}")
 
     # Convert to string if not already
     if not isinstance(raw_description, str):
         raw_description = str(raw_description)
 
     # Sanitize: remove control characters and limit length
-    sanitized = ''.join(
-        char for char in raw_description
-        if char.isprintable() or char == ' '
-    )
+    sanitized = "".join(char for char in raw_description if char.isprintable() or char == " ")
 
     if len(sanitized) > MAX_DESCRIPTION_LENGTH:
-        sanitized = sanitized[:MAX_DESCRIPTION_LENGTH] + '...'
+        sanitized = sanitized[:MAX_DESCRIPTION_LENGTH] + "..."
 
     return sanitized
 
@@ -268,9 +264,9 @@ def _validate_numeric_field(
     value: Any,
     field_name: str,
     description: str,
-    min_value: Optional[float] = None,
-    max_value: Optional[float] = None,
-    units: str = ""
+    min_value: float | None = None,
+    max_value: float | None = None,
+    units: str = "",
 ) -> None:
     """Validate a numeric field with optional range checking.
 
@@ -294,8 +290,7 @@ def _validate_numeric_field(
             )
         else:
             raise ValueError(
-                f"GCP at {description}: {field_name} must be a number, "
-                f"got {type(value).__name__}"
+                f"GCP at {description}: {field_name} must be a number, got {type(value).__name__}"
             )
 
     if min_value is not None and max_value is not None:
@@ -307,7 +302,7 @@ def _validate_numeric_field(
             )
 
 
-def validate_gcp_gps_coordinates(gcp: Dict[str, Any], index: int) -> None:
+def validate_gcp_gps_coordinates(gcp: dict[str, Any], index: int) -> None:
     """Validate GPS coordinates of a ground control point.
 
     Args:
@@ -317,44 +312,30 @@ def validate_gcp_gps_coordinates(gcp: Dict[str, Any], index: int) -> None:
     Raises:
         ValueError: If GPS coordinates are invalid
     """
-    if 'gps' not in gcp:
-        raise ValueError(
-            f"GCP at index {index} missing required 'gps' section"
-        )
+    if "gps" not in gcp:
+        raise ValueError(f"GCP at index {index} missing required 'gps' section")
 
-    gps = gcp['gps']
+    gps = gcp["gps"]
     description = _get_gcp_description(gcp, index)
 
     # Validate latitude
-    if 'latitude' not in gps:
-        raise ValueError(
-            f"GCP at {description} missing required 'latitude' field"
-        )
+    if "latitude" not in gps:
+        raise ValueError(f"GCP at {description} missing required 'latitude' field")
 
     _validate_numeric_field(
-        gps['latitude'],
-        'latitude',
-        description,
-        min_value=MIN_LATITUDE,
-        max_value=MAX_LATITUDE
+        gps["latitude"], "latitude", description, min_value=MIN_LATITUDE, max_value=MAX_LATITUDE
     )
 
     # Validate longitude
-    if 'longitude' not in gps:
-        raise ValueError(
-            f"GCP at {description} missing required 'longitude' field"
-        )
+    if "longitude" not in gps:
+        raise ValueError(f"GCP at {description} missing required 'longitude' field")
 
     _validate_numeric_field(
-        gps['longitude'],
-        'longitude',
-        description,
-        min_value=MIN_LONGITUDE,
-        max_value=MAX_LONGITUDE
+        gps["longitude"], "longitude", description, min_value=MIN_LONGITUDE, max_value=MAX_LONGITUDE
     )
 
 
-def validate_gcp_elevation(gcp: Dict[str, Any], index: int) -> None:
+def validate_gcp_elevation(gcp: dict[str, Any], index: int) -> None:
     """Validate elevation of a ground control point.
 
     Args:
@@ -364,31 +345,28 @@ def validate_gcp_elevation(gcp: Dict[str, Any], index: int) -> None:
     Raises:
         ValueError: If elevation is invalid
     """
-    if 'gps' not in gcp:
+    if "gps" not in gcp:
         return  # Will be caught by GPS validation
 
-    gps = gcp['gps']
+    gps = gcp["gps"]
 
     # Elevation is optional, only validate if present
-    if 'elevation' not in gps:
+    if "elevation" not in gps:
         return
 
     description = _get_gcp_description(gcp, index)
 
     _validate_numeric_field(
-        gps['elevation'],
-        'elevation',
+        gps["elevation"],
+        "elevation",
         description,
         min_value=MIN_ELEVATION,
         max_value=MAX_ELEVATION,
-        units='meters'
+        units="meters",
     )
 
 
-def _validate_image_dimension(
-    dimension: Any,
-    dimension_name: str
-) -> Optional[int]:
+def _validate_image_dimension(dimension: Any, dimension_name: str) -> int | None:
     """Validate and normalize an image dimension parameter.
 
     Args:
@@ -413,37 +391,27 @@ def _validate_image_dimension(
             )
         else:
             raise ValueError(
-                f"{dimension_name} must be a positive integer, "
-                f"got {type(dimension).__name__}"
+                f"{dimension_name} must be a positive integer, got {type(dimension).__name__}"
             )
 
     # Convert to int and validate range
     try:
         dim_int = int(dimension)
     except (TypeError, ValueError, OverflowError) as e:
-        raise ValueError(
-            f"{dimension_name} must be a positive integer, got {dimension}"
-        ) from e
+        raise ValueError(f"{dimension_name} must be a positive integer, got {dimension}") from e
 
     if dim_int <= 0:
-        raise ValueError(
-            f"{dimension_name} must be positive, got {dim_int}"
-        )
+        raise ValueError(f"{dimension_name} must be positive, got {dim_int}")
 
     # Sanity check for reasonable image dimensions (up to 100 megapixels)
     if dim_int > 100000:
-        raise ValueError(
-            f"{dimension_name} {dim_int} exceeds maximum allowed value of 100000"
-        )
+        raise ValueError(f"{dimension_name} {dim_int} exceeds maximum allowed value of 100000")
 
     return dim_int
 
 
 def validate_gcp_pixel_coordinates(
-    gcp: Dict[str, Any],
-    index: int,
-    image_width: Optional[int] = None,
-    image_height: Optional[int] = None
+    gcp: dict[str, Any], index: int, image_width: int | None = None, image_height: int | None = None
 ) -> None:
     """Validate pixel coordinates of a ground control point.
 
@@ -456,52 +424,44 @@ def validate_gcp_pixel_coordinates(
     Raises:
         ValueError: If pixel coordinates are invalid
     """
-    if 'image' not in gcp:
-        raise ValueError(
-            f"GCP at index {index} missing required 'image' section"
-        )
+    if "image" not in gcp:
+        raise ValueError(f"GCP at index {index} missing required 'image' section")
 
-    image = gcp['image']
+    image = gcp["image"]
     description = _get_gcp_description(gcp, index)
 
     # Validate u coordinate
-    if 'u' not in image:
-        raise ValueError(
-            f"GCP at {description} missing required 'u' (horizontal pixel) field"
-        )
+    if "u" not in image:
+        raise ValueError(f"GCP at {description} missing required 'u' (horizontal pixel) field")
 
-    u = image['u']
-    _validate_numeric_field(u, 'u coordinate', description)
+    u = image["u"]
+    _validate_numeric_field(u, "u coordinate", description)
 
     # Validate v coordinate
-    if 'v' not in image:
-        raise ValueError(
-            f"GCP at {description} missing required 'v' (vertical pixel) field"
-        )
+    if "v" not in image:
+        raise ValueError(f"GCP at {description} missing required 'v' (vertical pixel) field")
 
-    v = image['v']
-    _validate_numeric_field(v, 'v coordinate', description)
+    v = image["v"]
+    _validate_numeric_field(v, "v coordinate", description)
 
     # Validate bounds - check each dimension independently when provided
     if image_width is not None:
         if u < 0 or u >= image_width:
             raise ValueError(
-                f"GCP at {description}: u coordinate {u} outside image width "
-                f"[0, {image_width})"
+                f"GCP at {description}: u coordinate {u} outside image width [0, {image_width})"
             )
 
     if image_height is not None:
         if v < 0 or v >= image_height:
             raise ValueError(
-                f"GCP at {description}: v coordinate {v} outside image height "
-                f"[0, {image_height})"
+                f"GCP at {description}: v coordinate {v} outside image height [0, {image_height})"
             )
 
 
 def detect_duplicate_gcps(
-    gcps: List[Dict[str, Any]],
+    gcps: list[dict[str, Any]],
     gps_epsilon: float = GPS_EPSILON,
-    pixel_epsilon: float = PIXEL_EPSILON
+    pixel_epsilon: float = PIXEL_EPSILON,
 ) -> None:
     """Detect duplicate ground control points.
 
@@ -518,18 +478,12 @@ def detect_duplicate_gcps(
     """
     # Extract coordinates upfront to avoid repeated dictionary lookups
     # At this point, GCPs have been validated so we know these fields exist
-    coords: List[Tuple[float, float, float, float, str]] = []
+    coords: list[tuple[float, float, float, float, str]] = []
     for i, gcp in enumerate(gcps):
         desc = _get_gcp_description(gcp, i)
-        gps = gcp['gps']
-        image = gcp['image']
-        coords.append((
-            gps['latitude'],
-            gps['longitude'],
-            image['u'],
-            image['v'],
-            desc
-        ))
+        gps = gcp["gps"]
+        image = gcp["image"]
+        coords.append((gps["latitude"], gps["longitude"], image["u"], image["v"], desc))
 
     for i in range(len(coords)):
         lat_i, lon_i, u_i, v_i, desc_i = coords[i]
@@ -538,16 +492,10 @@ def detect_duplicate_gcps(
             lat_j, lon_j, u_j, v_j, desc_j = coords[j]
 
             # Check if GPS coordinates are within epsilon
-            gps_duplicate = (
-                abs(lat_i - lat_j) < gps_epsilon and
-                abs(lon_i - lon_j) < gps_epsilon
-            )
+            gps_duplicate = abs(lat_i - lat_j) < gps_epsilon and abs(lon_i - lon_j) < gps_epsilon
 
             # Check if pixel coordinates are within epsilon
-            pixel_duplicate = (
-                abs(u_i - u_j) < pixel_epsilon and
-                abs(v_i - v_j) < pixel_epsilon
-            )
+            pixel_duplicate = abs(u_i - u_j) < pixel_epsilon and abs(v_i - v_j) < pixel_epsilon
 
             # Only flag as duplicate if BOTH GPS and pixel coords match
             if gps_duplicate and pixel_duplicate:
@@ -560,10 +508,10 @@ def detect_duplicate_gcps(
 
 def validate_ground_control_points(
     gcps: Any,
-    image_width: Optional[int] = None,
-    image_height: Optional[int] = None,
-    min_gcp_count: int = 6
-) -> List[Dict[str, Any]]:
+    image_width: int | None = None,
+    image_height: int | None = None,
+    min_gcp_count: int = 6,
+) -> list[dict[str, Any]]:
     """Validate ground control points configuration.
 
     Supports two formats:
@@ -596,8 +544,8 @@ def validate_ground_control_points(
         >>> validated = validate_ground_control_points(gcps)
     """
     # Validate and normalize image dimensions first
-    validated_width = _validate_image_dimension(image_width, 'image_width')
-    validated_height = _validate_image_dimension(image_height, 'image_height')
+    validated_width = _validate_image_dimension(image_width, "image_width")
+    validated_height = _validate_image_dimension(image_height, "image_height")
 
     # Detect format and normalize to list
     if isinstance(gcps, list):
@@ -629,9 +577,7 @@ def validate_ground_control_points(
                     f"Using set '{first_key}' for validation"
                 )
     else:
-        raise ValueError(
-            f"ground_control_points must be a list or dict, got {type(gcps).__name__}"
-        )
+        raise ValueError(f"ground_control_points must be a list or dict, got {type(gcps).__name__}")
 
     # Check maximum count to prevent O(n^2) performance issues
     if len(gcp_list) > MAX_GCP_COUNT:
@@ -649,12 +595,10 @@ def validate_ground_control_points(
 
     # Log if pixel validation will be skipped (WARNING level since validation is reduced)
     if validated_width is None and validated_height is None:
-        logger.warning(
-            "Image dimensions not provided, skipping pixel coordinate bounds validation"
-        )
+        logger.warning("Image dimensions not provided, skipping pixel coordinate bounds validation")
     elif validated_width is None or validated_height is None:
-        provided = 'image_width' if validated_width is not None else 'image_height'
-        missing = 'image_height' if validated_width is not None else 'image_width'
+        provided = "image_width" if validated_width is not None else "image_height"
+        missing = "image_height" if validated_width is not None else "image_width"
         logger.warning(
             f"Only {provided} provided, {missing} missing. "
             f"Partial pixel coordinate bounds validation will be performed"
@@ -663,9 +607,7 @@ def validate_ground_control_points(
     # Validate each GCP
     for i, gcp in enumerate(gcp_list):
         if not isinstance(gcp, dict):
-            raise ValueError(
-                f"GCP at index {i} must be a dictionary, got {type(gcp).__name__}"
-            )
+            raise ValueError(f"GCP at index {i} must be a dictionary, got {type(gcp).__name__}")
 
         # Validate GPS coordinates
         validate_gcp_gps_coordinates(gcp, i)

@@ -1,0 +1,156 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["poc_homography"]
+
+[tool.hatch.build.targets.wheel.sources]
+"poc_homography" = "poc_homography"
+
+[tool.hatch.build]
+include = [
+    "poc_homography/**/*.py",
+    "poc_homography/**/*.j2",
+]
+
+[project]
+name = "poc-homography"
+version = "0.1.0"
+description = "POC for camera homography and coordinate transformations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.7.0",
+    "requests>=2.28",
+    "PyYAML>=6.0",
+    "scipy>=1.9",
+    "pyproj>=3.7.1",
+    "jinja2>=3.1.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.100",
+    "mypy>=1.8",
+    "ruff>=0.4",
+    "pre-commit>=3.5",
+    "types-PyYAML",
+    "types-requests",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["poc_homography", "tools", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B007",   # loop control variable not used (common pattern)
+    "B008",   # do not perform function calls in argument defaults
+    "B028",   # no explicit stacklevel in warnings
+    "B904",   # raise from err (stylistic)
+    "B905",   # zip without strict (Python 3.10+ style)
+    "C901",   # too complex
+    "ARG001", # unused function argument (common in callbacks/interfaces)
+    "ARG002", # unused method argument (common in callbacks/interfaces)
+    "F821",   # undefined name (forward references in type hints)
+    "F841",   # local variable assigned but never used (cleanup later)
+    "PTH",    # pathlib suggestions (not critical, keep existing os.path usage)
+    "RUF001", # ambiguous unicode in strings (intentional math symbols)
+    "RUF002", # ambiguous unicode in docstrings (math symbols)
+    "RUF003", # ambiguous unicode in comments (math symbols)
+    "RUF005", # list concatenation vs spread (stylistic)
+    "RUF012", # mutable class attributes (common pattern)
+    "RUF013", # implicit Optional (legacy code)
+    "RUF022", # unsorted __all__ (preserve logical grouping)
+    "RUF043", # regex pattern metacharacters (intentional)
+    "RUF059", # unused unpacked variable (use _ prefix manually)
+    "SIM102", # nested if statements (sometimes clearer)
+    "SIM103", # return condition directly (sometimes less clear)
+    "SIM105", # contextlib.suppress suggestion (stylistic)
+    "SIM108", # ternary operator (sometimes less readable)
+    "SIM115", # context manager for files (not always applicable)
+    "SIM118", # key in dict vs dict.keys() (stylistic)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG", "B011", "E402", "S101", "SIM117"]  # Tests have asserts and path setup
+"tools/*" = ["ARG", "E402", "F401"]  # Tools have path setup and conditional imports
+
+[tool.ruff.lint.isort]
+known-first-party = ["poc_homography"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = [
+    "build",
+    "dist",
+    ".venv",
+]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "-ra",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+[tool.coverage.run]
+source = ["poc_homography"]
+branch = true
+omit = ["tests/*", "tools/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

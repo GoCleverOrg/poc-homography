@@ -17,19 +17,15 @@ This test suite ensures that all modules now use the correct shared implementati
 and that round-trip conversions are accurate to sub-millimeter precision.
 """
 
-import unittest
-import sys
-import os
 import math
+import os
+import sys
+import unittest
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from poc_homography.coordinate_converter import (
-    EARTH_RADIUS_M,
-    gps_to_local_xy,
-    local_xy_to_gps
-)
+from poc_homography.coordinate_converter import EARTH_RADIUS_M, gps_to_local_xy, local_xy_to_gps
 
 
 class TestCoordinateConverterBasics(unittest.TestCase):
@@ -37,8 +33,9 @@ class TestCoordinateConverterBasics(unittest.TestCase):
 
     def test_earth_radius_constant(self):
         """Verify EARTH_RADIUS_M is set to the correct value (6371000m)."""
-        self.assertEqual(EARTH_RADIUS_M, 6371000.0,
-                        "Earth radius should be 6371000.0 meters (WGS84 mean radius)")
+        self.assertEqual(
+            EARTH_RADIUS_M, 6371000.0, "Earth radius should be 6371000.0 meters (WGS84 mean radius)"
+        )
 
     def test_round_trip_origin(self):
         """Zero offset should return to origin with perfect accuracy."""
@@ -49,16 +46,16 @@ class TestCoordinateConverterBasics(unittest.TestCase):
         x, y = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
         # Should be exact (within floating point precision)
-        self.assertAlmostEqual(x, 0.0, places=10,
-                              msg="Zero offset should return exactly to X=0")
-        self.assertAlmostEqual(y, 0.0, places=10,
-                              msg="Zero offset should return exactly to Y=0")
+        self.assertAlmostEqual(x, 0.0, places=10, msg="Zero offset should return exactly to X=0")
+        self.assertAlmostEqual(y, 0.0, places=10, msg="Zero offset should return exactly to Y=0")
 
         # GPS coordinates should match reference point
-        self.assertAlmostEqual(lat, ref_lat, places=10,
-                              msg="Zero offset should return to reference latitude")
-        self.assertAlmostEqual(lon, ref_lon, places=10,
-                              msg="Zero offset should return to reference longitude")
+        self.assertAlmostEqual(
+            lat, ref_lat, places=10, msg="Zero offset should return to reference latitude"
+        )
+        self.assertAlmostEqual(
+            lon, ref_lon, places=10, msg="Zero offset should return to reference longitude"
+        )
 
     def test_round_trip_various_distances_single_latitude(self):
         """Round-trip should have < 1mm error for < 1km distances at 45° latitude."""
@@ -89,12 +86,15 @@ class TestCoordinateConverterBasics(unittest.TestCase):
                 x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
                 # Calculate round-trip error
-                error = math.sqrt((x_orig - x_final)**2 + (y_orig - y_final)**2)
+                error = math.sqrt((x_orig - x_final) ** 2 + (y_orig - y_final) ** 2)
                 error_mm = error * 1000  # Convert to millimeters
 
-                self.assertLess(error_mm, max_error_mm,
-                               f"{description}: Round-trip error {error_mm:.4f}mm exceeds "
-                               f"threshold {max_error_mm}mm")
+                self.assertLess(
+                    error_mm,
+                    max_error_mm,
+                    f"{description}: Round-trip error {error_mm:.4f}mm exceeds "
+                    f"threshold {max_error_mm}mm",
+                )
 
     def test_round_trip_various_latitudes(self):
         """Test round-trip accuracy at different reference latitudes."""
@@ -115,16 +115,18 @@ class TestCoordinateConverterBasics(unittest.TestCase):
                 ref_lon = 0.0
 
                 # Test in all cardinal directions
-                for x, y in [(distance_m, 0), (0, distance_m),
-                            (-distance_m, 0), (0, -distance_m)]:
+                for x, y in [(distance_m, 0), (0, distance_m), (-distance_m, 0), (0, -distance_m)]:
                     lat, lon = local_xy_to_gps(ref_lat, ref_lon, x, y)
                     x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
-                    error = math.sqrt((x - x_final)**2 + (y - y_final)**2)
+                    error = math.sqrt((x - x_final) ** 2 + (y - y_final) ** 2)
                     error_mm = error * 1000
 
-                    self.assertLess(error_mm, max_error_mm,
-                                   f"{description} at ({x},{y}): error {error_mm:.4f}mm")
+                    self.assertLess(
+                        error_mm,
+                        max_error_mm,
+                        f"{description} at ({x},{y}): error {error_mm:.4f}mm",
+                    )
 
     def test_negative_coordinates(self):
         """West and South directions should work correctly."""
@@ -144,11 +146,12 @@ class TestCoordinateConverterBasics(unittest.TestCase):
                 lat, lon = local_xy_to_gps(ref_lat, ref_lon, x, y)
                 x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
-                error = math.sqrt((x - x_final)**2 + (y - y_final)**2)
+                error = math.sqrt((x - x_final) ** 2 + (y - y_final) ** 2)
                 error_mm = error * 1000
 
-                self.assertLess(error_mm, max_error_mm,
-                               f"{description}: Round-trip error {error_mm:.4f}mm")
+                self.assertLess(
+                    error_mm, max_error_mm, f"{description}: Round-trip error {error_mm:.4f}mm"
+                )
 
     def test_gps_to_local_xy_eastward_movement(self):
         """Moving East should increase longitude and produce positive X."""
@@ -161,8 +164,7 @@ class TestCoordinateConverterBasics(unittest.TestCase):
         x, y = gps_to_local_xy(ref_lat, ref_lon, target_lat, target_lon)
 
         self.assertGreater(x, 0, "Eastward movement should produce positive X")
-        self.assertAlmostEqual(y, 0, places=10,
-                              msg="Pure eastward movement should have Y ≈ 0")
+        self.assertAlmostEqual(y, 0, places=10, msg="Pure eastward movement should have Y ≈ 0")
 
     def test_gps_to_local_xy_northward_movement(self):
         """Moving North should increase latitude and produce positive Y."""
@@ -174,8 +176,7 @@ class TestCoordinateConverterBasics(unittest.TestCase):
 
         x, y = gps_to_local_xy(ref_lat, ref_lon, target_lat, target_lon)
 
-        self.assertAlmostEqual(x, 0, places=10,
-                              msg="Pure northward movement should have X ≈ 0")
+        self.assertAlmostEqual(x, 0, places=10, msg="Pure northward movement should have X ≈ 0")
         self.assertGreater(y, 0, "Northward movement should produce positive Y")
 
     def test_latitude_validation(self):
@@ -210,27 +211,39 @@ class TestConsistencyAcrossModules(unittest.TestCase):
 
     def test_all_modules_import_shared_implementation(self):
         """Verify all modules import from coordinate_converter."""
+        import poc_homography.feature_match_homography
         import poc_homography.gps_distance_calculator
         import poc_homography.intrinsic_extrinsic_homography
-        import poc_homography.feature_match_homography
 
         # Check that gps_distance_calculator imports the functions
-        self.assertTrue(hasattr(poc_homography.gps_distance_calculator, 'gps_to_local_xy'),
-                       "gps_distance_calculator should import gps_to_local_xy")
-        self.assertTrue(hasattr(poc_homography.gps_distance_calculator, 'local_xy_to_gps'),
-                       "gps_distance_calculator should import local_xy_to_gps")
-        self.assertTrue(hasattr(poc_homography.gps_distance_calculator, 'EARTH_RADIUS_M'),
-                       "gps_distance_calculator should import EARTH_RADIUS_M")
+        self.assertTrue(
+            hasattr(poc_homography.gps_distance_calculator, "gps_to_local_xy"),
+            "gps_distance_calculator should import gps_to_local_xy",
+        )
+        self.assertTrue(
+            hasattr(poc_homography.gps_distance_calculator, "local_xy_to_gps"),
+            "gps_distance_calculator should import local_xy_to_gps",
+        )
+        self.assertTrue(
+            hasattr(poc_homography.gps_distance_calculator, "EARTH_RADIUS_M"),
+            "gps_distance_calculator should import EARTH_RADIUS_M",
+        )
 
         # Check that feature_match_homography imports the functions
-        self.assertTrue(hasattr(poc_homography.feature_match_homography, 'gps_to_local_xy'),
-                       "feature_match_homography should import gps_to_local_xy")
-        self.assertTrue(hasattr(poc_homography.feature_match_homography, 'local_xy_to_gps'),
-                       "feature_match_homography should import local_xy_to_gps")
+        self.assertTrue(
+            hasattr(poc_homography.feature_match_homography, "gps_to_local_xy"),
+            "feature_match_homography should import gps_to_local_xy",
+        )
+        self.assertTrue(
+            hasattr(poc_homography.feature_match_homography, "local_xy_to_gps"),
+            "feature_match_homography should import local_xy_to_gps",
+        )
 
         # Check that intrinsic_extrinsic_homography imports local_xy_to_gps
-        self.assertTrue(hasattr(poc_homography.intrinsic_extrinsic_homography, 'local_xy_to_gps'),
-                       "intrinsic_extrinsic_homography should import local_xy_to_gps")
+        self.assertTrue(
+            hasattr(poc_homography.intrinsic_extrinsic_homography, "local_xy_to_gps"),
+            "intrinsic_extrinsic_homography should import local_xy_to_gps",
+        )
 
     def test_all_modules_use_same_earth_radius(self):
         """Verify all modules use the same Earth radius constant."""
@@ -238,17 +251,20 @@ class TestConsistencyAcrossModules(unittest.TestCase):
         from poc_homography.coordinate_converter import EARTH_RADIUS_M
 
         # gps_distance_calculator imports and uses EARTH_RADIUS_M
-        self.assertEqual(poc_homography.gps_distance_calculator.EARTH_RADIUS_M,
-                        EARTH_RADIUS_M,
-                        "gps_distance_calculator should use the shared EARTH_RADIUS_M")
+        self.assertEqual(
+            poc_homography.gps_distance_calculator.EARTH_RADIUS_M,
+            EARTH_RADIUS_M,
+            "gps_distance_calculator should use the shared EARTH_RADIUS_M",
+        )
 
-        self.assertEqual(EARTH_RADIUS_M, 6371000.0,
-                        "All modules should use Earth radius of 6371000m")
+        self.assertEqual(
+            EARTH_RADIUS_M, 6371000.0, "All modules should use Earth radius of 6371000m"
+        )
 
     def test_modules_produce_identical_results(self):
         """Verify that imported functions produce identical results."""
-        import poc_homography.gps_distance_calculator as gps_calc
         import poc_homography.feature_match_homography as feature_match
+        import poc_homography.gps_distance_calculator as gps_calc
         from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 
         ref_lat, ref_lon = 39.640472, -0.230194
@@ -269,10 +285,18 @@ class TestConsistencyAcrossModules(unittest.TestCase):
         lat2, lon2 = gps_calc.local_xy_to_gps(ref_lat, ref_lon, 50.0, 100.0)
         lat3, lon3 = feature_match.local_xy_to_gps(ref_lat, ref_lon, 50.0, 100.0)
 
-        self.assertEqual(lat1, lat2, "coordinate_converter and gps_distance_calculator should match")
-        self.assertEqual(lat1, lat3, "coordinate_converter and feature_match_homography should match")
-        self.assertEqual(lon1, lon2, "coordinate_converter and gps_distance_calculator should match")
-        self.assertEqual(lon1, lon3, "coordinate_converter and feature_match_homography should match")
+        self.assertEqual(
+            lat1, lat2, "coordinate_converter and gps_distance_calculator should match"
+        )
+        self.assertEqual(
+            lat1, lat3, "coordinate_converter and feature_match_homography should match"
+        )
+        self.assertEqual(
+            lon1, lon2, "coordinate_converter and gps_distance_calculator should match"
+        )
+        self.assertEqual(
+            lon1, lon3, "coordinate_converter and feature_match_homography should match"
+        )
 
 
 class TestIssue30Regression(unittest.TestCase):
@@ -313,15 +337,18 @@ class TestIssue30Regression(unittest.TestCase):
                 lat, lon = local_xy_to_gps(ref_lat, ref_lon, x, y)
                 x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
-                error = math.sqrt((x - x_final)**2 + (y - y_final)**2)
+                error = math.sqrt((x - x_final) ** 2 + (y - y_final) ** 2)
                 error_mm = error * 1000
 
                 # This test would FAIL with the old 111111 formula (error ~76mm)
                 # but PASSES with the correct R=6371000 formula (error < 1mm)
-                self.assertLess(error_mm, max_error_mm,
-                               f"{description}: Error {error_mm:.6f}mm. "
-                               f"Old formula would have ~76mm error. "
-                               f"This proves we're using the correct R=6371000 formula.")
+                self.assertLess(
+                    error_mm,
+                    max_error_mm,
+                    f"{description}: Error {error_mm:.6f}mm. "
+                    f"Old formula would have ~76mm error. "
+                    f"This proves we're using the correct R=6371000 formula.",
+                )
 
     def test_conversion_matches_formula_b(self):
         """
@@ -347,10 +374,18 @@ class TestIssue30Regression(unittest.TestCase):
         actual_lat, actual_lon = local_xy_to_gps(ref_lat, ref_lon, x_meters, y_meters)
 
         # Should match to high precision
-        self.assertAlmostEqual(actual_lat, expected_lat, places=12,
-                              msg="Implementation should match Formula B for latitude")
-        self.assertAlmostEqual(actual_lon, expected_lon, places=12,
-                              msg="Implementation should match Formula B for longitude")
+        self.assertAlmostEqual(
+            actual_lat,
+            expected_lat,
+            places=12,
+            msg="Implementation should match Formula B for latitude",
+        )
+        self.assertAlmostEqual(
+            actual_lon,
+            expected_lon,
+            places=12,
+            msg="Implementation should match Formula B for longitude",
+        )
 
     def test_old_formula_would_fail(self):
         """
@@ -376,19 +411,26 @@ class TestIssue30Regression(unittest.TestCase):
 
         # Convert longitude difference back to meters to see the actual error
         # At this latitude, 1 degree longitude ≈ 85.4 km
-        lon_difference_meters = lon_difference_deg * (EARTH_RADIUS_M * math.cos(ref_lat_rad) * math.pi / 180)
+        lon_difference_meters = lon_difference_deg * (
+            EARTH_RADIUS_M * math.cos(ref_lat_rad) * math.pi / 180
+        )
         lon_difference_mm = lon_difference_meters * 1000
 
         # The old formula should differ by approximately 0.076% of 100m ≈ 76mm
         # We expect the difference to be in the range of 50-100mm
-        self.assertGreater(lon_difference_mm, 50,
-                          f"Old formula should differ by at least 50mm at 100m distance. "
-                          f"Actual difference: {lon_difference_mm:.2f}mm. "
-                          f"This proves the old formula had significant error.")
+        self.assertGreater(
+            lon_difference_mm,
+            50,
+            f"Old formula should differ by at least 50mm at 100m distance. "
+            f"Actual difference: {lon_difference_mm:.2f}mm. "
+            f"This proves the old formula had significant error.",
+        )
 
-        self.assertLess(lon_difference_mm, 100,
-                       f"Difference should be less than 100mm. "
-                       f"Actual: {lon_difference_mm:.2f}mm")
+        self.assertLess(
+            lon_difference_mm,
+            100,
+            f"Difference should be less than 100mm. Actual: {lon_difference_mm:.2f}mm",
+        )
 
     def test_earth_radius_not_111111(self):
         """
@@ -403,8 +445,11 @@ class TestIssue30Regression(unittest.TestCase):
         from poc_homography.coordinate_converter import EARTH_RADIUS_M
 
         # Verify we're using the correct Earth radius
-        self.assertEqual(EARTH_RADIUS_M, 6371000.0,
-                        "Must use Earth radius of 6371000m, not the 111111 approximation")
+        self.assertEqual(
+            EARTH_RADIUS_M,
+            6371000.0,
+            "Must use Earth radius of 6371000m, not the 111111 approximation",
+        )
 
         # Calculate what the correct meters per degree should be
         correct_m_per_deg_lat = EARTH_RADIUS_M * math.pi / 180
@@ -413,16 +458,26 @@ class TestIssue30Regression(unittest.TestCase):
         old_approximation = 111111.0
 
         # Calculate the error percentage
-        error_percentage = abs(correct_m_per_deg_lat - old_approximation) / correct_m_per_deg_lat * 100
+        error_percentage = (
+            abs(correct_m_per_deg_lat - old_approximation) / correct_m_per_deg_lat * 100
+        )
 
         # Document that the old formula had ~0.076% error
-        self.assertAlmostEqual(error_percentage, 0.076, places=2,
-                              msg=f"The old 111111 approximation had ~0.076% error. "
-                                  f"Actual error: {error_percentage:.3f}%")
+        self.assertAlmostEqual(
+            error_percentage,
+            0.076,
+            places=2,
+            msg=f"The old 111111 approximation had ~0.076% error. "
+            f"Actual error: {error_percentage:.3f}%",
+        )
 
         # Verify our implementation does NOT use 111111
-        self.assertNotAlmostEqual(correct_m_per_deg_lat, old_approximation, places=0,
-                                 msg="We should NOT be using the 111111 approximation")
+        self.assertNotAlmostEqual(
+            correct_m_per_deg_lat,
+            old_approximation,
+            places=0,
+            msg="We should NOT be using the 111111 approximation",
+        )
 
 
 class TestEdgeCases(unittest.TestCase):
@@ -437,12 +492,15 @@ class TestEdgeCases(unittest.TestCase):
             lat, lon = local_xy_to_gps(ref_lat, ref_lon, x, y)
             x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
-            error = math.sqrt((x - x_final)**2 + (y - y_final)**2)
+            error = math.sqrt((x - x_final) ** 2 + (y - y_final) ** 2)
             error_microns = error * 1e6
 
-            self.assertLess(error_microns, 1.0,
-                           f"1mm offset should round-trip with < 1 micrometer error. "
-                           f"Got {error_microns:.3f} micrometers")
+            self.assertLess(
+                error_microns,
+                1.0,
+                f"1mm offset should round-trip with < 1 micrometer error. "
+                f"Got {error_microns:.3f} micrometers",
+            )
 
     def test_large_offsets(self):
         """Test that 1km offsets still have acceptable accuracy."""
@@ -463,12 +521,14 @@ class TestEdgeCases(unittest.TestCase):
                 lat, lon = local_xy_to_gps(ref_lat, ref_lon, x, y)
                 x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
-                error = math.sqrt((x - x_final)**2 + (y - y_final)**2)
+                error = math.sqrt((x - x_final) ** 2 + (y - y_final) ** 2)
                 error_cm = error * 100
 
-                self.assertLess(error_cm, max_error_cm,
-                               f"{description} should have < {max_error_cm}cm error. "
-                               f"Got {error_cm:.3f}cm")
+                self.assertLess(
+                    error_cm,
+                    max_error_cm,
+                    f"{description} should have < {max_error_cm}cm error. Got {error_cm:.3f}cm",
+                )
 
     def test_equator_special_case(self):
         """Test conversions at the equator (latitude = 0)."""
@@ -481,11 +541,10 @@ class TestEdgeCases(unittest.TestCase):
         lat, lon = local_xy_to_gps(ref_lat, ref_lon, x_meters, y_meters)
         x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
-        error = math.sqrt((x_meters - x_final)**2 + (y_meters - y_final)**2)
+        error = math.sqrt((x_meters - x_final) ** 2 + (y_meters - y_final) ** 2)
         error_mm = error * 1000
 
-        self.assertLess(error_mm, 0.001,
-                       f"Equator should have < 1mm error. Got {error_mm:.6f}mm")
+        self.assertLess(error_mm, 0.001, f"Equator should have < 1mm error. Got {error_mm:.6f}mm")
 
     def test_coordinate_system_axes(self):
         """
@@ -498,26 +557,30 @@ class TestEdgeCases(unittest.TestCase):
         # Test East (positive X)
         lat_east, lon_east = local_xy_to_gps(ref_lat, ref_lon, 100.0, 0.0)
         self.assertGreater(lon_east, ref_lon, "Moving East should increase longitude")
-        self.assertAlmostEqual(lat_east, ref_lat, places=10,
-                              msg="Moving East should not change latitude")
+        self.assertAlmostEqual(
+            lat_east, ref_lat, places=10, msg="Moving East should not change latitude"
+        )
 
         # Test West (negative X)
         lat_west, lon_west = local_xy_to_gps(ref_lat, ref_lon, -100.0, 0.0)
         self.assertLess(lon_west, ref_lon, "Moving West should decrease longitude")
-        self.assertAlmostEqual(lat_west, ref_lat, places=10,
-                              msg="Moving West should not change latitude")
+        self.assertAlmostEqual(
+            lat_west, ref_lat, places=10, msg="Moving West should not change latitude"
+        )
 
         # Test North (positive Y)
         lat_north, lon_north = local_xy_to_gps(ref_lat, ref_lon, 0.0, 100.0)
         self.assertGreater(lat_north, ref_lat, "Moving North should increase latitude")
-        self.assertAlmostEqual(lon_north, ref_lon, places=10,
-                              msg="Moving North should not change longitude")
+        self.assertAlmostEqual(
+            lon_north, ref_lon, places=10, msg="Moving North should not change longitude"
+        )
 
         # Test South (negative Y)
         lat_south, lon_south = local_xy_to_gps(ref_lat, ref_lon, 0.0, -100.0)
         self.assertLess(lat_south, ref_lat, "Moving South should decrease latitude")
-        self.assertAlmostEqual(lon_south, ref_lon, places=10,
-                              msg="Moving South should not change longitude")
+        self.assertAlmostEqual(
+            lon_south, ref_lon, places=10, msg="Moving South should not change longitude"
+        )
 
 
 def run_tests():
@@ -537,14 +600,14 @@ def run_tests():
     result = runner.run(suite)
 
     # Print summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TEST SUMMARY")
-    print("="*70)
+    print("=" * 70)
     print(f"Tests run: {result.testsRun}")
     print(f"Successes: {result.testsRun - len(result.failures) - len(result.errors)}")
     print(f"Failures: {len(result.failures)}")
     print(f"Errors: {len(result.errors)}")
-    print("="*70)
+    print("=" * 70)
 
     return result.wasSuccessful()
 

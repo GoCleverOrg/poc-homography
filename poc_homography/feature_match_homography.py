@@ -15,22 +15,23 @@ Coordinate Systems:
     - Map coordinates: (x, y) in meters from reference point on ground plane
 """
 
-import numpy as np
-import cv2
-import math
 import logging
-from typing import List, Tuple, Dict, Any, Optional
+import math
+from typing import Any
 
+import cv2
+import numpy as np
+
+from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 from poc_homography.homography_interface import (
+    GPSPositionMixin,
+    HomographyApproach,
     HomographyProviderExtended,
     HomographyResult,
-    WorldPoint,
     MapCoordinate,
-    HomographyApproach,
+    WorldPoint,
     validate_homography_matrix,
-    GPSPositionMixin
 )
-from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,9 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
     MIN_DET_THRESHOLD = 1e-10
 
     # Fitting method options
-    FITTING_METHOD_RANSAC = 'ransac'
-    FITTING_METHOD_LMEDS = 'lmeds'
-    FITTING_METHOD_AUTO = 'auto'  # Use LMEDS first, fall back to RANSAC
+    FITTING_METHOD_RANSAC = "ransac"
+    FITTING_METHOD_LMEDS = "lmeds"
+    FITTING_METHOD_AUTO = "auto"  # Use LMEDS first, fall back to RANSAC
 
     # Confidence calculation parameters
     MIN_INLIER_RATIO = 0.5  # Minimum ratio of inliers to total points
@@ -97,11 +98,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         self,
         width: int,
         height: int,
-        detector: str = 'gcp',  # Not used, kept for API compatibility
+        detector: str = "gcp",  # Not used, kept for API compatibility
         min_matches: int = 4,
         ransac_threshold: float = 3.0,
         confidence_threshold: float = 0.5,
-        fitting_method: str = 'auto'
+        fitting_method: str = "auto",
     ):
         """
         Initialize GCP-based homography provider.
@@ -128,21 +129,21 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         """
         if min_matches < 4:
             raise ValueError(
-                f"min_matches must be at least 4 for homography estimation, "
-                f"got {min_matches}"
+                f"min_matches must be at least 4 for homography estimation, got {min_matches}"
             )
 
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError(
-                f"confidence_threshold must be in range [0.0, 1.0], "
-                f"got {confidence_threshold}"
+                f"confidence_threshold must be in range [0.0, 1.0], got {confidence_threshold}"
             )
 
-        valid_methods = [self.FITTING_METHOD_RANSAC, self.FITTING_METHOD_LMEDS, self.FITTING_METHOD_AUTO]
+        valid_methods = [
+            self.FITTING_METHOD_RANSAC,
+            self.FITTING_METHOD_LMEDS,
+            self.FITTING_METHOD_AUTO,
+        ]
         if fitting_method not in valid_methods:
-            raise ValueError(
-                f"fitting_method must be one of {valid_methods}, got {fitting_method}"
-            )
+            raise ValueError(f"fitting_method must be one of {valid_methods}, got {fitting_method}")
 
         self.width = width
         self.height = height
@@ -156,16 +157,16 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         self.H = np.eye(3)  # Maps local metric to image
         self.H_inv = np.eye(3)  # Maps image to local metric
         self._confidence: float = 0.0
-        self._last_metadata: Dict[str, Any] = {}
+        self._last_metadata: dict[str, Any] = {}
 
         # GPS reference point for local metric to GPS conversion
         # This will be set from the first GCP or can be set explicitly
-        self._camera_gps_lat: Optional[float] = None
-        self._camera_gps_lon: Optional[float] = None
-        self._reference_lat: Optional[float] = None
-        self._reference_lon: Optional[float] = None
+        self._camera_gps_lat: float | None = None
+        self._camera_gps_lon: float | None = None
+        self._reference_lat: float | None = None
+        self._reference_lon: float | None = None
 
-    def _gps_to_local(self, lat: float, lon: float) -> Tuple[float, float]:
+    def _gps_to_local(self, lat: float, lon: float) -> tuple[float, float]:
         """
         Convert GPS coordinates to local metric coordinates.
 
@@ -187,14 +188,9 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "during compute_homography() from GCPs."
             )
 
-        return gps_to_local_xy(
-            self._reference_lat,
-            self._reference_lon,
-            lat,
-            lon
-        )
+        return gps_to_local_xy(self._reference_lat, self._reference_lon, lat, lon)
 
-    def _local_to_gps(self, x_meters: float, y_meters: float) -> Tuple[float, float]:
+    def _local_to_gps(self, x_meters: float, y_meters: float) -> tuple[float, float]:
         """
         Convert local metric coordinates to GPS coordinates.
 
@@ -216,17 +212,9 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "to initialize from GCPs."
             )
 
-        return local_xy_to_gps(
-            self._reference_lat,
-            self._reference_lon,
-            x_meters,
-            y_meters
-        )
+        return local_xy_to_gps(self._reference_lat, self._reference_lon, x_meters, y_meters)
 
-    def _calculate_spatial_distribution(
-        self,
-        image_points: np.ndarray
-    ) -> Dict[str, Any]:
+    def _calculate_spatial_distribution(self, image_points: np.ndarray) -> dict[str, Any]:
         """
         Assess the spatial distribution quality of GCPs in image space.
 
@@ -253,12 +241,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         if n_points < 3:
             return {
-                'coverage_ratio': 0.0,
-                'quadrants_covered': 0,
-                'spread_x': 0.0,
-                'spread_y': 0.0,
-                'distribution_score': 0.0,
-                'warnings': ['Too few points for distribution analysis']
+                "coverage_ratio": 0.0,
+                "quadrants_covered": 0,
+                "spread_x": 0.0,
+                "spread_y": 0.0,
+                "distribution_score": 0.0,
+                "warnings": ["Too few points for distribution analysis"],
             }
 
         # Calculate convex hull coverage
@@ -269,7 +257,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             coverage_ratio = hull_area / image_area if image_area > 0 else 0.0
         except Exception:
             coverage_ratio = 0.0
-            warnings.append('Could not compute convex hull')
+            warnings.append("Could not compute convex hull")
 
         # Calculate quadrant coverage
         center_u = self.width / 2.0
@@ -291,18 +279,16 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         # Generate warnings
         if coverage_ratio < self.MIN_COVERAGE_RATIO:
             warnings.append(
-                f'GCPs are clustered (coverage {coverage_ratio:.1%} < {self.MIN_COVERAGE_RATIO:.0%}). '
-                'Add GCPs in different areas of the image.'
+                f"GCPs are clustered (coverage {coverage_ratio:.1%} < {self.MIN_COVERAGE_RATIO:.0%}). "
+                "Add GCPs in different areas of the image."
             )
         if quadrants_covered < self.MIN_QUADRANT_COVERAGE:
             warnings.append(
-                f'GCPs only cover {quadrants_covered}/4 quadrants. '
-                'Add GCPs to cover more of the image.'
+                f"GCPs only cover {quadrants_covered}/4 quadrants. "
+                "Add GCPs to cover more of the image."
             )
         if spread_x < 0.15 or spread_y < 0.15:
-            warnings.append(
-                'GCPs have low spatial variance. Spread points across the image.'
-            )
+            warnings.append("GCPs have low spatial variance. Spread points across the image.")
 
         # Calculate overall distribution score
         # Weight: 40% coverage, 30% quadrant, 30% spread
@@ -310,19 +296,15 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         quadrant_score = quadrants_covered / 4.0
         spread_score = min(1.0, (spread_x + spread_y) / 0.5)  # Normalize to ~1.0 for good spread
 
-        distribution_score = (
-            0.4 * coverage_score +
-            0.3 * quadrant_score +
-            0.3 * spread_score
-        )
+        distribution_score = 0.4 * coverage_score + 0.3 * quadrant_score + 0.3 * spread_score
 
         return {
-            'coverage_ratio': coverage_ratio,
-            'quadrants_covered': quadrants_covered,
-            'spread_x': spread_x,
-            'spread_y': spread_y,
-            'distribution_score': distribution_score,
-            'warnings': warnings
+            "coverage_ratio": coverage_ratio,
+            "quadrants_covered": quadrants_covered,
+            "spread_x": spread_x,
+            "spread_y": spread_y,
+            "distribution_score": distribution_score,
+            "warnings": warnings,
         }
 
     def _calculate_confidence(
@@ -330,7 +312,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         num_inliers: int,
         total_points: int,
         reprojection_errors: np.ndarray,
-        distribution_metrics: Optional[Dict[str, Any]] = None
+        distribution_metrics: dict[str, Any] | None = None,
     ) -> float:
         """
         Calculate confidence score for the homography.
@@ -373,8 +355,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         # Factor in spatial distribution
         if distribution_metrics:
-            dist_score = distribution_metrics.get('distribution_score', 0.5)
-            coverage = distribution_metrics.get('coverage_ratio', 0.0)
+            dist_score = distribution_metrics.get("distribution_score", 0.5)
+            coverage = distribution_metrics.get("coverage_ratio", 0.0)
 
             if coverage < self.MIN_COVERAGE_RATIO:
                 # Severe penalty for very clustered GCPs
@@ -382,7 +364,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 logger.warning(
                     "GCPs are severely clustered (coverage=%.1f%%). "
                     "Homography may be unreliable outside the GCP cluster.",
-                    coverage * 100
+                    coverage * 100,
                 )
             elif dist_score < 0.5:
                 # Moderate penalty for somewhat clustered GCPs
@@ -394,9 +376,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         return min(1.0, confidence)
 
     def _get_suggested_action(
-        self,
-        confidence_breakdown: Dict[str, Any],
-        outlier_analysis: List[Dict[str, Any]]
+        self, confidence_breakdown: dict[str, Any], outlier_analysis: list[dict[str, Any]]
     ) -> str:
         """Generate a suggested action based on confidence diagnostics.
 
@@ -409,13 +389,15 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         """
         suggestions = []
 
-        inlier_ratio = confidence_breakdown.get('inlier_ratio', 1.0)
-        final_confidence = confidence_breakdown.get('final_confidence', 0.0)
+        inlier_ratio = confidence_breakdown.get("inlier_ratio", 1.0)
+        final_confidence = confidence_breakdown.get("final_confidence", 0.0)
 
         # Check inlier ratio
         if inlier_ratio < 0.5:
-            num_outliers = sum(1 for o in outlier_analysis if not o['is_inlier'])
-            high_error_outliers = [o for o in outlier_analysis if not o['is_inlier'] and o['error_px'] > 20]
+            num_outliers = sum(1 for o in outlier_analysis if not o["is_inlier"])
+            high_error_outliers = [
+                o for o in outlier_analysis if not o["is_inlier"] and o["error_px"] > 20
+            ]
 
             if len(high_error_outliers) > 0:
                 worst = high_error_outliers[0]
@@ -438,8 +420,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 )
 
         # Distribution warnings
-        dist_penalty = confidence_breakdown.get('distribution_penalty', '')
-        if 'POOR_COVERAGE' in dist_penalty:
+        dist_penalty = confidence_breakdown.get("distribution_penalty", "")
+        if "POOR_COVERAGE" in dist_penalty:
             suggestions.append(
                 "GCPs are too clustered. Add GCPs spread across the full image area."
             )
@@ -453,9 +435,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         return " | ".join(suggestions)
 
     def _calculate_point_confidence(
-        self,
-        image_point: Tuple[float, float],
-        base_confidence: float
+        self, image_point: tuple[float, float], base_confidence: float
     ) -> float:
         """
         Calculate per-point confidence based on distance from image center.
@@ -486,9 +466,10 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         # Reduce confidence for points far from center
         if dist_from_center < 1.0:
-            edge_factor = self.EDGE_FACTOR_CENTER - (
-                self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE
-            ) * dist_from_center
+            edge_factor = (
+                self.EDGE_FACTOR_CENTER
+                - (self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE) * dist_from_center
+            )
         else:
             edge_factor = self.EDGE_FACTOR_EDGE * (2.0 - dist_from_center)
 
@@ -497,9 +478,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         return base_confidence * edge_factor
 
     def _project_image_point_to_local(
-        self,
-        image_point: Tuple[float, float]
-    ) -> Tuple[float, float]:
+        self, image_point: tuple[float, float]
+    ) -> tuple[float, float]:
         """
         Project image point to local metric coordinates.
 
@@ -531,10 +511,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         return x_local, y_local
 
     def _compute_homography_with_method(
-        self,
-        local_points: np.ndarray,
-        image_points: np.ndarray
-    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], str]:
+        self, local_points: np.ndarray, image_points: np.ndarray
+    ) -> tuple[np.ndarray | None, np.ndarray | None, str]:
         """
         Compute homography using the configured fitting method.
 
@@ -551,30 +529,19 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         if self.fitting_method == self.FITTING_METHOD_RANSAC:
             # Use RANSAC directly
             H, mask = cv2.findHomography(
-                local_points,
-                image_points,
-                cv2.RANSAC,
-                self.ransac_threshold
+                local_points, image_points, cv2.RANSAC, self.ransac_threshold
             )
-            return H, mask, 'ransac'
+            return H, mask, "ransac"
 
         elif self.fitting_method == self.FITTING_METHOD_LMEDS:
             # Use LMEDS directly (no threshold parameter needed)
-            H, mask = cv2.findHomography(
-                local_points,
-                image_points,
-                cv2.LMEDS
-            )
-            return H, mask, 'lmeds'
+            H, mask = cv2.findHomography(local_points, image_points, cv2.LMEDS)
+            return H, mask, "lmeds"
 
         else:  # AUTO mode
             # Try LMEDS first (more robust to high outlier rates up to 50%)
             logger.debug("AUTO mode: trying LMEDS first")
-            H_lmeds, mask_lmeds = cv2.findHomography(
-                local_points,
-                image_points,
-                cv2.LMEDS
-            )
+            H_lmeds, mask_lmeds = cv2.findHomography(local_points, image_points, cv2.LMEDS)
 
             if H_lmeds is not None and mask_lmeds is not None:
                 inlier_ratio_lmeds = np.sum(mask_lmeds) / len(mask_lmeds)
@@ -584,19 +551,16 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 if inlier_ratio_lmeds >= 0.5:
                     logger.info(
                         "AUTO mode: using LMEDS (inlier ratio %.1f%% >= 50%%)",
-                        inlier_ratio_lmeds * 100
+                        inlier_ratio_lmeds * 100,
                     )
-                    return H_lmeds, mask_lmeds, 'lmeds'
+                    return H_lmeds, mask_lmeds, "lmeds"
 
                 # Otherwise, try RANSAC and compare
                 logger.debug("LMEDS inlier ratio low, trying RANSAC")
 
             # Try RANSAC
             H_ransac, mask_ransac = cv2.findHomography(
-                local_points,
-                image_points,
-                cv2.RANSAC,
-                self.ransac_threshold
+                local_points, image_points, cv2.RANSAC, self.ransac_threshold
             )
 
             if H_ransac is not None and mask_ransac is not None:
@@ -612,34 +576,29 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                         logger.info(
                             "AUTO mode: using LMEDS (%.1f%% > RANSAC %.1f%%)",
                             inlier_ratio_lmeds * 100,
-                            inlier_ratio_ransac * 100
+                            inlier_ratio_ransac * 100,
                         )
-                        return H_lmeds, mask_lmeds, 'lmeds'
+                        return H_lmeds, mask_lmeds, "lmeds"
 
                 logger.info(
-                    "AUTO mode: using RANSAC (inlier ratio %.1f%%)",
-                    inlier_ratio_ransac * 100
+                    "AUTO mode: using RANSAC (inlier ratio %.1f%%)", inlier_ratio_ransac * 100
                 )
-                return H_ransac, mask_ransac, 'ransac'
+                return H_ransac, mask_ransac, "ransac"
 
             # If RANSAC failed but LMEDS succeeded, use LMEDS
             if H_lmeds is not None:
                 logger.info("AUTO mode: RANSAC failed, falling back to LMEDS")
-                return H_lmeds, mask_lmeds, 'lmeds'
+                return H_lmeds, mask_lmeds, "lmeds"
 
             # Both failed
             logger.error("AUTO mode: both LMEDS and RANSAC failed")
-            return None, None, 'none'
+            return None, None, "none"
 
     # =========================================================================
     # HomographyProvider Interface Implementation
     # =========================================================================
 
-    def compute_homography(
-        self,
-        frame: np.ndarray,
-        reference: Dict[str, Any]
-    ) -> HomographyResult:
+    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """
         Compute homography from Ground Control Points.
 
@@ -658,10 +617,10 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             RuntimeError: If homography computation fails
         """
         # Validate reference data
-        if 'ground_control_points' not in reference:
+        if "ground_control_points" not in reference:
             raise ValueError("Missing required reference key: 'ground_control_points'")
 
-        gcps = reference['ground_control_points']
+        gcps = reference["ground_control_points"]
 
         if not isinstance(gcps, list) or len(gcps) < self.min_matches:
             raise ValueError(
@@ -673,20 +632,20 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         gps_points = []
 
         for gcp in gcps:
-            if 'gps' not in gcp or 'image' not in gcp:
+            if "gps" not in gcp or "image" not in gcp:
                 raise ValueError("Each GCP must have 'gps' and 'image' keys")
 
-            gps = gcp['gps']
-            img = gcp['image']
+            gps = gcp["gps"]
+            img = gcp["image"]
 
-            if 'latitude' not in gps or 'longitude' not in gps:
+            if "latitude" not in gps or "longitude" not in gps:
                 raise ValueError("GPS must have 'latitude' and 'longitude' keys")
 
-            if 'u' not in img or 'v' not in img:
+            if "u" not in img or "v" not in img:
                 raise ValueError("Image must have 'u' and 'v' keys")
 
-            image_points.append([img['u'], img['v']])
-            gps_points.append([gps['latitude'], gps['longitude']])
+            image_points.append([img["u"], img["v"]])
+            gps_points.append([gps["latitude"], gps["longitude"]])
 
         # Convert to numpy arrays
         image_points = np.array(image_points, dtype=np.float32)
@@ -694,17 +653,17 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         # Set reference point for local coordinate system
         # Priority: 1) camera_gps from reference, 2) GCP centroid (more stable than first GCP)
-        camera_gps = reference.get('camera_gps')
-        if camera_gps and 'latitude' in camera_gps and 'longitude' in camera_gps:
+        camera_gps = reference.get("camera_gps")
+        if camera_gps and "latitude" in camera_gps and "longitude" in camera_gps:
             # Use explicit camera position as reference
-            self._reference_lat = camera_gps['latitude']
-            self._reference_lon = camera_gps['longitude']
+            self._reference_lat = camera_gps["latitude"]
+            self._reference_lon = camera_gps["longitude"]
             self._camera_gps_lat = self._reference_lat
             self._camera_gps_lon = self._reference_lon
             logger.info(
                 "Using camera GPS as reference: lat=%.6f, lon=%.6f",
                 self._reference_lat,
-                self._reference_lon
+                self._reference_lon,
             )
         else:
             # Fall back to GCP centroid (more stable than arbitrary first point)
@@ -715,7 +674,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             logger.info(
                 "Using GCP centroid as reference (no camera_gps provided): lat=%.6f, lon=%.6f",
                 self._reference_lat,
-                self._reference_lon
+                self._reference_lon,
             )
 
         # Convert GPS points to local metric coordinates
@@ -729,23 +688,19 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         logger.info(
             "Computing homography from %d GCPs (image -> local metric), method=%s",
             len(image_points),
-            self.fitting_method
+            self.fitting_method,
         )
 
         # Compute homography using specified fitting method
         # H maps local metric coordinates to image coordinates
-        H, mask, method_used = self._compute_homography_with_method(
-            local_points, image_points
-        )
+        H, mask, method_used = self._compute_homography_with_method(local_points, image_points)
 
         if H is None:
             logger.error("Failed to compute homography from GCPs")
             self.H = np.eye(3)
             self.H_inv = np.eye(3)
             self._confidence = 0.0
-            raise RuntimeError(
-                "Failed to compute homography. Check GCP quality and distribution."
-            )
+            raise RuntimeError("Failed to compute homography. Check GCP quality and distribution.")
 
         # Store homography (local metric -> image)
         self.H = H
@@ -754,7 +709,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         distribution_metrics = self._calculate_spatial_distribution(image_points)
 
         # Log distribution warnings
-        for warning in distribution_metrics.get('warnings', []):
+        for warning in distribution_metrics.get("warnings", []):
             logger.warning(warning)
 
         # Initialize reprojection error variables
@@ -764,10 +719,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         # Compute inverse (image -> local metric)
         det_H = np.linalg.det(self.H)
         if abs(det_H) < self.MIN_DET_THRESHOLD:
-            logger.warning(
-                "Homography is singular (det=%.2e). Inverse may be unstable.",
-                det_H
-            )
+            logger.warning("Homography is singular (det=%.2e). Inverse may be unstable.", det_H)
             self.H_inv = np.eye(3)
             self._confidence = 0.0
         else:
@@ -784,8 +736,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
                 # Project local points to image using homography
                 projected = cv2.perspectiveTransform(
-                    inlier_local.reshape(-1, 1, 2),
-                    self.H
+                    inlier_local.reshape(-1, 1, 2), self.H
                 ).reshape(-1, 2)
 
                 # Calculate reprojection errors
@@ -813,98 +764,105 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 gcp = gcps[i]
                 is_inlier = bool(mask[i][0])
                 error = float(all_errors[i])
-                desc = gcp.get('metadata', {}).get('description', f'GCP {i+1}')
+                desc = gcp.get("metadata", {}).get("description", f"GCP {i + 1}")
 
-                outlier_analysis.append({
-                    'index': i,
-                    'description': desc,
-                    'is_inlier': is_inlier,
-                    'error_px': error,
-                    'pixel': [float(image_points[i][0]), float(image_points[i][1])],
-                    'gps': [float(gps_points[i][0]), float(gps_points[i][1])]
-                })
+                outlier_analysis.append(
+                    {
+                        "index": i,
+                        "description": desc,
+                        "is_inlier": is_inlier,
+                        "error_px": error,
+                        "pixel": [float(image_points[i][0]), float(image_points[i][1])],
+                        "gps": [float(gps_points[i][0]), float(gps_points[i][1])],
+                    }
+                )
 
         # Sort outlier analysis by error (highest first)
-        outlier_analysis.sort(key=lambda x: x['error_px'], reverse=True)
+        outlier_analysis.sort(key=lambda x: x["error_px"], reverse=True)
 
         # Build confidence breakdown for diagnostics
-        inlier_ratio = num_inliers / total_points if 'num_inliers' in dir() else 0
+        inlier_ratio = num_inliers / total_points if "num_inliers" in dir() else 0
         confidence_breakdown = {
-            'inlier_ratio': inlier_ratio,
-            'inlier_penalty_applied': inlier_ratio < self.MIN_INLIER_RATIO,
-            'base_confidence': inlier_ratio * self.CONFIDENCE_PENALTY_LOW_INLIERS if inlier_ratio < self.MIN_INLIER_RATIO else inlier_ratio,
-            'error_factor': max(0.3, 1.0 - (mean_reproj_error / (2 * self.ransac_threshold))) if mean_reproj_error else 1.0,
-            'distribution_penalty': None,
-            'final_confidence': self._confidence
+            "inlier_ratio": inlier_ratio,
+            "inlier_penalty_applied": inlier_ratio < self.MIN_INLIER_RATIO,
+            "base_confidence": inlier_ratio * self.CONFIDENCE_PENALTY_LOW_INLIERS
+            if inlier_ratio < self.MIN_INLIER_RATIO
+            else inlier_ratio,
+            "error_factor": max(0.3, 1.0 - (mean_reproj_error / (2 * self.ransac_threshold)))
+            if mean_reproj_error
+            else 1.0,
+            "distribution_penalty": None,
+            "final_confidence": self._confidence,
         }
 
         # Determine distribution penalty
-        dist_score = distribution_metrics.get('distribution_score', 0.5)
-        coverage = distribution_metrics.get('coverage_ratio', 0.0)
+        dist_score = distribution_metrics.get("distribution_score", 0.5)
+        coverage = distribution_metrics.get("coverage_ratio", 0.0)
         if coverage < self.MIN_COVERAGE_RATIO:
-            confidence_breakdown['distribution_penalty'] = f'POOR_COVERAGE ({self.DIST_PENALTY_POOR_COVERAGE}x)'
+            confidence_breakdown["distribution_penalty"] = (
+                f"POOR_COVERAGE ({self.DIST_PENALTY_POOR_COVERAGE}x)"
+            )
         elif dist_score < 0.5:
-            confidence_breakdown['distribution_penalty'] = f'LOW_COVERAGE ({self.DIST_PENALTY_LOW_COVERAGE}x)'
+            confidence_breakdown["distribution_penalty"] = (
+                f"LOW_COVERAGE ({self.DIST_PENALTY_LOW_COVERAGE}x)"
+            )
         elif dist_score > 0.7:
-            confidence_breakdown['distribution_penalty'] = f'GOOD_COVERAGE_BONUS ({self.DIST_BONUS_GOOD_COVERAGE}x)'
+            confidence_breakdown["distribution_penalty"] = (
+                f"GOOD_COVERAGE_BONUS ({self.DIST_BONUS_GOOD_COVERAGE}x)"
+            )
         else:
-            confidence_breakdown['distribution_penalty'] = 'NONE (1.0x)'
+            confidence_breakdown["distribution_penalty"] = "NONE (1.0x)"
 
         # Build metadata with distribution info
         metadata = {
-            'approach': HomographyApproach.FEATURE_MATCH.value,
-            'method': 'gcp_based',
-            'fitting_method': method_used,
-            'fitting_method_config': self.fitting_method,
-            'num_gcps': len(image_points),
-            'num_inliers': int(np.sum(mask)) if mask is not None else 0,
-            'inlier_ratio': float(np.sum(mask)) / len(image_points) if mask is not None else 0.0,
-            'inlier_mask': mask.flatten().astype(bool).tolist() if mask is not None else None,
-            'determinant': det_H,
-            'reference_gps': {
-                'latitude': self._reference_lat,
-                'longitude': self._reference_lon
-            },
+            "approach": HomographyApproach.FEATURE_MATCH.value,
+            "method": "gcp_based",
+            "fitting_method": method_used,
+            "fitting_method_config": self.fitting_method,
+            "num_gcps": len(image_points),
+            "num_inliers": int(np.sum(mask)) if mask is not None else 0,
+            "inlier_ratio": float(np.sum(mask)) / len(image_points) if mask is not None else 0.0,
+            "inlier_mask": mask.flatten().astype(bool).tolist() if mask is not None else None,
+            "determinant": det_H,
+            "reference_gps": {"latitude": self._reference_lat, "longitude": self._reference_lon},
             # Distribution metrics
-            'distribution': {
-                'coverage_ratio': distribution_metrics['coverage_ratio'],
-                'quadrants_covered': distribution_metrics['quadrants_covered'],
-                'spread_x': distribution_metrics['spread_x'],
-                'spread_y': distribution_metrics['spread_y'],
-                'distribution_score': distribution_metrics['distribution_score'],
-                'warnings': distribution_metrics['warnings']
+            "distribution": {
+                "coverage_ratio": distribution_metrics["coverage_ratio"],
+                "quadrants_covered": distribution_metrics["quadrants_covered"],
+                "spread_x": distribution_metrics["spread_x"],
+                "spread_y": distribution_metrics["spread_y"],
+                "distribution_score": distribution_metrics["distribution_score"],
+                "warnings": distribution_metrics["warnings"],
             },
             # Reprojection error stats
-            'reprojection_error': {
-                'mean_px': mean_reproj_error,
-                'max_px': max_reproj_error,
-                'threshold_px': self.ransac_threshold
+            "reprojection_error": {
+                "mean_px": mean_reproj_error,
+                "max_px": max_reproj_error,
+                "threshold_px": self.ransac_threshold,
             },
             # NEW: Detailed diagnostics
-            'confidence_breakdown': confidence_breakdown,
-            'outlier_analysis': outlier_analysis,
-            'top_outliers': [o for o in outlier_analysis if not o['is_inlier']][:5],
-            'suggested_action': self._get_suggested_action(confidence_breakdown, outlier_analysis)
+            "confidence_breakdown": confidence_breakdown,
+            "outlier_analysis": outlier_analysis,
+            "top_outliers": [o for o in outlier_analysis if not o["is_inlier"]][:5],
+            "suggested_action": self._get_suggested_action(confidence_breakdown, outlier_analysis),
         }
 
         self._last_metadata = metadata
 
         logger.info(
             "Homography computed: %d/%d inliers, confidence=%.3f, distribution_score=%.2f, method=%s",
-            metadata['num_inliers'],
-            metadata['num_gcps'],
+            metadata["num_inliers"],
+            metadata["num_gcps"],
             self._confidence,
-            distribution_metrics['distribution_score'],
-            method_used
+            distribution_metrics["distribution_score"],
+            method_used,
         )
 
         return HomographyResult(
-            homography_matrix=self.H.copy(),
-            confidence=self._confidence,
-            metadata=metadata
+            homography_matrix=self.H.copy(), confidence=self._confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: Tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
         """
         Project image point to GPS world coordinates.
 
@@ -937,16 +895,9 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         # Calculate point-specific confidence
         point_confidence = self._calculate_point_confidence(image_point, self._confidence)
 
-        return WorldPoint(
-            latitude=latitude,
-            longitude=longitude,
-            confidence=point_confidence
-        )
+        return WorldPoint(latitude=latitude, longitude=longitude, confidence=point_confidence)
 
-    def project_points(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[WorldPoint]:
+    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
         """
         Project multiple image points to GPS world coordinates.
 
@@ -989,17 +940,14 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         return validate_homography_matrix(
             self.H_inv,  # Check inverse since that's what we use for projection
             self._confidence,
-            self.confidence_threshold
+            self.confidence_threshold,
         )
 
     # =========================================================================
     # HomographyProviderExtended Interface Implementation
     # =========================================================================
 
-    def project_point_to_map(
-        self,
-        image_point: Tuple[float, float]
-    ) -> MapCoordinate:
+    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
         """
         Project image point to local map coordinates.
 
@@ -1033,13 +981,10 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             x=x_local,
             y=y_local,
             confidence=point_confidence,
-            elevation=0.0  # Ground plane assumption
+            elevation=0.0,  # Ground plane assumption
         )
 
-    def project_points_to_map(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[MapCoordinate]:
+    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
         """
         Project multiple image points to local map coordinates.
 

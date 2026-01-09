@@ -61,11 +61,12 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Set
+from typing import NamedTuple
 
 
 class TransformerLocation(NamedTuple):
     """Represents a location where Transformer.from_crs() is called."""
+
     file_path: str
     line_number: int
     line_content: str
@@ -88,7 +89,7 @@ class TestPyprojAudit(unittest.TestCase):
     # Known locations from the audit (for documentation purposes)
     # Maps relative file path to list of expected line numbers
     # Note: Line 43 is in docstring example code, actual calls are at 90, 91
-    DOCUMENTED_LOCATIONS: Dict[str, List[int]] = {
+    DOCUMENTED_LOCATIONS: dict[str, list[int]] = {
         "poc_homography/coordinate_converter.py": [43, 90, 91],  # Line 43 is docstring example
         "tools/extract_kml_points.py": [42, 45],  # Multi-line calls start at these lines
         "tools/unified_gcp_tool.py": [345, 348],  # Multi-line calls start at these lines
@@ -104,30 +105,27 @@ class TestPyprojAudit(unittest.TestCase):
         cls.project_root = cls.tests_dir.parent
 
         # Verify we're in the right project
-        assert (cls.project_root / "poc_homography").exists(), \
+        assert (cls.project_root / "poc_homography").exists(), (
             f"Could not find poc_homography directory in {cls.project_root}"
+        )
 
-    def _find_transformer_calls_grep(self) -> List[TransformerLocation]:
+    def _find_transformer_calls_grep(self) -> list[TransformerLocation]:
         """
         Find all Transformer.from_crs() calls using grep/subprocess.
 
         Returns:
             List of TransformerLocation objects for each call found
         """
-        locations: List[TransformerLocation] = []
+        locations: list[TransformerLocation] = []
 
         # Search pattern: Transformer.from_crs with any arguments
         # Using grep -rn for recursive search with line numbers
         try:
             result = subprocess.run(
-                [
-                    "grep", "-rn", "--include=*.py",
-                    "Transformer.from_crs",
-                    str(self.project_root)
-                ],
+                ["grep", "-rn", "--include=*.py", "Transformer.from_crs", str(self.project_root)],
                 capture_output=True,
                 text=True,
-                cwd=str(self.project_root)
+                cwd=str(self.project_root),
             )
 
             # Parse grep output: each line is "filepath:linenumber:content"
@@ -158,22 +156,26 @@ class TestPyprojAudit(unittest.TestCase):
                 # Skip lines that are comments, docstrings, or URLs (not actual code)
                 # These are references to documentation, not actual Transformer calls
                 stripped_content = line_content.strip()
-                if (stripped_content.startswith("#") or
-                    stripped_content.startswith("See:") or
-                    "http://" in stripped_content or
-                    "https://" in stripped_content):
+                if (
+                    stripped_content.startswith("#")
+                    or stripped_content.startswith("See:")
+                    or "http://" in stripped_content
+                    or "https://" in stripped_content
+                ):
                     continue
 
                 # Check if always_xy=True is present
                 # Need to handle multi-line calls, so we read more context
                 has_always_xy = self._check_always_xy_in_call(file_path, line_number)
 
-                locations.append(TransformerLocation(
-                    file_path=file_path,
-                    line_number=line_number,
-                    line_content=line_content,
-                    has_always_xy=has_always_xy
-                ))
+                locations.append(
+                    TransformerLocation(
+                        file_path=file_path,
+                        line_number=line_number,
+                        line_content=line_content,
+                        has_always_xy=has_always_xy,
+                    )
+                )
 
         except FileNotFoundError:
             # grep not available, fall back to Python-based search
@@ -181,14 +183,14 @@ class TestPyprojAudit(unittest.TestCase):
 
         return locations
 
-    def _find_transformer_calls_python(self) -> List[TransformerLocation]:
+    def _find_transformer_calls_python(self) -> list[TransformerLocation]:
         """
         Fallback: Find all Transformer.from_crs() calls using Python file scanning.
 
         Returns:
             List of TransformerLocation objects for each call found
         """
-        locations: List[TransformerLocation] = []
+        locations: list[TransformerLocation] = []
 
         # Directories to search
         search_dirs = [
@@ -217,21 +219,23 @@ class TestPyprojAudit(unittest.TestCase):
                         if "Transformer.from_crs" in line:
                             # Skip lines that are comments, docstrings, or URLs
                             stripped = line.strip()
-                            if (stripped.startswith("#") or
-                                stripped.startswith("See:") or
-                                "http://" in stripped or
-                                "https://" in stripped):
+                            if (
+                                stripped.startswith("#")
+                                or stripped.startswith("See:")
+                                or "http://" in stripped
+                                or "https://" in stripped
+                            ):
                                 continue
 
-                            has_always_xy = self._check_always_xy_in_call(
-                                str(py_file), i
+                            has_always_xy = self._check_always_xy_in_call(str(py_file), i)
+                            locations.append(
+                                TransformerLocation(
+                                    file_path=str(py_file),
+                                    line_number=i,
+                                    line_content=line.strip(),
+                                    has_always_xy=has_always_xy,
+                                )
                             )
-                            locations.append(TransformerLocation(
-                                file_path=str(py_file),
-                                line_number=i,
-                                line_content=line.strip(),
-                                has_always_xy=has_always_xy
-                            ))
 
                 except Exception:
                     continue
@@ -252,7 +256,7 @@ class TestPyprojAudit(unittest.TestCase):
             True if always_xy=True is found in the call
         """
         try:
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 lines = f.readlines()
 
             # Read lines starting from the call (up to 10 lines to handle multi-line)
@@ -297,8 +301,8 @@ class TestPyprojAudit(unittest.TestCase):
         locations = self._find_transformer_calls_grep()
 
         # Separate compliant and non-compliant calls
-        compliant: List[TransformerLocation] = []
-        non_compliant: List[TransformerLocation] = []
+        compliant: list[TransformerLocation] = []
+        non_compliant: list[TransformerLocation] = []
 
         for loc in locations:
             if loc.has_always_xy:
@@ -327,26 +331,29 @@ class TestPyprojAudit(unittest.TestCase):
                 rel_path = os.path.relpath(loc.file_path, self.project_root)
                 print(f"  [FAIL] {rel_path}:{loc.line_number}")
                 print(f"         {loc.line_content}")
-                print(f"         -> Missing always_xy=True parameter!")
+                print("         -> Missing always_xy=True parameter!")
 
         print("\n" + "=" * 70)
 
         # Assert all calls are compliant
         self.assertEqual(
-            len(non_compliant), 0,
+            len(non_compliant),
+            0,
             f"\n\nFOUND {len(non_compliant)} TRANSFORMER CALLS WITHOUT always_xy=True!\n\n"
-            f"The following locations MUST be fixed:\n" +
-            "\n".join([
-                f"  - {os.path.relpath(loc.file_path, self.project_root)}:{loc.line_number}: "
-                f"{loc.line_content[:60]}..."
-                for loc in non_compliant
-            ]) +
-            "\n\nWHY THIS MATTERS:\n"
+            f"The following locations MUST be fixed:\n"
+            + "\n".join(
+                [
+                    f"  - {os.path.relpath(loc.file_path, self.project_root)}:{loc.line_number}: "
+                    f"{loc.line_content[:60]}..."
+                    for loc in non_compliant
+                ]
+            )
+            + "\n\nWHY THIS MATTERS:\n"
             "  pyproj's default coordinate order follows the CRS definition.\n"
             "  For EPSG:4326, this means (lat, lon) instead of (lon, lat).\n"
             "  Without always_xy=True, coordinates get silently swapped,\n"
             "  causing subtle but serious bugs in coordinate transforms.\n\n"
-            "FIX: Add always_xy=True to all Transformer.from_crs() calls."
+            "FIX: Add always_xy=True to all Transformer.from_crs() calls.",
         )
 
     def test_documented_files_exist(self):
@@ -356,7 +363,7 @@ class TestPyprojAudit(unittest.TestCase):
         This test ensures the documentation stays up to date by checking
         that the files listed in DOCUMENTED_LOCATIONS still exist.
         """
-        missing_files: List[str] = []
+        missing_files: list[str] = []
 
         for rel_path in self.DOCUMENTED_LOCATIONS.keys():
             full_path = self.project_root / rel_path
@@ -364,10 +371,11 @@ class TestPyprojAudit(unittest.TestCase):
                 missing_files.append(rel_path)
 
         self.assertEqual(
-            len(missing_files), 0,
-            f"\n\nDocumented files no longer exist:\n" +
-            "\n".join([f"  - {f}" for f in missing_files]) +
-            "\n\nPlease update DOCUMENTED_LOCATIONS in this test file."
+            len(missing_files),
+            0,
+            "\n\nDocumented files no longer exist:\n"
+            + "\n".join([f"  - {f}" for f in missing_files])
+            + "\n\nPlease update DOCUMENTED_LOCATIONS in this test file.",
         )
 
     def test_no_undocumented_transformer_calls(self):
@@ -380,14 +388,14 @@ class TestPyprojAudit(unittest.TestCase):
         locations = self._find_transformer_calls_grep()
 
         # Get set of files with documented locations
-        documented_files: Set[str] = set()
+        documented_files: set[str] = set()
         for rel_path in self.DOCUMENTED_LOCATIONS.keys():
             # Normalize path for comparison
             full_path = str((self.project_root / rel_path).resolve())
             documented_files.add(full_path)
 
         # Find files with calls that aren't documented
-        undocumented_files: Set[str] = set()
+        undocumented_files: set[str] = set()
         for loc in locations:
             normalized_path = str(Path(loc.file_path).resolve())
             if normalized_path not in documented_files:
@@ -400,15 +408,15 @@ class TestPyprojAudit(unittest.TestCase):
                 print(f"  [NEW] {rel_path}")
 
         self.assertEqual(
-            len(undocumented_files), 0,
-            f"\n\nFound Transformer.from_crs() calls in undocumented files:\n" +
-            "\n".join([
-                f"  - {os.path.relpath(f, self.project_root)}"
-                for f in undocumented_files
-            ]) +
-            "\n\nPlease:\n"
+            len(undocumented_files),
+            0,
+            "\n\nFound Transformer.from_crs() calls in undocumented files:\n"
+            + "\n".join(
+                [f"  - {os.path.relpath(f, self.project_root)}" for f in undocumented_files]
+            )
+            + "\n\nPlease:\n"
             "  1. Verify these calls use always_xy=True\n"
-            "  2. Add the files to DOCUMENTED_LOCATIONS in this test file"
+            "  2. Add the files to DOCUMENTED_LOCATIONS in this test file",
         )
 
     def test_minimum_transformer_calls_found(self):
@@ -436,11 +444,13 @@ class TestPyprojAudit(unittest.TestCase):
             "  - Files were deleted or refactored\n"
             "  - Our search pattern needs updating\n"
             "  - The audit documentation is outdated\n\n"
-            "Found locations:\n" +
-            "\n".join([
-                f"  - {os.path.relpath(loc.file_path, self.project_root)}:{loc.line_number}"
-                for loc in locations
-            ])
+            "Found locations:\n"
+            + "\n".join(
+                [
+                    f"  - {os.path.relpath(loc.file_path, self.project_root)}:{loc.line_number}"
+                    for loc in locations
+                ]
+            ),
         )
 
 
@@ -533,12 +543,12 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
         cls.wgs84_to_utm = Transformer.from_crs(
             "EPSG:4326",  # WGS84 (GPS coordinates)
             "EPSG:25830",  # UTM Zone 30N (Valencia area)
-            always_xy=True  # CRITICAL: ensures (lon, lat) order for WGS84
+            always_xy=True,  # CRITICAL: ensures (lon, lat) order for WGS84
         )
         cls.utm_to_wgs84 = Transformer.from_crs(
             "EPSG:25830",  # UTM Zone 30N
             "EPSG:4326",  # WGS84
-            always_xy=True  # CRITICAL: ensures (lon, lat) order for WGS84
+            always_xy=True,  # CRITICAL: ensures (lon, lat) order for WGS84
         )
 
     def test_valencia_points_utm_to_wgs84_round_trip(self):
@@ -568,7 +578,7 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
                 # First, get accurate UTM from the known GPS coordinates
                 easting_orig, northing_orig = self.wgs84_to_utm.transform(
                     point["longitude"],  # x = longitude (always_xy=True)
-                    point["latitude"]    # y = latitude
+                    point["latitude"],  # y = latitude
                 )
 
                 # Round-trip: UTM -> WGS84 -> UTM
@@ -585,7 +595,7 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
                 # Calculate round-trip error
                 easting_error = abs(easting_final - easting_orig)
                 northing_error = abs(northing_final - northing_orig)
-                total_error = (easting_error**2 + northing_error**2)**0.5
+                total_error = (easting_error**2 + northing_error**2) ** 0.5
 
                 # Assert within 1cm tolerance
                 # This assertion verifies that the full transform chain preserves
@@ -593,12 +603,12 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
                 self.assertLess(
                     total_error,
                     self.UTM_TOLERANCE_M,
-                    f"UTM->WGS84->UTM round-trip error {total_error*100:.4f}cm exceeds 1cm threshold\n"
+                    f"UTM->WGS84->UTM round-trip error {total_error * 100:.4f}cm exceeds 1cm threshold\n"
                     f"Point: {point['name']}\n"
                     f"Original UTM: ({easting_orig:.4f}, {northing_orig:.4f})\n"
                     f"Intermediate WGS84: ({lon_intermediate:.8f}, {lat_intermediate:.8f})\n"
                     f"Final UTM: ({easting_final:.4f}, {northing_final:.4f})\n"
-                    f"Easting error: {easting_error*100:.4f}cm, Northing error: {northing_error*100:.4f}cm"
+                    f"Easting error: {easting_error * 100:.4f}cm, Northing error: {northing_error * 100:.4f}cm",
                 )
 
     def test_valencia_points_wgs84_to_utm_round_trip(self):
@@ -632,7 +642,7 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
                 # Step 1: WGS84 to UTM
                 easting_intermediate, northing_intermediate = self.wgs84_to_utm.transform(
                     lon_orig,  # x = longitude (always_xy=True)
-                    lat_orig   # y = latitude
+                    lat_orig,  # y = latitude
                 )
 
                 # Step 2: UTM back to WGS84
@@ -651,7 +661,7 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
 
                 lon_error_m = lon_error * METERS_PER_DEG_LON
                 lat_error_m = lat_error * METERS_PER_DEG_LAT
-                total_error_m = (lon_error_m**2 + lat_error_m**2)**0.5
+                total_error_m = (lon_error_m**2 + lat_error_m**2) ** 0.5
 
                 # Assert within tolerance
                 # This assertion verifies that GPS coordinates survive the full
@@ -659,29 +669,29 @@ class TestUTMWGS84RoundTrip(unittest.TestCase):
                 self.assertLess(
                     lon_error,
                     self.WGS84_TOLERANCE_DEG,
-                    f"Longitude round-trip error {lon_error:.10f}° ({lon_error_m*100:.4f}cm) exceeds threshold\n"
+                    f"Longitude round-trip error {lon_error:.10f}° ({lon_error_m * 100:.4f}cm) exceeds threshold\n"
                     f"Point: {point['name']}\n"
                     f"Original: ({lon_orig:.8f}, {lat_orig:.8f})\n"
                     f"Intermediate UTM: ({easting_intermediate:.4f}, {northing_intermediate:.4f})\n"
-                    f"Final: ({lon_final:.8f}, {lat_final:.8f})"
+                    f"Final: ({lon_final:.8f}, {lat_final:.8f})",
                 )
 
                 self.assertLess(
                     lat_error,
                     self.WGS84_TOLERANCE_DEG,
-                    f"Latitude round-trip error {lat_error:.10f}° ({lat_error_m*100:.4f}cm) exceeds threshold\n"
+                    f"Latitude round-trip error {lat_error:.10f}° ({lat_error_m * 100:.4f}cm) exceeds threshold\n"
                     f"Point: {point['name']}\n"
                     f"Original: ({lon_orig:.8f}, {lat_orig:.8f})\n"
                     f"Intermediate UTM: ({easting_intermediate:.4f}, {northing_intermediate:.4f})\n"
-                    f"Final: ({lon_final:.8f}, {lat_final:.8f})"
+                    f"Final: ({lon_final:.8f}, {lat_final:.8f})",
                 )
 
                 # Also verify total 2D error in meters
                 self.assertLess(
                     total_error_m,
                     self.UTM_TOLERANCE_M,
-                    f"Total 2D round-trip error {total_error_m*100:.4f}cm exceeds 1cm threshold\n"
-                    f"Point: {point['name']}"
+                    f"Total 2D round-trip error {total_error_m * 100:.4f}cm exceeds 1cm threshold\n"
+                    f"Point: {point['name']}",
                 )
 
 
@@ -744,12 +754,8 @@ class TestCoordinateConsistency(unittest.TestCase):
         canonical_converter = UTMConverter(self.UTM_CRS)
 
         # Create Transformers the way tools do (unified_gcp_tool.py pattern)
-        tool_wgs84_to_utm = Transformer.from_crs(
-            "EPSG:4326", self.UTM_CRS, always_xy=True
-        )
-        tool_utm_to_wgs84 = Transformer.from_crs(
-            self.UTM_CRS, "EPSG:4326", always_xy=True
-        )
+        tool_wgs84_to_utm = Transformer.from_crs("EPSG:4326", self.UTM_CRS, always_xy=True)
+        tool_utm_to_wgs84 = Transformer.from_crs(self.UTM_CRS, "EPSG:4326", always_xy=True)
 
         for point in self.VALENCIA_TEST_POINTS:
             with self.subTest(point=point["name"]):
@@ -770,7 +776,7 @@ class TestCoordinateConsistency(unittest.TestCase):
                     f"GPS->UTM easting mismatch for {point['name']}:\n"
                     f"  Canonical: {canonical_easting}\n"
                     f"  Tool-style: {tool_easting}\n"
-                    f"  This indicates tools have diverged from coordinate_converter.py"
+                    f"  This indicates tools have diverged from coordinate_converter.py",
                 )
                 self.assertEqual(
                     canonical_northing,
@@ -778,7 +784,7 @@ class TestCoordinateConsistency(unittest.TestCase):
                     f"GPS->UTM northing mismatch for {point['name']}:\n"
                     f"  Canonical: {canonical_northing}\n"
                     f"  Tool-style: {tool_northing}\n"
-                    f"  This indicates tools have diverged from coordinate_converter.py"
+                    f"  This indicates tools have diverged from coordinate_converter.py",
                 )
 
                 # --- Test UTM to GPS conversion ---
@@ -788,9 +794,7 @@ class TestCoordinateConsistency(unittest.TestCase):
                 )
 
                 # Tool-style implementation
-                tool_lon, tool_lat = tool_utm_to_wgs84.transform(
-                    tool_easting, tool_northing
-                )
+                tool_lon, tool_lat = tool_utm_to_wgs84.transform(tool_easting, tool_northing)
 
                 # Results must match exactly
                 self.assertEqual(
@@ -799,7 +803,7 @@ class TestCoordinateConsistency(unittest.TestCase):
                     f"UTM->GPS latitude mismatch for {point['name']}:\n"
                     f"  Canonical: {canonical_lat}\n"
                     f"  Tool-style: {tool_lat}\n"
-                    f"  This indicates tools have diverged from coordinate_converter.py"
+                    f"  This indicates tools have diverged from coordinate_converter.py",
                 )
                 self.assertEqual(
                     canonical_lon,
@@ -807,7 +811,7 @@ class TestCoordinateConsistency(unittest.TestCase):
                     f"UTM->GPS longitude mismatch for {point['name']}:\n"
                     f"  Canonical: {canonical_lon}\n"
                     f"  Tool-style: {tool_lon}\n"
-                    f"  This indicates tools have diverged from coordinate_converter.py"
+                    f"  This indicates tools have diverged from coordinate_converter.py",
                 )
 
 
