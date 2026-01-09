@@ -1,0 +1,797 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+    <name>Reference Points</name>
+
+    <Style id="zebra">
+        <IconStyle><color>ff0000ff</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+    <Style id="arrow">
+        <IconStyle><color>ff00ff00</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+    <Style id="parking">
+        <IconStyle><color>ffff0000</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+    <Style id="other">
+        <IconStyle><color>ff00ffff</color><scale>0.8</scale>
+            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-circle.png</href></Icon>
+        </IconStyle>
+    </Style>
+
+    <Placemark>
+    <name>Z1</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.22997144,39.64025855,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z2</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.22998807,39.64024603,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z3</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.22998093,39.64026331,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z4</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.22999846,39.64025035,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z5</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.22999071,39.64026809,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z6</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23000854,39.64025468,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z7</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23003103,39.64028649,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z8</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23004826,39.64027330,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z9</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23011042,39.64032466,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z10</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23012826,39.64031126,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z11</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23013060,39.64033353,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z12</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23014813,39.64032058,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z13</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23014039,39.64033807,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z14</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23015937,39.64032538,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z15</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23031614,39.64026927,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z16</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23032627,39.64025069,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z17</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23030732,39.64026271,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z18</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23031739,39.64024549,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z19</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23029961,39.64025686,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z20</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23030818,39.64024052,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z21</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23028186,39.64024623,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z22</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23029111,39.64022787,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z23</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23026388,39.64023378,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z24</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23027338,39.64021657,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z25</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23024584,39.64022316,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z26</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23025564,39.64020571,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z27</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23015667,39.64016526,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z28</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23016705,39.64014783,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z29</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23013007,39.64014853,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z30</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23014101,39.64013156,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z31</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23010348,39.64013180,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z32</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23011296,39.64011434,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z33</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23008603,39.64012049,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z34</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23009527,39.64010236,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z35</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23006806,39.64010784,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z36</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23007811,39.64009129,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z37</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23005003,39.64009674,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z38</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23005981,39.64007952,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z39</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23003200,39.64008567,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z40</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23004152,39.64006730,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z41</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23001400,39.64007389,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z42</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23002346,39.64005713,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z43</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23007076,39.64012830,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z44</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23005286,39.64011382,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z45</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23005958,39.64014435,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z46</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23004167,39.64012987,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z47</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23004781,39.64015971,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>Z48</name>
+    <description>Category: zebra</description>
+    <styleUrl>#zebra</styleUrl>
+    <Point>
+        <coordinates>-0.23002932,39.64014545,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A1</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.23017237,39.64026402,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A2</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.22999492,39.64010382,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A3</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.22989481,39.64005518,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A4</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.22976506,39.64002987,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A5</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.22954005,39.64031876,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A6</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.22983850,39.64048911,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>A7</name>
+    <description>Category: arrow</description>
+    <styleUrl>#arrow</styleUrl>
+    <Point>
+        <coordinates>-0.22998478,39.64050439,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P1</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.23002107,39.64015364,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P2</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22977450,39.64012395,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P3</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22997433,39.64021554,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P4</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22972749,39.64018472,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P5</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22992521,39.64027785,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P6</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22967695,39.64024609,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P7</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22987702,39.64033927,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P8</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22962931,39.64030819,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P9</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22982823,39.64040090,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P10</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22958258,39.64036987,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P11</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22978032,39.64046257,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P12</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22953407,39.64043174,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P13</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22973300,39.64052422,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P14</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22948528,39.64049337,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P15</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22968359,39.64058629,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P16</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22943977,39.64055371,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P17</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22963627,39.64064820,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>P18</name>
+    <description>Category: parking</description>
+    <styleUrl>#parking</styleUrl>
+    <Point>
+        <coordinates>-0.22938883,39.64061734,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X1</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22937841,39.64063636,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X2</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22943731,39.64063028,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X3</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22937160,39.64066725,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X4</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22947992,39.64064196,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X5</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22937967,39.64069284,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X6</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22952166,39.64065453,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X7</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22939244,39.64071083,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X8</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22955585,39.64066509,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X9</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22941511,39.64073042,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X10</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22959992,39.64067701,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X11</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22944849,39.64074639,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X12</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22958779,39.64070937,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X13</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22948669,39.64075162,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X14</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.22956253,39.64073235,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X15</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23005022,39.64051796,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X16</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23006101,39.64050463,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X17</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23007092,39.64049149,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X18</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23008115,39.64047791,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X19</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23009076,39.64046474,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X20</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23010060,39.64045343,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X21</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23011977,39.64042849,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X22</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23013683,39.64040532,0</coordinates>
+    </Point>
+</Placemark>
+    <Placemark>
+    <name>X23</name>
+    <description>Category: other</description>
+    <styleUrl>#other</styleUrl>
+    <Point>
+        <coordinates>-0.23015683,39.64038154,0</coordinates>
+    </Point>
+</Placemark>
+
+</Document>
+</kml>
