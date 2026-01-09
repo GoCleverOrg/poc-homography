@@ -1,14 +1,12 @@
-"""Point extractor for georeferenced images with KML import/export."""
-
-import re
-import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from functools import cached_property
+"""Georeferenced point registry with KML support."""
 
 from jinja2 import Environment, PackageLoader
 from pyproj import Transformer
 
 from poc_homography.geotiff_utils import apply_geotransform
+from poc_homography.kml.geo_config import GeoConfig
+from poc_homography.kml.kml_point import KmlPoint
+from poc_homography.kml.pixel_point import PixelPoint
 
 # Set up Jinja2 template environment
 _template_env = Environment(
@@ -18,155 +16,8 @@ _template_env = Environment(
     lstrip_blocks=True,
 )
 
-# Type alias for the 6-parameter GDAL geotransform
-Geotransform = tuple[float, float, float, float, float, float]
 
-
-@dataclass(frozen=True)
-class PixelPoint:
-    """Pixel coordinates in an image.
-
-    Attributes:
-        x: Pixel x coordinate (column).
-        y: Pixel y coordinate (row).
-    """
-
-    x: float
-    y: float
-
-
-@dataclass(frozen=True)
-class KmlPoint:
-    """Geographic point for KML export.
-
-    Attributes:
-        category: Point category (e.g., "zebra", "arrow", "parking", "other").
-        lat: Latitude in degrees (WGS84).
-        lon: Longitude in degrees (WGS84).
-        style: Normalized style identifier for KML rendering (computed).
-    """
-
-    category: str
-    lat: float
-    lon: float
-    style: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        """Compute style from category."""
-        style = self.category.lower().replace(" ", "_")
-        if style not in ["zebra", "arrow", "parking"]:
-            style = "other"
-        object.__setattr__(self, "style", style)
-
-    @classmethod
-    def from_placemark(cls, placemark: ET.Element) -> "KmlPoint | None":
-        """Create KmlPoint from a KML Placemark element.
-
-        Args:
-            placemark: XML Element representing a KML Placemark.
-
-        Returns:
-            KmlPoint if coordinates found, None otherwise.
-        """
-        # Extract category from styleUrl or description
-        category = cls._parse_category(placemark)
-
-        # Get coordinates
-        coords_elem = placemark.find(".//coordinates")
-        if coords_elem is None or not coords_elem.text:
-            return None
-
-        parts = coords_elem.text.strip().split(",")
-        if len(parts) < 2:
-            return None
-
-        lon = float(parts[0])
-        lat = float(parts[1])
-        return cls(category=category, lat=lat, lon=lon)
-
-    @staticmethod
-    def _parse_category(placemark: ET.Element) -> str:
-        """Extract category from Placemark's styleUrl or description."""
-        # Try styleUrl first
-        style_elem = placemark.find("styleUrl")
-        if style_elem is not None and style_elem.text:
-            style = style_elem.text.replace("#", "")
-            if style in ["zebra", "arrow", "parking"]:
-                return style
-
-        # Fall back to description
-        desc_elem = placemark.find("description")
-        if desc_elem is not None and desc_elem.text:
-            desc_lower = desc_elem.text.lower()
-            if "category: zebra" in desc_lower:
-                return "zebra"
-            if "category: arrow" in desc_lower:
-                return "arrow"
-            if "category: parking" in desc_lower:
-                return "parking"
-
-        return "other"
-
-
-class Kml:
-    """Parser for KML files containing geographic points.
-
-    Args:
-        kml_text: KML file content as string.
-
-    Example:
-        >>> kml = Kml(kml_content)
-        >>> for name, point in kml.points.items():
-        ...     print(f"{name}: {point.lat}, {point.lon}")
-    """
-
-    def __init__(self, kml_text: str):
-        text = re.sub(r'\sxmlns="[^"]+"', "", kml_text, count=1)
-        self._root = ET.fromstring(text)
-
-    @cached_property
-    def points(self) -> dict[str, KmlPoint]:
-        """Parse KML and return geographic points.
-
-        Returns:
-            Dict mapping point names to KmlPoint objects.
-        """
-        points: dict[str, KmlPoint] = {}
-        unnamed_count = 0
-
-        for placemark in self._root.iter("Placemark"):
-            point = KmlPoint.from_placemark(placemark)
-            if point is None:
-                continue
-
-            name_elem = placemark.find("name")
-            if name_elem is not None and name_elem.text:
-                name = name_elem.text
-            else:
-                unnamed_count += 1
-                name = f"Point_{unnamed_count}"
-
-            points[name] = point
-
-        return points
-
-
-@dataclass(frozen=True)
-class GeoConfig:
-    """Configuration for georeferenced coordinate transformations.
-
-    Attributes:
-        crs: Coordinate reference system identifier (e.g., "EPSG:25830").
-        geotransform: 6-parameter GDAL affine geotransform as
-            (origin_x, pixel_width, row_rotation, origin_y, col_rotation, pixel_height).
-            For north-up images, row_rotation and col_rotation are typically 0.
-    """
-
-    crs: str
-    geotransform: Geotransform
-
-
-class PointExtractor:
+class GeoPointRegistry:
     """Extract and manage georeferenced points from images with KML support.
 
     This class handles coordinate transformations between pixel coordinates,
@@ -281,7 +132,9 @@ class PointExtractor:
 
         return px, py
 
-    def import_kml(self, kml_points: dict[str, KmlPoint]) -> dict[str, tuple[PixelPoint, KmlPoint]]:
+    def add_kml_points(
+        self, kml_points: dict[str, KmlPoint]
+    ) -> dict[str, tuple[PixelPoint, KmlPoint]]:
         """Convert KML geographic points to pixel coordinates.
 
         Converts lat/lon coordinates to pixel coordinates using the configured

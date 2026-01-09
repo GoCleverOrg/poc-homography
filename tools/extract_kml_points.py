@@ -19,7 +19,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.kml import GeoConfig, Kml, PointExtractor
+from poc_homography.kml import GeoConfig, GeoPointRegistry, Kml
 from poc_homography.server_utils import find_available_port
 
 
@@ -662,7 +662,7 @@ def create_html(image_path: str, config: dict) -> str:
 def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
     """Run the web server."""
 
-    extractor = PointExtractor(geo_config)
+    extractor = GeoPointRegistry(geo_config)
     # Convert to dict for JavaScript JSON serialization
     config_dict = {"crs": geo_config.crs, "geotransform": list(geo_config.geotransform)}
     html_content = create_html(image_path, config_dict)
@@ -706,7 +706,7 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
                 try:
                     kml_text = post_data.get("kml", "")
                     kml = Kml(kml_text)
-                    imported = extractor.import_kml(kml.points)
+                    imported = extractor.add_kml_points(kml.points)
 
                     # Convert to list format expected by frontend
                     points_list = [
