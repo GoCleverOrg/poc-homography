@@ -7,6 +7,7 @@ This tool provides a unified workflow for:
 
 The two tabs share a unified session with automatic point synchronization.
 """
+from __future__ import annotations
 
 import argparse
 import base64

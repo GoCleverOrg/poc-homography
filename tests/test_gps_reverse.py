@@ -3,11 +3,11 @@
 Test reverse GPS calculation (homography X,Y -> GPS coordinates).
 """
 
+from poc_homography.coordinate_converter import local_xy_to_gps
 from poc_homography.gps_distance_calculator import (
     dd_to_dms,
     dms_to_dd,
     haversine_distance,
-    local_xy_to_gps,
 )
 
 # Your data

@@ -32,6 +32,7 @@ Potential Model Architectures:
     - LoFTR: Detector-free local feature matching
     - Custom models trained on domain-specific data
 """
+from __future__ import annotations
 
 import logging
 from typing import Any

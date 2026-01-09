@@ -23,6 +23,7 @@ Example Usage:
 Environment Variables:
     GOOGLE_MAPS_API_KEY: Optional API key for Google Maps satellite layer
 """
+from __future__ import annotations
 
 import http.server
 import json

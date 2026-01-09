@@ -28,7 +28,7 @@ from poc_homography.camera_position_deriver import (
     GroundControlPoint,
     PnPResult,
 )
-from poc_homography.gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
+from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 
 
 def create_ptz_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:

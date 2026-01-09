@@ -11,9 +11,18 @@ environment variable RUN_3D is set to '1'. This prevents accidental camera movem
 """
 
 import os
+import sys
 import time
 
-from hikvision_ptz_discovery import CAMERAS, PASSWORD, USERNAME, HikvisionPTZ
+# Add parent directory to path to import ptz_discovery_and_control
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import (
+    CAMERAS,
+    PASSWORD,
+    USERNAME,
+    HikvisionPTZ,
+)
 
 
 def main():

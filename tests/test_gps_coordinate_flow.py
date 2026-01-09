@@ -26,12 +26,11 @@ except ImportError:
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 from poc_homography.gps_distance_calculator import (
     dd_to_dms,
     dms_to_dd,
-    gps_to_local_xy,
     haversine_distance,
-    local_xy_to_gps,
 )
 from poc_homography.homography_interface import WorldPoint
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography

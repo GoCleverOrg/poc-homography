@@ -37,6 +37,7 @@ Usage Example:
     ...     estimates = calibrator.get_all_height_estimates()
     ...     print(f"Height estimates: {estimates}")
 """
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -47,6 +48,7 @@ from scipy.stats import t as t_dist
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gps_distance_calculator import dms_to_dd, haversine_distance
+from poc_homography.types import Degrees
 
 # Numerical threshold for detecting near-zero values (used for horizon detection
 # and invalid homography distances). Values below this are considered effectively zero.
@@ -158,8 +160,8 @@ class HeightCalibrator:
             self.camera_lat_dd = dms_to_dd(camera_gps["lat"])
             self.camera_lon_dd = dms_to_dd(camera_gps["lon"])
         else:
-            self.camera_lat_dd = float(camera_gps["lat"])
-            self.camera_lon_dd = float(camera_gps["lon"])
+            self.camera_lat_dd = Degrees(float(camera_gps["lat"]))
+            self.camera_lon_dd = Degrees(float(camera_gps["lon"]))
 
     def add_point(
         self,
@@ -217,7 +219,9 @@ class HeightCalibrator:
         homography_distance = np.sqrt(world_x**2 + world_y**2)
 
         # Calculate actual GPS distance using haversine formula
-        gps_distance = haversine_distance(self.camera_lat_dd, self.camera_lon_dd, gps_lat, gps_lon)
+        gps_distance = haversine_distance(
+            self.camera_lat_dd, self.camera_lon_dd, Degrees(gps_lat), Degrees(gps_lon)
+        )
 
         # Create and store calibration point
         point = CalibrationPoint(

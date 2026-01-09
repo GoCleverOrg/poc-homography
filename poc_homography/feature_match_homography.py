@@ -14,6 +14,7 @@ Coordinate Systems:
     - Local metric coordinates: (x, y) in meters using equirectangular projection
     - Map coordinates: (x, y) in meters from reference point on ground plane
 """
+from __future__ import annotations
 
 import logging
 import math
@@ -32,6 +33,7 @@ from poc_homography.homography_interface import (
     WorldPoint,
     validate_homography_matrix,
 )
+from poc_homography.types import Degrees, Meters
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +190,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "during compute_homography() from GCPs."
             )
 
-        return gps_to_local_xy(self._reference_lat, self._reference_lon, lat, lon)
+        return gps_to_local_xy(
+            Degrees(self._reference_lat),
+            Degrees(self._reference_lon),
+            Degrees(lat),
+            Degrees(lon),
+        )
 
     def _local_to_gps(self, x_meters: float, y_meters: float) -> tuple[float, float]:
         """
@@ -212,7 +219,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "to initialize from GCPs."
             )
 
-        return local_xy_to_gps(self._reference_lat, self._reference_lon, x_meters, y_meters)
+        return local_xy_to_gps(
+            Degrees(self._reference_lat),
+            Degrees(self._reference_lon),
+            Meters(x_meters),
+            Meters(y_meters),
+        )
 
     def _calculate_spatial_distribution(self, image_points: np.ndarray) -> dict[str, Any]:
         """
@@ -628,8 +640,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             )
 
         # Extract GCP data
-        image_points = []
-        gps_points = []
+        image_pts_list: list[list[float]] = []
+        gps_pts_list: list[list[float]] = []
 
         for gcp in gcps:
             if "gps" not in gcp or "image" not in gcp:
@@ -644,12 +656,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             if "u" not in img or "v" not in img:
                 raise ValueError("Image must have 'u' and 'v' keys")
 
-            image_points.append([img["u"], img["v"]])
-            gps_points.append([gps["latitude"], gps["longitude"]])
+            image_pts_list.append([img["u"], img["v"]])
+            gps_pts_list.append([gps["latitude"], gps["longitude"]])
 
         # Convert to numpy arrays
-        image_points = np.array(image_points, dtype=np.float32)
-        gps_points = np.array(gps_points, dtype=np.float64)
+        image_points: np.ndarray = np.array(image_pts_list, dtype=np.float32)
+        gps_points: np.ndarray = np.array(gps_pts_list, dtype=np.float64)
 
         # Set reference point for local coordinate system
         # Priority: 1) camera_gps from reference, 2) GCP centroid (more stable than first GCP)
@@ -678,12 +690,12 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             )
 
         # Convert GPS points to local metric coordinates
-        local_points = []
+        local_pts_list: list[list[float]] = []
         for lat, lon in gps_points:
             x, y = self._gps_to_local(lat, lon)
-            local_points.append([x, y])
+            local_pts_list.append([x, y])
 
-        local_points = np.array(local_points, dtype=np.float32)
+        local_points: np.ndarray = np.array(local_pts_list, dtype=np.float32)
 
         logger.info(
             "Computing homography from %d GCPs (image -> local metric), method=%s",
@@ -723,14 +735,14 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             self.H_inv = np.eye(3)
             self._confidence = 0.0
         else:
-            self.H_inv = np.linalg.inv(self.H)
+            self.H_inv = np.asarray(np.linalg.inv(self.H))
 
             # Calculate confidence based on inliers
-            num_inliers = int(np.sum(mask))
+            num_inliers = int(np.sum(mask)) if mask is not None else 0
             total_points = len(image_points)
 
             # Calculate reprojection errors for inliers
-            if num_inliers > 0:
+            if mask is not None and num_inliers > 0:
                 inlier_local = local_points[mask.ravel() == 1]
                 inlier_image = image_points[mask.ravel() == 1]
 
@@ -782,7 +794,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         # Build confidence breakdown for diagnostics
         inlier_ratio = num_inliers / total_points if "num_inliers" in dir() else 0
-        confidence_breakdown = {
+        confidence_breakdown: dict[str, Any] = {
             "inlier_ratio": inlier_ratio,
             "inlier_penalty_applied": inlier_ratio < self.MIN_INLIER_RATIO,
             "base_confidence": inlier_ratio * self.CONFIDENCE_PENALTY_LOW_INLIERS

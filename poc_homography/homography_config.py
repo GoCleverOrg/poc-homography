@@ -251,7 +251,7 @@ class HomographyConfig:
             >>> print(config_dict['approach'])
             'intrinsic_extrinsic'
         """
-        result = {
+        result: dict[str, Any] = {
             "approach": self.approach.value,
             "coordinate_system_mode": self.coordinate_system_mode.value,
         }
