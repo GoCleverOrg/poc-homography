@@ -19,7 +19,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.kml import GeoConfig, PointExtractor
+from poc_homography.kml import GeoConfig, Kml, PointExtractor
 from poc_homography.server_utils import find_available_port
 
 
@@ -705,7 +705,8 @@ def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
             elif self.path == "/import":
                 try:
                     kml_text = post_data.get("kml", "")
-                    imported = extractor.import_kml(kml_text)
+                    kml = Kml(kml_text)
+                    imported = extractor.import_kml(kml.points)
 
                     # Convert to list format expected by frontend
                     points_list = [

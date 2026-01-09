@@ -3,6 +3,7 @@
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from functools import cached_property
 
 from jinja2 import Environment, PackageLoader
 from pyproj import Transformer
@@ -47,6 +48,78 @@ class KmlPoint:
     category: str
     lat: float
     lon: float
+
+
+class Kml:
+    """Parser for KML files containing geographic points.
+
+    Parses KML text and extracts points as a cached property.
+
+    Args:
+        kml_text: KML file content as string.
+
+    Example:
+        >>> kml = Kml(kml_content)
+        >>> for name, point in kml.points.items():
+        ...     print(f"{name}: {point.lat}, {point.lon}")
+    """
+
+    def __init__(self, kml_text: str):
+        self._kml_text = kml_text
+
+    @cached_property
+    def points(self) -> dict[str, KmlPoint]:
+        """Parse KML and return geographic points.
+
+        Returns:
+            Dict mapping point names to KmlPoint objects.
+        """
+        # Remove namespace for easier parsing
+        text = re.sub(r'\sxmlns="[^"]+"', "", self._kml_text, count=1)
+
+        root = ET.fromstring(text)
+        points: dict[str, KmlPoint] = {}
+        unnamed_count = 0
+
+        for placemark in root.iter("Placemark"):
+            name_elem = placemark.find("name")
+            if name_elem is not None and name_elem.text:
+                name = name_elem.text
+            else:
+                unnamed_count += 1
+                name = f"Point_{unnamed_count}"
+
+            # Try to extract category from styleUrl or description
+            style_elem = placemark.find("styleUrl")
+            desc_elem = placemark.find("description")
+
+            category = "other"
+            if style_elem is not None and style_elem.text:
+                style = style_elem.text.replace("#", "")
+                if style in ["zebra", "arrow", "parking"]:
+                    category = style
+
+            # Also check description for category
+            if desc_elem is not None and desc_elem.text:
+                desc_lower = desc_elem.text.lower()
+                if "category: zebra" in desc_lower:
+                    category = "zebra"
+                elif "category: arrow" in desc_lower:
+                    category = "arrow"
+                elif "category: parking" in desc_lower:
+                    category = "parking"
+
+            # Get coordinates
+            coords_elem = placemark.find(".//coordinates")
+            if coords_elem is not None and coords_elem.text:
+                coords_text = coords_elem.text.strip()
+                parts = coords_text.split(",")
+                if len(parts) >= 2:
+                    lon = float(parts[0])
+                    lat = float(parts[1])
+                    points[name] = KmlPoint(category=category, lat=lat, lon=lon)
+
+        return points
 
 
 @dataclass(frozen=True)
@@ -179,79 +252,18 @@ class PointExtractor:
 
         return px, py
 
-    @staticmethod
-    def parse_kml(kml_text: str) -> dict[str, KmlPoint]:
-        """Parse KML file and extract geographic points.
+    def import_kml(self, kml_points: dict[str, KmlPoint]) -> dict[str, tuple[PixelPoint, KmlPoint]]:
+        """Convert KML geographic points to pixel coordinates.
 
-        This is a static method as it only extracts geographic data from KML
-        without any coordinate transformations.
-
-        Args:
-            kml_text: KML file content as string.
-
-        Returns:
-            Dict mapping point names to KmlPoint objects.
-        """
-        # Remove namespace for easier parsing
-        kml_text = re.sub(r'\sxmlns="[^"]+"', "", kml_text, count=1)
-
-        root = ET.fromstring(kml_text)
-        points: dict[str, KmlPoint] = {}
-        unnamed_count = 0
-
-        for placemark in root.iter("Placemark"):
-            name_elem = placemark.find("name")
-            if name_elem is not None and name_elem.text:
-                name = name_elem.text
-            else:
-                unnamed_count += 1
-                name = f"Point_{unnamed_count}"
-
-            # Try to extract category from styleUrl or description
-            style_elem = placemark.find("styleUrl")
-            desc_elem = placemark.find("description")
-
-            category = "other"
-            if style_elem is not None and style_elem.text:
-                style = style_elem.text.replace("#", "")
-                if style in ["zebra", "arrow", "parking"]:
-                    category = style
-
-            # Also check description for category
-            if desc_elem is not None and desc_elem.text:
-                desc_lower = desc_elem.text.lower()
-                if "category: zebra" in desc_lower:
-                    category = "zebra"
-                elif "category: arrow" in desc_lower:
-                    category = "arrow"
-                elif "category: parking" in desc_lower:
-                    category = "parking"
-
-            # Get coordinates
-            coords_elem = placemark.find(".//coordinates")
-            if coords_elem is not None and coords_elem.text:
-                coords_text = coords_elem.text.strip()
-                parts = coords_text.split(",")
-                if len(parts) >= 2:
-                    lon = float(parts[0])
-                    lat = float(parts[1])
-                    points[name] = KmlPoint(category=category, lat=lat, lon=lon)
-
-        return points
-
-    def import_kml(self, kml_text: str) -> dict[str, tuple[PixelPoint, KmlPoint]]:
-        """Import KML and convert geographic points to pixel coordinates.
-
-        Parses KML file and converts lat/lon coordinates to pixel coordinates
-        using the configured geotransform.
+        Converts lat/lon coordinates to pixel coordinates using the configured
+        geotransform.
 
         Args:
-            kml_text: KML file content as string.
+            kml_points: Dict mapping point names to KmlPoint objects.
 
         Returns:
             Dict mapping point names to (PixelPoint, KmlPoint) tuples.
         """
-        kml_points = self.parse_kml(kml_text)
         result: dict[str, tuple[PixelPoint, KmlPoint]] = {}
 
         for name, kml_point in kml_points.items():
