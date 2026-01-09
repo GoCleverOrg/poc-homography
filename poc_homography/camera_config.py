@@ -20,11 +20,6 @@ PASSWORD = os.getenv("CAMERA_PASSWORD")
 # - Horizontal FOV: 59.8° (wide) to 3.3° (tele)
 # - Aperture: F1.5 (max)
 #
-# SENSOR WIDTH CALCULATION:
-# Using FOV formula: FOV = 2 * arctan(sensor_width / (2 * focal_length))
-# At wide end: 59.8° = 2 * arctan(sensor_width / 11.8)
-# Solving: sensor_width = 11.8 * tan(29.9°) = 6.78mm
-#
 # Note: The geometric sensor width (6.78mm) differs from the physical sensor
 # because the stated FOV accounts for some lens distortion effects.
 # =============================================================================
@@ -153,7 +148,7 @@ def get_camera_configs() -> list:
     return CAMERAS
 
 
-def get_camera_by_name(camera_name: str) -> dict:
+def get_camera_by_name(camera_name: str) -> dict | None:
     """
     Find camera configuration by name.
 
@@ -166,7 +161,7 @@ def get_camera_by_name(camera_name: str) -> dict:
     return next((cam for cam in CAMERAS if cam.get("name") == camera_name), None)
 
 
-def get_camera_by_name_safe(camera_name: str) -> dict:
+def get_camera_by_name_safe(camera_name: str) -> dict | None:
     """
     Alias for get_camera_by_name().
 
@@ -183,7 +178,7 @@ def get_camera_by_name_safe(camera_name: str) -> dict:
     return get_camera_by_name(camera_name)
 
 
-def get_camera_gps(camera_name: str) -> dict:
+def get_camera_gps(camera_name: str) -> dict | None:
     """
     Get GPS coordinates for a camera.
 
@@ -199,7 +194,7 @@ def get_camera_gps(camera_name: str) -> dict:
     return None
 
 
-def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str:
+def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     """
     Get RTSP URL for a camera.
 
@@ -232,7 +227,7 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str:
 if __name__ == "__main__":
     print("Camera Configuration")
     print("=" * 70)
-    print(f"\nCredentials: {USERNAME} / {'*' * len(PASSWORD)}")
+    print(f"\nCredentials: {USERNAME} / {'*' * len(PASSWORD or '')}")
     print(f"\nConfigured Cameras: {len(CAMERAS)}")
 
     for cam in CAMERAS:
@@ -240,4 +235,4 @@ if __name__ == "__main__":
         print(f"  IP: {cam['ip']}")
         print(f"  GPS: {cam['lat']}, {cam['lon']}")
         print(f"  Height: {cam['height_m']}m")
-        print(f"  RTSP: {get_rtsp_url(cam['name'])}")
+        print(f"  RTSP: {get_rtsp_url(str(cam['name']))}")

@@ -111,21 +111,21 @@ class CameraGeometry:
         self.A = np.eye(3)
 
         # Placeholder for real-world geometry parameters (to be set by user)
-        self.K = None  # Intrinsic Matrix
-        self.w_pos = None  # Camera World Position [Xw, Yw, Zw]
+        self.K: np.ndarray | None = None  # Intrinsic Matrix
+        self.w_pos: np.ndarray | None = None  # Camera World Position [Xw, Yw, Zw]
         self.height_m = 5.0  # Camera Height (m)
         self.pan_deg = 0.0  # Camera Pan (Yaw)
         self.tilt_deg = 0.0  # Camera Tilt (Pitch)
         self.roll_deg = 0.0  # Camera Roll (rotation around optical axis)
 
         # Height uncertainty for propagation (set via set_height_uncertainty)
-        self.height_uncertainty_lower = None  # Lower bound of height confidence interval
-        self.height_uncertainty_upper = None  # Upper bound of height confidence interval
+        self.height_uncertainty_lower: Meters | None = None  # Lower bound of height confidence interval
+        self.height_uncertainty_upper: Meters | None = None  # Upper bound of height confidence interval
 
         # Lens distortion coefficients (OpenCV model)
         # Radial: k1, k2, k3 (k3 often 0 for simple lenses)
         # Tangential: p1, p2
-        self._dist_coeffs = None  # Will be np.array([k1, k2, p1, p2, k3]) when set
+        self._dist_coeffs: np.ndarray | None = None  # np.array([k1, k2, p1, p2, k3]) when set
         self._use_distortion = False
 
     @staticmethod
@@ -169,10 +169,6 @@ class CameraGeometry:
         #   - Optical zoom: 25x (linear: f = 5.9mm × zoom_factor)
         f_mm = 5.9 * zoom_factor
 
-        # 2. Convert focal length to pixels (f_px = f_mm * (W_px / sensor_width_mm))
-        # Default sensor_width_mm (6.78mm) is calculated from:
-        #   - Horizontal FOV = 59.8° at 5.9mm focal length
-        #   - sensor_width = 2 × 5.9 × tan(59.8°/2) = 6.78mm
         f_px = f_mm * (W_px / sensor_width_mm)
 
         # 3. Construct K
@@ -497,7 +493,7 @@ class CameraGeometry:
         Note:
             If no distortion coefficients are set, returns the input unchanged.
         """
-        if not self._use_distortion or self.K is None:
+        if not self._use_distortion or self.K is None or self._dist_coeffs is None:
             return (u, v)
 
         # Get intrinsic parameters
@@ -570,7 +566,7 @@ class CameraGeometry:
         Note:
             If no distortion coefficients are set, returns the input unchanged.
         """
-        if not self._use_distortion or self.K is None:
+        if not self._use_distortion or self.K is None or self._dist_coeffs is None:
             return (u, v)
 
         # Get intrinsic parameters
@@ -787,7 +783,7 @@ class CameraGeometry:
                 f"Inverse may be numerically unstable."
             )
 
-        self.H_inv = np.linalg.inv(self.H)
+        self.H_inv = np.asarray(np.linalg.inv(self.H))
 
         # Validate projected distance from image center
         self._validate_projection()
@@ -805,6 +801,9 @@ class CameraGeometry:
         Raises:
             ValueError: If projection yields invalid results (negative or infinite distances).
         """
+        if self.w_pos is None:
+            raise RuntimeError("Camera position not set. Call set_camera_parameters() first.")
+
         # Project image center to ground plane
         image_center = np.array([self.w / 2.0, self.h / 2.0, 1.0])
         world_point = self.H_inv @ image_center
@@ -935,7 +934,7 @@ class CameraGeometry:
 
         # Full rotation: first pan in world, then base transform, then roll in camera, then tilt in camera
         # R_world_to_cam = R_tilt @ R_roll @ R_base @ R_pan
-        R = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
+        R: np.ndarray = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
         return R
 
     def _calculate_ground_homography(self) -> np.ndarray:
@@ -1019,9 +1018,9 @@ class CameraGeometry:
             )
             return np.eye(3)
 
-        H /= H[2, 2]
+        H_normalized: np.ndarray = H / H[2, 2]
 
-        return H
+        return H_normalized
 
     def project_image_to_map(
         self, pts: list[tuple[int, int]], sw: int, sh: int
@@ -1035,10 +1034,11 @@ class CameraGeometry:
             return [(int(x / 2), int(y / 2)) for x, y in pts]
 
         # Undistort points if distortion is enabled
+        pts_float: list[tuple[float, float]] = [(float(x), float(y)) for x, y in pts]
         if self._use_distortion:
-            pts = self.undistort_points(pts)
+            pts_float = self.undistort_points(pts_float)
 
-        pts_homogeneous = np.array(pts, dtype=np.float64).T
+        pts_homogeneous = np.array(pts_float, dtype=np.float64).T
         pts_homogeneous = np.vstack([pts_homogeneous, np.ones(pts_homogeneous.shape[1])])
 
         # Project from Image to World Ground Plane (Xw, Yw, 1)
@@ -1072,13 +1072,11 @@ class CameraGeometry:
         Returns:
             (x_px, y_px) tuple in pixels relative to the top-left of the side panel image.
         """
-        if sw is None:
-            sw = self.map_width
-        if sh is None:
-            sh = self.map_height
+        width: int = sw if sw is not None else self.map_width
+        height: int = sh if sh is not None else self.map_height
 
-        map_center_x = sw // 2
-        map_bottom_y = sh
+        map_center_x = width // 2
+        map_bottom_y = height
 
         x_px = Pixels(int((Xw * self.PPM) + map_center_x))
         y_px = Pixels(int(map_bottom_y - (Yw * self.PPM)))

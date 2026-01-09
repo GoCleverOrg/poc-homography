@@ -40,6 +40,7 @@ import cv2
 import numpy as np
 
 from poc_homography.gps_distance_calculator import gps_to_local_xy
+from poc_homography.types import Degrees
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +322,10 @@ class CameraPositionDeriver:
         for gcp in gcps:
             # Convert GPS to local X, Y (meters)
             x, y = gps_to_local_xy(
-                self.reference_lat, self.reference_lon, gcp.latitude, gcp.longitude
+                Degrees(self.reference_lat),
+                Degrees(self.reference_lon),
+                Degrees(gcp.latitude),
+                Degrees(gcp.longitude),
             )
             # Ground plane assumption: Z = 0
             object_points.append([x, y, 0.0])
@@ -355,25 +359,12 @@ class CameraPositionDeriver:
             - Tilt range: -90 to 90 degrees
             - Near gimbal lock (tilt ≈ ±90°), pan becomes ambiguous
         """
-        # For R = Rx_tilt @ R_base @ Rz_pan (CameraGeometry convention):
-        # Where R_base converts world (X=East, Y=North, Z=Up) to camera (X=Right, Y=Down, Z=Forward)
-        #
-        # The rotation matrix elements are:
-        #   R[0,0] = cos(pan)
-        #   R[0,1] = -sin(pan)
-        #   R[2,2] = -sin(tilt)  <-- Independent of pan!
-        #
-        # Extract tilt directly from R[2,2]:
-        # sin(tilt) = -R[2,2], so tilt = asin(-R[2,2])
         sin_tilt = -R[2, 2]
         # Clamp to [-1, 1] to handle numerical errors
         sin_tilt = max(-1.0, min(1.0, sin_tilt))
         tilt_rad = math.asin(sin_tilt)
         tilt_deg = math.degrees(tilt_rad)
 
-        # Extract pan from R[0,0] and R[0,1]:
-        #   R[0,0] = cos(pan), R[0,1] = -sin(pan)
-        #   pan = atan2(-R[0,1], R[0,0]) = atan2(sin(pan), cos(pan))
         pan_rad = math.atan2(-R[0, 1], R[0, 0])
 
         # Check for gimbal lock (tilt near ±90°)
@@ -418,8 +409,9 @@ class CameraPositionDeriver:
             max_error: Maximum reprojection error in pixels
             errors: Array of per-point reprojection errors
         """
-        # Project object points to image
-        projected_points, _ = cv2.projectPoints(object_points, rvec, tvec, self.K, distCoeffs=None)
+        # Project object points to image (use zero distortion coefficients)
+        dist_coeffs = np.zeros(5, dtype=np.float64)
+        projected_points, _ = cv2.projectPoints(object_points, rvec, tvec, self.K, dist_coeffs)
         projected_points = projected_points.reshape(-1, 2)
 
         # Compute per-point errors (Euclidean distance in pixels)
@@ -490,13 +482,14 @@ class CameraPositionDeriver:
             f"Y=[{object_points[:, 1].min():.1f}, {object_points[:, 1].max():.1f}]"
         )
 
-        # Call solvePnPRansac
+        # Call solvePnPRansac (use zero distortion coefficients)
+        dist_coeffs = np.zeros(5, dtype=np.float64)
         success, rvec, tvec, inliers = cv2.solvePnPRansac(
             objectPoints=object_points,
             imagePoints=image_points,
             cameraMatrix=self.K,
-            distCoeffs=None,
-            iterationsCount=self.ransac_iterations,
+            distCoeffs=dist_coeffs,
+            iterationsCount=int(self.ransac_iterations),
             reprojectionError=self.ransac_reprojection_threshold,
             confidence=self.ransac_confidence,
             flags=self.solver_method,
