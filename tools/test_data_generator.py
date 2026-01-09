@@ -2,10 +2,12 @@
 Standalone test data generator tool for camera calibration GCPs.
 
 This tool captures full-resolution camera frames from PTZ cameras and enables
-interactive marking of Ground Control Points (GCPs) with GPS coordinates.
+interactive marking of Ground Control Points (GCPs) with map point references.
 Automatically fetches camera parameters (pan/tilt/zoom, GPS, height) and exports
 test data in JSON format.
 """
+
+from __future__ import annotations
 
 import argparse
 import http.server
@@ -14,7 +16,6 @@ import os
 import sys
 import tempfile
 import webbrowser
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -36,15 +37,8 @@ from poc_homography.camera_config import (
     get_rtsp_url,
 )
 from poc_homography.gps_distance_calculator import dms_to_dd
+from poc_homography.map_points import MapPointRegistry
 from poc_homography.server_utils import find_available_port
-
-# Try to import UTMConverter for accurate coordinate conversion
-try:
-    from poc_homography.coordinate_converter import UTMConverter
-
-    UTM_CONVERTER_AVAILABLE = True
-except ImportError:
-    UTM_CONVERTER_AVAILABLE = False
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
@@ -59,6 +53,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         - camera_name: str or None
         - output: str or None
         - list_cameras: bool
+        - map_points: str (path to map points JSON file)
 
     Raises:
         SystemExit: If arguments are invalid (argparse behavior)
@@ -85,10 +80,10 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--kml",
+        "--map-points",
         type=str,
-        default=None,
-        help="KML file with reference points for GPS coordinate selection",
+        default="map_points.json",
+        help="Path to map points JSON file (default: map_points.json)",
     )
 
     args = parser.parse_args(argv)
@@ -137,156 +132,36 @@ def validate_gps_ranges(latitude: float, longitude: float) -> None:
         raise ValueError(f"Longitude must be between -180 and 180 degrees, got {longitude}")
 
 
-def parse_kml_points(kml_path: str) -> list[dict]:
+def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
     """
-    Parse KML file and extract Point placemarks with GPS and optional UTM coordinates.
+    Load map points from JSON file using MapPointRegistry.
 
     Args:
-        kml_path: Path to the KML file to parse
+        map_points_path: Path to map points JSON file
 
     Returns:
-        List of dictionaries with structure:
-        [
-            {
-                'name': str,
-                'latitude': float,
-                'longitude': float,
-                'utm_easting': float (optional),
-                'utm_northing': float (optional),
-                'utm_crs': str (optional)
-            },
-            ...
-        ]
+        MapPointRegistry containing loaded map points
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        json.JSONDecodeError: If JSON is invalid
+        KeyError: If required keys are missing
+        ValueError: If data format is invalid
     """
-    ns = {"kml": "http://www.opengis.net/kml/2.2"}
-
-    try:
-        tree = ET.parse(kml_path)
-        root = tree.getroot()
-    except FileNotFoundError:
-        print(f"Warning: KML file not found: {kml_path}")
-        return []
-    except ET.ParseError as e:
-        print(f"Warning: Failed to parse KML file {kml_path}: {e}")
-        return []
-
-    points = []
-    unnamed_counter = 1
-
-    placemarks = root.findall(".//kml:Placemark", ns)
-    if not placemarks:
-        placemarks = root.findall(".//Placemark")
-
-    for placemark in placemarks:
-        point_elem = placemark.find(".//kml:Point", ns)
-        if point_elem is None:
-            point_elem = placemark.find(".//Point")
-
-        if point_elem is None:
-            continue
-
-        name_elem = placemark.find(".//kml:name", ns)
-        if name_elem is None:
-            name_elem = placemark.find(".//name")
-
-        if name_elem is not None and name_elem.text:
-            name = name_elem.text.strip()
-        else:
-            name = f"Unnamed Point {unnamed_counter}"
-            unnamed_counter += 1
-
-        coords_elem = point_elem.find(".//kml:coordinates", ns)
-        if coords_elem is None:
-            coords_elem = point_elem.find(".//coordinates")
-
-        if coords_elem is None or not coords_elem.text:
-            continue
-
-        coords_text = coords_elem.text.strip()
-        try:
-            parts = coords_text.split(",")
-            if len(parts) < 2:
-                raise ValueError("Not enough coordinate values")
-
-            longitude = float(parts[0])
-            latitude = float(parts[1])
-
-            point_data = {"name": name, "latitude": latitude, "longitude": longitude}
-
-            # Try to extract UTM coordinates from ExtendedData
-            extended_data = placemark.find(".//kml:ExtendedData", ns)
-            if extended_data is None:
-                extended_data = placemark.find(".//ExtendedData")
-
-            if extended_data is not None:
-                simple_data_elems = extended_data.findall(".//kml:SimpleData", ns)
-                if not simple_data_elems:
-                    simple_data_elems = extended_data.findall(".//SimpleData")
-
-                for sd in simple_data_elems:
-                    sd_name = sd.get("name")
-                    sd_value = sd.text
-                    if sd_name and sd_value:
-                        if sd_name == "utm_easting":
-                            point_data["utm_easting"] = float(sd_value)
-                        elif sd_name == "utm_northing":
-                            point_data["utm_northing"] = float(sd_value)
-                        elif sd_name == "utm_crs":
-                            point_data["utm_crs"] = sd_value
-
-            points.append(point_data)
-
-        except (ValueError, IndexError) as e:
-            print(f"Warning: Skipping placemark '{name}' - invalid coordinates: {e}")
-            continue
-
-    return points
+    return MapPointRegistry.load(map_points_path)
 
 
-def convert_kml_points_to_gps(kml_points: list[dict]) -> list[dict]:
+def convert_map_points_to_list(registry: MapPointRegistry) -> list[dict]:
     """
-    Convert KML points to GPS coordinates, using UTM if available for accuracy.
-
-    If UTM coordinates are present, they are converted to GPS coordinates.
-    Otherwise, the original GPS coordinates from the KML are used.
+    Convert MapPointRegistry to list format for web interface.
 
     Args:
-        kml_points: List of KML point dictionaries
+        registry: MapPointRegistry to convert
 
     Returns:
-        List of dictionaries with 'name', 'latitude', 'longitude' keys
+        List of dictionaries with id, pixel_x, pixel_y, map_id keys
     """
-    result = []
-
-    # Check if any points have UTM coordinates
-    has_utm = any("utm_easting" in p and "utm_northing" in p for p in kml_points)
-
-    utm_converter = None
-    if has_utm and UTM_CONVERTER_AVAILABLE:
-        try:
-            # Get UTM CRS from first point that has it
-            utm_crs = next(
-                (p.get("utm_crs", "EPSG:25830") for p in kml_points if "utm_crs" in p), "EPSG:25830"
-            )
-            utm_converter = UTMConverter(utm_crs)
-            print(f"Using UTM coordinates (CRS: {utm_crs}) for accurate GPS conversion")
-        except Exception as e:
-            print(f"Warning: Could not initialize UTM converter: {e}")
-
-    for point in kml_points:
-        name = point["name"]
-
-        # If we have UTM coordinates and converter, use those
-        if utm_converter and "utm_easting" in point and "utm_northing" in point:
-            lat, lon = utm_converter.utm_to_gps(point["utm_easting"], point["utm_northing"])
-        else:
-            # Use original GPS coordinates
-            lat = point["latitude"]
-            lon = point["longitude"]
-
-        result.append({"name": name, "latitude": lat, "longitude": lon})
-
-    return result
+    return [point.to_dict() for point in registry.points.values()]
 
 
 def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> tuple[float, float]:
@@ -434,7 +309,7 @@ def generate_json_output(
 
     Args:
         camera_info: Dictionary with camera parameters (latitude, longitude, height_meters, pan_deg, tilt_deg, zoom_level)
-        gcps: List of GCP dictionaries with pixel_x, pixel_y, latitude, longitude
+        gcps: List of GCP dictionaries with pixel_x, pixel_y, and either map_point_id or latitude/longitude
         camera_name: Name of the camera
         output_path: Optional custom output path for JSON
         frame_path: Optional path to the captured frame image
@@ -474,7 +349,7 @@ SERVER_STATE = {
     "camera_info": {},
     "camera_name": None,
     "output_path": None,
-    "kml_points": [],  # List of {name, latitude, longitude} from KML file
+    "map_points": [],  # List of {id, pixel_x, pixel_y, map_id} from map points file
 }
 
 
@@ -661,25 +536,20 @@ def create_html_interface() -> str:
         <div id="gcp-items"></div>
     </div>
 
-    <!-- Modal for entering GPS coordinates -->
+    <!-- Modal for selecting map points -->
     <div id="gps-modal" class="modal">
         <div class="modal-content">
-            <h3 id="modal-title">Enter GPS Coordinates</h3>
+            <h3 id="modal-title">Select Map Point</h3>
 
-            <!-- KML point search (hidden if no KML loaded) -->
-            <div id="kml-search-container" style="display: none; margin-bottom: 15px; padding: 10px; background: #f0f7ff; border-radius: 5px;">
-                <label style="font-weight: bold; color: #1976D2;">Search KML Points:</label>
-                <input type="text" id="kml-search" placeholder="Type to filter by name..." style="width: 100%; padding: 8px; margin: 5px 0; border: 2px solid #1976D2; border-radius: 3px;" />
-                <div id="kml-results" style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; border-radius: 3px; background: white;"></div>
+            <!-- Map point search -->
+            <div id="map-point-search-container" style="margin-bottom: 15px; padding: 10px; background: #f0f7ff; border-radius: 5px;">
+                <label style="font-weight: bold; color: #1976D2;">Search Map Points:</label>
+                <input type="text" id="map-point-search" placeholder="Type to filter by ID..." style="width: 100%; padding: 8px; margin: 5px 0; border: 2px solid #1976D2; border-radius: 3px;" />
+                <div id="map-point-results" style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; border-radius: 3px; background: white;"></div>
             </div>
 
-            <label>Latitude (decimal degrees):</label>
-            <input type="number" id="modal-lat" step="any" placeholder="e.g., 39.640477" />
-            <label>Longitude (decimal degrees):</label>
-            <input type="number" id="modal-lon" step="any" placeholder="e.g., -0.230175" />
             <div class="modal-buttons">
                 <button id="modal-cancel" style="background-color: #999; color: white;">Cancel</button>
-                <button id="modal-save" style="background-color: #4CAF50; color: white;">Save</button>
             </div>
         </div>
     </div>
@@ -693,7 +563,7 @@ def create_html_interface() -> str:
         let dragGcpIndex = null;
         let cameraInfo = {};
         let cameraName = '';
-        let kmlPoints = [];  // KML points with {name, latitude, longitude}
+        let mapPoints = [];  // Map points with {id, pixel_x, pixel_y, map_id}
 
         // Canvas and image
         const canvas = document.getElementById('image-canvas');
@@ -706,7 +576,7 @@ def create_html_interface() -> str:
             .then(data => {
                 cameraInfo = data.camera_info;
                 cameraName = data.camera_name;
-                kmlPoints = data.kml_points || [];
+                mapPoints = data.map_points || [];
 
                 document.getElementById('camera-name').textContent = cameraName;
                 document.getElementById('cam-lat').value = cameraInfo.latitude;
@@ -715,11 +585,6 @@ def create_html_interface() -> str:
                 document.getElementById('cam-pan').value = cameraInfo.pan_deg;
                 document.getElementById('cam-tilt').value = cameraInfo.tilt_deg;
                 document.getElementById('cam-zoom').value = cameraInfo.zoom_level;
-
-                // Show KML search if points are available
-                if (kmlPoints.length > 0) {
-                    document.getElementById('kml-search-container').style.display = 'block';
-                }
 
                 // Load image
                 img.src = '/api/image';
@@ -730,28 +595,28 @@ def create_html_interface() -> str:
                 };
             });
 
-        // KML point search functionality
-        function filterKmlPoints(query) {
-            const resultsContainer = document.getElementById('kml-results');
+        // Map point search functionality
+        function filterMapPoints(query) {
+            const resultsContainer = document.getElementById('map-point-results');
             resultsContainer.innerHTML = '';
 
             if (!query || query.length < 1) {
                 // Show all points when query is empty
-                const matches = kmlPoints.slice(0, 20);  // Show first 20
-                displayKmlMatches(matches);
+                const matches = mapPoints.slice(0, 20);  // Show first 20
+                displayMapPointMatches(matches);
                 return;
             }
 
             const lowerQuery = query.toLowerCase();
-            const matches = kmlPoints.filter(p =>
-                p.name.toLowerCase().includes(lowerQuery)
+            const matches = mapPoints.filter(p =>
+                p.id.toLowerCase().includes(lowerQuery)
             ).slice(0, 20);  // Limit to 20 results
 
-            displayKmlMatches(matches);
+            displayMapPointMatches(matches);
         }
 
-        function displayKmlMatches(matches) {
-            const resultsContainer = document.getElementById('kml-results');
+        function displayMapPointMatches(matches) {
+            const resultsContainer = document.getElementById('map-point-results');
             resultsContainer.innerHTML = '';
 
             if (matches.length === 0) {
@@ -762,29 +627,45 @@ def create_html_interface() -> str:
             matches.forEach(point => {
                 const div = document.createElement('div');
                 div.style.cssText = 'padding: 8px; cursor: pointer; border-bottom: 1px solid #eee;';
-                div.innerHTML = `<strong>${point.name}</strong><br><small style="color: #666;">${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}</small>`;
+                div.innerHTML = `<strong>${point.id}</strong><br><small style="color: #666;">Pixel: (${point.pixel_x.toFixed(1)}, ${point.pixel_y.toFixed(1)})</small>`;
                 div.onmouseover = () => div.style.backgroundColor = '#e3f2fd';
                 div.onmouseout = () => div.style.backgroundColor = 'white';
-                div.onclick = () => selectKmlPoint(point);
+                div.onclick = () => selectMapPoint(point);
                 resultsContainer.appendChild(div);
             });
         }
 
-        function selectKmlPoint(point) {
-            document.getElementById('modal-lat').value = point.latitude;
-            document.getElementById('modal-lon').value = point.longitude;
-            document.getElementById('kml-search').value = point.name;
-            document.getElementById('kml-results').innerHTML = '';
+        function selectMapPoint(point) {
+            document.getElementById('map-point-search').value = point.id;
+            document.getElementById('map-point-results').innerHTML = '';
+
+            // Add or update GCP
+            if (selectedGcpIndex !== null) {
+                // Edit existing GCP
+                gcps[selectedGcpIndex].map_point_id = point.id;
+            } else {
+                // Add new GCP
+                gcps.push({
+                    pixel_x: pendingPixelCoords.x,
+                    pixel_y: pendingPixelCoords.y,
+                    map_point_id: point.id
+                });
+            }
+
+            updateGcpList();
+            drawCanvas();
+            hideGpsModal();
+            selectedGcpIndex = null;
         }
 
-        // Set up KML search event listener
-        document.getElementById('kml-search').addEventListener('input', (e) => {
-            filterKmlPoints(e.target.value);
+        // Set up map point search event listener
+        document.getElementById('map-point-search').addEventListener('input', (e) => {
+            filterMapPoints(e.target.value);
         });
 
-        // Show all KML points when search is focused
-        document.getElementById('kml-search').addEventListener('focus', (e) => {
-            filterKmlPoints(e.target.value);
+        // Show all map points when search is focused
+        document.getElementById('map-point-search').addEventListener('focus', (e) => {
+            filterMapPoints(e.target.value);
         });
 
         function drawCanvas() {
@@ -824,79 +705,31 @@ def create_html_interface() -> str:
 
             const modal = document.getElementById('gps-modal');
             const title = document.getElementById('modal-title');
-            const latInput = document.getElementById('modal-lat');
-            const lonInput = document.getElementById('modal-lon');
-            const kmlSearch = document.getElementById('kml-search');
-            const kmlResults = document.getElementById('kml-results');
+            const mapPointSearch = document.getElementById('map-point-search');
+            const mapPointResults = document.getElementById('map-point-results');
 
-            // Clear KML search
-            kmlSearch.value = '';
-            kmlResults.innerHTML = '';
+            // Clear map point search
+            mapPointSearch.value = '';
+            mapPointResults.innerHTML = '';
 
             if (existingGcp) {
-                title.textContent = 'Edit GPS Coordinates';
-                latInput.value = existingGcp.latitude;
-                lonInput.value = existingGcp.longitude;
+                title.textContent = 'Edit Map Point';
+                if (existingGcp.map_point_id) {
+                    mapPointSearch.value = existingGcp.map_point_id;
+                }
             } else {
-                title.textContent = 'Enter GPS Coordinates';
-                latInput.value = '';
-                lonInput.value = '';
+                title.textContent = 'Select Map Point';
             }
 
             modal.style.display = 'block';
-
-            // Focus on KML search if available, otherwise lat input
-            if (kmlPoints.length > 0) {
-                kmlSearch.focus();
-            } else {
-                latInput.focus();
-            }
+            mapPointSearch.focus();
         }
 
         function hideGpsModal() {
             document.getElementById('gps-modal').style.display = 'none';
-            document.getElementById('kml-search').value = '';
-            document.getElementById('kml-results').innerHTML = '';
+            document.getElementById('map-point-search').value = '';
+            document.getElementById('map-point-results').innerHTML = '';
             pendingPixelCoords = null;
-        }
-
-        function saveGcp() {
-            const lat = parseFloat(document.getElementById('modal-lat').value);
-            const lon = parseFloat(document.getElementById('modal-lon').value);
-
-            if (isNaN(lat) || isNaN(lon)) {
-                alert('Please enter valid coordinates');
-                return;
-            }
-
-            if (lat < -90 || lat > 90) {
-                alert('Latitude must be between -90 and 90');
-                return;
-            }
-
-            if (lon < -180 || lon > 180) {
-                alert('Longitude must be between -180 and 180');
-                return;
-            }
-
-            if (selectedGcpIndex !== null) {
-                // Edit existing GCP
-                gcps[selectedGcpIndex].latitude = lat;
-                gcps[selectedGcpIndex].longitude = lon;
-            } else {
-                // Add new GCP
-                gcps.push({
-                    pixel_x: pendingPixelCoords.x,
-                    pixel_y: pendingPixelCoords.y,
-                    latitude: lat,
-                    longitude: lon
-                });
-            }
-
-            updateGcpList();
-            drawCanvas();
-            hideGpsModal();
-            selectedGcpIndex = null;
         }
 
         function updateGcpList() {
@@ -915,7 +748,7 @@ def create_html_interface() -> str:
                 div.innerHTML = `
                     <strong>GCP #${idx + 1}</strong><br>
                     Pixel: (${gcp.pixel_x.toFixed(1)}, ${gcp.pixel_y.toFixed(1)})<br>
-                    GPS: (${gcp.latitude.toFixed(6)}, ${gcp.longitude.toFixed(6)})
+                    Map Point: ${gcp.map_point_id || 'None'}
                 `;
                 div.onclick = () => selectGcp(idx);
                 container.appendChild(div);
@@ -1052,16 +885,7 @@ def create_html_interface() -> str:
             }
         });
 
-        document.getElementById('modal-save').addEventListener('click', saveGcp);
         document.getElementById('modal-cancel').addEventListener('click', hideGpsModal);
-
-        document.getElementById('modal-lat').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') saveGcp();
-        });
-
-        document.getElementById('modal-lon').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') saveGcp();
-        });
 
         document.getElementById('export-btn').addEventListener('click', exportJson);
 
@@ -1107,14 +931,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(create_html_interface().encode())
 
         elif parsed_url.path == "/api/init":
-            # Serve initial camera info and KML points
+            # Serve initial camera info and map points
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
             data = {
                 "camera_info": SERVER_STATE["camera_info"],
                 "camera_name": SERVER_STATE["camera_name"],
-                "kml_points": SERVER_STATE["kml_points"],
+                "map_points": SERVER_STATE["map_points"],
             }
             self.wfile.write(json.dumps(data).encode())
 
@@ -1212,27 +1036,29 @@ def main():
         print(f"   Error: {e}")
         sys.exit(1)
 
-    # Step 4: Load KML points (if provided)
-    kml_points = []
-    if args.kml:
-        print(f"4. Loading KML points from {args.kml}...")
-        raw_kml_points = parse_kml_points(args.kml)
-        if raw_kml_points:
-            kml_points = convert_kml_points_to_gps(raw_kml_points)
-            print(f"   Loaded {len(kml_points)} points")
-        else:
-            print("   Warning: No points found in KML file")
+    # Step 4: Load map points
+    map_points = []
+    print(f"4. Loading map points from {args.map_points}...")
+    try:
+        registry = load_map_points(args.map_points)
+        map_points = convert_map_points_to_list(registry)
+        print(f"   Loaded {len(map_points)} points from map '{registry.map_id}'")
+    except FileNotFoundError:
+        print(f"   Warning: Map points file not found: {args.map_points}")
+        print("   Continuing without map points (manual coordinate entry required)")
+    except Exception as e:
+        print(f"   Warning: Failed to load map points: {e}")
+        print("   Continuing without map points")
 
     # Step 5: Start web server
-    step_num = "5" if args.kml else "4"
-    print(f"\n{step_num}. Starting web server...")
+    print(f"\n5. Starting web server...")
 
     # Store state for server
     SERVER_STATE["frame_path"] = frame_path
     SERVER_STATE["camera_info"] = camera_info
     SERVER_STATE["camera_name"] = args.camera_name
     SERVER_STATE["output_path"] = args.output
-    SERVER_STATE["kml_points"] = kml_points
+    SERVER_STATE["map_points"] = map_points
 
     # Find available port
     port = find_available_port(start_port=8080, max_attempts=10)
