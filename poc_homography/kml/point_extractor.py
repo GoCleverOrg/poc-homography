@@ -2,7 +2,7 @@
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 
 from jinja2 import Environment, PackageLoader
@@ -43,19 +43,20 @@ class KmlPoint:
         category: Point category (e.g., "zebra", "arrow", "parking", "other").
         lat: Latitude in degrees (WGS84).
         lon: Longitude in degrees (WGS84).
+        style: Normalized style identifier for KML rendering (computed).
     """
 
     category: str
     lat: float
     lon: float
+    style: str = field(init=False)
 
-    @property
-    def style(self) -> str:
-        """Normalized style identifier for KML rendering."""
+    def __post_init__(self) -> None:
+        """Compute style from category."""
         style = self.category.lower().replace(" ", "_")
         if style not in ["zebra", "arrow", "parking"]:
-            return "other"
-        return style
+            style = "other"
+        object.__setattr__(self, "style", style)
 
 
 class Kml:
