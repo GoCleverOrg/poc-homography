@@ -12,22 +12,23 @@ Tests cover:
 - Convergence and outlier rejection
 """
 
-import pytest
-import numpy as np
+import copy
 from datetime import datetime, timezone
 from unittest.mock import Mock
-import copy
 
+import numpy as np
+import pytest
+
+from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gcp_calibrator import (
     CalibrationResult,
     GCPCalibrator,
 )
-from poc_homography.camera_geometry import CameraGeometry
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_camera_geometry():
@@ -56,7 +57,7 @@ def real_camera_geometry():
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
     return geo
 
@@ -65,24 +66,19 @@ def real_camera_geometry():
 def valid_gcps():
     """Create a list of valid GCP dictionaries for testing."""
     return [
+        {"gps": {"latitude": 39.640444, "longitude": -0.230111}, "image": {"u": 960.0, "v": 540.0}},
         {
-            'gps': {'latitude': 39.640444, 'longitude': -0.230111},
-            'image': {'u': 960.0, 'v': 540.0}
+            "gps": {"latitude": 39.640500, "longitude": -0.230200},
+            "image": {"u": 1000.0, "v": 600.0},
         },
-        {
-            'gps': {'latitude': 39.640500, 'longitude': -0.230200},
-            'image': {'u': 1000.0, 'v': 600.0}
-        },
-        {
-            'gps': {'latitude': 39.640300, 'longitude': -0.230000},
-            'image': {'u': 920.0, 'v': 500.0}
-        },
+        {"gps": {"latitude": 39.640300, "longitude": -0.230000}, "image": {"u": 920.0, "v": 500.0}},
     ]
 
 
 # ============================================================================
 # Test: CalibrationResult Dataclass
 # ============================================================================
+
 
 class TestCalibrationResult:
     """Tests for CalibrationResult dataclass."""
@@ -92,11 +88,11 @@ class TestCalibrationResult:
         params = np.array([1.0, 2.0, 0.5, 0.1, 0.2, -0.3])
         errors = [0.5, 1.2, 0.8]
         convergence = {
-            'success': True,
-            'message': 'Optimization converged',
-            'iterations': 10,
-            'function_evals': 50,
-            'optimality': 1e-6
+            "success": True,
+            "message": "Optimization converged",
+            "iterations": 10,
+            "function_evals": 50,
+            "optimality": 1e-6,
         }
         timestamp = datetime(2024, 1, 5, 12, 0, 0)
 
@@ -109,7 +105,7 @@ class TestCalibrationResult:
             inlier_ratio=0.75,
             per_gcp_errors=errors,
             convergence_info=convergence,
-            timestamp=timestamp
+            timestamp=timestamp,
         )
 
         assert np.array_equal(result.optimized_params, params)
@@ -134,7 +130,7 @@ class TestCalibrationResult:
             num_outliers=0,
             inlier_ratio=1.0,
             per_gcp_errors=[0.5, 0.3, 0.7, 0.4, 0.6],
-            convergence_info={'success': True}
+            convergence_info={"success": True},
         )
 
         after = datetime.now(timezone.utc)
@@ -152,7 +148,7 @@ class TestCalibrationResult:
             num_outliers=0,
             inlier_ratio=1.0,
             per_gcp_errors=[],
-            convergence_info={}
+            convergence_info={},
         )
 
         assert isinstance(result.optimized_params, np.ndarray)
@@ -169,7 +165,7 @@ class TestCalibrationResult:
             num_outliers=0,
             inlier_ratio=1.0,
             per_gcp_errors=errors,
-            convergence_info={}
+            convergence_info={},
         )
 
         assert isinstance(result.per_gcp_errors, list)
@@ -180,6 +176,7 @@ class TestCalibrationResult:
 # Test: GCPCalibrator Initialization
 # ============================================================================
 
+
 class TestGCPCalibratorInit:
     """Tests for GCPCalibrator initialization and validation."""
 
@@ -188,13 +185,13 @@ class TestGCPCalibratorInit:
         calibrator = GCPCalibrator(
             camera_geometry=mock_camera_geometry,
             gcps=valid_gcps,
-            loss_function='huber',
-            loss_scale=1.0
+            loss_function="huber",
+            loss_scale=1.0,
         )
 
         assert calibrator.camera_geometry == mock_camera_geometry
         assert calibrator.gcps == valid_gcps
-        assert calibrator.loss_function == 'huber'
+        assert calibrator.loss_function == "huber"
         assert calibrator.loss_scale == 1.0
 
     def test_valid_initialization_cauchy(self, mock_camera_geometry, valid_gcps):
@@ -202,33 +199,25 @@ class TestGCPCalibratorInit:
         calibrator = GCPCalibrator(
             camera_geometry=mock_camera_geometry,
             gcps=valid_gcps,
-            loss_function='cauchy',
-            loss_scale=2.0
+            loss_function="cauchy",
+            loss_scale=2.0,
         )
 
-        assert calibrator.loss_function == 'cauchy'
+        assert calibrator.loss_function == "cauchy"
         assert calibrator.loss_scale == 2.0
 
     def test_loss_function_case_insensitive(self, mock_camera_geometry, valid_gcps):
         """Test that loss_function parameter is case-insensitive."""
-        calibrator1 = GCPCalibrator(
-            mock_camera_geometry, valid_gcps, loss_function='HUBER'
-        )
-        calibrator2 = GCPCalibrator(
-            mock_camera_geometry, valid_gcps, loss_function='Cauchy'
-        )
+        calibrator1 = GCPCalibrator(mock_camera_geometry, valid_gcps, loss_function="HUBER")
+        calibrator2 = GCPCalibrator(mock_camera_geometry, valid_gcps, loss_function="Cauchy")
 
-        assert calibrator1.loss_function == 'huber'
-        assert calibrator2.loss_function == 'cauchy'
+        assert calibrator1.loss_function == "huber"
+        assert calibrator2.loss_function == "cauchy"
 
     def test_invalid_loss_function(self, mock_camera_geometry, valid_gcps):
         """Test that invalid loss_function raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
-            GCPCalibrator(
-                mock_camera_geometry,
-                valid_gcps,
-                loss_function='invalid_loss'
-            )
+            GCPCalibrator(mock_camera_geometry, valid_gcps, loss_function="invalid_loss")
 
         assert "Invalid loss_function" in str(exc_info.value)
         assert "invalid_loss" in str(exc_info.value)
@@ -238,20 +227,13 @@ class TestGCPCalibratorInit:
     def test_empty_gcps_list(self, mock_camera_geometry):
         """Test that empty GCPs list raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
-            GCPCalibrator(
-                mock_camera_geometry,
-                gcps=[],
-                loss_function='huber'
-            )
+            GCPCalibrator(mock_camera_geometry, gcps=[], loss_function="huber")
 
         assert "empty" in str(exc_info.value).lower()
 
     def test_gcp_not_dict(self, mock_camera_geometry):
         """Test that non-dict GCP raises ValueError."""
-        invalid_gcps = [
-            "not a dict",
-            {'gps': {}, 'image': {}}
-        ]
+        invalid_gcps = ["not a dict", {"gps": {}, "image": {}}]
 
         with pytest.raises(ValueError) as exc_info:
             GCPCalibrator(mock_camera_geometry, invalid_gcps)
@@ -262,7 +244,7 @@ class TestGCPCalibratorInit:
     def test_gcp_missing_gps_key(self, mock_camera_geometry):
         """Test that GCP missing 'gps' key raises ValueError."""
         invalid_gcps = [
-            {'image': {'u': 100, 'v': 200}}  # Missing 'gps'
+            {"image": {"u": 100, "v": 200}}  # Missing 'gps'
         ]
 
         with pytest.raises(ValueError) as exc_info:
@@ -273,7 +255,7 @@ class TestGCPCalibratorInit:
     def test_gcp_missing_image_key(self, mock_camera_geometry):
         """Test that GCP missing 'image' key raises ValueError."""
         invalid_gcps = [
-            {'gps': {'latitude': 39.64, 'longitude': -0.23}}  # Missing 'image'
+            {"gps": {"latitude": 39.64, "longitude": -0.23}}  # Missing 'image'
         ]
 
         with pytest.raises(ValueError) as exc_info:
@@ -285,8 +267,8 @@ class TestGCPCalibratorInit:
         """Test that GCP with GPS missing latitude raises ValueError."""
         invalid_gcps = [
             {
-                'gps': {'longitude': -0.23},  # Missing latitude
-                'image': {'u': 100, 'v': 200}
+                "gps": {"longitude": -0.23},  # Missing latitude
+                "image": {"u": 100, "v": 200},
             }
         ]
 
@@ -299,8 +281,8 @@ class TestGCPCalibratorInit:
         """Test that GCP with GPS missing longitude raises ValueError."""
         invalid_gcps = [
             {
-                'gps': {'latitude': 39.64},  # Missing longitude
-                'image': {'u': 100, 'v': 200}
+                "gps": {"latitude": 39.64},  # Missing longitude
+                "image": {"u": 100, "v": 200},
             }
         ]
 
@@ -313,8 +295,8 @@ class TestGCPCalibratorInit:
         """Test that GCP with image missing 'u' raises ValueError."""
         invalid_gcps = [
             {
-                'gps': {'latitude': 39.64, 'longitude': -0.23},
-                'image': {'v': 200}  # Missing 'u'
+                "gps": {"latitude": 39.64, "longitude": -0.23},
+                "image": {"v": 200},  # Missing 'u'
             }
         ]
 
@@ -327,8 +309,8 @@ class TestGCPCalibratorInit:
         """Test that GCP with image missing 'v' raises ValueError."""
         invalid_gcps = [
             {
-                'gps': {'latitude': 39.64, 'longitude': -0.23},
-                'image': {'u': 100}  # Missing 'v'
+                "gps": {"latitude": 39.64, "longitude": -0.23},
+                "image": {"u": 100},  # Missing 'v'
             }
         ]
 
@@ -340,22 +322,14 @@ class TestGCPCalibratorInit:
     def test_negative_loss_scale(self, mock_camera_geometry, valid_gcps):
         """Test that negative loss_scale raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
-            GCPCalibrator(
-                mock_camera_geometry,
-                valid_gcps,
-                loss_scale=-1.0
-            )
+            GCPCalibrator(mock_camera_geometry, valid_gcps, loss_scale=-1.0)
 
         assert "loss_scale must be positive" in str(exc_info.value)
 
     def test_zero_loss_scale(self, mock_camera_geometry, valid_gcps):
         """Test that zero loss_scale raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
-            GCPCalibrator(
-                mock_camera_geometry,
-                valid_gcps,
-                loss_scale=0.0
-            )
+            GCPCalibrator(mock_camera_geometry, valid_gcps, loss_scale=0.0)
 
         assert "loss_scale must be positive" in str(exc_info.value)
 
@@ -363,6 +337,7 @@ class TestGCPCalibratorInit:
 # ============================================================================
 # Test: Predicted Homography Computation (Task 3)
 # ============================================================================
+
 
 class TestComputePredictedHomography:
     """Tests for _compute_predicted_homography method."""
@@ -436,6 +411,7 @@ class TestComputePredictedHomography:
 # Test: Residual Computation (Task 4)
 # ============================================================================
 
+
 class TestComputeResiduals:
     """Tests for _compute_residuals method."""
 
@@ -493,14 +469,14 @@ class TestComputeResiduals:
 # Test: Robust Loss Application (Task 5)
 # ============================================================================
 
+
 class TestApplyRobustLoss:
     """Tests for _apply_robust_loss method."""
 
     def test_huber_loss_small_residuals(self, real_camera_geometry, valid_gcps):
         """Test Huber loss is quadratic for small residuals."""
         calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='huber', loss_scale=2.0
+            real_camera_geometry, valid_gcps, loss_function="huber", loss_scale=2.0
         )
 
         # Small residuals (< scale)
@@ -514,8 +490,7 @@ class TestApplyRobustLoss:
     def test_huber_loss_large_residuals(self, real_camera_geometry, valid_gcps):
         """Test Huber loss is linear for large residuals."""
         calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='huber', loss_scale=2.0
+            real_camera_geometry, valid_gcps, loss_function="huber", loss_scale=2.0
         )
 
         # Large residuals (> scale)
@@ -531,8 +506,7 @@ class TestApplyRobustLoss:
         """Test Huber loss transitions correctly at scale."""
         scale = 3.0
         calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='huber', loss_scale=scale
+            real_camera_geometry, valid_gcps, loss_function="huber", loss_scale=scale
         )
 
         # Residuals at transition point
@@ -547,8 +521,7 @@ class TestApplyRobustLoss:
     def test_cauchy_loss_logarithmic_growth(self, real_camera_geometry, valid_gcps):
         """Test Cauchy loss has logarithmic growth for large residuals."""
         calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='cauchy', loss_scale=1.0
+            real_camera_geometry, valid_gcps, loss_function="cauchy", loss_scale=1.0
         )
 
         residuals = np.array([1.0, 10.0, 100.0])
@@ -556,14 +529,15 @@ class TestApplyRobustLoss:
 
         # Cauchy loss: (scale^2/2) * log(1 + (r/scale)^2)
         scale = 1.0
-        expected = (scale**2 / 2.0) * np.log1p((residuals / scale)**2)
+        expected = (scale**2 / 2.0) * np.log1p((residuals / scale) ** 2)
         np.testing.assert_allclose(loss, expected, rtol=1e-10)
 
-    def test_cauchy_loss_smaller_than_quadratic_for_outliers(self, real_camera_geometry, valid_gcps):
+    def test_cauchy_loss_smaller_than_quadratic_for_outliers(
+        self, real_camera_geometry, valid_gcps
+    ):
         """Test Cauchy loss grows slower than quadratic for large residuals."""
         calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='cauchy', loss_scale=1.0
+            real_camera_geometry, valid_gcps, loss_function="cauchy", loss_scale=1.0
         )
 
         # Large outlier residual
@@ -577,8 +551,7 @@ class TestApplyRobustLoss:
     def test_loss_symmetric(self, real_camera_geometry, valid_gcps):
         """Test that loss is symmetric (loss(r) = loss(-r))."""
         calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='huber', loss_scale=2.0
+            real_camera_geometry, valid_gcps, loss_function="huber", loss_scale=2.0
         )
 
         residuals_pos = np.array([1.0, 5.0, 10.0])
@@ -591,10 +564,7 @@ class TestApplyRobustLoss:
 
     def test_loss_zero_for_zero_residual(self, real_camera_geometry, valid_gcps):
         """Test that loss is zero when residual is zero."""
-        calibrator = GCPCalibrator(
-            real_camera_geometry, valid_gcps,
-            loss_function='huber'
-        )
+        calibrator = GCPCalibrator(real_camera_geometry, valid_gcps, loss_function="huber")
 
         residuals = np.array([0.0])
         loss = calibrator._apply_robust_loss(residuals)
@@ -605,6 +575,7 @@ class TestApplyRobustLoss:
 # ============================================================================
 # Test: RMS Error Computation
 # ============================================================================
+
 
 class TestComputeRMSError:
     """Tests for _compute_rms_error helper method."""
@@ -643,12 +614,14 @@ class TestComputeRMSError:
 # Integration Tests: Full Calibration (Task 6 & Task 8)
 # ============================================================================
 
+
 class TestCalibrateIntegration:
     """Integration tests for full calibrate() method with synthetic data."""
 
     @pytest.fixture
     def create_synthetic_gcps(self, real_camera_geometry):
         """Helper to create synthetic GCPs by projecting world points through homography."""
+
         def _create(num_gcps=10, perturbation=None, outlier_fraction=0.0):
             """
             Create synthetic GCPs with optional parameter perturbation and outliers.
@@ -671,7 +644,7 @@ class TestCalibrateIntegration:
                     pan_deg=real_camera_geometry.pan_deg + delta_pan,
                     tilt_deg=real_camera_geometry.tilt_deg + delta_tilt,
                     map_width=real_camera_geometry.map_width,
-                    map_height=real_camera_geometry.map_height
+                    map_height=real_camera_geometry.map_height,
                 )
                 geo_to_use = perturbed_geo
             else:
@@ -702,10 +675,7 @@ class TestCalibrateIntegration:
                 lat = ref_lat + (y_world / 111000.0)
                 lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-                gcps.append({
-                    'gps': {'latitude': lat, 'longitude': lon},
-                    'image': {'u': u, 'v': v}
-                })
+                gcps.append({"gps": {"latitude": lat, "longitude": lon}, "image": {"u": u, "v": v}})
 
             return gcps, perturbation, geo_to_use
 
@@ -716,7 +686,7 @@ class TestCalibrateIntegration:
         # Create perfect GCPs (no perturbation)
         gcps, _, _ = create_synthetic_gcps(num_gcps=10, perturbation=None)
 
-        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function='huber')
+        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function="huber")
         result = calibrator.calibrate()
 
         # Initial error might be large due to coordinate system mismatch
@@ -726,7 +696,7 @@ class TestCalibrateIntegration:
         assert result.final_error < 1.0
 
         # Should converge
-        assert result.convergence_info['success']
+        assert result.convergence_info["success"]
 
     def test_calibrate_recovers_pan_perturbation(self, real_camera_geometry, create_synthetic_gcps):
         """Test that calibration recovers known pan angle perturbation."""
@@ -735,7 +705,7 @@ class TestCalibrateIntegration:
         gcps, _, _ = create_synthetic_gcps(num_gcps=15, perturbation=true_perturbation)
 
         # Calibrate with unperturbed geometry (should discover the -2° correction)
-        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function='huber')
+        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function="huber")
         result = calibrator.calibrate()
 
         # Should recover approximately +2° pan (same as perturbation)
@@ -745,13 +715,15 @@ class TestCalibrateIntegration:
         # Final error should be much smaller than initial
         assert result.final_error < result.initial_error * 0.5
 
-    def test_calibrate_recovers_tilt_perturbation(self, real_camera_geometry, create_synthetic_gcps):
+    def test_calibrate_recovers_tilt_perturbation(
+        self, real_camera_geometry, create_synthetic_gcps
+    ):
         """Test that calibration recovers known tilt angle perturbation."""
         # Create GCPs with -1.5 degree tilt perturbation
         true_perturbation = np.array([0, -1.5, 0, 0, 0, 0])  # -1.5° tilt
         gcps, _, _ = create_synthetic_gcps(num_gcps=15, perturbation=true_perturbation)
 
-        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function='huber')
+        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function="huber")
         result = calibrator.calibrate()
 
         # Should recover approximately -1.5° tilt (same as perturbation)
@@ -761,13 +733,15 @@ class TestCalibrateIntegration:
         # Final error should be reduced
         assert result.final_error < result.initial_error * 0.5
 
-    def test_calibrate_recovers_position_perturbation(self, real_camera_geometry, create_synthetic_gcps):
+    def test_calibrate_recovers_position_perturbation(
+        self, real_camera_geometry, create_synthetic_gcps
+    ):
         """Test that calibration recovers known position perturbation."""
         # Create GCPs with position offset
         true_perturbation = np.array([0, 0, 0, 1.0, -0.5, 0.2])  # 1m X, -0.5m Y, 0.2m Z
         gcps, _, _ = create_synthetic_gcps(num_gcps=15, perturbation=true_perturbation)
 
-        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function='huber')
+        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function="huber")
         result = calibrator.calibrate()
 
         # Should recover same position adjustments
@@ -779,13 +753,15 @@ class TestCalibrateIntegration:
         # Final error should be reduced
         assert result.final_error < result.initial_error * 0.5
 
-    def test_calibrate_with_multiple_perturbations(self, real_camera_geometry, create_synthetic_gcps):
+    def test_calibrate_with_multiple_perturbations(
+        self, real_camera_geometry, create_synthetic_gcps
+    ):
         """Test calibration with multiple parameter perturbations simultaneously."""
         # Complex perturbation: pan, tilt, and position
         true_perturbation = np.array([1.5, -1.0, 0, 0.5, 0.3, -0.2])
         gcps, _, _ = create_synthetic_gcps(num_gcps=20, perturbation=true_perturbation)
 
-        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function='huber')
+        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function="huber")
         result = calibrator.calibrate()
 
         # Should recover same perturbations
@@ -807,15 +783,14 @@ class TestCalibrateIntegration:
         # Create GCPs with 30% outliers
         true_perturbation = np.array([1.0, 0, 0, 0, 0, 0])
         gcps, _, _ = create_synthetic_gcps(
-            num_gcps=20,
-            perturbation=true_perturbation,
-            outlier_fraction=0.3
+            num_gcps=20, perturbation=true_perturbation, outlier_fraction=0.3
         )
 
         calibrator = GCPCalibrator(
-            real_camera_geometry, gcps,
-            loss_function='huber',
-            loss_scale=5.0  # 5px threshold
+            real_camera_geometry,
+            gcps,
+            loss_function="huber",
+            loss_scale=5.0,  # 5px threshold
         )
         result = calibrator.calibrate()
 
@@ -828,22 +803,18 @@ class TestCalibrateIntegration:
         # Create GCPs with 25% outliers
         true_perturbation = np.array([0, 1.0, 0, 0, 0, 0])
         gcps, _, _ = create_synthetic_gcps(
-            num_gcps=20,
-            perturbation=true_perturbation,
-            outlier_fraction=0.25
+            num_gcps=20, perturbation=true_perturbation, outlier_fraction=0.25
         )
 
         calibrator = GCPCalibrator(
-            real_camera_geometry, gcps,
-            loss_function='cauchy',
-            loss_scale=3.0
+            real_camera_geometry, gcps, loss_function="cauchy", loss_scale=3.0
         )
         result = calibrator.calibrate()
 
         # Should identify outliers
         assert result.num_outliers >= 3
 
-        # Should still recover reasonable tilt adjustment  
+        # Should still recover reasonable tilt adjustment
         assert abs(result.optimized_params[1] - 1.0) < 1.5
 
     def test_calibrate_with_custom_bounds(self, real_camera_geometry, create_synthetic_gcps):
@@ -852,7 +823,7 @@ class TestCalibrateIntegration:
         gcps, _, _ = create_synthetic_gcps(num_gcps=15, perturbation=true_perturbation)
 
         # Constrain pan to ±2°
-        custom_bounds = {'pan': (-2.0, 2.0)}
+        custom_bounds = {"pan": (-2.0, 2.0)}
 
         calibrator = GCPCalibrator(real_camera_geometry, gcps)
         result = calibrator.calibrate(bounds=custom_bounds)
@@ -861,7 +832,7 @@ class TestCalibrateIntegration:
         assert abs(result.optimized_params[0]) <= 2.1  # Allow small tolerance
 
         # Should still converge
-        assert result.convergence_info['success']
+        assert result.convergence_info["success"]
 
     def test_calibrate_convergence_info(self, real_camera_geometry, create_synthetic_gcps):
         """Test that convergence info is properly populated."""
@@ -871,14 +842,14 @@ class TestCalibrateIntegration:
         result = calibrator.calibrate()
 
         # Check convergence info structure
-        assert 'success' in result.convergence_info
-        assert 'message' in result.convergence_info
-        assert 'iterations' in result.convergence_info
-        assert 'function_evals' in result.convergence_info
-        assert 'optimality' in result.convergence_info
+        assert "success" in result.convergence_info
+        assert "message" in result.convergence_info
+        assert "iterations" in result.convergence_info
+        assert "function_evals" in result.convergence_info
+        assert "optimality" in result.convergence_info
 
         # Should have done some iterations
-        assert result.convergence_info['iterations'] > 0
+        assert result.convergence_info["iterations"] > 0
 
     def test_calibrate_per_gcp_errors(self, real_camera_geometry, create_synthetic_gcps):
         """Test that per-GCP errors are correctly calculated."""
@@ -929,10 +900,12 @@ class TestCalibrateIntegration:
         # Add Gaussian noise to pixel coordinates (0.5px std dev)
         np.random.seed(43)
         for gcp in gcps:
-            gcp['image']['u'] += np.random.randn() * 0.5
-            gcp['image']['v'] += np.random.randn() * 0.5
+            gcp["image"]["u"] += np.random.randn() * 0.5
+            gcp["image"]["v"] += np.random.randn() * 0.5
 
-        calibrator = GCPCalibrator(real_camera_geometry, gcps, loss_function='huber', loss_scale=2.0)
+        calibrator = GCPCalibrator(
+            real_camera_geometry, gcps, loss_function="huber", loss_scale=2.0
+        )
         result = calibrator.calibrate()
 
         # With noise, should still produce reasonable results

@@ -8,12 +8,13 @@ retrieval from calibration tables, with fallback to linear approximation.
 Run with: python -m pytest tests/test_calibration_table.py -v
 """
 
+import os
+import sys
+
 import numpy as np
 import pytest
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 
@@ -25,19 +26,31 @@ class TestCalibrationTableInterpolation:
         """When zoom exactly matches a calibrated value, return that entry without interpolation."""
         calibration_table = {
             1.0: {
-                "fx": 1825.3, "fy": 1823.1, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.341, "k2": 0.788, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1825.3,
+                "fy": 1823.1,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.341,
+                "k2": 0.788,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 9120.5, "fy": 9115.2, "cx": 1282.1, "cy": 721.3,
-                "k1": -0.298, "k2": 0.654, "p1": 0.001, "p2": 0.0, "k3": 0.0
-            }
+                "fx": 9120.5,
+                "fy": 9115.2,
+                "cx": 1282.1,
+                "cy": 721.3,
+                "k1": -0.298,
+                "k2": 0.654,
+                "p1": 0.001,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Exact match at zoom=1.0
@@ -45,32 +58,44 @@ class TestCalibrationTableInterpolation:
         assert K[0, 0] == pytest.approx(1825.3, abs=1e-6)  # fx
         assert K[1, 1] == pytest.approx(1823.1, abs=1e-6)  # fy
         assert K[0, 2] == pytest.approx(1280.0, abs=1e-6)  # cx
-        assert K[1, 2] == pytest.approx(720.0, abs=1e-6)   # cy
+        assert K[1, 2] == pytest.approx(720.0, abs=1e-6)  # cy
 
         # Exact match at zoom=5.0
         K = homography.get_intrinsics(zoom_factor=5.0)
         assert K[0, 0] == pytest.approx(9120.5, abs=1e-6)  # fx
         assert K[1, 1] == pytest.approx(9115.2, abs=1e-6)  # fy
         assert K[0, 2] == pytest.approx(1282.1, abs=1e-6)  # cx
-        assert K[1, 2] == pytest.approx(721.3, abs=1e-6)   # cy
+        assert K[1, 2] == pytest.approx(721.3, abs=1e-6)  # cy
 
     def test_interpolation_between_zoom_levels(self):
         """When zoom is between calibrated values, linearly interpolate fx, fy, cx, cy."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.001, "p2": 0.0, "k3": 0.0
-            }
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.001,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom at midpoint (3.0 is halfway between 1.0 and 5.0)
@@ -84,25 +109,37 @@ class TestCalibrationTableInterpolation:
         assert K[0, 0] == pytest.approx(3000.0, abs=1e-6)  # fx
         assert K[1, 1] == pytest.approx(3000.0, abs=1e-6)  # fy
         assert K[0, 2] == pytest.approx(1285.0, abs=1e-6)  # cx
-        assert K[1, 2] == pytest.approx(725.0, abs=1e-6)   # cy
+        assert K[1, 2] == pytest.approx(725.0, abs=1e-6)  # cy
 
     def test_zoom_below_minimum_clamps_to_lowest(self):
         """When zoom is below minimum calibrated value, use lowest calibrated zoom (no extrapolation)."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.001, "p2": 0.0, "k3": 0.0
-            }
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.001,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom below minimum (0.5 < 1.0)
@@ -118,19 +155,31 @@ class TestCalibrationTableInterpolation:
         """When zoom is above maximum calibrated value, use highest calibrated zoom (no extrapolation)."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.001, "p2": 0.0, "k3": 0.0
-            }
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.001,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom above maximum (10.0 > 5.0)
@@ -149,7 +198,7 @@ class TestCalibrationTableInterpolation:
             height=1440,
             sensor_width_mm=6.78,
             base_focal_length_mm=5.9,
-            calibration_table=None  # Explicit None
+            calibration_table=None,  # Explicit None
         )
 
         K = homography.get_intrinsics(zoom_factor=5.0)
@@ -161,16 +210,13 @@ class TestCalibrationTableInterpolation:
         assert K[0, 0] == pytest.approx(expected_f_px, abs=1e-2)
         assert K[1, 1] == pytest.approx(expected_f_px, abs=1e-2)
         assert K[0, 2] == pytest.approx(1280.0, abs=1e-6)  # cx = width / 2
-        assert K[1, 2] == pytest.approx(720.0, abs=1e-6)   # cy = height / 2
+        assert K[1, 2] == pytest.approx(720.0, abs=1e-6)  # cy = height / 2
 
     def test_calibration_table_not_provided_defaults_to_none(self):
         """When calibration_table parameter is not provided, it defaults to None (linear approximation)."""
         # Don't pass calibration_table parameter at all
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            sensor_width_mm=6.78,
-            base_focal_length_mm=5.9
+            width=2560, height=1440, sensor_width_mm=6.78, base_focal_length_mm=5.9
         )
 
         K = homography.get_intrinsics(zoom_factor=5.0)
@@ -187,19 +233,31 @@ class TestDistortionCoefficientRetrieval:
         """When zoom exactly matches a calibrated value, return distortion coefficients."""
         calibration_table = {
             1.0: {
-                "fx": 1825.3, "fy": 1823.1, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.341, "k2": 0.788, "p1": 0.001, "p2": 0.002, "k3": -0.5
+                "fx": 1825.3,
+                "fy": 1823.1,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.341,
+                "k2": 0.788,
+                "p1": 0.001,
+                "p2": 0.002,
+                "k3": -0.5,
             },
             5.0: {
-                "fx": 9120.5, "fy": 9115.2, "cx": 1282.1, "cy": 721.3,
-                "k1": -0.298, "k2": 0.654, "p1": 0.003, "p2": 0.004, "k3": -0.3
-            }
+                "fx": 9120.5,
+                "fy": 9115.2,
+                "cx": 1282.1,
+                "cy": 721.3,
+                "k1": -0.298,
+                "k2": 0.654,
+                "p1": 0.003,
+                "p2": 0.004,
+                "k3": -0.3,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Exact match at zoom=1.0
@@ -216,19 +274,31 @@ class TestDistortionCoefficientRetrieval:
         """When zoom is between calibrated values, linearly interpolate distortion coefficients."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.004, "p2": 0.002, "k3": -0.1
-            }
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.004,
+                "p2": 0.002,
+                "k3": -0.1,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom at midpoint (3.0)
@@ -247,19 +317,31 @@ class TestDistortionCoefficientRetrieval:
         """When zoom is below minimum, use lowest calibrated zoom's distortion coefficients."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.004, "p2": 0.002, "k3": -0.1
-            }
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.004,
+                "p2": 0.002,
+                "k3": -0.1,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom below minimum
@@ -271,19 +353,31 @@ class TestDistortionCoefficientRetrieval:
         """When zoom is above maximum, use highest calibrated zoom's distortion coefficients."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.004, "p2": 0.002, "k3": -0.1
-            }
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.004,
+                "p2": 0.002,
+                "k3": -0.1,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom above maximum
@@ -293,11 +387,7 @@ class TestDistortionCoefficientRetrieval:
 
     def test_no_calibration_table_returns_none(self):
         """When calibration_table is None, return None (no distortion from table)."""
-        homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=None
-        )
+        homography = IntrinsicExtrinsicHomography(width=2560, height=1440, calibration_table=None)
 
         dist_coeffs = homography.get_distortion_coefficients(zoom_factor=5.0)
         assert dist_coeffs is None
@@ -310,23 +400,42 @@ class TestMultipleZoomLevels:
         """Test interpolation with three calibrated zoom levels."""
         calibration_table = {
             1.0: {
-                "fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             },
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1290.0, "cy": 730.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.004, "p2": 0.002, "k3": -0.1
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1290.0,
+                "cy": 730.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.004,
+                "p2": 0.002,
+                "k3": -0.1,
             },
             10.0: {
-                "fx": 10000.0, "fy": 10000.0, "cx": 1300.0, "cy": 740.0,
-                "k1": -0.1, "k2": 0.5, "p1": 0.008, "p2": 0.004, "k3": -0.2
-            }
+                "fx": 10000.0,
+                "fy": 10000.0,
+                "cx": 1300.0,
+                "cy": 740.0,
+                "k1": -0.1,
+                "k2": 0.5,
+                "p1": 0.008,
+                "p2": 0.004,
+                "k3": -0.2,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Interpolate between zoom=5.0 and zoom=10.0 at zoom=7.5 (midpoint)
@@ -349,24 +458,76 @@ class TestMultipleZoomLevels:
     def test_six_zoom_levels_realistic_scenario(self):
         """Test realistic scenario with 6 calibrated zoom levels (1x, 5x, 10x, 15x, 20x, 25x)."""
         calibration_table = {
-            1.0: {"fx": 1825.3, "fy": 1823.1, "cx": 1280.0, "cy": 720.0,
-                  "k1": -0.341, "k2": 0.788, "p1": 0.0, "p2": 0.0, "k3": 0.0},
-            5.0: {"fx": 9120.5, "fy": 9115.2, "cx": 1282.1, "cy": 721.3,
-                  "k1": -0.298, "k2": 0.654, "p1": 0.001, "p2": 0.0, "k3": 0.0},
-            10.0: {"fx": 18240.8, "fy": 18230.3, "cx": 1284.2, "cy": 722.6,
-                   "k1": -0.255, "k2": 0.520, "p1": 0.002, "p2": 0.001, "k3": 0.0},
-            15.0: {"fx": 27361.1, "fy": 27345.4, "cx": 1286.3, "cy": 723.9,
-                   "k1": -0.212, "k2": 0.386, "p1": 0.003, "p2": 0.001, "k3": 0.0},
-            20.0: {"fx": 36481.4, "fy": 36460.5, "cx": 1288.4, "cy": 725.2,
-                   "k1": -0.169, "k2": 0.252, "p1": 0.004, "p2": 0.002, "k3": 0.0},
-            25.0: {"fx": 45601.7, "fy": 45575.6, "cx": 1290.5, "cy": 726.5,
-                   "k1": -0.126, "k2": 0.118, "p1": 0.005, "p2": 0.002, "k3": 0.0}
+            1.0: {
+                "fx": 1825.3,
+                "fy": 1823.1,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.341,
+                "k2": 0.788,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
+            5.0: {
+                "fx": 9120.5,
+                "fy": 9115.2,
+                "cx": 1282.1,
+                "cy": 721.3,
+                "k1": -0.298,
+                "k2": 0.654,
+                "p1": 0.001,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
+            10.0: {
+                "fx": 18240.8,
+                "fy": 18230.3,
+                "cx": 1284.2,
+                "cy": 722.6,
+                "k1": -0.255,
+                "k2": 0.520,
+                "p1": 0.002,
+                "p2": 0.001,
+                "k3": 0.0,
+            },
+            15.0: {
+                "fx": 27361.1,
+                "fy": 27345.4,
+                "cx": 1286.3,
+                "cy": 723.9,
+                "k1": -0.212,
+                "k2": 0.386,
+                "p1": 0.003,
+                "p2": 0.001,
+                "k3": 0.0,
+            },
+            20.0: {
+                "fx": 36481.4,
+                "fy": 36460.5,
+                "cx": 1288.4,
+                "cy": 725.2,
+                "k1": -0.169,
+                "k2": 0.252,
+                "p1": 0.004,
+                "p2": 0.002,
+                "k3": 0.0,
+            },
+            25.0: {
+                "fx": 45601.7,
+                "fy": 45575.6,
+                "cx": 1290.5,
+                "cy": 726.5,
+                "k1": -0.126,
+                "k2": 0.118,
+                "p1": 0.005,
+                "p2": 0.002,
+                "k3": 0.0,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Test interpolation at zoom=12.5 (between 10.0 and 15.0)
@@ -385,15 +546,20 @@ class TestEdgeCases:
         """Calibration table with single zoom level uses that value for all zooms."""
         calibration_table = {
             5.0: {
-                "fx": 5000.0, "fy": 5000.0, "cx": 1280.0, "cy": 720.0,
-                "k1": -0.2, "k2": 0.6, "p1": 0.0, "p2": 0.0, "k3": 0.0
+                "fx": 5000.0,
+                "fy": 5000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.2,
+                "k2": 0.6,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
             }
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Any zoom should return the single calibrated value
@@ -413,7 +579,7 @@ class TestEdgeCases:
             height=1440,
             sensor_width_mm=6.78,
             base_focal_length_mm=5.9,
-            calibration_table={}
+            calibration_table={},
         )
 
         K = homography.get_intrinsics(zoom_factor=5.0)
@@ -429,14 +595,21 @@ class TestEdgeCases:
     def test_calibration_table_with_non_numeric_zoom_keys_raises_error(self):
         """Calibration table with non-numeric zoom keys should raise TypeError."""
         calibration_table = {
-            "wide": {"fx": 1000.0, "fy": 1000.0, "cx": 1280.0, "cy": 720.0,
-                     "k1": -0.3, "k2": 0.7, "p1": 0.0, "p2": 0.0, "k3": 0.0}
+            "wide": {
+                "fx": 1000.0,
+                "fy": 1000.0,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.3,
+                "k2": 0.7,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
+            }
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Should raise TypeError when trying to use string as numeric key
@@ -451,10 +624,7 @@ class TestBackwardCompatibility:
         """Existing code that doesn't use calibration_table continues to work."""
         # Old-style initialization (no calibration_table parameter)
         homography = IntrinsicExtrinsicHomography(
-            width=1920,
-            height=1080,
-            sensor_width_mm=7.18,
-            base_focal_length_mm=5.9
+            width=1920, height=1080, sensor_width_mm=7.18, base_focal_length_mm=5.9
         )
 
         # Should work with linear approximation
@@ -469,16 +639,32 @@ class TestBackwardCompatibility:
     def test_compute_homography_still_works_with_calibration_table(self):
         """compute_homography() works correctly when calibration_table is used."""
         calibration_table = {
-            1.0: {"fx": 1825.3, "fy": 1823.1, "cx": 1280.0, "cy": 720.0,
-                  "k1": -0.341, "k2": 0.788, "p1": 0.0, "p2": 0.0, "k3": 0.0},
-            5.0: {"fx": 9120.5, "fy": 9115.2, "cx": 1282.1, "cy": 721.3,
-                  "k1": -0.298, "k2": 0.654, "p1": 0.001, "p2": 0.0, "k3": 0.0}
+            1.0: {
+                "fx": 1825.3,
+                "fy": 1823.1,
+                "cx": 1280.0,
+                "cy": 720.0,
+                "k1": -0.341,
+                "k2": 0.788,
+                "p1": 0.0,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
+            5.0: {
+                "fx": 9120.5,
+                "fy": 9115.2,
+                "cx": 1282.1,
+                "cy": 721.3,
+                "k1": -0.298,
+                "k2": 0.654,
+                "p1": 0.001,
+                "p2": 0.0,
+                "k3": 0.0,
+            },
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            calibration_table=calibration_table
+            width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Get intrinsics using calibration table
@@ -488,13 +674,13 @@ class TestBackwardCompatibility:
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
 
         reference = {
-            'camera_matrix': K,
-            'camera_position': np.array([0.0, 0.0, 5.0]),
-            'pan_deg': 0.0,
-            'tilt_deg': 45.0,
-            'roll_deg': 0.0,
-            'map_width': 640,
-            'map_height': 640
+            "camera_matrix": K,
+            "camera_position": np.array([0.0, 0.0, 5.0]),
+            "pan_deg": 0.0,
+            "tilt_deg": 45.0,
+            "roll_deg": 0.0,
+            "map_width": 640,
+            "map_height": 640,
         }
 
         # Should compute homography without error

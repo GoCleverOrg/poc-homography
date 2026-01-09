@@ -30,15 +30,16 @@ Reference:
     ptz_intrinsics_and_pose.md Section 2 Method B (PnP Solver)
 """
 
-import numpy as np
-import cv2
-import math
 import logging
-from enum import Enum
+import math
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Any, Optional, Union
+from enum import Enum
+from typing import Any
 
-from poc_homography.gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
+import cv2
+import numpy as np
+
+from poc_homography.gps_distance_calculator import gps_to_local_xy
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class AccuracyLevel(Enum):
         HIGH: Maximum accuracy for initial calibration.
               15+ GCPs, 1000 RANSAC iterations, 1.0px threshold.
     """
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -74,6 +76,7 @@ class GroundControlPoint:
         u: Pixel x-coordinate (column, 0 at left)
         v: Pixel y-coordinate (row, 0 at top)
     """
+
     latitude: float
     longitude: float
     u: float
@@ -109,32 +112,37 @@ class PnPResult:
         num_inliers: Number of inlier GCPs after RANSAC
         inliers_mask: Boolean mask indicating which GCPs are inliers
     """
-    success: bool
-    position: Optional[np.ndarray] = None
-    rotation_matrix: Optional[np.ndarray] = None
-    rotation_vector: Optional[np.ndarray] = None
-    pan_deg: Optional[float] = None
-    tilt_deg: Optional[float] = None
-    reprojection_error_mean: Optional[float] = None
-    reprojection_error_max: Optional[float] = None
-    inlier_ratio: Optional[float] = None
-    num_inliers: Optional[int] = None
-    inliers_mask: Optional[np.ndarray] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    success: bool
+    position: np.ndarray | None = None
+    rotation_matrix: np.ndarray | None = None
+    rotation_vector: np.ndarray | None = None
+    pan_deg: float | None = None
+    tilt_deg: float | None = None
+    reprojection_error_mean: float | None = None
+    reprojection_error_max: float | None = None
+    inlier_ratio: float | None = None
+    num_inliers: int | None = None
+    inliers_mask: np.ndarray | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary for serialization."""
         return {
-            'success': self.success,
-            'position': self.position.tolist() if self.position is not None else None,
-            'rotation_matrix': self.rotation_matrix.tolist() if self.rotation_matrix is not None else None,
-            'rotation_vector': self.rotation_vector.tolist() if self.rotation_vector is not None else None,
-            'pan_deg': self.pan_deg,
-            'tilt_deg': self.tilt_deg,
-            'reprojection_error_mean': self.reprojection_error_mean,
-            'reprojection_error_max': self.reprojection_error_max,
-            'inlier_ratio': self.inlier_ratio,
-            'num_inliers': self.num_inliers,
-            'inliers_mask': self.inliers_mask.tolist() if self.inliers_mask is not None else None,
+            "success": self.success,
+            "position": self.position.tolist() if self.position is not None else None,
+            "rotation_matrix": self.rotation_matrix.tolist()
+            if self.rotation_matrix is not None
+            else None,
+            "rotation_vector": self.rotation_vector.tolist()
+            if self.rotation_vector is not None
+            else None,
+            "pan_deg": self.pan_deg,
+            "tilt_deg": self.tilt_deg,
+            "reprojection_error_mean": self.reprojection_error_mean,
+            "reprojection_error_max": self.reprojection_error_max,
+            "inlier_ratio": self.inlier_ratio,
+            "num_inliers": self.num_inliers,
+            "inliers_mask": self.inliers_mask.tolist() if self.inliers_mask is not None else None,
         }
 
 
@@ -184,19 +192,19 @@ class CameraPositionDeriver:
     # Default RANSAC configuration per accuracy level
     RANSAC_CONFIG = {
         AccuracyLevel.LOW: {
-            'iterations': 100,
-            'reprojection_threshold': 5.0,
-            'confidence': 0.95,
+            "iterations": 100,
+            "reprojection_threshold": 5.0,
+            "confidence": 0.95,
         },
         AccuracyLevel.MEDIUM: {
-            'iterations': 500,
-            'reprojection_threshold': 3.0,
-            'confidence': 0.99,
+            "iterations": 500,
+            "reprojection_threshold": 3.0,
+            "confidence": 0.99,
         },
         AccuracyLevel.HIGH: {
-            'iterations': 1000,
-            'reprojection_threshold': 1.0,
-            'confidence': 0.999,
+            "iterations": 1000,
+            "reprojection_threshold": 1.0,
+            "confidence": 0.999,
         },
     }
 
@@ -214,12 +222,12 @@ class CameraPositionDeriver:
         reference_lat: float,
         reference_lon: float,
         accuracy: AccuracyLevel = AccuracyLevel.MEDIUM,
-        ransac_iterations: Optional[int] = None,
-        ransac_reprojection_threshold: Optional[float] = None,
-        ransac_confidence: Optional[float] = None,
+        ransac_iterations: int | None = None,
+        ransac_reprojection_threshold: float | None = None,
+        ransac_confidence: float | None = None,
         solver_method: int = cv2.SOLVEPNP_ITERATIVE,
-        max_reprojection_error: Optional[float] = None,
-        min_inlier_ratio: Optional[float] = None,
+        max_reprojection_error: float | None = None,
+        min_inlier_ratio: float | None = None,
     ):
         """
         Initialize camera position deriver.
@@ -241,7 +249,9 @@ class CameraPositionDeriver:
         """
         # Validate intrinsic matrix
         if not isinstance(K, np.ndarray) or K.shape != (3, 3):
-            raise ValueError(f"K must be a 3x3 numpy array, got shape {K.shape if isinstance(K, np.ndarray) else type(K)}")
+            raise ValueError(
+                f"K must be a 3x3 numpy array, got shape {K.shape if isinstance(K, np.ndarray) else type(K)}"
+            )
 
         # Validate reference GPS coordinates
         if not -90.0 <= reference_lat <= 90.0:
@@ -259,13 +269,27 @@ class CameraPositionDeriver:
         default_config = self.RANSAC_CONFIG[accuracy]
 
         # Apply overrides or use defaults for RANSAC parameters
-        self.ransac_iterations = ransac_iterations if ransac_iterations is not None else default_config['iterations']
-        self.ransac_reprojection_threshold = ransac_reprojection_threshold if ransac_reprojection_threshold is not None else default_config['reprojection_threshold']
-        self.ransac_confidence = ransac_confidence if ransac_confidence is not None else default_config['confidence']
+        self.ransac_iterations = (
+            ransac_iterations if ransac_iterations is not None else default_config["iterations"]
+        )
+        self.ransac_reprojection_threshold = (
+            ransac_reprojection_threshold
+            if ransac_reprojection_threshold is not None
+            else default_config["reprojection_threshold"]
+        )
+        self.ransac_confidence = (
+            ransac_confidence if ransac_confidence is not None else default_config["confidence"]
+        )
 
         # Apply overrides or use defaults for validation thresholds
-        self.max_reprojection_error = max_reprojection_error if max_reprojection_error is not None else self.MAX_REPROJECTION_ERROR
-        self.min_inlier_ratio = min_inlier_ratio if min_inlier_ratio is not None else self.MIN_INLIER_RATIO
+        self.max_reprojection_error = (
+            max_reprojection_error
+            if max_reprojection_error is not None
+            else self.MAX_REPROJECTION_ERROR
+        )
+        self.min_inlier_ratio = (
+            min_inlier_ratio if min_inlier_ratio is not None else self.MIN_INLIER_RATIO
+        )
 
         logger.debug(
             f"CameraPositionDeriver initialized: accuracy={accuracy.value}, "
@@ -275,9 +299,8 @@ class CameraPositionDeriver:
         )
 
     def _convert_gcps_to_world_coords(
-        self,
-        gcps: List[GroundControlPoint]
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, gcps: list[GroundControlPoint]
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Convert GCPs from GPS coordinates to local metric 3D coordinates.
 
@@ -298,22 +321,15 @@ class CameraPositionDeriver:
         for gcp in gcps:
             # Convert GPS to local X, Y (meters)
             x, y = gps_to_local_xy(
-                self.reference_lat, self.reference_lon,
-                gcp.latitude, gcp.longitude
+                self.reference_lat, self.reference_lon, gcp.latitude, gcp.longitude
             )
             # Ground plane assumption: Z = 0
             object_points.append([x, y, 0.0])
             image_points.append([gcp.u, gcp.v])
 
-        return (
-            np.array(object_points, dtype=np.float64),
-            np.array(image_points, dtype=np.float64)
-        )
+        return (np.array(object_points, dtype=np.float64), np.array(image_points, dtype=np.float64))
 
-    def _extract_pan_tilt_from_rotation(
-        self,
-        R: np.ndarray
-    ) -> Tuple[float, float]:
+    def _extract_pan_tilt_from_rotation(self, R: np.ndarray) -> tuple[float, float]:
         """
         Extract pan and tilt angles from rotation matrix.
 
@@ -382,8 +398,8 @@ class CameraPositionDeriver:
         image_points: np.ndarray,
         rvec: np.ndarray,
         tvec: np.ndarray,
-        inliers_mask: Optional[np.ndarray] = None
-    ) -> Tuple[float, float, np.ndarray]:
+        inliers_mask: np.ndarray | None = None,
+    ) -> tuple[float, float, np.ndarray]:
         """
         Compute reprojection errors for all points or inliers only.
 
@@ -403,9 +419,7 @@ class CameraPositionDeriver:
             errors: Array of per-point reprojection errors
         """
         # Project object points to image
-        projected_points, _ = cv2.projectPoints(
-            object_points, rvec, tvec, self.K, distCoeffs=None
-        )
+        projected_points, _ = cv2.projectPoints(object_points, rvec, tvec, self.K, distCoeffs=None)
         projected_points = projected_points.reshape(-1, 2)
 
         # Compute per-point errors (Euclidean distance in pixels)
@@ -418,8 +432,8 @@ class CameraPositionDeriver:
                 mean_error = float(np.mean(inlier_errors))
                 max_error = float(np.max(inlier_errors))
             else:
-                mean_error = float('inf')
-                max_error = float('inf')
+                mean_error = float("inf")
+                max_error = float("inf")
         else:
             mean_error = float(np.mean(errors))
             max_error = float(np.max(errors))
@@ -428,7 +442,9 @@ class CameraPositionDeriver:
 
     def derive_position(
         self,
-        gcps: Union[List[GroundControlPoint], List[Dict[str, Any]], List[Tuple[float, float, float, float]]]
+        gcps: list[GroundControlPoint]
+        | list[dict[str, Any]]
+        | list[tuple[float, float, float, float]],
     ) -> PnPResult:
         """
         Derive camera position from ground control points using PnP solver.
@@ -470,8 +486,8 @@ class CameraPositionDeriver:
 
         logger.debug(
             f"Solving PnP with {len(normalized_gcps)} GCPs, "
-            f"object points range: X=[{object_points[:,0].min():.1f}, {object_points[:,0].max():.1f}], "
-            f"Y=[{object_points[:,1].min():.1f}, {object_points[:,1].max():.1f}]"
+            f"object points range: X=[{object_points[:, 0].min():.1f}, {object_points[:, 0].max():.1f}], "
+            f"Y=[{object_points[:, 1].min():.1f}, {object_points[:, 1].max():.1f}]"
         )
 
         # Call solvePnPRansac
@@ -483,7 +499,7 @@ class CameraPositionDeriver:
             iterationsCount=self.ransac_iterations,
             reprojectionError=self.ransac_reprojection_threshold,
             confidence=self.ransac_confidence,
-            flags=self.solver_method
+            flags=self.solver_method,
         )
 
         # Handle RANSAC failure
@@ -539,8 +555,7 @@ class CameraPositionDeriver:
 
         # Validate result quality using instance thresholds (configurable)
         is_valid = (
-            mean_error <= self.max_reprojection_error and
-            inlier_ratio >= self.min_inlier_ratio
+            mean_error <= self.max_reprojection_error and inlier_ratio >= self.min_inlier_ratio
         )
 
         if not is_valid:
@@ -573,8 +588,10 @@ class CameraPositionDeriver:
 
     def _normalize_gcps(
         self,
-        gcps: Union[List[GroundControlPoint], List[Dict[str, Any]], List[Tuple[float, float, float, float]]]
-    ) -> List[GroundControlPoint]:
+        gcps: list[GroundControlPoint]
+        | list[dict[str, Any]]
+        | list[tuple[float, float, float, float]],
+    ) -> list[GroundControlPoint]:
         """
         Normalize GCP input to list of GroundControlPoint objects.
 
@@ -599,35 +616,33 @@ class CameraPositionDeriver:
                 normalized.append(gcp)
             elif isinstance(gcp, dict):
                 # Extract latitude (support both 'lat' and 'latitude' keys)
-                lat = gcp.get('lat', gcp.get('latitude'))
+                lat = gcp.get("lat", gcp.get("latitude"))
                 if lat is None:
                     raise ValueError(f"GCP {i}: missing 'lat' or 'latitude' field")
 
                 # Extract longitude (support both 'lon' and 'longitude' keys)
-                lon = gcp.get('lon', gcp.get('longitude'))
+                lon = gcp.get("lon", gcp.get("longitude"))
                 if lon is None:
                     raise ValueError(f"GCP {i}: missing 'lon' or 'longitude' field")
 
                 # Extract pixel coordinates
-                u = gcp.get('u')
-                v = gcp.get('v')
+                u = gcp.get("u")
+                v = gcp.get("v")
                 if u is None or v is None:
                     raise ValueError(f"GCP {i}: missing 'u' or 'v' field")
 
-                normalized.append(GroundControlPoint(
-                    latitude=float(lat),
-                    longitude=float(lon),
-                    u=float(u),
-                    v=float(v)
-                ))
+                normalized.append(
+                    GroundControlPoint(
+                        latitude=float(lat), longitude=float(lon), u=float(u), v=float(v)
+                    )
+                )
             elif isinstance(gcp, (tuple, list)) and len(gcp) == 4:
                 lat, lon, u, v = gcp
-                normalized.append(GroundControlPoint(
-                    latitude=float(lat),
-                    longitude=float(lon),
-                    u=float(u),
-                    v=float(v)
-                ))
+                normalized.append(
+                    GroundControlPoint(
+                        latitude=float(lat), longitude=float(lon), u=float(u), v=float(v)
+                    )
+                )
             else:
                 raise ValueError(
                     f"GCP {i}: invalid format. Expected GroundControlPoint, "

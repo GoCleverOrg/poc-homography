@@ -5,14 +5,15 @@ Tests the math without needing physical markers or camera access.
 """
 
 import numpy as np
+
 from poc_homography.camera_geometry import CameraGeometry
 
 
 def quick_test():
     """Quick homography sanity check."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("QUICK HOMOGRAPHY SANITY CHECK")
-    print("="*70)
+    print("=" * 70)
 
     # Setup a typical camera configuration
     print("\nSetting up camera geometry:")
@@ -34,15 +35,15 @@ def quick_test():
         pan_deg=0.0,
         tilt_deg=45.0,  # 45 degrees down
         map_width=640,
-        map_height=480
+        map_height=480,
     )
 
-    print("\n" + "-"*70)
+    print("\n" + "-" * 70)
     print("TEST 1: Image Center Projection")
-    print("-"*70)
+    print("-" * 70)
 
     # Test image center
-    cx, cy = 2560/2, 1440/2
+    cx, cy = 2560 / 2, 1440 / 2
     pt_image = np.array([[cx], [cy], [1.0]])
     pt_world = geo.H_inv @ pt_image
 
@@ -65,12 +66,12 @@ def quick_test():
     else:
         print("  ✗ FAIL - Center projection seems wrong")
 
-    print("\n" + "-"*70)
+    print("\n" + "-" * 70)
     print("TEST 2: Bottom of Image (Near Field)")
-    print("-"*70)
+    print("-" * 70)
 
     # Test bottom center (near field)
-    u, v = 2560/2, 1440 - 100
+    u, v = 2560 / 2, 1440 - 100
     pt_image = np.array([[u], [v], [1.0]])
     pt_world = geo.H_inv @ pt_image
 
@@ -87,12 +88,12 @@ def quick_test():
     else:
         print("  ✗ FAIL - Bottom should be closer than center")
 
-    print("\n" + "-"*70)
+    print("\n" + "-" * 70)
     print("TEST 3: Top of Image (Far Field)")
-    print("-"*70)
+    print("-" * 70)
 
     # Test top center (far field / horizon)
-    u, v = 2560/2, 100
+    u, v = 2560 / 2, 100
     pt_image = np.array([[u], [v], [1.0]])
     pt_world = geo.H_inv @ pt_image
 
@@ -109,9 +110,9 @@ def quick_test():
     else:
         print("  ✗ FAIL - Top should be farther than center")
 
-    print("\n" + "-"*70)
+    print("\n" + "-" * 70)
     print("TEST 4: Round-Trip Consistency")
-    print("-"*70)
+    print("-" * 70)
 
     # Test round-trip projection
     test_points = [
@@ -134,7 +135,7 @@ def quick_test():
         Xw_recovered = pt_world_recovered[0, 0] / pt_world_recovered[2, 0]
         Yw_recovered = pt_world_recovered[1, 0] / pt_world_recovered[2, 0]
 
-        error = np.sqrt((Xw_orig - Xw_recovered)**2 + (Yw_orig - Yw_recovered)**2)
+        error = np.sqrt((Xw_orig - Xw_recovered) ** 2 + (Yw_orig - Yw_recovered) ** 2)
         max_error = max(max_error, error)
 
         status = "✓" if error < 0.01 else "✗"
@@ -149,9 +150,9 @@ def quick_test():
     else:
         print("  ✗ FAIL - Round-trip error too large")
 
-    print("\n" + "-"*70)
+    print("\n" + "-" * 70)
     print("TEST 5: Homography Properties")
-    print("-"*70)
+    print("-" * 70)
 
     det_H = np.linalg.det(geo.H)
     det_H_inv = np.linalg.det(geo.H_inv)
@@ -170,16 +171,11 @@ def quick_test():
     for desc, result, symbol in checks:
         print(f"    {symbol} {desc}: {result}")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("SUMMARY")
-    print("="*70)
+    print("=" * 70)
 
-    all_pass = (
-        error_pct < 10 and
-        max_error < 0.01 and
-        det_H > 1e-6 and
-        identity_test
-    )
+    all_pass = error_pct < 10 and max_error < 0.01 and det_H > 1e-6 and identity_test
 
     if all_pass:
         print("\n✓ ALL TESTS PASSED!")
@@ -195,7 +191,7 @@ def quick_test():
         print("  - Homography formula: H = K @ [r1, r2, t]")
         print("  - Camera coordinate system conventions")
 
-    print("\n" + "="*70 + "\n")
+    print("\n" + "=" * 70 + "\n")
 
 
 if __name__ == "__main__":

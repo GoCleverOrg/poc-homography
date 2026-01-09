@@ -21,22 +21,24 @@ Mathematical Background:
 Run with: python -m pytest tests/test_planar_homography_synthetic.py -v
 """
 
-import numpy as np
 import math
-import sys
 import os
-import pytest
-from hypothesis import given, strategies as st, assume, settings
+import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import numpy as np
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 
-
 # ============================================================================
 # Hypothesis Strategies for Camera Parameters
 # ============================================================================
+
 
 @st.composite
 def camera_dimensions(draw):
@@ -125,6 +127,7 @@ def ground_point(draw, camera_pos, pan_deg, tilt_deg, max_distance=50.0):
 # Helper Functions for Independent Projection Computation
 # ============================================================================
 
+
 def compute_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:
     """
     Compute rotation matrix from world to camera coordinates.
@@ -139,25 +142,31 @@ def compute_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:
 
     # Base transform: world to camera when pan=0, tilt=0
     # Camera looking North, horizontal
-    R_base = np.array([
-        [1,  0,  0],
-        [0,  0, -1],  # World Z (up) -> Camera -Y (down)
-        [0,  1,  0]   # World Y (north) -> Camera Z (forward)
-    ])
+    R_base = np.array(
+        [
+            [1, 0, 0],
+            [0, 0, -1],  # World Z (up) -> Camera -Y (down)
+            [0, 1, 0],  # World Y (north) -> Camera Z (forward)
+        ]
+    )
 
     # Pan rotation around world Z-axis
-    Rz_pan = np.array([
-        [math.cos(pan_rad), -math.sin(pan_rad), 0],
-        [math.sin(pan_rad),  math.cos(pan_rad), 0],
-        [0,                  0,                 1]
-    ])
+    Rz_pan = np.array(
+        [
+            [math.cos(pan_rad), -math.sin(pan_rad), 0],
+            [math.sin(pan_rad), math.cos(pan_rad), 0],
+            [0, 0, 1],
+        ]
+    )
 
     # Tilt rotation around camera X-axis
-    Rx_tilt = np.array([
-        [1,  0,                 0],
-        [0,  math.cos(tilt_rad), -math.sin(tilt_rad)],
-        [0,  math.sin(tilt_rad),  math.cos(tilt_rad)]
-    ])
+    Rx_tilt = np.array(
+        [
+            [1, 0, 0],
+            [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+            [0, math.sin(tilt_rad), math.cos(tilt_rad)],
+        ]
+    )
 
     # Full rotation: pan in world, then base, then tilt in camera
     R = Rx_tilt @ R_base @ Rz_pan
@@ -165,10 +174,7 @@ def compute_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:
 
 
 def compute_expected_projection_3d(
-    K: np.ndarray,
-    R: np.ndarray,
-    camera_position: np.ndarray,
-    world_point: np.ndarray
+    K: np.ndarray, R: np.ndarray, camera_position: np.ndarray, world_point: np.ndarray
 ) -> tuple:
     """
     Compute expected pixel coordinates using full 3D projection.
@@ -230,6 +236,7 @@ def project_via_homography(H: np.ndarray, world_point_xy: np.ndarray) -> tuple:
 # Property Tests: Synthetic Projection Validation
 # ============================================================================
 
+
 class TestHomographySyntheticProjection:
     """
     Synthetic tests verifying H = K[r1, r2, t] produces correct projections.
@@ -243,7 +250,7 @@ class TestHomographySyntheticProjection:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=100)
     def test_homography_matches_3d_projection_camera_geometry(
@@ -307,14 +314,14 @@ class TestHomographySyntheticProjection:
             expected_u, expected_v = expected
 
             # Skip points outside reasonable image bounds (with margin)
-            if not (-width < expected_u < 2*width and -height < expected_v < 2*height):
+            if not (-width < expected_u < 2 * width and -height < expected_v < 2 * height):
                 continue
 
             # Project using homography
             actual_u, actual_v = project_via_homography(H, world_point[:2])
 
             # Compare - should be identical within numerical tolerance
-            pixel_diff = math.sqrt((actual_u - expected_u)**2 + (actual_v - expected_v)**2)
+            pixel_diff = math.sqrt((actual_u - expected_u) ** 2 + (actual_v - expected_v) ** 2)
 
             assert pixel_diff < 1e-6, (
                 f"Homography projection differs from 3D projection by {pixel_diff:.2e} pixels\n"
@@ -329,7 +336,7 @@ class TestHomographySyntheticProjection:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=100)
     def test_homography_matches_3d_projection_intrinsic_extrinsic(
@@ -378,12 +385,12 @@ class TestHomographySyntheticProjection:
 
             expected_u, expected_v = expected
 
-            if not (-width < expected_u < 2*width and -height < expected_v < 2*height):
+            if not (-width < expected_u < 2 * width and -height < expected_v < 2 * height):
                 continue
 
             actual_u, actual_v = project_via_homography(H, world_point[:2])
 
-            pixel_diff = math.sqrt((actual_u - expected_u)**2 + (actual_v - expected_v)**2)
+            pixel_diff = math.sqrt((actual_u - expected_u) ** 2 + (actual_v - expected_v) ** 2)
 
             assert pixel_diff < 1e-6, (
                 f"IEH projection differs from 3D projection by {pixel_diff:.2e} pixels\n"
@@ -403,12 +410,10 @@ class TestHomographyShapeAndNormalization:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=50)
-    def test_homography_shape_camera_geometry(
-        self, pos, pan_deg, tilt_deg, zoom, dimensions
-    ):
+    def test_homography_shape_camera_geometry(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """Property: CameraGeometry homography must be 3x3 (not 3x4)."""
         width, height = dimensions
 
@@ -426,12 +431,10 @@ class TestHomographyShapeAndNormalization:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=50)
-    def test_homography_shape_intrinsic_extrinsic(
-        self, pos, pan_deg, tilt_deg, zoom, dimensions
-    ):
+    def test_homography_shape_intrinsic_extrinsic(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """Property: IntrinsicExtrinsicHomography must be 3x3 (not 3x4)."""
         width, height = dimensions
 
@@ -449,12 +452,10 @@ class TestHomographyShapeAndNormalization:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=50)
-    def test_homography_normalized_camera_geometry(
-        self, pos, pan_deg, tilt_deg, zoom, dimensions
-    ):
+    def test_homography_normalized_camera_geometry(self, pos, pan_deg, tilt_deg, zoom, dimensions):
         """Property: CameraGeometry homography must be normalized (H[2,2] = 1)."""
         width, height = dimensions
 
@@ -475,7 +476,7 @@ class TestHomographyShapeAndNormalization:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=50)
     def test_homography_normalized_intrinsic_extrinsic(
@@ -507,7 +508,7 @@ class TestHomographyConsistencyBetweenModules:
         pan_deg=pan_angle(),
         tilt_deg=tilt_angle(),
         zoom=zoom_factor(),
-        dimensions=camera_dimensions()
+        dimensions=camera_dimensions(),
     )
     @settings(max_examples=100)
     def test_both_modules_produce_identical_homography(
@@ -585,7 +586,7 @@ class TestSpecificCameraConfigurations:
         # Compare with homography
         actual = project_via_homography(geo.H, world_point[:2])
 
-        pixel_diff = math.sqrt((actual[0] - expected[0])**2 + (actual[1] - expected[1])**2)
+        pixel_diff = math.sqrt((actual[0] - expected[0]) ** 2 + (actual[1] - expected[1]) ** 2)
         assert pixel_diff < 1e-6
 
     def test_camera_looking_east_steep_tilt(self):
@@ -615,7 +616,7 @@ class TestSpecificCameraConfigurations:
 
         actual = project_via_homography(geo.H, world_point[:2])
 
-        pixel_diff = math.sqrt((actual[0] - expected[0])**2 + (actual[1] - expected[1])**2)
+        pixel_diff = math.sqrt((actual[0] - expected[0]) ** 2 + (actual[1] - expected[1]) ** 2)
         assert pixel_diff < 1e-6
 
     def test_multiple_ground_points_various_configurations(self):
@@ -627,11 +628,11 @@ class TestSpecificCameraConfigurations:
         """
         configurations = [
             # (pos, pan_deg, tilt_deg, zoom)
-            (np.array([0, 0, 5]), 0, 30, 1.0),    # Low camera, shallow tilt
-            (np.array([0, 0, 20]), 0, 60, 1.0),   # High camera, steep tilt
-            (np.array([10, 10, 8]), 45, 45, 2.0), # Offset position, diagonal
-            (np.array([-5, 5, 12]), -90, 50, 1.5), # Looking west
-            (np.array([0, 0, 10]), 180, 40, 3.0), # Looking south
+            (np.array([0, 0, 5]), 0, 30, 1.0),  # Low camera, shallow tilt
+            (np.array([0, 0, 20]), 0, 60, 1.0),  # High camera, steep tilt
+            (np.array([10, 10, 8]), 45, 45, 2.0),  # Offset position, diagonal
+            (np.array([-5, 5, 12]), -90, 50, 1.5),  # Looking west
+            (np.array([0, 0, 10]), 180, 40, 3.0),  # Looking south
         ]
 
         for pos, pan_deg, tilt_deg, zoom in configurations:
@@ -660,10 +661,20 @@ class TestSpecificCameraConfigurations:
             ground_dist = pos[2] / math.tan(tilt_rad) if tilt_rad > 0.1 else pos[2] * 5
 
             ground_points = [
-                np.array([pos[0] + ground_dist * math.sin(pan_rad),
-                          pos[1] + ground_dist * math.cos(pan_rad), 0.0]),
-                np.array([pos[0] + 0.5 * ground_dist * math.sin(pan_rad),
-                          pos[1] + 0.5 * ground_dist * math.cos(pan_rad), 0.0]),
+                np.array(
+                    [
+                        pos[0] + ground_dist * math.sin(pan_rad),
+                        pos[1] + ground_dist * math.cos(pan_rad),
+                        0.0,
+                    ]
+                ),
+                np.array(
+                    [
+                        pos[0] + 0.5 * ground_dist * math.sin(pan_rad),
+                        pos[1] + 0.5 * ground_dist * math.cos(pan_rad),
+                        0.0,
+                    ]
+                ),
             ]
 
             for wp in ground_points:
@@ -672,7 +683,9 @@ class TestSpecificCameraConfigurations:
                     continue
 
                 actual = project_via_homography(geo.H, wp[:2])
-                pixel_diff = math.sqrt((actual[0] - expected[0])**2 + (actual[1] - expected[1])**2)
+                pixel_diff = math.sqrt(
+                    (actual[0] - expected[0]) ** 2 + (actual[1] - expected[1]) ** 2
+                )
 
                 assert pixel_diff < 1e-6, (
                     f"Config: pos={pos}, pan={pan_deg}, tilt={tilt_deg}\n"
@@ -680,5 +693,5 @@ class TestSpecificCameraConfigurations:
                 )
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

@@ -14,20 +14,23 @@ that example-based tests might miss.
 Run with: python -m pytest tests/test_camera_geometry_properties.py -v
 """
 
-import numpy as np
 import math
-import sys
 import os
+import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import numpy as np
 
-from hypothesis import given, strategies as st, assume
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from hypothesis import assume, given
+from hypothesis import strategies as st
+
 from poc_homography.camera_geometry import CameraGeometry
-
 
 # ============================================================================
 # Hypothesis Strategies for Valid Camera Parameters
 # ============================================================================
+
 
 def valid_pan_angle():
     """
@@ -79,22 +82,22 @@ def valid_image_dimensions():
 
     Common resolutions: 1920x1080 (Full HD), 1280x720 (HD), 640x480 (VGA).
     """
-    return st.sampled_from([
-        (1920, 1080),  # Full HD
-        (1280, 720),   # HD
-        (640, 480),    # VGA
-        (1024, 768),   # XGA
-    ])
+    return st.sampled_from(
+        [
+            (1920, 1080),  # Full HD
+            (1280, 720),  # HD
+            (640, 480),  # VGA
+            (1024, 768),  # XGA
+        ]
+    )
 
 
 # ============================================================================
 # Property 1: Rotation Matrix Orthogonality
 # ============================================================================
 
-@given(
-    pan=valid_pan_angle(),
-    tilt=valid_tilt_angle()
-)
+
+@given(pan=valid_pan_angle(), tilt=valid_tilt_angle())
 def test_rotation_matrix_orthogonality(pan, tilt):
     """
     PROPERTY: Rotation matrices MUST be orthogonal.
@@ -147,12 +150,13 @@ def test_rotation_matrix_orthogonality(pan, tilt):
 # Property 2: Homography Invertibility
 # ============================================================================
 
+
 @given(
     pan=valid_pan_angle(),
     tilt=valid_tilt_angle(),
     height=valid_camera_height(),
     zoom=valid_zoom_factor(),
-    dims=valid_image_dimensions()
+    dims=valid_image_dimensions(),
 )
 def test_homography_invertibility(pan, tilt, height, zoom, dims):
     """
@@ -210,6 +214,7 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
 # Property 3: Projection Round-Trip Consistency
 # ============================================================================
 
+
 @given(
     pan=valid_pan_angle(),
     tilt=valid_tilt_angle(),
@@ -218,9 +223,11 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
     dims=valid_image_dimensions(),
     # Generate random pixel within image bounds
     pixel_u_fraction=st.floats(min_value=0.1, max_value=0.9),
-    pixel_v_fraction=st.floats(min_value=0.1, max_value=0.9)
+    pixel_v_fraction=st.floats(min_value=0.1, max_value=0.9),
 )
-def test_projection_round_trip_consistency(pan, tilt, height, zoom, dims, pixel_u_fraction, pixel_v_fraction):
+def test_projection_round_trip_consistency(
+    pan, tilt, height, zoom, dims, pixel_u_fraction, pixel_v_fraction
+):
     """
     PROPERTY: Projection round-trip MUST return to original pixel within tolerance.
 
@@ -302,11 +309,12 @@ def test_projection_round_trip_consistency(pan, tilt, height, zoom, dims, pixel_
 # Property 4: Pan/Tilt Independence
 # ============================================================================
 
+
 @given(
     pan1=valid_pan_angle(),
     pan2=valid_pan_angle(),
     tilt_fixed=valid_tilt_angle(),
-    height=valid_camera_height()
+    height=valid_camera_height(),
 )
 def test_pan_tilt_independence_pan_only(pan1, pan2, tilt_fixed, height):
     """
@@ -378,7 +386,7 @@ def test_pan_tilt_independence_pan_only(pan1, pan2, tilt_fixed, height):
     tilt1=valid_tilt_angle(),
     tilt2=valid_tilt_angle(),
     pan_fixed=valid_pan_angle(),
-    height=valid_camera_height()
+    height=valid_camera_height(),
 )
 def test_pan_tilt_independence_tilt_only(tilt1, tilt2, pan_fixed, height):
     """
@@ -453,10 +461,8 @@ def test_pan_tilt_independence_tilt_only(tilt1, tilt2, pan_fixed, height):
 # Property 5: Rotation Matrix Inverse Equals Transpose
 # ============================================================================
 
-@given(
-    pan=valid_pan_angle(),
-    tilt=valid_tilt_angle()
-)
+
+@given(pan=valid_pan_angle(), tilt=valid_tilt_angle())
 def test_rotation_matrix_inverse_equals_transpose(pan, tilt):
     """
     PROPERTY: For orthogonal matrices, inverse equals transpose (R^-1 = R.T).
@@ -503,12 +509,13 @@ def test_rotation_matrix_inverse_equals_transpose(pan, tilt):
 # Property 6: Homography Preserves Line Relationships
 # ============================================================================
 
+
 @given(
     pan=valid_pan_angle(),
     tilt=valid_tilt_angle(),
     height=valid_camera_height(),
     zoom=valid_zoom_factor(),
-    dims=valid_image_dimensions()
+    dims=valid_image_dimensions(),
 )
 def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     """
@@ -598,6 +605,7 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import pytest
-    pytest.main([__file__, '-v', '--hypothesis-show-statistics'])
+
+    pytest.main([__file__, "-v", "--hypothesis-show-statistics"])

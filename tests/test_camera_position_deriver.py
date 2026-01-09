@@ -11,23 +11,22 @@ Tests validate:
 - Edge cases: various camera heights, pan/tilt combinations, GCPs at image edges
 """
 
-import unittest
-import sys
-import os
 import math
-import numpy as np
+import os
+import sys
+import unittest
+
 import cv2
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+import numpy as np
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_position_deriver import (
+    AccuracyLevel,
     CameraPositionDeriver,
     GroundControlPoint,
     PnPResult,
-    AccuracyLevel,
 )
 from poc_homography.gps_distance_calculator import gps_to_local_xy, local_xy_to_gps
 
@@ -51,25 +50,25 @@ def create_ptz_rotation_matrix(pan_deg: float, tilt_deg: float) -> np.ndarray:
     tilt_rad = math.radians(tilt_deg)
 
     # Base transformation from World to Camera when pan=0, tilt=0
-    R_base = np.array([
-        [1, 0, 0],
-        [0, 0, -1],
-        [0, 1, 0]
-    ])
+    R_base = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
 
     # Pan rotation around world Z-axis
-    Rz_pan = np.array([
-        [math.cos(pan_rad), -math.sin(pan_rad), 0],
-        [math.sin(pan_rad), math.cos(pan_rad), 0],
-        [0, 0, 1]
-    ])
+    Rz_pan = np.array(
+        [
+            [math.cos(pan_rad), -math.sin(pan_rad), 0],
+            [math.sin(pan_rad), math.cos(pan_rad), 0],
+            [0, 0, 1],
+        ]
+    )
 
     # Tilt rotation around camera X-axis
-    Rx_tilt = np.array([
-        [1, 0, 0],
-        [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
-        [0, math.sin(tilt_rad), math.cos(tilt_rad)]
-    ])
+    Rx_tilt = np.array(
+        [
+            [1, 0, 0],
+            [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+            [0, math.sin(tilt_rad), math.cos(tilt_rad)],
+        ]
+    )
 
     return Rx_tilt @ R_base @ Rz_pan
 
@@ -79,12 +78,7 @@ class TestGroundControlPoint(unittest.TestCase):
 
     def test_valid_gcp_creation(self):
         """Test that valid GCP is created successfully."""
-        gcp = GroundControlPoint(
-            latitude=39.640583,
-            longitude=-0.230194,
-            u=1280.0,
-            v=720.0
-        )
+        gcp = GroundControlPoint(latitude=39.640583, longitude=-0.230194, u=1280.0, v=720.0)
         self.assertEqual(gcp.latitude, 39.640583)
         self.assertEqual(gcp.longitude, -0.230194)
         self.assertEqual(gcp.u, 1280.0)
@@ -140,20 +134,14 @@ class TestCameraPositionDeriverInit(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.valid_K = np.array([
-            [2000.0, 0.0, 1280.0],
-            [0.0, 2000.0, 720.0],
-            [0.0, 0.0, 1.0]
-        ])
+        self.valid_K = np.array([[2000.0, 0.0, 1280.0], [0.0, 2000.0, 720.0], [0.0, 0.0, 1.0]])
         self.reference_lat = 39.640583
         self.reference_lon = -0.230194
 
     def test_valid_initialization(self):
         """Test valid initialization with default parameters."""
         deriver = CameraPositionDeriver(
-            K=self.valid_K,
-            reference_lat=self.reference_lat,
-            reference_lon=self.reference_lon
+            K=self.valid_K, reference_lat=self.reference_lat, reference_lon=self.reference_lon
         )
         self.assertIsNotNone(deriver)
         self.assertEqual(deriver.accuracy, AccuracyLevel.MEDIUM)
@@ -166,13 +154,15 @@ class TestCameraPositionDeriverInit(unittest.TestCase):
                 K=self.valid_K,
                 reference_lat=self.reference_lat,
                 reference_lon=self.reference_lon,
-                accuracy=accuracy
+                accuracy=accuracy,
             )
             self.assertEqual(deriver.accuracy, accuracy)
             # Verify RANSAC config matches accuracy level
             expected_config = CameraPositionDeriver.RANSAC_CONFIG[accuracy]
-            self.assertEqual(deriver.ransac_iterations, expected_config['iterations'])
-            self.assertEqual(deriver.ransac_reprojection_threshold, expected_config['reprojection_threshold'])
+            self.assertEqual(deriver.ransac_iterations, expected_config["iterations"])
+            self.assertEqual(
+                deriver.ransac_reprojection_threshold, expected_config["reprojection_threshold"]
+            )
 
     def test_initialization_with_custom_ransac_params(self):
         """Test initialization with custom RANSAC parameters."""
@@ -183,7 +173,7 @@ class TestCameraPositionDeriverInit(unittest.TestCase):
             accuracy=AccuracyLevel.LOW,
             ransac_iterations=250,
             ransac_reprojection_threshold=4.0,
-            ransac_confidence=0.98
+            ransac_confidence=0.98,
         )
         self.assertEqual(deriver.ransac_iterations, 250)
         self.assertEqual(deriver.ransac_reprojection_threshold, 4.0)
@@ -194,9 +184,7 @@ class TestCameraPositionDeriverInit(unittest.TestCase):
         invalid_K = np.array([[1.0, 0.0], [0.0, 1.0]])
         with self.assertRaisesRegex(ValueError, "K must be a 3x3 numpy array"):
             CameraPositionDeriver(
-                K=invalid_K,
-                reference_lat=self.reference_lat,
-                reference_lon=self.reference_lon
+                K=invalid_K, reference_lat=self.reference_lat, reference_lon=self.reference_lon
             )
 
     def test_invalid_K_type_raises_value_error(self):
@@ -205,25 +193,21 @@ class TestCameraPositionDeriverInit(unittest.TestCase):
             CameraPositionDeriver(
                 K=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                 reference_lat=self.reference_lat,
-                reference_lon=self.reference_lon
+                reference_lon=self.reference_lon,
             )
 
     def test_invalid_reference_latitude_raises_value_error(self):
         """Test that invalid reference latitude raises ValueError."""
         with self.assertRaisesRegex(ValueError, "Reference latitude 91.0 outside valid range"):
             CameraPositionDeriver(
-                K=self.valid_K,
-                reference_lat=91.0,
-                reference_lon=self.reference_lon
+                K=self.valid_K, reference_lat=91.0, reference_lon=self.reference_lon
             )
 
     def test_invalid_reference_longitude_raises_value_error(self):
         """Test that invalid reference longitude raises ValueError."""
         with self.assertRaisesRegex(ValueError, "Reference longitude -181.0 outside valid range"):
             CameraPositionDeriver(
-                K=self.valid_K,
-                reference_lat=self.reference_lat,
-                reference_lon=-181.0
+                K=self.valid_K, reference_lat=self.reference_lat, reference_lon=-181.0
             )
 
 
@@ -232,15 +216,9 @@ class TestMinimumGCPEnforcement(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.K = np.array([
-            [2000.0, 0.0, 1280.0],
-            [0.0, 2000.0, 720.0],
-            [0.0, 0.0, 1.0]
-        ])
+        self.K = np.array([[2000.0, 0.0, 1280.0], [0.0, 2000.0, 720.0], [0.0, 0.0, 1.0]])
         self.deriver = CameraPositionDeriver(
-            K=self.K,
-            reference_lat=39.640583,
-            reference_lon=-0.230194
+            K=self.K, reference_lat=39.640583, reference_lon=-0.230194
         )
 
     def test_fewer_than_6_gcps_raises_value_error(self):
@@ -256,7 +234,12 @@ class TestMinimumGCPEnforcement(unittest.TestCase):
         """Test that exactly 6 GCPs does not raise ValueError."""
         # Create 6 GCPs with distinct coordinates
         gcps = [
-            GroundControlPoint(latitude=39.6406 + i*0.0001, longitude=-0.2302 + i*0.0001, u=1000.0 + i*100, v=500.0 + i*100)
+            GroundControlPoint(
+                latitude=39.6406 + i * 0.0001,
+                longitude=-0.2302 + i * 0.0001,
+                u=1000.0 + i * 100,
+                v=500.0 + i * 100,
+            )
             for i in range(6)
         ]
         # Should not raise - actual derivation may fail but that's OK for this test
@@ -275,31 +258,21 @@ class TestGCPNormalization(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.K = np.array([
-            [2000.0, 0.0, 1280.0],
-            [0.0, 2000.0, 720.0],
-            [0.0, 0.0, 1.0]
-        ])
+        self.K = np.array([[2000.0, 0.0, 1280.0], [0.0, 2000.0, 720.0], [0.0, 0.0, 1.0]])
         self.deriver = CameraPositionDeriver(
-            K=self.K,
-            reference_lat=39.640583,
-            reference_lon=-0.230194
+            K=self.K, reference_lat=39.640583, reference_lon=-0.230194
         )
 
     def test_normalize_dataclass_format(self):
         """Test normalization of GroundControlPoint dataclass."""
-        gcps = [
-            GroundControlPoint(latitude=39.6406, longitude=-0.2302, u=1280.0, v=720.0)
-        ]
+        gcps = [GroundControlPoint(latitude=39.6406, longitude=-0.2302, u=1280.0, v=720.0)]
         normalized = self.deriver._normalize_gcps(gcps)
         self.assertEqual(len(normalized), 1)
         self.assertIsInstance(normalized[0], GroundControlPoint)
 
     def test_normalize_dict_format_with_lat_lon(self):
         """Test normalization of dict format with 'lat'/'lon' keys."""
-        gcps = [
-            {'lat': 39.6406, 'lon': -0.2302, 'u': 1280.0, 'v': 720.0}
-        ]
+        gcps = [{"lat": 39.6406, "lon": -0.2302, "u": 1280.0, "v": 720.0}]
         normalized = self.deriver._normalize_gcps(gcps)
         self.assertEqual(len(normalized), 1)
         self.assertEqual(normalized[0].latitude, 39.6406)
@@ -307,9 +280,7 @@ class TestGCPNormalization(unittest.TestCase):
 
     def test_normalize_dict_format_with_latitude_longitude(self):
         """Test normalization of dict format with 'latitude'/'longitude' keys."""
-        gcps = [
-            {'latitude': 39.6406, 'longitude': -0.2302, 'u': 1280.0, 'v': 720.0}
-        ]
+        gcps = [{"latitude": 39.6406, "longitude": -0.2302, "u": 1280.0, "v": 720.0}]
         normalized = self.deriver._normalize_gcps(gcps)
         self.assertEqual(len(normalized), 1)
         self.assertEqual(normalized[0].latitude, 39.6406)
@@ -317,9 +288,7 @@ class TestGCPNormalization(unittest.TestCase):
 
     def test_normalize_tuple_format(self):
         """Test normalization of tuple format (lat, lon, u, v)."""
-        gcps = [
-            (39.6406, -0.2302, 1280.0, 720.0)
-        ]
+        gcps = [(39.6406, -0.2302, 1280.0, 720.0)]
         normalized = self.deriver._normalize_gcps(gcps)
         self.assertEqual(len(normalized), 1)
         self.assertEqual(normalized[0].latitude, 39.6406)
@@ -327,42 +296,32 @@ class TestGCPNormalization(unittest.TestCase):
 
     def test_normalize_list_format(self):
         """Test normalization of list format [lat, lon, u, v]."""
-        gcps = [
-            [39.6406, -0.2302, 1280.0, 720.0]
-        ]
+        gcps = [[39.6406, -0.2302, 1280.0, 720.0]]
         normalized = self.deriver._normalize_gcps(gcps)
         self.assertEqual(len(normalized), 1)
         self.assertEqual(normalized[0].latitude, 39.6406)
 
     def test_normalize_dict_missing_lat_raises_value_error(self):
         """Test that dict missing latitude raises ValueError."""
-        gcps = [
-            {'lon': -0.2302, 'u': 1280.0, 'v': 720.0}
-        ]
+        gcps = [{"lon": -0.2302, "u": 1280.0, "v": 720.0}]
         with self.assertRaisesRegex(ValueError, "missing 'lat' or 'latitude' field"):
             self.deriver._normalize_gcps(gcps)
 
     def test_normalize_dict_missing_lon_raises_value_error(self):
         """Test that dict missing longitude raises ValueError."""
-        gcps = [
-            {'lat': 39.6406, 'u': 1280.0, 'v': 720.0}
-        ]
+        gcps = [{"lat": 39.6406, "u": 1280.0, "v": 720.0}]
         with self.assertRaisesRegex(ValueError, "missing 'lon' or 'longitude' field"):
             self.deriver._normalize_gcps(gcps)
 
     def test_normalize_dict_missing_u_raises_value_error(self):
         """Test that dict missing u coordinate raises ValueError."""
-        gcps = [
-            {'lat': 39.6406, 'lon': -0.2302, 'v': 720.0}
-        ]
+        gcps = [{"lat": 39.6406, "lon": -0.2302, "v": 720.0}]
         with self.assertRaisesRegex(ValueError, "missing 'u' or 'v' field"):
             self.deriver._normalize_gcps(gcps)
 
     def test_normalize_invalid_format_raises_value_error(self):
         """Test that invalid format raises ValueError."""
-        gcps = [
-            "invalid_gcp_string"
-        ]
+        gcps = ["invalid_gcp_string"]
         with self.assertRaisesRegex(ValueError, "invalid format"):
             self.deriver._normalize_gcps(gcps)
 
@@ -378,11 +337,7 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         self.tilt_deg = 30.0  # positive = looking down
 
         # Camera intrinsics (typical Hikvision at 5x zoom)
-        self.K = np.array([
-            [2106.27, 0.0, 1280.0],
-            [0.0, 2106.27, 720.0],
-            [0.0, 0.0, 1.0]
-        ])
+        self.K = np.array([[2106.27, 0.0, 1280.0], [0.0, 2106.27, 720.0], [0.0, 0.0, 1.0]])
 
         # Reference GPS position (camera location)
         self.reference_lat = 39.640583
@@ -392,9 +347,7 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         self.true_position = np.array([0.0, 0.0, self.camera_height])
 
     def _generate_synthetic_gcps_opencv_style(
-        self,
-        num_points: int = 10,
-        noise_pixels: float = 0.0
+        self, num_points: int = 10, noise_pixels: float = 0.0
     ) -> list:
         """
         Generate synthetic GCPs using OpenCV's projectPoints for ground truth.
@@ -425,9 +378,7 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         tvec = t.reshape(3, 1)
 
         # Project points using OpenCV (this is the ground truth)
-        image_points, _ = cv2.projectPoints(
-            object_points, rvec, tvec, self.K, distCoeffs=None
-        )
+        image_points, _ = cv2.projectPoints(object_points, rvec, tvec, self.K, distCoeffs=None)
         image_points = image_points.reshape(-1, 2)
 
         # Add noise if requested
@@ -438,16 +389,12 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         for i, (obj_pt, img_pt) in enumerate(zip(object_points, image_points)):
             if 0 <= img_pt[0] < 2560 and 0 <= img_pt[1] < 1440:
                 x, y, z = obj_pt
-                lat, lon = local_xy_to_gps(
-                    self.reference_lat, self.reference_lon,
-                    x, y
+                lat, lon = local_xy_to_gps(self.reference_lat, self.reference_lon, x, y)
+                gcps.append(
+                    GroundControlPoint(
+                        latitude=lat, longitude=lon, u=float(img_pt[0]), v=float(img_pt[1])
+                    )
                 )
-                gcps.append(GroundControlPoint(
-                    latitude=lat,
-                    longitude=lon,
-                    u=float(img_pt[0]),
-                    v=float(img_pt[1])
-                ))
                 if len(gcps) >= num_points:
                     break
 
@@ -458,15 +405,18 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         gcps = self._generate_synthetic_gcps_opencv_style(num_points=12, noise_pixels=0.0)
 
         # Ensure we have enough valid GCPs - if not, it's a test configuration problem
-        self.assertGreaterEqual(len(gcps), 6,
+        self.assertGreaterEqual(
+            len(gcps),
+            6,
             f"GCP generation produced only {len(gcps)} valid points. "
-            "Check camera pan/tilt configuration produces visible ground plane points.")
+            "Check camera pan/tilt configuration produces visible ground plane points.",
+        )
 
         deriver = CameraPositionDeriver(
             K=self.K,
             reference_lat=self.reference_lat,
             reference_lon=self.reference_lon,
-            accuracy=AccuracyLevel.HIGH
+            accuracy=AccuracyLevel.HIGH,
         )
 
         result = deriver.derive_position(gcps)
@@ -476,31 +426,39 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
 
         # Position should be close to true position
         position_error = np.linalg.norm(result.position - self.true_position)
-        self.assertLess(position_error, 1.0,
+        self.assertLess(
+            position_error,
+            1.0,
             f"Position error {position_error:.2f}m too high. "
-            f"Expected ~{self.true_position}, got {result.position}")
+            f"Expected ~{self.true_position}, got {result.position}",
+        )
 
         # Reprojection error should be very low
-        self.assertLess(result.reprojection_error_mean, 1.0,
-            f"Reprojection error {result.reprojection_error_mean:.2f}px too high")
+        self.assertLess(
+            result.reprojection_error_mean,
+            1.0,
+            f"Reprojection error {result.reprojection_error_mean:.2f}px too high",
+        )
 
         # All points should be inliers
-        self.assertGreater(result.inlier_ratio, 0.9,
-            f"Inlier ratio {result.inlier_ratio:.2%} too low")
+        self.assertGreater(
+            result.inlier_ratio, 0.9, f"Inlier ratio {result.inlier_ratio:.2%} too low"
+        )
 
     def test_position_derivation_with_noisy_gcps(self):
         """Test position derivation with noisy synthetic GCPs."""
         gcps = self._generate_synthetic_gcps_opencv_style(num_points=15, noise_pixels=2.0)
 
         # Ensure we have enough valid GCPs
-        self.assertGreaterEqual(len(gcps), 6,
-            f"GCP generation produced only {len(gcps)} valid points.")
+        self.assertGreaterEqual(
+            len(gcps), 6, f"GCP generation produced only {len(gcps)} valid points."
+        )
 
         deriver = CameraPositionDeriver(
             K=self.K,
             reference_lat=self.reference_lat,
             reference_lon=self.reference_lon,
-            accuracy=AccuracyLevel.HIGH
+            accuracy=AccuracyLevel.HIGH,
         )
 
         result = deriver.derive_position(gcps)
@@ -510,8 +468,9 @@ class TestSyntheticGCPPositionDerivation(unittest.TestCase):
         # So we check position directly if we got a result
         if result.position is not None:
             position_error = np.linalg.norm(result.position - self.true_position)
-            self.assertLess(position_error, 5.0,
-                f"Position error {position_error:.2f}m too high for noisy data")
+            self.assertLess(
+                position_error, 5.0, f"Position error {position_error:.2f}m too high for noisy data"
+            )
 
 
 class TestPanTiltAngleExtraction(unittest.TestCase):
@@ -519,15 +478,9 @@ class TestPanTiltAngleExtraction(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.K = np.array([
-            [2000.0, 0.0, 1280.0],
-            [0.0, 2000.0, 720.0],
-            [0.0, 0.0, 1.0]
-        ])
+        self.K = np.array([[2000.0, 0.0, 1280.0], [0.0, 2000.0, 720.0], [0.0, 0.0, 1.0]])
         self.deriver = CameraPositionDeriver(
-            K=self.K,
-            reference_lat=39.640583,
-            reference_lon=-0.230194
+            K=self.K, reference_lat=39.640583, reference_lon=-0.230194
         )
 
     def test_angle_extraction_pan_0_tilt_0(self):
@@ -557,8 +510,7 @@ class TestPanTiltAngleExtraction(unittest.TestCase):
         pan, tilt = self.deriver._extract_pan_tilt_from_rotation(R)
         # pan=180 may be extracted as -180 (equivalent)
         self.assertTrue(
-            abs(pan - 180.0) < 1.0 or abs(pan + 180.0) < 1.0,
-            f"Pan {pan} not close to ±180"
+            abs(pan - 180.0) < 1.0 or abs(pan + 180.0) < 1.0, f"Pan {pan} not close to ±180"
         )
         self.assertAlmostEqual(tilt, 60.0, places=1)
 
@@ -591,8 +543,9 @@ class TestPanTiltAngleExtraction(unittest.TestCase):
                     pan_diff = 360 - pan_diff
 
                 self.assertLess(pan_diff, 2.0, f"Pan mismatch: in={pan_in}, out={pan_out}")
-                self.assertAlmostEqual(tilt_out, tilt_in, places=1,
-                    msg=f"Tilt mismatch: in={tilt_in}, out={tilt_out}")
+                self.assertAlmostEqual(
+                    tilt_out, tilt_in, places=1, msg=f"Tilt mismatch: in={tilt_in}, out={tilt_out}"
+                )
 
 
 class TestRANSACOutlierRejection(unittest.TestCase):
@@ -604,11 +557,7 @@ class TestRANSACOutlierRejection(unittest.TestCase):
         self.pan_deg = 30.0
         self.tilt_deg = 45.0
 
-        self.K = np.array([
-            [2106.27, 0.0, 1280.0],
-            [0.0, 2106.27, 720.0],
-            [0.0, 0.0, 1.0]
-        ])
+        self.K = np.array([[2106.27, 0.0, 1280.0], [0.0, 2106.27, 720.0], [0.0, 0.0, 1.0]])
 
         self.reference_lat = 39.640583
         self.reference_lon = -0.230194
@@ -646,10 +595,11 @@ class TestRANSACOutlierRejection(unittest.TestCase):
             if 0 <= img_pt[0] < 2560 and 0 <= img_pt[1] < 1440:
                 x, y, z = obj_pt
                 lat, lon = local_xy_to_gps(self.reference_lat, self.reference_lon, x, y)
-                gcps.append(GroundControlPoint(
-                    latitude=lat, longitude=lon,
-                    u=float(img_pt[0]), v=float(img_pt[1])
-                ))
+                gcps.append(
+                    GroundControlPoint(
+                        latitude=lat, longitude=lon, u=float(img_pt[0]), v=float(img_pt[1])
+                    )
+                )
                 if len(gcps) >= num_inliers:
                     break
 
@@ -674,14 +624,15 @@ class TestRANSACOutlierRejection(unittest.TestCase):
         gcps = self._generate_gcps_with_outliers(num_inliers=10, num_outliers=4)
 
         # Ensure we have enough valid GCPs (inliers + outliers)
-        self.assertGreaterEqual(len(gcps), 6,
-            f"GCP generation produced only {len(gcps)} valid points.")
+        self.assertGreaterEqual(
+            len(gcps), 6, f"GCP generation produced only {len(gcps)} valid points."
+        )
 
         deriver = CameraPositionDeriver(
             K=self.K,
             reference_lat=self.reference_lat,
             reference_lon=self.reference_lon,
-            accuracy=AccuracyLevel.HIGH
+            accuracy=AccuracyLevel.HIGH,
         )
 
         result = deriver.derive_position(gcps)
@@ -690,8 +641,11 @@ class TestRANSACOutlierRejection(unittest.TestCase):
         if result.position is not None:
             # Position should be reasonably accurate despite outliers
             position_error = np.linalg.norm(result.position - self.true_position)
-            self.assertLess(position_error, 5.0,
-                f"Position error {position_error:.2f}m too high despite outlier rejection")
+            self.assertLess(
+                position_error,
+                5.0,
+                f"Position error {position_error:.2f}m too high despite outlier rejection",
+            )
 
 
 class TestPnPResultDataclass(unittest.TestCase):
@@ -718,21 +672,21 @@ class TestPnPResultDataclass(unittest.TestCase):
             reprojection_error_max=3.0,
             inlier_ratio=0.9,
             num_inliers=9,
-            inliers_mask=np.array([True, True, True, False, True, True, True, True, True, True])
+            inliers_mask=np.array([True, True, True, False, True, True, True, True, True, True]),
         )
 
         d = result.to_dict()
 
         # All values should be JSON-serializable (lists, not numpy arrays)
-        self.assertIsInstance(d['position'], list)
-        self.assertIsInstance(d['rotation_matrix'], list)
-        self.assertIsInstance(d['rotation_vector'], list)
-        self.assertIsInstance(d['inliers_mask'], list)
+        self.assertIsInstance(d["position"], list)
+        self.assertIsInstance(d["rotation_matrix"], list)
+        self.assertIsInstance(d["rotation_vector"], list)
+        self.assertIsInstance(d["inliers_mask"], list)
 
         # Values should match
-        self.assertEqual(d['success'], True)
-        self.assertAlmostEqual(d['pan_deg'], 45.0)
-        self.assertAlmostEqual(d['tilt_deg'], 30.0)
+        self.assertEqual(d["success"], True)
+        self.assertAlmostEqual(d["pan_deg"], 45.0)
+        self.assertAlmostEqual(d["tilt_deg"], 30.0)
 
 
 class TestGPSCoordinateConversion(unittest.TestCase):
@@ -745,11 +699,11 @@ class TestGPSCoordinateConversion(unittest.TestCase):
 
         # Test points at various distances
         test_offsets = [
-            (10.0, 10.0),    # 10m east, 10m north
-            (-20.0, 30.0),   # 20m west, 30m north
-            (50.0, -25.0),   # 50m east, 25m south
-            (0.0, 100.0),    # 100m north
-            (100.0, 0.0),    # 100m east
+            (10.0, 10.0),  # 10m east, 10m north
+            (-20.0, 30.0),  # 20m west, 30m north
+            (50.0, -25.0),  # 50m east, 25m south
+            (0.0, 100.0),  # 100m north
+            (100.0, 0.0),  # 100m east
         ]
 
         for x_orig, y_orig in test_offsets:
@@ -761,10 +715,18 @@ class TestGPSCoordinateConversion(unittest.TestCase):
                 x_recovered, y_recovered = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
                 # Round-trip error should be < 1cm
-                self.assertAlmostEqual(x_recovered, x_orig, places=2,
-                    msg=f"X round-trip error: {abs(x_recovered - x_orig):.4f}m")
-                self.assertAlmostEqual(y_recovered, y_orig, places=2,
-                    msg=f"Y round-trip error: {abs(y_recovered - y_orig):.4f}m")
+                self.assertAlmostEqual(
+                    x_recovered,
+                    x_orig,
+                    places=2,
+                    msg=f"X round-trip error: {abs(x_recovered - x_orig):.4f}m",
+                )
+                self.assertAlmostEqual(
+                    y_recovered,
+                    y_orig,
+                    places=2,
+                    msg=f"Y round-trip error: {abs(y_recovered - y_orig):.4f}m",
+                )
 
 
 class TestAccuracyLevelConfiguration(unittest.TestCase):
@@ -778,10 +740,7 @@ class TestAccuracyLevelConfiguration(unittest.TestCase):
         K[2, 2] = 1
 
         deriver = CameraPositionDeriver(
-            K=K,
-            reference_lat=0.0,
-            reference_lon=0.0,
-            accuracy=AccuracyLevel.LOW
+            K=K, reference_lat=0.0, reference_lon=0.0, accuracy=AccuracyLevel.LOW
         )
 
         self.assertEqual(deriver.ransac_iterations, 100)
@@ -796,10 +755,7 @@ class TestAccuracyLevelConfiguration(unittest.TestCase):
         K[2, 2] = 1
 
         deriver = CameraPositionDeriver(
-            K=K,
-            reference_lat=0.0,
-            reference_lon=0.0,
-            accuracy=AccuracyLevel.MEDIUM
+            K=K, reference_lat=0.0, reference_lon=0.0, accuracy=AccuracyLevel.MEDIUM
         )
 
         self.assertEqual(deriver.ransac_iterations, 500)
@@ -814,10 +770,7 @@ class TestAccuracyLevelConfiguration(unittest.TestCase):
         K[2, 2] = 1
 
         deriver = CameraPositionDeriver(
-            K=K,
-            reference_lat=0.0,
-            reference_lon=0.0,
-            accuracy=AccuracyLevel.HIGH
+            K=K, reference_lat=0.0, reference_lon=0.0, accuracy=AccuracyLevel.HIGH
         )
 
         self.assertEqual(deriver.ransac_iterations, 1000)
@@ -827,7 +780,7 @@ class TestAccuracyLevelConfiguration(unittest.TestCase):
 
 def main():
     """Run all tests."""
-    unittest.main(argv=[''], verbosity=2, exit=False)
+    unittest.main(argv=[""], verbosity=2, exit=False)
 
 
 if __name__ == "__main__":

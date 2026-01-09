@@ -27,23 +27,26 @@ Usage:
         zoom: 1.0
 """
 
-import sys
-import os
-import math
 import argparse
-import numpy as np
-from typing import List, Dict, Any, Tuple, Optional
+import math
+import os
+import sys
 from dataclasses import dataclass
-from scipy.optimize import minimize, differential_evolution
+from typing import Any
+
+import numpy as np
+from scipy.optimize import differential_evolution, minimize
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Suppress verbose logging during optimization
 import logging
-logging.getLogger('poc_homography').setLevel(logging.ERROR)
+
+logging.getLogger("poc_homography").setLevel(logging.ERROR)
 
 import contextlib
 import io
+
 
 @contextlib.contextmanager
 def suppress_stdout():
@@ -51,14 +54,16 @@ def suppress_stdout():
     with contextlib.redirect_stdout(io.StringIO()):
         yield
 
+
+from poc_homography.camera_config import get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.coordinate_converter import gps_to_local_xy
-from poc_homography.camera_config import get_camera_configs, get_camera_by_name_safe
 from poc_homography.gps_distance_calculator import dms_to_dd
 
 # Try to import yaml, fallback to manual parsing if not available
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -67,6 +72,7 @@ except ImportError:
 @dataclass
 class GCP:
     """Ground Control Point with GPS and pixel coordinates."""
+
     lat: float
     lon: float
     pixel_u: float
@@ -79,13 +85,14 @@ class GCP:
 @dataclass
 class CalibrationParams:
     """Parameters to optimize during calibration."""
+
     camera_lat: float
     camera_lon: float
     height_m: float
     pan_offset_deg: float
     focal_multiplier: float  # Multiplier for base focal length (5.9mm)
-    tilt_offset_deg: float   # Offset added to reported tilt
-    sensor_width_mm: float   # Sensor width (6.78mm from FOV spec)
+    tilt_offset_deg: float  # Offset added to reported tilt
+    sensor_width_mm: float  # Sensor width (6.78mm from FOV spec)
     # Lens distortion coefficients (OpenCV model)
     k1: float = 0.0  # Primary radial distortion
     k2: float = 0.0  # Secondary radial distortion
@@ -97,65 +104,72 @@ CAMERA_CONFIGS = {}
 for cam in _camera_configs_list:
     # Convert DMS coordinates to decimal degrees for calculations
     config = {
-        'name': cam['name'],
-        'lat': dms_to_dd(cam['lat']),
-        'lon': dms_to_dd(cam['lon']),
-        'height_m': cam.get('height_m', 5.0),
-        'pan_offset_deg': cam.get('pan_offset_deg', 0.0),
-        'focal_multiplier': 1.0,  # Default multiplier, can be calibrated
-        'k1': cam.get('k1', 0.0),
-        'k2': cam.get('k2', 0.0),
+        "name": cam["name"],
+        "lat": dms_to_dd(cam["lat"]),
+        "lon": dms_to_dd(cam["lon"]),
+        "height_m": cam.get("height_m", 5.0),
+        "pan_offset_deg": cam.get("pan_offset_deg", 0.0),
+        "focal_multiplier": 1.0,  # Default multiplier, can be calibrated
+        "k1": cam.get("k1", 0.0),
+        "k2": cam.get("k2", 0.0),
     }
-    CAMERA_CONFIGS[cam['name']] = config
+    CAMERA_CONFIGS[cam["name"]] = config
 
 
-def parse_gcps_from_yaml(yaml_path: str) -> List[GCP]:
+def parse_gcps_from_yaml(yaml_path: str) -> list[GCP]:
     """Parse GCPs from a YAML file."""
     if YAML_AVAILABLE:
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path) as f:
             data = yaml.safe_load(f)
     else:
         # Simple manual YAML parsing for flat structure
-        data = {'gcps': []}
-        with open(yaml_path, 'r') as f:
+        data = {"gcps": []}
+        with open(yaml_path) as f:
             current_gcp = {}
             for line in f:
                 line = line.strip()
-                if line.startswith('- lat:'):
+                if line.startswith("- lat:"):
                     if current_gcp:
-                        data['gcps'].append(current_gcp)
-                    current_gcp = {'lat': float(line.split(':')[1].strip())}
-                elif ':' in line and current_gcp:
-                    key, val = line.split(':', 1)
-                    key = key.strip().lstrip('- ')
+                        data["gcps"].append(current_gcp)
+                    current_gcp = {"lat": float(line.split(":")[1].strip())}
+                elif ":" in line and current_gcp:
+                    key, val = line.split(":", 1)
+                    key = key.strip().lstrip("- ")
                     val = val.strip()
                     try:
                         current_gcp[key] = float(val)
                     except ValueError:
                         current_gcp[key] = val
             if current_gcp:
-                data['gcps'].append(current_gcp)
+                data["gcps"].append(current_gcp)
 
     gcps = []
-    for gcp_data in data.get('gcps', []):
-        gcps.append(GCP(
-            lat=gcp_data['lat'],
-            lon=gcp_data['lon'],
-            pixel_u=gcp_data['pixel_u'],
-            pixel_v=gcp_data['pixel_v'],
-            pan_raw=gcp_data.get('pan_raw', 0.0),
-            tilt_deg=gcp_data.get('tilt_deg', 30.0),
-            zoom=gcp_data.get('zoom', 1.0)
-        ))
+    for gcp_data in data.get("gcps", []):
+        gcps.append(
+            GCP(
+                lat=gcp_data["lat"],
+                lon=gcp_data["lon"],
+                pixel_u=gcp_data["pixel_u"],
+                pixel_v=gcp_data["pixel_v"],
+                pan_raw=gcp_data.get("pan_raw", 0.0),
+                tilt_deg=gcp_data.get("tilt_deg", 30.0),
+                zoom=gcp_data.get("zoom", 1.0),
+            )
+        )
     return gcps
 
 
 def undistort_point_simple(
-    u: float, v: float,
-    fx: float, fy: float, cx: float, cy: float,
-    k1: float, k2: float,
-    iterations: int = 10
-) -> Tuple[float, float]:
+    u: float,
+    v: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+    k1: float,
+    k2: float,
+    iterations: int = 10,
+) -> tuple[float, float]:
     """
     Undistort a single point using iterative method.
     Standalone function to avoid CameraGeometry dependency during optimization.
@@ -183,11 +197,8 @@ def undistort_point_simple(
 
 
 def compute_projection_error(
-    params: CalibrationParams,
-    gcps: List[GCP],
-    image_width: int = 1920,
-    image_height: int = 1080
-) -> Tuple[float, List[float]]:
+    params: CalibrationParams, gcps: list[GCP], image_width: int = 1920, image_height: int = 1080
+) -> tuple[float, list[float]]:
     """
     Compute total projection error for given parameters and GCPs.
 
@@ -199,20 +210,13 @@ def compute_projection_error(
     for gcp in gcps:
         try:
             # Convert GCP GPS to local XY relative to (optimized) camera position
-            x_m, y_m = gps_to_local_xy(
-                params.camera_lat, params.camera_lon,
-                gcp.lat, gcp.lon
-            )
+            x_m, y_m = gps_to_local_xy(params.camera_lat, params.camera_lon, gcp.lat, gcp.lon)
 
             # Build intrinsic matrix with optimized parameters
             effective_focal_mm = 5.9 * gcp.zoom * params.focal_multiplier
             f_px = effective_focal_mm * (image_width / params.sensor_width_mm)
             cx, cy = image_width / 2.0, image_height / 2.0
-            K = np.array([
-                [f_px, 0, cx],
-                [0, f_px, cy],
-                [0, 0, 1]
-            ])
+            K = np.array([[f_px, 0, cx], [0, f_px, cy], [0, 0, 1]])
 
             # Compute pan and tilt with offsets
             pan_deg = gcp.pan_raw + params.pan_offset_deg
@@ -248,19 +252,14 @@ def compute_projection_error(
             # Undistort the observed GCP pixel coordinates
             # (GCP pixels are in distorted image space, projected coords are undistorted)
             gcp_u_undist, gcp_v_undist = undistort_point_simple(
-                gcp.pixel_u, gcp.pixel_v,
-                f_px, f_px, cx, cy,
-                params.k1, params.k2
+                gcp.pixel_u, gcp.pixel_v, f_px, f_px, cx, cy, params.k1, params.k2
             )
 
             # Compute pixel error in undistorted space
-            error = math.sqrt(
-                (gcp_u_undist - projected_u)**2 +
-                (gcp_v_undist - projected_v)**2
-            )
+            error = math.sqrt((gcp_u_undist - projected_u) ** 2 + (gcp_v_undist - projected_v) ** 2)
             errors.append(error)
 
-        except Exception as e:
+        except Exception:
             errors.append(1000.0)  # Penalty for any error
 
     if not errors:
@@ -271,7 +270,7 @@ def compute_projection_error(
 
 def objective_function(
     x: np.ndarray,
-    gcps: List[GCP],
+    gcps: list[GCP],
     base_params: CalibrationParams,
     optimize_gps: bool,
     optimize_focal: bool,
@@ -279,7 +278,7 @@ def objective_function(
     optimize_tilt: bool,
     optimize_distortion: bool,
     image_width: int,
-    image_height: int
+    image_height: int,
 ) -> float:
     """
     Objective function for optimization.
@@ -290,18 +289,22 @@ def objective_function(
     idx = 0
 
     # Always optimize height
-    height_m = x[idx]; idx += 1
+    height_m = x[idx]
+    idx += 1
 
     # Pan offset (optional)
     if optimize_pan:
-        pan_offset_deg = x[idx]; idx += 1
+        pan_offset_deg = x[idx]
+        idx += 1
     else:
         pan_offset_deg = base_params.pan_offset_deg
 
     # GPS offset (in meters, for numerical stability)
     if optimize_gps:
-        lat_offset_m = x[idx]; idx += 1
-        lon_offset_m = x[idx]; idx += 1
+        lat_offset_m = x[idx]
+        idx += 1
+        lon_offset_m = x[idx]
+        idx += 1
         # Convert meter offsets to degree offsets
         lat_offset_deg = lat_offset_m / 111320.0  # ~111km per degree latitude
         lon_offset_deg = lon_offset_m / (111320.0 * math.cos(math.radians(base_params.camera_lat)))
@@ -311,20 +314,24 @@ def objective_function(
 
     # Focal length multiplier
     if optimize_focal:
-        focal_multiplier = x[idx]; idx += 1
+        focal_multiplier = x[idx]
+        idx += 1
     else:
         focal_multiplier = base_params.focal_multiplier
 
     # Tilt offset
     if optimize_tilt:
-        tilt_offset_deg = x[idx]; idx += 1
+        tilt_offset_deg = x[idx]
+        idx += 1
     else:
         tilt_offset_deg = base_params.tilt_offset_deg
 
     # Distortion coefficients
     if optimize_distortion:
-        k1 = x[idx]; idx += 1
-        k2 = x[idx]; idx += 1
+        k1 = x[idx]
+        idx += 1
+        k2 = x[idx]
+        idx += 1
     else:
         k1 = base_params.k1
         k2 = base_params.k2
@@ -339,7 +346,7 @@ def objective_function(
         tilt_offset_deg=tilt_offset_deg,
         sensor_width_mm=base_params.sensor_width_mm,
         k1=k1,
-        k2=k2
+        k2=k2,
     )
 
     mean_error, _ = compute_projection_error(params, gcps, image_width, image_height)
@@ -347,16 +354,16 @@ def objective_function(
 
 
 def run_calibration(
-    camera_config: Dict[str, Any],
-    gcps: List[GCP],
+    camera_config: dict[str, Any],
+    gcps: list[GCP],
     optimize_gps: bool = True,
     optimize_focal: bool = True,
     optimize_pan: bool = True,
     optimize_tilt: bool = True,
     optimize_distortion: bool = True,
     image_width: int = 1920,
-    image_height: int = 1080
-) -> Tuple[CalibrationParams, float, List[float]]:
+    image_height: int = 1080,
+) -> tuple[CalibrationParams, float, list[float]]:
     """
     Run comprehensive calibration to find optimal parameters.
 
@@ -374,15 +381,15 @@ def run_calibration(
     """
     # Initial parameters
     base_params = CalibrationParams(
-        camera_lat=camera_config['lat'],
-        camera_lon=camera_config['lon'],
-        height_m=camera_config.get('height_m', 5.0),
-        pan_offset_deg=camera_config.get('pan_offset_deg', 0.0),
-        focal_multiplier=camera_config.get('focal_multiplier', 1.0),
+        camera_lat=camera_config["lat"],
+        camera_lon=camera_config["lon"],
+        height_m=camera_config.get("height_m", 5.0),
+        pan_offset_deg=camera_config.get("pan_offset_deg", 0.0),
+        focal_multiplier=camera_config.get("focal_multiplier", 1.0),
         tilt_offset_deg=0.0,
         sensor_width_mm=6.78,  # Calculated from 59.8° FOV at 5.9mm focal length
-        k1=camera_config.get('k1', 0.0),
-        k2=camera_config.get('k2', 0.0)
+        k1=camera_config.get("k1", 0.0),
+        k2=camera_config.get("k2", 0.0),
     )
 
     # Build initial guess and bounds
@@ -412,9 +419,11 @@ def run_calibration(
     print("\n" + "=" * 70)
     print("COMPREHENSIVE CALIBRATION")
     print("=" * 70)
-    print(f"\nOptimizing parameters:")
-    print(f"  - Height: Yes")
-    print(f"  - Pan offset: {'Yes' if optimize_pan else 'No (fixed at ' + str(base_params.pan_offset_deg) + '°)'}")
+    print("\nOptimizing parameters:")
+    print("  - Height: Yes")
+    print(
+        f"  - Pan offset: {'Yes' if optimize_pan else 'No (fixed at ' + str(base_params.pan_offset_deg) + '°)'}"
+    )
     print(f"  - Camera GPS: {'Yes' if optimize_gps else 'No'}")
     print(f"  - Focal length: {'Yes' if optimize_focal else 'No'}")
     print(f"  - Tilt offset: {'Yes' if optimize_tilt else 'No'}")
@@ -429,6 +438,7 @@ def run_calibration(
 
     # Progress callback for differential evolution
     iteration_count = [0]  # Use list for mutable in closure
+
     def progress_callback(xk, convergence):
         iteration_count[0] += 1
         if iteration_count[0] % 10 == 0:
@@ -442,15 +452,24 @@ def run_calibration(
     result_de = differential_evolution(
         objective_function,
         bounds,
-        args=(gcps, base_params, optimize_gps, optimize_focal, optimize_pan,
-              optimize_tilt, optimize_distortion, image_width, image_height),
+        args=(
+            gcps,
+            base_params,
+            optimize_gps,
+            optimize_focal,
+            optimize_pan,
+            optimize_tilt,
+            optimize_distortion,
+            image_width,
+            image_height,
+        ),
         seed=42,
         maxiter=200,  # Reduced for faster convergence
         tol=0.01,
         polish=True,  # Use local optimizer to polish result
         workers=1,
         disp=False,
-        callback=progress_callback
+        callback=progress_callback,
     )
 
     print(f"Global optimization complete. Error: {result_de.fun:.2f} pixels")
@@ -461,25 +480,38 @@ def run_calibration(
     result = minimize(
         objective_function,
         result_de.x,
-        args=(gcps, base_params, optimize_gps, optimize_focal, optimize_pan,
-              optimize_tilt, optimize_distortion, image_width, image_height),
-        method='L-BFGS-B',
+        args=(
+            gcps,
+            base_params,
+            optimize_gps,
+            optimize_focal,
+            optimize_pan,
+            optimize_tilt,
+            optimize_distortion,
+            image_width,
+            image_height,
+        ),
+        method="L-BFGS-B",
         bounds=bounds,
-        options={'maxiter': 1000, 'ftol': 1e-8}
+        options={"maxiter": 1000, "ftol": 1e-8},
     )
 
     # Extract optimized parameters
     idx = 0
-    height_m = result.x[idx]; idx += 1
+    height_m = result.x[idx]
+    idx += 1
 
     if optimize_pan:
-        pan_offset_deg = result.x[idx]; idx += 1
+        pan_offset_deg = result.x[idx]
+        idx += 1
     else:
         pan_offset_deg = base_params.pan_offset_deg
 
     if optimize_gps:
-        lat_offset_m = result.x[idx]; idx += 1
-        lon_offset_m = result.x[idx]; idx += 1
+        lat_offset_m = result.x[idx]
+        idx += 1
+        lon_offset_m = result.x[idx]
+        idx += 1
         lat_offset_deg = lat_offset_m / 111320.0
         lon_offset_deg = lon_offset_m / (111320.0 * math.cos(math.radians(base_params.camera_lat)))
     else:
@@ -487,18 +519,22 @@ def run_calibration(
         lon_offset_deg = 0.0
 
     if optimize_focal:
-        focal_multiplier = result.x[idx]; idx += 1
+        focal_multiplier = result.x[idx]
+        idx += 1
     else:
         focal_multiplier = base_params.focal_multiplier
 
     if optimize_tilt:
-        tilt_offset_deg = result.x[idx]; idx += 1
+        tilt_offset_deg = result.x[idx]
+        idx += 1
     else:
         tilt_offset_deg = 0.0
 
     if optimize_distortion:
-        k1 = result.x[idx]; idx += 1
-        k2 = result.x[idx]; idx += 1
+        k1 = result.x[idx]
+        idx += 1
+        k2 = result.x[idx]
+        idx += 1
     else:
         k1 = base_params.k1
         k2 = base_params.k2
@@ -512,7 +548,7 @@ def run_calibration(
         tilt_offset_deg=tilt_offset_deg,
         sensor_width_mm=base_params.sensor_width_mm,
         k1=k1,
-        k2=k2
+        k2=k2,
     )
 
     # Compute final errors
@@ -524,11 +560,11 @@ def run_calibration(
 
 
 def print_results(
-    base_config: Dict[str, Any],
+    base_config: dict[str, Any],
     optimized: CalibrationParams,
     mean_error: float,
-    individual_errors: List[float],
-    gcps: List[GCP]
+    individual_errors: list[float],
+    gcps: list[GCP],
 ):
     """Print calibration results."""
     print("\n" + "=" * 70)
@@ -539,65 +575,65 @@ def print_results(
     if mean_error < 5:
         print("  ✓ Target accuracy achieved (< 5 pixels)")
     else:
-        print(f"  ✗ Target accuracy NOT achieved (need < 5 pixels)")
+        print("  ✗ Target accuracy NOT achieved (need < 5 pixels)")
 
-    print(f"\nIndividual GCP errors:")
+    print("\nIndividual GCP errors:")
     for i, (gcp, error) in enumerate(zip(gcps, individual_errors)):
         status = "✓" if error < 5 else "✗"
-        print(f"  GCP {i+1}: {error:.2f}px {status} (GPS: {gcp.lat:.6f}, {gcp.lon:.6f})")
+        print(f"  GCP {i + 1}: {error:.2f}px {status} (GPS: {gcp.lat:.6f}, {gcp.lon:.6f})")
 
     print("\n" + "-" * 70)
     print("PARAMETER CHANGES")
     print("-" * 70)
 
     # Height
-    height_change = optimized.height_m - base_config.get('height_m', 5.0)
-    print(f"\nCamera Height:")
+    height_change = optimized.height_m - base_config.get("height_m", 5.0)
+    print("\nCamera Height:")
     print(f"  Original: {base_config.get('height_m', 5.0):.2f}m")
     print(f"  Optimized: {optimized.height_m:.2f}m")
     print(f"  Change: {height_change:+.2f}m")
 
     # Pan offset
-    pan_change = optimized.pan_offset_deg - base_config.get('pan_offset_deg', 0.0)
-    print(f"\nPan Offset:")
+    pan_change = optimized.pan_offset_deg - base_config.get("pan_offset_deg", 0.0)
+    print("\nPan Offset:")
     print(f"  Original: {base_config.get('pan_offset_deg', 0.0):.1f}°")
     print(f"  Optimized: {optimized.pan_offset_deg:.1f}°")
     print(f"  Change: {pan_change:+.1f}°")
 
     # GPS position
-    lat_change = optimized.camera_lat - base_config['lat']
-    lon_change = optimized.camera_lon - base_config['lon']
+    lat_change = optimized.camera_lat - base_config["lat"]
+    lon_change = optimized.camera_lon - base_config["lon"]
     # Convert to meters for readability
     lat_change_m = lat_change * 111320.0
-    lon_change_m = lon_change * 111320.0 * math.cos(math.radians(base_config['lat']))
+    lon_change_m = lon_change * 111320.0 * math.cos(math.radians(base_config["lat"]))
 
-    print(f"\nCamera GPS Position:")
+    print("\nCamera GPS Position:")
     print(f"  Original: {base_config['lat']:.6f}, {base_config['lon']:.6f}")
     print(f"  Optimized: {optimized.camera_lat:.6f}, {optimized.camera_lon:.6f}")
     print(f"  Change: {lat_change_m:+.2f}m N/S, {lon_change_m:+.2f}m E/W")
 
     # Focal multiplier
-    print(f"\nFocal Length Multiplier:")
-    print(f"  Original: 1.00")
+    print("\nFocal Length Multiplier:")
+    print("  Original: 1.00")
     print(f"  Optimized: {optimized.focal_multiplier:.4f}")
     print(f"  Effect: Base focal {5.9 * optimized.focal_multiplier:.2f}mm (was 5.9mm)")
 
     # Tilt offset
-    print(f"\nTilt Offset:")
-    print(f"  Original: 0.0°")
+    print("\nTilt Offset:")
+    print("  Original: 0.0°")
     print(f"  Optimized: {optimized.tilt_offset_deg:+.2f}°")
     print(f"  Effect: Add {optimized.tilt_offset_deg:+.2f}° to reported tilt")
 
     # Lens distortion
-    print(f"\nLens Distortion (radial):")
+    print("\nLens Distortion (radial):")
     print(f"  k1: {optimized.k1:+.6f}")
     print(f"  k2: {optimized.k2:+.6f}")
     if optimized.k1 < 0:
-        print(f"  Type: Barrel distortion (edges curve outward)")
+        print("  Type: Barrel distortion (edges curve outward)")
     elif optimized.k1 > 0:
-        print(f"  Type: Pincushion distortion (edges curve inward)")
+        print("  Type: Pincushion distortion (edges curve inward)")
     else:
-        print(f"  Type: No significant distortion")
+        print("  Type: No significant distortion")
 
     # Print configuration update instructions
     print("\n" + "=" * 70)
@@ -606,8 +642,8 @@ def print_results(
     print("\nUpdate camera_config.py with:")
     print(f'''
     {{
-        "lat": "{_decimal_to_dms(optimized.camera_lat, 'lat')}",
-        "lon": "{_decimal_to_dms(optimized.camera_lon, 'lon')}",
+        "lat": "{_decimal_to_dms(optimized.camera_lat, "lat")}",
+        "lon": "{_decimal_to_dms(optimized.camera_lon, "lon")}",
         "height_m": {optimized.height_m:.2f},
         "pan_offset_deg": {optimized.pan_offset_deg:.1f},
         "focal_multiplier": {optimized.focal_multiplier:.4f},
@@ -631,10 +667,10 @@ def _decimal_to_dms(decimal: float, coord_type: str) -> str:
     minutes = int((decimal - degrees) * 60)
     seconds = ((decimal - degrees) * 60 - minutes) * 60
 
-    if coord_type == 'lat':
-        direction = 'S' if is_negative else 'N'
+    if coord_type == "lat":
+        direction = "S" if is_negative else "N"
     else:
-        direction = 'W' if is_negative else 'E'
+        direction = "W" if is_negative else "E"
 
     return f"{degrees}°{minutes}'{seconds:.2f}\"{direction}"
 
@@ -643,66 +679,36 @@ def main():
     parser = argparse.ArgumentParser(
         description="Comprehensive calibration for sub-5px projection accuracy"
     )
+    parser.add_argument("--camera", "-c", type=str, required=True, help="Camera name (e.g., Valte)")
+    parser.add_argument("--gcps", "-g", type=str, help="Path to YAML file with GCPs")
     parser.add_argument(
-        '--camera', '-c',
-        type=str,
-        required=True,
-        help='Camera name (e.g., Valte)'
-    )
-    parser.add_argument(
-        '--gcps', '-g',
-        type=str,
-        help='Path to YAML file with GCPs'
-    )
-    parser.add_argument(
-        '--gcp', '-p',
-        action='append',
+        "--gcp",
+        "-p",
+        action="append",
         nargs=6,
-        metavar=('LAT', 'LON', 'U', 'V', 'PAN', 'TILT'),
-        help='Single GCP: LAT LON PIXEL_U PIXEL_V PAN_RAW TILT_DEG (can be repeated)'
+        metavar=("LAT", "LON", "U", "V", "PAN", "TILT"),
+        help="Single GCP: LAT LON PIXEL_U PIXEL_V PAN_RAW TILT_DEG (can be repeated)",
+    )
+    parser.add_argument("--no-gps", action="store_true", help="Do not optimize camera GPS position")
+    parser.add_argument("--no-focal", action="store_true", help="Do not optimize focal length")
+    parser.add_argument(
+        "--no-pan", action="store_true", help="Do not optimize pan offset (use value from config)"
+    )
+    parser.add_argument("--no-tilt", action="store_true", help="Do not optimize tilt offset")
+    parser.add_argument(
+        "--no-distortion", action="store_true", help="Do not optimize lens distortion coefficients"
     )
     parser.add_argument(
-        '--no-gps',
-        action='store_true',
-        help='Do not optimize camera GPS position'
-    )
-    parser.add_argument(
-        '--no-focal',
-        action='store_true',
-        help='Do not optimize focal length'
-    )
-    parser.add_argument(
-        '--no-pan',
-        action='store_true',
-        help='Do not optimize pan offset (use value from config)'
-    )
-    parser.add_argument(
-        '--no-tilt',
-        action='store_true',
-        help='Do not optimize tilt offset'
-    )
-    parser.add_argument(
-        '--no-distortion',
-        action='store_true',
-        help='Do not optimize lens distortion coefficients'
-    )
-    parser.add_argument(
-        '--zoom',
+        "--zoom",
         type=float,
         default=1.0,
-        help='Zoom factor for all GCPs if using --gcp (default: 1.0)'
+        help="Zoom factor for all GCPs if using --gcp (default: 1.0)",
     )
     parser.add_argument(
-        '--width',
-        type=int,
-        default=1920,
-        help='Image width in pixels (default: 1920)'
+        "--width", type=int, default=1920, help="Image width in pixels (default: 1920)"
     )
     parser.add_argument(
-        '--height',
-        type=int,
-        default=1080,
-        help='Image height in pixels (default: 1080)'
+        "--height", type=int, default=1080, help="Image height in pixels (default: 1080)"
     )
 
     args = parser.parse_args()
@@ -723,15 +729,17 @@ def main():
     if args.gcp:
         for gcp_args in args.gcp:
             lat, lon, u, v, pan, tilt = map(float, gcp_args)
-            gcps.append(GCP(
-                lat=lat,
-                lon=lon,
-                pixel_u=u,
-                pixel_v=v,
-                pan_raw=pan,
-                tilt_deg=tilt,
-                zoom=args.zoom
-            ))
+            gcps.append(
+                GCP(
+                    lat=lat,
+                    lon=lon,
+                    pixel_u=u,
+                    pixel_v=v,
+                    pan_raw=pan,
+                    tilt_deg=tilt,
+                    zoom=args.zoom,
+                )
+            )
 
     if not gcps:
         print("Error: No GCPs provided. Use --gcps FILE or --gcp LAT LON U V PAN TILT")
@@ -755,12 +763,12 @@ def main():
         optimize_tilt=not args.no_tilt,
         optimize_distortion=not args.no_distortion,
         image_width=args.width,
-        image_height=args.height
+        image_height=args.height,
     )
 
     # Print results
     print_results(camera_config, optimized, mean_error, individual_errors, gcps)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

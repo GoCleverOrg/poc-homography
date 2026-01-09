@@ -25,13 +25,13 @@ Environment Variables:
 """
 
 import http.server
+import json
 import os
 import shutil
 import socketserver
 import webbrowser
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import json
+from typing import Any
 
 from poc_homography.satellite_layers import generate_satellite_layers_js
 from poc_homography.server_utils import find_available_port
@@ -40,10 +40,10 @@ from poc_homography.server_utils import find_available_port
 def generate_html(
     camera_frame_path: str,
     kml_path: str,
-    camera_gps: Dict[str, float],
-    gcps: List[Dict[str, Any]],
-    validation_results: Dict[str, Any],
-    homography_matrix: Optional[List[List[float]]] = None
+    camera_gps: dict[str, float],
+    gcps: list[dict[str, Any]],
+    validation_results: dict[str, Any],
+    homography_matrix: list[list[float]] | None = None,
 ) -> str:
     """
     Generate self-contained HTML string for the debug visualization.
@@ -89,78 +89,67 @@ def generate_html(
         ... )
     """
     # Check for Google Maps API key and generate satellite layers
-    google_maps_api_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
     satellite_layers_js = generate_satellite_layers_js(
-        google_api_key=google_maps_api_key if google_maps_api_key else None,
-        default_layer='google'
+        google_api_key=google_maps_api_key if google_maps_api_key else None, default_layer="google"
     )
 
     # Prepare GCP data for JavaScript
     gcp_data = []
     for i, gcp in enumerate(gcps):
-        gps = gcp.get('gps', {})
-        image = gcp.get('image', {})
-        metadata = gcp.get('metadata', {})
+        gps = gcp.get("gps", {})
+        image = gcp.get("image", {})
+        metadata = gcp.get("metadata", {})
 
         gcp_entry = {
-            'name': metadata.get('description', f'GCP {i+1}'),
-            'original_gps': {
-                'lat': gps.get('latitude', 0),
-                'lon': gps.get('longitude', 0)
-            },
-            'pixel': {
-                'u': image.get('u', 0),
-                'v': image.get('v', 0)
-            }
+            "name": metadata.get("description", f"GCP {i + 1}"),
+            "original_gps": {"lat": gps.get("latitude", 0), "lon": gps.get("longitude", 0)},
+            "pixel": {"u": image.get("u", 0), "v": image.get("v", 0)},
         }
 
         # Add projected GPS and projected pixel if available
-        if validation_results and 'details' in validation_results:
-            details = validation_results['details']
-            if i < len(details) and 'projected_gps' in details[i]:
-                proj_lat, proj_lon = details[i]['projected_gps']
-                gcp_entry['projected_gps'] = {
-                    'lat': proj_lat,
-                    'lon': proj_lon
-                }
-                gcp_entry['error_meters'] = details[i].get('error_meters', 0)
+        if validation_results and "details" in validation_results:
+            details = validation_results["details"]
+            if i < len(details) and "projected_gps" in details[i]:
+                proj_lat, proj_lon = details[i]["projected_gps"]
+                gcp_entry["projected_gps"] = {"lat": proj_lat, "lon": proj_lon}
+                gcp_entry["error_meters"] = details[i].get("error_meters", 0)
 
                 # Add projected pixel coordinates if available
-                if 'projected_pixel' in details[i]:
-                    proj_u, proj_v = details[i]['projected_pixel']
-                    gcp_entry['projected_pixel'] = {
-                        'u': proj_u,
-                        'v': proj_v
-                    }
+                if "projected_pixel" in details[i]:
+                    proj_u, proj_v = details[i]["projected_pixel"]
+                    gcp_entry["projected_pixel"] = {"u": proj_u, "v": proj_v}
 
         gcp_data.append(gcp_entry)
 
     # Extract homography stats for header display
-    confidence = validation_results.get('confidence', 0) if validation_results else 0
-    inliers = validation_results.get('inliers', 0) if validation_results else 0
-    outliers = validation_results.get('outliers', 0) if validation_results else 0
-    total_gcps = validation_results.get('gcps_tested', len(gcps)) if validation_results else len(gcps)
+    confidence = validation_results.get("confidence", 0) if validation_results else 0
+    inliers = validation_results.get("inliers", 0) if validation_results else 0
+    outliers = validation_results.get("outliers", 0) if validation_results else 0
+    total_gcps = (
+        validation_results.get("gcps_tested", len(gcps)) if validation_results else len(gcps)
+    )
 
     # GPS error stats (in meters)
-    mean_gps_error = validation_results.get('mean_error_m', 0) if validation_results else 0
-    min_gps_error = validation_results.get('min_error_m', 0) if validation_results else 0
-    max_gps_error = validation_results.get('max_error_m', 0) if validation_results else 0
+    mean_gps_error = validation_results.get("mean_error_m", 0) if validation_results else 0
+    min_gps_error = validation_results.get("min_error_m", 0) if validation_results else 0
+    max_gps_error = validation_results.get("max_error_m", 0) if validation_results else 0
 
     # Pixel reprojection error stats
-    reproj = validation_results.get('reprojection_error', {}) if validation_results else {}
-    mean_px_error = reproj.get('mean_px', 0) or 0
-    min_px_error = reproj.get('min_px', 0) or 0
-    max_px_error = reproj.get('max_px', 0) or 0
+    reproj = validation_results.get("reprojection_error", {}) if validation_results else {}
+    mean_px_error = reproj.get("mean_px", 0) or 0
+    min_px_error = reproj.get("min_px", 0) or 0
+    max_px_error = reproj.get("max_px", 0) or 0
 
     # Determine CSS classes for color coding
-    conf_class = 'good' if confidence >= 0.7 else ('warn' if confidence >= 0.5 else 'bad')
-    mean_gps_class = 'good' if mean_gps_error < 1.0 else ('warn' if mean_gps_error < 3.0 else 'bad')
-    mean_px_class = 'good' if mean_px_error < 5.0 else ('warn' if mean_px_error < 10.0 else 'bad')
+    conf_class = "good" if confidence >= 0.7 else ("warn" if confidence >= 0.5 else "bad")
+    mean_gps_class = "good" if mean_gps_error < 1.0 else ("warn" if mean_gps_error < 3.0 else "bad")
+    mean_px_class = "good" if mean_px_error < 5.0 else ("warn" if mean_px_error < 10.0 else "bad")
 
     # Convert data to JSON for embedding in HTML
     gcp_data_json = json.dumps(gcp_data)
     camera_gps_json = json.dumps(camera_gps)
-    homography_json = json.dumps(homography_matrix) if homography_matrix else 'null'
+    homography_json = json.dumps(homography_matrix) if homography_matrix else "null"
 
     # Generate HTML with embedded data
     html = f"""<!DOCTYPE html>
@@ -1509,11 +1498,11 @@ def start_server(
     output_dir: str,
     camera_frame_path: str,
     kml_path: str,
-    camera_gps: Dict[str, float],
-    gcps: List[Dict[str, Any]],
-    validation_results: Dict[str, Any],
-    homography_matrix: Optional[List[List[float]]] = None,
-    auto_open: bool = True
+    camera_gps: dict[str, float],
+    gcps: list[dict[str, Any]],
+    validation_results: dict[str, Any],
+    homography_matrix: list[list[float]] | None = None,
+    auto_open: bool = True,
 ) -> None:
     """
     Start the map debug visualization web server.
@@ -1575,7 +1564,7 @@ def start_server(
             shutil.copy2(camera_frame_src, camera_frame_dest)
             print(f"Copied camera frame to {camera_frame_dest}")
         else:
-            raise IOError(f"Camera frame not found: {camera_frame_src}")
+            raise OSError(f"Camera frame not found: {camera_frame_src}")
 
     # Copy KML file to output dir if not already there
     kml_dest = output_path / kml_filename
@@ -1584,21 +1573,21 @@ def start_server(
             shutil.copy2(kml_src, kml_dest)
             print(f"Copied KML file to {kml_dest}")
         else:
-            raise IOError(f"KML file not found: {kml_src}")
+            raise OSError(f"KML file not found: {kml_src}")
 
     # Generate HTML
     html_content = generate_html(
         camera_frame_filename,  # Use relative path in HTML
-        kml_filename,           # Use relative path in HTML
+        kml_filename,  # Use relative path in HTML
         camera_gps,
         gcps,
         validation_results,
-        homography_matrix
+        homography_matrix,
     )
 
     # Write HTML to output directory
-    html_path = output_path / 'index.html'
-    with open(html_path, 'w', encoding='utf-8') as f:
+    html_path = output_path / "index.html"
+    with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
     print(f"Generated HTML at {html_path}")
@@ -1636,61 +1625,58 @@ def start_server(
             print("Server stopped.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """
     Example usage and test of the map debug server.
     """
     # Create sample data
     sample_gcps = [
         {
-            'gps': {'latitude': 39.640600, 'longitude': -0.230200},
-            'image': {'u': 400.0, 'v': 300.0},
-            'metadata': {'description': 'P#01'}
+            "gps": {"latitude": 39.640600, "longitude": -0.230200},
+            "image": {"u": 400.0, "v": 300.0},
+            "metadata": {"description": "P#01"},
         },
         {
-            'gps': {'latitude': 39.640620, 'longitude': -0.229800},
-            'image': {'u': 2100.0, 'v': 320.0},
-            'metadata': {'description': 'P#02'}
+            "gps": {"latitude": 39.640620, "longitude": -0.229800},
+            "image": {"u": 2100.0, "v": 320.0},
+            "metadata": {"description": "P#02"},
         },
         {
-            'gps': {'latitude': 39.640400, 'longitude': -0.230000},
-            'image': {'u': 1280.0, 'v': 720.0},
-            'metadata': {'description': 'P#03'}
+            "gps": {"latitude": 39.640400, "longitude": -0.230000},
+            "image": {"u": 1280.0, "v": 720.0},
+            "metadata": {"description": "P#03"},
         },
     ]
 
     sample_results = {
-        'details': [
+        "details": [
             {
-                'projected_gps': (39.640605, -0.230205),
-                'projected_pixel': (402.3, 301.5),
-                'error_meters': 0.56
+                "projected_gps": (39.640605, -0.230205),
+                "projected_pixel": (402.3, 301.5),
+                "error_meters": 0.56,
             },
             {
-                'projected_gps': (39.640618, -0.229805),
-                'projected_pixel': (2098.7, 318.2),
-                'error_meters': 0.45
+                "projected_gps": (39.640618, -0.229805),
+                "projected_pixel": (2098.7, 318.2),
+                "error_meters": 0.45,
             },
             {
-                'projected_gps': (39.640398, -0.230002),
-                'projected_pixel': (1281.1, 719.8),
-                'error_meters': 0.23
+                "projected_gps": (39.640398, -0.230002),
+                "projected_pixel": (1281.1, 719.8),
+                "error_meters": 0.23,
             },
         ]
     }
 
-    sample_camera = {
-        'latitude': 39.640500,
-        'longitude': -0.230000
-    }
+    sample_camera = {"latitude": 39.640500, "longitude": -0.230000}
 
     # Get project root
     module_dir = Path(__file__).parent
     project_root = module_dir.parent
-    output_dir = project_root / 'output'
+    output_dir = project_root / "output"
 
     # Use example KML file if it exists
-    example_kml = output_dir / 'example_gcp_validation.kml'
+    example_kml = output_dir / "example_gcp_validation.kml"
 
     if not example_kml.exists():
         print("Error: Example KML file not found.")
@@ -1701,7 +1687,7 @@ if __name__ == '__main__':
     import cv2
     import numpy as np
 
-    dummy_frame_path = output_dir / 'dummy_frame.jpg'
+    dummy_frame_path = output_dir / "dummy_frame.jpg"
     if not dummy_frame_path.exists():
         # Create a simple test image
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
@@ -1725,5 +1711,5 @@ if __name__ == '__main__':
         camera_gps=sample_camera,
         gcps=sample_gcps,
         validation_results=sample_results,
-        auto_open=True
+        auto_open=True,
     )

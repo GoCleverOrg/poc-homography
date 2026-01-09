@@ -134,20 +134,23 @@ Usage Example:
     >>> print(f"Inliers: {result.num_inliers}/{result.num_inliers + result.num_outliers}")
 """
 
+import copy
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Tuple
-from poc_homography.types import Degrees, Meters
+from typing import Any
+
 import numpy as np
-import logging
-import copy
 
 # Import scipy for optimization
 from scipy.optimize import least_squares
 
+from poc_homography.types import Degrees
+
 # Import matplotlib for visualization (optional, lazy import)
 try:
     import matplotlib.pyplot as plt
+
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -155,20 +158,24 @@ except ImportError:
 
 # Import coordinate conversion for GPS to local metric
 try:
-    from poc_homography.coordinate_converter import gps_to_local_xy, UTMConverter
+    from poc_homography.coordinate_converter import UTMConverter, gps_to_local_xy
+
     UTM_CONVERTER_AVAILABLE = True
 except ImportError:
     UTM_CONVERTER_AVAILABLE = False
+
     # Fallback if coordinate_converter is not available
     def gps_to_local_xy(ref_lat, ref_lon, lat, lon):
         """Simple equirectangular approximation for testing."""
         import math
+
         R_EARTH = 6371000  # meters
         ref_lat_rad = math.radians(ref_lat)
         # Convert degree differences to radians, then scale by Earth radius
         x = math.radians(lon - ref_lon) * math.cos(ref_lat_rad) * R_EARTH
         y = math.radians(lat - ref_lat) * R_EARTH
         return x, y
+
 
 logger = logging.getLogger(__name__)
 
@@ -206,19 +213,20 @@ class CalibrationResult:
         train_indices: Optional list of GCP indices used for training (optimization)
         test_indices: Optional list of GCP indices used for testing (validation)
     """
+
     optimized_params: np.ndarray
     initial_error: float
     final_error: float
     num_inliers: int
     num_outliers: int
     inlier_ratio: float
-    per_gcp_errors: List[float]
-    convergence_info: Dict[str, Any]
+    per_gcp_errors: list[float]
+    convergence_info: dict[str, Any]
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    validation_metrics: Optional[Dict[str, Dict[str, float]]] = None
-    train_indices: Optional[List[int]] = None
-    test_indices: Optional[List[int]] = None
-    regularization_penalty: Optional[float] = None  # Weighted squared deviation from priors
+    validation_metrics: dict[str, dict[str, float]] | None = None
+    train_indices: list[int] | None = None
+    test_indices: list[int] | None = None
+    regularization_penalty: float | None = None  # Weighted squared deviation from priors
 
 
 class GCPCalibrator:
@@ -244,8 +252,8 @@ class GCPCalibrator:
     """
 
     # Supported loss functions
-    LOSS_HUBER = 'huber'
-    LOSS_CAUCHY = 'cauchy'
+    LOSS_HUBER = "huber"
+    LOSS_CAUCHY = "cauchy"
     VALID_LOSS_FUNCTIONS = [LOSS_HUBER, LOSS_CAUCHY]
 
     # Large residual value for points projecting to infinity (horizon)
@@ -254,37 +262,37 @@ class GCPCalibrator:
 
     # Default parameter bounds (conservative ranges)
     DEFAULT_BOUNDS = {
-        'pan': (-10.0, 10.0),      # ±10 degrees
-        'tilt': (-10.0, 10.0),     # ±10 degrees
-        'roll': (-10.0, 10.0),     # ±10 degrees (reserved for future CameraGeometry support)
-        'X': (-5.0, 5.0),          # ±5 meters
-        'Y': (-5.0, 5.0),          # ±5 meters
-        'Z': (-5.0, 5.0),          # ±5 meters
+        "pan": (-10.0, 10.0),  # ±10 degrees
+        "tilt": (-10.0, 10.0),  # ±10 degrees
+        "roll": (-10.0, 10.0),  # ±10 degrees (reserved for future CameraGeometry support)
+        "X": (-5.0, 5.0),  # ±5 meters
+        "Y": (-5.0, 5.0),  # ±5 meters
+        "Z": (-5.0, 5.0),  # ±5 meters
     }
 
     # Default prior standard deviations for regularization
     # These represent typical uncertainties in camera pose estimates
-    DEFAULT_PRIOR_SIGMAS: Dict[str, float] = {
-        'gps_position_m': 10.0,    # X, Y position uncertainty (meters)
-        'height_m': 2.0,           # Z position uncertainty (meters)
-        'pan_deg': 3.0,            # Pan angle uncertainty (degrees)
-        'tilt_deg': 3.0,           # Tilt angle uncertainty (degrees)
-        'roll_deg': 1.0,           # Roll angle uncertainty (degrees)
+    DEFAULT_PRIOR_SIGMAS: dict[str, float] = {
+        "gps_position_m": 10.0,  # X, Y position uncertainty (meters)
+        "height_m": 2.0,  # Z position uncertainty (meters)
+        "pan_deg": 3.0,  # Pan angle uncertainty (degrees)
+        "tilt_deg": 3.0,  # Tilt angle uncertainty (degrees)
+        "roll_deg": 1.0,  # Roll angle uncertainty (degrees)
     }
 
     def __init__(
         self,
-        camera_geometry: 'CameraGeometry',
-        gcps: List[Dict[str, Any]],
-        loss_function: str = 'huber',
+        camera_geometry: "CameraGeometry",
+        gcps: list[dict[str, Any]],
+        loss_function: str = "huber",
         loss_scale: float = 1.0,
-        reference_lat: Optional[Degrees] = None,
-        reference_lon: Optional[Degrees] = None,
-        utm_crs: Optional[str] = None,
+        reference_lat: Degrees | None = None,
+        reference_lon: Degrees | None = None,
+        utm_crs: str | None = None,
         validation_split: float = 0.0,
-        random_seed: Optional[int] = None,
-        prior_sigmas: Optional[Dict[str, float]] = None,
-        regularization_weight: float = 1.0
+        random_seed: int | None = None,
+        prior_sigmas: dict[str, float] | None = None,
+        regularization_weight: float = 1.0,
     ):
         """
         Initialize GCP-based calibrator.
@@ -342,24 +350,22 @@ class GCPCalibrator:
         for i, gcp in enumerate(gcps):
             if not isinstance(gcp, dict):
                 raise ValueError(f"GCP at index {i} must be a dictionary")
-            if 'gps' not in gcp:
+            if "gps" not in gcp:
                 raise ValueError(f"GCP at index {i} missing required 'gps' key")
-            if 'image' not in gcp:
+            if "image" not in gcp:
                 raise ValueError(f"GCP at index {i} missing required 'image' key")
 
             # Check GPS keys
-            gps = gcp['gps']
-            if 'latitude' not in gps or 'longitude' not in gps:
+            gps = gcp["gps"]
+            if "latitude" not in gps or "longitude" not in gps:
                 raise ValueError(
                     f"GCP at index {i}: 'gps' must have 'latitude' and 'longitude' keys"
                 )
 
             # Check image keys
-            image = gcp['image']
-            if 'u' not in image or 'v' not in image:
-                raise ValueError(
-                    f"GCP at index {i}: 'image' must have 'u' and 'v' keys"
-                )
+            image = gcp["image"]
+            if "u" not in image or "v" not in image:
+                raise ValueError(f"GCP at index {i}: 'image' must have 'u' and 'v' keys")
 
         # Validate loss_scale
         if loss_scale <= 0:
@@ -387,9 +393,7 @@ class GCPCalibrator:
         # Validate prior_sigmas values (must be positive and finite)
         for key, value in merged_sigmas.items():
             if not np.isfinite(value) or value <= 0.0:
-                raise ValueError(
-                    f"prior_sigmas['{key}'] must be positive and finite, got {value}"
-                )
+                raise ValueError(f"prior_sigmas['{key}'] must be positive and finite, got {value}")
 
         # Store configuration
         self.camera_geometry = camera_geometry
@@ -403,14 +407,17 @@ class GCPCalibrator:
 
         # Convert prior_sigmas to internal numpy array format for efficient computation
         # Order: [sigma_pan, sigma_tilt, sigma_roll, sigma_X, sigma_Y, sigma_Z]
-        self._sigma_vector = np.array([
-            merged_sigmas['pan_deg'],           # sigma_pan (degrees)
-            merged_sigmas['tilt_deg'],          # sigma_tilt (degrees)
-            merged_sigmas['roll_deg'],          # sigma_roll (degrees)
-            merged_sigmas['gps_position_m'],    # sigma_X (meters)
-            merged_sigmas['gps_position_m'],    # sigma_Y (meters)
-            merged_sigmas['height_m'],          # sigma_Z (meters)
-        ], dtype=np.float64)
+        self._sigma_vector = np.array(
+            [
+                merged_sigmas["pan_deg"],  # sigma_pan (degrees)
+                merged_sigmas["tilt_deg"],  # sigma_tilt (degrees)
+                merged_sigmas["roll_deg"],  # sigma_roll (degrees)
+                merged_sigmas["gps_position_m"],  # sigma_X (meters)
+                merged_sigmas["gps_position_m"],  # sigma_Y (meters)
+                merged_sigmas["height_m"],  # sigma_Z (meters)
+            ],
+            dtype=np.float64,
+        )
 
         # Set reference GPS coordinates for local coordinate conversion
         # IMPORTANT: This should be the camera position so that world coordinates
@@ -418,11 +425,13 @@ class GCPCalibrator:
         if reference_lat is not None and reference_lon is not None:
             self._reference_lat = reference_lat
             self._reference_lon = reference_lon
-            logger.info(f"Using camera position as reference: ({reference_lat:.6f}, {reference_lon:.6f})")
+            logger.info(
+                f"Using camera position as reference: ({reference_lat:.6f}, {reference_lon:.6f})"
+            )
         else:
             # Fallback to GCP centroid (NOT recommended - will cause coordinate mismatch)
-            gps_lats = [gcp['gps']['latitude'] for gcp in gcps]
-            gps_lons = [gcp['gps']['longitude'] for gcp in gcps]
+            gps_lats = [gcp["gps"]["latitude"] for gcp in gcps]
+            gps_lons = [gcp["gps"]["longitude"] for gcp in gcps]
             self._reference_lat = np.mean(gps_lats)
             self._reference_lon = np.mean(gps_lons)
             logger.warning(
@@ -436,9 +445,13 @@ class GCPCalibrator:
             try:
                 self._utm_converter = UTMConverter(utm_crs)
                 self._utm_converter.set_reference(self._reference_lat, self._reference_lon)
-                logger.info(f"Using UTM converter with CRS {utm_crs} for accurate coordinate conversion")
+                logger.info(
+                    f"Using UTM converter with CRS {utm_crs} for accurate coordinate conversion"
+                )
             except Exception as e:
-                logger.warning(f"Failed to initialize UTM converter: {e}, falling back to GPS conversion")
+                logger.warning(
+                    f"Failed to initialize UTM converter: {e}, falling back to GPS conversion"
+                )
                 self._utm_converter = None
 
         # Convert GCPs to world coordinates (cached for efficiency)
@@ -448,17 +461,17 @@ class GCPCalibrator:
         gps_count = 0
         for gcp in gcps:
             # Try UTM coordinates first (more accurate)
-            if self._utm_converter and 'utm' in gcp and gcp['utm']:
-                utm = gcp['utm']
-                if utm.get('easting') is not None and utm.get('northing') is not None:
-                    x, y = self._utm_converter.utm_to_local_xy(utm['easting'], utm['northing'])
+            if self._utm_converter and "utm" in gcp and gcp["utm"]:
+                utm = gcp["utm"]
+                if utm.get("easting") is not None and utm.get("northing") is not None:
+                    x, y = self._utm_converter.utm_to_local_xy(utm["easting"], utm["northing"])
                     self._world_coords.append([x, y])
                     utm_count += 1
                     continue
 
             # Fall back to GPS conversion
-            lat = gcp['gps']['latitude']
-            lon = gcp['gps']['longitude']
+            lat = gcp["gps"]["latitude"]
+            lon = gcp["gps"]["longitude"]
             if self._utm_converter:
                 x, y = self._utm_converter.gps_to_local_xy(lat, lon)
             else:
@@ -473,7 +486,9 @@ class GCPCalibrator:
 
         # DEBUG: Print first GCP's local XY for verification
         if len(self._world_coords) > 0:
-            print(f"GCPCalibrator DEBUG: First GCP local XY = ({self._world_coords[0][0]:.2f}, {self._world_coords[0][1]:.2f}) meters")
+            print(
+                f"GCPCalibrator DEBUG: First GCP local XY = ({self._world_coords[0][0]:.2f}, {self._world_coords[0][1]:.2f}) meters"
+            )
 
         # Initialize train/test split indices (will be set in calibrate() if validation_split > 0)
         self._train_indices = None
@@ -523,12 +538,14 @@ class GCPCalibrator:
             pan_deg=updated_pan,
             tilt_deg=updated_tilt,
             map_width=self.camera_geometry.map_width,
-            map_height=self.camera_geometry.map_height
+            map_height=self.camera_geometry.map_height,
         )
 
         return temp_geo.H
 
-    def _compute_residuals(self, params: np.ndarray, gcp_indices: Optional[List[int]] = None) -> np.ndarray:
+    def _compute_residuals(
+        self, params: np.ndarray, gcp_indices: list[int] | None = None
+    ) -> np.ndarray:
         """
         Compute reprojection residuals for specified GCPs.
 
@@ -563,8 +580,8 @@ class GCPCalibrator:
             gcp = self.gcps[gcp_idx]
 
             # Get observed camera pixel coordinates
-            u_observed = gcp['image']['u']
-            v_observed = gcp['image']['v']
+            u_observed = gcp["image"]["u"]
+            v_observed = gcp["image"]["v"]
 
             # Get world coordinates (pre-computed from GPS)
             x_world, y_world = self._world_coords[gcp_idx]
@@ -577,8 +594,8 @@ class GCPCalibrator:
             # Normalize homogeneous coordinates (perspective division)
             if abs(predicted_homogeneous[2]) < 1e-10:
                 # Point is at infinity (horizon), use large residual to penalize
-                residuals[2*res_idx] = self.INFINITY_RESIDUAL
-                residuals[2*res_idx + 1] = self.INFINITY_RESIDUAL
+                residuals[2 * res_idx] = self.INFINITY_RESIDUAL
+                residuals[2 * res_idx + 1] = self.INFINITY_RESIDUAL
                 logger.warning(f"GCP {gcp_idx} projects to infinity with params {params}")
                 continue
 
@@ -586,15 +603,12 @@ class GCPCalibrator:
             v_predicted = predicted_homogeneous[1] / predicted_homogeneous[2]
 
             # Compute residuals (observed - predicted)
-            residuals[2*res_idx] = u_observed - u_predicted
-            residuals[2*res_idx + 1] = v_observed - v_predicted
+            residuals[2 * res_idx] = u_observed - u_predicted
+            residuals[2 * res_idx + 1] = v_observed - v_predicted
 
         return residuals
 
-    def _compute_regularization_residuals(
-        self,
-        params: np.ndarray
-    ) -> np.ndarray:
+    def _compute_regularization_residuals(self, params: np.ndarray) -> np.ndarray:
         """
         Compute regularization residuals for Tikhonov regularization.
 
@@ -671,14 +685,12 @@ class GCPCalibrator:
                 # Quadratic region: r²/2
                 0.5 * residuals**2,
                 # Linear region: scale·|r| - scale²/2
-                self.loss_scale * abs_residuals - 0.5 * self.loss_scale**2
+                self.loss_scale * abs_residuals - 0.5 * self.loss_scale**2,
             )
         elif self.loss_function == self.LOSS_CAUCHY:
             # Cauchy loss: logarithmic growth for large errors
             # ρ(r) = (scale²/2) · log(1 + (r/scale)²)
-            loss_values = (self.loss_scale**2 / 2.0) * np.log1p(
-                (residuals / self.loss_scale)**2
-            )
+            loss_values = (self.loss_scale**2 / 2.0) * np.log1p((residuals / self.loss_scale) ** 2)
         else:
             # Fallback to L2 loss (should not reach here due to validation)
             loss_values = 0.5 * residuals**2
@@ -702,7 +714,7 @@ class GCPCalibrator:
         # Return RMS
         return np.sqrt(np.mean(per_point_errors**2))
 
-    def _split_train_test(self) -> Tuple[List[int], List[int]]:
+    def _split_train_test(self) -> tuple[list[int], list[int]]:
         """
         Split GCPs into train and test sets based on validation_split.
 
@@ -755,7 +767,9 @@ class GCPCalibrator:
 
         return train_indices, test_indices
 
-    def _compute_validation_metrics(self, params: np.ndarray, indices: List[int]) -> Dict[str, float]:
+    def _compute_validation_metrics(
+        self, params: np.ndarray, indices: list[int]
+    ) -> dict[str, float]:
         """
         Compute validation metrics (RMS, P90, max) for specified GCP indices.
 
@@ -767,7 +781,7 @@ class GCPCalibrator:
             Dictionary with 'rms', 'p90', 'max', 'count' metrics
         """
         if not indices:
-            return {'rms': 0.0, 'p90': 0.0, 'max': 0.0, 'count': 0}
+            return {"rms": 0.0, "p90": 0.0, "max": 0.0, "count": 0}
 
         # Compute residuals for these GCPs
         residuals = self._compute_residuals(params, gcp_indices=indices)
@@ -781,17 +795,9 @@ class GCPCalibrator:
         p90 = np.percentile(per_point_errors, 90)
         max_err = np.max(per_point_errors)
 
-        return {
-            'rms': float(rms),
-            'p90': float(p90),
-            'max': float(max_err),
-            'count': len(indices)
-        }
+        return {"rms": float(rms), "p90": float(p90), "max": float(max_err), "count": len(indices)}
 
-    def calibrate(
-        self,
-        bounds: Optional[Dict[str, Tuple[float, float]]] = None
-    ) -> CalibrationResult:
+    def calibrate(self, bounds: dict[str, tuple[float, float]] | None = None) -> CalibrationResult:
         """
         Calibrate camera parameters using GCP-based reprojection error minimization.
 
@@ -836,22 +842,26 @@ class GCPCalibrator:
             bounds = merged_bounds
 
         # Extract bounds in parameter vector order
-        lower_bounds = np.array([
-            bounds['pan'][0],
-            bounds['tilt'][0],
-            bounds['roll'][0],
-            bounds['X'][0],
-            bounds['Y'][0],
-            bounds['Z'][0]
-        ])
-        upper_bounds = np.array([
-            bounds['pan'][1],
-            bounds['tilt'][1],
-            bounds['roll'][1],
-            bounds['X'][1],
-            bounds['Y'][1],
-            bounds['Z'][1]
-        ])
+        lower_bounds = np.array(
+            [
+                bounds["pan"][0],
+                bounds["tilt"][0],
+                bounds["roll"][0],
+                bounds["X"][0],
+                bounds["Y"][0],
+                bounds["Z"][0],
+            ]
+        )
+        upper_bounds = np.array(
+            [
+                bounds["pan"][1],
+                bounds["tilt"][1],
+                bounds["roll"][1],
+                bounds["X"][1],
+                bounds["Y"][1],
+                bounds["Z"][1],
+            ]
+        )
 
         # Initial parameter guess: all zeros (no adjustment)
         params_initial = np.zeros(6)
@@ -866,10 +876,10 @@ class GCPCalibrator:
         # Note: 'soft_l1' is scipy's pseudo-Huber loss: 2*((1+r²)^0.5 - 1)
         # It behaves similarly to Huber (quadratic for small r, linear for large r)
         scipy_loss_map = {
-            'huber': 'soft_l1',  # pseudo-Huber loss (smooth approximation)
-            'cauchy': 'cauchy'
+            "huber": "soft_l1",  # pseudo-Huber loss (smooth approximation)
+            "cauchy": "cauchy",
         }
-        scipy_loss = scipy_loss_map.get(self.loss_function, 'linear')
+        scipy_loss = scipy_loss_map.get(self.loss_function, "linear")
 
         # Define residual function for optimization (uses train indices)
         # Returns reprojection residuals (2N elements) plus optional regularization
@@ -893,9 +903,9 @@ class GCPCalibrator:
                 bounds=(lower_bounds, upper_bounds),
                 loss=scipy_loss,
                 f_scale=self.loss_scale,  # Scale parameter for robust loss
-                method='trf',  # Trust Region Reflective (handles bounds)
+                method="trf",  # Trust Region Reflective (handles bounds)
                 verbose=0,
-                max_nfev=1000  # Maximum function evaluations
+                max_nfev=1000,  # Maximum function evaluations
             )
         except Exception as e:
             logger.error(f"Optimization failed: {e}")
@@ -923,27 +933,24 @@ class GCPCalibrator:
 
         # Build convergence info
         convergence_info = {
-            'success': result.success,
-            'message': result.message,
-            'iterations': result.nfev,  # Number of function evaluations
-            'function_evals': result.nfev,
-            'optimality': result.optimality,
-            'status': result.status
+            "success": result.success,
+            "message": result.message,
+            "iterations": result.nfev,  # Number of function evaluations
+            "function_evals": result.nfev,
+            "optimality": result.optimality,
+            "status": result.status,
         }
 
         # Add Jacobian evaluations if available
-        if hasattr(result, 'njev'):
-            convergence_info['jacobian_evals'] = result.njev
+        if hasattr(result, "njev"):
+            convergence_info["jacobian_evals"] = result.njev
 
         # Compute validation metrics if we have train/test split
         validation_metrics = None
         if self._train_indices and self._test_indices:
             train_metrics = self._compute_validation_metrics(optimized_params, self._train_indices)
             test_metrics = self._compute_validation_metrics(optimized_params, self._test_indices)
-            validation_metrics = {
-                'train': train_metrics,
-                'test': test_metrics
-            }
+            validation_metrics = {"train": train_metrics, "test": test_metrics}
 
         logger.info(
             f"Calibration complete: final RMS error = {final_error:.3f}px "
@@ -956,7 +963,7 @@ class GCPCalibrator:
         # Calculate regularization penalty if regularization is enabled
         if self._regularization_weight > 0.0:
             reg_residuals = self._compute_regularization_residuals(optimized_params)
-            regularization_penalty = float(np.sum(reg_residuals ** 2))
+            regularization_penalty = float(np.sum(reg_residuals**2))
         else:
             regularization_penalty = None
 
@@ -972,7 +979,7 @@ class GCPCalibrator:
             validation_metrics=validation_metrics,
             train_indices=self._train_indices,
             test_indices=self._test_indices,
-            regularization_penalty=regularization_penalty
+            regularization_penalty=regularization_penalty,
         )
 
 
@@ -980,11 +987,12 @@ class GCPCalibrator:
 # Validation and Diagnostic Functions
 # ============================================================================
 
+
 def detect_systematic_errors(
     residuals_2d: np.ndarray,
     image_coords: np.ndarray,
-    image_center: Optional[Tuple[float, float]] = None
-) -> List[str]:
+    image_center: tuple[float, float] | None = None,
+) -> list[str]:
     """
     Detect systematic error patterns in calibration residuals.
 
@@ -1047,8 +1055,7 @@ def detect_systematic_errors(
     # 2. Check for radial error growth
     # Compute distance from image center for each point
     distances = np.sqrt(
-        (image_coords[:, 0] - image_center[0])**2 +
-        (image_coords[:, 1] - image_center[1])**2
+        (image_coords[:, 0] - image_center[0]) ** 2 + (image_coords[:, 1] - image_center[1]) ** 2
     )
 
     # Compute error magnitude for each point
@@ -1075,10 +1082,10 @@ def detect_systematic_errors(
 
 def generate_residual_plot(
     calibration_result: CalibrationResult,
-    gcps: List[Dict[str, Any]],
+    gcps: list[dict[str, Any]],
     image_width: int,
     image_height: int,
-    output_path: Optional[str] = None
+    output_path: str | None = None,
 ):
     """
     Generate scatter plot of calibration residuals on image plane.
@@ -1119,12 +1126,16 @@ def generate_residual_plot(
     fig, ax = plt.subplots(figsize=(12, 8))
 
     # Determine train/test split
-    train_indices = calibration_result.train_indices if calibration_result.train_indices else list(range(len(gcps)))
+    train_indices = (
+        calibration_result.train_indices
+        if calibration_result.train_indices
+        else list(range(len(gcps)))
+    )
     test_indices = calibration_result.test_indices if calibration_result.test_indices else []
 
     # Extract image coordinates
-    u_coords = np.array([gcp['image']['u'] for gcp in gcps])
-    v_coords = np.array([gcp['image']['v'] for gcp in gcps])
+    u_coords = np.array([gcp["image"]["u"] for gcp in gcps])
+    v_coords = np.array([gcp["image"]["v"] for gcp in gcps])
 
     # Compute unified color scale across all errors
     all_errors = np.array(calibration_result.per_gcp_errors)
@@ -1135,10 +1146,19 @@ def generate_residual_plot(
     train_v = v_coords[train_indices]
     train_errors = all_errors[train_indices]
 
-    scatter_train = ax.scatter(train_u, train_v, c=train_errors, s=100, alpha=0.6,
-                               cmap='viridis', edgecolors='black', linewidths=1,
-                               label=f'Train ({len(train_indices)} GCPs)',
-                               vmin=vmin, vmax=vmax)
+    scatter_train = ax.scatter(
+        train_u,
+        train_v,
+        c=train_errors,
+        s=100,
+        alpha=0.6,
+        cmap="viridis",
+        edgecolors="black",
+        linewidths=1,
+        label=f"Train ({len(train_indices)} GCPs)",
+        vmin=vmin,
+        vmax=vmax,
+    )
 
     # Plot test points if available (triangles with same colormap)
     if test_indices:
@@ -1146,47 +1166,55 @@ def generate_residual_plot(
         test_v = v_coords[test_indices]
         test_errors = all_errors[test_indices]
 
-        ax.scatter(test_u, test_v, c=test_errors, s=100, alpha=0.6,
-                   cmap='viridis', marker='^', edgecolors='red', linewidths=2,
-                   label=f'Test ({len(test_indices)} GCPs)',
-                   vmin=vmin, vmax=vmax)
+        ax.scatter(
+            test_u,
+            test_v,
+            c=test_errors,
+            s=100,
+            alpha=0.6,
+            cmap="viridis",
+            marker="^",
+            edgecolors="red",
+            linewidths=2,
+            label=f"Test ({len(test_indices)} GCPs)",
+            vmin=vmin,
+            vmax=vmax,
+        )
 
     # Add colorbar using unified scale
-    cbar = plt.colorbar(scatter_train, ax=ax, label='Reprojection Error (px)')
+    cbar = plt.colorbar(scatter_train, ax=ax, label="Reprojection Error (px)")
 
     # Set axis labels and title
-    ax.set_xlabel('Image U (pixels)', fontsize=12)
-    ax.set_ylabel('Image V (pixels)', fontsize=12)
+    ax.set_xlabel("Image U (pixels)", fontsize=12)
+    ax.set_ylabel("Image V (pixels)", fontsize=12)
     ax.set_title(
-        f'Calibration Residuals\n'
-        f'RMS Error: {calibration_result.final_error:.2f}px | '
-        f'Inliers: {calibration_result.num_inliers}/{len(gcps)}',
-        fontsize=14
+        f"Calibration Residuals\n"
+        f"RMS Error: {calibration_result.final_error:.2f}px | "
+        f"Inliers: {calibration_result.num_inliers}/{len(gcps)}",
+        fontsize=14,
     )
 
     # Set axis limits
     ax.set_xlim(0, image_width)
     ax.set_ylim(image_height, 0)  # Invert Y axis (image coordinates)
-    ax.set_aspect('equal')
+    ax.set_aspect("equal")
 
     # Add legend
-    ax.legend(loc='best', fontsize=10)
+    ax.legend(loc="best", fontsize=10)
 
     # Add grid
     ax.grid(True, alpha=0.3)
 
     # Save if output path provided
     if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+        fig.savefig(output_path, dpi=150, bbox_inches="tight")
         logger.info(f"Residual plot saved to {output_path}")
 
     return fig
 
 
 def generate_residual_histogram(
-    calibration_result: CalibrationResult,
-    bins: int = 20,
-    output_path: Optional[str] = None
+    calibration_result: CalibrationResult, bins: int = 20, output_path: str | None = None
 ):
     """
     Generate histogram of residual magnitudes.
@@ -1220,59 +1248,94 @@ def generate_residual_histogram(
     all_errors = np.array(calibration_result.per_gcp_errors)
 
     # Determine train/test split
-    train_indices = calibration_result.train_indices if calibration_result.train_indices else list(range(len(all_errors)))
+    train_indices = (
+        calibration_result.train_indices
+        if calibration_result.train_indices
+        else list(range(len(all_errors)))
+    )
     test_indices = calibration_result.test_indices if calibration_result.test_indices else []
 
     # Plot train histogram
     train_errors = all_errors[train_indices]
-    ax.hist(train_errors, bins=bins, alpha=0.6, label=f'Train ({len(train_indices)} GCPs)',
-            color='blue', edgecolor='black')
+    ax.hist(
+        train_errors,
+        bins=bins,
+        alpha=0.6,
+        label=f"Train ({len(train_indices)} GCPs)",
+        color="blue",
+        edgecolor="black",
+    )
 
     # Plot test histogram if available
     if test_indices:
         test_errors = all_errors[test_indices]
-        ax.hist(test_errors, bins=bins, alpha=0.6, label=f'Test ({len(test_indices)} GCPs)',
-                color='red', edgecolor='black')
+        ax.hist(
+            test_errors,
+            bins=bins,
+            alpha=0.6,
+            label=f"Test ({len(test_indices)} GCPs)",
+            color="red",
+            edgecolor="black",
+        )
 
     # Add statistical markers
     train_mean = np.mean(train_errors)
     train_median = np.median(train_errors)
-    ax.axvline(train_mean, color='blue', linestyle='--', linewidth=2,
-               label=f'Train Mean: {train_mean:.2f}px')
-    ax.axvline(train_median, color='blue', linestyle=':', linewidth=2,
-               label=f'Train Median: {train_median:.2f}px')
+    ax.axvline(
+        train_mean,
+        color="blue",
+        linestyle="--",
+        linewidth=2,
+        label=f"Train Mean: {train_mean:.2f}px",
+    )
+    ax.axvline(
+        train_median,
+        color="blue",
+        linestyle=":",
+        linewidth=2,
+        label=f"Train Median: {train_median:.2f}px",
+    )
 
     if test_indices:
         test_mean = np.mean(test_errors)
         test_median = np.median(test_errors)
-        ax.axvline(test_mean, color='red', linestyle='--', linewidth=2,
-                   label=f'Test Mean: {test_mean:.2f}px')
-        ax.axvline(test_median, color='red', linestyle=':', linewidth=2,
-                   label=f'Test Median: {test_median:.2f}px')
+        ax.axvline(
+            test_mean,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label=f"Test Mean: {test_mean:.2f}px",
+        )
+        ax.axvline(
+            test_median,
+            color="red",
+            linestyle=":",
+            linewidth=2,
+            label=f"Test Median: {test_median:.2f}px",
+        )
 
     # Set axis labels and title
-    ax.set_xlabel('Reprojection Error (pixels)', fontsize=12)
-    ax.set_ylabel('Frequency', fontsize=12)
-    ax.set_title('Distribution of Calibration Residuals', fontsize=14)
+    ax.set_xlabel("Reprojection Error (pixels)", fontsize=12)
+    ax.set_ylabel("Frequency", fontsize=12)
+    ax.set_title("Distribution of Calibration Residuals", fontsize=14)
 
     # Add legend
-    ax.legend(loc='best', fontsize=9)
+    ax.legend(loc="best", fontsize=9)
 
     # Add grid
-    ax.grid(True, alpha=0.3, axis='y')
+    ax.grid(True, alpha=0.3, axis="y")
 
     # Save if output path provided
     if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+        fig.savefig(output_path, dpi=150, bbox_inches="tight")
         logger.info(f"Residual histogram saved to {output_path}")
 
     return fig
 
 
 def validate_calibration(
-    calibration_result: CalibrationResult,
-    thresholds: Optional[Dict[str, float]] = None
-) -> Tuple[bool, List[str]]:
+    calibration_result: CalibrationResult, thresholds: dict[str, float] | None = None
+) -> tuple[bool, list[str]]:
     """
     Validate calibration result against quality thresholds.
 
@@ -1307,11 +1370,11 @@ def validate_calibration(
     """
     # Default thresholds (generous for typical calibration)
     default_thresholds = {
-        'train_rms_max': 5.0,      # 5 pixels RMS
-        'test_rms_max': 6.0,       # 6 pixels RMS (slightly higher for test)
-        'train_p90_max': 8.0,      # 8 pixels P90
-        'test_p90_max': 10.0,      # 10 pixels P90
-        'min_inlier_ratio': 0.7    # 70% inliers minimum
+        "train_rms_max": 5.0,  # 5 pixels RMS
+        "test_rms_max": 6.0,  # 6 pixels RMS (slightly higher for test)
+        "train_p90_max": 8.0,  # 8 pixels P90
+        "test_p90_max": 10.0,  # 10 pixels P90
+        "min_inlier_ratio": 0.7,  # 70% inliers minimum
     }
 
     # Use provided thresholds or defaults
@@ -1326,7 +1389,7 @@ def validate_calibration(
     failures = []
 
     # Check inlier ratio (always available)
-    if calibration_result.inlier_ratio < thresholds['min_inlier_ratio']:
+    if calibration_result.inlier_ratio < thresholds["min_inlier_ratio"]:
         failures.append(
             f"Inlier ratio {calibration_result.inlier_ratio:.2f} below threshold "
             f"{thresholds['min_inlier_ratio']:.2f}"
@@ -1334,32 +1397,32 @@ def validate_calibration(
 
     # Check train/test metrics if validation_metrics available
     if calibration_result.validation_metrics:
-        train_metrics = calibration_result.validation_metrics['train']
-        test_metrics = calibration_result.validation_metrics['test']
+        train_metrics = calibration_result.validation_metrics["train"]
+        test_metrics = calibration_result.validation_metrics["test"]
 
         # Check train RMS
-        if train_metrics['rms'] > thresholds['train_rms_max']:
+        if train_metrics["rms"] > thresholds["train_rms_max"]:
             failures.append(
                 f"Train RMS error {train_metrics['rms']:.2f}px exceeds threshold "
                 f"{thresholds['train_rms_max']:.2f}px"
             )
 
         # Check test RMS (if test set exists)
-        if test_metrics['count'] > 0 and test_metrics['rms'] > thresholds['test_rms_max']:
+        if test_metrics["count"] > 0 and test_metrics["rms"] > thresholds["test_rms_max"]:
             failures.append(
                 f"Test RMS error {test_metrics['rms']:.2f}px exceeds threshold "
                 f"{thresholds['test_rms_max']:.2f}px"
             )
 
         # Check train P90
-        if train_metrics['p90'] > thresholds['train_p90_max']:
+        if train_metrics["p90"] > thresholds["train_p90_max"]:
             failures.append(
                 f"Train P90 error {train_metrics['p90']:.2f}px exceeds threshold "
                 f"{thresholds['train_p90_max']:.2f}px"
             )
 
         # Check test P90 (if test set exists)
-        if test_metrics['count'] > 0 and test_metrics['p90'] > thresholds['test_p90_max']:
+        if test_metrics["count"] > 0 and test_metrics["p90"] > thresholds["test_p90_max"]:
             failures.append(
                 f"Test P90 error {test_metrics['p90']:.2f}px exceeds threshold "
                 f"{thresholds['test_p90_max']:.2f}px"
@@ -1370,8 +1433,7 @@ def validate_calibration(
 
 
 def generate_validation_report(
-    calibration_result: CalibrationResult,
-    validation_thresholds: Optional[Dict[str, float]] = None
+    calibration_result: CalibrationResult, validation_thresholds: dict[str, float] | None = None
 ) -> str:
     """
     Generate comprehensive text report of calibration validation.
@@ -1423,13 +1485,17 @@ def generate_validation_report(
     lines.append(f"  Final RMS error:   {calibration_result.final_error:.2f} px")
     improvement_px = calibration_result.initial_error - calibration_result.final_error
     if calibration_result.initial_error > 0:
-        improvement_pct = (1 - calibration_result.final_error / calibration_result.initial_error) * 100
+        improvement_pct = (
+            1 - calibration_result.final_error / calibration_result.initial_error
+        ) * 100
         lines.append(f"  Improvement:       {improvement_px:.2f} px ({improvement_pct:.1f}%)")
     else:
         lines.append(f"  Improvement:       {improvement_px:.2f} px (N/A%)")
     lines.append("")
-    lines.append(f"  Inliers:  {calibration_result.num_inliers} / {calibration_result.num_inliers + calibration_result.num_outliers} "
-                 f"({calibration_result.inlier_ratio*100:.1f}%)")
+    lines.append(
+        f"  Inliers:  {calibration_result.num_inliers} / {calibration_result.num_inliers + calibration_result.num_outliers} "
+        f"({calibration_result.inlier_ratio * 100:.1f}%)"
+    )
     lines.append(f"  Outliers: {calibration_result.num_outliers}")
     lines.append("")
 
@@ -1438,15 +1504,15 @@ def generate_validation_report(
         lines.append("Train/Test Split Metrics:")
         lines.append("-" * 60)
 
-        train_metrics = calibration_result.validation_metrics['train']
+        train_metrics = calibration_result.validation_metrics["train"]
         lines.append(f"  Train Set ({train_metrics['count']} GCPs):")
         lines.append(f"    RMS error: {train_metrics['rms']:.2f} px")
         lines.append(f"    P90 error: {train_metrics['p90']:.2f} px")
         lines.append(f"    Max error: {train_metrics['max']:.2f} px")
         lines.append("")
 
-        test_metrics = calibration_result.validation_metrics['test']
-        if test_metrics['count'] > 0:
+        test_metrics = calibration_result.validation_metrics["test"]
+        if test_metrics["count"] > 0:
             lines.append(f"  Test Set ({test_metrics['count']} GCPs):")
             lines.append(f"    RMS error: {test_metrics['rms']:.2f} px")
             lines.append(f"    P90 error: {test_metrics['p90']:.2f} px")
@@ -1458,15 +1524,15 @@ def generate_validation_report(
     lines.append("-" * 60)
     conv = calibration_result.convergence_info
     lines.append(f"  Status:           {'SUCCESS' if conv.get('success', False) else 'FAILED'}")
-    if 'message' in conv:
+    if "message" in conv:
         lines.append(f"  Message:          {conv['message']}")
-    if 'iterations' in conv:
+    if "iterations" in conv:
         lines.append(f"  Iterations:       {conv['iterations']}")
-    if 'function_evals' in conv:
+    if "function_evals" in conv:
         lines.append(f"  Function evals:   {conv['function_evals']}")
-    if 'jacobian_evals' in conv:
+    if "jacobian_evals" in conv:
         lines.append(f"  Jacobian evals:   {conv['jacobian_evals']}")
-    if 'optimality' in conv:
+    if "optimality" in conv:
         lines.append(f"  Optimality:       {conv['optimality']:.2e}")
     lines.append("")
 

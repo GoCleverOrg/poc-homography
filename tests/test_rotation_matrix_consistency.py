@@ -9,17 +9,18 @@ produces results consistent with CameraGeometry.
 Run with: python -m pytest tests/test_rotation_matrix_consistency.py -v
 """
 
-import numpy as np
 import math
-import sys
 import os
+import sys
+
+import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 
 
 class TestRotationMatrixConsistency:
@@ -32,22 +33,25 @@ class TestRotationMatrixConsistency:
         ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
         return geo, ieh
 
-    @pytest.mark.parametrize("pan_deg,tilt_deg", [
-        (0, 30),
-        (45, 30),
-        (90, 30),
-        (180, 30),
-        (-45, 30),
-        (-90, 30),
-        (66.7, 30),  # Test pan offset value (Valencia region test data)
-        (0, 15),
-        (0, 45),
-        (0, 60),
-        (45, 45),
-        (90, 60),
-        (135, 25),
-        (-135, 40),
-    ])
+    @pytest.mark.parametrize(
+        "pan_deg,tilt_deg",
+        [
+            (0, 30),
+            (45, 30),
+            (90, 30),
+            (180, 30),
+            (-45, 30),
+            (-90, 30),
+            (66.7, 30),  # Test pan offset value (Valencia region test data)
+            (0, 15),
+            (0, 45),
+            (0, 60),
+            (45, 45),
+            (90, 60),
+            (135, 25),
+            (-135, 40),
+        ],
+    )
     def test_rotation_matrices_match(self, geometry_instances, pan_deg, tilt_deg):
         """Verify rotation matrices are identical for both implementations."""
         geo, ieh = geometry_instances
@@ -67,23 +71,30 @@ class TestRotationMatrixConsistency:
             f"Max difference: {max_diff}"
         )
 
-    @pytest.mark.parametrize("pan_deg,tilt_deg", [
-        (0, 30),
-        (45, 30),
-        (90, 30),
-        (66.7, 30),
-    ])
+    @pytest.mark.parametrize(
+        "pan_deg,tilt_deg",
+        [
+            (0, 30),
+            (45, 30),
+            (90, 30),
+            (66.7, 30),
+        ],
+    )
     def test_rotation_matrix_is_orthogonal(self, geometry_instances, pan_deg, tilt_deg):
         """Verify rotation matrices are proper orthogonal matrices (det=1, R@R.T=I)."""
         geo, ieh = geometry_instances
 
         for name, R in [
             ("CameraGeometry", geo._get_rotation_matrix()),
-            ("IntrinsicExtrinsicHomography", ieh._get_rotation_matrix(pan_deg, tilt_deg))
+            ("IntrinsicExtrinsicHomography", ieh._get_rotation_matrix(pan_deg, tilt_deg)),
         ]:
             geo.pan_deg = pan_deg
             geo.tilt_deg = tilt_deg
-            R = geo._get_rotation_matrix() if "Camera" in name else ieh._get_rotation_matrix(pan_deg, tilt_deg)
+            R = (
+                geo._get_rotation_matrix()
+                if "Camera" in name
+                else ieh._get_rotation_matrix(pan_deg, tilt_deg)
+            )
 
             # Check determinant is 1
             det = np.linalg.det(R)
@@ -92,7 +103,9 @@ class TestRotationMatrixConsistency:
             # Check R @ R.T = I
             RRT = R @ R.T
             identity_diff = np.max(np.abs(RRT - np.eye(3)))
-            assert identity_diff < 1e-10, f"{name}: R @ R.T differs from identity by {identity_diff}"
+            assert identity_diff < 1e-10, (
+                f"{name}: R @ R.T differs from identity by {identity_diff}"
+            )
 
 
 class TestRollRotation:
@@ -124,14 +137,19 @@ class TestRollRotation:
         identity_diff = np.max(np.abs(RRT - np.eye(3)))
         assert identity_diff < 1e-10, f"R @ R.T differs from identity by {identity_diff}"
 
-    @pytest.mark.parametrize("pan_deg,tilt_deg,roll_deg", [
-        (0, 30, 0),
-        (45, 30, 0),
-        (0, 30, 5),
-        (45, 30, -5),
-        (90, 45, 2),
-    ])
-    def test_rotation_matrices_with_roll_match(self, geometry_instances, pan_deg, tilt_deg, roll_deg):
+    @pytest.mark.parametrize(
+        "pan_deg,tilt_deg,roll_deg",
+        [
+            (0, 30, 0),
+            (45, 30, 0),
+            (0, 30, 5),
+            (45, 30, -5),
+            (90, 45, 2),
+        ],
+    )
+    def test_rotation_matrices_with_roll_match(
+        self, geometry_instances, pan_deg, tilt_deg, roll_deg
+    ):
         """Verify rotation matrices match between both classes when roll is specified."""
         geo, ieh = geometry_instances
 
@@ -178,11 +196,7 @@ class TestRollRotation:
         """Verify homography changes when roll != 0."""
         _, ieh = geometry_instances
 
-        K = np.array([
-            [1000, 0, 960],
-            [0, 1000, 540],
-            [0, 0, 1]
-        ])
+        K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
         camera_position = np.array([0.0, 0.0, 5.0])
         pan_deg = 0.0
         tilt_deg = 30.0
@@ -218,14 +232,16 @@ class TestRollValidation:
 
         # This should trigger a warning but not raise an error
         import warnings
+
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=6.0)
 
             # Should have at least one warning
             assert len(w) > 0, "Expected warning for |roll_deg| > 5.0"
-            assert any("roll" in str(warning.message).lower() for warning in w), \
+            assert any("roll" in str(warning.message).lower() for warning in w), (
                 "Warning should mention roll"
+            )
 
     def test_roll_error_threshold(self):
         """Verify error is raised when |roll_deg| > 15.0."""
@@ -237,8 +253,7 @@ class TestRollValidation:
         with pytest.raises(ValueError) as exc_info:
             geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=16.0)
 
-        assert "roll" in str(exc_info.value).lower(), \
-            "Error message should mention roll"
+        assert "roll" in str(exc_info.value).lower(), "Error message should mention roll"
 
     def test_roll_negative_threshold(self):
         """Verify error is raised when roll_deg < -15.0."""
@@ -250,8 +265,7 @@ class TestRollValidation:
         with pytest.raises(ValueError) as exc_info:
             geo.set_camera_parameters(K, w_pos, 0.0, 30.0, 640, 640, roll_deg=-16.0)
 
-        assert "roll" in str(exc_info.value).lower(), \
-            "Error message should mention roll"
+        assert "roll" in str(exc_info.value).lower(), "Error message should mention roll"
 
     def test_roll_within_limits_accepted(self):
         """Verify roll values within limits are accepted."""
@@ -274,84 +288,74 @@ class TestComputeHomographyWithRoll:
         """Verify compute_homography extracts roll_deg from reference dict."""
         ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
 
-        K = np.array([
-            [1000, 0, 960],
-            [0, 1000, 540],
-            [0, 0, 1]
-        ])
+        K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
 
         reference = {
-            'camera_matrix': K,
-            'camera_position': np.array([0.0, 0.0, 5.0]),
-            'pan_deg': 0.0,
-            'tilt_deg': 30.0,
-            'roll_deg': 2.5,
-            'map_width': 640,
-            'map_height': 640
+            "camera_matrix": K,
+            "camera_position": np.array([0.0, 0.0, 5.0]),
+            "pan_deg": 0.0,
+            "tilt_deg": 30.0,
+            "roll_deg": 2.5,
+            "map_width": 640,
+            "map_height": 640,
         }
 
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
         result = ieh.compute_homography(frame, reference)
 
         # Check that roll_deg is stored
-        assert hasattr(ieh, 'roll_deg'), "roll_deg should be stored as instance attribute"
+        assert hasattr(ieh, "roll_deg"), "roll_deg should be stored as instance attribute"
         assert ieh.roll_deg == 2.5, f"Expected roll_deg=2.5, got {ieh.roll_deg}"
 
         # Check that roll_deg is in metadata
-        assert 'roll_deg' in result.metadata, "roll_deg should be in metadata"
-        assert result.metadata['roll_deg'] == 2.5, \
+        assert "roll_deg" in result.metadata, "roll_deg should be in metadata"
+        assert result.metadata["roll_deg"] == 2.5, (
             f"Expected metadata roll_deg=2.5, got {result.metadata['roll_deg']}"
+        )
 
     def test_compute_homography_roll_defaults_to_zero(self):
         """Verify compute_homography defaults roll_deg to 0.0 when not in reference."""
         ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
 
-        K = np.array([
-            [1000, 0, 960],
-            [0, 1000, 540],
-            [0, 0, 1]
-        ])
+        K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
 
         reference = {
-            'camera_matrix': K,
-            'camera_position': np.array([0.0, 0.0, 5.0]),
-            'pan_deg': 0.0,
-            'tilt_deg': 30.0,
+            "camera_matrix": K,
+            "camera_position": np.array([0.0, 0.0, 5.0]),
+            "pan_deg": 0.0,
+            "tilt_deg": 30.0,
             # Note: no 'roll_deg' key
-            'map_width': 640,
-            'map_height': 640
+            "map_width": 640,
+            "map_height": 640,
         }
 
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
         result = ieh.compute_homography(frame, reference)
 
         # Should default to 0.0
-        assert hasattr(ieh, 'roll_deg'), "roll_deg should be stored as instance attribute"
+        assert hasattr(ieh, "roll_deg"), "roll_deg should be stored as instance attribute"
         assert ieh.roll_deg == 0.0, f"Expected default roll_deg=0.0, got {ieh.roll_deg}"
 
         # Check metadata
-        assert 'roll_deg' in result.metadata, "roll_deg should be in metadata"
-        assert result.metadata['roll_deg'] == 0.0, \
+        assert "roll_deg" in result.metadata, "roll_deg should be in metadata"
+        assert result.metadata["roll_deg"] == 0.0, (
             f"Expected metadata roll_deg=0.0, got {result.metadata['roll_deg']}"
+        )
 
     def test_compute_homography_rejects_invalid_roll(self):
         """Verify compute_homography raises error for |roll_deg| > 15.0."""
         ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
 
-        K = np.array([
-            [1000, 0, 960],
-            [0, 1000, 540],
-            [0, 0, 1]
-        ])
+        K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
 
         reference = {
-            'camera_matrix': K,
-            'camera_position': np.array([0.0, 0.0, 5.0]),
-            'pan_deg': 0.0,
-            'tilt_deg': 30.0,
-            'roll_deg': 16.0,  # Invalid: > 15.0
-            'map_width': 640,
-            'map_height': 640
+            "camera_matrix": K,
+            "camera_position": np.array([0.0, 0.0, 5.0]),
+            "pan_deg": 0.0,
+            "tilt_deg": 30.0,
+            "roll_deg": 16.0,  # Invalid: > 15.0
+            "map_width": 640,
+            "map_height": 640,
         }
 
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
@@ -359,8 +363,7 @@ class TestComputeHomographyWithRoll:
         with pytest.raises(ValueError) as exc_info:
             ieh.compute_homography(frame, reference)
 
-        assert "roll" in str(exc_info.value).lower(), \
-            "Error message should mention roll"
+        assert "roll" in str(exc_info.value).lower(), "Error message should mention roll"
 
 
 class TestCameraViewingDirection:
@@ -381,14 +384,17 @@ class TestCameraViewingDirection:
         elevation = math.degrees(math.asin(-forward[2]))
         return azimuth, elevation
 
-    @pytest.mark.parametrize("pan_deg,expected_azimuth", [
-        (0, 0),      # Looking North
-        (45, 45),    # Looking NE
-        (90, 90),    # Looking East
-        (180, 180),  # Looking South
-        (-90, -90),  # Looking West
-        (-45, -45),  # Looking NW
-    ])
+    @pytest.mark.parametrize(
+        "pan_deg,expected_azimuth",
+        [
+            (0, 0),  # Looking North
+            (45, 45),  # Looking NE
+            (90, 90),  # Looking East
+            (180, 180),  # Looking South
+            (-90, -90),  # Looking West
+            (-45, -45),  # Looking NW
+        ],
+    )
     def test_pan_controls_azimuth(self, geo, pan_deg, expected_azimuth):
         """Verify pan angle correctly controls camera azimuth."""
         tilt_deg = 30.0
@@ -409,12 +415,15 @@ class TestCameraViewingDirection:
             f"Pan={pan_deg}° should give azimuth={expected_azimuth}°, got {azimuth:.1f}°"
         )
 
-    @pytest.mark.parametrize("tilt_deg,expected_elevation", [
-        (30, 30),
-        (45, 45),
-        (60, 60),
-        (15, 15),
-    ])
+    @pytest.mark.parametrize(
+        "tilt_deg,expected_elevation",
+        [
+            (30, 30),
+            (45, 45),
+            (60, 60),
+            (15, 15),
+        ],
+    )
     def test_tilt_controls_elevation(self, geo, tilt_deg, expected_elevation):
         """Verify tilt angle correctly controls camera elevation."""
         pan_deg = 0.0
@@ -437,86 +446,77 @@ class TestHomographyConsistency:
     def camera_params(self):
         # Static test parameters (Valencia region test data, not current camera config)
         return {
-            'width': 1920,
-            'height': 1080,
-            'height_m': 3.4,
-            'pan_deg': 66.7,
-            'tilt_deg': 30.0,
-            'zoom': 1.0,
-            'sensor_width_mm': 7.18,
+            "width": 1920,
+            "height": 1080,
+            "height_m": 3.4,
+            "pan_deg": 66.7,
+            "tilt_deg": 30.0,
+            "zoom": 1.0,
+            "sensor_width_mm": 7.18,
         }
 
     def test_homography_matrices_match(self, camera_params):
         """Verify both implementations produce identical homography matrices."""
-        geo = CameraGeometry(w=camera_params['width'], h=camera_params['height'])
+        geo = CameraGeometry(w=camera_params["width"], h=camera_params["height"])
         ieh = IntrinsicExtrinsicHomography(
-            width=camera_params['width'],
-            height=camera_params['height']
+            width=camera_params["width"], height=camera_params["height"]
         )
 
         K = CameraGeometry.get_intrinsics(
-            camera_params['zoom'],
-            camera_params['width'],
-            camera_params['height'],
-            camera_params['sensor_width_mm']
+            camera_params["zoom"],
+            camera_params["width"],
+            camera_params["height"],
+            camera_params["sensor_width_mm"],
         )
-        w_pos = np.array([0.0, 0.0, camera_params['height_m']])
+        w_pos = np.array([0.0, 0.0, camera_params["height_m"]])
 
         # CameraGeometry
         geo.set_camera_parameters(
-            K, w_pos,
-            camera_params['pan_deg'],
-            camera_params['tilt_deg'],
-            640, 640
+            K, w_pos, camera_params["pan_deg"], camera_params["tilt_deg"], 640, 640
         )
         H_geo = geo.H
 
         # IntrinsicExtrinsicHomography
         H_ieh = ieh._calculate_ground_homography(
-            K, w_pos,
-            camera_params['pan_deg'],
-            camera_params['tilt_deg']
+            K, w_pos, camera_params["pan_deg"], camera_params["tilt_deg"]
         )
         H_ieh_norm = H_ieh / H_ieh[2, 2]
 
         max_diff = np.max(np.abs(H_geo - H_ieh_norm))
         assert max_diff < 1e-6, f"Homography matrices differ by {max_diff}"
 
-    @pytest.mark.parametrize("world_point", [
-        (5.0, 2.0),
-        (10.0, 5.0),
-        (-3.0, 8.0),
-        (0.0, 10.0),
-        (15.0, 0.0),
-    ])
+    @pytest.mark.parametrize(
+        "world_point",
+        [
+            (5.0, 2.0),
+            (10.0, 5.0),
+            (-3.0, 8.0),
+            (0.0, 10.0),
+            (15.0, 0.0),
+        ],
+    )
     def test_projection_matches(self, camera_params, world_point):
         """Verify both implementations project world points identically."""
-        geo = CameraGeometry(w=camera_params['width'], h=camera_params['height'])
+        geo = CameraGeometry(w=camera_params["width"], h=camera_params["height"])
         ieh = IntrinsicExtrinsicHomography(
-            width=camera_params['width'],
-            height=camera_params['height']
+            width=camera_params["width"], height=camera_params["height"]
         )
 
         K = CameraGeometry.get_intrinsics(
-            camera_params['zoom'],
-            camera_params['width'],
-            camera_params['height'],
-            camera_params['sensor_width_mm']
+            camera_params["zoom"],
+            camera_params["width"],
+            camera_params["height"],
+            camera_params["sensor_width_mm"],
         )
-        w_pos = np.array([0.0, 0.0, camera_params['height_m']])
+        w_pos = np.array([0.0, 0.0, camera_params["height_m"]])
 
         geo.set_camera_parameters(
-            K, w_pos,
-            camera_params['pan_deg'],
-            camera_params['tilt_deg'],
-            640, 640
+            K, w_pos, camera_params["pan_deg"], camera_params["tilt_deg"], 640, 640
         )
         H_geo = geo.H
 
         H_ieh = ieh._calculate_ground_homography(
-            K, w_pos,
-            camera_params['pan_deg'],
-            camera_params['tilt_deg']
+            K, w_pos, camera_params["pan_deg"], camera_params["tilt_deg"]
         )
 
         # Project with both
@@ -530,7 +530,7 @@ class TestHomographyConsistency:
         u_ieh = p_ieh[0, 0] / p_ieh[2, 0]
         v_ieh = p_ieh[1, 0] / p_ieh[2, 0]
 
-        pixel_diff = math.sqrt((u_geo - u_ieh)**2 + (v_geo - v_ieh)**2)
+        pixel_diff = math.sqrt((u_geo - u_ieh) ** 2 + (v_geo - v_ieh) ** 2)
         assert pixel_diff < 0.01, (
             f"Projection differs by {pixel_diff:.2f} pixels for point {world_point}"
         )
@@ -543,35 +543,30 @@ class TestGPSProjection:
     def valte_config(self):
         # Static test parameters (Valencia region test data, not current camera config)
         return {
-            'camera_lat': 39.640497,
-            'camera_lon': -0.230106,
-            'height_m': 3.4,
-            'pan_offset_deg': 66.7,
-            'pan_raw': 0.0,
-            'tilt_deg': 30.0,
-            'zoom': 1.0,
-            'width': 1920,
-            'height': 1080,
+            "camera_lat": 39.640497,
+            "camera_lon": -0.230106,
+            "height_m": 3.4,
+            "pan_offset_deg": 66.7,
+            "pan_raw": 0.0,
+            "tilt_deg": 30.0,
+            "zoom": 1.0,
+            "width": 1920,
+            "height": 1080,
         }
 
     def test_image_center_projects_to_camera_direction(self, valte_config):
         """Verify image center projects to a point along camera viewing direction."""
-        geo = CameraGeometry(w=valte_config['width'], h=valte_config['height'])
+        geo = CameraGeometry(w=valte_config["width"], h=valte_config["height"])
         K = CameraGeometry.get_intrinsics(
-            valte_config['zoom'],
-            valte_config['width'],
-            valte_config['height'],
-            7.18
+            valte_config["zoom"], valte_config["width"], valte_config["height"], 7.18
         )
-        w_pos = np.array([0.0, 0.0, valte_config['height_m']])
-        pan_deg = valte_config['pan_raw'] + valte_config['pan_offset_deg']
+        w_pos = np.array([0.0, 0.0, valte_config["height_m"]])
+        pan_deg = valte_config["pan_raw"] + valte_config["pan_offset_deg"]
 
-        geo.set_camera_parameters(K, w_pos, pan_deg, valte_config['tilt_deg'], 640, 640)
+        geo.set_camera_parameters(K, w_pos, pan_deg, valte_config["tilt_deg"], 640, 640)
 
         # Inverse project image center
-        center = np.array([[valte_config['width'] / 2],
-                           [valte_config['height'] / 2],
-                           [1.0]])
+        center = np.array([[valte_config["width"] / 2], [valte_config["height"] / 2], [1.0]])
         world_pt = geo.H_inv @ center
         x = world_pt[0, 0] / world_pt[2, 0]
         y = world_pt[1, 0] / world_pt[2, 0]
@@ -586,20 +581,19 @@ class TestGPSProjection:
 
     def test_point_in_camera_direction_projects_to_center(self, valte_config):
         """Verify a point directly in camera's view projects near image center."""
-        geo = CameraGeometry(w=valte_config['width'], h=valte_config['height'])
+        geo = CameraGeometry(w=valte_config["width"], h=valte_config["height"])
         K = CameraGeometry.get_intrinsics(
-            valte_config['zoom'],
-            valte_config['width'],
-            valte_config['height'],
-            7.18
+            valte_config["zoom"], valte_config["width"], valte_config["height"], 7.18
         )
-        w_pos = np.array([0.0, 0.0, valte_config['height_m']])
-        pan_deg = valte_config['pan_raw'] + valte_config['pan_offset_deg']
+        w_pos = np.array([0.0, 0.0, valte_config["height_m"]])
+        pan_deg = valte_config["pan_raw"] + valte_config["pan_offset_deg"]
 
-        geo.set_camera_parameters(K, w_pos, pan_deg, valte_config['tilt_deg'], 640, 640)
+        geo.set_camera_parameters(K, w_pos, pan_deg, valte_config["tilt_deg"], 640, 640)
 
         # Calculate ground distance for center projection
-        ground_distance = valte_config['height_m'] / math.tan(math.radians(valte_config['tilt_deg']))
+        ground_distance = valte_config["height_m"] / math.tan(
+            math.radians(valte_config["tilt_deg"])
+        )
 
         # Point at that distance along camera direction
         x = ground_distance * math.sin(math.radians(pan_deg))
@@ -611,11 +605,11 @@ class TestGPSProjection:
         u = img_pt[0, 0] / img_pt[2, 0]
         v = img_pt[1, 0] / img_pt[2, 0]
 
-        center_u = valte_config['width'] / 2
-        center_v = valte_config['height'] / 2
+        center_u = valte_config["width"] / 2
+        center_v = valte_config["height"] / 2
 
         # Should be near center
-        dist_from_center = math.sqrt((u - center_u)**2 + (v - center_v)**2)
+        dist_from_center = math.sqrt((u - center_u) ** 2 + (v - center_v) ** 2)
         assert dist_from_center < 50, (
             f"Point at camera direction projects to ({u:.1f}, {v:.1f}), "
             f"{dist_from_center:.1f}px from center"
@@ -623,8 +617,8 @@ class TestGPSProjection:
 
     def test_gps_round_trip(self, valte_config):
         """Verify GPS -> local XY -> GPS round trip is accurate."""
-        ref_lat = valte_config['camera_lat']
-        ref_lon = valte_config['camera_lon']
+        ref_lat = valte_config["camera_lat"]
+        ref_lon = valte_config["camera_lon"]
 
         test_points = [
             (ref_lat + 0.0001, ref_lon + 0.0001),
@@ -691,5 +685,5 @@ class TestEdgeCases:
         assert max_diff < 1e-10, f"400° and 40° should produce same rotation, diff={max_diff}"
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

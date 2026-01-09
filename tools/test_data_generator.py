@@ -15,8 +15,6 @@ Usage:
 """
 
 import argparse
-import base64
-import cv2
 import http.server
 import json
 import os
@@ -26,28 +24,37 @@ import webbrowser
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
+
+import cv2
 
 # Add parent directory to path for imports
 parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from poc_homography.gps_distance_calculator import dms_to_dd
-from poc_homography.camera_config import get_camera_by_name, get_rtsp_url, CAMERAS, USERNAME, PASSWORD
-from poc_homography.server_utils import find_available_port
 from tools.get_camera_intrinsics import get_ptz_status
+
+from poc_homography.camera_config import (
+    CAMERAS,
+    PASSWORD,
+    USERNAME,
+    get_camera_by_name,
+    get_rtsp_url,
+)
+from poc_homography.gps_distance_calculator import dms_to_dd
+from poc_homography.server_utils import find_available_port
 
 # Try to import UTMConverter for accurate coordinate conversion
 try:
     from poc_homography.coordinate_converter import UTMConverter
+
     UTM_CONVERTER_AVAILABLE = True
 except ImportError:
     UTM_CONVERTER_AVAILABLE = False
 
 
-def parse_arguments(argv: List[str]) -> argparse.Namespace:
+def parse_arguments(argv: list[str]) -> argparse.Namespace:
     """
     Parse command-line arguments.
 
@@ -64,48 +71,43 @@ def parse_arguments(argv: List[str]) -> argparse.Namespace:
         SystemExit: If arguments are invalid (argparse behavior)
     """
     parser = argparse.ArgumentParser(
-        description='Test data generator for camera calibration GCPs',
+        description="Test data generator for camera calibration GCPs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     parser.add_argument(
-        'camera_name',
-        type=str,
-        nargs='?',
-        help='Camera name (e.g., Valte, Setram)'
+        "camera_name", type=str, nargs="?", help="Camera name (e.g., Valte, Setram)"
     )
 
     parser.add_argument(
-        '--output',
+        "--output",
         type=str,
         default=None,
-        help='Output JSON file path (default: test_data_{camera}_{timestamp}.json)'
+        help="Output JSON file path (default: test_data_{camera}_{timestamp}.json)",
     )
 
     parser.add_argument(
-        '--list-cameras',
-        action='store_true',
-        help='List available cameras and exit'
+        "--list-cameras", action="store_true", help="List available cameras and exit"
     )
 
     parser.add_argument(
-        '--kml',
+        "--kml",
         type=str,
         default=None,
-        help='KML file with reference points for GPS coordinate selection'
+        help="KML file with reference points for GPS coordinate selection",
     )
 
     args = parser.parse_args(argv)
 
     # Validate that camera_name is provided if not listing cameras
     if not args.list_cameras and not args.camera_name:
-        parser.error('camera_name is required unless --list-cameras is specified')
+        parser.error("camera_name is required unless --list-cameras is specified")
 
     return args
 
 
-def validate_camera_name(camera_name: str, cameras: List[Dict]) -> None:
+def validate_camera_name(camera_name: str, cameras: list[dict]) -> None:
     """
     Validate that camera name exists in camera list.
 
@@ -116,12 +118,11 @@ def validate_camera_name(camera_name: str, cameras: List[Dict]) -> None:
     Raises:
         ValueError: If camera name not found in cameras list
     """
-    available_names = [cam['name'] for cam in cameras]
+    available_names = [cam["name"] for cam in cameras]
 
     if camera_name not in available_names:
         raise ValueError(
-            f"Camera '{camera_name}' not found. "
-            f"Available: {', '.join(available_names)}"
+            f"Camera '{camera_name}' not found. Available: {', '.join(available_names)}"
         )
 
 
@@ -137,17 +138,13 @@ def validate_gps_ranges(latitude: float, longitude: float) -> None:
         ValueError: If coordinates are outside valid ranges
     """
     if not -90.0 <= latitude <= 90.0:
-        raise ValueError(
-            f"Latitude must be between -90 and 90 degrees, got {latitude}"
-        )
+        raise ValueError(f"Latitude must be between -90 and 90 degrees, got {latitude}")
 
     if not -180.0 <= longitude <= 180.0:
-        raise ValueError(
-            f"Longitude must be between -180 and 180 degrees, got {longitude}"
-        )
+        raise ValueError(f"Longitude must be between -180 and 180 degrees, got {longitude}")
 
 
-def parse_kml_points(kml_path: str) -> List[Dict]:
+def parse_kml_points(kml_path: str) -> list[dict]:
     """
     Parse KML file and extract Point placemarks with GPS and optional UTM coordinates.
 
@@ -168,7 +165,7 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
             ...
         ]
     """
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    ns = {"kml": "http://www.opengis.net/kml/2.2"}
 
     try:
         tree = ET.parse(kml_path)
@@ -183,21 +180,21 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
     points = []
     unnamed_counter = 1
 
-    placemarks = root.findall('.//kml:Placemark', ns)
+    placemarks = root.findall(".//kml:Placemark", ns)
     if not placemarks:
-        placemarks = root.findall('.//Placemark')
+        placemarks = root.findall(".//Placemark")
 
     for placemark in placemarks:
-        point_elem = placemark.find('.//kml:Point', ns)
+        point_elem = placemark.find(".//kml:Point", ns)
         if point_elem is None:
-            point_elem = placemark.find('.//Point')
+            point_elem = placemark.find(".//Point")
 
         if point_elem is None:
             continue
 
-        name_elem = placemark.find('.//kml:name', ns)
+        name_elem = placemark.find(".//kml:name", ns)
         if name_elem is None:
-            name_elem = placemark.find('.//name')
+            name_elem = placemark.find(".//name")
 
         if name_elem is not None and name_elem.text:
             name = name_elem.text.strip()
@@ -205,48 +202,44 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
             name = f"Unnamed Point {unnamed_counter}"
             unnamed_counter += 1
 
-        coords_elem = point_elem.find('.//kml:coordinates', ns)
+        coords_elem = point_elem.find(".//kml:coordinates", ns)
         if coords_elem is None:
-            coords_elem = point_elem.find('.//coordinates')
+            coords_elem = point_elem.find(".//coordinates")
 
         if coords_elem is None or not coords_elem.text:
             continue
 
         coords_text = coords_elem.text.strip()
         try:
-            parts = coords_text.split(',')
+            parts = coords_text.split(",")
             if len(parts) < 2:
                 raise ValueError("Not enough coordinate values")
 
             longitude = float(parts[0])
             latitude = float(parts[1])
 
-            point_data = {
-                'name': name,
-                'latitude': latitude,
-                'longitude': longitude
-            }
+            point_data = {"name": name, "latitude": latitude, "longitude": longitude}
 
             # Try to extract UTM coordinates from ExtendedData
-            extended_data = placemark.find('.//kml:ExtendedData', ns)
+            extended_data = placemark.find(".//kml:ExtendedData", ns)
             if extended_data is None:
-                extended_data = placemark.find('.//ExtendedData')
+                extended_data = placemark.find(".//ExtendedData")
 
             if extended_data is not None:
-                simple_data_elems = extended_data.findall('.//kml:SimpleData', ns)
+                simple_data_elems = extended_data.findall(".//kml:SimpleData", ns)
                 if not simple_data_elems:
-                    simple_data_elems = extended_data.findall('.//SimpleData')
+                    simple_data_elems = extended_data.findall(".//SimpleData")
 
                 for sd in simple_data_elems:
-                    sd_name = sd.get('name')
+                    sd_name = sd.get("name")
                     sd_value = sd.text
                     if sd_name and sd_value:
-                        if sd_name == 'utm_easting':
-                            point_data['utm_easting'] = float(sd_value)
-                        elif sd_name == 'utm_northing':
-                            point_data['utm_northing'] = float(sd_value)
-                        elif sd_name == 'utm_crs':
-                            point_data['utm_crs'] = sd_value
+                        if sd_name == "utm_easting":
+                            point_data["utm_easting"] = float(sd_value)
+                        elif sd_name == "utm_northing":
+                            point_data["utm_northing"] = float(sd_value)
+                        elif sd_name == "utm_crs":
+                            point_data["utm_crs"] = sd_value
 
             points.append(point_data)
 
@@ -257,7 +250,7 @@ def parse_kml_points(kml_path: str) -> List[Dict]:
     return points
 
 
-def convert_kml_points_to_gps(kml_points: List[Dict]) -> List[Dict]:
+def convert_kml_points_to_gps(kml_points: list[dict]) -> list[dict]:
     """
     Convert KML points to GPS coordinates, using UTM if available for accuracy.
 
@@ -273,15 +266,14 @@ def convert_kml_points_to_gps(kml_points: List[Dict]) -> List[Dict]:
     result = []
 
     # Check if any points have UTM coordinates
-    has_utm = any('utm_easting' in p and 'utm_northing' in p for p in kml_points)
+    has_utm = any("utm_easting" in p and "utm_northing" in p for p in kml_points)
 
     utm_converter = None
     if has_utm and UTM_CONVERTER_AVAILABLE:
         try:
             # Get UTM CRS from first point that has it
             utm_crs = next(
-                (p.get('utm_crs', 'EPSG:25830') for p in kml_points if 'utm_crs' in p),
-                'EPSG:25830'
+                (p.get("utm_crs", "EPSG:25830") for p in kml_points if "utm_crs" in p), "EPSG:25830"
             )
             utm_converter = UTMConverter(utm_crs)
             print(f"Using UTM coordinates (CRS: {utm_crs}) for accurate GPS conversion")
@@ -289,29 +281,22 @@ def convert_kml_points_to_gps(kml_points: List[Dict]) -> List[Dict]:
             print(f"Warning: Could not initialize UTM converter: {e}")
 
     for point in kml_points:
-        name = point['name']
+        name = point["name"]
 
         # If we have UTM coordinates and converter, use those
-        if utm_converter and 'utm_easting' in point and 'utm_northing' in point:
-            lat, lon = utm_converter.utm_to_gps(
-                point['utm_easting'],
-                point['utm_northing']
-            )
+        if utm_converter and "utm_easting" in point and "utm_northing" in point:
+            lat, lon = utm_converter.utm_to_gps(point["utm_easting"], point["utm_northing"])
         else:
             # Use original GPS coordinates
-            lat = point['latitude']
-            lon = point['longitude']
+            lat = point["latitude"]
+            lon = point["longitude"]
 
-        result.append({
-            'name': name,
-            'latitude': lat,
-            'longitude': lon
-        })
+        result.append({"name": name, "latitude": lat, "longitude": lon})
 
     return result
 
 
-def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> Tuple[float, float]:
+def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> tuple[float, float]:
     """
     Convert GPS coordinates from DMS format to decimal degrees with validation.
 
@@ -335,7 +320,7 @@ def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> Tuple[float, float]:
     return (latitude, longitude)
 
 
-def extract_camera_parameters(camera_config: Dict) -> Dict:
+def extract_camera_parameters(camera_config: dict) -> dict:
     """
     Extract camera GPS position and height from camera config.
 
@@ -348,21 +333,17 @@ def extract_camera_parameters(camera_config: Dict) -> Dict:
     Raises:
         ValueError: If GPS conversion fails
     """
-    lat_dms = camera_config['lat']
-    lon_dms = camera_config['lon']
-    height_m = camera_config['height_m']
+    lat_dms = camera_config["lat"]
+    lon_dms = camera_config["lon"]
+    height_m = camera_config["height_m"]
 
     # Convert DMS to decimal degrees
     latitude, longitude = convert_gps_coordinates(lat_dms, lon_dms)
 
-    return {
-        'latitude': latitude,
-        'longitude': longitude,
-        'height_meters': height_m
-    }
+    return {"latitude": latitude, "longitude": longitude, "height_meters": height_m}
 
 
-def fetch_ptz_status(camera_config: Dict) -> Dict:
+def fetch_ptz_status(camera_config: dict) -> dict:
     """
     Fetch current PTZ status from camera.
 
@@ -375,15 +356,15 @@ def fetch_ptz_status(camera_config: Dict) -> Dict:
     Raises:
         RuntimeError: If PTZ status cannot be fetched
     """
-    ip = camera_config['ip']
+    ip = camera_config["ip"]
 
     try:
         ptz_data = get_ptz_status(ip, USERNAME, PASSWORD, timeout=10.0)
 
         return {
-            'pan_deg': ptz_data['pan'],
-            'tilt_deg': ptz_data['tilt'],
-            'zoom_level': ptz_data['zoom']
+            "pan_deg": ptz_data["pan"],
+            "tilt_deg": ptz_data["tilt"],
+            "zoom_level": ptz_data["zoom"],
         }
     except RuntimeError as e:
         raise RuntimeError(f"Failed to fetch PTZ status: {e}")
@@ -417,6 +398,7 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
 
     # Set timeout by reading with retries
     import time
+
     start_time = time.time()
     frame = None
 
@@ -435,7 +417,7 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
         )
 
     # Save frame to temporary file
-    temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+    temp_file = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
     temp_path = temp_file.name
     temp_file.close()
 
@@ -447,8 +429,13 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
     return temp_path
 
 
-def generate_json_output(camera_info: Dict, gcps: List[Dict], camera_name: str,
-                         output_path: Optional[str] = None, frame_path: Optional[str] = None) -> Dict[str, str]:
+def generate_json_output(
+    camera_info: dict,
+    gcps: list[dict],
+    camera_name: str,
+    output_path: str | None = None,
+    frame_path: str | None = None,
+) -> dict[str, str]:
     """
     Generate JSON output file with camera info and GCPs, and copy the frame image.
 
@@ -470,34 +457,31 @@ def generate_json_output(camera_info: Dict, gcps: List[Dict], camera_name: str,
         output_path = f"test_data_{camera_name}_{timestamp}.json"
 
     # Construct output data
-    data = {
-        "camera_info": camera_info,
-        "gcps": gcps
-    }
+    data = {"camera_info": camera_info, "gcps": gcps}
 
     # Write JSON file
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(data, f, indent=2)
 
-    result = {'json_path': output_path, 'image_path': None}
+    result = {"json_path": output_path, "image_path": None}
 
     # Copy frame image with matching filename
     if frame_path and os.path.exists(frame_path):
         # Replace .json with .jpg for the image filename
-        image_output_path = output_path.rsplit('.json', 1)[0] + '.jpg'
+        image_output_path = output_path.rsplit(".json", 1)[0] + ".jpg"
         shutil.copy2(frame_path, image_output_path)
-        result['image_path'] = image_output_path
+        result["image_path"] = image_output_path
 
     return result
 
 
 # Global variables for server state
 SERVER_STATE = {
-    'frame_path': None,
-    'camera_info': {},
-    'camera_name': None,
-    'output_path': None,
-    'kml_points': []  # List of {name, latitude, longitude} from KML file
+    "frame_path": None,
+    "camera_info": {},
+    "camera_name": None,
+    "output_path": None,
+    "kml_points": [],  # List of {name, latitude, longitude} from KML file
 }
 
 
@@ -508,7 +492,7 @@ def create_html_interface() -> str:
     Returns:
         HTML string with embedded JavaScript
     """
-    return '''<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html>
 <head>
     <title>Test Data Generator</title>
@@ -1108,7 +1092,7 @@ def create_html_interface() -> str:
         });
     </script>
 </body>
-</html>'''
+</html>"""
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -1122,31 +1106,31 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         """Handle GET requests."""
         parsed_url = urlparse(self.path)
 
-        if parsed_url.path == '/':
+        if parsed_url.path == "/":
             # Serve main HTML interface
             self.send_response(200)
-            self.send_header('Content-type', 'text/html')
+            self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(create_html_interface().encode())
 
-        elif parsed_url.path == '/api/init':
+        elif parsed_url.path == "/api/init":
             # Serve initial camera info and KML points
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header("Content-type", "application/json")
             self.end_headers()
             data = {
-                'camera_info': SERVER_STATE['camera_info'],
-                'camera_name': SERVER_STATE['camera_name'],
-                'kml_points': SERVER_STATE['kml_points']
+                "camera_info": SERVER_STATE["camera_info"],
+                "camera_name": SERVER_STATE["camera_name"],
+                "kml_points": SERVER_STATE["kml_points"],
             }
             self.wfile.write(json.dumps(data).encode())
 
-        elif parsed_url.path == '/api/image':
+        elif parsed_url.path == "/api/image":
             # Serve captured frame image
             self.send_response(200)
-            self.send_header('Content-type', 'image/jpeg')
+            self.send_header("Content-type", "image/jpeg")
             self.end_headers()
-            with open(SERVER_STATE['frame_path'], 'rb') as f:
+            with open(SERVER_STATE["frame_path"], "rb") as f:
                 self.wfile.write(f.read())
 
         else:
@@ -1155,23 +1139,23 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests."""
-        if self.path == '/api/export':
+        if self.path == "/api/export":
             # Handle JSON export
-            content_length = int(self.headers['Content-Length'])
+            content_length = int(self.headers["Content-Length"])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode())
 
             # Generate JSON output and copy image
             result = generate_json_output(
-                camera_info=data['camera_info'],
-                gcps=data['gcps'],
-                camera_name=SERVER_STATE['camera_name'],
-                output_path=SERVER_STATE['output_path'],
-                frame_path=SERVER_STATE['frame_path']
+                camera_info=data["camera_info"],
+                gcps=data["gcps"],
+                camera_name=SERVER_STATE["camera_name"],
+                output_path=SERVER_STATE["output_path"],
+                frame_path=SERVER_STATE["frame_path"],
             )
 
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
+            self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(result).encode())
         else:
@@ -1221,12 +1205,8 @@ def main():
         print(f"   Zoom: {ptz_status['zoom_level']:.1f}x")
     except RuntimeError as e:
         print(f"   Warning: {e}")
-        print(f"   Using default values (manual entry required)")
-        ptz_status = {
-            'pan_deg': 0.0,
-            'tilt_deg': 0.0,
-            'zoom_level': 1.0
-        }
+        print("   Using default values (manual entry required)")
+        ptz_status = {"pan_deg": 0.0, "tilt_deg": 0.0, "zoom_level": 1.0}
 
     # Combine camera info
     camera_info = {**camera_params, **ptz_status}
@@ -1255,24 +1235,24 @@ def main():
     print(f"\n{step_num}. Starting web server...")
 
     # Store state for server
-    SERVER_STATE['frame_path'] = frame_path
-    SERVER_STATE['camera_info'] = camera_info
-    SERVER_STATE['camera_name'] = args.camera_name
-    SERVER_STATE['output_path'] = args.output
-    SERVER_STATE['kml_points'] = kml_points
+    SERVER_STATE["frame_path"] = frame_path
+    SERVER_STATE["camera_info"] = camera_info
+    SERVER_STATE["camera_name"] = args.camera_name
+    SERVER_STATE["output_path"] = args.output
+    SERVER_STATE["kml_points"] = kml_points
 
     # Find available port
     port = find_available_port(start_port=8080, max_attempts=10)
 
-    server = http.server.HTTPServer(('localhost', port), RequestHandler)
+    server = http.server.HTTPServer(("localhost", port), RequestHandler)
 
     print(f"   Server running at http://localhost:{port}")
-    print(f"\n=== Opening browser... ===")
-    print(f"Mark GCP points by clicking on the image.")
-    print(f"Press Ctrl+C to stop the server.\n")
+    print("\n=== Opening browser... ===")
+    print("Mark GCP points by clicking on the image.")
+    print("Press Ctrl+C to stop the server.\n")
 
     # Open browser
-    webbrowser.open(f'http://localhost:{port}')
+    webbrowser.open(f"http://localhost:{port}")
 
     try:
         server.serve_forever()
@@ -1287,5 +1267,5 @@ def main():
         print("Done!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

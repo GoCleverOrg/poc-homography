@@ -4,15 +4,9 @@ Calculate ground distance between GPS coordinates using Haversine formula.
 """
 
 import math
-import numpy as np
 
-from poc_homography.coordinate_converter import (
-    EARTH_RADIUS_M,
-    gps_to_local_xy,
-    local_xy_to_gps
-)
+from poc_homography.coordinate_converter import EARTH_RADIUS_M, gps_to_local_xy
 from poc_homography.types import Degrees, Meters
-
 
 
 def dms_to_dd(dms_str: str) -> Degrees:
@@ -28,17 +22,17 @@ def dms_to_dd(dms_str: str) -> Degrees:
     dms_str = dms_str[:-1]
 
     # Split degrees, minutes, seconds
-    parts = dms_str.replace('°', ' ').replace("'", ' ').replace('"', '').split()
+    parts = dms_str.replace("°", " ").replace("'", " ").replace('"', "").split()
 
     degrees = float(parts[0])
     minutes = float(parts[1]) if len(parts) > 1 else 0.0
     seconds = float(parts[2]) if len(parts) > 2 else 0.0
 
     # Calculate decimal degrees
-    dd = degrees + minutes/60.0 + seconds/3600.0
+    dd = degrees + minutes / 60.0 + seconds / 3600.0
 
     # Apply direction (West and South are negative)
-    if direction in ['W', 'S']:
+    if direction in ["W", "S"]:
         dd = -dd
 
     return dd
@@ -64,9 +58,11 @@ def haversine_distance(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: Degree
     delta_lon = math.radians(lon2 - lon1)
 
     # Haversine formula
-    a = math.sin(delta_lat/2)**2 + \
-        math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    a = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     distance = R * c
 
@@ -85,8 +81,9 @@ def bearing_between_points(lat1: Degrees, lon1: Degrees, lat2: Degrees, lon2: De
     delta_lon = math.radians(lon2 - lon1)
 
     x = math.sin(delta_lon) * math.cos(lat2_rad)
-    y = math.cos(lat1_rad) * math.sin(lat2_rad) - \
-        math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(delta_lon)
+    y = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(
+        lat2_rad
+    ) * math.cos(delta_lon)
 
     bearing_rad = math.atan2(x, y)
     bearing_deg = math.degrees(bearing_rad)
@@ -110,9 +107,9 @@ def dd_to_dms(dd: Degrees, is_latitude: bool = True) -> str:
     """
     # Determine direction
     if is_latitude:
-        direction = 'N' if dd >= 0 else 'S'
+        direction = "N" if dd >= 0 else "S"
     else:
-        direction = 'E' if dd >= 0 else 'W'
+        direction = "E" if dd >= 0 else "W"
 
     # Work with absolute value
     dd_abs = abs(dd)
@@ -126,8 +123,9 @@ def dd_to_dms(dd: Degrees, is_latitude: bool = True) -> str:
     return f"{degrees}°{minutes}'{seconds:.1f}\"{direction}"
 
 
-def compare_distances(camera_gps: dict, point_gps: dict,
-                      homography_distance: float, verbose: bool = True):
+def compare_distances(
+    camera_gps: dict, point_gps: dict, homography_distance: float, verbose: bool = True
+):
     """
     Compare homography distance with actual GPS distance.
 
@@ -172,32 +170,32 @@ def compare_distances(camera_gps: dict, point_gps: dict,
     }
 
     if verbose:
-        print("="*70)
+        print("=" * 70)
         print("GPS DISTANCE VALIDATION")
-        print("="*70)
+        print("=" * 70)
 
-        print(f"\nCamera GPS:")
+        print("\nCamera GPS:")
         print(f"  DMS: {camera_gps['lat']}, {camera_gps['lon']}")
         print(f"  DD:  {cam_lat_dd:.6f}°, {cam_lon_dd:.6f}°")
 
-        print(f"\nPoint GPS:")
+        print("\nPoint GPS:")
         print(f"  DMS: {point_gps['lat']}, {point_gps['lon']}")
         print(f"  DD:  {pt_lat_dd:.6f}°, {pt_lon_dd:.6f}°")
 
-        print(f"\nDistance Comparison:")
+        print("\nDistance Comparison:")
         print(f"  GPS Distance (Haversine):  {gps_distance:.2f} m")
         print(f"  Homography Distance:       {homography_distance:.2f} m")
         print(f"  Error:                     {error_m:+.2f} m ({error_pct:+.1f}%)")
 
-        print(f"\nGeometry:")
+        print("\nGeometry:")
         print(f"  Bearing: {bearing:.1f}° ({get_cardinal_direction(bearing)})")
         print(f"  Local X (East):  {x_local:+.2f} m")
         print(f"  Local Y (North): {y_local:+.2f} m")
 
         # Assessment
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("ASSESSMENT:")
-        print("="*70)
+        print("=" * 70)
 
         abs_error = abs(error_m)
         if abs_error < 0.5:
@@ -221,25 +219,41 @@ def compare_distances(camera_gps: dict, point_gps: dict,
         print(f"   Relative error: {abs(error_pct):.1f}%")
 
         if abs_error > 1.0:
-            print(f"\n   Possible causes:")
+            print("\n   Possible causes:")
             if error_m > 0:
-                print(f"   • Homography overestimates distance")
-                print(f"   • Camera height may be set too high")
-                print(f"   • Tilt angle may need calibration")
+                print("   • Homography overestimates distance")
+                print("   • Camera height may be set too high")
+                print("   • Tilt angle may need calibration")
             else:
-                print(f"   • Homography underestimates distance")
-                print(f"   • Camera height may be set too low")
-                print(f"   • Ground not perfectly flat")
+                print("   • Homography underestimates distance")
+                print("   • Camera height may be set too low")
+                print("   • Ground not perfectly flat")
 
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
     return results
 
 
 def get_cardinal_direction(bearing: float) -> str:
     """Convert bearing to cardinal direction."""
-    directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    directions = [
+        "N",
+        "NNE",
+        "NE",
+        "ENE",
+        "E",
+        "ESE",
+        "SE",
+        "SSE",
+        "S",
+        "SSW",
+        "SW",
+        "WSW",
+        "W",
+        "WNW",
+        "NW",
+        "NNW",
+    ]
     index = round(bearing / 22.5) % 16
     return directions[index]
 
@@ -249,8 +263,12 @@ def main():
     import sys
 
     if len(sys.argv) < 7:
-        print("Usage: python gps_distance_calculator.py CAM_LAT CAM_LON POINT_LAT POINT_LON HOMOGRAPHY_DIST")
-        print('Example: python gps_distance_calculator.py "39°38\'25.7\\"N" "0°13\'48.7\\"W" "39°38\'25.6\\"N" "0°13\'48.4\\"W" 3.44')
+        print(
+            "Usage: python gps_distance_calculator.py CAM_LAT CAM_LON POINT_LAT POINT_LON HOMOGRAPHY_DIST"
+        )
+        print(
+            'Example: python gps_distance_calculator.py "39°38\'25.7\\"N" "0°13\'48.7\\"W" "39°38\'25.6\\"N" "0°13\'48.4\\"W" 3.44'
+        )
         sys.exit(1)
 
     camera_gps = {"lat": sys.argv[1], "lon": sys.argv[2]}

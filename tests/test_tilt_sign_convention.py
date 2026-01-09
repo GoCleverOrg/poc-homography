@@ -11,6 +11,7 @@ Issue #29: Fix tilt convention double negation causing inverted projections
 """
 
 import math
+
 import numpy as np
 import pytest
 
@@ -24,10 +25,7 @@ class TestTiltSignConvention:
     def homography_provider(self):
         """Create a standard homography provider for testing."""
         return IntrinsicExtrinsicHomography(
-            width=2560,
-            height=1440,
-            sensor_width_mm=7.18,
-            base_focal_length_mm=5.9
+            width=2560, height=1440, sensor_width_mm=7.18, base_focal_length_mm=5.9
         )
 
     def test_positive_tilt_projects_ahead(self, homography_provider):
@@ -49,13 +47,13 @@ class TestTiltSignConvention:
         result = homography_provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': homography_provider.get_intrinsics(zoom, 2560, 1440),
-                'camera_position': np.array([0.0, 0.0, camera_height]),
-                'pan_deg': pan_deg,
-                'tilt_deg': tilt_deg,  # Pass raw value, NOT negated
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_matrix": homography_provider.get_intrinsics(zoom, 2560, 1440),
+                "camera_position": np.array([0.0, 0.0, camera_height]),
+                "pan_deg": pan_deg,
+                "tilt_deg": tilt_deg,  # Pass raw value, NOT negated
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         assert result.confidence > 0, "Homography should be valid"
@@ -84,13 +82,13 @@ class TestTiltSignConvention:
         result = homography_provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': homography_provider.get_intrinsics(1.0, 2560, 1440),
-                'camera_position': np.array([0.0, 0.0, camera_height]),
-                'pan_deg': 0.0,
-                'tilt_deg': tilt_deg,
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_matrix": homography_provider.get_intrinsics(1.0, 2560, 1440),
+                "camera_position": np.array([0.0, 0.0, camera_height]),
+                "pan_deg": 0.0,
+                "tilt_deg": tilt_deg,
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         # Project image center
@@ -119,18 +117,18 @@ class TestTiltSignConvention:
         result = homography_provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': homography_provider.get_intrinsics(1.0, 2560, 1440),
-                'camera_position': np.array([0.0, 0.0, 5.0]),
-                'pan_deg': 0.0,
-                'tilt_deg': 30.0,
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_matrix": homography_provider.get_intrinsics(1.0, 2560, 1440),
+                "camera_position": np.array([0.0, 0.0, 5.0]),
+                "pan_deg": 0.0,
+                "tilt_deg": 30.0,
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         # Project bottom and top of image center column
         bottom_point = homography_provider.project_point_to_map((1280, 1340))  # Near bottom
-        top_point = homography_provider.project_point_to_map((1280, 200))      # Near top
+        top_point = homography_provider.project_point_to_map((1280, 200))  # Near top
 
         # Check both projections are valid (not on horizon)
         if bottom_point.y > 0 and top_point.y > 0:
@@ -161,13 +159,13 @@ class TestTiltSignConvention:
         homography_provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': homography_provider.get_intrinsics(1.0, 2560, 1440),
-                'camera_position': np.array([0.0, 0.0, camera_height]),
-                'pan_deg': 0.0,
-                'tilt_deg': tilt_a,
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_matrix": homography_provider.get_intrinsics(1.0, 2560, 1440),
+                "camera_position": np.array([0.0, 0.0, camera_height]),
+                "pan_deg": 0.0,
+                "tilt_deg": tilt_a,
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
         point_a = homography_provider.project_point_to_map((1280, 720))
         distance_a = math.sqrt(point_a.x**2 + point_a.y**2)
@@ -176,13 +174,13 @@ class TestTiltSignConvention:
         homography_provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': homography_provider.get_intrinsics(1.0, 2560, 1440),
-                'camera_position': np.array([0.0, 0.0, camera_height]),
-                'pan_deg': 0.0,
-                'tilt_deg': tilt_b,
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_matrix": homography_provider.get_intrinsics(1.0, 2560, 1440),
+                "camera_position": np.array([0.0, 0.0, camera_height]),
+                "pan_deg": 0.0,
+                "tilt_deg": tilt_b,
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
         point_b = homography_provider.project_point_to_map((1280, 720))
         distance_b = math.sqrt(point_b.x**2 + point_b.y**2)
@@ -206,24 +204,24 @@ class TestTiltSignConvention:
         """
         # Simulate camera reporting positive tilt (pointing down)
         camera_status = {
-            'pan': 45.0,
-            'tilt': 25.0,  # Hikvision: positive = down
-            'zoom': 1.0
+            "pan": 45.0,
+            "tilt": 25.0,  # Hikvision: positive = down
+            "zoom": 1.0,
         }
 
         # Pass directly without negation (correct way)
         result = homography_provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': homography_provider.get_intrinsics(
-                    camera_status['zoom'], 2560, 1440
+                "camera_matrix": homography_provider.get_intrinsics(
+                    camera_status["zoom"], 2560, 1440
                 ),
-                'camera_position': np.array([0.0, 0.0, 5.0]),
-                'pan_deg': camera_status['pan'],
-                'tilt_deg': camera_status['tilt'],  # Direct, no negation
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_position": np.array([0.0, 0.0, 5.0]),
+                "pan_deg": camera_status["pan"],
+                "tilt_deg": camera_status["tilt"],  # Direct, no negation
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         assert result.confidence > 0, "Homography should be valid with direct tilt"
@@ -249,13 +247,13 @@ class TestTiltSignConsistency:
         result = provider.compute_homography(
             frame=None,
             reference={
-                'camera_matrix': provider.get_intrinsics(1.0, 2560, 1440),
-                'camera_position': np.array([0.0, 0.0, 10.0]),
-                'pan_deg': 0.0,
-                'tilt_deg': 45.0,  # 45 degrees down
-                'map_width': 640,
-                'map_height': 640,
-            }
+                "camera_matrix": provider.get_intrinsics(1.0, 2560, 1440),
+                "camera_position": np.array([0.0, 0.0, 10.0]),
+                "pan_deg": 0.0,
+                "tilt_deg": 45.0,  # 45 degrees down
+                "map_width": 640,
+                "map_height": 640,
+            },
         )
 
         # At 45 degrees and 10m height, distance should be ~10m
@@ -268,5 +266,5 @@ class TestTiltSignConsistency:
         )
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

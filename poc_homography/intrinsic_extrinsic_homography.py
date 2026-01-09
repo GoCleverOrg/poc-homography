@@ -14,21 +14,22 @@ Coordinate Systems:
     - Image Frame: origin top-left, u=right, v=down (pixels)
 """
 
-import numpy as np
-import math
 import logging
-from typing import List, Tuple, Dict, Any, Optional
+import math
+from typing import Any
 
+import numpy as np
+
+from poc_homography.coordinate_converter import local_xy_to_gps
 from poc_homography.homography_interface import (
+    GPSPositionMixin,
+    HomographyApproach,
     HomographyProviderExtended,
     HomographyResult,
-    WorldPoint,
     MapCoordinate,
-    HomographyApproach,
-    GPSPositionMixin
+    WorldPoint,
 )
-from poc_homography.coordinate_converter import local_xy_to_gps
-from poc_homography.types import Degrees, Meters, Pixels, Millimeters, Unitless
+from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
 
@@ -78,35 +79,35 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
     # Confidence thresholds based on homography matrix determinant
     # These values are empirically determined from typical camera configurations
-    DET_THRESHOLD_INVALID = 1e-6    # Below this: homography is degenerate
-    DET_THRESHOLD_LOW = 1e-3        # Below this: low confidence
-    DET_THRESHOLD_HIGH = 1e3        # Above this: possible numerical issues
+    DET_THRESHOLD_INVALID = 1e-6  # Below this: homography is degenerate
+    DET_THRESHOLD_LOW = 1e-3  # Below this: low confidence
+    DET_THRESHOLD_HIGH = 1e3  # Above this: possible numerical issues
 
     # Condition number thresholds for numerical stability assessment
     # High condition numbers indicate the matrix is sensitive to small input changes
     COND_THRESHOLD_DEGENERATE = 1e10  # Matrix is numerically degenerate
-    COND_THRESHOLD_UNSTABLE = 1e6     # Matrix is numerically unstable
-    COND_THRESHOLD_MARGINAL = 1e3     # Matrix is marginally stable
+    COND_THRESHOLD_UNSTABLE = 1e6  # Matrix is numerically unstable
+    COND_THRESHOLD_MARGINAL = 1e3  # Matrix is marginally stable
 
     # Confidence penalty multipliers for various conditions
-    CONFIDENCE_PENALTY_UNSTABLE = 0.5    # Applied when condition number > COND_THRESHOLD_UNSTABLE
-    CONFIDENCE_PENALTY_MARGINAL = 0.9    # Applied when condition number > COND_THRESHOLD_MARGINAL
+    CONFIDENCE_PENALTY_UNSTABLE = 0.5  # Applied when condition number > COND_THRESHOLD_UNSTABLE
+    CONFIDENCE_PENALTY_MARGINAL = 0.9  # Applied when condition number > COND_THRESHOLD_MARGINAL
     CONFIDENCE_PENALTY_BAD_HEIGHT = 0.5  # Applied when camera height <= 0
-    CONFIDENCE_PENALTY_BAD_TILT = 0.8    # Applied when tilt outside [-90, 90]
-    CONFIDENCE_LARGE_DET = 0.7           # Confidence for very large determinant
+    CONFIDENCE_PENALTY_BAD_TILT = 0.8  # Applied when tilt outside [-90, 90]
+    CONFIDENCE_LARGE_DET = 0.7  # Confidence for very large determinant
 
     # Gimbal lock threshold - angles within this range of ±90° cause numerical instability
-    GIMBAL_LOCK_THRESHOLD_DEG = 0.1      # Degrees from ±90° considered gimbal lock zone
-    CONFIDENCE_PENALTY_GIMBAL_LOCK = 0.3 # Severe penalty for near-gimbal-lock configuration
+    GIMBAL_LOCK_THRESHOLD_DEG = 0.1  # Degrees from ±90° considered gimbal lock zone
+    CONFIDENCE_PENALTY_GIMBAL_LOCK = 0.3  # Severe penalty for near-gimbal-lock configuration
 
     # Edge factor constants for point confidence calculation
-    EDGE_FACTOR_CENTER = 1.0             # Confidence factor at image center
-    EDGE_FACTOR_EDGE = 0.7               # Confidence factor at image edges
-    EDGE_FACTOR_CORNER_DECAY = 0.2       # Decay rate beyond edge radius
-    EDGE_FACTOR_MIN = 0.3                # Minimum edge factor
+    EDGE_FACTOR_CENTER = 1.0  # Confidence factor at image center
+    EDGE_FACTOR_EDGE = 0.7  # Confidence factor at image edges
+    EDGE_FACTOR_CORNER_DECAY = 0.2  # Decay rate beyond edge radius
+    EDGE_FACTOR_MIN = 0.3  # Minimum edge factor
 
     # Roll validation thresholds (consistent with CameraGeometry)
-    ROLL_WARN_THRESHOLD = 5.0   # Warning when |roll_deg| > 5.0
+    ROLL_WARN_THRESHOLD = 5.0  # Warning when |roll_deg| > 5.0
     ROLL_ERROR_THRESHOLD = 15.0  # Error when |roll_deg| > 15.0
 
     def __init__(
@@ -116,8 +117,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         pixels_per_meter: Unitless = Unitless(100.0),
         sensor_width_mm: Millimeters = Millimeters(7.18),
         base_focal_length_mm: Millimeters = Millimeters(5.9),
-        calibration_table: Optional[Dict[float, Dict[str, float]]] = None,
-        **kwargs  # Accept and ignore other kwargs for forward compatibility
+        calibration_table: dict[float, dict[str, float]] | None = None,
+        **kwargs,  # Accept and ignore other kwargs for forward compatibility
     ):
         """
         Initialize intrinsic/extrinsic homography provider.
@@ -146,7 +147,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         """
         # Validate image dimensions
         if width <= 0 or height <= 0:
-            raise ValueError(f"Image dimensions must be positive, got width={width}, height={height}")
+            raise ValueError(
+                f"Image dimensions must be positive, got width={width}, height={height}"
+            )
 
         self.width = width
         self.height = height
@@ -165,23 +168,20 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self.map_height = 640
 
         # GPS reference point for WorldPoint conversion
-        self._camera_gps_lat: Optional[float] = None
-        self._camera_gps_lon: Optional[float] = None
+        self._camera_gps_lat: float | None = None
+        self._camera_gps_lon: float | None = None
 
         # Current roll angle (degrees, default 0.0 for backward compatibility)
         self.roll_deg: float = 0.0
 
         # Last used camera parameters (for metadata)
-        self._last_camera_matrix: Optional[np.ndarray] = None
-        self._last_camera_position: Optional[np.ndarray] = None
-        self._last_pan_deg: Optional[float] = None
-        self._last_tilt_deg: Optional[float] = None
-        self._last_roll_deg: Optional[float] = None
+        self._last_camera_matrix: np.ndarray | None = None
+        self._last_camera_position: np.ndarray | None = None
+        self._last_pan_deg: float | None = None
+        self._last_tilt_deg: float | None = None
+        self._last_roll_deg: float | None = None
 
-    def _interpolate_calibration_params(
-        self,
-        zoom_factor: float
-    ) -> Optional[Dict[str, float]]:
+    def _interpolate_calibration_params(self, zoom_factor: float) -> dict[str, float] | None:
         """
         Interpolate intrinsic parameters from calibration table for given zoom factor.
 
@@ -215,7 +215,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 "fx": float(params["fx"]),
                 "fy": float(params["fy"]),
                 "cx": float(params["cx"]),
-                "cy": float(params["cy"])
+                "cy": float(params["cy"]),
             }
 
         # Clamp to valid range (no extrapolation)
@@ -226,7 +226,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 "fx": float(params["fx"]),
                 "fy": float(params["fy"]),
                 "cx": float(params["cx"]),
-                "cy": float(params["cy"])
+                "cy": float(params["cy"]),
             }
 
         if zoom_factor >= zoom_levels[-1]:
@@ -236,7 +236,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                 "fx": float(params["fx"]),
                 "fy": float(params["fy"]),
                 "cx": float(params["cx"]),
-                "cy": float(params["cy"])
+                "cy": float(params["cy"]),
             }
 
         # Find bracketing zoom levels
@@ -256,7 +256,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
                     "fx": params_low["fx"] + (params_high["fx"] - params_low["fx"]) * t,
                     "fy": params_low["fy"] + (params_high["fy"] - params_low["fy"]) * t,
                     "cx": params_low["cx"] + (params_high["cx"] - params_low["cx"]) * t,
-                    "cy": params_low["cy"] + (params_high["cy"] - params_low["cy"]) * t
+                    "cy": params_low["cy"] + (params_high["cy"] - params_low["cy"]) * t,
                 }
 
         # Should never reach here, but return None as fallback
@@ -265,9 +265,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     def get_intrinsics(
         self,
         zoom_factor: Unitless,
-        width_px: Optional[Pixels] = None,
-        height_px: Optional[Pixels] = None,
-        sensor_width_mm: Optional[Millimeters] = None
+        width_px: Pixels | None = None,
+        height_px: Pixels | None = None,
+        sensor_width_mm: Millimeters | None = None,
     ) -> np.ndarray:
         """
         Calculate camera intrinsic matrix K from zoom factor and sensor specs.
@@ -321,11 +321,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             cy = calibration_params["cy"]
 
             # Construct intrinsic matrix from calibrated values
-            K = np.array([
-                [fx, 0.0, cx],
-                [0.0, fy, cy],
-                [0.0, 0.0, 1.0]
-            ])
+            K = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
             return K
 
         # Fallback to linear approximation
@@ -347,17 +343,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         cx, cy = width_px / 2.0, height_px / 2.0
 
         # Construct intrinsic matrix
-        K = np.array([
-            [f_px, 0.0, cx],
-            [0.0, f_px, cy],
-            [0.0, 0.0, 1.0]
-        ])
+        K = np.array([[f_px, 0.0, cx], [0.0, f_px, cy], [0.0, 0.0, 1.0]])
         return K
 
-    def get_distortion_coefficients(
-        self,
-        zoom_factor: Unitless
-    ) -> Optional[np.ndarray]:
+    def get_distortion_coefficients(self, zoom_factor: Unitless) -> np.ndarray | None:
         """
         Get distortion coefficients for given zoom factor from calibration table.
 
@@ -399,36 +388,42 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         if len(zoom_levels) == 1:
             single_zoom = zoom_levels[0]
             params = self.calibration_table[single_zoom]
-            return np.array([
-                float(params["k1"]),
-                float(params["k2"]),
-                float(params["p1"]),
-                float(params["p2"]),
-                float(params["k3"])
-            ])
+            return np.array(
+                [
+                    float(params["k1"]),
+                    float(params["k2"]),
+                    float(params["p1"]),
+                    float(params["p2"]),
+                    float(params["k3"]),
+                ]
+            )
 
         # Clamp to valid range (no extrapolation)
         if zoom_factor <= zoom_levels[0]:
             # Below minimum: use lowest calibrated zoom
             params = self.calibration_table[zoom_levels[0]]
-            return np.array([
-                float(params["k1"]),
-                float(params["k2"]),
-                float(params["p1"]),
-                float(params["p2"]),
-                float(params["k3"])
-            ])
+            return np.array(
+                [
+                    float(params["k1"]),
+                    float(params["k2"]),
+                    float(params["p1"]),
+                    float(params["p2"]),
+                    float(params["k3"]),
+                ]
+            )
 
         if zoom_factor >= zoom_levels[-1]:
             # Above maximum: use highest calibrated zoom
             params = self.calibration_table[zoom_levels[-1]]
-            return np.array([
-                float(params["k1"]),
-                float(params["k2"]),
-                float(params["p1"]),
-                float(params["p2"]),
-                float(params["k3"])
-            ])
+            return np.array(
+                [
+                    float(params["k1"]),
+                    float(params["k2"]),
+                    float(params["p1"]),
+                    float(params["p2"]),
+                    float(params["k3"]),
+                ]
+            )
 
         # Find bracketing zoom levels and interpolate
         for i in range(len(zoom_levels) - 1):
@@ -455,10 +450,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         return None
 
     def _get_rotation_matrix(
-        self,
-        pan_deg: Degrees,
-        tilt_deg: Degrees,
-        roll_deg: Degrees = Degrees(0.0)
+        self, pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees = Degrees(0.0)
     ) -> np.ndarray:
         """
         Calculate rotation matrix from world to camera coordinates.
@@ -509,36 +501,38 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         #   Xc = Xw
         #   Yc = -Zw
         #   Zc = Yw
-        R_base = np.array([
-            [1.0,  0.0,  0.0],
-            [0.0,  0.0, -1.0],
-            [0.0,  1.0,  0.0]
-        ])
+        R_base = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
 
         # Pan rotation around world Z-axis (yaw)
         # Positive pan = clockwise from above = camera looks right
-        Rz_pan = np.array([
-            [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
-            [math.sin(pan_rad),  math.cos(pan_rad), 0.0],
-            [0.0,                0.0,               1.0]
-        ])
+        Rz_pan = np.array(
+            [
+                [math.cos(pan_rad), -math.sin(pan_rad), 0.0],
+                [math.sin(pan_rad), math.cos(pan_rad), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
         # Roll rotation around camera Z-axis (optical axis)
         # Positive roll = clockwise when looking from behind camera (along +Z axis)
         # This rotates the image plane around the optical axis
-        Rz_roll = np.array([
-            [math.cos(roll_rad), -math.sin(roll_rad), 0.0],
-            [math.sin(roll_rad),  math.cos(roll_rad), 0.0],
-            [0.0,                 0.0,                1.0]
-        ])
+        Rz_roll = np.array(
+            [
+                [math.cos(roll_rad), -math.sin(roll_rad), 0.0],
+                [math.sin(roll_rad), math.cos(roll_rad), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
         # Tilt rotation around camera X-axis (pitch)
         # Positive tilt = camera looks down
-        Rx_tilt = np.array([
-            [1.0,  0.0,                0.0],
-            [0.0,  math.cos(tilt_rad), -math.sin(tilt_rad)],
-            [0.0,  math.sin(tilt_rad),  math.cos(tilt_rad)]
-        ])
+        Rx_tilt = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+                [0.0, math.sin(tilt_rad), math.cos(tilt_rad)],
+            ]
+        )
 
         # Full rotation: first pan in world, then base transform, then roll in camera, then tilt in camera
         # R_world_to_cam = R_tilt @ R_roll @ R_base @ R_pan
@@ -551,7 +545,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         camera_position: np.ndarray,
         pan_deg: Degrees,
         tilt_deg: Degrees,
-        roll_deg: Degrees = Degrees(0.0)
+        roll_deg: Degrees = Degrees(0.0),
     ) -> np.ndarray:
         """
         Calculate homography matrix mapping world ground plane (Z=0) to image.
@@ -632,7 +626,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # Normalize so H[2, 2] = 1 for consistent scale
         if abs(H[2, 2]) < self.MIN_DET_THRESHOLD:
             logger.warning(
-                f"Homography normalization failed (H[2,2]={H[2,2]:.2e}). Returning identity."
+                f"Homography normalization failed (H[2,2]={H[2, 2]:.2e}). Returning identity."
             )
             return np.eye(3)
 
@@ -643,8 +637,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     def _calculate_confidence(
         self,
         H: np.ndarray,
-        camera_position: Optional[np.ndarray] = None,
-        tilt_deg: Optional[float] = None
+        camera_position: np.ndarray | None = None,
+        tilt_deg: float | None = None,
     ) -> float:
         """
         Calculate confidence score for the homography matrix.
@@ -719,9 +713,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         return confidence
 
     def _calculate_point_confidence(
-        self,
-        image_point: Tuple[float, float],
-        base_confidence: float
+        self, image_point: tuple[float, float], base_confidence: float
     ) -> float:
         """
         Calculate per-point confidence based on distance from image center.
@@ -755,16 +747,21 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # Linear falloff: CENTER at center, EDGE at edges, decays toward corners
         if dist_from_center < 1.0:
             # Interpolate from CENTER (1.0) to EDGE (0.7) within the image boundary
-            edge_factor = self.EDGE_FACTOR_CENTER - (self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE) * dist_from_center
+            edge_factor = (
+                self.EDGE_FACTOR_CENTER
+                - (self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE) * dist_from_center
+            )
         else:
             # Beyond edge, decay further toward minimum
-            edge_factor = self.EDGE_FACTOR_EDGE - self.EDGE_FACTOR_CORNER_DECAY * (dist_from_center - 1.0)
+            edge_factor = self.EDGE_FACTOR_EDGE - self.EDGE_FACTOR_CORNER_DECAY * (
+                dist_from_center - 1.0
+            )
 
         edge_factor = max(self.EDGE_FACTOR_MIN, min(self.EDGE_FACTOR_CENTER, edge_factor))
 
         return base_confidence * edge_factor
 
-    def _local_to_gps(self, x_meters: Meters, y_meters: Meters) -> Tuple[Degrees, Degrees]:
+    def _local_to_gps(self, x_meters: Meters, y_meters: Meters) -> tuple[Degrees, Degrees]:
         """
         Convert local metric coordinates to GPS coordinates.
 
@@ -782,21 +779,13 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             RuntimeError: If camera GPS position not set
         """
         if self._camera_gps_lat is None or self._camera_gps_lon is None:
-            raise RuntimeError(
-                "Camera GPS position not set. Call set_camera_gps_position() first."
-            )
+            raise RuntimeError("Camera GPS position not set. Call set_camera_gps_position() first.")
 
-        return local_xy_to_gps(
-            self._camera_gps_lat,
-            self._camera_gps_lon,
-            x_meters,
-            y_meters
-        )
+        return local_xy_to_gps(self._camera_gps_lat, self._camera_gps_lon, x_meters, y_meters)
 
     def _project_image_point_to_world(
-        self,
-        image_point: Tuple[float, float]
-    ) -> Tuple[Meters, Meters]:
+        self, image_point: tuple[float, float]
+    ) -> tuple[Meters, Meters]:
         """
         Project image point to world ground plane coordinates (meters).
 
@@ -825,12 +814,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         return x_world, y_world
 
     def _world_to_map_pixels(
-        self,
-        x_world: Meters,
-        y_world: Meters,
-        map_width: Pixels,
-        map_height: Pixels
-    ) -> Tuple[int, int]:
+        self, x_world: Meters, y_world: Meters, map_width: Pixels, map_height: Pixels
+    ) -> tuple[int, int]:
         """
         Convert world coordinates (meters) to map pixel coordinates.
 
@@ -860,11 +845,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     # HomographyProvider Interface Implementation
     # =========================================================================
 
-    def compute_homography(
-        self,
-        frame: np.ndarray,
-        reference: Dict[str, Any]
-    ) -> HomographyResult:
+    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """
         Compute homography from camera parameters.
 
@@ -890,20 +871,24 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         """
         # Validate reference data
         required_keys = [
-            'camera_matrix', 'camera_position', 'pan_deg',
-            'tilt_deg', 'map_width', 'map_height'
+            "camera_matrix",
+            "camera_position",
+            "pan_deg",
+            "tilt_deg",
+            "map_width",
+            "map_height",
         ]
         for key in required_keys:
             if key not in reference:
                 raise ValueError(f"Missing required reference key: '{key}'")
 
-        K = reference['camera_matrix']
-        camera_position = reference['camera_position']
-        pan_deg = reference['pan_deg']
-        tilt_deg = reference['tilt_deg']
-        roll_deg = reference.get('roll_deg', 0.0)  # Default to 0.0 for backward compatibility
-        map_width = reference['map_width']
-        map_height = reference['map_height']
+        K = reference["camera_matrix"]
+        camera_position = reference["camera_position"]
+        pan_deg = reference["pan_deg"]
+        tilt_deg = reference["tilt_deg"]
+        roll_deg = reference.get("roll_deg", 0.0)  # Default to 0.0 for backward compatibility
+        map_width = reference["map_width"]
+        map_height = reference["map_height"]
 
         # Validate inputs
         if not isinstance(K, np.ndarray) or K.shape != (3, 3):
@@ -911,14 +896,13 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         if not isinstance(camera_position, np.ndarray) or len(camera_position) != 3:
             raise ValueError(
-                f"camera_position must be array of 3 elements [X, Y, Z], "
-                f"got {len(camera_position)}"
+                f"camera_position must be array of 3 elements [X, Y, Z], got {len(camera_position)}"
             )
 
         if camera_position[2] <= 0:
             logger.warning(
                 "Camera height (Z=%s) should be positive for ground plane homography.",
-                camera_position[2]
+                camera_position[2],
             )
 
         # Validate and clamp tilt angle to valid range [-90, 90] degrees
@@ -926,7 +910,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             logger.warning(
                 "Tilt angle (%.2f degrees) is outside valid range [-90, 90]. "
                 "Clamping to valid range.",
-                tilt_deg
+                tilt_deg,
             )
             tilt_deg = max(-90.0, min(90.0, tilt_deg))
 
@@ -935,7 +919,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             logger.warning(
                 "Tilt angle (%.2f degrees) is near ±90° gimbal lock zone. "
                 "Homography may be numerically unstable.",
-                tilt_deg
+                tilt_deg,
             )
 
         # Validate roll angle (consistent with CameraGeometry)
@@ -950,7 +934,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             logger.warning(
                 "Roll angle (%.2f degrees) is unusually large (>%.1f degrees). "
                 "Typical camera mount roll is ±2 degrees.",
-                roll_deg, self.ROLL_WARN_THRESHOLD
+                roll_deg,
+                self.ROLL_WARN_THRESHOLD,
             )
 
         # Store map dimensions
@@ -963,10 +948,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # Calculate inverse homography
         det_H = np.linalg.det(self.H)
         if abs(det_H) < self.MIN_DET_THRESHOLD:
-            logger.warning(
-                "Homography is singular (det=%.2e). Inverse may be unstable.",
-                det_H
-            )
+            logger.warning("Homography is singular (det=%.2e). Inverse may be unstable.", det_H)
             self.H_inv = np.eye(3)
             self.confidence = 0.0
         else:
@@ -983,22 +965,20 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         # Build metadata
         metadata = {
-            'approach': HomographyApproach.INTRINSIC_EXTRINSIC.value,
-            'camera_position': camera_position.tolist(),
-            'pan_deg': pan_deg,
-            'tilt_deg': tilt_deg,
-            'roll_deg': roll_deg,
-            'determinant': det_H,
-            'map_dimensions': (map_width, map_height)
+            "approach": HomographyApproach.INTRINSIC_EXTRINSIC.value,
+            "camera_position": camera_position.tolist(),
+            "pan_deg": pan_deg,
+            "tilt_deg": tilt_deg,
+            "roll_deg": roll_deg,
+            "determinant": det_H,
+            "map_dimensions": (map_width, map_height),
         }
 
         return HomographyResult(
-            homography_matrix=self.H.copy(),
-            confidence=self.confidence,
-            metadata=metadata
+            homography_matrix=self.H.copy(), confidence=self.confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: Tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
         """
         Project image point to GPS world coordinates.
 
@@ -1037,16 +1017,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # Calculate point-specific confidence
         point_confidence = self._calculate_point_confidence(image_point, self.confidence)
 
-        return WorldPoint(
-            latitude=latitude,
-            longitude=longitude,
-            confidence=point_confidence
-        )
+        return WorldPoint(latitude=latitude, longitude=longitude, confidence=point_confidence)
 
-    def project_points(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[WorldPoint]:
+    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
         """
         Project multiple image points to GPS world coordinates.
 
@@ -1106,10 +1079,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     # HomographyProviderExtended Interface Implementation
     # =========================================================================
 
-    def project_point_to_map(
-        self,
-        image_point: Tuple[float, float]
-    ) -> MapCoordinate:
+    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
         """
         Project image point to local map coordinates.
 
@@ -1143,13 +1113,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             x=x_world,
             y=y_world,
             confidence=point_confidence,
-            elevation=0.0  # Ground plane assumption
+            elevation=0.0,  # Ground plane assumption
         )
 
-    def project_points_to_map(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[MapCoordinate]:
+    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
         """
         Project multiple image points to local map coordinates.
 
@@ -1180,11 +1147,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
     # =========================================================================
 
     def project_image_to_map(
-        self,
-        pts: List[Tuple[int, int]],
-        sw: int,
-        sh: int
-    ) -> List[Tuple[int, int]]:
+        self, pts: list[tuple[int, int]], sw: int, sh: int
+    ) -> list[tuple[int, int]]:
         """
         Project image coordinates to map visualization pixel coordinates.
 
@@ -1237,12 +1201,8 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         return pts_map
 
     def world_to_map(
-        self,
-        Xw: float,
-        Yw: float,
-        sw: Optional[int] = None,
-        sh: Optional[int] = None
-    ) -> Tuple[int, int]:
+        self, Xw: float, Yw: float, sw: int | None = None, sh: int | None = None
+    ) -> tuple[int, int]:
         """
         Convert world coordinates (meters) to map pixel coordinates.
 
@@ -1264,7 +1224,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         return self._world_to_map_pixels(Xw, Yw, sw, sh)
 
-    def get_camera_position(self) -> Optional[np.ndarray]:
+    def get_camera_position(self) -> np.ndarray | None:
         """
         Get the last used camera position in world coordinates.
 

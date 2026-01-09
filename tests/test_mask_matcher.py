@@ -9,16 +9,17 @@ Tests verify:
 - Correlation scoring for various mask configurations
 """
 
-import unittest
-import sys
 import os
+import sys
+import unittest
+from abc import ABC
+
 import numpy as np
-from abc import ABC, abstractmethod
 
 # Add parent directory to path to import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from poc_homography.mask_matcher import MaskMatcher, DistanceTransformMatcher
+from poc_homography.mask_matcher import DistanceTransformMatcher, MaskMatcher
 
 
 class TestMaskMatcherInterface(unittest.TestCase):
@@ -30,8 +31,8 @@ class TestMaskMatcherInterface(unittest.TestCase):
 
     def test_mask_matcher_has_compute_correlation_method(self):
         """Verify MaskMatcher defines abstract compute_correlation method."""
-        self.assertTrue(hasattr(MaskMatcher, 'compute_correlation'))
-        self.assertTrue(getattr(MaskMatcher.compute_correlation, '__isabstractmethod__', False))
+        self.assertTrue(hasattr(MaskMatcher, "compute_correlation"))
+        self.assertTrue(getattr(MaskMatcher.compute_correlation, "__isabstractmethod__", False))
 
     def test_cannot_instantiate_mask_matcher(self):
         """Verify MaskMatcher cannot be directly instantiated."""
@@ -54,7 +55,7 @@ class TestDistanceTransformMatcherInterface(unittest.TestCase):
     def test_distance_transform_matcher_implements_compute_correlation(self):
         """Verify DistanceTransformMatcher implements compute_correlation method."""
         matcher = DistanceTransformMatcher()
-        self.assertTrue(callable(getattr(matcher, 'compute_correlation', None)))
+        self.assertTrue(callable(getattr(matcher, "compute_correlation", None)))
 
 
 class TestDistanceTransformMatcherEdgeCases(unittest.TestCase):
@@ -123,7 +124,7 @@ class TestDistanceTransformMatcherEdgeCases(unittest.TestCase):
             (mask_small, mask_small),
             (mask_small, mask_large),
             (mask_small, mask_shifted),
-            (mask_large, mask_shifted)
+            (mask_large, mask_shifted),
         ]
 
         for mask1, mask2 in test_pairs:
@@ -169,8 +170,9 @@ class TestDistanceTransformMatcherCorrelation(unittest.TestCase):
         score = self.matcher.compute_correlation(mask, mask)
 
         # Identical masks should have very high correlation
-        self.assertGreater(score, 0.9,
-                          f"Identical masks should yield correlation > 0.9, got {score}")
+        self.assertGreater(
+            score, 0.9, f"Identical masks should yield correlation > 0.9, got {score}"
+        )
 
     def test_shifted_masks_yield_lower_correlation(self):
         """Verify shifted masks yield correlation < 1.0, decreasing with shift."""
@@ -191,12 +193,12 @@ class TestDistanceTransformMatcherCorrelation(unittest.TestCase):
         score_large_shift = self.matcher.compute_correlation(mask_ref, mask_shifted_large)
 
         # Shifted masks should have lower correlation
-        self.assertLess(score_small_shift, score_identical,
-                       "Small shift should reduce correlation")
+        self.assertLess(score_small_shift, score_identical, "Small shift should reduce correlation")
 
         # Larger shift should have even lower correlation
-        self.assertLess(score_large_shift, score_small_shift,
-                       "Larger shift should reduce correlation more")
+        self.assertLess(
+            score_large_shift, score_small_shift, "Larger shift should reduce correlation more"
+        )
 
     def test_different_masks_yield_low_correlation(self):
         """
@@ -218,13 +220,17 @@ class TestDistanceTransformMatcherCorrelation(unittest.TestCase):
 
         # Masks in opposite corners should have low correlation
         # Using 0.4 threshold as masks ~72% of diagonal apart yield ~0.37 score
-        self.assertLess(score, 0.4,
-                       f"Masks in opposite corners should yield correlation < 0.4, got {score}")
+        self.assertLess(
+            score, 0.4, f"Masks in opposite corners should yield correlation < 0.4, got {score}"
+        )
 
         # Verify it's significantly lower than identical masks
         score_identical = self.matcher.compute_correlation(mask_topleft, mask_topleft)
-        self.assertLess(score, score_identical * 0.5,
-                       "Different location masks should score less than half of identical masks")
+        self.assertLess(
+            score,
+            score_identical * 0.5,
+            "Different location masks should score less than half of identical masks",
+        )
 
 
 class TestDistanceTransformProperties(unittest.TestCase):
@@ -259,9 +265,10 @@ class TestDistanceTransformProperties(unittest.TestCase):
             dist_at_center = dist_transform[center_y, center_x]
 
             # Center should have higher distance than edge
-            self.assertGreaterEqual(dist_at_center, dist_at_edge,
-                                   "Distance should increase moving away from edges")
+            self.assertGreaterEqual(
+                dist_at_center, dist_at_edge, "Distance should increase moving away from edges"
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

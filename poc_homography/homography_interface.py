@@ -18,7 +18,8 @@ The interface supports multiple homography computation approaches:
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Tuple, Optional, List, Dict, Any
+from typing import Any
+
 import numpy as np
 
 
@@ -85,6 +86,7 @@ class WorldPoint:
         confidence: Confidence score for this projection, range [0.0, 1.0]
             where 1.0 indicates highest confidence
     """
+
     latitude: float
     longitude: float
     confidence: float
@@ -112,10 +114,11 @@ class MapCoordinate:
         confidence: Confidence score for this projection, range [0.0, 1.0]
         elevation: Optional elevation above ground plane in meters
     """
+
     x: float
     y: float
     confidence: float
-    elevation: Optional[float] = None
+    elevation: float | None = None
 
     def __post_init__(self):
         """Validate confidence range."""
@@ -144,9 +147,10 @@ class HomographyResult:
             - 'timestamp': When homography was computed
             - 'camera_pose': Camera rotation and translation (intrinsic/extrinsic)
     """
+
     homography_matrix: np.ndarray
     confidence: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validate homography matrix and confidence."""
@@ -181,8 +185,9 @@ class GPSPositionMixin:
         provider.compute_homography(frame, reference)      # Then compute homography
         world_point = provider.project_point((1280, 720)) # Now projection works
     """
-    _camera_gps_lat: Optional[float]
-    _camera_gps_lon: Optional[float]
+
+    _camera_gps_lat: float | None
+    _camera_gps_lon: float | None
 
     def set_camera_gps_position(self, lat: float, lon: float) -> None:
         """
@@ -238,11 +243,7 @@ class HomographyProvider(ABC):
     """
 
     @abstractmethod
-    def compute_homography(
-        self,
-        frame: np.ndarray,
-        reference: Dict[str, Any]
-    ) -> HomographyResult:
+    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """Compute homography matrix from image frame to ground plane.
 
         This method analyzes the input frame and reference data to compute
@@ -277,7 +278,7 @@ class HomographyProvider(ABC):
         pass
 
     @abstractmethod
-    def project_point(self, image_point: Tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
         """Project single image coordinate to world coordinate (GPS).
 
         Transforms a 2D image point to a GPS coordinate using the most
@@ -307,10 +308,7 @@ class HomographyProvider(ABC):
         pass
 
     @abstractmethod
-    def project_points(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[WorldPoint]:
+    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
         """Project multiple image points to world coordinates (GPS).
 
         Batch version of project_point() for efficiency when projecting
@@ -383,10 +381,7 @@ class HomographyProviderExtended(HomographyProvider):
     """
 
     @abstractmethod
-    def project_point_to_map(
-        self,
-        image_point: Tuple[float, float]
-    ) -> MapCoordinate:
+    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
         """Project image coordinate to local map coordinate system.
 
         Args:
@@ -401,10 +396,7 @@ class HomographyProviderExtended(HomographyProvider):
         pass
 
     @abstractmethod
-    def project_points_to_map(
-        self,
-        image_points: List[Tuple[float, float]]
-    ) -> List[MapCoordinate]:
+    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
         """Project multiple image points to local map coordinates.
 
         Args:
@@ -420,10 +412,10 @@ class HomographyProviderExtended(HomographyProvider):
 
 
 def validate_homography_matrix(
-    matrix: Optional[np.ndarray],
+    matrix: np.ndarray | None,
     confidence: float,
     confidence_threshold: float,
-    min_det_threshold: float = 1e-15
+    min_det_threshold: float = 1e-15,
 ) -> bool:
     """
     Validate a homography matrix for use in projections.

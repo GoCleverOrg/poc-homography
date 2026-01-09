@@ -14,10 +14,10 @@ Tests cover:
 6. Comparison of GPS vs UTM accuracy
 """
 
-import math
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).parent.parent)
@@ -25,14 +25,13 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from poc_homography.coordinate_converter import (
-    gps_to_local_xy,
-    local_xy_to_gps,
+    DEFAULT_UTM_CRS,
+    PYPROJ_AVAILABLE,
     GCPCoordinateConverter,
     UTMConverter,
-    PYPROJ_AVAILABLE,
-    DEFAULT_UTM_CRS
+    gps_to_local_xy,
+    local_xy_to_gps,
 )
-
 
 # Test data: Valencia area coordinates (EPSG:25830)
 VALENCIA_REF_LAT = 39.640472
@@ -46,23 +45,26 @@ class TestEquirectangularProjection:
 
     def test_gps_to_local_xy_identity(self):
         """Reference point should map to origin."""
-        x, y = gps_to_local_xy(VALENCIA_REF_LAT, VALENCIA_REF_LON,
-                               VALENCIA_REF_LAT, VALENCIA_REF_LON)
+        x, y = gps_to_local_xy(
+            VALENCIA_REF_LAT, VALENCIA_REF_LON, VALENCIA_REF_LAT, VALENCIA_REF_LON
+        )
         assert abs(x) < 0.001
         assert abs(y) < 0.001
 
     def test_gps_to_local_xy_north_displacement(self):
         """Point north of reference should have positive Y."""
         # 1 degree north (about 111km)
-        x, y = gps_to_local_xy(VALENCIA_REF_LAT, VALENCIA_REF_LON,
-                               VALENCIA_REF_LAT + 1.0, VALENCIA_REF_LON)
+        x, y = gps_to_local_xy(
+            VALENCIA_REF_LAT, VALENCIA_REF_LON, VALENCIA_REF_LAT + 1.0, VALENCIA_REF_LON
+        )
         assert abs(x) < 10  # Small X drift is acceptable
         assert 110000 < y < 112000  # Approximately 111 km
 
     def test_gps_to_local_xy_east_displacement(self):
         """Point east of reference should have positive X."""
-        x, y = gps_to_local_xy(VALENCIA_REF_LAT, VALENCIA_REF_LON,
-                               VALENCIA_REF_LAT, VALENCIA_REF_LON + 0.001)
+        x, y = gps_to_local_xy(
+            VALENCIA_REF_LAT, VALENCIA_REF_LON, VALENCIA_REF_LAT, VALENCIA_REF_LON + 0.001
+        )
         assert x > 0
         assert abs(y) < 1
 
@@ -178,10 +180,7 @@ class TestGCPCoordinateConverter:
         converter = GCPCoordinateConverter()
         converter.set_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
-        point = {
-            'latitude': VALENCIA_REF_LAT + 0.0001,
-            'longitude': VALENCIA_REF_LON + 0.0001
-        }
+        point = {"latitude": VALENCIA_REF_LAT + 0.0001, "longitude": VALENCIA_REF_LON + 0.0001}
         x, y = converter.convert_point(point)
 
         # Should produce reasonable small displacements (~8-11m)
@@ -193,10 +192,7 @@ class TestGCPCoordinateConverter:
         converter = GCPCoordinateConverter()
         converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
 
-        point = {
-            'utm_easting': VALENCIA_REF_UTM_E + 100,
-            'utm_northing': VALENCIA_REF_UTM_N + 50
-        }
+        point = {"utm_easting": VALENCIA_REF_UTM_E + 100, "utm_northing": VALENCIA_REF_UTM_N + 50}
         x, y = converter.convert_point(point)
 
         assert abs(x - 100) < 0.01
@@ -209,10 +205,10 @@ class TestGCPCoordinateConverter:
 
         # Point with both coordinate types (UTM is accurate, GPS is slightly off)
         point = {
-            'latitude': VALENCIA_REF_LAT + 0.001,  # Different from UTM
-            'longitude': VALENCIA_REF_LON + 0.001,
-            'utm_easting': VALENCIA_REF_UTM_E + 100,  # Exact offset
-            'utm_northing': VALENCIA_REF_UTM_N + 50
+            "latitude": VALENCIA_REF_LAT + 0.001,  # Different from UTM
+            "longitude": VALENCIA_REF_LON + 0.001,
+            "utm_easting": VALENCIA_REF_UTM_E + 100,  # Exact offset
+            "utm_northing": VALENCIA_REF_UTM_N + 50,
         }
         x, y = converter.convert_point(point)
 
@@ -281,10 +277,7 @@ class TestEquirectangularFallback:
         assert converter.using_utm is False
         assert "Equirectangular" in converter.method_name
 
-        point = {
-            'latitude': VALENCIA_REF_LAT + 0.0001,
-            'longitude': VALENCIA_REF_LON + 0.0001
-        }
+        point = {"latitude": VALENCIA_REF_LAT + 0.0001, "longitude": VALENCIA_REF_LON + 0.0001}
         x, y = converter.convert_point(point)
 
         # Should still produce reasonable results
@@ -303,11 +296,11 @@ class TestGCPPointStructures:
         converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
 
         gcp_point = {
-            'latitude': VALENCIA_REF_LAT + 0.0001,
-            'longitude': VALENCIA_REF_LON + 0.0001,
-            'utm_easting': VALENCIA_REF_UTM_E + 10,
-            'utm_northing': VALENCIA_REF_UTM_N + 10,
-            'utm_crs': 'EPSG:25830'
+            "latitude": VALENCIA_REF_LAT + 0.0001,
+            "longitude": VALENCIA_REF_LON + 0.0001,
+            "utm_easting": VALENCIA_REF_UTM_E + 10,
+            "utm_northing": VALENCIA_REF_UTM_N + 10,
+            "utm_crs": "EPSG:25830",
         }
 
         x, y = converter.convert_point(gcp_point)
@@ -322,7 +315,7 @@ class TestGCPPointStructures:
         converter = GCPCoordinateConverter(prefer_utm=False)
         converter.set_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
-        invalid_point = {'some_other_field': 123}
+        invalid_point = {"some_other_field": 123}
 
         with pytest.raises(ValueError):
             converter.convert_point(invalid_point)
@@ -352,5 +345,5 @@ class TestCoordinateConverterEdgeCases:
             gps_to_local_xy(89.0, 0, 89.1, 0)
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

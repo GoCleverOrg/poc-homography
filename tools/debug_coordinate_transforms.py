@@ -18,6 +18,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from pyproj import Transformer
+
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 
 # Constants
@@ -106,33 +107,42 @@ def analyze_transformation_discrepancy():
     points_data = []
     for px, py, name in test_pixels:
         lat, lon, easting, northing = pyproj_pixel_to_latlon(px, py)
-        points_data.append({
-            'name': name,
-            'px': px, 'py': py,
-            'lat': lat, 'lon': lon,
-            'easting': easting, 'northing': northing
-        })
-        print(f"{name:20s} pixel({px:4d},{py:4d}) → UTM({easting:.2f}, {northing:.2f}) → ({lat:.8f}, {lon:.8f})")
+        points_data.append(
+            {
+                "name": name,
+                "px": px,
+                "py": py,
+                "lat": lat,
+                "lon": lon,
+                "easting": easting,
+                "northing": northing,
+            }
+        )
+        print(
+            f"{name:20s} pixel({px:4d},{py:4d}) → UTM({easting:.2f}, {northing:.2f}) → ({lat:.8f}, {lon:.8f})"
+        )
 
     # Get reference point (use top-left as reference for equirectangular)
-    ref_lat = points_data[0]['lat']
-    ref_lon = points_data[0]['lon']
+    ref_lat = points_data[0]["lat"]
+    ref_lon = points_data[0]["lon"]
 
     print(f"\n2. USING TOP-LEFT AS REFERENCE: ({ref_lat:.8f}, {ref_lon:.8f})")
     print("-" * 80)
 
     print("\n3. COMPARE: UTM distances vs Equirectangular distances from reference")
     print("-" * 80)
-    print(f"{'Point':<20} {'UTM ΔE(m)':<12} {'UTM ΔN(m)':<12} {'Equi ΔX(m)':<12} {'Equi ΔY(m)':<12} {'Err X(m)':<10} {'Err Y(m)':<10} {'Err %':<10}")
+    print(
+        f"{'Point':<20} {'UTM ΔE(m)':<12} {'UTM ΔN(m)':<12} {'Equi ΔX(m)':<12} {'Equi ΔY(m)':<12} {'Err X(m)':<10} {'Err Y(m)':<10} {'Err %':<10}"
+    )
 
     errors = []
     for p in points_data:
         # UTM distance from reference
-        utm_dx = p['easting'] - points_data[0]['easting']
-        utm_dy = p['northing'] - points_data[0]['northing']
+        utm_dx = p["easting"] - points_data[0]["easting"]
+        utm_dy = p["northing"] - points_data[0]["northing"]
 
         # Equirectangular distance from reference
-        equi_x, equi_y = equirect_gps_to_local_xy(ref_lat, ref_lon, p['lat'], p['lon'])
+        equi_x, equi_y = equirect_gps_to_local_xy(ref_lat, ref_lon, p["lat"], p["lon"])
 
         # Error
         err_x = equi_x - utm_dx
@@ -142,15 +152,22 @@ def analyze_transformation_discrepancy():
         err_dist = math.sqrt(err_x**2 + err_y**2)
         err_pct = (err_dist / utm_dist * 100) if utm_dist > 0 else 0
 
-        errors.append({
-            'name': p['name'],
-            'utm_dx': utm_dx, 'utm_dy': utm_dy,
-            'equi_x': equi_x, 'equi_y': equi_y,
-            'err_x': err_x, 'err_y': err_y,
-            'err_pct': err_pct
-        })
+        errors.append(
+            {
+                "name": p["name"],
+                "utm_dx": utm_dx,
+                "utm_dy": utm_dy,
+                "equi_x": equi_x,
+                "equi_y": equi_y,
+                "err_x": err_x,
+                "err_y": err_y,
+                "err_pct": err_pct,
+            }
+        )
 
-        print(f"{p['name']:<20} {utm_dx:<12.3f} {utm_dy:<12.3f} {equi_x:<12.3f} {equi_y:<12.3f} {err_x:<10.3f} {err_y:<10.3f} {err_pct:<10.2f}%")
+        print(
+            f"{p['name']:<20} {utm_dx:<12.3f} {utm_dy:<12.3f} {equi_x:<12.3f} {equi_y:<12.3f} {err_x:<10.3f} {err_y:<10.3f} {err_pct:<10.2f}%"
+        )
 
     print("\n4. SCALING ANALYSIS")
     print("-" * 80)
@@ -160,13 +177,12 @@ def analyze_transformation_discrepancy():
     bottom_right = points_data[3]
 
     utm_diagonal = math.sqrt(
-        (bottom_right['easting'] - top_left['easting'])**2 +
-        (bottom_right['northing'] - top_left['northing'])**2
+        (bottom_right["easting"] - top_left["easting"]) ** 2
+        + (bottom_right["northing"] - top_left["northing"]) ** 2
     )
 
     equi_diagonal_x, equi_diagonal_y = equirect_gps_to_local_xy(
-        top_left['lat'], top_left['lon'],
-        bottom_right['lat'], bottom_right['lon']
+        top_left["lat"], top_left["lon"], bottom_right["lat"], bottom_right["lon"]
     )
     equi_diagonal = math.sqrt(equi_diagonal_x**2 + equi_diagonal_y**2)
 
@@ -178,14 +194,16 @@ def analyze_transformation_discrepancy():
     print(f"Scale error:                      {(scale_factor - 1) * 100:.4f}%")
 
     # Separate X and Y scale factors
-    utm_width = bottom_right['easting'] - top_left['easting']
-    utm_height = top_left['northing'] - bottom_right['northing']  # Note: northing decreases going down
+    utm_width = bottom_right["easting"] - top_left["easting"]
+    utm_height = (
+        top_left["northing"] - bottom_right["northing"]
+    )  # Note: northing decreases going down
 
     scale_x = equi_diagonal_x / utm_width if utm_width != 0 else 1
     scale_y = -equi_diagonal_y / utm_height if utm_height != 0 else 1  # Note sign
 
-    print(f"\nScale factor X (East-West):       {scale_x:.8f} ({(scale_x-1)*100:.4f}% error)")
-    print(f"Scale factor Y (North-South):     {scale_y:.8f} ({(scale_y-1)*100:.4f}% error)")
+    print(f"\nScale factor X (East-West):       {scale_x:.8f} ({(scale_x - 1) * 100:.4f}% error)")
+    print(f"Scale factor Y (North-South):     {scale_y:.8f} ({(scale_y - 1) * 100:.4f}% error)")
 
     print("\n5. ROOT CAUSE ANALYSIS")
     print("-" * 80)
@@ -220,7 +238,9 @@ KEY DIFFERENCES:
         px2, py2, _, _ = pyproj_latlon_to_pixel(lat, lon)
         err_px = px2 - px
         err_py = py2 - py
-        print(f"  {name}: ({px},{py}) → ({lat:.8f},{lon:.8f}) → ({px2:.3f},{py2:.3f})  error: ({err_px:.6f}, {err_py:.6f}) pixels")
+        print(
+            f"  {name}: ({px},{py}) → ({lat:.8f},{lon:.8f}) → ({px2:.3f},{py2:.3f})  error: ({err_px:.6f}, {err_py:.6f}) pixels"
+        )
 
     print("\n7. SUGGESTED FIX")
     print("-" * 80)
@@ -287,15 +307,18 @@ def load_geotiff_params(camera_name: str):
         sys.exit(1)
 
     if "geotiff_params" not in camera_config:
-        print(f"Error: Camera '{camera_name}' does not have 'geotiff_params' configured.", file=sys.stderr)
+        print(
+            f"Error: Camera '{camera_name}' does not have 'geotiff_params' configured.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     geotiff_params = camera_config["geotiff_params"]
 
     # Handle both new (geotransform) and legacy (origin_easting, etc.) formats
-    if 'geotransform' in geotiff_params:
+    if "geotransform" in geotiff_params:
         # New format: extract values from geotransform array
-        gt = geotiff_params['geotransform']
+        gt = geotiff_params["geotransform"]
         origin_easting = gt[0]
         origin_northing = gt[3]
         gsd = abs(gt[1])  # GSD is always positive (pixel width)
@@ -305,7 +328,10 @@ def load_geotiff_params(camera_name: str):
         missing_params = [p for p in required_params if p not in geotiff_params]
 
         if missing_params:
-            print(f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}", file=sys.stderr)
+            print(
+                f"Error: Camera '{camera_name}' geotiff_params missing required fields: {', '.join(missing_params)}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         origin_easting = geotiff_params["origin_easting"]
@@ -314,7 +340,10 @@ def load_geotiff_params(camera_name: str):
 
     # Validate utm_crs (required in both formats)
     if "utm_crs" not in geotiff_params:
-        print(f"Error: Camera '{camera_name}' geotiff_params missing 'utm_crs' field.", file=sys.stderr)
+        print(
+            f"Error: Camera '{camera_name}' geotiff_params missing 'utm_crs' field.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     utm_crs = geotiff_params["utm_crs"]
@@ -322,7 +351,7 @@ def load_geotiff_params(camera_name: str):
     return origin_easting, origin_northing, gsd, utm_crs
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Debug tool to analyze coordinate transformation discrepancies"
@@ -331,19 +360,13 @@ if __name__ == '__main__':
         "--camera",
         type=str,
         default="Valte",
-        help="Camera name to load georeferencing parameters from (default: Valte)"
+        help="Camera name to load georeferencing parameters from (default: Valte)",
     )
     parser.add_argument(
-        "px",
-        type=float,
-        nargs="?",
-        help="Pixel X coordinate for specific point test (optional)"
+        "px", type=float, nargs="?", help="Pixel X coordinate for specific point test (optional)"
     )
     parser.add_argument(
-        "py",
-        type=float,
-        nargs="?",
-        help="Pixel Y coordinate for specific point test (optional)"
+        "py", type=float, nargs="?", help="Pixel Y coordinate for specific point test (optional)"
     )
     args = parser.parse_args()
 

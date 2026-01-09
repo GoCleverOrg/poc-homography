@@ -10,25 +10,25 @@ Tests cover:
 - CalibrationHistory persistence
 """
 
-import pytest
-import numpy as np
 from datetime import datetime
-from pathlib import Path
 
+import numpy as np
+import pytest
+
+from poc_homography.calibration_history import (
+    CalibrationHistory,
+    CalibrationHistoryEntry,
+)
 from poc_homography.height_calibration import (
     CalibrationPoint,
     CalibrationResult,
     HeightCalibrator,
 )
-from poc_homography.calibration_history import (
-    CalibrationHistory,
-    CalibrationHistoryEntry,
-)
-
 
 # ============================================================================
 # Mock Classes
 # ============================================================================
+
 
 class MockCameraGeometry:
     """Mock CameraGeometry that projects pixel (1, 1) to a given world coordinate."""
@@ -44,11 +44,7 @@ class MockCameraGeometry:
         # H_inv such that [1, 1, 1]^T @ H_inv gives [world_x, world_y, 1]
         # For homogeneous coords: H_inv @ [px, py, 1] = [Xw, Yw, W]
         # We want: [world_x, world_y, 1] for pixel [1, 1, 1]
-        self.H_inv = np.array([
-            [world_x, 0, 0],
-            [0, world_y, 0],
-            [0, 0, 1.0]
-        ])
+        self.H_inv = np.array([[world_x, 0, 0], [0, world_y, 0], [0, 0, 1.0]])
 
 
 class MockCameraGeometryHorizon:
@@ -56,16 +52,19 @@ class MockCameraGeometryHorizon:
 
     def __init__(self):
         # H_inv that results in W=0 (horizon point)
-        self.H_inv = np.array([
-            [1.0, 0, 0],
-            [0, 1.0, 0],
-            [0, 0, 0.0]  # This makes W = 0
-        ])
+        self.H_inv = np.array(
+            [
+                [1.0, 0, 0],
+                [0, 1.0, 0],
+                [0, 0, 0.0],  # This makes W = 0
+            ]
+        )
 
 
 # ============================================================================
 # Test: CalibrationPoint Dataclass
 # ============================================================================
+
 
 class TestCalibrationPoint:
     """Tests for CalibrationPoint dataclass."""
@@ -81,7 +80,7 @@ class TestCalibrationPoint:
             world_y=10.0,
             gps_distance=11.18,
             homography_distance=11.18,
-            current_height=5.0
+            current_height=5.0,
         )
 
         assert point.pixel_x == 100.0
@@ -97,15 +96,27 @@ class TestCalibrationPoint:
     def test_all_fields_exist(self):
         """Verify all required fields exist."""
         point = CalibrationPoint(
-            pixel_x=0, pixel_y=0, gps_lat=0, gps_lon=0,
-            world_x=0, world_y=0, gps_distance=0,
-            homography_distance=0, current_height=0
+            pixel_x=0,
+            pixel_y=0,
+            gps_lat=0,
+            gps_lon=0,
+            world_x=0,
+            world_y=0,
+            gps_distance=0,
+            homography_distance=0,
+            current_height=0,
         )
 
         required_fields = [
-            'pixel_x', 'pixel_y', 'gps_lat', 'gps_lon',
-            'world_x', 'world_y', 'gps_distance',
-            'homography_distance', 'current_height'
+            "pixel_x",
+            "pixel_y",
+            "gps_lat",
+            "gps_lon",
+            "world_x",
+            "world_y",
+            "gps_distance",
+            "homography_distance",
+            "current_height",
         ]
 
         for field in required_fields:
@@ -115,6 +126,7 @@ class TestCalibrationPoint:
 # ============================================================================
 # Test: CalibrationResult Dataclass
 # ============================================================================
+
 
 class TestCalibrationResult:
     """Tests for CalibrationResult dataclass."""
@@ -126,7 +138,7 @@ class TestCalibrationResult:
             confidence_interval=(5.2, 5.8),
             inlier_count=7,
             outlier_count=2,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         assert result.estimated_height == 5.5
@@ -141,7 +153,7 @@ class TestCalibrationResult:
             confidence_interval=(4.8, 5.2),
             inlier_count=5,
             outlier_count=0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # calibration_points should default to empty list
@@ -152,6 +164,7 @@ class TestCalibrationResult:
 # ============================================================================
 # Test: HeightCalibrator Initialization
 # ============================================================================
+
 
 class TestHeightCalibratorInit:
     """Tests for HeightCalibrator initialization."""
@@ -195,6 +208,7 @@ class TestHeightCalibratorInit:
 # Test: HeightCalibrator Point Management
 # ============================================================================
 
+
 class TestHeightCalibratorPoints:
     """Tests for HeightCalibrator point management methods."""
 
@@ -216,7 +230,7 @@ class TestHeightCalibratorPoints:
             gps_lat=39.640500,  # Slightly north of camera
             gps_lon=-0.230150,  # Slightly east of camera
             current_height=5.0,
-            geo=geo
+            geo=geo,
         )
 
         assert point.pixel_x == 1.0
@@ -234,12 +248,7 @@ class TestHeightCalibratorPoints:
 
         with pytest.raises(ValueError, match="too close to horizon"):
             calibrator.add_point(
-                pixel_x=1.0,
-                pixel_y=1.0,
-                gps_lat=39.64,
-                gps_lon=-0.23,
-                current_height=5.0,
-                geo=geo
+                pixel_x=1.0, pixel_y=1.0, gps_lat=39.64, gps_lon=-0.23, current_height=5.0, geo=geo
             )
 
     def test_clear_points(self, calibrator):
@@ -260,7 +269,7 @@ class TestHeightCalibratorPoints:
         geo = MockCameraGeometry(world_x=3.0, world_y=4.0)
 
         for i in range(3):
-            calibrator.add_point(1, 1, 39.64 + i*0.0001, -0.23, 5.0, geo)
+            calibrator.add_point(1, 1, 39.64 + i * 0.0001, -0.23, 5.0, geo)
 
         assert calibrator.is_ready() is True
 
@@ -278,6 +287,7 @@ class TestHeightCalibratorPoints:
 # Test: Height Estimation
 # ============================================================================
 
+
 class TestHeightEstimation:
     """Tests for height estimation methods."""
 
@@ -288,12 +298,15 @@ class TestHeightEstimation:
         # Create point where GPS distance is 2x homography distance
         # This means height should be 2x current
         point = CalibrationPoint(
-            pixel_x=1, pixel_y=1,
-            gps_lat=39.64, gps_lon=-0.23,
-            world_x=3.0, world_y=4.0,
+            pixel_x=1,
+            pixel_y=1,
+            gps_lat=39.64,
+            gps_lon=-0.23,
+            world_x=3.0,
+            world_y=4.0,
             gps_distance=10.0,  # GPS says 10m
             homography_distance=5.0,  # Homography says 5m
-            current_height=5.0
+            current_height=5.0,
         )
 
         estimated = calibrator.estimate_height_from_point(point)
@@ -307,12 +320,15 @@ class TestHeightEstimation:
 
         # Create point where GPS distance is 0.5x homography distance
         point = CalibrationPoint(
-            pixel_x=1, pixel_y=1,
-            gps_lat=39.64, gps_lon=-0.23,
-            world_x=3.0, world_y=4.0,
+            pixel_x=1,
+            pixel_y=1,
+            gps_lat=39.64,
+            gps_lon=-0.23,
+            world_x=3.0,
+            world_y=4.0,
             gps_distance=5.0,  # GPS says 5m
             homography_distance=10.0,  # Homography says 10m
-            current_height=10.0
+            current_height=10.0,
         )
 
         estimated = calibrator.estimate_height_from_point(point)
@@ -325,12 +341,15 @@ class TestHeightEstimation:
         calibrator = HeightCalibrator({"lat": 39.64, "lon": -0.23}, min_points=1)
 
         point = CalibrationPoint(
-            pixel_x=1, pixel_y=1,
-            gps_lat=39.64, gps_lon=-0.23,
-            world_x=0, world_y=0,
+            pixel_x=1,
+            pixel_y=1,
+            gps_lat=39.64,
+            gps_lon=-0.23,
+            world_x=0,
+            world_y=0,
             gps_distance=10.0,
             homography_distance=0.0,  # Invalid
-            current_height=5.0
+            current_height=5.0,
         )
 
         with pytest.raises(ValueError, match="near-zero homography distance"):
@@ -366,6 +385,7 @@ class TestHeightEstimation:
 # Test: Least-Squares Optimization
 # ============================================================================
 
+
 class TestOptimization:
     """Tests for least-squares optimization."""
 
@@ -379,12 +399,15 @@ class TestOptimization:
         for i in range(6):
             calibrator.calibration_points.append(
                 CalibrationPoint(
-                    pixel_x=i, pixel_y=i,
-                    gps_lat=39.64, gps_lon=-0.23,
-                    world_x=3.0 + i*0.1, world_y=4.0 + i*0.1,
-                    gps_distance=6.0 + i*0.1,  # GPS says ~6m
-                    homography_distance=5.0 + i*0.1,  # Homography says ~5m
-                    current_height=5.0
+                    pixel_x=i,
+                    pixel_y=i,
+                    gps_lat=39.64,
+                    gps_lon=-0.23,
+                    world_x=3.0 + i * 0.1,
+                    world_y=4.0 + i * 0.1,
+                    gps_distance=6.0 + i * 0.1,  # GPS says ~6m
+                    homography_distance=5.0 + i * 0.1,  # Homography says ~5m
+                    current_height=5.0,
                 )
             )
 
@@ -429,6 +452,7 @@ class TestOptimization:
 # Test: Outlier Detection
 # ============================================================================
 
+
 class TestOutlierDetection:
     """Tests for outlier detection methods."""
 
@@ -465,9 +489,7 @@ class TestOutlierDetection:
         np.random.seed(42)  # For reproducibility
         estimates = [5.0, 5.1, 4.9, 5.0, 5.2, 10.0]
 
-        inliers, indices = calibrator._detect_outliers_ransac(
-            estimates, threshold_ratio=0.1
-        )
+        inliers, indices = calibrator._detect_outliers_ransac(estimates, threshold_ratio=0.1)
 
         # The outlier (10.0) should be excluded
         assert 10.0 not in inliers
@@ -480,7 +502,7 @@ class TestOutlierDetection:
         # Add 7 consistent points (height estimates around 6.0)
         for i in range(7):
             calibrator.calibration_points.append(
-                CalibrationPoint(i, i, 39.64, -0.23, 3, 4, 6.0 + i*0.1, 5.0, 5.0)
+                CalibrationPoint(i, i, 39.64, -0.23, 3, 4, 6.0 + i * 0.1, 5.0, 5.0)
             )
 
         # Add 1 extreme outlier (GPS distance very high = height estimate ~25)
@@ -488,7 +510,7 @@ class TestOutlierDetection:
             CalibrationPoint(10, 10, 39.64, -0.23, 3, 4, 50.0, 5.0, 5.0)
         )
 
-        result = calibrator.optimize_height_with_outliers(method='mad', threshold=2.0)
+        result = calibrator.optimize_height_with_outliers(method="mad", threshold=2.0)
 
         # Height should be around 6.x, not pulled up by the single outlier
         assert result.estimated_height < 15.0  # Much less than outlier's 50
@@ -508,10 +530,10 @@ class TestOutlierDetection:
         # Add outliers
         for i in range(2):
             calibrator.calibration_points.append(
-                CalibrationPoint(i+5, i+5, 39.64, -0.23, 3, 4, 25.0, 5.0, 5.0)
+                CalibrationPoint(i + 5, i + 5, 39.64, -0.23, 3, 4, 25.0, 5.0, 5.0)
             )
 
-        result = calibrator.optimize_height_with_outliers(method='ransac')
+        result = calibrator.optimize_height_with_outliers(method="ransac")
 
         # Height should be around 6.0
         assert 5.5 < result.estimated_height < 7.0
@@ -526,12 +548,13 @@ class TestOutlierDetection:
             )
 
         with pytest.raises(ValueError, match="Invalid outlier detection method"):
-            calibrator.optimize_height_with_outliers(method='invalid')
+            calibrator.optimize_height_with_outliers(method="invalid")
 
 
 # ============================================================================
 # Test: CalibrationHistory
 # ============================================================================
+
 
 class TestCalibrationHistory:
     """Tests for CalibrationHistory persistence."""
@@ -548,30 +571,30 @@ class TestCalibrationHistory:
             outlier_count=2,
             method="mad",
             camera_gps_lat=39.640472,
-            camera_gps_lon=-0.230194
+            camera_gps_lon=-0.230194,
         )
 
     def test_entry_to_dict(self, sample_entry):
         """Test entry serialization to dict."""
         data = sample_entry.to_dict()
 
-        assert data['camera_name'] == "TestCam"
-        assert data['estimated_height'] == 5.23
-        assert data['timestamp'] == "2024-01-15T10:30:00"
-        assert data['confidence_interval'] == (5.10, 5.36)
+        assert data["camera_name"] == "TestCam"
+        assert data["estimated_height"] == 5.23
+        assert data["timestamp"] == "2024-01-15T10:30:00"
+        assert data["confidence_interval"] == (5.10, 5.36)
 
     def test_entry_from_dict(self):
         """Test entry deserialization from dict."""
         data = {
-            'camera_name': "TestCam",
-            'timestamp': "2024-01-15T10:30:00",
-            'estimated_height': 5.23,
-            'confidence_interval': [5.10, 5.36],  # List from YAML
-            'inlier_count': 7,
-            'outlier_count': 2,
-            'method': "mad",
-            'camera_gps_lat': 39.640472,
-            'camera_gps_lon': -0.230194
+            "camera_name": "TestCam",
+            "timestamp": "2024-01-15T10:30:00",
+            "estimated_height": 5.23,
+            "confidence_interval": [5.10, 5.36],  # List from YAML
+            "inlier_count": 7,
+            "outlier_count": 2,
+            "method": "mad",
+            "camera_gps_lat": 39.640472,
+            "camera_gps_lon": -0.230194,
         }
 
         entry = CalibrationHistoryEntry.from_dict(data)
@@ -606,7 +629,7 @@ class TestCalibrationHistory:
             outlier_count=1,
             method="ransac",
             camera_gps_lat=40.0,
-            camera_gps_lon=-1.0
+            camera_gps_lon=-1.0,
         )
         history.add_entry(entry2)
 
@@ -619,17 +642,19 @@ class TestCalibrationHistory:
         history = CalibrationHistory(storage_path=str(storage_file))
 
         history.add_entry(sample_entry)
-        history.add_entry(CalibrationHistoryEntry(
-            camera_name="OtherCam",
-            timestamp=datetime.now(),
-            estimated_height=6.0,
-            confidence_interval=(5.8, 6.2),
-            inlier_count=5,
-            outlier_count=1,
-            method="mad",
-            camera_gps_lat=40.0,
-            camera_gps_lon=-1.0
-        ))
+        history.add_entry(
+            CalibrationHistoryEntry(
+                camera_name="OtherCam",
+                timestamp=datetime.now(),
+                estimated_height=6.0,
+                confidence_interval=(5.8, 6.2),
+                inlier_count=5,
+                outlier_count=1,
+                method="mad",
+                camera_gps_lat=40.0,
+                camera_gps_lon=-1.0,
+            )
+        )
 
         entries = history.get_entries(camera_name="TestCam")
         assert len(entries) == 1
@@ -641,30 +666,34 @@ class TestCalibrationHistory:
         history = CalibrationHistory(storage_path=str(storage_file))
 
         # Add older entry first
-        history.add_entry(CalibrationHistoryEntry(
-            camera_name="TestCam",
-            timestamp=datetime(2024, 1, 10, 10, 0, 0),
-            estimated_height=5.0,
-            confidence_interval=(4.8, 5.2),
-            inlier_count=5,
-            outlier_count=0,
-            method="mad",
-            camera_gps_lat=39.64,
-            camera_gps_lon=-0.23
-        ))
+        history.add_entry(
+            CalibrationHistoryEntry(
+                camera_name="TestCam",
+                timestamp=datetime(2024, 1, 10, 10, 0, 0),
+                estimated_height=5.0,
+                confidence_interval=(4.8, 5.2),
+                inlier_count=5,
+                outlier_count=0,
+                method="mad",
+                camera_gps_lat=39.64,
+                camera_gps_lon=-0.23,
+            )
+        )
 
         # Add newer entry
-        history.add_entry(CalibrationHistoryEntry(
-            camera_name="TestCam",
-            timestamp=datetime(2024, 1, 15, 10, 0, 0),
-            estimated_height=6.0,
-            confidence_interval=(5.8, 6.2),
-            inlier_count=7,
-            outlier_count=1,
-            method="mad",
-            camera_gps_lat=39.64,
-            camera_gps_lon=-0.23
-        ))
+        history.add_entry(
+            CalibrationHistoryEntry(
+                camera_name="TestCam",
+                timestamp=datetime(2024, 1, 15, 10, 0, 0),
+                estimated_height=6.0,
+                confidence_interval=(5.8, 6.2),
+                inlier_count=7,
+                outlier_count=1,
+                method="mad",
+                camera_gps_lat=39.64,
+                camera_gps_lon=-0.23,
+            )
+        )
 
         latest = history.get_latest("TestCam")
 
@@ -707,17 +736,19 @@ class TestCalibrationHistory:
         history = CalibrationHistory(storage_path=str(storage_file))
 
         history.add_entry(sample_entry)
-        history.add_entry(CalibrationHistoryEntry(
-            camera_name="OtherCam",
-            timestamp=datetime.now(),
-            estimated_height=6.0,
-            confidence_interval=(5.8, 6.2),
-            inlier_count=5,
-            outlier_count=1,
-            method="mad",
-            camera_gps_lat=40.0,
-            camera_gps_lon=-1.0
-        ))
+        history.add_entry(
+            CalibrationHistoryEntry(
+                camera_name="OtherCam",
+                timestamp=datetime.now(),
+                estimated_height=6.0,
+                confidence_interval=(5.8, 6.2),
+                inlier_count=5,
+                outlier_count=1,
+                method="mad",
+                camera_gps_lat=40.0,
+                camera_gps_lon=-1.0,
+            )
+        )
 
         history.clear(camera_name="TestCam")
 
@@ -736,6 +767,7 @@ class TestCalibrationHistory:
 # ============================================================================
 # Test: Confidence Interval Computation
 # ============================================================================
+
 
 class TestConfidenceInterval:
     """Tests for confidence interval computation."""

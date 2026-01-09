@@ -40,13 +40,12 @@ def find_available_port(start_port: int = 8080, max_attempts: int = 10) -> int:
         try:
             # Try to bind to the port
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', port))
+                s.bind(("", port))
                 return port
         except OSError:
             # Port is in use, try next
             continue
 
     raise RuntimeError(
-        f"Could not find an available port in range "
-        f"{start_port}-{start_port + max_attempts - 1}"
+        f"Could not find an available port in range {start_port}-{start_port + max_attempts - 1}"
     )

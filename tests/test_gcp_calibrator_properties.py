@@ -18,23 +18,23 @@ Mathematical foundations:
 - Optimization minimizes weighted sum of residuals
 """
 
-import pytest
-import numpy as np
-from hypothesis import given, strategies as st, settings, assume, example
-from hypothesis import HealthCheck
-from unittest.mock import Mock
 import copy
+from unittest.mock import Mock
 
+import numpy as np
+import pytest
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
+
+from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gcp_calibrator import (
     GCPCalibrator,
-    CalibrationResult,
 )
-from poc_homography.camera_geometry import CameraGeometry
-
 
 # ============================================================================
 # Hypothesis Strategies for Test Data Generation
 # ============================================================================
+
 
 @st.composite
 def residuals_strategy(draw, min_count=1, max_count=20):
@@ -50,11 +50,13 @@ def residuals_strategy(draw, min_count=1, max_count=20):
     count = draw(st.integers(min_value=min_count, max_value=max_count))
 
     # Mix of small and large residuals
-    residuals = draw(st.lists(
-        st.floats(min_value=-100.0, max_value=100.0, allow_nan=False, allow_infinity=False),
-        min_size=count,
-        max_size=count
-    ))
+    residuals = draw(
+        st.lists(
+            st.floats(min_value=-100.0, max_value=100.0, allow_nan=False, allow_infinity=False),
+            min_size=count,
+            max_size=count,
+        )
+    )
 
     return np.array(residuals)
 
@@ -63,10 +65,11 @@ def residuals_strategy(draw, min_count=1, max_count=20):
 # Property 1: Zero Residual at Perfect Fit
 # ============================================================================
 
+
 @given(seed=st.integers(min_value=0, max_value=10000))
 @settings(
     deadline=5000,  # 5 seconds per test
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
 )
 def test_property_zero_residual_at_perfect_fit(seed):
     """
@@ -101,7 +104,7 @@ def test_property_zero_residual_at_perfect_fit(seed):
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
 
     # Generate world points and project through homography to get perfect pixels
@@ -139,10 +142,9 @@ def test_property_zero_residual_at_perfect_fit(seed):
         lat = ref_lat + (y_world / 111000.0)
         lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-        gcps.append({
-            'gps': {'latitude': lat, 'longitude': lon},
-            'image': {'u': float(u), 'v': float(v)}
-        })
+        gcps.append(
+            {"gps": {"latitude": lat, "longitude": lon}, "image": {"u": float(u), "v": float(v)}}
+        )
 
     # Need at least 3 GCPs for calibration
     if len(gcps) < 3:
@@ -152,8 +154,12 @@ def test_property_zero_residual_at_perfect_fit(seed):
     # Create calibrator with perfect GCPs
     # CRITICAL: Pass camera position as reference to ensure coordinate systems align
     calibrator = GCPCalibrator(
-        geo, gcps, loss_function='huber', loss_scale=1.0,
-        reference_lat=ref_lat, reference_lon=ref_lon
+        geo,
+        gcps,
+        loss_function="huber",
+        loss_scale=1.0,
+        reference_lat=ref_lat,
+        reference_lon=ref_lon,
     )
 
     # Compute residuals at zero perturbation (should be perfect fit)
@@ -170,8 +176,7 @@ def test_property_zero_residual_at_perfect_fit(seed):
     # RMS error should also be very small
     rms_error = calibrator._compute_rms_error(residuals)
     assert rms_error < 15.0, (
-        f"Perfect projection should yield near-zero RMS error, "
-        f"got: {rms_error:.6f} pixels"
+        f"Perfect projection should yield near-zero RMS error, got: {rms_error:.6f} pixels"
     )
 
 
@@ -179,10 +184,11 @@ def test_property_zero_residual_at_perfect_fit(seed):
 # Property 2: Robust Loss Continuity and Bounds
 # ============================================================================
 
+
 @given(
     residuals=residuals_strategy(min_count=5, max_count=50),
-    loss_function=st.sampled_from(['huber', 'cauchy']),
-    loss_scale=st.floats(min_value=0.1, max_value=10.0)
+    loss_function=st.sampled_from(["huber", "cauchy"]),
+    loss_scale=st.floats(min_value=0.1, max_value=10.0),
 )
 @settings(deadline=1000)
 def test_property_robust_loss_continuity(residuals, loss_function, loss_scale):
@@ -221,30 +227,22 @@ def test_property_robust_loss_continuity(residuals, loss_function, loss_scale):
     mock_geo.map_height = 640
 
     # Minimal valid GCP list (calibrator requires at least one)
-    minimal_gcps = [{
-        'gps': {'latitude': 39.64, 'longitude': -0.23},
-        'image': {'u': 960.0, 'v': 540.0}
-    }]
+    minimal_gcps = [
+        {"gps": {"latitude": 39.64, "longitude": -0.23}, "image": {"u": 960.0, "v": 540.0}}
+    ]
 
     calibrator = GCPCalibrator(
-        mock_geo,
-        minimal_gcps,
-        loss_function=loss_function,
-        loss_scale=loss_scale
+        mock_geo, minimal_gcps, loss_function=loss_function, loss_scale=loss_scale
     )
 
     # Apply robust loss
     loss_values = calibrator._apply_robust_loss(residuals)
 
     # Property 1: Loss values must be finite (no NaN or Inf)
-    assert np.all(np.isfinite(loss_values)), (
-        "Loss function produced non-finite values (NaN or Inf)"
-    )
+    assert np.all(np.isfinite(loss_values)), "Loss function produced non-finite values (NaN or Inf)"
 
     # Property 2: Loss must be non-negative
-    assert np.all(loss_values >= 0), (
-        "Loss function produced negative values"
-    )
+    assert np.all(loss_values >= 0), "Loss function produced negative values"
 
     # Property 3: Loss is symmetric (loss(r) = loss(-r))
     loss_neg = calibrator._apply_robust_loss(-residuals)
@@ -255,9 +253,7 @@ def test_property_robust_loss_continuity(residuals, loss_function, loss_scale):
     # Property 4: Loss is zero only when residual is zero
     zero_residuals = np.zeros_like(residuals)
     loss_zero = calibrator._apply_robust_loss(zero_residuals)
-    assert np.allclose(loss_zero, 0.0, atol=1e-12), (
-        "Loss at zero residual is not zero"
-    )
+    assert np.allclose(loss_zero, 0.0, atol=1e-12), "Loss at zero residual is not zero"
 
     # Property 5: Loss is monotonically increasing in |r|
     # For each residual, slightly increasing |r| should increase loss
@@ -278,7 +274,7 @@ def test_property_robust_loss_continuity(residuals, loss_function, loss_scale):
         )
 
     # Property 6: Huber loss transitions smoothly at scale
-    if loss_function == 'huber':
+    if loss_function == "huber":
         # Test continuity at transition point
         r_before = loss_scale - 0.01
         r_at = loss_scale
@@ -289,12 +285,8 @@ def test_property_robust_loss_continuity(residuals, loss_function, loss_scale):
         loss_after = calibrator._apply_robust_loss(np.array([r_after]))[0]
 
         # Loss should be continuous (no jump)
-        assert abs(loss_at - loss_before) < 0.5, (
-            "Huber loss has discontinuity at scale transition"
-        )
-        assert abs(loss_after - loss_at) < 0.5, (
-            "Huber loss has discontinuity at scale transition"
-        )
+        assert abs(loss_at - loss_before) < 0.5, "Huber loss has discontinuity at scale transition"
+        assert abs(loss_after - loss_at) < 0.5, "Huber loss has discontinuity at scale transition"
 
     # Property 7: Robust loss grows slower than quadratic for large errors
     large_residuals = residuals[np.abs(residuals) > 2 * loss_scale]
@@ -312,14 +304,15 @@ def test_property_robust_loss_continuity(residuals, loss_function, loss_scale):
 # Property 3: Optimization Convergence
 # ============================================================================
 
+
 @given(
     seed=st.integers(min_value=0, max_value=10000),
-    perturbation_scale=st.floats(min_value=0.5, max_value=2.0)
+    perturbation_scale=st.floats(min_value=0.5, max_value=2.0),
 )
 @settings(
     deadline=10000,  # 10 seconds (optimization can be slow)
     max_examples=20,  # Reduce examples due to computational cost
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
 )
 def test_property_optimization_convergence(seed, perturbation_scale):
     """
@@ -356,7 +349,7 @@ def test_property_optimization_convergence(seed, perturbation_scale):
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
 
     # Generate perturbation (scaled for test variety)
@@ -371,7 +364,7 @@ def test_property_optimization_convergence(seed, perturbation_scale):
         pan_deg=geo.pan_deg + perturbation[0],
         tilt_deg=geo.tilt_deg + perturbation[1],
         map_width=geo.map_width,
-        map_height=geo.map_height
+        map_height=geo.map_height,
     )
 
     # Generate synthetic GCPs from perturbed geometry
@@ -404,10 +397,9 @@ def test_property_optimization_convergence(seed, perturbation_scale):
         lat = ref_lat + (y_world / 111000.0)
         lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-        gcps.append({
-            'gps': {'latitude': lat, 'longitude': lon},
-            'image': {'u': float(u), 'v': float(v)}
-        })
+        gcps.append(
+            {"gps": {"latitude": lat, "longitude": lon}, "image": {"u": float(u), "v": float(v)}}
+        )
 
     if len(gcps) < 5:  # Need enough GCPs for robust optimization
         return  # Skip this iteration
@@ -415,8 +407,12 @@ def test_property_optimization_convergence(seed, perturbation_scale):
     # Calibrate using base (unperturbed) geometry
     # Optimizer should discover the perturbation and reduce error
     calibrator = GCPCalibrator(
-        geo, gcps, loss_function='huber', loss_scale=5.0,
-        reference_lat=ref_lat, reference_lon=ref_lon
+        geo,
+        gcps,
+        loss_function="huber",
+        loss_scale=5.0,
+        reference_lat=ref_lat,
+        reference_lon=ref_lon,
     )
     result = calibrator.calibrate()
 
@@ -443,14 +439,11 @@ def test_property_optimization_convergence(seed, perturbation_scale):
 # Property 4: Residual Symmetry (Commutative Property)
 # ============================================================================
 
+
 @given(
-    seed=st.integers(min_value=0, max_value=10000),
-    num_gcps=st.integers(min_value=3, max_value=15)
+    seed=st.integers(min_value=0, max_value=10000), num_gcps=st.integers(min_value=3, max_value=15)
 )
-@settings(
-    deadline=2000,
-    suppress_health_check=[HealthCheck.filter_too_much]
-)
+@settings(deadline=2000, suppress_health_check=[HealthCheck.filter_too_much])
 def test_property_residual_symmetry(seed, num_gcps):
     """
     Property: Swapping GCP order does not change total residual.
@@ -482,7 +475,7 @@ def test_property_residual_symmetry(seed, num_gcps):
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
 
     # Generate GCPs with random pixel locations
@@ -499,23 +492,30 @@ def test_property_residual_symmetry(seed, num_gcps):
         lat = ref_lat + (y_world / 111000.0)
         lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-        gcps.append({
-            'gps': {'latitude': lat, 'longitude': lon},
-            'image': {'u': float(u), 'v': float(v)}
-        })
+        gcps.append(
+            {"gps": {"latitude": lat, "longitude": lon}, "image": {"u": float(u), "v": float(v)}}
+        )
 
     # Create calibrator with original GCP order
     calibrator1 = GCPCalibrator(
-        geo, gcps, loss_function='huber', loss_scale=1.0,
-        reference_lat=ref_lat, reference_lon=ref_lon
+        geo,
+        gcps,
+        loss_function="huber",
+        loss_scale=1.0,
+        reference_lat=ref_lat,
+        reference_lon=ref_lon,
     )
 
     # Create calibrator with shuffled GCP order
     gcps_shuffled = gcps.copy()
     np.random.shuffle(gcps_shuffled)
     calibrator2 = GCPCalibrator(
-        geo, gcps_shuffled, loss_function='huber', loss_scale=1.0,
-        reference_lat=ref_lat, reference_lon=ref_lon
+        geo,
+        gcps_shuffled,
+        loss_function="huber",
+        loss_scale=1.0,
+        reference_lat=ref_lat,
+        reference_lon=ref_lon,
     )
 
     # Compute residuals with same parameters
@@ -539,8 +539,7 @@ def test_property_residual_symmetry(seed, num_gcps):
     rms2 = calibrator2._compute_rms_error(residuals2)
 
     assert np.allclose(rms1, rms2, rtol=1e-10), (
-        f"RMS error changed with GCP reordering: "
-        f"original={rms1:.6f}, shuffled={rms2:.6f}"
+        f"RMS error changed with GCP reordering: original={rms1:.6f}, shuffled={rms2:.6f}"
     )
 
     # Sorted residuals should match (element-wise comparison)
@@ -556,11 +555,12 @@ def test_property_residual_symmetry(seed, num_gcps):
 # Additional Property: Loss Function Monotonicity
 # ============================================================================
 
+
 @given(
-    loss_function=st.sampled_from(['huber', 'cauchy']),
+    loss_function=st.sampled_from(["huber", "cauchy"]),
     loss_scale=st.floats(min_value=0.5, max_value=5.0),
     r1=st.floats(min_value=0.0, max_value=10.0),
-    r2=st.floats(min_value=0.0, max_value=10.0)
+    r2=st.floats(min_value=0.0, max_value=10.0),
 )
 @settings(deadline=500)
 def test_property_loss_monotonicity(loss_function, loss_scale, r1, r2):
@@ -594,16 +594,12 @@ def test_property_loss_monotonicity(loss_function, loss_scale, r1, r2):
     mock_geo.map_width = 640
     mock_geo.map_height = 640
 
-    minimal_gcps = [{
-        'gps': {'latitude': 39.64, 'longitude': -0.23},
-        'image': {'u': 960.0, 'v': 540.0}
-    }]
+    minimal_gcps = [
+        {"gps": {"latitude": 39.64, "longitude": -0.23}, "image": {"u": 960.0, "v": 540.0}}
+    ]
 
     calibrator = GCPCalibrator(
-        mock_geo,
-        minimal_gcps,
-        loss_function=loss_function,
-        loss_scale=loss_scale
+        mock_geo, minimal_gcps, loss_function=loss_function, loss_scale=loss_scale
     )
 
     # Compute losses
@@ -612,8 +608,7 @@ def test_property_loss_monotonicity(loss_function, loss_scale, r1, r2):
 
     # Property: loss is monotonically increasing
     assert loss1 <= loss2, (
-        f"Loss function not monotonic: "
-        f"loss({r1:.3f}) = {loss1:.6f} > loss({r2:.3f}) = {loss2:.6f}"
+        f"Loss function not monotonic: loss({r1:.3f}) = {loss1:.6f} > loss({r2:.3f}) = {loss2:.6f}"
     )
 
 
@@ -621,11 +616,12 @@ def test_property_loss_monotonicity(loss_function, loss_scale, r1, r2):
 # Additional Property: Parameter Bounds Respected
 # ============================================================================
 
+
 @given(seed=st.integers(min_value=0, max_value=10000))
 @settings(
     deadline=8000,
     max_examples=10,  # Expensive test
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
 )
 def test_property_parameter_bounds_respected(seed):
     """
@@ -651,7 +647,7 @@ def test_property_parameter_bounds_respected(seed):
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
 
     # Generate some GCPs
@@ -669,26 +665,25 @@ def test_property_parameter_bounds_respected(seed):
         lat = ref_lat + (y_world / 111000.0)
         lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-        gcps.append({
-            'gps': {'latitude': lat, 'longitude': lon},
-            'image': {'u': float(u), 'v': float(v)}
-        })
+        gcps.append(
+            {"gps": {"latitude": lat, "longitude": lon}, "image": {"u": float(u), "v": float(v)}}
+        )
 
     # Define strict custom bounds
     custom_bounds = {
-        'pan': (-2.0, 2.0),
-        'tilt': (-2.0, 2.0),
-        'roll': (-1.0, 1.0),
-        'X': (-1.0, 1.0),
-        'Y': (-1.0, 1.0),
-        'Z': (-0.5, 0.5)
+        "pan": (-2.0, 2.0),
+        "tilt": (-2.0, 2.0),
+        "roll": (-1.0, 1.0),
+        "X": (-1.0, 1.0),
+        "Y": (-1.0, 1.0),
+        "Z": (-0.5, 0.5),
     }
 
-    calibrator = GCPCalibrator(geo, gcps, loss_function='huber', loss_scale=5.0)
+    calibrator = GCPCalibrator(geo, gcps, loss_function="huber", loss_scale=5.0)
     result = calibrator.calibrate(bounds=custom_bounds)
 
     # Verify each parameter respects bounds (with small tolerance for numerical issues)
-    param_names = ['pan', 'tilt', 'roll', 'X', 'Y', 'Z']
+    param_names = ["pan", "tilt", "roll", "X", "Y", "Z"]
     tol = 1e-6  # Small tolerance for floating-point comparison
 
     for i, name in enumerate(param_names):
@@ -696,8 +691,7 @@ def test_property_parameter_bounds_respected(seed):
         value = result.optimized_params[i]
 
         assert lower - tol <= value <= upper + tol, (
-            f"Parameter {name} violated bounds: "
-            f"value={value:.6f}, bounds=[{lower}, {upper}]"
+            f"Parameter {name} violated bounds: value={value:.6f}, bounds=[{lower}, {upper}]"
         )
 
 
@@ -705,14 +699,15 @@ def test_property_parameter_bounds_respected(seed):
 # Property 6: Validation Metrics Consistency
 # ============================================================================
 
+
 @given(
     seed=st.integers(min_value=0, max_value=10000),
-    validation_split=st.floats(min_value=0.2, max_value=0.4)
+    validation_split=st.floats(min_value=0.2, max_value=0.4),
 )
 @settings(
     deadline=10000,  # 10 seconds (calibration can be slow)
     max_examples=15,  # Reduce examples due to computational cost
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
 )
 def test_property_validation_metrics_consistency(seed, validation_split):
     """
@@ -744,7 +739,7 @@ def test_property_validation_metrics_consistency(seed, validation_split):
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
 
     # Generate sufficient GCPs for train/test split (need at least 9: 6 train + 3 test)
@@ -756,26 +751,31 @@ def test_property_validation_metrics_consistency(seed, validation_split):
     for i in range(num_gcps):
         lat_offset = np.random.uniform(-0.001, 0.001)
         lon_offset = np.random.uniform(-0.001, 0.001)
-        gcps.append({
-            'gps': {'latitude': ref_lat + lat_offset, 'longitude': ref_lon + lon_offset},
-            'image': {'u': 960.0 + i * 20, 'v': 540.0 + i * 10}
-        })
+        gcps.append(
+            {
+                "gps": {"latitude": ref_lat + lat_offset, "longitude": ref_lon + lon_offset},
+                "image": {"u": 960.0 + i * 20, "v": 540.0 + i * 10},
+            }
+        )
 
     # Create calibrator with validation split
     calibrator = GCPCalibrator(
-        geo, gcps, loss_function='huber', loss_scale=1.0,
+        geo,
+        gcps,
+        loss_function="huber",
+        loss_scale=1.0,
         validation_split=validation_split,
-        random_seed=seed
+        random_seed=seed,
     )
 
     # Calibrate with tight bounds to ensure convergence
     bounds = {
-        'pan': (-2.0, 2.0),
-        'tilt': (-2.0, 2.0),
-        'roll': (-0.1, 0.1),
-        'X': (-0.5, 0.5),
-        'Y': (-0.5, 0.5),
-        'Z': (-0.5, 0.5)
+        "pan": (-2.0, 2.0),
+        "tilt": (-2.0, 2.0),
+        "roll": (-0.1, 0.1),
+        "X": (-0.5, 0.5),
+        "Y": (-0.5, 0.5),
+        "Z": (-0.5, 0.5),
     }
     result = calibrator.calibrate(bounds=bounds)
 
@@ -788,9 +788,7 @@ def test_property_validation_metrics_consistency(seed, validation_split):
     train_set = set(result.train_indices)
     test_set = set(result.test_indices)
     overlap = train_set.intersection(test_set)
-    assert len(overlap) == 0, (
-        f"Train/test indices overlap: {overlap}"
-    )
+    assert len(overlap) == 0, f"Train/test indices overlap: {overlap}"
 
     # Property 2: Train/test indices cover all GCPs
     all_indices_set = train_set.union(test_set)
@@ -804,7 +802,7 @@ def test_property_validation_metrics_consistency(seed, validation_split):
     # Property 3: Train RMS matches computation from per_gcp_errors
     train_errors = np.array(result.per_gcp_errors)[result.train_indices]
     expected_train_rms = np.sqrt(np.mean(train_errors**2))
-    assert np.isclose(result.validation_metrics['train']['rms'], expected_train_rms, rtol=1e-6), (
+    assert np.isclose(result.validation_metrics["train"]["rms"], expected_train_rms, rtol=1e-6), (
         f"Train RMS mismatch: "
         f"reported={result.validation_metrics['train']['rms']:.6f}, "
         f"computed={expected_train_rms:.6f}"
@@ -813,28 +811,28 @@ def test_property_validation_metrics_consistency(seed, validation_split):
     # Property 4: Test RMS matches computation from per_gcp_errors
     test_errors = np.array(result.per_gcp_errors)[result.test_indices]
     expected_test_rms = np.sqrt(np.mean(test_errors**2))
-    assert np.isclose(result.validation_metrics['test']['rms'], expected_test_rms, rtol=1e-6), (
+    assert np.isclose(result.validation_metrics["test"]["rms"], expected_test_rms, rtol=1e-6), (
         f"Test RMS mismatch: "
         f"reported={result.validation_metrics['test']['rms']:.6f}, "
         f"computed={expected_test_rms:.6f}"
     )
 
     # Property 5: RMS <= max error (mathematical invariant)
-    train_metrics = result.validation_metrics['train']
-    test_metrics = result.validation_metrics['test']
+    train_metrics = result.validation_metrics["train"]
+    test_metrics = result.validation_metrics["test"]
 
-    assert train_metrics['rms'] <= train_metrics['max'] + 1e-9, (
+    assert train_metrics["rms"] <= train_metrics["max"] + 1e-9, (
         f"Train RMS > max (impossible): rms={train_metrics['rms']}, max={train_metrics['max']}"
     )
-    assert test_metrics['rms'] <= test_metrics['max'] + 1e-9, (
+    assert test_metrics["rms"] <= test_metrics["max"] + 1e-9, (
         f"Test RMS > max (impossible): rms={test_metrics['rms']}, max={test_metrics['max']}"
     )
 
     # Property 6: P90 <= max error (mathematical invariant)
-    assert train_metrics['p90'] <= train_metrics['max'] + 1e-9, (
+    assert train_metrics["p90"] <= train_metrics["max"] + 1e-9, (
         f"Train P90 > max (impossible): p90={train_metrics['p90']}, max={train_metrics['max']}"
     )
-    assert test_metrics['p90'] <= test_metrics['max'] + 1e-9, (
+    assert test_metrics["p90"] <= test_metrics["max"] + 1e-9, (
         f"Test P90 > max (impossible): p90={test_metrics['p90']}, max={test_metrics['max']}"
     )
 
@@ -843,7 +841,7 @@ def test_property_validation_metrics_consistency(seed, validation_split):
 @settings(
     deadline=10000,
     max_examples=10,
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
 )
 def test_property_validation_split_reproducibility(seed):
     """
@@ -869,7 +867,7 @@ def test_property_validation_split_reproducibility(seed):
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
 
     # Generate GCPs
@@ -879,28 +877,30 @@ def test_property_validation_split_reproducibility(seed):
 
     gcps = []
     for i in range(num_gcps):
-        gcps.append({
-            'gps': {'latitude': ref_lat + i * 0.0001, 'longitude': ref_lon + i * 0.0001},
-            'image': {'u': 960.0 + i * 20, 'v': 540.0 + i * 10}
-        })
+        gcps.append(
+            {
+                "gps": {"latitude": ref_lat + i * 0.0001, "longitude": ref_lon + i * 0.0001},
+                "image": {"u": 960.0 + i * 20, "v": 540.0 + i * 10},
+            }
+        )
 
     bounds = {
-        'pan': (-2.0, 2.0),
-        'tilt': (-2.0, 2.0),
-        'roll': (-0.1, 0.1),
-        'X': (-0.5, 0.5),
-        'Y': (-0.5, 0.5),
-        'Z': (-0.5, 0.5)
+        "pan": (-2.0, 2.0),
+        "tilt": (-2.0, 2.0),
+        "roll": (-0.1, 0.1),
+        "X": (-0.5, 0.5),
+        "Y": (-0.5, 0.5),
+        "Z": (-0.5, 0.5),
     }
 
     # Create two calibrators with same seed
     calibrator1 = GCPCalibrator(
-        geo, gcps, loss_function='huber', validation_split=0.2, random_seed=42
+        geo, gcps, loss_function="huber", validation_split=0.2, random_seed=42
     )
     result1 = calibrator1.calibrate(bounds=bounds)
 
     calibrator2 = GCPCalibrator(
-        geo, gcps, loss_function='huber', validation_split=0.2, random_seed=42
+        geo, gcps, loss_function="huber", validation_split=0.2, random_seed=42
     )
     result2 = calibrator2.calibrate(bounds=bounds)
 
@@ -924,7 +924,7 @@ def test_property_validation_split_reproducibility(seed):
 # Run Tests
 # ============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """
     Run property-based tests with pytest.
 
@@ -933,4 +933,4 @@ if __name__ == '__main__':
         pytest test_gcp_calibrator_properties.py -v
         pytest test_gcp_calibrator_properties.py -v -k "zero_residual"
     """
-    pytest.main([__file__, '-v', '--tb=short'])
+    pytest.main([__file__, "-v", "--tb=short"])

@@ -3,19 +3,21 @@
 Automated tests to verify homography consistency and correctness.
 """
 
-import numpy as np
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
 
 
 def test_forward_backward_consistency():
     """Test that H and H_inv are true inverses."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: Forward-Backward Consistency")
-    print("="*60)
+    print("=" * 60)
 
     # Setup camera
     geo = CameraGeometry(2560, 1440)
@@ -28,12 +30,12 @@ def test_forward_backward_consistency():
         pan_deg=0.0,
         tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
         map_width=640,
-        map_height=480
+        map_height=480,
     )
 
     # Test points at various distances
     world_points = [
-        (0.0, 5.0),   # 5m straight ahead
+        (0.0, 5.0),  # 5m straight ahead
         (5.0, 10.0),  # 10m ahead, 5m to the right
         (-3.0, 8.0),  # 8m ahead, 3m to the left
     ]
@@ -55,11 +57,13 @@ def test_forward_backward_consistency():
         Yw_recovered = pt_world_recovered[1, 0] / pt_world_recovered[2, 0]
 
         # Calculate error
-        error = np.sqrt((Xw - Xw_recovered)**2 + (Yw - Yw_recovered)**2)
+        error = np.sqrt((Xw - Xw_recovered) ** 2 + (Yw - Yw_recovered) ** 2)
         max_error = max(max_error, error)
 
         status = "✓ PASS" if error < 0.01 else "✗ FAIL"
-        print(f"  ({Xw:6.2f}, {Yw:6.2f})m → ({u:7.1f}, {v:7.1f})px → ({Xw_recovered:6.2f}, {Yw_recovered:6.2f})m  |  Error: {error:.6f}m  {status}")
+        print(
+            f"  ({Xw:6.2f}, {Yw:6.2f})m → ({u:7.1f}, {v:7.1f})px → ({Xw_recovered:6.2f}, {Yw_recovered:6.2f})m  |  Error: {error:.6f}m  {status}"
+        )
 
     print(f"\nMax error: {max_error:.6f} meters")
     print("✓ TEST PASSED" if max_error < 0.01 else "✗ TEST FAILED")
@@ -67,9 +71,9 @@ def test_forward_backward_consistency():
 
 def test_principal_point_projection():
     """Test that image center projects to a point in front of camera."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Principal Point Projection")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = geo.get_intrinsics(zoom_factor=1.0, W_px=2560, H_px=1440)
@@ -77,12 +81,7 @@ def test_principal_point_projection():
 
     for tilt in [30, 45, 60]:  # Positive = pointing down (Hikvision convention)
         geo.set_camera_parameters(
-            K=K,
-            w_pos=w_pos,
-            pan_deg=0.0,
-            tilt_deg=tilt,
-            map_width=640,
-            map_height=480
+            K=K, w_pos=w_pos, pan_deg=0.0, tilt_deg=tilt, map_width=640, map_height=480
         )
 
         # Project center of image to ground
@@ -103,14 +102,16 @@ def test_principal_point_projection():
         error = abs(distance - expected_distance)
         status = "✓ PASS" if error < 0.5 else "✗ FAIL"
 
-        print(f"  Tilt {tilt:>3}°: Center projects to ({Xw:6.2f}, {Yw:6.2f})m, distance={distance:.2f}m (expected ~{expected_distance:.2f}m) {status}")
+        print(
+            f"  Tilt {tilt:>3}°: Center projects to ({Xw:6.2f}, {Yw:6.2f})m, distance={distance:.2f}m (expected ~{expected_distance:.2f}m) {status}"
+        )
 
 
 def test_horizon_behavior():
     """Test that points near horizon have very large world coordinates."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Horizon Behavior")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = geo.get_intrinsics(zoom_factor=1.0, W_px=2560, H_px=1440)
@@ -122,7 +123,7 @@ def test_horizon_behavior():
         pan_deg=0.0,
         tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
         map_width=640,
-        map_height=480
+        map_height=480,
     )
 
     print("\nProjecting points from bottom to top of image:")
@@ -145,16 +146,16 @@ def test_horizon_behavior():
 
 def test_pan_rotation():
     """Test that pan angle rotates projections correctly."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: Pan Rotation")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = geo.get_intrinsics(zoom_factor=1.0, W_px=2560, H_px=1440)
     w_pos = np.array([0.0, 0.0, 5.0])
 
     # Test same image point with different pan angles
-    u, v = 2560/2, 1440 - 200  # Near bottom center
+    u, v = 2560 / 2, 1440 - 200  # Near bottom center
 
     print(f"\nProjecting point ({u:.0f}, {v:.0f})px with different pan angles:")
     for pan in [-90, -45, 0, 45, 90]:
@@ -164,7 +165,7 @@ def test_pan_rotation():
             pan_deg=pan,
             tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
             map_width=640,
-            map_height=480
+            map_height=480,
         )
 
         pt_image = np.array([[u], [v], [1.0]])
@@ -181,15 +182,15 @@ def test_pan_rotation():
 
 def test_zoom_effect():
     """Test that zoom changes focal length and projection."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: Zoom Effect on Projection")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     w_pos = np.array([0.0, 0.0, 5.0])
 
     # Same image point, different zoom levels
-    u, v = 2560/2, 1440 - 200
+    u, v = 2560 / 2, 1440 - 200
 
     print(f"\nProjecting point ({u:.0f}, {v:.0f})px with different zoom:")
     for zoom in [1.0, 2.0, 3.0, 4.0]:
@@ -200,7 +201,7 @@ def test_zoom_effect():
             pan_deg=0.0,
             tilt_deg=45.0,  # Positive = pointing down (Hikvision convention)
             map_width=640,
-            map_height=480
+            map_height=480,
         )
 
         pt_image = np.array([[u], [v], [1.0]])
@@ -210,16 +211,18 @@ def test_zoom_effect():
         Yw = pt_world[1, 0] / pt_world[2, 0]
         distance = np.sqrt(Xw**2 + Yw**2)
 
-        print(f"  Zoom {zoom:.1f}x: World=({Xw:6.2f}, {Yw:6.2f})m, Distance={distance:6.2f}m, f_px={K[0,0]:.1f}")
+        print(
+            f"  Zoom {zoom:.1f}x: World=({Xw:6.2f}, {Yw:6.2f})m, Distance={distance:6.2f}m, f_px={K[0, 0]:.1f}"
+        )
 
     print("\n✓ Higher zoom = smaller field of view = objects appear farther")
 
 
 def main():
     """Run all verification tests."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("HOMOGRAPHY VERIFICATION TEST SUITE")
-    print("="*70)
+    print("=" * 70)
 
     try:
         test_forward_backward_consistency()
@@ -228,13 +231,14 @@ def main():
         test_pan_rotation()
         test_zoom_effect()
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("ALL TESTS COMPLETED")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
     except Exception as e:
         print(f"\n✗ TEST SUITE FAILED WITH ERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
 

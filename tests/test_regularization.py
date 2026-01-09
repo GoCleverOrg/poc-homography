@@ -10,20 +10,18 @@ Tests cover:
 - CalibrationResult.regularization_penalty field
 """
 
-import pytest
 import numpy as np
-from unittest.mock import Mock
+import pytest
 
+from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gcp_calibrator import (
-    CalibrationResult,
     GCPCalibrator,
 )
-from poc_homography.camera_geometry import CameraGeometry
-
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_camera_geometry():
@@ -36,7 +34,7 @@ def sample_camera_geometry():
         pan_deg=0.0,
         tilt_deg=45.0,
         map_width=640,
-        map_height=640
+        map_height=640,
     )
     return geo
 
@@ -45,18 +43,12 @@ def sample_camera_geometry():
 def sample_gcps():
     """Create a minimal list of valid GCP dictionaries for testing."""
     return [
+        {"gps": {"latitude": 39.640444, "longitude": -0.230111}, "image": {"u": 960.0, "v": 540.0}},
         {
-            'gps': {'latitude': 39.640444, 'longitude': -0.230111},
-            'image': {'u': 960.0, 'v': 540.0}
+            "gps": {"latitude": 39.640500, "longitude": -0.230200},
+            "image": {"u": 1000.0, "v": 600.0},
         },
-        {
-            'gps': {'latitude': 39.640500, 'longitude': -0.230200},
-            'image': {'u': 1000.0, 'v': 600.0}
-        },
-        {
-            'gps': {'latitude': 39.640300, 'longitude': -0.230000},
-            'image': {'u': 920.0, 'v': 500.0}
-        },
+        {"gps": {"latitude": 39.640300, "longitude": -0.230000}, "image": {"u": 920.0, "v": 500.0}},
     ]
 
 
@@ -64,15 +56,14 @@ def sample_gcps():
 # Test: Tikhonov Regularization
 # ============================================================================
 
+
 class TestRegularization:
     """Unit tests for Tikhonov regularization in GCPCalibrator."""
 
     def test_zero_deviation_zero_residuals(self, sample_camera_geometry, sample_gcps):
         """Test that params=[0,0,0,0,0,0] produces all-zero regularization residuals."""
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=1.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=1.0
         )
 
         params = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -88,12 +79,12 @@ class TestRegularization:
         Setup: params = [1.0, 0, 0, 0, 0, 0] with sigma_pan=3.0 and lambda=1.0
         Expected: r_prior[0] = sqrt(1.0) * 1.0 / 3.0 = 0.333..., others are 0
         """
-        custom_sigmas = {'pan_deg': 3.0}
+        custom_sigmas = {"pan_deg": 3.0}
         calibrator = GCPCalibrator(
             camera_geometry=sample_camera_geometry,
             gcps=sample_gcps,
             prior_sigmas=custom_sigmas,
-            regularization_weight=1.0
+            regularization_weight=1.0,
         )
 
         params = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -115,21 +106,21 @@ class TestRegularization:
         """
         # Use default sigmas
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=1.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=1.0
         )
 
         # Get the default sigmas and create params = sigmas
         defaults = GCPCalibrator.DEFAULT_PRIOR_SIGMAS
-        params = np.array([
-            defaults['pan_deg'],           # sigma_pan
-            defaults['tilt_deg'],          # sigma_tilt
-            defaults['roll_deg'],          # sigma_roll
-            defaults['gps_position_m'],    # sigma_X
-            defaults['gps_position_m'],    # sigma_Y
-            defaults['height_m'],          # sigma_Z
-        ])
+        params = np.array(
+            [
+                defaults["pan_deg"],  # sigma_pan
+                defaults["tilt_deg"],  # sigma_tilt
+                defaults["roll_deg"],  # sigma_roll
+                defaults["gps_position_m"],  # sigma_X
+                defaults["gps_position_m"],  # sigma_Y
+                defaults["height_m"],  # sigma_Z
+            ]
+        )
 
         reg_residuals = calibrator._compute_regularization_residuals(params)
 
@@ -147,17 +138,13 @@ class TestRegularization:
 
         # Create calibrator with lambda=1.0
         calibrator_lambda1 = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=1.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=1.0
         )
         residuals_lambda1 = calibrator_lambda1._compute_regularization_residuals(params)
 
         # Create calibrator with lambda=4.0
         calibrator_lambda4 = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=4.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=4.0
         )
         residuals_lambda4 = calibrator_lambda4._compute_regularization_residuals(params)
 
@@ -167,9 +154,7 @@ class TestRegularization:
     def test_regularization_disabled(self, sample_camera_geometry, sample_gcps):
         """Test that regularization_weight=0.0 produces all-zero residuals."""
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=0.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=0.0
         )
 
         # Use non-zero params to ensure zeros come from disabled regularization
@@ -188,9 +173,7 @@ class TestRegularization:
         """
         n_gcps = len(sample_gcps)
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=1.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=1.0
         )
 
         params = np.zeros(6)
@@ -212,64 +195,66 @@ class TestRegularization:
     def test_default_prior_sigmas(self, sample_camera_geometry, sample_gcps):
         """Verify DEFAULT_PRIOR_SIGMAS class constant has correct values and defaults are used."""
         # Check class constant values
-        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS['gps_position_m'] == 10.0
-        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS['height_m'] == 2.0
-        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS['pan_deg'] == 3.0
-        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS['tilt_deg'] == 3.0
-        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS['roll_deg'] == 1.0
+        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS["gps_position_m"] == 10.0
+        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS["height_m"] == 2.0
+        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS["pan_deg"] == 3.0
+        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS["tilt_deg"] == 3.0
+        assert GCPCalibrator.DEFAULT_PRIOR_SIGMAS["roll_deg"] == 1.0
 
         # Create calibrator with prior_sigmas=None (should use defaults)
         calibrator = GCPCalibrator(
             camera_geometry=sample_camera_geometry,
             gcps=sample_gcps,
             prior_sigmas=None,
-            regularization_weight=1.0
+            regularization_weight=1.0,
         )
 
         # Verify internal sigma vector matches defaults
         # Order: [sigma_pan, sigma_tilt, sigma_roll, sigma_X, sigma_Y, sigma_Z]
-        expected_sigma_vector = np.array([
-            3.0,   # pan_deg
-            3.0,   # tilt_deg
-            1.0,   # roll_deg
-            10.0,  # gps_position_m (X)
-            10.0,  # gps_position_m (Y)
-            2.0,   # height_m (Z)
-        ])
+        expected_sigma_vector = np.array(
+            [
+                3.0,  # pan_deg
+                3.0,  # tilt_deg
+                1.0,  # roll_deg
+                10.0,  # gps_position_m (X)
+                10.0,  # gps_position_m (Y)
+                2.0,  # height_m (Z)
+            ]
+        )
         np.testing.assert_array_equal(calibrator._sigma_vector, expected_sigma_vector)
 
     def test_custom_prior_sigmas_override(self, sample_camera_geometry, sample_gcps):
         """Test that custom sigmas override defaults, and defaults fill missing keys."""
         # Provide only partial custom sigmas
         custom_sigmas = {
-            'pan_deg': 5.0,       # Override pan
-            'height_m': 3.0,      # Override height
+            "pan_deg": 5.0,  # Override pan
+            "height_m": 3.0,  # Override height
         }
 
         calibrator = GCPCalibrator(
             camera_geometry=sample_camera_geometry,
             gcps=sample_gcps,
             prior_sigmas=custom_sigmas,
-            regularization_weight=1.0
+            regularization_weight=1.0,
         )
 
         # Expected: custom values for pan_deg and height_m, defaults for others
-        expected_sigma_vector = np.array([
-            5.0,   # pan_deg (custom)
-            3.0,   # tilt_deg (default)
-            1.0,   # roll_deg (default)
-            10.0,  # gps_position_m X (default)
-            10.0,  # gps_position_m Y (default)
-            3.0,   # height_m Z (custom)
-        ])
+        expected_sigma_vector = np.array(
+            [
+                5.0,  # pan_deg (custom)
+                3.0,  # tilt_deg (default)
+                1.0,  # roll_deg (default)
+                10.0,  # gps_position_m X (default)
+                10.0,  # gps_position_m Y (default)
+                3.0,  # height_m Z (custom)
+            ]
+        )
         np.testing.assert_array_equal(calibrator._sigma_vector, expected_sigma_vector)
 
     def test_regularization_penalty_in_result(self, sample_camera_geometry, sample_gcps):
         """Test that CalibrationResult.regularization_penalty is not None and > 0 when enabled."""
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=1.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=1.0
         )
 
         result = calibrator.calibrate()
@@ -285,9 +270,7 @@ class TestRegularization:
     def test_regularization_penalty_none_when_disabled(self, sample_camera_geometry, sample_gcps):
         """Test that CalibrationResult.regularization_penalty is None when disabled."""
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=sample_gcps,
-            regularization_weight=0.0
+            camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=0.0
         )
 
         result = calibrator.calibrate()
@@ -302,6 +285,7 @@ class TestRegularization:
         """
         # Create GCPs that will require parameter adjustment
         import copy
+
         geo_perturbed = copy.copy(sample_camera_geometry)
         geo_perturbed.set_camera_parameters(
             K=sample_camera_geometry.K,
@@ -309,7 +293,7 @@ class TestRegularization:
             pan_deg=sample_camera_geometry.pan_deg + 2.0,  # Add 2 degree pan perturbation
             tilt_deg=sample_camera_geometry.tilt_deg,
             map_width=sample_camera_geometry.map_width,
-            map_height=sample_camera_geometry.map_height
+            map_height=sample_camera_geometry.map_height,
         )
 
         # Generate synthetic GCPs using the perturbed geometry
@@ -327,16 +311,11 @@ class TestRegularization:
             lat = ref_lat + (y_world / 111000.0)
             lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-            gcps.append({
-                'gps': {'latitude': lat, 'longitude': lon},
-                'image': {'u': u, 'v': v}
-            })
+            gcps.append({"gps": {"latitude": lat, "longitude": lon}, "image": {"u": u, "v": v}})
 
         # Calibrate with the original (unperturbed) geometry - should discover ~2 degree pan
         calibrator = GCPCalibrator(
-            camera_geometry=sample_camera_geometry,
-            gcps=gcps,
-            regularization_weight=1.0
+            camera_geometry=sample_camera_geometry, gcps=gcps, regularization_weight=1.0
         )
 
         result = calibrator.calibrate()
@@ -349,9 +328,7 @@ class TestRegularization:
         """Test that negative regularization_weight raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
             GCPCalibrator(
-                camera_geometry=sample_camera_geometry,
-                gcps=sample_gcps,
-                regularization_weight=-1.0
+                camera_geometry=sample_camera_geometry, gcps=sample_gcps, regularization_weight=-1.0
             )
 
         assert "regularization_weight" in str(exc_info.value)
@@ -363,7 +340,7 @@ class TestRegularization:
             GCPCalibrator(
                 camera_geometry=sample_camera_geometry,
                 gcps=sample_gcps,
-                regularization_weight=np.inf
+                regularization_weight=np.inf,
             )
 
         assert "regularization_weight" in str(exc_info.value)
@@ -375,7 +352,7 @@ class TestRegularization:
             GCPCalibrator(
                 camera_geometry=sample_camera_geometry,
                 gcps=sample_gcps,
-                regularization_weight=np.nan
+                regularization_weight=np.nan,
             )
 
         assert "regularization_weight" in str(exc_info.value)
@@ -387,7 +364,7 @@ class TestRegularization:
             GCPCalibrator(
                 camera_geometry=sample_camera_geometry,
                 gcps=sample_gcps,
-                prior_sigmas={'pan_deg': 0.0}
+                prior_sigmas={"pan_deg": 0.0},
             )
 
         assert "prior_sigmas" in str(exc_info.value)
@@ -399,7 +376,7 @@ class TestRegularization:
             GCPCalibrator(
                 camera_geometry=sample_camera_geometry,
                 gcps=sample_gcps,
-                prior_sigmas={'height_m': -5.0}
+                prior_sigmas={"height_m": -5.0},
             )
 
         assert "prior_sigmas" in str(exc_info.value)
@@ -411,7 +388,7 @@ class TestRegularization:
             GCPCalibrator(
                 camera_geometry=sample_camera_geometry,
                 gcps=sample_gcps,
-                prior_sigmas={'gps_position_m': np.inf}
+                prior_sigmas={"gps_position_m": np.inf},
             )
 
         assert "prior_sigmas" in str(exc_info.value)
@@ -421,18 +398,18 @@ class TestRegularization:
         """Verify the exact formula: r_prior[j] = sqrt(lambda) * params[j] / sigma[j]."""
         lambda_val = 2.5
         custom_sigmas = {
-            'pan_deg': 4.0,
-            'tilt_deg': 5.0,
-            'roll_deg': 2.0,
-            'gps_position_m': 8.0,
-            'height_m': 1.5,
+            "pan_deg": 4.0,
+            "tilt_deg": 5.0,
+            "roll_deg": 2.0,
+            "gps_position_m": 8.0,
+            "height_m": 1.5,
         }
 
         calibrator = GCPCalibrator(
             camera_geometry=sample_camera_geometry,
             gcps=sample_gcps,
             prior_sigmas=custom_sigmas,
-            regularization_weight=lambda_val
+            regularization_weight=lambda_val,
         )
 
         params = np.array([2.0, 3.0, 0.5, 1.0, 2.0, 0.75])
@@ -440,14 +417,16 @@ class TestRegularization:
 
         # Manually compute expected residuals
         # Order: [pan, tilt, roll, X, Y, Z]
-        sigmas = np.array([
-            custom_sigmas['pan_deg'],        # pan
-            custom_sigmas['tilt_deg'],       # tilt
-            custom_sigmas['roll_deg'],       # roll
-            custom_sigmas['gps_position_m'], # X
-            custom_sigmas['gps_position_m'], # Y
-            custom_sigmas['height_m'],       # Z
-        ])
+        sigmas = np.array(
+            [
+                custom_sigmas["pan_deg"],  # pan
+                custom_sigmas["tilt_deg"],  # tilt
+                custom_sigmas["roll_deg"],  # roll
+                custom_sigmas["gps_position_m"],  # X
+                custom_sigmas["gps_position_m"],  # Y
+                custom_sigmas["height_m"],  # Z
+            ]
+        )
         expected_residuals = np.sqrt(lambda_val) * params / sigmas
 
         np.testing.assert_allclose(reg_residuals, expected_residuals, rtol=1e-10)
@@ -456,6 +435,7 @@ class TestRegularization:
 # ============================================================================
 # Integration Tests: Regularization Effectiveness
 # ============================================================================
+
 
 class TestRegularizationIntegration:
     """Integration tests demonstrating regularization effectiveness.
@@ -475,7 +455,7 @@ class TestRegularizationIntegration:
             pan_deg=0.0,
             tilt_deg=45.0,
             map_width=640,
-            map_height=640
+            map_height=640,
         )
         return geo
 
@@ -516,10 +496,12 @@ class TestRegularizationIntegration:
             lat = ref_lat + (y_world / 111000.0)
             lon = ref_lon + (x_world / (111000.0 * np.cos(np.radians(ref_lat))))
 
-            gcps.append({
-                'gps': {'latitude': lat, 'longitude': lon},
-                'image': {'u': float(u), 'v': float(v)}
-            })
+            gcps.append(
+                {
+                    "gps": {"latitude": lat, "longitude": lon},
+                    "image": {"u": float(u), "v": float(v)},
+                }
+            )
 
         return gcps
 
@@ -537,11 +519,11 @@ class TestRegularizationIntegration:
         noisy_gcps = []
         for gcp in gcps:
             noisy_gcp = {
-                'gps': gcp['gps'].copy(),
-                'image': {
-                    'u': gcp['image']['u'] + rng.normal(0, pixel_std),
-                    'v': gcp['image']['v'] + rng.normal(0, pixel_std)
-                }
+                "gps": gcp["gps"].copy(),
+                "image": {
+                    "u": gcp["image"]["u"] + rng.normal(0, pixel_std),
+                    "v": gcp["image"]["v"] + rng.normal(0, pixel_std),
+                },
             }
             noisy_gcps.append(noisy_gcp)
         return noisy_gcps
@@ -573,7 +555,7 @@ class TestRegularizationIntegration:
                 gcps=noisy_gcps,
                 regularization_weight=0.0,
                 reference_lat=ref_lat,
-                reference_lon=ref_lon
+                reference_lon=ref_lon,
             )
             result_unreg = calibrator_unreg.calibrate()
 
@@ -584,7 +566,7 @@ class TestRegularizationIntegration:
                 gcps=noisy_gcps,
                 regularization_weight=5.0,
                 reference_lat=ref_lat,
-                reference_lon=ref_lon
+                reference_lon=ref_lon,
             )
             result_reg = calibrator_reg.calibrate()
 
@@ -609,8 +591,7 @@ class TestRegularizationIntegration:
 
         # Additionally, verify that at least in most trials, regularization helps
         improvement_count = sum(
-            reg < unreg
-            for reg, unreg in zip(regularized_deviations, unregularized_deviations)
+            reg < unreg for reg, unreg in zip(regularized_deviations, unregularized_deviations)
         )
         assert improvement_count >= len(seeds) // 2, (
             f"Regularization should help in majority of trials. "
@@ -637,7 +618,7 @@ class TestRegularizationIntegration:
             pan_deg=5.0,  # 5 degree pan offset
             tilt_deg=45.0,
             map_width=640,
-            map_height=640
+            map_height=640,
         )
 
         # Use accurate GCPs from ground truth (these reveal the bias)
@@ -650,7 +631,7 @@ class TestRegularizationIntegration:
             gcps=accurate_gcps,
             regularization_weight=0.0,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
         result_unreg = calibrator_unreg.calibrate()
 
@@ -660,7 +641,7 @@ class TestRegularizationIntegration:
             gcps=accurate_gcps,
             regularization_weight=0.1,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
         result_weak = calibrator_weak.calibrate()
 
@@ -670,7 +651,7 @@ class TestRegularizationIntegration:
             gcps=accurate_gcps,
             regularization_weight=10.0,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
         result_strong = calibrator_strong.calibrate()
 
@@ -718,14 +699,14 @@ class TestRegularizationIntegration:
             gcps=accurate_gcps,
             regularization_weight=0.0,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
 
         # Test 1: Residual vector shape (2N elements only)
         params = np.zeros(6)
         reproj_residuals = calibrator._compute_residuals(params)
         assert reproj_residuals.shape == (2 * n_gcps,), (
-            f"Reprojection residuals should have 2N={2*n_gcps} elements, "
+            f"Reprojection residuals should have 2N={2 * n_gcps} elements, "
             f"got {reproj_residuals.shape[0]}"
         )
 
@@ -748,7 +729,7 @@ class TestRegularizationIntegration:
             prior_sigmas=None,
             regularization_weight=0.0,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
         result_none = calibrator_none_sigmas.calibrate()
         assert result_none.regularization_penalty is None
@@ -769,7 +750,7 @@ class TestRegularizationIntegration:
             gcps=accurate_gcps,
             regularization_weight=0.0,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
         _ = warmup_calibrator.calibrate()
 
@@ -782,7 +763,7 @@ class TestRegularizationIntegration:
                 gcps=accurate_gcps,
                 regularization_weight=0.0,
                 reference_lat=ref_lat,
-                reference_lon=ref_lon
+                reference_lon=ref_lon,
             )
             start = time.perf_counter()
             _ = calibrator.calibrate()
@@ -796,7 +777,7 @@ class TestRegularizationIntegration:
                 gcps=accurate_gcps,
                 regularization_weight=1.0,
                 reference_lat=ref_lat,
-                reference_lon=ref_lon
+                reference_lon=ref_lon,
             )
             start = time.perf_counter()
             _ = calibrator.calibrate()
@@ -815,9 +796,11 @@ class TestRegularizationIntegration:
         # (using 50% as a more generous threshold for CI stability)
         assert overhead_pct < 50.0, (
             f"Regularization overhead too high: {overhead_pct:.1f}% "
-            f"(unregularized: {mean_unreg*1000:.2f}ms, regularized: {mean_reg*1000:.2f}ms)"
+            f"(unregularized: {mean_unreg * 1000:.2f}ms, regularized: {mean_reg * 1000:.2f}ms)"
         )
 
         # Log performance info for reference (not a strict assertion)
-        print(f"\nPerformance: unreg={mean_unreg*1000:.2f}ms, "
-              f"reg={mean_reg*1000:.2f}ms, overhead={overhead_pct:.1f}%")
+        print(
+            f"\nPerformance: unreg={mean_unreg * 1000:.2f}ms, "
+            f"reg={mean_reg * 1000:.2f}ms, overhead={overhead_pct:.1f}%"
+        )

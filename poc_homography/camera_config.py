@@ -98,9 +98,9 @@ CAMERAS = [
         # Lens distortion coefficients (OpenCV model)
         # Calibrated using checkerboard or GCP-based optimization
         "k1": -0.341052,  # Radial distortion (negative = barrel distortion)
-        "k2": 0.787571,   # Secondary radial distortion
-        "p1": 0.0,        # Tangential distortion (not calibrated)
-        "p2": 0.0,        # Tangential distortion (not calibrated)
+        "k2": 0.787571,  # Secondary radial distortion
+        "p1": 0.0,  # Tangential distortion (not calibrated)
+        "p2": 0.0,  # Tangential distortion (not calibrated)
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
@@ -114,9 +114,9 @@ CAMERAS = [
         # For north-up rasters, row_rotation=0 and col_rotation=0
         "geotiff_params": {
             "geotransform": [737575.05, 0.15, 0, 4391595.45, 0, -0.15],
-            "utm_crs": "EPSG:25830"
+            "utm_crs": "EPSG:25830",
         },
-        "description": "Valte camera location"
+        "description": "Valte camera location",
     },
     {
         "ip": "10.237.100.15",
@@ -136,7 +136,7 @@ CAMERAS = [
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
         # Zoom-dependent intrinsic calibration table (optional)
         "calibration_table": None,
-        "description": "Setram camera location"
+        "description": "Setram camera location",
     },
 ]
 

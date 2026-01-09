@@ -25,30 +25,26 @@ References:
 """
 
 import math
-import sys
 import os
-from typing import Tuple
+import sys
 
-import numpy as np
-from hypothesis import given, assume, settings, strategies as st
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 from hypothesis.strategies import composite
 
 # Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.coordinate_converter import (
     EARTH_RADIUS_M,
     gps_to_local_xy,
     local_xy_to_gps,
-    gps_to_local_xy_utm,
-    local_xy_to_gps_utm,
-    PYPROJ_AVAILABLE,
 )
-
 
 # ============================================================================
 # Hypothesis Strategies for Test Data Generation
 # ============================================================================
+
 
 @composite
 def valid_latitude(draw, min_lat: float = -85.0, max_lat: float = 85.0) -> float:
@@ -66,7 +62,9 @@ def valid_latitude(draw, min_lat: float = -85.0, max_lat: float = 85.0) -> float
     Returns:
         Latitude in decimal degrees within [-85, 85]
     """
-    return draw(st.floats(min_value=min_lat, max_value=max_lat, allow_nan=False, allow_infinity=False))
+    return draw(
+        st.floats(min_value=min_lat, max_value=max_lat, allow_nan=False, allow_infinity=False)
+    )
 
 
 @composite
@@ -82,11 +80,13 @@ def valid_longitude(draw, min_lon: float = -180.0, max_lon: float = 180.0) -> fl
     Returns:
         Longitude in decimal degrees within [-180, 180]
     """
-    return draw(st.floats(min_value=min_lon, max_value=max_lon, allow_nan=False, allow_infinity=False))
+    return draw(
+        st.floats(min_value=min_lon, max_value=max_lon, allow_nan=False, allow_infinity=False)
+    )
 
 
 @composite
-def gps_coordinate_pair(draw, max_distance_m: float = 1000.0) -> Tuple[float, float, float, float]:
+def gps_coordinate_pair(draw, max_distance_m: float = 1000.0) -> tuple[float, float, float, float]:
     """
     Generate a pair of GPS coordinates (reference and target) within a maximum distance.
 
@@ -110,8 +110,12 @@ def gps_coordinate_pair(draw, max_distance_m: float = 1000.0) -> Tuple[float, fl
 
     # Generate a local offset within max_distance
     # Use a random angle and distance to ensure uniform distribution
-    angle_rad = draw(st.floats(min_value=0, max_value=2*math.pi, allow_nan=False, allow_infinity=False))
-    distance = draw(st.floats(min_value=0, max_value=max_distance_m, allow_nan=False, allow_infinity=False))
+    angle_rad = draw(
+        st.floats(min_value=0, max_value=2 * math.pi, allow_nan=False, allow_infinity=False)
+    )
+    distance = draw(
+        st.floats(min_value=0, max_value=max_distance_m, allow_nan=False, allow_infinity=False)
+    )
 
     # Convert to local X, Y
     x_offset = distance * math.cos(angle_rad)
@@ -133,7 +137,7 @@ def gps_coordinate_pair(draw, max_distance_m: float = 1000.0) -> Tuple[float, fl
 
 
 @composite
-def local_xy_offset(draw, max_distance_m: float = 1000.0) -> Tuple[float, float]:
+def local_xy_offset(draw, max_distance_m: float = 1000.0) -> tuple[float, float]:
     """
     Generate local X, Y offsets within a maximum distance.
 
@@ -145,8 +149,12 @@ def local_xy_offset(draw, max_distance_m: float = 1000.0) -> Tuple[float, float]
         Tuple of (x_meters, y_meters)
     """
     # Generate random angle and distance
-    angle_rad = draw(st.floats(min_value=0, max_value=2*math.pi, allow_nan=False, allow_infinity=False))
-    distance = draw(st.floats(min_value=0, max_value=max_distance_m, allow_nan=False, allow_infinity=False))
+    angle_rad = draw(
+        st.floats(min_value=0, max_value=2 * math.pi, allow_nan=False, allow_infinity=False)
+    )
+    distance = draw(
+        st.floats(min_value=0, max_value=max_distance_m, allow_nan=False, allow_infinity=False)
+    )
 
     x = distance * math.cos(angle_rad)
     y = distance * math.sin(angle_rad)
@@ -155,7 +163,7 @@ def local_xy_offset(draw, max_distance_m: float = 1000.0) -> Tuple[float, float]
 
 
 @composite
-def reference_gps(draw) -> Tuple[float, float]:
+def reference_gps(draw) -> tuple[float, float]:
     """
     Generate a reference GPS coordinate.
 
@@ -168,7 +176,7 @@ def reference_gps(draw) -> Tuple[float, float]:
 
 
 @composite
-def reference_and_local_offset(draw) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+def reference_and_local_offset(draw) -> tuple[tuple[float, float], tuple[float, float]]:
     """
     Generate a reference GPS coordinate and a local XY offset.
 
@@ -181,7 +189,7 @@ def reference_and_local_offset(draw) -> Tuple[Tuple[float, float], Tuple[float, 
 
 
 @composite
-def latitude_and_local_offset(draw) -> Tuple[float, Tuple[float, float]]:
+def latitude_and_local_offset(draw) -> tuple[float, tuple[float, float]]:
     """
     Generate a latitude and a local XY offset.
 
@@ -194,7 +202,7 @@ def latitude_and_local_offset(draw) -> Tuple[float, Tuple[float, float]]:
 
 
 @composite
-def reference_distance_angle(draw) -> Tuple[Tuple[float, float], float, float]:
+def reference_distance_angle(draw) -> tuple[tuple[float, float], float, float]:
     """
     Generate a reference GPS, distance, and angle for isotropy tests.
 
@@ -202,14 +210,19 @@ def reference_distance_angle(draw) -> Tuple[Tuple[float, float], float, float]:
         Tuple of ((ref_lat, ref_lon), distance, angle)
     """
     ref = draw(reference_gps())
-    distance = draw(st.floats(min_value=0.0, max_value=1000.0, allow_nan=False, allow_infinity=False))
-    angle = draw(st.floats(min_value=0.0, max_value=2*math.pi, allow_nan=False, allow_infinity=False))
+    distance = draw(
+        st.floats(min_value=0.0, max_value=1000.0, allow_nan=False, allow_infinity=False)
+    )
+    angle = draw(
+        st.floats(min_value=0.0, max_value=2 * math.pi, allow_nan=False, allow_infinity=False)
+    )
     return ref, distance, angle
 
 
 # ============================================================================
 # Property 1: GPS Round-Trip Accuracy
 # ============================================================================
+
 
 @given(gps_coordinate_pair(max_distance_m=1000.0))
 @settings(deadline=None)
@@ -297,7 +310,7 @@ def test_property_local_round_trip_accuracy(ref_and_offset):
     x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
     # Calculate round-trip error
-    error_m = math.sqrt((x_orig - x_final)**2 + (y_orig - y_final)**2)
+    error_m = math.sqrt((x_orig - x_final) ** 2 + (y_orig - y_final) ** 2)
     error_mm = error_m * 1000
 
     assert error_mm < 300.0, (
@@ -342,7 +355,7 @@ def test_property_round_trip_accuracy_across_latitudes(lat_and_offset):
     x_final, y_final = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
 
     # Calculate error
-    error_m = math.sqrt((x - x_final)**2 + (y - y_final)**2)
+    error_m = math.sqrt((x - x_final) ** 2 + (y - y_final) ** 2)
     error_mm = error_m * 1000
 
     assert error_mm < 300.0, (
@@ -372,11 +385,10 @@ def test_property_round_trip_accuracy_across_latitudes(lat_and_offset):
 # - GPS → UTM → GPS round-trip accuracy
 
 
-
-
 # ============================================================================
 # Property 3: Coordinate System Sign Convention
 # ============================================================================
+
 
 @given(reference_gps())
 @settings(deadline=None)
@@ -415,8 +427,7 @@ def test_property_positive_x_means_east(ref_coords):
     # Latitude should remain essentially unchanged (within numerical precision)
     lat_diff = abs(lat - ref_lat)
     assert lat_diff < 1e-10, (
-        f"Pure eastward movement should not change latitude\n"
-        f"Latitude change: {lat_diff:.12f}°"
+        f"Pure eastward movement should not change latitude\nLatitude change: {lat_diff:.12f}°"
     )
 
 
@@ -451,8 +462,7 @@ def test_property_negative_x_means_west(ref_coords):
     # Latitude should remain unchanged
     lat_diff = abs(lat - ref_lat)
     assert lat_diff < 1e-10, (
-        f"Pure westward movement should not change latitude\n"
-        f"Latitude change: {lat_diff:.12f}°"
+        f"Pure westward movement should not change latitude\nLatitude change: {lat_diff:.12f}°"
     )
 
 
@@ -492,8 +502,7 @@ def test_property_positive_y_means_north(ref_coords):
     # Longitude should remain unchanged
     lon_diff = abs(lon - ref_lon)
     assert lon_diff < 1e-10, (
-        f"Pure northward movement should not change longitude\n"
-        f"Longitude change: {lon_diff:.12f}°"
+        f"Pure northward movement should not change longitude\nLongitude change: {lon_diff:.12f}°"
     )
 
 
@@ -528,8 +537,7 @@ def test_property_negative_y_means_south(ref_coords):
     # Longitude should remain unchanged
     lon_diff = abs(lon - ref_lon)
     assert lon_diff < 1e-10, (
-        f"Pure southward movement should not change longitude\n"
-        f"Longitude change: {lon_diff:.12f}°"
+        f"Pure southward movement should not change longitude\nLongitude change: {lon_diff:.12f}°"
     )
 
 
@@ -583,6 +591,7 @@ def test_property_coordinate_system_consistency(coords):
 # Property 4: Distance Preservation
 # ============================================================================
 
+
 @given(gps_coordinate_pair(max_distance_m=1000.0))
 @settings(deadline=None)
 def test_property_distance_preservation_for_short_distances(coords):
@@ -620,9 +629,10 @@ def test_property_distance_preservation_for_short_distances(coords):
     delta_lat_rad = math.radians(target_lat - ref_lat)
     delta_lon_rad = math.radians(target_lon - ref_lon)
 
-    a = (math.sin(delta_lat_rad / 2)**2 +
-         math.cos(ref_lat_rad) * math.cos(target_lat_rad) *
-         math.sin(delta_lon_rad / 2)**2)
+    a = (
+        math.sin(delta_lat_rad / 2) ** 2
+        + math.cos(ref_lat_rad) * math.cos(target_lat_rad) * math.sin(delta_lon_rad / 2) ** 2
+    )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     great_circle_distance = EARTH_RADIUS_M * c
 
@@ -637,7 +647,7 @@ def test_property_distance_preservation_for_short_distances(coords):
 
     # For distances < 1km, error should be < 10% (relaxed tolerance due to projection errors)
     assert relative_error < 0.10, (
-        f"Distance preservation error {relative_error*100:.2f}% exceeds 10%\n"
+        f"Distance preservation error {relative_error * 100:.2f}% exceeds 10%\n"
         f"Reference:         ({ref_lat:.6f}, {ref_lon:.6f})\n"
         f"Target:            ({target_lat:.6f}, {target_lon:.6f})\n"
         f"Euclidean (XY):    {euclidean_distance:.3f}m\n"
@@ -696,7 +706,7 @@ def test_property_distance_isotropy_across_directions(ref_dist_angle):
 
     # Allow up to 20% variation (relaxed due to projection errors)
     assert relative_error < 0.20, (
-        f"Distance anisotropy {relative_error*100:.2f}% exceeds 20%\n"
+        f"Distance anisotropy {relative_error * 100:.2f}% exceeds 20%\n"
         f"Reference:         ({ref_lat:.6f}, {ref_lon:.6f})\n"
         f"Angle:             {math.degrees(angle):.1f}°\n"
         f"Original distance: {distance:.3f}m\n"
@@ -708,6 +718,7 @@ def test_property_distance_isotropy_across_directions(ref_dist_angle):
 # ============================================================================
 # Property 5: Origin Invariance
 # ============================================================================
+
 
 @given(gps_coordinate_pair(max_distance_m=1000.0))
 @settings(deadline=None)
@@ -777,8 +788,9 @@ def test_property_zero_local_returns_to_reference_gps(ref_coords):
 # ============================================================================
 
 if __name__ == "__main__":
-    import pytest
     import sys
+
+    import pytest
 
     # Run pytest on this file
     sys.exit(pytest.main([__file__, "-v", "--tb=short"]))

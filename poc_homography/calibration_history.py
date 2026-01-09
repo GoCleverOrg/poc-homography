@@ -38,10 +38,10 @@ Usage Example:
     ...     print(f"Last calibration: {latest.estimated_height}m")
 """
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import List, Tuple, Optional
 from pathlib import Path
+
 import yaml
 
 
@@ -65,10 +65,11 @@ class CalibrationHistoryEntry:
         camera_gps_lat: Camera GPS latitude in decimal degrees
         camera_gps_lon: Camera GPS longitude in decimal degrees
     """
+
     camera_name: str
     timestamp: datetime
     estimated_height: float
-    confidence_interval: Tuple[float, float]
+    confidence_interval: tuple[float, float]
     inlier_count: int
     outlier_count: int
     method: str
@@ -84,11 +85,11 @@ class CalibrationHistoryEntry:
         """
         data = asdict(self)
         # Convert datetime to ISO format string
-        data['timestamp'] = self.timestamp.isoformat()
+        data["timestamp"] = self.timestamp.isoformat()
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'CalibrationHistoryEntry':
+    def from_dict(cls, data: dict) -> "CalibrationHistoryEntry":
         """
         Create entry from dictionary loaded from YAML.
 
@@ -102,12 +103,12 @@ class CalibrationHistoryEntry:
             ValueError: If required fields are missing or invalid
         """
         # Convert timestamp string to datetime
-        if isinstance(data['timestamp'], str):
-            data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        if isinstance(data["timestamp"], str):
+            data["timestamp"] = datetime.fromisoformat(data["timestamp"])
 
         # Convert confidence_interval list to tuple
-        if isinstance(data['confidence_interval'], list):
-            data['confidence_interval'] = tuple(data['confidence_interval'])
+        if isinstance(data["confidence_interval"], list):
+            data["confidence_interval"] = tuple(data["confidence_interval"])
 
         return cls(**data)
 
@@ -128,7 +129,7 @@ class CalibrationHistory:
         entries: List of CalibrationHistoryEntry objects currently loaded
     """
 
-    def __init__(self, storage_path: Optional[str] = None):
+    def __init__(self, storage_path: str | None = None):
         """
         Initialize calibration history manager.
 
@@ -143,8 +144,8 @@ class CalibrationHistory:
         if storage_path is None:
             # Default to user's home directory
             home = Path.home()
-            storage_dir = home / '.poc-homography'
-            self.storage_path = storage_dir / 'calibration_history.yaml'
+            storage_dir = home / ".poc-homography"
+            self.storage_path = storage_dir / "calibration_history.yaml"
         else:
             self.storage_path = Path(storage_path)
 
@@ -152,7 +153,7 @@ class CalibrationHistory:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Initialize entries list
-        self.entries: List[CalibrationHistoryEntry] = []
+        self.entries: list[CalibrationHistoryEntry] = []
 
         # Load existing history if file exists
         if self.storage_path.exists():
@@ -177,10 +178,8 @@ class CalibrationHistory:
         self.entries.sort(key=lambda e: e.timestamp, reverse=True)
 
     def get_entries(
-        self,
-        camera_name: Optional[str] = None,
-        limit: Optional[int] = None
-    ) -> List[CalibrationHistoryEntry]:
+        self, camera_name: str | None = None, limit: int | None = None
+    ) -> list[CalibrationHistoryEntry]:
         """
         Get calibration entries, optionally filtered and limited.
 
@@ -202,10 +201,7 @@ class CalibrationHistory:
         """
         # Filter by camera name if specified
         if camera_name is not None:
-            filtered_entries = [
-                e for e in self.entries
-                if e.camera_name == camera_name
-            ]
+            filtered_entries = [e for e in self.entries if e.camera_name == camera_name]
         else:
             filtered_entries = self.entries.copy()
 
@@ -215,7 +211,7 @@ class CalibrationHistory:
 
         return filtered_entries
 
-    def get_latest(self, camera_name: str) -> Optional[CalibrationHistoryEntry]:
+    def get_latest(self, camera_name: str) -> CalibrationHistoryEntry | None:
         """
         Get the most recent calibration entry for a specific camera.
 
@@ -251,12 +247,10 @@ class CalibrationHistory:
             types are serialized.
         """
         # Convert entries to dictionaries
-        data = {
-            'calibrations': [entry.to_dict() for entry in self.entries]
-        }
+        data = {"calibrations": [entry.to_dict() for entry in self.entries]}
 
         # Write to YAML file
-        with open(self.storage_path, 'w') as f:
+        with open(self.storage_path, "w") as f:
             yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
     def load(self) -> None:
@@ -282,24 +276,23 @@ class CalibrationHistory:
             return
 
         # Load from YAML file
-        with open(self.storage_path, 'r') as f:
+        with open(self.storage_path) as f:
             data = yaml.safe_load(f)
 
         # Handle empty file or missing calibrations key
-        if data is None or 'calibrations' not in data:
+        if data is None or "calibrations" not in data:
             self.entries = []
             return
 
         # Convert dictionaries to CalibrationHistoryEntry objects
         self.entries = [
-            CalibrationHistoryEntry.from_dict(entry_data)
-            for entry_data in data['calibrations']
+            CalibrationHistoryEntry.from_dict(entry_data) for entry_data in data["calibrations"]
         ]
 
         # Sort entries by timestamp, newest first
         self.entries.sort(key=lambda e: e.timestamp, reverse=True)
 
-    def clear(self, camera_name: Optional[str] = None) -> None:
+    def clear(self, camera_name: str | None = None) -> None:
         """
         Clear calibration history entries.
 
@@ -325,7 +318,4 @@ class CalibrationHistory:
             self.entries = []
         else:
             # Clear only entries for specified camera
-            self.entries = [
-                e for e in self.entries
-                if e.camera_name != camera_name
-            ]
+            self.entries = [e for e in self.entries if e.camera_name != camera_name]

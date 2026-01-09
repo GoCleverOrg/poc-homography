@@ -25,40 +25,36 @@ Mathematical Context:
 Run with: pytest tests/test_cross_module_consistency_properties.py -v
 """
 
-import sys
-import os
-import numpy as np
 import math
-from typing import Tuple, List
+import os
+import sys
+
+import numpy as np
 
 # Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Import modules under test
-from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
-from poc_homography.coordinate_converter import (
-    gps_to_local_xy,
-    local_xy_to_gps,
-    EARTH_RADIUS_M
-)
-from poc_homography.gcp_calibrator import GCPCalibrator
-
-# Import modules that should use shared GPS functions
-import poc_homography.gps_distance_calculator
-import poc_homography.feature_match_homography
-
-# Hypothesis imports
-from hypothesis import given, strategies as st, settings, assume, example, HealthCheck
-from hypothesis.extra.numpy import arrays
-
 # pytest imports
 import pytest
 
+# Hypothesis imports
+from hypothesis import HealthCheck, assume, example, given, settings
+from hypothesis import strategies as st
+
+import poc_homography.feature_match_homography
+
+# Import modules that should use shared GPS functions
+import poc_homography.gps_distance_calculator
+from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.coordinate_converter import EARTH_RADIUS_M, gps_to_local_xy, local_xy_to_gps
+from poc_homography.gcp_calibrator import GCPCalibrator
+from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 
 # =============================================================================
 # Hypothesis Strategies for Camera Parameters
 # =============================================================================
+
 
 @st.composite
 def valid_pan_degrees(draw):
@@ -109,8 +105,12 @@ def valid_gps_coordinate(draw):
 
     Excludes polar regions (> 85°) where equirectangular approximation breaks down.
     """
-    latitude = draw(st.floats(min_value=-85.0, max_value=85.0, allow_nan=False, allow_infinity=False))
-    longitude = draw(st.floats(min_value=-180.0, max_value=180.0, allow_nan=False, allow_infinity=False))
+    latitude = draw(
+        st.floats(min_value=-85.0, max_value=85.0, allow_nan=False, allow_infinity=False)
+    )
+    longitude = draw(
+        st.floats(min_value=-180.0, max_value=180.0, allow_nan=False, allow_infinity=False)
+    )
     return latitude, longitude
 
 
@@ -143,17 +143,18 @@ def valid_camera_parameters(draw):
     position = np.array([0.0, 0.0, height_m])
 
     return {
-        'pan_deg': pan_deg,
-        'tilt_deg': tilt_deg,
-        'height_m': height_m,
-        'zoom_factor': zoom_factor,
-        'position': position
+        "pan_deg": pan_deg,
+        "tilt_deg": tilt_deg,
+        "height_m": height_m,
+        "zoom_factor": zoom_factor,
+        "position": position,
     }
 
 
 # =============================================================================
 # Property 1: Rotation Matrix Equivalence
 # =============================================================================
+
 
 class TestRotationMatrixEquivalence:
     """
@@ -245,6 +246,7 @@ class TestRotationMatrixEquivalence:
 # Property 2: GPS Conversion Function Equivalence
 # =============================================================================
 
+
 class TestGPSConversionEquivalence:
     """
     Property: All modules must use the same canonical GPS conversion functions.
@@ -266,21 +268,21 @@ class TestGPSConversionEquivalence:
         from the same GPS input.
         """
         # Verify gps_distance_calculator imports shared functions
-        assert hasattr(poc_homography.gps_distance_calculator, 'gps_to_local_xy'), (
+        assert hasattr(poc_homography.gps_distance_calculator, "gps_to_local_xy"), (
             "gps_distance_calculator must import gps_to_local_xy from coordinate_converter"
         )
-        assert hasattr(poc_homography.gps_distance_calculator, 'local_xy_to_gps'), (
+        assert hasattr(poc_homography.gps_distance_calculator, "local_xy_to_gps"), (
             "gps_distance_calculator must import local_xy_to_gps from coordinate_converter"
         )
-        assert hasattr(poc_homography.gps_distance_calculator, 'EARTH_RADIUS_M'), (
+        assert hasattr(poc_homography.gps_distance_calculator, "EARTH_RADIUS_M"), (
             "gps_distance_calculator must import EARTH_RADIUS_M from coordinate_converter"
         )
 
         # Verify feature_match_homography imports shared functions
-        assert hasattr(poc_homography.feature_match_homography, 'gps_to_local_xy'), (
+        assert hasattr(poc_homography.feature_match_homography, "gps_to_local_xy"), (
             "feature_match_homography must import gps_to_local_xy from coordinate_converter"
         )
-        assert hasattr(poc_homography.feature_match_homography, 'local_xy_to_gps'), (
+        assert hasattr(poc_homography.feature_match_homography, "local_xy_to_gps"), (
             "feature_match_homography must import local_xy_to_gps from coordinate_converter"
         )
 
@@ -292,7 +294,6 @@ class TestGPSConversionEquivalence:
         Issue #30 documented a 0.076% systematic error from using 111111 m/degree
         instead of the correct 6371000m radius. This test prevents regression.
         """
-        from poc_homography.coordinate_converter import EARTH_RADIUS_M
 
         # Verify gps_distance_calculator uses shared constant
         assert poc_homography.gps_distance_calculator.EARTH_RADIUS_M == EARTH_RADIUS_M, (
@@ -308,11 +309,11 @@ class TestGPSConversionEquivalence:
 
     @given(ref_gps=valid_gps_coordinate(), target_gps=valid_gps_coordinate())
     @settings(max_examples=100, suppress_health_check=[HealthCheck.filter_too_much])
-    @example(ref_gps=(39.640472, -0.230194), target_gps=(39.640583, -0.230111))  # Valencia test data
+    @example(
+        ref_gps=(39.640472, -0.230194), target_gps=(39.640583, -0.230111)
+    )  # Valencia test data
     def test_modules_produce_identical_gps_to_local_results(
-        self,
-        ref_gps: Tuple[float, float],
-        target_gps: Tuple[float, float]
+        self, ref_gps: tuple[float, float], target_gps: tuple[float, float]
     ):
         """
         GPS-to-local conversion must produce identical results across all modules.
@@ -372,9 +373,7 @@ class TestGPSConversionEquivalence:
     @settings(max_examples=100, suppress_health_check=[HealthCheck.filter_too_much])
     @example(ref_gps=(39.640472, -0.230194), offset=(50.0, 100.0))  # Valencia test data
     def test_modules_produce_identical_local_to_gps_results(
-        self,
-        ref_gps: Tuple[float, float],
-        offset: Tuple[float, float]
+        self, ref_gps: tuple[float, float], offset: tuple[float, float]
     ):
         """
         Local-to-GPS conversion must produce identical results across all modules.
@@ -425,6 +424,7 @@ class TestGPSConversionEquivalence:
 # Property 3: Homography Matrix Consistency
 # =============================================================================
 
+
 class TestHomographyConsistency:
     """
     Property: CameraGeometry.H and IntrinsicExtrinsicHomography must produce
@@ -438,10 +438,15 @@ class TestHomographyConsistency:
 
     @given(params=valid_camera_parameters())
     @settings(max_examples=100)
-    @example(params={
-        'pan_deg': 66.7, 'tilt_deg': 30.0, 'height_m': 3.4,
-        'zoom_factor': 1.0, 'position': np.array([0.0, 0.0, 3.4])
-    })  # Valencia test data
+    @example(
+        params={
+            "pan_deg": 66.7,
+            "tilt_deg": 30.0,
+            "height_m": 3.4,
+            "zoom_factor": 1.0,
+            "position": np.array([0.0, 0.0, 3.4]),
+        }
+    )  # Valencia test data
     def test_homography_matrices_identical(self, params: dict):
         """
         Homography matrices must be identical for same camera parameters.
@@ -453,11 +458,11 @@ class TestHomographyConsistency:
 
             where matrices are normalized to H[2,2] = 1
         """
-        pan_deg = params['pan_deg']
-        tilt_deg = params['tilt_deg']
-        height_m = params['height_m']
-        zoom_factor = params['zoom_factor']
-        position = params['position']
+        pan_deg = params["pan_deg"]
+        tilt_deg = params["tilt_deg"]
+        height_m = params["height_m"]
+        zoom_factor = params["zoom_factor"]
+        position = params["position"]
 
         width, height = 1920, 1080
 
@@ -490,7 +495,7 @@ class TestHomographyConsistency:
 
     @given(params=valid_camera_parameters(), world_point=valid_local_xy_offset())
     @settings(max_examples=100, suppress_health_check=[HealthCheck.filter_too_much])
-    def test_projection_consistency(self, params: dict, world_point: Tuple[float, float]):
+    def test_projection_consistency(self, params: dict, world_point: tuple[float, float]):
         """
         World point projection must be identical using both homography matrices.
 
@@ -505,10 +510,10 @@ class TestHomographyConsistency:
         WHY: If homographies project the same world point to different image pixels,
         the modules are using inconsistent camera models.
         """
-        pan_deg = params['pan_deg']
-        tilt_deg = params['tilt_deg']
-        position = params['position']
-        zoom_factor = params['zoom_factor']
+        pan_deg = params["pan_deg"]
+        tilt_deg = params["tilt_deg"]
+        position = params["position"]
+        zoom_factor = params["zoom_factor"]
 
         x_world, y_world = world_point
 
@@ -541,7 +546,7 @@ class TestHomographyConsistency:
         v_ieh = p_ieh[1, 0] / p_ieh[2, 0]
 
         # Verify projections match
-        pixel_diff = math.sqrt((u_geo - u_ieh)**2 + (v_geo - v_ieh)**2)
+        pixel_diff = math.sqrt((u_geo - u_ieh) ** 2 + (v_geo - v_ieh) ** 2)
         assert pixel_diff < 0.01, (
             f"Projection differs by {pixel_diff:.4f} pixels for world point ({x_world:.2f}, {y_world:.2f}m) "
             f"at pan={pan_deg:.2f}°, tilt={tilt_deg:.2f}°. "
@@ -553,6 +558,7 @@ class TestHomographyConsistency:
 # =============================================================================
 # Property 4: GCP Calibration Residual Consistency
 # =============================================================================
+
 
 class TestGCPResidualConsistency:
     """
@@ -568,11 +574,18 @@ class TestGCPResidualConsistency:
     """
 
     @given(params=valid_camera_parameters())
-    @settings(max_examples=50, suppress_health_check=[HealthCheck.filter_too_much])  # Fewer examples due to computational cost
-    @example(params={
-        'pan_deg': 0.0, 'tilt_deg': 30.0, 'height_m': 5.0,
-        'zoom_factor': 10.0, 'position': np.array([0.0, 0.0, 5.0])
-    })
+    @settings(
+        max_examples=50, suppress_health_check=[HealthCheck.filter_too_much]
+    )  # Fewer examples due to computational cost
+    @example(
+        params={
+            "pan_deg": 0.0,
+            "tilt_deg": 30.0,
+            "height_m": 5.0,
+            "zoom_factor": 10.0,
+            "position": np.array([0.0, 0.0, 5.0]),
+        }
+    )
     def test_calibrator_residuals_match_manual_projection_errors(self, params: dict):
         """
         GCPCalibrator residuals must match manually computed projection errors.
@@ -592,10 +605,10 @@ class TestGCPResidualConsistency:
         small numerical errors. This is acceptable as long as both computations use
         the same coordinate conversion pipeline.
         """
-        pan_deg = params['pan_deg']
-        tilt_deg = params['tilt_deg']
-        position = params['position']
-        zoom_factor = params['zoom_factor']
+        pan_deg = params["pan_deg"]
+        tilt_deg = params["tilt_deg"]
+        position = params["position"]
+        zoom_factor = params["zoom_factor"]
 
         width, height = 1920, 1080
 
@@ -610,11 +623,11 @@ class TestGCPResidualConsistency:
 
         # Generate 5 GCPs at different world positions
         world_positions = [
-            (10.0, 20.0),   # North-East
+            (10.0, 20.0),  # North-East
             (-10.0, 20.0),  # North-West
             (10.0, -20.0),  # South-East
-            (-10.0, -20.0), # South-West
-            (0.0, 15.0),    # North
+            (-10.0, -20.0),  # South-West
+            (0.0, 15.0),  # North
         ]
 
         gcps = []
@@ -637,11 +650,13 @@ class TestGCPResidualConsistency:
             if not (0 <= u_obs < width and 0 <= v_obs < height):
                 continue
 
-            gcps.append({
-                'gps': {'latitude': lat, 'longitude': lon},
-                'image': {'u': u_obs, 'v': v_obs},
-                'world': (x_world, y_world)  # Store for manual computation
-            })
+            gcps.append(
+                {
+                    "gps": {"latitude": lat, "longitude": lon},
+                    "image": {"u": u_obs, "v": v_obs},
+                    "world": (x_world, y_world),  # Store for manual computation
+                }
+            )
 
         # Need at least 3 GCPs for calibration
         assume(len(gcps) >= 3)
@@ -651,10 +666,10 @@ class TestGCPResidualConsistency:
         calibrator = GCPCalibrator(
             camera_geometry=geo,
             gcps=gcps,
-            loss_function='huber',
+            loss_function="huber",
             loss_scale=1.0,
             reference_lat=ref_lat,
-            reference_lon=ref_lon
+            reference_lon=ref_lon,
         )
 
         # Compute residuals using calibrator (at zero perturbation)
@@ -666,8 +681,8 @@ class TestGCPResidualConsistency:
         # to ensure we're comparing apples to apples
         residuals_manual = []
         for i, gcp in enumerate(gcps):
-            u_obs = gcp['image']['u']
-            v_obs = gcp['image']['v']
+            u_obs = gcp["image"]["u"]
+            v_obs = gcp["image"]["v"]
 
             # Use calibrator's world coordinates (which include GPS round-trip)
             x_world, y_world = calibrator._world_coords[i]
@@ -678,7 +693,9 @@ class TestGCPResidualConsistency:
 
             if abs(img_pt[2, 0]) < 1e-10:
                 # Point at horizon - calibrator uses INFINITY_RESIDUAL
-                residuals_manual.extend([calibrator.INFINITY_RESIDUAL, calibrator.INFINITY_RESIDUAL])
+                residuals_manual.extend(
+                    [calibrator.INFINITY_RESIDUAL, calibrator.INFINITY_RESIDUAL]
+                )
                 continue
 
             u_pred = img_pt[0, 0] / img_pt[2, 0]
@@ -719,6 +736,7 @@ class TestGCPResidualConsistency:
 # Additional Consistency Properties
 # =============================================================================
 
+
 class TestIntrinsicMatrixConsistency:
     """
     Property: Intrinsic matrix computation must be consistent across modules.
@@ -730,7 +748,7 @@ class TestIntrinsicMatrixConsistency:
 
     @given(zoom_factor=valid_zoom_factor())
     @settings(max_examples=100)
-    @example(zoom_factor=1.0)   # Wide angle
+    @example(zoom_factor=1.0)  # Wide angle
     @example(zoom_factor=10.0)  # Medium zoom
     @example(zoom_factor=25.0)  # Maximum zoom
     def test_intrinsic_matrix_identical(self, zoom_factor: float):
@@ -774,6 +792,6 @@ class TestIntrinsicMatrixConsistency:
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run tests with pytest
-    pytest.main([__file__, '-v', '--tb=short'])
+    pytest.main([__file__, "-v", "--tb=short"])

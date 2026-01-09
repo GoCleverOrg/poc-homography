@@ -1,16 +1,16 @@
 # camera_geometry.py
 
-import numpy as np
-import math
 import logging
+import math
 import warnings
-from typing import List, Tuple, Union, Dict, Any, Optional
+from typing import Any
 
-from poc_homography.types import (
-    Degrees, Meters, Pixels, Millimeters, Unitless
-)
+import numpy as np
+
+from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
+
 
 class CameraGeometry:
     """
@@ -133,7 +133,7 @@ class CameraGeometry:
         zoom_factor: Unitless,
         W_px: Pixels = Pixels(1920),
         H_px: Pixels = Pixels(1080),
-        sensor_width_mm: Millimeters = Millimeters(6.78)
+        sensor_width_mm: Millimeters = Millimeters(6.78),
     ) -> np.ndarray:
         """
         Calculates the 3x3 Intrinsic Matrix K based on camera specifications and zoom factor.
@@ -177,17 +177,11 @@ class CameraGeometry:
 
         # 3. Construct K
         cx, cy = W_px / 2.0, H_px / 2.0
-        K = np.array([
-            [f_px, 0, cx],
-            [0, f_px, cy],
-            [0, 0, 1]
-        ])
+        K = np.array([[f_px, 0, cx], [0, f_px, cy], [0, 0, 1]])
         return K
 
     def set_geotiff_params(
-        self,
-        geotiff_params: Optional[Dict[str, Any]],
-        camera_utm_position: Optional[Tuple[float, float]]
+        self, geotiff_params: dict[str, Any] | None, camera_utm_position: tuple[float, float] | None
     ) -> None:
         """
         Set GeoTIFF parameters to compute the affine transformation matrix A.
@@ -285,27 +279,25 @@ class CameraGeometry:
         camera_easting, camera_northing = camera_utm_position
 
         # Validate camera_utm_position values are numeric and finite
-        for i, (name, value) in enumerate([('easting', camera_easting), ('northing', camera_northing)]):
+        for i, (name, value) in enumerate(
+            [("easting", camera_easting), ("northing", camera_northing)]
+        ):
             if not isinstance(value, (int, float)):
                 raise TypeError(
                     f"camera_utm_position[{i}] ({name}) must be numeric (int or float), "
                     f"got {type(value).__name__}"
                 )
             if not np.isfinite(value):
-                raise ValueError(
-                    f"camera_utm_position[{i}] ({name}) must be finite, got {value}"
-                )
+                raise ValueError(f"camera_utm_position[{i}] ({name}) must be finite, got {value}")
 
         # Check format: new geotransform format vs legacy 4-parameter format
-        if 'geotransform' in geotiff_params:
+        if "geotransform" in geotiff_params:
             # New format: 6-parameter GDAL GeoTransform
-            gt = geotiff_params['geotransform']
+            gt = geotiff_params["geotransform"]
 
             # Validate geotransform is a list/tuple
             if not isinstance(gt, (list, tuple)):
-                raise TypeError(
-                    f"geotransform must be a list or tuple, got {type(gt).__name__}"
-                )
+                raise TypeError(f"geotransform must be a list or tuple, got {type(gt).__name__}")
 
             # Validate geotransform has exactly 6 elements
             if len(gt) != 6:
@@ -322,19 +314,13 @@ class CameraGeometry:
                         f"got {type(val).__name__}"
                     )
                 if not np.isfinite(val):
-                    raise ValueError(
-                        f"geotransform[{i}] must be finite, got {val}"
-                    )
+                    raise ValueError(f"geotransform[{i}] must be finite, got {val}")
 
             # Validate pixel sizes (GT[1] and GT[5]) are non-zero
             if gt[1] == 0:
-                raise ValueError(
-                    f"GT[1] (pixel width) must be non-zero, got {gt[1]}"
-                )
+                raise ValueError(f"GT[1] (pixel width) must be non-zero, got {gt[1]}")
             if gt[5] == 0:
-                raise ValueError(
-                    f"GT[5] (pixel height) must be non-zero, got {gt[5]}"
-                )
+                raise ValueError(f"GT[5] (pixel height) must be non-zero, got {gt[5]}")
 
             # Extract GeoTransform parameters
             origin_easting = gt[0]
@@ -349,16 +335,20 @@ class CameraGeometry:
             t_y = origin_northing - camera_northing
 
             # Construct A matrix with rotation terms
-            self.A = np.array([
-                [pixel_width, row_rotation, t_x],
-                [col_rotation, pixel_height, t_y],
-                [0.0, 0.0, 1.0]
-            ])
+            self.A = np.array(
+                [
+                    [pixel_width, row_rotation, t_x],
+                    [col_rotation, pixel_height, t_y],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
 
             # Log A matrix computation at INFO level
             rotation_info = ""
             if row_rotation != 0 or col_rotation != 0:
-                rotation_info = f"\n  Rotation: GT[2]={row_rotation}, GT[4]={col_rotation} (rotated raster)"
+                rotation_info = (
+                    f"\n  Rotation: GT[2]={row_rotation}, GT[4]={col_rotation} (rotated raster)"
+                )
 
             logger.info(
                 f"Computed affine transformation matrix A from GeoTransform:\n"
@@ -380,11 +370,11 @@ class CameraGeometry:
                 "To convert: geotiff_params = {'geotransform': [origin_easting, pixel_size_x, 0, "
                 "origin_northing, 0, pixel_size_y]}",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
             # Validate legacy format contains required keys
-            required_keys = ['pixel_size_x', 'pixel_size_y', 'origin_easting', 'origin_northing']
+            required_keys = ["pixel_size_x", "pixel_size_y", "origin_easting", "origin_northing"]
             for key in required_keys:
                 if key not in geotiff_params:
                     raise ValueError(
@@ -393,44 +383,38 @@ class CameraGeometry:
                     )
 
             # Extract legacy parameters
-            pixel_size_x = geotiff_params['pixel_size_x']
-            pixel_size_y = geotiff_params['pixel_size_y']
-            origin_easting = geotiff_params['origin_easting']
-            origin_northing = geotiff_params['origin_northing']
+            pixel_size_x = geotiff_params["pixel_size_x"]
+            pixel_size_y = geotiff_params["pixel_size_y"]
+            origin_easting = geotiff_params["origin_easting"]
+            origin_northing = geotiff_params["origin_northing"]
 
             # Validate numeric types and values
-            for name, value in [('pixel_size_x', pixel_size_x), ('pixel_size_y', pixel_size_y),
-                                ('origin_easting', origin_easting), ('origin_northing', origin_northing)]:
+            for name, value in [
+                ("pixel_size_x", pixel_size_x),
+                ("pixel_size_y", pixel_size_y),
+                ("origin_easting", origin_easting),
+                ("origin_northing", origin_northing),
+            ]:
                 if not isinstance(value, (int, float)):
                     raise TypeError(
                         f"geotiff_params['{name}'] must be numeric (int or float), "
                         f"got {type(value).__name__}"
                     )
                 if not np.isfinite(value):
-                    raise ValueError(
-                        f"geotiff_params['{name}'] must be finite, got {value}"
-                    )
+                    raise ValueError(f"geotiff_params['{name}'] must be finite, got {value}")
 
             # Validate pixel sizes are non-zero
             if pixel_size_x == 0:
-                raise ValueError(
-                    f"pixel_size_x must be non-zero, got {pixel_size_x}"
-                )
+                raise ValueError(f"pixel_size_x must be non-zero, got {pixel_size_x}")
             if pixel_size_y == 0:
-                raise ValueError(
-                    f"pixel_size_y must be non-zero, got {pixel_size_y}"
-                )
+                raise ValueError(f"pixel_size_y must be non-zero, got {pixel_size_y}")
 
             # Compute translation components
             t_x = origin_easting - camera_easting
             t_y = origin_northing - camera_northing
 
             # Construct A matrix (no rotation)
-            self.A = np.array([
-                [pixel_size_x, 0.0, t_x],
-                [0.0, pixel_size_y, t_y],
-                [0.0, 0.0, 1.0]
-            ])
+            self.A = np.array([[pixel_size_x, 0.0, t_x], [0.0, pixel_size_y, t_y], [0.0, 0.0, 1.0]])
 
             # Log A matrix computation at INFO level
             logger.info(
@@ -448,7 +432,7 @@ class CameraGeometry:
         k2: Unitless = Unitless(0.0),
         p1: Unitless = Unitless(0.0),
         p2: Unitless = Unitless(0.0),
-        k3: Unitless = Unitless(0.0)
+        k3: Unitless = Unitless(0.0),
     ) -> None:
         """
         Set lens distortion coefficients using the OpenCV distortion model.
@@ -477,12 +461,14 @@ class CameraGeometry:
         self._use_distortion = not np.allclose(self._dist_coeffs, 0.0)
 
         if self._use_distortion:
-            logger.info(f"Distortion coefficients set: k1={k1:.6f}, k2={k2:.6f}, "
-                       f"p1={p1:.6f}, p2={p2:.6f}, k3={k3:.6f}")
+            logger.info(
+                f"Distortion coefficients set: k1={k1:.6f}, k2={k2:.6f}, "
+                f"p1={p1:.6f}, p2={p2:.6f}, k3={k3:.6f}"
+            )
         else:
             logger.info("Distortion coefficients cleared (all zero)")
 
-    def get_distortion_coefficients(self) -> Optional[np.ndarray]:
+    def get_distortion_coefficients(self) -> np.ndarray | None:
         """
         Get current distortion coefficients.
 
@@ -491,12 +477,7 @@ class CameraGeometry:
         """
         return self._dist_coeffs.copy() if self._dist_coeffs is not None else None
 
-    def undistort_point(
-        self,
-        u: float,
-        v: float,
-        iterations: int = 10
-    ) -> Tuple[float, float]:
+    def undistort_point(self, u: float, v: float, iterations: int = 10) -> tuple[float, float]:
         """
         Undistort a single image point to remove lens distortion.
 
@@ -558,10 +539,8 @@ class CameraGeometry:
         return (u_undist, v_undist)
 
     def undistort_points(
-        self,
-        points: List[Tuple[float, float]],
-        iterations: int = 10
-    ) -> List[Tuple[float, float]]:
+        self, points: list[tuple[float, float]], iterations: int = 10
+    ) -> list[tuple[float, float]]:
         """
         Undistort multiple image points.
 
@@ -574,7 +553,7 @@ class CameraGeometry:
         """
         return [self.undistort_point(u, v, iterations) for u, v in points]
 
-    def distort_point(self, u: float, v: float) -> Tuple[float, float]:
+    def distort_point(self, u: float, v: float) -> tuple[float, float]:
         """
         Apply lens distortion to an undistorted point.
 
@@ -628,7 +607,7 @@ class CameraGeometry:
         return (u_dist, v_dist)
 
     # Roll validation thresholds
-    ROLL_WARN_THRESHOLD = 5.0   # Warning when |roll_deg| > 5.0
+    ROLL_WARN_THRESHOLD = 5.0  # Warning when |roll_deg| > 5.0
     ROLL_ERROR_THRESHOLD = 15.0  # Error when |roll_deg| > 15.0
 
     def _validate_parameters(
@@ -637,7 +616,7 @@ class CameraGeometry:
         w_pos: np.ndarray,
         pan_deg: Degrees,
         tilt_deg: Degrees,
-        roll_deg: Degrees = Degrees(0.0)
+        roll_deg: Degrees = Degrees(0.0),
     ) -> None:
         """
         Validates all camera parameters before setting them.
@@ -737,7 +716,7 @@ class CameraGeometry:
             warnings.warn(
                 f"Roll angle {roll_deg:.1f}° is unusually large (>{self.ROLL_WARN_THRESHOLD}°). "
                 f"Typical camera mount roll is ±2°. Verify configuration.",
-                UserWarning
+                UserWarning,
             )
 
     def set_camera_parameters(
@@ -748,7 +727,7 @@ class CameraGeometry:
         tilt_deg: Degrees,
         map_width: Pixels,
         map_height: Pixels,
-        roll_deg: Degrees = Degrees(0.0)
+        roll_deg: Degrees = Degrees(0.0),
     ):
         """
         Sets all required parameters and calculates the Homography matrix H.
@@ -841,7 +820,7 @@ class CameraGeometry:
         Yw = world_point[1] / world_point[2]
 
         # Calculate distance from camera position to projected point
-        distance = math.sqrt((Xw - self.w_pos[0])**2 + (Yw - self.w_pos[1])**2)
+        distance = math.sqrt((Xw - self.w_pos[0]) ** 2 + (Yw - self.w_pos[1]) ** 2)
 
         # Validate distance
         if not math.isfinite(distance):
@@ -869,10 +848,7 @@ class CameraGeometry:
 
     # --- Core Geometry Methods (Unchanged from previous output) ---
 
-    def _get_rotation_matrix(
-        self,
-        roll_deg: Optional[Degrees] = None
-    ) -> np.ndarray:
+    def _get_rotation_matrix(self, roll_deg: Degrees | None = None) -> np.ndarray:
         """
         Calculates the 3x3 rotation matrix R from world to camera coordinates
         based on pan (Yaw), tilt (Pitch), and roll.
@@ -922,38 +898,40 @@ class CameraGeometry:
         #   Xc = Xw
         #   Yc = -Zw
         #   Zc = Yw
-        R_base = np.array([
-            [1,  0,  0],
-            [0,  0, -1],
-            [0,  1,  0]
-        ])
+        R_base = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
 
         # Pan rotation around world Z-axis (yaw)
         # Positive pan = clockwise from above = camera looks right (towards East when starting North)
         # This is applied in world coordinates before the base transform
-        Rz_pan = np.array([
-            [math.cos(pan_rad), -math.sin(pan_rad), 0],
-            [math.sin(pan_rad),  math.cos(pan_rad), 0],
-            [0,                  0,                 1]
-        ])
+        Rz_pan = np.array(
+            [
+                [math.cos(pan_rad), -math.sin(pan_rad), 0],
+                [math.sin(pan_rad), math.cos(pan_rad), 0],
+                [0, 0, 1],
+            ]
+        )
 
         # Roll rotation around camera Z-axis (optical axis)
         # Positive roll = clockwise when looking from behind camera (along +Z axis)
         # This rotates the image plane around the optical axis
-        Rz_roll = np.array([
-            [math.cos(roll_rad), -math.sin(roll_rad), 0],
-            [math.sin(roll_rad),  math.cos(roll_rad), 0],
-            [0,                   0,                  1]
-        ])
+        Rz_roll = np.array(
+            [
+                [math.cos(roll_rad), -math.sin(roll_rad), 0],
+                [math.sin(roll_rad), math.cos(roll_rad), 0],
+                [0, 0, 1],
+            ]
+        )
 
         # Tilt rotation around camera X-axis (pitch)
         # Positive tilt = camera looks down
         # This is applied in camera coordinates after pan, base transform, and roll
-        Rx_tilt = np.array([
-            [1,  0,                   0],
-            [0,  math.cos(tilt_rad), -math.sin(tilt_rad)],
-            [0,  math.sin(tilt_rad),  math.cos(tilt_rad)]
-        ])
+        Rx_tilt = np.array(
+            [
+                [1, 0, 0],
+                [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+                [0, math.sin(tilt_rad), math.cos(tilt_rad)],
+            ]
+        )
 
         # Full rotation: first pan in world, then base transform, then roll in camera, then tilt in camera
         # R_world_to_cam = R_tilt @ R_roll @ R_base @ R_pan
@@ -1036,14 +1014,18 @@ class CameraGeometry:
 
         # Normalize so H[2, 2] = 1 for consistent scale
         if abs(H[2, 2]) < 1e-10:
-            logger.warning("Homography normalization failed (H[2,2] near zero). Returning identity.")
+            logger.warning(
+                "Homography normalization failed (H[2,2] near zero). Returning identity."
+            )
             return np.eye(3)
 
         H /= H[2, 2]
 
         return H
 
-    def project_image_to_map(self, pts: List[Tuple[int, int]], sw: int, sh: int) -> List[Tuple[int, int]]:
+    def project_image_to_map(
+        self, pts: list[tuple[int, int]], sw: int, sh: int
+    ) -> list[tuple[int, int]]:
         """
         Projects image coordinates (pixels) to the world ground plane (meters).
 
@@ -1078,12 +1060,8 @@ class CameraGeometry:
         return pts_map
 
     def world_to_map(
-        self,
-        Xw: Meters,
-        Yw: Meters,
-        sw: Optional[Pixels] = None,
-        sh: Optional[Pixels] = None
-    ) -> Tuple[Pixels, Pixels]:
+        self, Xw: Meters, Yw: Meters, sw: Pixels | None = None, sh: Pixels | None = None
+    ) -> tuple[Pixels, Pixels]:
         """
         Map a world coordinate (meters) to side-panel pixel coordinates.
 
@@ -1107,7 +1085,7 @@ class CameraGeometry:
 
         return x_px, y_px
 
-    def set_height_uncertainty(self, confidence_interval: Tuple[Meters, Meters]) -> None:
+    def set_height_uncertainty(self, confidence_interval: tuple[Meters, Meters]) -> None:
         """
         Set height uncertainty for propagation to future projections.
 
@@ -1136,23 +1114,15 @@ class CameraGeometry:
         lower, upper = confidence_interval
 
         if lower <= 0 or upper <= 0:
-            raise ValueError(
-                f"Height bounds must be positive, got lower={lower}, upper={upper}"
-            )
+            raise ValueError(f"Height bounds must be positive, got lower={lower}, upper={upper}")
 
         if lower > upper:
-            raise ValueError(
-                f"Lower bound ({lower}) cannot exceed upper bound ({upper})"
-            )
+            raise ValueError(f"Lower bound ({lower}) cannot exceed upper bound ({upper})")
 
         self.height_uncertainty_lower = lower
         self.height_uncertainty_upper = upper
 
-    def project_to_world_with_uncertainty(
-        self,
-        pixel_x: float,
-        pixel_y: float
-    ) -> Dict[str, Any]:
+    def project_to_world_with_uncertainty(self, pixel_x: float, pixel_y: float) -> dict[str, Any]:
         """
         Project pixel to world coordinates with uncertainty propagation.
 
@@ -1220,9 +1190,7 @@ class CameraGeometry:
         distance_uncertainty = 0.0
 
         # If height uncertainty has been set, compute uncertainty bounds
-        if (self.height_uncertainty_lower is not None and
-            self.height_uncertainty_upper is not None):
-
+        if self.height_uncertainty_lower is not None and self.height_uncertainty_upper is not None:
             # World coordinates scale proportionally with height
             # new_coord = original_coord * (new_height / original_height)
 
@@ -1244,11 +1212,11 @@ class CameraGeometry:
             distance_uncertainty = abs(distance_upper - distance_lower) / 2.0
 
         return {
-            'world_x': world_x_mean,
-            'world_y': world_y_mean,
-            'distance': distance_mean,
-            'x_uncertainty': x_uncertainty,
-            'y_uncertainty': y_uncertainty,
-            'distance_uncertainty': distance_uncertainty,
-            'confidence_level': 0.95
+            "world_x": world_x_mean,
+            "world_y": world_y_mean,
+            "distance": distance_mean,
+            "x_uncertainty": x_uncertainty,
+            "y_uncertainty": y_uncertainty,
+            "distance_uncertainty": distance_uncertainty,
+            "confidence_level": 0.95,
         }

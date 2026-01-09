@@ -22,23 +22,24 @@ Transforms Tested:
     8. Edge Cases (horizon, gimbal lock, extreme zoom)
 """
 
-import pytest
-import numpy as np
-import math
 import json
+import math
 from pathlib import Path
-from typing import List, Tuple, Dict, Any
+from typing import Any
+
+import numpy as np
+import pytest
+
+from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.coordinate_converter import (
+    PYPROJ_AVAILABLE,
+    UTMConverter,
+    gps_to_local_xy,
+    local_xy_to_gps,
+)
 
 # Import modules under test
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
-from poc_homography.coordinate_converter import (
-    local_xy_to_gps,
-    gps_to_local_xy,
-    UTMConverter,
-    PYPROJ_AVAILABLE
-)
-from poc_homography.camera_geometry import CameraGeometry
-
 
 # =============================================================================
 # TEST DATA: Ground Control Points from Valte Camera (loaded from fixture file)
@@ -49,7 +50,7 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
 VALTE_GCP_DATA_FILE = FIXTURE_DIR / "valte_gcp_data.json"
 
 
-def load_gcp_test_data(filepath: Path = VALTE_GCP_DATA_FILE) -> Dict[str, Any]:
+def load_gcp_test_data(filepath: Path = VALTE_GCP_DATA_FILE) -> dict[str, Any]:
     """Load GCP test data from JSON fixture file.
 
     Args:
@@ -58,7 +59,7 @@ def load_gcp_test_data(filepath: Path = VALTE_GCP_DATA_FILE) -> Dict[str, Any]:
     Returns:
         Dictionary with camera_info, image_dimensions, and gcps
     """
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         return json.load(f)
 
 
@@ -84,26 +85,27 @@ VALIDATION_GCPS = GCPS[8:]
 # FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
-def camera_info() -> Dict[str, Any]:
+def camera_info() -> dict[str, Any]:
     """Return camera parameters."""
     return CAMERA_INFO.copy()
 
 
 @pytest.fixture
-def gcps() -> List[Dict[str, float]]:
+def gcps() -> list[dict[str, float]]:
     """Return all GCPs."""
     return [gcp.copy() for gcp in GCPS]
 
 
 @pytest.fixture
-def train_gcps() -> List[Dict[str, float]]:
+def train_gcps() -> list[dict[str, float]]:
     """Return training GCPs."""
     return [gcp.copy() for gcp in TRAIN_GCPS]
 
 
 @pytest.fixture
-def validation_gcps() -> List[Dict[str, float]]:
+def validation_gcps() -> list[dict[str, float]]:
     """Return validation GCPs."""
     return [gcp.copy() for gcp in VALIDATION_GCPS]
 
@@ -116,10 +118,7 @@ def homography_provider(camera_info) -> IntrinsicExtrinsicHomography:
         height=IMAGE_HEIGHT,
         pixels_per_meter=100.0,
     )
-    provider.set_camera_gps_position(
-        camera_info["latitude"],
-        camera_info["longitude"]
-    )
+    provider.set_camera_gps_position(camera_info["latitude"], camera_info["longitude"])
     return provider
 
 
@@ -133,9 +132,7 @@ def camera_geometry(camera_info) -> CameraGeometry:
     geom.w_pos = np.array([0, 0, camera_info["height_meters"]])
     # Compute intrinsics and set K
     geom.K = CameraGeometry.get_intrinsics(
-        zoom_factor=camera_info["zoom_level"],
-        W_px=IMAGE_WIDTH,
-        H_px=IMAGE_HEIGHT
+        zoom_factor=camera_info["zoom_level"], W_px=IMAGE_WIDTH, H_px=IMAGE_HEIGHT
     )
     return geom
 
@@ -153,6 +150,7 @@ def utm_converter() -> UTMConverter:
 # =============================================================================
 # TEST 1: GPS ↔ LOCAL METRIC COORDINATE CONVERSION
 # =============================================================================
+
 
 class TestCoordinateConversion:
     """Test GPS to local metric and back conversions."""
@@ -232,13 +230,18 @@ class TestCoordinateConversion:
             # For parking lot distances (< 100m), absolute error should be < 3m
             # Equirectangular approximation has documented errors of ~2% X, ~5% Y
             # For these small distances, we use absolute thresholds instead of percentages
-            assert x_diff < 3.0, f"X differs by {x_diff:.2f}m between UTM and equirectangular (expected < 3m)"
-            assert y_diff < 3.0, f"Y differs by {y_diff:.2f}m between UTM and equirectangular (expected < 3m)"
+            assert x_diff < 3.0, (
+                f"X differs by {x_diff:.2f}m between UTM and equirectangular (expected < 3m)"
+            )
+            assert y_diff < 3.0, (
+                f"Y differs by {y_diff:.2f}m between UTM and equirectangular (expected < 3m)"
+            )
 
 
 # =============================================================================
 # TEST 2: INTRINSIC MATRIX (K) COMPUTATION
 # =============================================================================
+
 
 class TestIntrinsicMatrix:
     """Test camera intrinsic matrix computation."""
@@ -260,8 +263,12 @@ class TestIntrinsicMatrix:
 
         # cx, cy should be near image center
         cx, cy = K[0, 2], K[1, 2]
-        assert abs(cx - IMAGE_WIDTH / 2) < IMAGE_WIDTH * 0.1, f"cx={cx} should be near {IMAGE_WIDTH/2}"
-        assert abs(cy - IMAGE_HEIGHT / 2) < IMAGE_HEIGHT * 0.1, f"cy={cy} should be near {IMAGE_HEIGHT/2}"
+        assert abs(cx - IMAGE_WIDTH / 2) < IMAGE_WIDTH * 0.1, (
+            f"cx={cx} should be near {IMAGE_WIDTH / 2}"
+        )
+        assert abs(cy - IMAGE_HEIGHT / 2) < IMAGE_HEIGHT * 0.1, (
+            f"cy={cy} should be near {IMAGE_HEIGHT / 2}"
+        )
 
     def test_focal_length_scales_with_zoom(self, homography_provider):
         """Focal length should increase approximately linearly with zoom."""
@@ -308,30 +315,28 @@ class TestIntrinsicMatrix:
 # TEST 3: ROTATION MATRIX (R) COMPUTATION
 # =============================================================================
 
+
 class TestRotationMatrix:
     """Test rotation matrix computation from pan/tilt/roll."""
 
     def test_rotation_matrix_orthogonal(self, homography_provider, camera_info):
         """R should be orthogonal: R @ R.T = I."""
         R = homography_provider._get_rotation_matrix(
-            pan_deg=camera_info["pan_deg"],
-            tilt_deg=camera_info["tilt_deg"],
-            roll_deg=0.0
+            pan_deg=camera_info["pan_deg"], tilt_deg=camera_info["tilt_deg"], roll_deg=0.0
         )
 
         # R @ R.T should be identity
         RRT = R @ R.T
         identity = np.eye(3)
 
-        np.testing.assert_allclose(RRT, identity, atol=1e-10,
-            err_msg="R @ R.T should be identity (orthogonality)")
+        np.testing.assert_allclose(
+            RRT, identity, atol=1e-10, err_msg="R @ R.T should be identity (orthogonality)"
+        )
 
     def test_rotation_matrix_determinant_one(self, homography_provider, camera_info):
         """R should have determinant +1 (proper rotation, not reflection)."""
         R = homography_provider._get_rotation_matrix(
-            pan_deg=camera_info["pan_deg"],
-            tilt_deg=camera_info["tilt_deg"],
-            roll_deg=0.0
+            pan_deg=camera_info["pan_deg"], tilt_deg=camera_info["tilt_deg"], roll_deg=0.0
         )
 
         det = np.linalg.det(R)
@@ -365,8 +370,12 @@ class TestRotationMatrix:
 
     def test_roll_rotation_around_optical_axis(self, homography_provider):
         """Roll should rotate around camera optical axis (Z)."""
-        R_no_roll = homography_provider._get_rotation_matrix(pan_deg=30.0, tilt_deg=45.0, roll_deg=0.0)
-        R_with_roll = homography_provider._get_rotation_matrix(pan_deg=30.0, tilt_deg=45.0, roll_deg=5.0)
+        R_no_roll = homography_provider._get_rotation_matrix(
+            pan_deg=30.0, tilt_deg=45.0, roll_deg=0.0
+        )
+        R_with_roll = homography_provider._get_rotation_matrix(
+            pan_deg=30.0, tilt_deg=45.0, roll_deg=5.0
+        )
 
         # Both should be valid rotations
         assert abs(np.linalg.det(R_no_roll) - 1.0) < 1e-10
@@ -389,6 +398,7 @@ class TestRotationMatrix:
 # =============================================================================
 # TEST 4: HOMOGRAPHY MATRIX (H) COMPUTATION
 # =============================================================================
+
 
 class TestHomographyComputation:
     """Test homography matrix computation from camera parameters."""
@@ -453,9 +463,13 @@ class TestHomographyComputation:
 
         result = homography_provider.compute_homography(frame=None, reference=reference)
 
-        assert 0.0 <= result.confidence <= 1.0, f"Confidence should be in [0,1], got {result.confidence}"
+        assert 0.0 <= result.confidence <= 1.0, (
+            f"Confidence should be in [0,1], got {result.confidence}"
+        )
         # With reasonable camera params, confidence should be decent
-        assert result.confidence > 0.3, f"Confidence too low for reasonable params: {result.confidence}"
+        assert result.confidence > 0.3, (
+            f"Confidence too low for reasonable params: {result.confidence}"
+        )
 
     def test_homography_condition_number(self, homography_provider, camera_info):
         """Homography condition number should be reasonable for numerical stability."""
@@ -481,6 +495,7 @@ class TestHomographyComputation:
 # =============================================================================
 # TEST 5: PIXEL → WORLD PROJECTION AGAINST GCP GROUND TRUTH
 # =============================================================================
+
 
 class TestPixelToWorldProjection:
     """Test that pixel coordinates project to correct world/GPS coordinates."""
@@ -522,7 +537,7 @@ class TestPixelToWorldProjection:
         max_error = np.max(errors_meters)
 
         # Log errors for debugging
-        print(f"\nPixel→GPS projection errors (UNCALIBRATED camera model):")
+        print("\nPixel→GPS projection errors (UNCALIBRATED camera model):")
         print(f"  Mean error: {mean_error:.2f} m")
         print(f"  Max error: {max_error:.2f} m")
         print(f"  Individual errors: {[f'{e:.2f}m' for e in errors_meters]}")
@@ -570,12 +585,15 @@ class TestPixelToWorldProjection:
         # Should match exactly
         for i, (ind, bat) in enumerate(zip(individual, batch)):
             assert abs(ind[0] - bat.latitude) < 1e-10, f"GCP {i}: batch lat differs from individual"
-            assert abs(ind[1] - bat.longitude) < 1e-10, f"GCP {i}: batch lon differs from individual"
+            assert abs(ind[1] - bat.longitude) < 1e-10, (
+                f"GCP {i}: batch lon differs from individual"
+            )
 
 
 # =============================================================================
 # TEST 6: WORLD → PIXEL PROJECTION (INVERSE)
 # =============================================================================
+
 
 class TestWorldToPixelProjection:
     """Test inverse projection from world/GPS to pixel coordinates."""
@@ -616,6 +634,7 @@ class TestWorldToPixelProjection:
 # =============================================================================
 # TEST 7: ROUND-TRIP CONSISTENCY
 # =============================================================================
+
 
 class TestRoundTripConsistency:
     """Test that pixel → world → pixel recovers original coordinates."""
@@ -671,10 +690,8 @@ class TestRoundTripConsistency:
             recovered_y = pixel_homo2[1] / pixel_homo2[2]
 
             # Should recover original within floating point tolerance
-            assert abs(recovered_x - orig_x) < 1.0, \
-                f"X round-trip error: {orig_x} → {recovered_x}"
-            assert abs(recovered_y - orig_y) < 1.0, \
-                f"Y round-trip error: {orig_y} → {recovered_y}"
+            assert abs(recovered_x - orig_x) < 1.0, f"X round-trip error: {orig_x} → {recovered_x}"
+            assert abs(recovered_y - orig_y) < 1.0, f"Y round-trip error: {orig_y} → {recovered_y}"
 
     def test_homography_inverse_identity(self, homography_provider, camera_info):
         """H @ H_inv should be approximately identity."""
@@ -701,13 +718,15 @@ class TestRoundTripConsistency:
         # Normalize by [2,2] element
         if abs(product[2, 2]) > 1e-10:
             product = product / product[2, 2]
-            np.testing.assert_allclose(product, np.eye(3), atol=1e-6,
-                err_msg="H @ H_inv should be identity (up to scale)")
+            np.testing.assert_allclose(
+                product, np.eye(3), atol=1e-6, err_msg="H @ H_inv should be identity (up to scale)"
+            )
 
 
 # =============================================================================
 # TEST 8: EDGE CASES
 # =============================================================================
+
 
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
@@ -735,8 +754,9 @@ class TestEdgeCases:
             result = homography_provider.project_point(horizon_pixel)
             # If it succeeds, distance should be very large
             # (or coordinates should be flagged as low confidence)
-            assert result.confidence < 0.5, \
+            assert result.confidence < 0.5, (
                 f"Horizon point should have low confidence, got {result.confidence}"
+            )
         except ValueError:
             # Expected - point is at/beyond horizon
             pass
@@ -779,15 +799,15 @@ class TestEdgeCases:
             result = homography_provider.compute_homography(frame=None, reference=reference)
 
             assert result.homography_matrix is not None, f"H should exist at zoom={zoom}"
-            assert np.all(np.isfinite(result.homography_matrix)), f"H should be finite at zoom={zoom}"
+            assert np.all(np.isfinite(result.homography_matrix)), (
+                f"H should be finite at zoom={zoom}"
+            )
 
     def test_extreme_pan_angles(self, homography_provider):
         """Pan angles 0°, 90°, 180°, 270° should all work."""
         for pan in [0, 90, 180, 270, 360, -90]:
             R = homography_provider._get_rotation_matrix(
-                pan_deg=float(pan),
-                tilt_deg=45.0,
-                roll_deg=0.0
+                pan_deg=float(pan), tilt_deg=45.0, roll_deg=0.0
             )
 
             assert R.shape == (3, 3), f"R should be 3x3 at pan={pan}"
@@ -797,11 +817,7 @@ class TestEdgeCases:
         """Tilt at 0°, 45°, 89° should work; 90° may cause issues."""
         # Valid tilts
         for tilt in [1.0, 45.0, 60.0, 89.0]:
-            R = homography_provider._get_rotation_matrix(
-                pan_deg=0.0,
-                tilt_deg=tilt,
-                roll_deg=0.0
-            )
+            R = homography_provider._get_rotation_matrix(pan_deg=0.0, tilt_deg=tilt, roll_deg=0.0)
             assert abs(np.linalg.det(R) - 1.0) < 1e-10, f"det(R) should be 1 at tilt={tilt}"
 
     def test_negative_coordinates(self, camera_info):
@@ -840,6 +856,7 @@ class TestEdgeCases:
 # TEST 9: GCP CALIBRATION VALIDATION (REPROJECTION ERROR)
 # =============================================================================
 
+
 class TestGCPReprojectionError:
     """Test calibration quality by computing reprojection errors."""
 
@@ -867,26 +884,21 @@ class TestGCPReprojectionError:
 
         for i, gcp in enumerate(gcps):
             # Convert GCP GPS to local coordinates
-            x_world, y_world = gps_to_local_xy(
-                ref_lat, ref_lon, gcp["latitude"], gcp["longitude"]
-            )
+            x_world, y_world = gps_to_local_xy(ref_lat, ref_lon, gcp["latitude"], gcp["longitude"])
 
             # Project world to pixel using H
             world_homo = np.array([x_world, y_world, 1.0])
             pixel_homo = H @ world_homo
 
             if abs(pixel_homo[2]) < 1e-10:
-                reprojection_errors.append(float('inf'))
+                reprojection_errors.append(float("inf"))
                 continue
 
             pred_x = pixel_homo[0] / pixel_homo[2]
             pred_y = pixel_homo[1] / pixel_homo[2]
 
             # Compute pixel error
-            error = math.sqrt(
-                (pred_x - gcp["pixel_x"])**2 +
-                (pred_y - gcp["pixel_y"])**2
-            )
+            error = math.sqrt((pred_x - gcp["pixel_x"]) ** 2 + (pred_y - gcp["pixel_y"]) ** 2)
             reprojection_errors.append(error)
 
         # Statistics
@@ -894,12 +906,12 @@ class TestGCPReprojectionError:
         max_error = np.max(reprojection_errors)
         std_error = np.std(reprojection_errors)
 
-        print(f"\nReprojection Errors (pixels):")
+        print("\nReprojection Errors (pixels):")
         print(f"  Mean: {mean_error:.1f}")
         print(f"  Max: {max_error:.1f}")
         print(f"  Std: {std_error:.1f}")
         for i, err in enumerate(reprojection_errors):
-            print(f"  GCP {i+1}: {err:.1f} px")
+            print(f"  GCP {i + 1}: {err:.1f} px")
 
         # Document current behavior - this will fail until calibration is tuned
         # Typical acceptable reprojection error is < 5-10 pixels after calibration
@@ -910,6 +922,7 @@ class TestGCPReprojectionError:
 # =============================================================================
 # TEST 10: MATHEMATICAL INVARIANTS
 # =============================================================================
+
 
 class TestMathematicalInvariants:
     """Test mathematical properties that must hold for correct implementation."""
@@ -943,23 +956,22 @@ class TestMathematicalInvariants:
         for wp in world_points:
             ip = H @ wp
             if abs(ip[2]) > 1e-10:
-                image_points.append(np.array([ip[0]/ip[2], ip[1]/ip[2]]))
+                image_points.append(np.array([ip[0] / ip[2], ip[1] / ip[2]]))
 
         if len(image_points) == 3:
             # Check collinearity: area of triangle should be ~0
             p1, p2, p3 = image_points
-            area = abs(
-                p1[0] * (p2[1] - p3[1]) +
-                p2[0] * (p3[1] - p1[1]) +
-                p3[0] * (p1[1] - p2[1])
-            ) / 2
+            area = (
+                abs(p1[0] * (p2[1] - p3[1]) + p2[0] * (p3[1] - p1[1]) + p3[0] * (p1[1] - p2[1])) / 2
+            )
 
             # Normalize by scale
-            max_coord = max(abs(p[i]) for p in image_points for i in [0,1])
+            max_coord = max(abs(p[i]) for p in image_points for i in [0, 1])
             if max_coord > 0:
-                normalized_area = area / (max_coord ** 2)
-                assert normalized_area < 1e-6, \
+                normalized_area = area / (max_coord**2)
+                assert normalized_area < 1e-6, (
                     f"Collinear points should project to line, got area={normalized_area}"
+                )
 
     def test_cross_ratio_preserved(self, homography_provider, camera_info):
         """Cross-ratio of four collinear points should be preserved by homography."""
@@ -980,14 +992,14 @@ class TestMathematicalInvariants:
 
         # Four collinear world points on a line
         t_values = [0, 1, 3, 7]  # Arbitrary spacing
-        world_points = [np.array([5 + t, 10 + 2*t, 1]) for t in t_values]
+        world_points = [np.array([5 + t, 10 + 2 * t, 1]) for t in t_values]
 
         # Project to image
         image_points = []
         for wp in world_points:
             ip = H @ wp
             if abs(ip[2]) > 1e-10:
-                image_points.append(ip[0]/ip[2])  # Use x-coordinate
+                image_points.append(ip[0] / ip[2])  # Use x-coordinate
             else:
                 image_points.append(None)
 
@@ -1003,8 +1015,9 @@ class TestMathematicalInvariants:
             cr_image = cross_ratio(*image_points)
 
             # Should be equal (fundamental projective invariant)
-            assert abs(cr_world - cr_image) < 1e-3, \
+            assert abs(cr_world - cr_image) < 1e-3, (
                 f"Cross-ratio should be preserved: world={cr_world}, image={cr_image}"
+            )
 
 
 # =============================================================================

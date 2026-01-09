@@ -12,20 +12,21 @@ Tests validate:
 - No regression for normal operating conditions (tilt 20-70 degrees)
 """
 
-import unittest
-import sys
-import os
 import math
+import os
+import sys
+import unittest
+
 import numpy as np
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools.unified_gcp_tool import (
-    _classify_corner_projection,
+    UnifiedSession,
     _clamp_to_max_distance,
+    _classify_corner_projection,
     _convert_world_offset_to_latlon,
-    UnifiedSession
 )
 
 
@@ -45,11 +46,11 @@ class TestCornerProjectionClassification(unittest.TestCase):
 
         result = _classify_corner_projection(pt_world, self.height_m)
 
-        self.assertEqual(result['status'], 'valid')
-        self.assertFalse(result['needs_clamping'])
-        self.assertAlmostEqual(result['east_offset'], 10.0)
-        self.assertAlmostEqual(result['north_offset'], 20.0)
-        self.assertAlmostEqual(result['distance'], math.sqrt(10**2 + 20**2))
+        self.assertEqual(result["status"], "valid")
+        self.assertFalse(result["needs_clamping"])
+        self.assertAlmostEqual(result["east_offset"], 10.0)
+        self.assertAlmostEqual(result["north_offset"], 20.0)
+        self.assertAlmostEqual(result["distance"], math.sqrt(10**2 + 20**2))
 
     def test_classify_near_horizon_positive_w(self):
         """Test classification when w near zero but positive (near horizon)."""
@@ -58,11 +59,11 @@ class TestCornerProjectionClassification(unittest.TestCase):
 
         result = _classify_corner_projection(pt_world, self.height_m)
 
-        self.assertEqual(result['status'], 'clampable')
-        self.assertTrue(result['needs_clamping'])
+        self.assertEqual(result["status"], "clampable")
+        self.assertTrue(result["needs_clamping"])
         # Should preserve direction even though unnormalized values are huge
-        self.assertIsNotNone(result['east_offset'])
-        self.assertIsNotNone(result['north_offset'])
+        self.assertIsNotNone(result["east_offset"])
+        self.assertIsNotNone(result["north_offset"])
 
     def test_classify_negative_w(self):
         """Test classification when w is negative (beyond horizon)."""
@@ -72,11 +73,11 @@ class TestCornerProjectionClassification(unittest.TestCase):
         result = _classify_corner_projection(pt_world, self.height_m)
 
         # Should be clampable with negated direction (forward projection)
-        self.assertEqual(result['status'], 'clampable')
-        self.assertTrue(result['needs_clamping'])
+        self.assertEqual(result["status"], "clampable")
+        self.assertTrue(result["needs_clamping"])
         # Direction should be negated to point forward
-        self.assertAlmostEqual(result['east_offset'], -10.0)
-        self.assertAlmostEqual(result['north_offset'], -20.0)
+        self.assertAlmostEqual(result["east_offset"], -10.0)
+        self.assertAlmostEqual(result["north_offset"], -20.0)
 
     def test_classify_exceeds_max_distance(self):
         """Test classification when distance exceeds max (height * 20)."""
@@ -86,9 +87,9 @@ class TestCornerProjectionClassification(unittest.TestCase):
 
         result = _classify_corner_projection(pt_world, self.height_m)
 
-        self.assertEqual(result['status'], 'clampable')
-        self.assertTrue(result['needs_clamping'])
-        self.assertGreater(result['distance'], self.max_distance)
+        self.assertEqual(result["status"], "clampable")
+        self.assertTrue(result["needs_clamping"])
+        self.assertGreater(result["distance"], self.max_distance)
 
     def test_classify_at_max_distance_boundary(self):
         """Test classification exactly at max distance boundary."""
@@ -99,8 +100,8 @@ class TestCornerProjectionClassification(unittest.TestCase):
         result = _classify_corner_projection(pt_world, self.height_m)
 
         # At boundary should be valid (not clamped)
-        self.assertEqual(result['status'], 'valid')
-        self.assertFalse(result['needs_clamping'])
+        self.assertEqual(result["status"], "valid")
+        self.assertFalse(result["needs_clamping"])
 
 
 class TestDistanceClamping(unittest.TestCase):
@@ -119,17 +120,15 @@ class TestDistanceClamping(unittest.TestCase):
         north_offset = 120.0
         original_distance = math.sqrt(160**2 + 120**2)  # 200m
 
-        clamped = _clamp_to_max_distance(
-            east_offset, north_offset, self.max_distance
-        )
+        clamped = _clamp_to_max_distance(east_offset, north_offset, self.max_distance)
 
         # Should clamp to max_distance while preserving direction
-        clamped_distance = math.sqrt(clamped['east']**2 + clamped['north']**2)
+        clamped_distance = math.sqrt(clamped["east"] ** 2 + clamped["north"] ** 2)
         self.assertAlmostEqual(clamped_distance, self.max_distance, places=5)
 
         # Direction should be preserved (ratio should be same)
         original_ratio = north_offset / east_offset
-        clamped_ratio = clamped['north'] / clamped['east']
+        clamped_ratio = clamped["north"] / clamped["east"]
         self.assertAlmostEqual(original_ratio, clamped_ratio, places=5)
 
     def test_clamp_northeast_direction(self):
@@ -138,42 +137,36 @@ class TestDistanceClamping(unittest.TestCase):
         east_offset = 200.0 / math.sqrt(2)
         north_offset = 200.0 / math.sqrt(2)
 
-        clamped = _clamp_to_max_distance(
-            east_offset, north_offset, self.max_distance
-        )
+        clamped = _clamp_to_max_distance(east_offset, north_offset, self.max_distance)
 
         # Should be at 45 degrees, distance = max_distance
-        self.assertAlmostEqual(clamped['east'], clamped['north'], places=5)
-        self.assertAlmostEqual(clamped['east'], self.max_distance / math.sqrt(2), places=5)
+        self.assertAlmostEqual(clamped["east"], clamped["north"], places=5)
+        self.assertAlmostEqual(clamped["east"], self.max_distance / math.sqrt(2), places=5)
 
     def test_clamp_pure_north(self):
         """Test clamping directly north."""
         east_offset = 0.0
         north_offset = 200.0
 
-        clamped = _clamp_to_max_distance(
-            east_offset, north_offset, self.max_distance
-        )
+        clamped = _clamp_to_max_distance(east_offset, north_offset, self.max_distance)
 
-        self.assertAlmostEqual(clamped['east'], 0.0, places=5)
-        self.assertAlmostEqual(clamped['north'], self.max_distance, places=5)
+        self.assertAlmostEqual(clamped["east"], 0.0, places=5)
+        self.assertAlmostEqual(clamped["north"], self.max_distance, places=5)
 
     def test_clamp_southeast_direction(self):
         """Test clamping in southeast direction (negative north)."""
         east_offset = 150.0
         north_offset = -200.0
 
-        clamped = _clamp_to_max_distance(
-            east_offset, north_offset, self.max_distance
-        )
+        clamped = _clamp_to_max_distance(east_offset, north_offset, self.max_distance)
 
         # Check distance
-        clamped_distance = math.sqrt(clamped['east']**2 + clamped['north']**2)
+        clamped_distance = math.sqrt(clamped["east"] ** 2 + clamped["north"] ** 2)
         self.assertAlmostEqual(clamped_distance, self.max_distance, places=5)
 
         # Check direction preserved
         original_ratio = north_offset / east_offset
-        clamped_ratio = clamped['north'] / clamped['east']
+        clamped_ratio = clamped["north"] / clamped["east"]
         self.assertAlmostEqual(original_ratio, clamped_ratio, places=5)
 
 
@@ -195,8 +188,8 @@ class TestWorldOffsetConversion(unittest.TestCase):
         )
 
         # Should add approximately 1 degree to latitude
-        self.assertAlmostEqual(result['lat'], self.camera_lat + 1.0, places=4)
-        self.assertAlmostEqual(result['lon'], self.camera_lon, places=4)
+        self.assertAlmostEqual(result["lat"], self.camera_lat + 1.0, places=4)
+        self.assertAlmostEqual(result["lon"], self.camera_lon, places=4)
 
     def test_convert_east_offset(self):
         """Test conversion of pure east offset."""
@@ -210,8 +203,8 @@ class TestWorldOffsetConversion(unittest.TestCase):
         )
 
         # Should add approximately 1 degree to longitude
-        self.assertAlmostEqual(result['lat'], self.camera_lat, places=4)
-        self.assertAlmostEqual(result['lon'], self.camera_lon + 1.0, places=1)
+        self.assertAlmostEqual(result["lat"], self.camera_lat, places=4)
+        self.assertAlmostEqual(result["lon"], self.camera_lon + 1.0, places=1)
 
     def test_convert_combined_offset(self):
         """Test conversion of combined north/east offset."""
@@ -223,11 +216,11 @@ class TestWorldOffsetConversion(unittest.TestCase):
         )
 
         # Verify both lat and lon changed
-        self.assertGreater(result['lat'], self.camera_lat)
-        self.assertGreater(result['lon'], self.camera_lon)
+        self.assertGreater(result["lat"], self.camera_lat)
+        self.assertGreater(result["lon"], self.camera_lon)
 
         # Verify north offset dominates lat change
-        lat_change_meters = (result['lat'] - self.camera_lat) * 111320.0
+        lat_change_meters = (result["lat"] - self.camera_lat) * 111320.0
         self.assertAlmostEqual(lat_change_meters, north_offset, places=0)
 
 
@@ -237,24 +230,20 @@ class TestFootprintCalculationIntegration(unittest.TestCase):
     def _create_test_session_with_params(self, tilt_deg, pan_deg=0.0, height_m=5.0):
         """Create a mock session with camera params for testing."""
         # Create basic camera parameters without full session initialization
-        K = np.array([
-            [1000.0, 0.0, 960.0],
-            [0.0, 1000.0, 540.0],
-            [0.0, 0.0, 1.0]
-        ])
+        K = np.array([[1000.0, 0.0, 960.0], [0.0, 1000.0, 540.0], [0.0, 0.0, 1.0]])
 
         # Create minimal mock object with just camera_params
         class MockSession:
             def __init__(self):
                 self.camera_params = {
-                    'K': K.tolist(),
-                    'image_width': 1920,
-                    'image_height': 1080,
-                    'camera_lat': 40.0,
-                    'camera_lon': -105.0,
-                    'height_m': height_m,
-                    'pan_deg': pan_deg,
-                    'tilt_deg': tilt_deg
+                    "K": K.tolist(),
+                    "image_width": 1920,
+                    "image_height": 1080,
+                    "camera_lat": 40.0,
+                    "camera_lon": -105.0,
+                    "height_m": height_m,
+                    "pan_deg": pan_deg,
+                    "tilt_deg": tilt_deg,
                 }
 
             # Bind the actual method
@@ -272,10 +261,10 @@ class TestFootprintCalculationIntegration(unittest.TestCase):
 
         # All corners should be valid and not clamped
         for corner in footprint:
-            self.assertIn('valid', corner)
-            self.assertIn('clamped', corner)
-            self.assertTrue(corner['valid'], f"Corner should be valid at tilt=45°")
-            self.assertFalse(corner['clamped'], f"Corner should not be clamped at tilt=45°")
+            self.assertIn("valid", corner)
+            self.assertIn("clamped", corner)
+            self.assertTrue(corner["valid"], "Corner should be valid at tilt=45°")
+            self.assertFalse(corner["clamped"], "Corner should not be clamped at tilt=45°")
 
     def test_low_tilt_partial_footprint(self):
         """Test low tilt (13 degrees) returns footprint even with clamped corners."""
@@ -295,10 +284,12 @@ class TestFootprintCalculationIntegration(unittest.TestCase):
 
         if footprint is not None:
             # Should have some clamped corners
-            clamped_count = sum(1 for c in footprint if c.get('clamped', False))
+            clamped_count = sum(1 for c in footprint if c.get("clamped", False))
             # At very low tilt, expect at least some clamping
             # (This may vary based on camera geometry)
-            self.assertGreaterEqual(len(footprint), 2, "Should have at least 2 corners even at tilt=5°")
+            self.assertGreaterEqual(
+                len(footprint), 2, "Should have at least 2 corners even at tilt=5°"
+            )
 
     def test_high_tilt_small_footprint(self):
         """Test high tilt (80 degrees) returns small but valid footprint."""
@@ -310,7 +301,7 @@ class TestFootprintCalculationIntegration(unittest.TestCase):
 
         # All corners should be valid (looking almost straight down)
         for corner in footprint:
-            self.assertTrue(corner['valid'], "Corner should be valid at tilt=80°")
+            self.assertTrue(corner["valid"], "Corner should be valid at tilt=80°")
 
     def test_footprint_direction_correctness(self):
         """Test footprint centroid displaced from camera in reasonable direction."""
@@ -321,8 +312,8 @@ class TestFootprintCalculationIntegration(unittest.TestCase):
         self.assertGreater(len(footprint), 0)
 
         # Calculate footprint centroid
-        avg_lat = sum(c['lat'] for c in footprint) / len(footprint)
-        avg_lon = sum(c['lon'] for c in footprint) / len(footprint)
+        avg_lat = sum(c["lat"] for c in footprint) / len(footprint)
+        avg_lon = sum(c["lon"] for c in footprint) / len(footprint)
 
         camera_lat = 40.0
         camera_lon = -105.0
@@ -336,23 +327,19 @@ class TestFootprintTestMatrix(unittest.TestCase):
 
     def _create_test_session_with_params(self, tilt_deg, pan_deg=0.0):
         """Create a mock session with camera params for testing."""
-        K = np.array([
-            [1000.0, 0.0, 960.0],
-            [0.0, 1000.0, 540.0],
-            [0.0, 0.0, 1.0]
-        ])
+        K = np.array([[1000.0, 0.0, 960.0], [0.0, 1000.0, 540.0], [0.0, 0.0, 1.0]])
 
         class MockSession:
             def __init__(self):
                 self.camera_params = {
-                    'K': K.tolist(),
-                    'image_width': 1920,
-                    'image_height': 1080,
-                    'camera_lat': 40.0,
-                    'camera_lon': -105.0,
-                    'height_m': 5.0,
-                    'pan_deg': pan_deg,
-                    'tilt_deg': tilt_deg
+                    "K": K.tolist(),
+                    "image_width": 1920,
+                    "image_height": 1080,
+                    "camera_lat": 40.0,
+                    "camera_lon": -105.0,
+                    "height_m": 5.0,
+                    "pan_deg": pan_deg,
+                    "tilt_deg": tilt_deg,
                 }
 
             calculate_camera_footprint = UnifiedSession.calculate_camera_footprint
@@ -370,7 +357,9 @@ class TestFootprintTestMatrix(unittest.TestCase):
         for tilt in test_tilts:
             for pan in test_pans:
                 with self.subTest(tilt=tilt, pan=pan):
-                    session = self._create_test_session_with_params(tilt_deg=float(tilt), pan_deg=float(pan))
+                    session = self._create_test_session_with_params(
+                        tilt_deg=float(tilt), pan_deg=float(pan)
+                    )
                     footprint = session.calculate_camera_footprint()
 
                     if footprint is None:
@@ -379,7 +368,9 @@ class TestFootprintTestMatrix(unittest.TestCase):
 
                     # Verify at least 2 corners present
                     if len(footprint) < 2:
-                        failures.append(f"tilt={tilt}°, pan={pan}° returned only {len(footprint)} corners")
+                        failures.append(
+                            f"tilt={tilt}°, pan={pan}° returned only {len(footprint)} corners"
+                        )
                         continue
 
                     # Verify no corners extend beyond max distance (with tolerance)
@@ -388,8 +379,12 @@ class TestFootprintTestMatrix(unittest.TestCase):
 
                     for i, corner in enumerate(footprint):
                         # Calculate approximate distance in meters
-                        lat_diff = (corner['lat'] - camera_lat) * 111320.0
-                        lon_diff = (corner['lon'] - camera_lon) * 111320.0 * math.cos(math.radians(camera_lat))
+                        lat_diff = (corner["lat"] - camera_lat) * 111320.0
+                        lon_diff = (
+                            (corner["lon"] - camera_lon)
+                            * 111320.0
+                            * math.cos(math.radians(camera_lat))
+                        )
                         distance = math.sqrt(lat_diff**2 + lon_diff**2)
 
                         # Should not exceed max_distance * 1.1 (10% tolerance)
@@ -399,7 +394,7 @@ class TestFootprintTestMatrix(unittest.TestCase):
                             )
 
         if failures:
-            self.fail(f"Footprint calculation issues:\n" + "\n".join(failures))
+            self.fail("Footprint calculation issues:\n" + "\n".join(failures))
 
 
 class TestNoRegression(unittest.TestCase):
@@ -407,23 +402,19 @@ class TestNoRegression(unittest.TestCase):
 
     def _create_test_session_with_params(self, tilt_deg):
         """Create a mock session with camera params for testing."""
-        K = np.array([
-            [1000.0, 0.0, 960.0],
-            [0.0, 1000.0, 540.0],
-            [0.0, 0.0, 1.0]
-        ])
+        K = np.array([[1000.0, 0.0, 960.0], [0.0, 1000.0, 540.0], [0.0, 0.0, 1.0]])
 
         class MockSession:
             def __init__(self):
                 self.camera_params = {
-                    'K': K.tolist(),
-                    'image_width': 1920,
-                    'image_height': 1080,
-                    'camera_lat': 40.0,
-                    'camera_lon': -105.0,
-                    'height_m': 5.0,
-                    'pan_deg': 0.0,
-                    'tilt_deg': tilt_deg
+                    "K": K.tolist(),
+                    "image_width": 1920,
+                    "image_height": 1080,
+                    "camera_lat": 40.0,
+                    "camera_lon": -105.0,
+                    "height_m": 5.0,
+                    "pan_deg": 0.0,
+                    "tilt_deg": tilt_deg,
                 }
 
             calculate_camera_footprint = UnifiedSession.calculate_camera_footprint
@@ -438,30 +429,39 @@ class TestNoRegression(unittest.TestCase):
                 footprint = session.calculate_camera_footprint()
 
                 self.assertIsNotNone(footprint, f"Should return footprint at tilt={tilt}°")
-                
+
                 # Should always have at least 2 corners
-                self.assertGreaterEqual(len(footprint), 2, f"Should have at least 2 corners at tilt={tilt}°")
-                
+                self.assertGreaterEqual(
+                    len(footprint), 2, f"Should have at least 2 corners at tilt={tilt}°"
+                )
+
                 # At tilt >= 40°, expect all 4 corners to be valid and not clamped
                 if tilt >= 40:
                     self.assertEqual(len(footprint), 4, f"Should have 4 corners at tilt={tilt}°")
                     # All corners should be valid and not clamped
                     for corner in footprint:
-                        self.assertTrue(corner['valid'], f"Corner should be valid at tilt={tilt}°")
-                        self.assertFalse(corner['clamped'], f"Corner should not be clamped at tilt={tilt}°")
-                
+                        self.assertTrue(corner["valid"], f"Corner should be valid at tilt={tilt}°")
+                        self.assertFalse(
+                            corner["clamped"], f"Corner should not be clamped at tilt={tilt}°"
+                        )
+
                 # For all tilts in this range, no corners should extend beyond max distance
                 # (either valid within range or clamped to max distance)
                 max_distance = 5.0 * 20.0
                 camera_lat = 40.0
                 camera_lon = -105.0
                 for corner in footprint:
-                    lat_diff = (corner['lat'] - camera_lat) * 111320.0
-                    lon_diff = (corner['lon'] - camera_lon) * 111320.0 * np.cos(np.radians(camera_lat))
+                    lat_diff = (corner["lat"] - camera_lat) * 111320.0
+                    lon_diff = (
+                        (corner["lon"] - camera_lon) * 111320.0 * np.cos(np.radians(camera_lat))
+                    )
                     distance = np.sqrt(lat_diff**2 + lon_diff**2)
-                    self.assertLessEqual(distance, max_distance * 1.1,
-                        f"Corner distance {distance:.1f}m should not exceed max {max_distance}m at tilt={tilt}°")
+                    self.assertLessEqual(
+                        distance,
+                        max_distance * 1.1,
+                        f"Corner distance {distance:.1f}m should not exceed max {max_distance}m at tilt={tilt}°",
+                    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

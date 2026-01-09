@@ -26,27 +26,27 @@ Usage Example:
 from typing import NewType
 
 # Angular units
-Degrees = NewType('Degrees', float)
+Degrees = NewType("Degrees", float)
 """Angle in degrees (e.g., pan, tilt, latitude, longitude, bearing)"""
 
-Radians = NewType('Radians', float)
+Radians = NewType("Radians", float)
 """Angle in radians (e.g., intermediate trigonometric calculations)"""
 
 # Distance/position units
-Meters = NewType('Meters', float)
+Meters = NewType("Meters", float)
 """Distance or position in meters (e.g., X, Y, Z coordinates, camera height, GPS distances)"""
 
 # Image coordinate units
-Pixels = NewType('Pixels', int)
+Pixels = NewType("Pixels", int)
 """Image coordinates or dimensions in pixels (e.g., u, v, width, height)"""
 
-PixelsFloat = NewType('PixelsFloat', float)
+PixelsFloat = NewType("PixelsFloat", float)
 """Floating-point image coordinates in pixels (e.g., subpixel coordinates)"""
 
 # Physical sensor dimensions
-Millimeters = NewType('Millimeters', float)
+Millimeters = NewType("Millimeters", float)
 """Physical dimensions in millimeters (e.g., sensor width, focal length)"""
 
 # Dimensionless quantities
-Unitless = NewType('Unitless', float)
+Unitless = NewType("Unitless", float)
 """Dimensionless scalar (e.g., zoom factor, scale factor, confidence, ratios)"""

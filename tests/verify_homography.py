@@ -9,11 +9,13 @@ Click on known ground points in the video window to see their projected world co
 """
 
 import sys
+
 import cv2
 import numpy as np
-from poc_homography.camera_config import get_camera_by_name, get_rtsp_url, USERNAME, PASSWORD
-from poc_homography.camera_geometry import CameraGeometry
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
+
+from poc_homography.camera_config import PASSWORD, USERNAME, get_camera_by_name, get_rtsp_url
+from poc_homography.camera_geometry import CameraGeometry
 
 
 class HomographyVerifier:
@@ -27,10 +29,7 @@ class HomographyVerifier:
 
         # Get camera status
         self.camera = HikvisionPTZ(
-            ip=self.cam_info["ip"],
-            username=USERNAME,
-            password=PASSWORD,
-            name=self.cam_info["name"]
+            ip=self.cam_info["ip"], username=USERNAME, password=PASSWORD, name=self.cam_info["name"]
         )
         self.status = self.camera.get_status()
 
@@ -58,11 +57,7 @@ class HomographyVerifier:
 
         # Setup geometry
         self.geo = CameraGeometry(w, h)
-        K = self.geo.get_intrinsics(
-            zoom_factor=self.status["zoom"],
-            W_px=w,
-            H_px=h
-        )
+        K = self.geo.get_intrinsics(zoom_factor=self.status["zoom"], W_px=w, H_px=h)
 
         w_pos = np.array([0.0, 0.0, height])
 
@@ -74,11 +69,13 @@ class HomographyVerifier:
             pan_deg=self.status["pan"],
             tilt_deg=self.status["tilt"],
             map_width=w,
-            map_height=h
+            map_height=h,
         )
 
         print(f"\n✓ Geometry initialized for {self.camera_name}")
-        print(f"  Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}")
+        print(
+            f"  Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}"
+        )
         print(f"  Height: {height}m\n")
 
     def mouse_callback(self, event, x, y, flags, param):
@@ -118,26 +115,41 @@ class HomographyVerifier:
             cv2.circle(annotated, (x, y), 10, (255, 255, 255), 2)
 
             # Draw label
-            label = f"P{i+1}: ({Xw:.1f}m, {Yw:.1f}m)"
-            cv2.putText(annotated, label, (x + 15, y - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            label = f"P{i + 1}: ({Xw:.1f}m, {Yw:.1f}m)"
+            cv2.putText(
+                annotated, label, (x + 15, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2
+            )
 
         # Draw instructions
-        cv2.putText(annotated, "Click on ground points to verify homography",
-                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(annotated, "Press 'q' to quit, 'c' to clear points, 's' to save",
-                   (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(
+            annotated,
+            "Click on ground points to verify homography",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+        )
+        cv2.putText(
+            annotated,
+            "Press 'q' to quit, 'c' to clear points, 's' to save",
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            1,
+        )
 
         return annotated
 
     def run(self):
         """Run interactive verification."""
-        cv2.namedWindow('Homography Verification')
-        cv2.setMouseCallback('Homography Verification', self.mouse_callback)
+        cv2.namedWindow("Homography Verification")
+        cv2.setMouseCallback("Homography Verification", self.mouse_callback)
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("HOMOGRAPHY VERIFICATION - INTERACTIVE MODE")
-        print("="*60)
+        print("=" * 60)
         print("\nInstructions:")
         print("  1. Click on known ground points (e.g., objects, markings)")
         print("  2. Note the displayed world coordinates (in meters)")
@@ -148,7 +160,7 @@ class HomographyVerifier:
         print("  • Click on the BASE of objects (where they touch the ground)")
         print("  • Verify distances match your measurements")
         print("  • Check angles are correct (X=East, Y=North)")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
         while True:
             ret, frame = self.cap.read()
@@ -161,15 +173,15 @@ class HomographyVerifier:
             self.current_frame = frame
             annotated = self.draw_annotations(frame)
 
-            cv2.imshow('Homography Verification', annotated)
+            cv2.imshow("Homography Verification", annotated)
 
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
+            if key == ord("q"):
                 break
-            elif key == ord('c'):
+            elif key == ord("c"):
                 self.clicked_points.clear()
                 print("\n✓ Points cleared")
-            elif key == ord('s'):
+            elif key == ord("s"):
                 self.save_results()
 
         self.cleanup()
@@ -181,16 +193,20 @@ class HomographyVerifier:
             return
 
         filename = f"homography_verification_{self.camera_name}.txt"
-        with open(filename, 'w') as f:
-            f.write(f"Homography Verification Results\n")
+        with open(filename, "w") as f:
+            f.write("Homography Verification Results\n")
             f.write(f"Camera: {self.camera_name}\n")
-            f.write(f"Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}\n\n")
+            f.write(
+                f"Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}\n\n"
+            )
             f.write(f"{'Point':<8} {'Image (px)':<20} {'World (m)':<25} {'Distance (m)':<15}\n")
             f.write("-" * 70 + "\n")
 
             for i, (x, y, Xw, Yw) in enumerate(self.clicked_points):
                 dist = np.sqrt(Xw**2 + Yw**2)
-                f.write(f"P{i+1:<7} ({x:>4}, {y:>4}){' '*8} ({Xw:>6.2f}, {Yw:>6.2f}){' '*10} {dist:>6.2f}\n")
+                f.write(
+                    f"P{i + 1:<7} ({x:>4}, {y:>4}){' ' * 8} ({Xw:>6.2f}, {Yw:>6.2f}){' ' * 10} {dist:>6.2f}\n"
+                )
 
         print(f"\n✓ Results saved to {filename}")
 

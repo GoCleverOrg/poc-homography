@@ -10,10 +10,8 @@ References:
     - Issue #133: Fix GeoTIFF pixel→UTM transform to use full 6-parameter affine
 """
 
-from typing import List, Tuple
 
-
-def apply_geotransform(px: float, py: float, gt: List[float]) -> Tuple[float, float]:
+def apply_geotransform(px: float, py: float, gt: list[float]) -> tuple[float, float]:
     """
     Apply GDAL 6-parameter affine geotransform to convert pixel to geographic coordinates.
 

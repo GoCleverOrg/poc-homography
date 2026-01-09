@@ -4,23 +4,25 @@ Test suite for parameter validation in camera_geometry.py
 Tests Issue #6: Add parameter validation and sanity checks to homography pipeline.
 """
 
-import numpy as np
-import sys
-import os
 import logging
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import os
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
 
 # Configure logging to see warnings
-logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
 
 def test_zoom_validation():
     """Test zoom factor validation in get_intrinsics."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Zoom Factor Validation")
-    print("="*60)
+    print("=" * 60)
 
     # Valid zoom
     print("\n1. Testing valid zoom (1.0)...")
@@ -57,9 +59,9 @@ def test_zoom_validation():
 
 def test_tilt_validation():
     """Test tilt angle validation."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Tilt Angle Validation")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = CameraGeometry.get_intrinsics(zoom_factor=1.0)
@@ -116,9 +118,9 @@ def test_tilt_validation():
 
 def test_height_validation():
     """Test camera height validation."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Camera Height Validation")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = CameraGeometry.get_intrinsics(zoom_factor=1.0)
@@ -166,9 +168,9 @@ def test_height_validation():
 
 def test_condition_number_validation():
     """Test homography condition number validation."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Homography Condition Number")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = CameraGeometry.get_intrinsics(zoom_factor=1.0)
@@ -192,9 +194,9 @@ def test_condition_number_validation():
 
 def test_projection_validation():
     """Test projected distance validation."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Projected Distance Validation")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
     K = CameraGeometry.get_intrinsics(zoom_factor=1.0)
@@ -218,9 +220,9 @@ def test_projection_validation():
 
 def test_boundary_values():
     """Test exact boundary values for parameters."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Boundary Value Validation")
-    print("="*60)
+    print("=" * 60)
 
     geo = CameraGeometry(2560, 1440)
 
@@ -260,9 +262,9 @@ def test_boundary_values():
 
 def main():
     """Run all validation tests."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("PARAMETER VALIDATION TEST SUITE (Issue #6)")
-    print("="*70)
+    print("=" * 70)
 
     try:
         test_zoom_validation()
@@ -272,13 +274,14 @@ def main():
         test_projection_validation()
         test_boundary_values()
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("ALL VALIDATION TESTS COMPLETED")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
     except Exception as e:
         print(f"\n✗ TEST SUITE FAILED WITH ERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
 

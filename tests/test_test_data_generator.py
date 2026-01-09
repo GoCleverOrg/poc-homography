@@ -6,12 +6,8 @@ camera frames and generates test data for calibration with interactive
 GCP marking.
 """
 
-import json
 import sys
-import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import Mock
 
 import pytest
 
@@ -124,13 +120,13 @@ class TestGPSCoordinateConversion:
 
     def test_convert_dms_to_decimal_validates_latitude_range(self):
         """Test that invalid latitude range raises ValueError."""
-        from tools.test_data_generator import convert_gps_coordinates
 
         # Create mock that returns out-of-range value
         with pytest.raises(ValueError, match="Latitude must be between -90 and 90"):
             # This would require mocking dms_to_dd, but based on clarification
             # we trust dms_to_dd. Let's test the validation wrapper instead.
             from tools.test_data_generator import validate_gps_ranges
+
             validate_gps_ranges(95.0, 0.0)
 
     def test_convert_dms_to_decimal_validates_longitude_range(self):
@@ -147,18 +143,18 @@ class TestGPSCoordinateConversion:
         # Should not raise exception
         validate_gps_ranges(39.640477, -0.230175)
         validate_gps_ranges(-90.0, -180.0)  # Edge cases
-        validate_gps_ranges(90.0, 180.0)    # Edge cases
-        validate_gps_ranges(0.0, 0.0)       # Origin
+        validate_gps_ranges(90.0, 180.0)  # Edge cases
+        validate_gps_ranges(0.0, 0.0)  # Origin
 
     def test_validate_gps_ranges_boundary_values(self):
         """Test boundary validation for GPS coordinates."""
         from tools.test_data_generator import validate_gps_ranges
 
         # Test exact boundaries
-        validate_gps_ranges(90.0, 0.0)   # Max latitude
+        validate_gps_ranges(90.0, 0.0)  # Max latitude
         validate_gps_ranges(-90.0, 0.0)  # Min latitude
         validate_gps_ranges(0.0, 180.0)  # Max longitude
-        validate_gps_ranges(0.0, -180.0) # Min longitude
+        validate_gps_ranges(0.0, -180.0)  # Min longitude
 
         # Test just outside boundaries
         with pytest.raises(ValueError):

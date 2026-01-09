@@ -10,17 +10,17 @@ Usage:
     python verify_gcp_gps.py --gcps gcps.yaml --camera Valte --show-fov
 """
 
-import sys
-import os
-import math
 import argparse
+import math
+import os
+import sys
 import webbrowser
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -46,10 +46,10 @@ def get_camera_config_decimal(camera_name: str) -> dict:
 
     # Convert DMS coordinates to decimal degrees
     return {
-        'lat': dms_to_dd(cam['lat']),
-        'lon': dms_to_dd(cam['lon']),
-        'height_m': cam['height_m'],
-        'pan_offset_deg': cam['pan_offset_deg'],
+        "lat": dms_to_dd(cam["lat"]),
+        "lon": dms_to_dd(cam["lon"]),
+        "height_m": cam["height_m"],
+        "pan_offset_deg": cam["pan_offset_deg"],
     }
 
 
@@ -62,48 +62,52 @@ def load_gcps_from_yaml(yaml_path: str, image_height: int = 1080) -> tuple:
     if not YAML_AVAILABLE:
         raise ImportError("PyYAML required")
 
-    with open(yaml_path, 'r') as f:
+    with open(yaml_path) as f:
         data = yaml.safe_load(f)
 
     gcps = []
     ptz_info = None
     metadata = {}
 
-    if 'gcps' in data:
+    if "gcps" in data:
         # Simple format
-        for gcp in data['gcps']:
-            gcps.append({
-                'lat': gcp['lat'],
-                'lon': gcp['lon'],
-                'name': gcp.get('name', 'GCP'),
-                'pixel_u': gcp.get('pixel_u', 0),
-                'pixel_v': gcp.get('pixel_v', 0),
-            })
-    elif 'homography' in data:
+        for gcp in data["gcps"]:
+            gcps.append(
+                {
+                    "lat": gcp["lat"],
+                    "lon": gcp["lon"],
+                    "name": gcp.get("name", "GCP"),
+                    "pixel_u": gcp.get("pixel_u", 0),
+                    "pixel_v": gcp.get("pixel_v", 0),
+                }
+            )
+    elif "homography" in data:
         # Complex format from capture tool
-        ctx = data['homography']['feature_match']['camera_capture_context']
-        ptz_info = ctx.get('ptz_position', {})
+        ctx = data["homography"]["feature_match"]["camera_capture_context"]
+        ptz_info = ctx.get("ptz_position", {})
         metadata = {
-            'camera_name': ctx.get('camera_name'),
-            'capture_timestamp': ctx.get('capture_timestamp'),
-            'notes': ctx.get('notes'),
-            'coordinate_system': ctx.get('coordinate_system'),
+            "camera_name": ctx.get("camera_name"),
+            "capture_timestamp": ctx.get("capture_timestamp"),
+            "notes": ctx.get("notes"),
+            "coordinate_system": ctx.get("coordinate_system"),
         }
 
-        coordinate_system = ctx.get('coordinate_system')
+        coordinate_system = ctx.get("coordinate_system")
 
-        for gcp in data['homography']['feature_match']['ground_control_points']:
-            v = gcp['image']['v']
+        for gcp in data["homography"]["feature_match"]["ground_control_points"]:
+            v = gcp["image"]["v"]
             if coordinate_system is None:
                 v = image_height - v
 
-            gcps.append({
-                'lat': gcp['gps']['latitude'],
-                'lon': gcp['gps']['longitude'],
-                'name': gcp.get('metadata', {}).get('description', 'GCP'),
-                'pixel_u': gcp['image']['u'],
-                'pixel_v': v,
-            })
+            gcps.append(
+                {
+                    "lat": gcp["gps"]["latitude"],
+                    "lon": gcp["gps"]["longitude"],
+                    "name": gcp.get("metadata", {}).get("description", "GCP"),
+                    "pixel_u": gcp["image"]["u"],
+                    "pixel_v": v,
+                }
+            )
 
     return gcps, ptz_info, metadata
 
@@ -122,32 +126,33 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return math.sqrt(dlat**2 + dlon**2)
 
 
-def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, title="GCP Verification Map"):
+def generate_map_html(
+    gcps, camera_config=None, ptz_info=None, metadata=None, title="GCP Verification Map"
+):
     """Generate interactive HTML map with GCPs plotted."""
 
     # Check for Google Maps API key and generate satellite layers
-    google_maps_api_key = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
     satellite_layers_js = generate_satellite_layers_js(
-        google_api_key=google_maps_api_key if google_maps_api_key else None,
-        default_layer='google'
+        google_api_key=google_maps_api_key if google_maps_api_key else None, default_layer="google"
     )
 
     # Calculate center point
     if gcps:
-        center_lat = sum(g['lat'] for g in gcps) / len(gcps)
-        center_lon = sum(g['lon'] for g in gcps) / len(gcps)
+        center_lat = sum(g["lat"] for g in gcps) / len(gcps)
+        center_lon = sum(g["lon"] for g in gcps) / len(gcps)
     elif camera_config:
-        center_lat = camera_config['lat']
-        center_lon = camera_config['lon']
+        center_lat = camera_config["lat"]
+        center_lon = camera_config["lon"]
     else:
         center_lat, center_lon = 39.64, -0.23
 
     # Calculate bounds for zoom
     if gcps:
-        min_lat = min(g['lat'] for g in gcps)
-        max_lat = max(g['lat'] for g in gcps)
-        min_lon = min(g['lon'] for g in gcps)
-        max_lon = max(g['lon'] for g in gcps)
+        min_lat = min(g["lat"] for g in gcps)
+        max_lat = max(g["lat"] for g in gcps)
+        min_lon = min(g["lon"] for g in gcps)
+        max_lon = max(g["lon"] for g in gcps)
     else:
         min_lat, max_lat = center_lat - 0.001, center_lat + 0.001
         min_lon, max_lon = center_lon - 0.001, center_lon + 0.001
@@ -158,8 +163,12 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
         # Calculate distance and bearing from camera if available
         extra_info = ""
         if camera_config:
-            dist = calculate_distance(camera_config['lat'], camera_config['lon'], gcp['lat'], gcp['lon'])
-            bearing = calculate_bearing(camera_config['lat'], camera_config['lon'], gcp['lat'], gcp['lon'])
+            dist = calculate_distance(
+                camera_config["lat"], camera_config["lon"], gcp["lat"], gcp["lon"]
+            )
+            bearing = calculate_bearing(
+                camera_config["lat"], camera_config["lon"], gcp["lat"], gcp["lon"]
+            )
             extra_info = f"<br>Distance: {dist:.1f}m<br>Bearing: {bearing:.1f}&deg;"
 
         popup_content = (
@@ -170,7 +179,7 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
         )
 
         gcp_markers_js += f"""
-        L.circleMarker([{gcp['lat']}, {gcp['lon']}], {{
+        L.circleMarker([{gcp["lat"]}, {gcp["lon"]}], {{
             radius: 6,
             fillColor: '#ff4444',
             color: '#aa0000',
@@ -185,7 +194,7 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
     if camera_config:
         camera_js = f"""
         // Camera position marker
-        L.marker([{camera_config['lat']}, {camera_config['lon']}], {{
+        L.marker([{camera_config["lat"]}, {camera_config["lon"]}], {{
             icon: L.divIcon({{
                 className: 'camera-icon',
                 html: '<div style="background:#0066ff;width:12px;height:12px;border-radius:50%;border:2px solid white;"></div>',
@@ -196,30 +205,40 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
         """
 
         # Add FOV cone if PTZ info available
-        if ptz_info and 'pan' in ptz_info:
-            pan = ptz_info['pan'] + camera_config.get('pan_offset_deg', 0)
+        if ptz_info and "pan" in ptz_info:
+            pan = ptz_info["pan"] + camera_config.get("pan_offset_deg", 0)
             # Approximate FOV based on zoom (60° at zoom=1)
-            zoom = ptz_info.get('zoom', 1.0)
+            zoom = ptz_info.get("zoom", 1.0)
             fov = 60.0 / zoom
 
             # Calculate FOV cone points (50m distance for visualization)
             cone_distance = 50
-            left_bearing = pan - fov/2
-            right_bearing = pan + fov/2
+            left_bearing = pan - fov / 2
+            right_bearing = pan + fov / 2
 
             def point_at_bearing(lat, lon, bearing, distance):
                 dlat = distance * math.cos(math.radians(bearing)) / 111320
-                dlon = distance * math.sin(math.radians(bearing)) / (111320 * math.cos(math.radians(lat)))
+                dlon = (
+                    distance
+                    * math.sin(math.radians(bearing))
+                    / (111320 * math.cos(math.radians(lat)))
+                )
                 return lat + dlat, lon + dlon
 
-            left_lat, left_lon = point_at_bearing(camera_config['lat'], camera_config['lon'], left_bearing, cone_distance)
-            right_lat, right_lon = point_at_bearing(camera_config['lat'], camera_config['lon'], right_bearing, cone_distance)
-            center_lat_fov, center_lon_fov = point_at_bearing(camera_config['lat'], camera_config['lon'], pan, cone_distance)
+            left_lat, left_lon = point_at_bearing(
+                camera_config["lat"], camera_config["lon"], left_bearing, cone_distance
+            )
+            right_lat, right_lon = point_at_bearing(
+                camera_config["lat"], camera_config["lon"], right_bearing, cone_distance
+            )
+            center_lat_fov, center_lon_fov = point_at_bearing(
+                camera_config["lat"], camera_config["lon"], pan, cone_distance
+            )
 
             camera_js += f"""
             // FOV cone
             L.polygon([
-                [{camera_config['lat']}, {camera_config['lon']}],
+                [{camera_config["lat"]}, {camera_config["lon"]}],
                 [{left_lat}, {left_lon}],
                 [{right_lat}, {right_lon}]
             ], {{
@@ -231,7 +250,7 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
 
             // Center line
             L.polyline([
-                [{camera_config['lat']}, {camera_config['lon']}],
+                [{camera_config["lat"]}, {camera_config["lon"]}],
                 [{center_lat_fov}, {center_lon_fov}]
             ], {{
                 color: '#0066ff',
@@ -244,13 +263,13 @@ def generate_map_html(gcps, camera_config=None, ptz_info=None, metadata=None, ti
     meta_info = ""
     if metadata:
         meta_parts = []
-        if metadata.get('camera_name'):
+        if metadata.get("camera_name"):
             meta_parts.append(f"Camera: {metadata['camera_name']}")
-        if metadata.get('capture_timestamp'):
+        if metadata.get("capture_timestamp"):
             meta_parts.append(f"Captured: {metadata['capture_timestamp']}")
-        if metadata.get('notes'):
+        if metadata.get("notes"):
             meta_parts.append(f"Notes: {metadata['notes']}")
-        if metadata.get('coordinate_system') is None:
+        if metadata.get("coordinate_system") is None:
             meta_parts.append("Format: Legacy (leaflet_y, converted)")
         meta_info = "<br>".join(meta_parts)
 
@@ -361,12 +380,14 @@ Examples:
   python verify_gcp_gps.py --gcps my_gcps.yaml
   python verify_gcp_gps.py --gcps gcps.yaml --camera Valte --output map.html
   python verify_gcp_gps.py --gcps gcps.yaml --camera Valte --no-browser
-        """
+        """,
     )
-    parser.add_argument('--gcps', '-g', required=True, help='Path to YAML file with GCPs')
-    parser.add_argument('--camera', '-c', help='Camera name to show position and FOV')
-    parser.add_argument('--output', '-o', help='Output HTML file (default: gcp_map.html)')
-    parser.add_argument('--no-browser', action='store_true', help='Do not open browser automatically')
+    parser.add_argument("--gcps", "-g", required=True, help="Path to YAML file with GCPs")
+    parser.add_argument("--camera", "-c", help="Camera name to show position and FOV")
+    parser.add_argument("--output", "-o", help="Output HTML file (default: gcp_map.html)")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="Do not open browser automatically"
+    )
 
     args = parser.parse_args()
 
@@ -375,7 +396,7 @@ Examples:
     gcps, ptz_info, metadata = load_gcps_from_yaml(args.gcps)
     print(f"  Loaded {len(gcps)} GCPs")
 
-    if metadata.get('coordinate_system') is None:
+    if metadata.get("coordinate_system") is None:
         print("  Note: Converted from legacy leaflet_y format")
 
     # Get camera config if specified
@@ -383,7 +404,9 @@ Examples:
     if args.camera:
         camera_config = get_camera_config_decimal(args.camera)
         if camera_config:
-            print(f"  Camera: {args.camera} at ({camera_config['lat']:.6f}, {camera_config['lon']:.6f})")
+            print(
+                f"  Camera: {args.camera} at ({camera_config['lat']:.6f}, {camera_config['lon']:.6f})"
+            )
         else:
             print(f"  Warning: Unknown camera '{args.camera}'")
 
@@ -392,30 +415,36 @@ Examples:
     html = generate_map_html(gcps, camera_config, ptz_info, metadata, title)
 
     # Write output
-    output_path = args.output or 'gcp_map.html'
-    with open(output_path, 'w') as f:
+    output_path = args.output or "gcp_map.html"
+    with open(output_path, "w") as f:
         f.write(html)
     print(f"\nMap saved to: {output_path}")
 
     # Calculate statistics
     if camera_config and gcps:
-        distances = [calculate_distance(camera_config['lat'], camera_config['lon'], g['lat'], g['lon']) for g in gcps]
-        bearings = [calculate_bearing(camera_config['lat'], camera_config['lon'], g['lat'], g['lon']) for g in gcps]
+        distances = [
+            calculate_distance(camera_config["lat"], camera_config["lon"], g["lat"], g["lon"])
+            for g in gcps
+        ]
+        bearings = [
+            calculate_bearing(camera_config["lat"], camera_config["lon"], g["lat"], g["lon"])
+            for g in gcps
+        ]
 
-        print(f"\nGCP Statistics:")
+        print("\nGCP Statistics:")
         print(f"  Distance range: {min(distances):.1f}m - {max(distances):.1f}m")
         print(f"  Bearing range: {min(bearings):.1f}° - {max(bearings):.1f}°")
 
-        if ptz_info and 'pan' in ptz_info:
-            expected_bearing = ptz_info['pan'] + camera_config.get('pan_offset_deg', 0)
+        if ptz_info and "pan" in ptz_info:
+            expected_bearing = ptz_info["pan"] + camera_config.get("pan_offset_deg", 0)
             print(f"  Expected center bearing: {expected_bearing:.1f}°")
 
     # Open in browser
     if not args.no_browser:
         abs_path = os.path.abspath(output_path)
-        print(f"\nOpening in browser...")
-        webbrowser.open(f'file://{abs_path}')
+        print("\nOpening in browser...")
+        webbrowser.open(f"file://{abs_path}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
