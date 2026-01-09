@@ -1,0 +1,92 @@
+{
+  "camera_info": {
+    "latitude": 39.640477777777775,
+    "longitude": -0.23017500000000002,
+    "height_meters": 4.71,
+    "pan_deg": 30.8,
+    "tilt_deg": 13.1,
+    "zoom_level": 1
+  },
+  "gcps": [
+    {
+      "pixel_x": 798.0078125,
+      "pixel_y": 578.3828125,
+      "map_point_id": "A7"
+    },
+    {
+      "pixel_x": 1082.0078125,
+      "pixel_y": 390.3828125,
+      "map_point_id": "A6"
+    },
+    {
+      "pixel_x": 408,
+      "pixel_y": 776.125,
+      "map_point_id": "X15"
+    },
+    {
+      "pixel_x": 568,
+      "pixel_y": 846.125,
+      "map_point_id": "X16"
+    },
+    {
+      "pixel_x": 768,
+      "pixel_y": 930.125,
+      "map_point_id": "X17"
+    },
+    {
+      "pixel_x": 1010,
+      "pixel_y": 1023.125,
+      "map_point_id": "X18"
+    },
+    {
+      "pixel_x": 468,
+      "pixel_y": 268.125,
+      "map_point_id": "P17"
+    },
+    {
+      "pixel_x": 666,
+      "pixel_y": 291.125,
+      "map_point_id": "P15"
+    },
+    {
+      "pixel_x": 926,
+      "pixel_y": 320.125,
+      "map_point_id": "P13"
+    },
+    {
+      "pixel_x": 1256,
+      "pixel_y": 360.125,
+      "map_point_id": "P11"
+    },
+    {
+      "pixel_x": 1683,
+      "pixel_y": 416.125,
+      "map_point_id": "P9"
+    },
+    {
+      "pixel_x": 1616,
+      "pixel_y": 299.125,
+      "map_point_id": "P10"
+    },
+    {
+      "pixel_x": 1352,
+      "pixel_y": 274.125,
+      "map_point_id": "P12"
+    },
+    {
+      "pixel_x": 1124,
+      "pixel_y": 254.125,
+      "map_point_id": "P14"
+    },
+    {
+      "pixel_x": 929,
+      "pixel_y": 237.125,
+      "map_point_id": "P16"
+    },
+    {
+      "pixel_x": 400,
+      "pixel_y": 258.125,
+      "map_point_id": "X10"
+    }
+  ]
+}
