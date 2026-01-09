@@ -2,11 +2,66 @@
 
 import re
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from dataclasses import dataclass
 
+from jinja2 import Environment, PackageLoader
 from pyproj import Transformer
 
 from poc_homography.geotiff_utils import apply_geotransform
+
+# Set up Jinja2 template environment
+_template_env = Environment(
+    loader=PackageLoader("poc_homography.kml", "templates"),
+    autoescape=False,  # KML is XML, we handle escaping manually
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
+
+# Type alias for the 6-parameter GDAL geotransform
+Geotransform = tuple[float, float, float, float, float, float]
+
+
+@dataclass(frozen=True)
+class PixelPoint:
+    """Pixel coordinates in an image.
+
+    Attributes:
+        x: Pixel x coordinate (column).
+        y: Pixel y coordinate (row).
+    """
+
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class KmlPoint:
+    """Geographic point for KML export.
+
+    Attributes:
+        category: Point category (e.g., "zebra", "arrow", "parking", "other").
+        lat: Latitude in degrees (WGS84).
+        lon: Longitude in degrees (WGS84).
+    """
+
+    category: str
+    lat: float
+    lon: float
+
+
+@dataclass(frozen=True)
+class GeoConfig:
+    """Configuration for georeferenced coordinate transformations.
+
+    Attributes:
+        crs: Coordinate reference system identifier (e.g., "EPSG:25830").
+        geotransform: 6-parameter GDAL affine geotransform as
+            (origin_x, pixel_width, row_rotation, origin_y, col_rotation, pixel_height).
+            For north-up images, row_rotation and col_rotation are typically 0.
+    """
+
+    crs: str
+    geotransform: Geotransform
 
 
 class PointExtractor:
@@ -16,29 +71,28 @@ class PointExtractor:
     UTM coordinates, and lat/lon (WGS84) using GDAL-style 6-parameter affine
     geotransforms.
 
+    Points are stored as a mapping from name to (PixelPoint, KmlPoint) tuples,
+    allowing efficient lookup by name and clear separation between pixel and
+    geographic coordinate spaces.
+
     Args:
-        image_path: Path to the source image file.
-        config: Configuration dict containing:
-            - crs: Coordinate reference system (e.g., "EPSG:25830")
-            - geotransform: 6-parameter GDAL geotransform array
-              [origin_x, pixel_width, row_rotation, origin_y, col_rotation, pixel_height]
+        geo_config: Georeferencing configuration with CRS and geotransform.
 
     Example:
-        >>> config = {
-        ...     "crs": "EPSG:25830",
-        ...     "geotransform": [725140.0, 0.05, 0, 4373490.0, 0, -0.05]
-        ... }
-        >>> extractor = PointExtractor("image.tif", config)
+        >>> geo_config = GeoConfig(
+        ...     crs="EPSG:25830",
+        ...     geotransform=(725140.0, 0.05, 0.0, 4373490.0, 0.0, -0.05),
+        ... )
+        >>> extractor = PointExtractor(geo_config)
         >>> extractor.add_point(100, 200, "P1", "zebra")
-        >>> extractor.export_kml("output.kml")
+        >>> kml_content = extractor.render_kml()
     """
 
-    def __init__(self, image_path: str, config: dict):
-        self.image_path = Path(image_path)
-        self.config = config
-        self.points: list[dict] = []
-        self.transformer = Transformer.from_crs(config["crs"], "EPSG:4326", always_xy=True)
-        self.reverse_transformer = Transformer.from_crs("EPSG:4326", config["crs"], always_xy=True)
+    def __init__(self, geo_config: GeoConfig):
+        self.geo_config = geo_config
+        self.points: dict[str, tuple[PixelPoint, KmlPoint]] = {}
+        self.transformer = Transformer.from_crs(geo_config.crs, "EPSG:4326", always_xy=True)
+        self.reverse_transformer = Transformer.from_crs("EPSG:4326", geo_config.crs, always_xy=True)
 
     def pixel_to_utm(self, px: float, py: float) -> tuple[float, float]:
         """Convert pixel coordinates to UTM using 6-parameter affine geotransform.
@@ -54,7 +108,7 @@ class PointExtractor:
         Returns:
             Tuple of (easting, northing) in UTM coordinates.
         """
-        easting, northing = apply_geotransform(px, py, self.config["geotransform"])
+        easting, northing = apply_geotransform(px, py, list(self.geo_config.geotransform))
         return easting, northing
 
     def pixel_to_latlon(self, px: float, py: float) -> tuple[float, float]:
@@ -104,7 +158,7 @@ class PointExtractor:
             ValueError: If the geotransform matrix is singular (cannot be inverted).
         """
         easting, northing = self.latlon_to_utm(lat, lon)
-        gt = self.config["geotransform"]
+        gt = self.geo_config.geotransform
 
         # Inverse affine transform
         # For general case (with rotation):
@@ -125,35 +179,40 @@ class PointExtractor:
 
         return px, py
 
-    def parse_kml(self, kml_text: str) -> list[dict]:
-        """Parse KML file and extract points with pixel coordinates.
+    @staticmethod
+    def parse_kml(kml_text: str) -> dict[str, KmlPoint]:
+        """Parse KML file and extract geographic points.
+
+        This is a static method as it only extracts geographic data from KML
+        without any coordinate transformations.
 
         Args:
             kml_text: KML file content as string.
 
         Returns:
-            List of point dictionaries with keys:
-                - name: Point name
-                - category: Point category (zebra, arrow, parking, other)
-                - px, py: Pixel coordinates
-                - lat, lon: Geographic coordinates
+            Dict mapping point names to KmlPoint objects.
         """
         # Remove namespace for easier parsing
         kml_text = re.sub(r'\sxmlns="[^"]+"', "", kml_text, count=1)
 
         root = ET.fromstring(kml_text)
-        points = []
+        points: dict[str, KmlPoint] = {}
+        unnamed_count = 0
 
         for placemark in root.iter("Placemark"):
             name_elem = placemark.find("name")
-            name = name_elem.text if name_elem is not None else f"Point_{len(points) + 1}"
+            if name_elem is not None and name_elem.text:
+                name = name_elem.text
+            else:
+                unnamed_count += 1
+                name = f"Point_{unnamed_count}"
 
             # Try to extract category from styleUrl or description
             style_elem = placemark.find("styleUrl")
             desc_elem = placemark.find("description")
 
             category = "other"
-            if style_elem is not None:
+            if style_elem is not None and style_elem.text:
                 style = style_elem.text.replace("#", "")
                 if style in ["zebra", "arrow", "parking"]:
                     category = style
@@ -176,139 +235,76 @@ class PointExtractor:
                 if len(parts) >= 2:
                     lon = float(parts[0])
                     lat = float(parts[1])
-                    px, py = self.latlon_to_pixel(lat, lon)
-                    points.append(
-                        {
-                            "name": name,
-                            "category": category,
-                            "px": px,
-                            "py": py,
-                            "lat": lat,
-                            "lon": lon,
-                        }
-                    )
+                    points[name] = KmlPoint(category=category, lat=lat, lon=lon)
 
         return points
 
-    def add_point(self, px: float, py: float, name: str, category: str) -> dict:
+    def import_kml(self, kml_text: str) -> dict[str, tuple[PixelPoint, KmlPoint]]:
+        """Import KML and convert geographic points to pixel coordinates.
+
+        Parses KML file and converts lat/lon coordinates to pixel coordinates
+        using the configured geotransform.
+
+        Args:
+            kml_text: KML file content as string.
+
+        Returns:
+            Dict mapping point names to (PixelPoint, KmlPoint) tuples.
+        """
+        kml_points = self.parse_kml(kml_text)
+        result: dict[str, tuple[PixelPoint, KmlPoint]] = {}
+
+        for name, kml_point in kml_points.items():
+            px, py = self.latlon_to_pixel(kml_point.lat, kml_point.lon)
+            pixel_point = PixelPoint(x=px, y=py)
+            result[name] = (pixel_point, kml_point)
+
+        return result
+
+    def add_point(
+        self, px: float, py: float, name: str, category: str
+    ) -> tuple[PixelPoint, KmlPoint]:
         """Add a reference point.
 
         Args:
             px: Pixel x coordinate.
             py: Pixel y coordinate.
-            name: Point name/label.
+            name: Point name/label (used as key in points dict).
             category: Point category (e.g., "zebra", "arrow", "parking", "other").
 
         Returns:
-            Dictionary containing the added point's data.
+            Tuple of (PixelPoint, KmlPoint) representing the added point.
         """
         lat, lon = self.pixel_to_latlon(px, py)
-        easting, northing = self.pixel_to_utm(px, py)
-        self.points.append(
-            {
-                "name": name,
-                "category": category,
-                "pixel_x": px,
-                "pixel_y": py,
-                "easting": easting,
-                "northing": northing,
-                "lat": lat,
-                "lon": lon,
-            }
-        )
-        return self.points[-1]
+        pixel_point = PixelPoint(x=px, y=py)
+        kml_point = KmlPoint(category=category, lat=lat, lon=lon)
+        self.points[name] = (pixel_point, kml_point)
+        return pixel_point, kml_point
 
-    def export_kml(self, output_path: str) -> str:
-        """Export points to KML file with both GPS and UTM coordinates.
+    def render_kml(self) -> str:
+        """Render points to KML format.
 
-        Args:
-            output_path: Path for the output KML file.
+        Uses Jinja2 template for KML generation.
 
         Returns:
-            The output path.
+            KML content as a string.
         """
-        kml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-<Document>
-    <name>Reference Points</name>
-    <description>Extracted from {self.image_path.name}</description>
-
-    <Schema name="GCPData" id="GCPData">
-        <SimpleField type="string" name="category"/>
-        <SimpleField type="float" name="pixel_x"/>
-        <SimpleField type="float" name="pixel_y"/>
-        <SimpleField type="float" name="utm_easting"/>
-        <SimpleField type="float" name="utm_northing"/>
-        <SimpleField type="string" name="utm_crs"/>
-    </Schema>
-
-    <Style id="zebra">
-        <IconStyle><color>ff0000ff</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-    <Style id="arrow">
-        <IconStyle><color>ff00ff00</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-    <Style id="parking">
-        <IconStyle><color>ffff0000</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-    <Style id="other">
-        <IconStyle><color>ff00ffff</color><scale>0.8</scale>
-            <Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-circle.png</href></Icon>
-        </IconStyle>
-    </Style>
-"""
-
-        for pt in self.points:
-            style = pt["category"].lower().replace(" ", "_")
+        # Prepare points with style information for template
+        template_points = []
+        for name, (pixel_point, kml_point) in self.points.items():
+            style = kml_point.category.lower().replace(" ", "_")
             if style not in ["zebra", "arrow", "parking"]:
                 style = "other"
-
-            kml_content += """
-    <Placemark>
-        <name>{name}</name>
-        <description>Category: {category}
-Pixel: ({pixel_x:.1f}, {pixel_y:.1f})
-UTM: E {easting:.2f}, N {northing:.2f}
-CRS: {crs}</description>
-        <styleUrl>#{style}</styleUrl>
-        <ExtendedData>
-            <SchemaData schemaUrl="#GCPData">
-                <SimpleData name="category">{category}</SimpleData>
-                <SimpleData name="pixel_x">{pixel_x:.2f}</SimpleData>
-                <SimpleData name="pixel_y">{pixel_y:.2f}</SimpleData>
-                <SimpleData name="utm_easting">{easting:.4f}</SimpleData>
-                <SimpleData name="utm_northing">{northing:.4f}</SimpleData>
-                <SimpleData name="utm_crs">{crs}</SimpleData>
-            </SchemaData>
-        </ExtendedData>
-        <Point>
-            <coordinates>{lon:.8f},{lat:.8f},0</coordinates>
-        </Point>
-    </Placemark>
-""".format(
-                name=pt["name"],
-                category=pt["category"],
-                pixel_x=pt["pixel_x"],
-                pixel_y=pt["pixel_y"],
-                easting=pt["easting"],
-                northing=pt["northing"],
-                crs=self.config["crs"],
-                style=style,
-                lon=pt["lon"],
-                lat=pt["lat"],
+            template_points.append(
+                {
+                    "name": name,
+                    "category": kml_point.category,
+                    "lat": kml_point.lat,
+                    "lon": kml_point.lon,
+                    "style": style,
+                }
             )
 
-        kml_content += """
-</Document>
-</kml>"""
-
-        with open(output_path, "w") as f:
-            f.write(kml_content)
-
-        return output_path
+        # Render template
+        template = _template_env.get_template("points.kml.j2")
+        return template.render(points=template_points)

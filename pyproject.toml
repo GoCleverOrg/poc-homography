@@ -2,6 +2,18 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["poc_homography"]
+
+[tool.hatch.build.targets.wheel.sources]
+"poc_homography" = "poc_homography"
+
+[tool.hatch.build]
+include = [
+    "poc_homography/**/*.py",
+    "poc_homography/**/*.j2",
+]
+
 [project]
 name = "poc-homography"
 version = "0.1.0"
@@ -16,6 +28,7 @@ dependencies = [
     "PyYAML>=6.0",
     "scipy>=1.9",
     "pyproj>=3.7.1",
+    "jinja2>=3.1.6",
 ]
 
 [dependency-groups]

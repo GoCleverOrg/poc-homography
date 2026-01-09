@@ -19,7 +19,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.kml import PointExtractor
+from poc_homography.kml import GeoConfig, PointExtractor
 from poc_homography.server_utils import find_available_port
 
 
@@ -659,11 +659,13 @@ def create_html(image_path: str, config: dict) -> str:
     )
 
 
-def run_server(image_path: str, config: dict, port: int = 8765):
+def run_server(image_path: str, geo_config: GeoConfig, port: int = 8765):
     """Run the web server."""
 
-    extractor = PointExtractor(image_path, config)
-    html_content = create_html(image_path, config)
+    extractor = PointExtractor(geo_config)
+    # Convert to dict for JavaScript JSON serialization
+    config_dict = {"crs": geo_config.crs, "geotransform": list(geo_config.geotransform)}
+    html_content = create_html(image_path, config_dict)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
@@ -681,13 +683,15 @@ def run_server(image_path: str, config: dict, port: int = 8765):
 
             if self.path == "/export":
                 # Clear and re-add points
-                extractor.points = []
+                extractor.points = {}
                 for p in post_data["points"]:
                     extractor.add_point(p["px"], p["py"], p["name"], p["category"])
 
                 # Export
                 output_path = str(Path(image_path).with_suffix(".kml"))
-                extractor.export_kml(output_path)
+                kml_content = extractor.render_kml()
+                with open(output_path, "w") as f:
+                    f.write(kml_content)
 
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
@@ -701,12 +705,23 @@ def run_server(image_path: str, config: dict, port: int = 8765):
             elif self.path == "/import":
                 try:
                     kml_text = post_data.get("kml", "")
-                    points = extractor.parse_kml(kml_text)
+                    imported = extractor.import_kml(kml_text)
+
+                    # Convert to list format expected by frontend
+                    points_list = [
+                        {
+                            "px": pixel.x,
+                            "py": pixel.y,
+                            "name": name,
+                            "category": kml.category,
+                        }
+                        for name, (pixel, kml) in imported.items()
+                    ]
 
                     self.send_response(200)
                     self.send_header("Content-type", "application/json")
                     self.end_headers()
-                    self.wfile.write(json.dumps({"success": True, "points": points}).encode())
+                    self.wfile.write(json.dumps({"success": True, "points": points_list}).encode())
                 except Exception as e:
                     self.send_response(200)
                     self.send_header("Content-type", "application/json")
@@ -726,8 +741,8 @@ def run_server(image_path: str, config: dict, port: int = 8765):
         print(f"\n{'=' * 60}")
         print(f"KML Point Extractor running at: {url}")
         print(f"Image: {image_path}")
-        print(f"CRS: {config['crs']}")
-        print(f"Geotransform: {config['geotransform']}")
+        print(f"CRS: {geo_config.crs}")
+        print(f"Geotransform: {geo_config.geotransform}")
         print(f"{'=' * 60}")
         print("\nPress Ctrl+C to stop\n")
 
@@ -794,31 +809,28 @@ def main():
     # Check for new geotransform format vs old format
     if "geotransform" in geotiff_params:
         # New format: use geotransform array directly
-        config = {"geotransform": geotiff_params["geotransform"], "crs": geotiff_params["utm_crs"]}
+        gt = list(geotiff_params["geotransform"])
+        crs = geotiff_params["utm_crs"]
         print(
             f"Loaded georeferencing parameters from camera: {args.camera} (new geotransform format)"
         )
     else:
         # Old format: build geotransform from separate parameters
-        config = {
-            "geotransform": [
-                geotiff_params["origin_easting"],
-                geotiff_params["pixel_size_x"],
-                0,  # row_rotation (assumed 0 for legacy format)
-                geotiff_params["origin_northing"],
-                0,  # col_rotation (assumed 0 for legacy format)
-                geotiff_params["pixel_size_y"],
-            ],
-            "crs": geotiff_params["utm_crs"],
-        }
+        gt = [
+            geotiff_params["origin_easting"],
+            geotiff_params["pixel_size_x"],
+            0.0,  # row_rotation (assumed 0 for legacy format)
+            geotiff_params["origin_northing"],
+            0.0,  # col_rotation (assumed 0 for legacy format)
+            geotiff_params["pixel_size_y"],
+        ]
+        crs = geotiff_params["utm_crs"]
         print(
             f"Loaded georeferencing parameters from camera: {args.camera} (legacy format, converted to geotransform)"
         )
 
     # Command-line arguments override camera config
     if args.origin_e is not None or args.origin_n is not None or args.gsd is not None:
-        gt = list(config["geotransform"])  # Make a copy
-
         # Override specific values
         if args.origin_e is not None:
             gt[0] = args.origin_e
@@ -827,14 +839,16 @@ def main():
         if args.gsd is not None:
             gt[1] = args.gsd
             gt[5] = -args.gsd
-
-        config["geotransform"] = gt
         print("Applied command-line overrides to geotransform")
 
     if args.crs is not None:
-        config["crs"] = args.crs
+        crs = args.crs
 
-    run_server(args.image, config, args.port)
+    geo_config = GeoConfig(
+        crs=crs,
+        geotransform=(gt[0], gt[1], gt[2], gt[3], gt[4], gt[5]),
+    )
+    run_server(args.image, geo_config, args.port)
 
 
 if __name__ == "__main__":
