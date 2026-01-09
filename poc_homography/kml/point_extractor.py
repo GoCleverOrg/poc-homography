@@ -49,6 +49,14 @@ class KmlPoint:
     lat: float
     lon: float
 
+    @property
+    def style(self) -> str:
+        """Normalized style identifier for KML rendering."""
+        style = self.category.lower().replace(" ", "_")
+        if style not in ["zebra", "arrow", "parking"]:
+            return "other"
+        return style
+
 
 class Kml:
     """Parser for KML files containing geographic points.
@@ -301,19 +309,16 @@ class PointExtractor:
         Returns:
             KML content as a string.
         """
-        # Prepare points with style information for template
+        # Prepare points for template
         template_points = []
-        for name, (pixel_point, kml_point) in self.points.items():
-            style = kml_point.category.lower().replace(" ", "_")
-            if style not in ["zebra", "arrow", "parking"]:
-                style = "other"
+        for name, (_, kml_point) in self.points.items():
             template_points.append(
                 {
                     "name": name,
                     "category": kml_point.category,
                     "lat": kml_point.lat,
                     "lon": kml_point.lon,
-                    "style": style,
+                    "style": kml_point.style,
                 }
             )
 
