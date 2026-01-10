@@ -157,9 +157,10 @@ cython_debug/
 output/*
 !output/README.md
 
-# Data folder (for large test files)
-data/*
-!data/.gitkeep
+# Data folder (YAML configs stored here)
+data/**/*
+!data/**/.gitkeep
+!data/**/
 
 # Worktrees
 .worktrees

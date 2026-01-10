@@ -1,0 +1,383 @@
+{% extends "gcp/base.html" %}
+{% load satellite_layers %}
+
+{% block title %}GCP Capture Tool{% endblock %}
+
+{% block extra_head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+{% endblock %}
+
+{% block body_style %}
+background: #1a1a2e;
+overflow: hidden;
+{% endblock %}
+
+{% block extra_style %}
+.container {
+    max-width: 100%;
+    padding: 0;
+    height: 100vh;
+    position: relative;
+}
+
+#map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+
+.info-panel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    max-width: 350px;
+    font-size: 13px;
+}
+
+.info-panel h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.gcp-list {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 10px;
+    border-top: 1px solid #ddd;
+    padding-top: 10px;
+}
+
+.gcp-item {
+    padding: 8px;
+    margin: 4px 0;
+    background: #f5f5f5;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gcp-item:hover {
+    background: #e8e8e8;
+}
+
+.btn {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin: 2px;
+}
+
+.btn-primary {
+    background: #4CAF50;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #45a049;
+}
+
+.btn-danger {
+    background: #f44336;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #da190b;
+}
+
+.btn-secondary {
+    background: #2196F3;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #0b7dda;
+}
+
+.stats {
+    display: flex;
+    gap: 15px;
+    margin: 10px 0;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.stat-item {
+    flex: 1;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+}
+
+.legend {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin: 5px 0;
+    font-size: 12px;
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+{% endblock %}
+
+{% block content %}
+<div id="map"></div>
+<div class="info-panel">
+    <h3>GCP Capture Tool</h3>
+
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-label">Map ID</div>
+            <div class="stat-value" id="map-id">{{ map_id }}</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Points</div>
+            <div class="stat-value" id="point-count">0</div>
+        </div>
+    </div>
+
+    <div>
+        <button class="btn btn-secondary" onclick="loadPoints()">Load Points</button>
+        <button class="btn btn-primary" onclick="savePoints()">Save Points</button>
+        <button class="btn btn-danger" onclick="clearAll()">Clear All</button>
+    </div>
+
+    <div class="legend">
+        <div class="legend-title" style="font-weight: 600; margin-bottom: 8px;">Legend</div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#ff4444;border:2px solid #aa0000;"></div>
+            <span>MapPoint Marker</span>
+        </div>
+    </div>
+
+    <div class="gcp-list" id="point-list">
+        <!-- Points will be dynamically added here -->
+    </div>
+
+    <div style="margin-top:10px;font-size:11px;color:#666;">
+        Click on map to add markers.<br>
+        Points are saved as pixel coordinates on the map.
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{# Safely embed initial data using json_script #}
+{{ points|json_script:"initial-points" }}
+
+{# Embed URLs for JavaScript to use #}
+<script>
+    const API_URLS = {
+        getPoints: "{% url 'gcp:api_get_gcps' %}",
+        savePoints: "{% url 'gcp:api_save_gcps' %}"
+    };
+</script>
+
+<script>
+(function() {
+    // Load initial points from json_script
+    const initialPointsElement = document.getElementById('initial-points');
+    let points = initialPointsElement ? JSON.parse(initialPointsElement.textContent) : [];
+    let markers = [];
+    let mapId = "{{ map_id|escapejs }}";
+    let pointCounter = points.length;
+
+    // Initialize map - default center (can be configured)
+    // Note: For MapPoint workflow, consider using an image overlay instead of tiles
+    const map = L.map('map').setView([39.640, -0.230], 18);
+
+    // Add satellite layers using template tag
+    {% satellite_layers_js default_layer='pnoa' %}
+
+    // Initialize existing points
+    points.forEach(point => addMarkerForPoint(point));
+    updateStats();
+    updatePointList();
+
+    // Add point on map click
+    map.on('click', function(e) {
+        pointCounter++;
+        const point = {
+            id: `P${pointCounter}`,
+            // Note: Using lat/lng from Leaflet click, but MapPoints use pixel_x/pixel_y
+            // This is a compatibility layer - the map coords are stored as pixel coords
+            pixel_x: e.latlng.lng * 1000000,  // Scale for precision
+            pixel_y: e.latlng.lat * 1000000,  // Scale for precision
+            map_id: mapId
+        };
+
+        points.push(point);
+        addMarkerForPoint(point);
+        updateStats();
+        updatePointList();
+    });
+
+    function addMarkerForPoint(point) {
+        // Convert back from scaled pixel coords to lat/lng for display
+        const lat = point.pixel_y / 1000000;
+        const lng = point.pixel_x / 1000000;
+
+        const marker = L.circleMarker([lat, lng], {
+            radius: 6,
+            fillColor: '#ff4444',
+            color: '#aa0000',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+        }).addTo(map);
+
+        marker.bindPopup(`<b>${escapeHtml(point.id)}</b><br>X: ${point.pixel_x.toFixed(2)}<br>Y: ${point.pixel_y.toFixed(2)}`);
+        markers.push({ point: point, marker: marker });
+    }
+
+    window.removePoint = function(pointId) {
+        const index = points.findIndex(p => p.id === pointId);
+        if (index !== -1) {
+            const markerObj = markers.find(m => m.point.id === pointId);
+            if (markerObj) {
+                map.removeLayer(markerObj.marker);
+            }
+            points.splice(index, 1);
+            markers = markers.filter(m => m.point.id !== pointId);
+            updateStats();
+            updatePointList();
+        }
+    };
+
+    function updateStats() {
+        document.getElementById('point-count').textContent = points.length;
+    }
+
+    function updatePointList() {
+        const listEl = document.getElementById('point-list');
+        listEl.innerHTML = '';
+
+        points.forEach(point => {
+            const item = document.createElement('div');
+            item.className = 'gcp-item';
+            item.innerHTML = `
+                <span>${escapeHtml(point.id)}</span>
+                <button class="btn btn-danger" onclick="removePoint('${escapeHtml(point.id)}')">Delete</button>
+            `;
+            listEl.appendChild(item);
+        });
+    }
+
+    window.loadPoints = function() {
+        fetch(API_URLS.getPoints)
+            .then(response => response.json())
+            .then(data => {
+                points = data.points || [];
+                mapId = data.map_id || mapId;
+                document.getElementById('map-id').textContent = mapId;
+
+                markers.forEach(m => map.removeLayer(m.marker));
+                markers = [];
+
+                points.forEach(point => addMarkerForPoint(point));
+                updateStats();
+                updatePointList();
+            })
+            .catch(error => {
+                console.error('Error loading points:', error);
+                alert('Failed to load points');
+            });
+    };
+
+    window.savePoints = function() {
+        fetch(API_URLS.savePoints, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                map_id: mapId,
+                points: points
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Points saved successfully!');
+            } else {
+                alert('Failed to save points: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error saving points:', error);
+            alert('Failed to save points');
+        });
+    };
+
+    window.clearAll = function() {
+        if (confirm('Are you sure you want to clear all points?')) {
+            points = [];
+            markers.forEach(m => map.removeLayer(m.marker));
+            markers = [];
+            updateStats();
+            updatePointList();
+        }
+    };
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+})();
+</script>
+{% endblock %}

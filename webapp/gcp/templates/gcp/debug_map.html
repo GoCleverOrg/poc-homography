@@ -1,0 +1,178 @@
+{% extends "gcp/base.html" %}
+
+{% block title %}MapPoint Debug - Visualization{% endblock %}
+
+{% block extra_style %}
+.info-panel {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.info-panel h3 {
+    margin: 0 0 15px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+}
+
+.stats {
+    display: flex;
+    gap: 30px;
+    margin: 15px 0;
+    padding: 15px;
+    background: #f5f5f5;
+    border-radius: 6px;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-weight: 600;
+    font-size: 24px;
+    color: #333;
+}
+
+.points-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.points-table th {
+    background: #667eea;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.points-table td {
+    padding: 10px 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.points-table tr:last-child td {
+    border-bottom: none;
+}
+
+.points-table tr:hover {
+    background: #f9f9f9;
+}
+
+.point-id {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.coordinate {
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+.empty-state h4 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+{% endblock %}
+
+{% block content %}
+<div class="info-panel">
+    <h3>MapPoint Debug Visualization</h3>
+    <p style="color: #666; margin-bottom: 0;">
+        Viewing MapPoints from registry. These are pixel coordinates on the reference map.
+    </p>
+
+    <div class="stats">
+        <div class="stat-item">
+            <span class="stat-label">Map ID</span>
+            <span class="stat-value">{{ map_id }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Total Points</span>
+            <span class="stat-value">{{ point_count }}</span>
+        </div>
+    </div>
+</div>
+
+{% if points %}
+<table class="points-table">
+    <thead>
+        <tr>
+            <th>Point ID</th>
+            <th>Pixel X</th>
+            <th>Pixel Y</th>
+            <th>Map ID</th>
+        </tr>
+    </thead>
+    <tbody id="points-body">
+        <!-- Points will be populated by JavaScript for proper number formatting -->
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <h4>No MapPoints Found</h4>
+    <p>Load a MapPoint registry file or add points using the GCP Capture tool.</p>
+    <a href="{% url 'gcp:gcp_capture' %}" style="color: #667eea;">Go to GCP Capture</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{{ points|json_script:"points-data" }}
+<script>
+(function() {
+    // Safely load points data using json_script
+    const pointsDataElement = document.getElementById('points-data');
+    if (!pointsDataElement) return;
+
+    const points = JSON.parse(pointsDataElement.textContent);
+    if (!points || points.length === 0) return;
+
+    const tbody = document.getElementById('points-body');
+    if (!tbody) return;
+
+    points.forEach(point => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="point-id">${escapeHtml(point.id)}</td>
+            <td class="coordinate">${formatNumber(point.pixel_x)}</td>
+            <td class="coordinate">${formatNumber(point.pixel_y)}</td>
+            <td>${escapeHtml(point.map_id)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    function formatNumber(num) {
+        if (typeof num !== 'number') return num;
+        return num.toFixed(2);
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+})();
+</script>
+{% endblock %}
