@@ -116,7 +116,6 @@ class TestGCPCoordinateConverter:
         """By default, should prefer UTM when available."""
         converter = GCPCoordinateConverter()
         assert converter.using_utm is True
-        assert "UTM" in converter.method_name
 
     def test_converter_with_gps_reference(self):
         """Set reference using GPS coordinates."""

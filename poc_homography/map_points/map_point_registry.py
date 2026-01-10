@@ -34,6 +34,11 @@ class DefaultFileSystem:
         Path(path).write_text(content, encoding="utf-8")
 
 
+def _get_fs(fs: FileSystem | None) -> FileSystem:
+    """Return the provided filesystem or the default."""
+    return fs if fs is not None else DefaultFileSystem()
+
+
 @dataclass(frozen=True)
 class MapPointRegistry:
     """Immutable registry for managing map points.
@@ -78,10 +83,7 @@ class MapPointRegistry:
             path: Path to output JSON file.
             fs: File system implementation (default: DefaultFileSystem).
         """
-        if fs is None:
-            fs = DefaultFileSystem()
-        content = self.to_json()
-        fs.write_text(path, content)
+        _get_fs(fs).write_text(path, self.to_json())
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MapPointRegistry:
@@ -142,7 +144,4 @@ class MapPointRegistry:
             KeyError: If required keys are missing.
             ValueError: If data format is invalid.
         """
-        if fs is None:
-            fs = DefaultFileSystem()
-        content = fs.read_text(path)
-        return cls.from_json(content)
+        return cls.from_json(_get_fs(fs).read_text(path))

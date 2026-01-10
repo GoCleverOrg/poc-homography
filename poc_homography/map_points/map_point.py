@@ -32,14 +32,7 @@ class MapPoint:
     @property
     @cache(maxsize=1)  # noqa: B019 - safe on frozen dataclass
     def pixel(self) -> PixelPoint:
-        """Get pixel coordinates as a PixelPoint.
-
-        Returns:
-            PixelPoint with x=pixel_x and y=pixel_y.
-
-        Note:
-            This property is cached since MapPoint is immutable (frozen dataclass).
-        """
+        """Get pixel coordinates as a PixelPoint."""
         return PixelPoint(self.pixel_x, self.pixel_y)
 
     def to_dict(self) -> dict[str, Any]:

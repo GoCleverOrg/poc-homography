@@ -119,6 +119,12 @@ class UTMConverter:
         self._ref_lat = lat
         self._ref_lon = lon
 
+    def _require_reference(self) -> tuple[float, float]:
+        """Return (easting, northing) or raise ValueError if not set."""
+        if self._ref_easting is None or self._ref_northing is None:
+            raise ValueError("Reference point not set. Call set_reference() first.")
+        return self._ref_easting, self._ref_northing
+
     def gps_to_local_xy(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
         """
         Convert GPS coordinates to local X, Y relative to reference point.
@@ -130,13 +136,9 @@ class UTMConverter:
         Returns:
             Tuple of (x_meters, y_meters) relative to reference point
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
+        ref_easting, ref_northing = self._require_reference()
         easting, northing = self._to_utm.transform(lon, lat)
-        x = Meters(easting - self._ref_easting)
-        y = Meters(northing - self._ref_northing)
-        return x, y
+        return Meters(easting - ref_easting), Meters(northing - ref_northing)
 
     def utm_to_local_xy(self, easting: Meters, northing: Meters) -> tuple[Meters, Meters]:
         """
@@ -149,12 +151,8 @@ class UTMConverter:
         Returns:
             Tuple of (x_meters, y_meters) relative to reference point
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
-        x = Meters(easting - self._ref_easting)
-        y = Meters(northing - self._ref_northing)
-        return x, y
+        ref_easting, ref_northing = self._require_reference()
+        return Meters(easting - ref_easting), Meters(northing - ref_northing)
 
     def local_xy_to_gps(self, x: Meters, y: Meters) -> tuple[Degrees, Degrees]:
         """
@@ -167,12 +165,8 @@ class UTMConverter:
         Returns:
             Tuple of (latitude, longitude) in decimal degrees
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
-        easting = self._ref_easting + x
-        northing = self._ref_northing + y
-        lon, lat = self._to_wgs84.transform(easting, northing)
+        ref_easting, ref_northing = self._require_reference()
+        lon, lat = self._to_wgs84.transform(ref_easting + x, ref_northing + y)
         return Degrees(lat), Degrees(lon)
 
     def local_xy_to_utm(self, x: Meters, y: Meters) -> tuple[Meters, Meters]:
@@ -186,12 +180,8 @@ class UTMConverter:
         Returns:
             Tuple of (easting, northing) in UTM coordinates
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
-        easting = Meters(self._ref_easting + x)
-        northing = Meters(self._ref_northing + y)
-        return easting, northing
+        ref_easting, ref_northing = self._require_reference()
+        return Meters(ref_easting + x), Meters(ref_northing + y)
 
     def gps_to_utm(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
         """
@@ -292,10 +282,18 @@ class GCPCoordinateConverter:
         """Return True if using UTM projection, False if using equirectangular."""
         return self.prefer_utm and self._utm_converter is not None
 
-    @property
-    def method_name(self) -> str:
-        """Return the name of the conversion method being used."""
-        return f"UTM ({self.utm_crs})" if self.using_utm else "Equirectangular"
+    def _require_gps_reference(self) -> None:
+        """Raise ValueError if GPS reference point not set."""
+        if self._ref_lat is None or self._ref_lon is None:
+            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+
+    def _require_utm_reference(self) -> tuple[float, float]:
+        """Return (easting, northing) or raise ValueError if not set."""
+        if self._ref_easting is None or self._ref_northing is None:
+            raise ValueError(
+                "Reference point not set. Call set_reference_gps() or set_reference_utm() first."
+            )
+        return self._ref_easting, self._ref_northing
 
     def set_reference_gps(self, lat: Degrees, lon: Degrees):
         """
@@ -343,8 +341,7 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (x_meters, y_meters)
         """
-        if self._ref_lat is None or self._ref_lon is None:
-            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+        self._require_gps_reference()
 
         if self._utm_converter:
             return self._utm_converter.gps_to_local_xy(lat, lon)
@@ -362,16 +359,10 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (x_meters, y_meters)
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError(
-                "Reference point not set. Call set_reference_gps() or set_reference_utm() first."
-            )
-
+        ref_easting, ref_northing = self._require_utm_reference()
         if self._utm_converter:
             return self._utm_converter.utm_to_local_xy(easting, northing)
-        else:
-            # Direct calculation without pyproj
-            return Meters(easting - self._ref_easting), Meters(northing - self._ref_northing)
+        return Meters(easting - ref_easting), Meters(northing - ref_northing)
 
     def local_to_gps(self, x: Meters, y: Meters) -> tuple[Degrees, Degrees]:
         """
@@ -384,8 +375,7 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (latitude, longitude)
         """
-        if self._ref_lat is None or self._ref_lon is None:
-            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+        self._require_gps_reference()
 
         if self._utm_converter:
             return self._utm_converter.local_xy_to_gps(x, y)
@@ -403,13 +393,10 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (easting, northing)
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set with UTM.")
-
+        ref_easting, ref_northing = self._require_utm_reference()
         if self._utm_converter:
             return self._utm_converter.local_xy_to_utm(x, y)
-        else:
-            return Meters(self._ref_easting + x), Meters(self._ref_northing + y)
+        return Meters(ref_easting + x), Meters(ref_northing + y)
 
     def convert_point(self, point: dict) -> tuple[Meters, Meters]:
         """
