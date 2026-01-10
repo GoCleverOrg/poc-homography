@@ -316,7 +316,7 @@ class FeatureMatchHomography(HomographyProvider):
                 # Small bonus for well-distributed GCPs (capped at 1.0)
                 confidence *= self.DIST_BONUS_GOOD_COVERAGE
 
-        return min(1.0, confidence)
+        return float(min(1.0, confidence))
 
     def _get_suggested_action(
         self, confidence_breakdown: dict[str, Any], outlier_analysis: list[dict[str, Any]]
@@ -629,6 +629,10 @@ class FeatureMatchHomography(HomographyProvider):
         mean_reproj_error = None
         max_reproj_error = None
 
+        # Initialize inlier tracking (will be updated if homography is valid)
+        num_inliers = 0
+        total_points = len(image_points)
+
         # Compute inverse (image -> map pixels)
         det_H = np.linalg.det(self.H)
         if abs(det_H) < self.MIN_DET_THRESHOLD:
@@ -694,7 +698,7 @@ class FeatureMatchHomography(HomographyProvider):
         outlier_analysis.sort(key=lambda x: x["error_px"], reverse=True)
 
         # Build confidence breakdown for diagnostics
-        inlier_ratio = num_inliers / total_points if "num_inliers" in dir() else 0
+        inlier_ratio = num_inliers / total_points if total_points > 0 else 0
         confidence_breakdown: dict[str, Any] = {
             "inlier_ratio": inlier_ratio,
             "inlier_penalty_applied": inlier_ratio < self.MIN_INLIER_RATIO,

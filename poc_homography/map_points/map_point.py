@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache as cache
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from poc_homography.pixel_point import PixelPoint
+from poc_homography.pixel_point import PixelPoint
 
 
 @dataclass(frozen=True)
@@ -41,8 +40,6 @@ class MapPoint:
         Note:
             This property is cached since MapPoint is immutable (frozen dataclass).
         """
-        from poc_homography.pixel_point import PixelPoint
-
         return PixelPoint(self.pixel_x, self.pixel_y)
 
     def to_dict(self) -> dict[str, Any]:

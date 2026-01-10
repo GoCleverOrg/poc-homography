@@ -1051,7 +1051,7 @@ def main():
         print("   Continuing without map points")
 
     # Step 5: Start web server
-    print(f"\n5. Starting web server...")
+    print("\n5. Starting web server...")
 
     # Store state for server
     SERVER_STATE["frame_path"] = frame_path

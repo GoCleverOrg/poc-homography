@@ -84,7 +84,7 @@ class MapPointRegistry:
         fs.write_text(path, content)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MapPointRegistry":
+    def from_dict(cls, data: dict[str, Any]) -> MapPointRegistry:
         """Create registry from dictionary.
 
         Args:
@@ -108,7 +108,7 @@ class MapPointRegistry:
         return cls(map_id=map_id, points=points)
 
     @classmethod
-    def from_json(cls, json_str: str) -> "MapPointRegistry":
+    def from_json(cls, json_str: str) -> MapPointRegistry:
         """Create registry from JSON string.
 
         Args:
@@ -126,7 +126,7 @@ class MapPointRegistry:
         return cls.from_dict(data)
 
     @classmethod
-    def load(cls, path: str | Path, fs: FileSystem | None = None) -> "MapPointRegistry":
+    def load(cls, path: str | Path, fs: FileSystem | None = None) -> MapPointRegistry:
         """Load registry from JSON file.
 
         Args:

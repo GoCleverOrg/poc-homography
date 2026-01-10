@@ -916,7 +916,9 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         self.map_height = map_height
 
         # Calculate homography (includes roll rotation)
-        self.H = self._calculate_ground_homography(K, camera_position, pan_deg, tilt_deg, roll_deg)
+        self.H = self._calculate_ground_homography(
+            K, camera_position, Degrees(pan_deg), Degrees(tilt_deg), Degrees(roll_deg)
+        )
 
         # Calculate inverse homography
         det_H = np.linalg.det(self.H)
@@ -1132,12 +1134,10 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         Returns:
             (x_px, y_px): Pixel coordinates in map visualization
         """
-        if sw is None:
-            sw = self.map_width
-        if sh is None:
-            sh = self.map_height
+        width = sw if sw is not None else self.map_width
+        height = sh if sh is not None else self.map_height
 
-        return self._world_to_map_pixels(Meters(Xw), Meters(Yw), Pixels(sw), Pixels(sh))
+        return self._world_to_map_pixels(Meters(Xw), Meters(Yw), Pixels(width), Pixels(height))
 
     def get_camera_position(self) -> np.ndarray | None:
         """

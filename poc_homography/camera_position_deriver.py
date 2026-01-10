@@ -483,7 +483,8 @@ class CameraPositionDeriver:
 
         # Convert inliers to boolean mask
         inliers_mask = np.zeros(len(object_points), dtype=bool)
-        inliers_mask[inliers.flatten()] = True
+        inlier_indices = inliers.flatten().astype(int)
+        inliers_mask[inlier_indices] = True
         num_inliers = int(np.sum(inliers_mask))
         inlier_ratio = num_inliers / len(object_points)
 

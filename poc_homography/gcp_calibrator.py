@@ -159,7 +159,7 @@ from poc_homography.types import Pixels
 
 # Import matplotlib for visualization (optional, lazy import)
 try:
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # pyright: ignore[reportMissingImports]
 
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
@@ -961,7 +961,7 @@ def detect_systematic_errors(
 
     # Compute image center if not provided
     if image_center is None:
-        image_center = (np.mean(image_coords[:, 0]), np.mean(image_coords[:, 1]))
+        image_center = (float(np.mean(image_coords[:, 0])), float(np.mean(image_coords[:, 1])))
 
     # 1. Check for directional bias
     # Compute mean residual vector
@@ -1036,7 +1036,7 @@ def generate_residual_plot(
         ImportError: If matplotlib is not available
         ValueError: If number of GCPs doesn't match per_gcp_errors length
     """
-    if not MATPLOTLIB_AVAILABLE:
+    if not MATPLOTLIB_AVAILABLE or plt is None:
         raise ImportError(
             "matplotlib is required for generate_residual_plot(). "
             "Install it with: pip install matplotlib"
@@ -1162,7 +1162,7 @@ def generate_residual_histogram(
     Raises:
         ImportError: If matplotlib is not available
     """
-    if not MATPLOTLIB_AVAILABLE:
+    if not MATPLOTLIB_AVAILABLE or plt is None:
         raise ImportError(
             "matplotlib is required for generate_residual_histogram(). "
             "Install it with: pip install matplotlib"
@@ -1206,8 +1206,8 @@ def generate_residual_histogram(
         )
 
     # Add statistical markers
-    train_mean = np.mean(train_errors)
-    train_median = np.median(train_errors)
+    train_mean = float(np.mean(train_errors))
+    train_median = float(np.median(train_errors))
     ax.axvline(
         train_mean,
         color="blue",
@@ -1224,8 +1224,8 @@ def generate_residual_histogram(
     )
 
     if test_indices:
-        test_mean = np.mean(test_errors)
-        test_median = np.median(test_errors)
+        test_mean = float(np.mean(test_errors))
+        test_median = float(np.median(test_errors))
         ax.axvline(
             test_mean,
             color="red",
