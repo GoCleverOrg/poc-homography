@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""CLI for interactive calibration tool."""
+"""CLI for interactive calibration tool.
+
+Example usage:
+    python tools/cli/interactive_calibration.py --camera Valte \\
+        --frame captured_frame.jpg --map-points map_points.json
+
+Interactive mode:
+    1. Click on points you know the Map Point ID of
+    2. Enter the Map Point ID when prompted (e.g., Z1, P5)
+    3. Press 'C' to run calibration
+    4. Press 'S' to save results
+"""
 
 import argparse
 import json
@@ -20,6 +31,8 @@ from tools.interactive_calibration import (
     run_interactive_session,
 )
 
+from poc_homography.map_points import MapPointRegistry
+
 if CV2_AVAILABLE:
     import cv2
 
@@ -31,12 +44,10 @@ if CAMERA_AVAILABLE:
 else:
     from poc_homography.camera_config import get_camera_by_name_safe
 
-from poc_homography.gps_distance_calculator import dms_to_dd
-
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Interactive calibration tool for GPS-to-image projection"
+        description="Interactive calibration tool for Map Point-to-image projection"
     )
     parser.add_argument("--camera", "-c", type=str, required=True, help="Camera name (e.g., Valte)")
     parser.add_argument(
@@ -44,6 +55,12 @@ def main():
         "-f",
         type=str,
         help="Path to saved frame image (optional, uses live camera if not provided)",
+    )
+    parser.add_argument(
+        "--map-points",
+        type=str,
+        default="map_points.json",
+        help="Path to map points JSON file (default: map_points.json)",
     )
     parser.add_argument(
         "--pan-raw",
@@ -65,6 +82,17 @@ def main():
 
     args = parser.parse_args()
 
+    # Load map points registry
+    try:
+        registry = MapPointRegistry.load(args.map_points)
+        print(f"Loaded {len(registry.points)} map points from {args.map_points}")
+    except FileNotFoundError:
+        print(f"Error: Map points file not found: {args.map_points}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error loading map points: {e}")
+        sys.exit(1)
+
     # Get camera config from canonical source
     if CAMERA_AVAILABLE:
         cam_config = get_camera_by_name(args.camera)
@@ -76,9 +104,6 @@ def main():
         print(f"Error: Camera '{args.camera}' not found")
         sys.exit(1)
 
-    # Convert DMS strings to decimal degrees
-    camera_lat = dms_to_dd(cam_config["lat"])
-    camera_lon = dms_to_dd(cam_config["lon"])
     height_m = cam_config.get("height_m", 5.0)
     pan_offset_deg = cam_config.get("pan_offset_deg", 0.0)
 
@@ -120,12 +145,11 @@ def main():
         print("Error: Either --frame or live camera connection is required")
         sys.exit(1)
 
-    # Create session
+    # Create session with MapPointRegistry
     session = CalibrationSession(
         camera_name=args.camera,
         frame=frame,
-        camera_lat=camera_lat,
-        camera_lon=camera_lon,
+        registry=registry,
         height_m=height_m,
         pan_offset_deg=pan_offset_deg,
         pan_raw=pan_raw,

@@ -1,13 +1,13 @@
 """
-Interactive Calibration Tool for GPS-to-Image Projection.
+Interactive Calibration Tool for Map Point-to-Image Projection.
 
 This tool guides you through calibrating the projection parameters using
 known reference points. It can either use the live camera or a saved frame.
 
 The tool will:
 1. Display the camera frame
-2. Let you click on points you know the GPS coordinates of
-3. Enter the GPS coordinates for each clicked point
+2. Let you click on points you know the Map Point ID of
+3. Enter the Map Point ID for each clicked point
 4. Calculate the optimal parameters (pan_offset, height)
 5. Show you what to update in camera_config.py
 """
@@ -30,13 +30,12 @@ except ImportError:
     print("Warning: OpenCV not available. Interactive mode disabled.")
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.coordinate_converter import gps_to_local_xy
+from poc_homography.map_points import MapPointRegistry
 
 # Try to import camera modules
 try:
     from poc_homography.camera_config import CAMERAS, get_camera_by_name, get_camera_by_name_safe
     from poc_homography.frame_grabber import grab_frame
-    from poc_homography.gps_distance_calculator import dms_to_dd
     from poc_homography.ptz_control import get_ptz_status
 
     CAMERA_AVAILABLE = True
@@ -44,7 +43,6 @@ except (ImportError, ValueError):
     CAMERA_AVAILABLE = False
     # Import safe fallback functions that don't require credentials
     from poc_homography.camera_config import get_camera_by_name_safe
-    from poc_homography.gps_distance_calculator import dms_to_dd
 
 
 class CalibrationSession:
@@ -54,8 +52,7 @@ class CalibrationSession:
         self,
         camera_name: str,
         frame: np.ndarray,
-        camera_lat: float,
-        camera_lon: float,
+        registry: MapPointRegistry,
         height_m: float,
         pan_offset_deg: float,
         pan_raw: float,
@@ -65,8 +62,7 @@ class CalibrationSession:
         self.camera_name = camera_name
         self.frame = frame.copy()
         self.display_frame = frame.copy()
-        self.camera_lat = camera_lat
-        self.camera_lon = camera_lon
+        self.registry = registry
         self.height_m = height_m
         self.pan_offset_deg = pan_offset_deg
         self.pan_raw = pan_raw
@@ -75,10 +71,10 @@ class CalibrationSession:
 
         self.image_height, self.image_width = frame.shape[:2]
 
-        # Reference points: list of {pixel_u, pixel_v, gps_lat, gps_lon, name}
+        # Reference points: list of {pixel_u, pixel_v, map_point_id}
         self.reference_points: list[dict] = []
 
-        # Current click position (for entering GPS)
+        # Current click position (for entering Map Point ID)
         self.pending_click: tuple[int, int] | None = None
 
         # Calibration results
@@ -86,20 +82,17 @@ class CalibrationSession:
         self.best_height: float | None = None
         self.best_error: float | None = None
 
-    def add_reference_point(
-        self, pixel_u: int, pixel_v: int, gps_lat: float, gps_lon: float, name: str = None
-    ):
-        """Add a reference point with known GPS coordinates."""
-        if name is None:
-            name = f"Point {len(self.reference_points) + 1}"
+    def add_reference_point(self, pixel_u: int, pixel_v: int, map_point_id: str):
+        """Add a reference point with known Map Point ID."""
+        if map_point_id not in self.registry.points:
+            print(f"Error: Map Point ID '{map_point_id}' not found in registry")
+            return
 
         self.reference_points.append(
             {
                 "pixel_u": pixel_u,
                 "pixel_v": pixel_v,
-                "gps_lat": gps_lat,
-                "gps_lon": gps_lon,
-                "name": name,
+                "map_point_id": map_point_id,
             }
         )
         self._update_display()
@@ -113,7 +106,7 @@ class CalibrationSession:
             u, v = int(pt["pixel_u"]), int(pt["pixel_v"])
             cv2.circle(self.display_frame, (u, v), 8, (0, 255, 0), 2)
             cv2.circle(self.display_frame, (u, v), 3, (0, 255, 0), -1)
-            label = f"{pt['name']}"
+            label = f"{pt['map_point_id']}"
             cv2.putText(
                 self.display_frame,
                 label,
@@ -135,9 +128,8 @@ class CalibrationSession:
                 geo.set_camera_parameters(K, w_pos, pan_deg, self.tilt_deg, 640, 640)
 
                 for pt in self.reference_points:
-                    x_m, y_m = gps_to_local_xy(
-                        self.camera_lat, self.camera_lon, pt["gps_lat"], pt["gps_lon"]
-                    )
+                    map_point = self.registry.points[pt["map_point_id"]]
+                    x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = geo.H @ world_pt
                     if img_pt[2, 0] > 0:
@@ -222,9 +214,8 @@ class CalibrationSession:
                 valid_points = 0
 
                 for pt in self.reference_points:
-                    x_m, y_m = gps_to_local_xy(
-                        self.camera_lat, self.camera_lon, pt["gps_lat"], pt["gps_lon"]
-                    )
+                    map_point = self.registry.points[pt["map_point_id"]]
+                    x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = geo.H @ world_pt
 
@@ -298,7 +289,7 @@ def mouse_callback(event, x, y, flags, session: CalibrationSession):
     if event == cv2.EVENT_LBUTTONDOWN:
         session.pending_click = (x, y)
         print(f"\nClicked at pixel ({x}, {y})")
-        print("Enter GPS coordinates (lat,lon): ", end="", flush=True)
+        print("Enter Map Point ID (e.g., Z1, P5): ", end="", flush=True)
 
 
 def run_interactive_session(session: CalibrationSession):
@@ -318,8 +309,8 @@ def run_interactive_session(session: CalibrationSession):
     print("INTERACTIVE CALIBRATION MODE")
     print("=" * 60)
     print("\nInstructions:")
-    print("1. Click on a point in the image that you know the GPS coordinates of")
-    print("2. Enter the GPS coordinates when prompted (format: lat,lon)")
+    print("1. Click on a point in the image that you know the Map Point ID of")
+    print("2. Enter the Map Point ID when prompted (e.g., Z1, P5)")
     print("3. Repeat for multiple points (more points = better calibration)")
     print("4. Press 'C' to run calibration")
     print("5. Press 'S' to save results")
@@ -330,7 +321,7 @@ def run_interactive_session(session: CalibrationSession):
         cv2.imshow(window_name, session.display_frame)
         key = cv2.waitKey(100) & 0xFF
 
-        # Check for pending GPS input
+        # Check for pending Map Point ID input
         if session.pending_click is not None:
             # This is handled in the console, check for input
             import select
@@ -339,18 +330,21 @@ def run_interactive_session(session: CalibrationSession):
                 try:
                     line = sys.stdin.readline().strip()
                     if line:
-                        parts = line.split(",")
-                        lat = float(parts[0])
-                        lon = float(parts[1])
-                        session.add_reference_point(
-                            session.pending_click[0], session.pending_click[1], lat, lon
-                        )
-                        print(
-                            f"Added reference point at ({session.pending_click[0]}, "
-                            f"{session.pending_click[1]}) -> ({lat:.6f}, {lon:.6f})"
-                        )
+                        map_point_id = line.upper()
+                        if map_point_id in session.registry.points:
+                            session.add_reference_point(
+                                session.pending_click[0], session.pending_click[1], map_point_id
+                            )
+                            map_point = session.registry.points[map_point_id]
+                            print(
+                                f"Added reference point at ({session.pending_click[0]}, "
+                                f"{session.pending_click[1]}) -> {map_point_id} "
+                                f"(map coords: {map_point.pixel_x:.2f}, {map_point.pixel_y:.2f})"
+                            )
+                        else:
+                            print(f"Map Point ID '{map_point_id}' not found in registry")
                 except (ValueError, IndexError):
-                    print("Invalid format. Use: lat,lon (e.g., 39.640500,-0.230000)")
+                    print("Invalid format. Enter a Map Point ID (e.g., Z1, P5)")
                 session.pending_click = None
 
         if key == ord("q") or key == 27:  # Q or ESC
@@ -375,9 +369,7 @@ def run_batch_calibration(session: CalibrationSession, reference_points: list[di
     print(f"\nBatch calibration with {len(reference_points)} reference points")
 
     for pt in reference_points:
-        session.add_reference_point(
-            pt["pixel_u"], pt["pixel_v"], pt["gps_lat"], pt["gps_lon"], pt.get("name")
-        )
+        session.add_reference_point(pt["pixel_u"], pt["pixel_v"], pt["map_point_id"])
 
     session.calibrate()
     session.save_results()
