@@ -3,6 +3,25 @@ Simple camera model validation script.
 
 Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
+
+GCPs are defined in YAML format with Map Point IDs referencing coordinates
+from a MapPointRegistry:
+
+    gcps:
+      - map_point_id: Z1
+        pixel_u: 960
+        pixel_v: 540
+        pan_raw: 0.0
+        tilt_deg: 30.0
+        zoom: 1.0
+
+Usage:
+    from tools.validate_camera_model import load_gcps_from_yaml, validate_model
+    from poc_homography.map_points import MapPointRegistry
+
+    gcps = load_gcps_from_yaml("gcps.yaml")
+    registry = MapPointRegistry.load("map_points.json")
+    mean_error, results = validate_model("Valte", gcps, registry)
 """
 
 import math
@@ -15,8 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc_homography.camera_config import get_camera_by_name_safe
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.coordinate_converter import gps_to_local_xy
-from poc_homography.gps_distance_calculator import dms_to_dd
+from poc_homography.map_points import MapPointRegistry
 
 try:
     import yaml
@@ -26,12 +44,21 @@ except ImportError:
     YAML_AVAILABLE = False
 
 
-def load_gcps_from_yaml(yaml_path: str, image_height: int = 1080) -> list:
+def load_gcps_from_yaml(yaml_path: str) -> list:
     """Load GCPs from YAML file.
 
-    Handles coordinate system conversion:
-    - 'image_v' format: V=0 at top (standard)
-    - Legacy format (no coordinate_system): V=0 at bottom, needs conversion
+    Expected YAML format:
+        gcps:
+          - map_point_id: Z1
+            pixel_u: 960
+            pixel_v: 540
+            pan_raw: 0.0
+            tilt_deg: 30.0
+            zoom: 1.0
+
+    Each GCP references a Map Point by ID. The map point's world/map coordinates
+    (pixel_x, pixel_y) are looked up from the MapPointRegistry at projection time.
+    The pixel_u/pixel_v values are the image pixel coordinates where the point appears.
     """
     if not YAML_AVAILABLE:
         raise ImportError("PyYAML required for YAML file loading")
@@ -40,63 +67,32 @@ def load_gcps_from_yaml(yaml_path: str, image_height: int = 1080) -> list:
         data = yaml.safe_load(f)
 
     gcps = []
-    coordinate_system = None
 
-    # Handle different YAML formats
-    if "gcps" in data:
-        # Simple format: gcps: [{lat, lon, pixel_u, pixel_v, ...}]
-        for gcp in data["gcps"]:
-            gcps.append(
-                {
-                    "lat": gcp["lat"],
-                    "lon": gcp["lon"],
-                    "pixel_u": gcp["pixel_u"],
-                    "pixel_v": gcp["pixel_v"],
-                    "pan": gcp.get("pan_raw", 0.0),
-                    "tilt": gcp.get("tilt_deg", 30.0),
-                    "zoom": gcp.get("zoom", 1.0),
-                    "name": gcp.get("name", "GCP"),
-                }
-            )
-    elif "homography" in data:
-        # Complex format from capture tool
-        ctx = data["homography"]["feature_match"]["camera_capture_context"]
-        ptz = ctx["ptz_position"]
-        coordinate_system = ctx.get("coordinate_system")  # 'image_v' or None (legacy)
+    if "gcps" not in data:
+        raise ValueError("YAML file must contain 'gcps' key with list of GCP entries")
 
-        for gcp in data["homography"]["feature_match"]["ground_control_points"]:
-            v = gcp["image"]["v"]
+    for gcp in data["gcps"]:
+        if "map_point_id" not in gcp:
+            raise ValueError(f"GCP entry missing required 'map_point_id' field: {gcp}")
 
-            # Convert legacy leaflet_y format to image_v
-            if coordinate_system is None:
-                # Legacy: V was stored as leaflet_y (0 at bottom)
-                # Convert to image_v (0 at top): v = image_height - leaflet_y
-                v = image_height - v
-
-            gcps.append(
-                {
-                    "lat": gcp["gps"]["latitude"],
-                    "lon": gcp["gps"]["longitude"],
-                    "pixel_u": gcp["image"]["u"],
-                    "pixel_v": v,
-                    "pan": ptz["pan"],
-                    "tilt": ptz["tilt"],
-                    "zoom": ptz.get("zoom", 1.0),
-                    "name": gcp.get("metadata", {}).get("description", "GCP"),
-                }
-            )
-
-        if coordinate_system is None:
-            print(f"Note: Converted {len(gcps)} GCPs from legacy leaflet_y to image_v format")
+        gcps.append(
+            {
+                "map_point_id": gcp["map_point_id"],
+                "pixel_u": gcp["pixel_u"],
+                "pixel_v": gcp["pixel_v"],
+                "pan": gcp.get("pan_raw", 0.0),
+                "tilt": gcp.get("tilt_deg", 30.0),
+                "zoom": gcp.get("zoom", 1.0),
+                "name": gcp.get("name", gcp["map_point_id"]),
+            }
+        )
 
     return gcps
 
 
-def project_gps_to_pixel(
-    lat: float,
-    lon: float,
-    camera_lat: float,
-    camera_lon: float,
+def project_map_point_to_pixel(
+    map_point_x: float,
+    map_point_y: float,
     camera_height: float,
     pan_deg: float,
     tilt_deg: float,
@@ -111,13 +107,30 @@ def project_gps_to_pixel(
     image_height: int = 1080,
 ) -> tuple:
     """
-    Project GPS coordinate to pixel using camera model.
+    Project Map Point coordinate to image pixel using camera model.
 
-    Returns (u, v, success, error_msg)
+    Args:
+        map_point_x: X coordinate from MapPoint (world/local coordinate in meters)
+        map_point_y: Y coordinate from MapPoint (world/local coordinate in meters)
+        camera_height: Camera height in meters
+        pan_deg: Pan angle in degrees
+        tilt_deg: Tilt angle in degrees
+        zoom: Zoom factor
+        pan_offset_deg: Pan offset calibration in degrees
+        tilt_offset_deg: Tilt offset calibration in degrees
+        focal_multiplier: Focal length multiplier for calibration
+        sensor_width_mm: Sensor width in millimeters
+        k1: Radial distortion coefficient k1
+        k2: Radial distortion coefficient k2
+        image_width: Image width in pixels
+        image_height: Image height in pixels
+
+    Returns:
+        (u, v, success, error_msg) tuple where u,v are image pixel coordinates
     """
     try:
-        # Convert GPS to local XY (meters from camera)
-        x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, lat, lon)
+        # Use map point coordinates directly as local XY (meters from camera)
+        x_m, y_m = map_point_x, map_point_y
 
         # Build intrinsic matrix
         effective_focal_mm = 5.9 * zoom * focal_multiplier
@@ -159,11 +172,23 @@ def project_gps_to_pixel(
         return None, None, False, str(e)
 
 
-def validate_model(camera_name: str, gcps: list, verbose: bool = True):
+def validate_model(
+    camera_name: str,
+    gcps: list,
+    registry: MapPointRegistry,
+    verbose: bool = True,
+):
     """
-    Validate camera model with GCPs.
+    Validate camera model with GCPs using Map Point coordinates.
 
-    Returns (mean_error, individual_errors)
+    Args:
+        camera_name: Name of the camera configuration to use
+        gcps: List of GCP dicts with map_point_id, pixel_u, pixel_v, pan, tilt, zoom
+        registry: MapPointRegistry containing the map point coordinates
+        verbose: Whether to print detailed output
+
+    Returns:
+        (mean_error, individual_errors) tuple
     """
     # Get camera config
     cam_config = get_camera_by_name_safe(camera_name)
@@ -171,9 +196,7 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
         print(f"Error: Unknown camera '{camera_name}'")
         return None, []
 
-    # Convert DMS coordinates to decimal degrees
-    camera_lat = dms_to_dd(cam_config["lat"])
-    camera_lon = dms_to_dd(cam_config["lon"])
+    # Extract camera parameters
     camera_height = cam_config.get("height_m", 5.0)
     pan_offset = cam_config.get("pan_offset_deg", 0.0)
     tilt_offset = cam_config.get("tilt_offset_deg", 0.0)
@@ -186,10 +209,9 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
         print("CAMERA MODEL VALIDATION")
         print("=" * 70)
         print(f"\nCamera: {camera_name}")
-        print(f"  Position: {camera_lat:.6f}, {camera_lon:.6f}")
         print(f"  Height: {camera_height:.2f}m")
-        print(f"  Pan offset: {pan_offset:.1f}°")
-        print(f"  Tilt offset: {tilt_offset:+.2f}°")
+        print(f"  Pan offset: {pan_offset:.1f}deg")
+        print(f"  Tilt offset: {tilt_offset:+.2f}deg")
         print(f"  Focal multiplier: {focal_mult:.4f}")
         print(f"  Distortion: k1={k1:.4f}, k2={k2:.4f}")
         print(f"\nNumber of GCPs: {len(gcps)}")
@@ -199,11 +221,22 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
     results = []
 
     for i, gcp in enumerate(gcps):
-        proj_u, proj_v, success, err_msg = project_gps_to_pixel(
-            gcp["lat"],
-            gcp["lon"],
-            camera_lat,
-            camera_lon,
+        map_point_id = gcp["map_point_id"]
+
+        # Look up map point coordinates from registry
+        if map_point_id not in registry.points:
+            if verbose:
+                print(
+                    f"GCP {i + 1}: {gcp['name'][:20]:20s} | FAILED: Map point '{map_point_id}' not found"
+                )
+            errors.append(1000.0)
+            continue
+
+        point = registry.points[map_point_id]
+
+        proj_u, proj_v, success, err_msg = project_map_point_to_pixel(
+            point.pixel_x,
+            point.pixel_y,
             camera_height,
             gcp["pan"],
             gcp["tilt"],
@@ -221,7 +254,7 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
             errors.append(error)
 
             if verbose:
-                status = "✓" if error < 5 else "✗"
+                status = "OK" if error < 5 else "FAIL"
                 print(
                     f"GCP {i + 1}: {gcp['name'][:20]:20s} | "
                     f"Expected: ({gcp['pixel_u']:7.1f}, {gcp['pixel_v']:7.1f}) | "
@@ -244,15 +277,15 @@ def validate_model(camera_name: str, gcps: list, verbose: bool = True):
             print(f"GCPs with <5px error: {good}/{len(errors)}")
 
             if mean_error < 5:
-                print("\n✓ Camera model is well-calibrated!")
+                print("\n[OK] Camera model is well-calibrated!")
             elif mean_error < 20:
-                print("\n⚠ Camera model needs minor calibration adjustment")
+                print("\n[WARN] Camera model needs minor calibration adjustment")
             else:
-                print("\n✗ Camera model needs significant calibration")
+                print("\n[FAIL] Camera model needs significant calibration")
                 print("  Possible causes:")
-                print("  - Incorrect camera GPS position")
+                print("  - Incorrect camera position/height")
                 print("  - Incorrect pan offset")
-                print("  - GCP coordinates may be inaccurate")
+                print("  - Map point coordinates may be inaccurate")
 
         return mean_error, results
 

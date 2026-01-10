@@ -104,9 +104,57 @@ The goal is to gradually remove KML and geographic coordinate dependencies:
 
 1. ✅ Create map_points data structures (MapPoint, MapPointRegistry)
 2. ✅ Convert existing KML to map_points.json
-3. 🔄 Update tools to support both KML and map_points formats
+3. ✅ Update CLI calibration tools to use Map Points
 4. 🔄 Migrate workflows to use map_points by default
 5. 🔄 Remove KML dependencies where no longer needed
+
+## CLI Tools Using Map Points
+
+The following calibration tools in `tools/` use the Map Points system:
+
+### calibrate_projection.py
+
+Calibrates pan_offset and height parameters using a single reference point.
+
+```bash
+python tools/calibrate_projection.py Valte Z1 960 540 0.0 30.0 1.0 --map-points map_points.json
+```
+
+Arguments:
+- `Valte` - Camera name
+- `Z1` - Map Point ID (from map_points.json)
+- `960 540` - Image pixel coordinates where the point appears
+- `0.0 30.0 1.0` - PTZ values (pan_raw, tilt, zoom)
+- `--map-points` - Path to map_points.json (default: `map_points.json`)
+
+### comprehensive_calibration.py
+
+Runs scipy optimization to calibrate all camera parameters using multiple GCPs.
+
+GCP YAML format:
+```yaml
+gcps:
+  - map_point_id: Z1
+    pixel_u: 960
+    pixel_v: 540
+    pan_raw: 0.0
+    tilt_deg: 30.0
+    zoom: 1.0
+```
+
+### validate_camera_model.py
+
+Validates camera model accuracy by comparing projected vs actual pixel positions.
+
+Uses the same GCP YAML format as comprehensive_calibration.py.
+
+### interactive_calibration.py
+
+Interactive GUI for manual calibration. User clicks on known features in camera image and enters Map Point IDs.
+
+### test_data_generator.py
+
+Web-based tool for capturing camera frames and marking GCPs. Includes Map Point search functionality for selecting reference points.
 
 ## Point Categories
 

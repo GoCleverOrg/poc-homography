@@ -7,13 +7,14 @@ This tool helps identify which parameter is causing projection misalignment:
 3. Focal length / intrinsics
 
 The tool will:
-1. Take a known GPS point that you've manually marked in the image
+1. Take a known Map Point that you've manually marked in the image
 2. Calculate what parameters would make that projection correct
 3. Compare against current parameters to identify the error
 """
 
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -22,8 +23,40 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.coordinate_converter import gps_to_local_xy
-from poc_homography.gps_distance_calculator import dms_to_dd
+
+
+def dms_to_dd(dms_str: str) -> float:
+    """
+    Convert DMS (degrees, minutes, seconds) string to decimal degrees.
+
+    Supports formats like:
+    - "39°38'25.72\"N"
+    - "0°13'48.63\"W"
+
+    Args:
+        dms_str: DMS coordinate string
+
+    Returns:
+        Decimal degrees (negative for S/W)
+    """
+    # Pattern to match DMS format
+    pattern = r"""(\d+)°(\d+)'([\d.]+)"?([NSEW])"""
+    match = re.match(pattern, dms_str)
+    if not match:
+        raise ValueError(f"Invalid DMS format: {dms_str}")
+
+    degrees = int(match.group(1))
+    minutes = int(match.group(2))
+    seconds = float(match.group(3))
+    direction = match.group(4)
+
+    dd = degrees + minutes / 60 + seconds / 3600
+
+    # Negative for South and West
+    if direction in ("S", "W"):
+        dd = -dd
+
+    return dd
 
 
 # Load camera configs from canonical source and convert DMS to decimal degrees
@@ -42,8 +75,8 @@ CAMERA_CONFIGS = {cam["name"]: _convert_camera_config(cam) for cam in get_camera
 
 def analyze_projection_error(
     camera_config: dict,
-    ref_lat: float,
-    ref_lon: float,
+    map_point_x: float,
+    map_point_y: float,
     actual_u: float,
     actual_v: float,
     pan_raw: float,
@@ -54,6 +87,18 @@ def analyze_projection_error(
 ):
     """
     Analyze the projection error for a known reference point.
+
+    Args:
+        camera_config: Camera configuration dictionary
+        map_point_x: X coordinate from MapPoint (world/local coordinate)
+        map_point_y: Y coordinate from MapPoint (world/local coordinate)
+        actual_u: Actual image pixel U coordinate where user clicked
+        actual_v: Actual image pixel V coordinate where user clicked
+        pan_raw: Raw pan value from camera PTZ
+        tilt_deg: Tilt angle in degrees
+        zoom: Zoom factor
+        image_width: Image width in pixels
+        image_height: Image height in pixels
     """
     camera_lat = camera_config["lat"]
     camera_lon = camera_config["lon"]
@@ -68,7 +113,7 @@ def analyze_projection_error(
     print("=" * 70)
 
     print("\nReference Point:")
-    print(f"  GPS: ({ref_lat:.6f}, {ref_lon:.6f})")
+    print(f"  Map coordinates: ({map_point_x:.2f}, {map_point_y:.2f})")
     print(f"  Actual pixel (marked by user): ({actual_u:.1f}, {actual_v:.1f})")
 
     print("\nCamera Parameters:")
@@ -77,8 +122,8 @@ def analyze_projection_error(
     print(f"  Pan raw: {pan_raw}°, Offset: {pan_offset_deg}°, Applied: {pan_deg}°")
     print(f"  Tilt: {tilt_deg}°, Zoom: {zoom}x")
 
-    # Convert GPS to local XY
-    x_m, y_m = gps_to_local_xy(camera_lat, camera_lon, ref_lat, ref_lon)
+    # Use map point coordinates directly as local XY
+    x_m, y_m = map_point_x, map_point_y
     distance = math.sqrt(x_m**2 + y_m**2)
     bearing = math.degrees(math.atan2(x_m, y_m))  # Bearing from camera to point
 
@@ -210,4 +255,4 @@ def analyze_projection_error(
         print("  - Intrinsic matrix may be wrong (focal length, sensor size)")
         print("  - Camera GPS position may be inaccurate")
         print("  - Tilt angle may be incorrectly reported by camera")
-        print("  - Reference point GPS may be inaccurate")
+        print("  - Map point coordinates may be inaccurate")
