@@ -20,7 +20,7 @@ from poc_homography.homography_interface import CoordinateSystemMode, Homography
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class HomographyConfig:
     """Configuration for homography provider selection.
 

@@ -17,6 +17,7 @@ import pytest
 
 from poc_homography.homography_map_points import MapPointHomography
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent
@@ -59,13 +60,13 @@ class TestMapPointHomographyInitialization:
         """Test that projecting before computing raises error."""
         h = MapPointHomography(map_id="test_map")
         with pytest.raises(RuntimeError, match="No valid homography"):
-            h.camera_to_map((960, 540))
+            h.camera_to_map(PixelPoint(960, 540))
 
     def test_map_to_camera_before_compute_raises(self):
         """Test that inverse projecting before computing raises error."""
         h = MapPointHomography(map_id="test_map")
         with pytest.raises(RuntimeError, match="No valid homography"):
-            h.map_to_camera((251500.0, -360500.0))
+            h.map_to_camera(PixelPoint(251500.0, -360500.0))
 
 
 class TestMapPointHomographyComputation:
@@ -139,7 +140,7 @@ class TestForwardProjection:
 
     def test_project_camera_center(self, homography):
         """Test projecting camera center point."""
-        map_point = homography.camera_to_map((960.0, 540.0))
+        map_point = homography.camera_to_map(PixelPoint(960.0, 540.0))
 
         # Should return valid MapPoint with UTM coordinates
         assert hasattr(map_point, "pixel_x")
@@ -150,7 +151,7 @@ class TestForwardProjection:
     def test_project_gcp_points(self, homography, map_registry, valte_gcps):
         """Test projecting actual GCP points."""
         for gcp in valte_gcps[:5]:  # Test first 5 GCPs
-            camera_pixel = (gcp["pixel_x"], gcp["pixel_y"])
+            camera_pixel = PixelPoint(gcp["pixel_x"], gcp["pixel_y"])
             projected_point = homography.camera_to_map(camera_pixel)
 
             # Get expected map coordinate
@@ -167,7 +168,7 @@ class TestForwardProjection:
 
     def test_batch_projection(self, homography, valte_gcps):
         """Test batch projection of multiple camera pixels."""
-        camera_pixels = [(gcp["pixel_x"], gcp["pixel_y"]) for gcp in valte_gcps]
+        camera_pixels = [PixelPoint(gcp["pixel_x"], gcp["pixel_y"]) for gcp in valte_gcps]
         map_points = homography.camera_to_map_batch(camera_pixels)
 
         assert len(map_points) == len(camera_pixels)
@@ -184,16 +185,15 @@ class TestInverseProjection:
     def test_project_map_point_to_camera(self, homography, map_registry):
         """Test projecting map point back to camera."""
         map_point = map_registry.points["A7"]
-        map_coord = (map_point.pixel_x, map_point.pixel_y)
+        map_coord = PixelPoint(map_point.pixel_x, map_point.pixel_y)
 
         camera_pixel = homography.map_to_camera(map_coord)
 
-        # Should return valid pixel coordinates
-        assert isinstance(camera_pixel, tuple)
-        assert len(camera_pixel) == 2
+        # Should return valid PixelPoint
+        assert isinstance(camera_pixel, PixelPoint)
         # Allow slight out-of-bounds for edge cases
-        assert -100 < camera_pixel[0] < 2020, "X in reasonable range"
-        assert -100 < camera_pixel[1] < 1180, "Y in reasonable range"
+        assert -100 < camera_pixel.x < 2020, "X in reasonable range"
+        assert -100 < camera_pixel.y < 1180, "Y in reasonable range"
 
     def test_inverse_projection_accuracy(self, homography, map_registry, valte_gcps):
         """Test that inverse projection is accurate."""
@@ -202,16 +202,19 @@ class TestInverseProjection:
         for gcp in valte_gcps[:10]:  # Test first 10
             # Get map coordinate
             map_point = map_registry.points[gcp["map_point_id"]]
-            map_coord = (map_point.pixel_x, map_point.pixel_y)
+            map_coord = PixelPoint(map_point.pixel_x, map_point.pixel_y)
 
             # Project to camera
             projected_pixel = homography.map_to_camera(map_coord)
 
             # Expected camera pixel
-            expected_pixel = (gcp["pixel_x"], gcp["pixel_y"])
+            expected_pixel = PixelPoint(gcp["pixel_x"], gcp["pixel_y"])
 
             # Calculate error in pixels
-            error = np.linalg.norm(np.array(projected_pixel) - np.array(expected_pixel))
+            error = np.linalg.norm(
+                np.array([projected_pixel.x, projected_pixel.y])
+                - np.array([expected_pixel.x, expected_pixel.y])
+            )
             errors.append(error)
 
         mean_error = np.mean(errors)
@@ -227,15 +230,14 @@ class TestInverseProjection:
         map_coords = []
         for gcp in valte_gcps:
             map_point = map_registry.points[gcp["map_point_id"]]
-            map_coords.append((map_point.pixel_x, map_point.pixel_y))
+            map_coords.append(PixelPoint(map_point.pixel_x, map_point.pixel_y))
 
         # Project all at once
         camera_pixels = homography.map_to_camera_batch(map_coords)
 
         assert len(camera_pixels) == len(map_coords)
         for pixel in camera_pixels:
-            assert isinstance(pixel, tuple)
-            assert len(pixel) == 2
+            assert isinstance(pixel, PixelPoint)
 
 
 class TestRoundTripConsistency:
@@ -246,15 +248,17 @@ class TestRoundTripConsistency:
         errors = []
 
         for gcp in valte_gcps:
-            original = (gcp["pixel_x"], gcp["pixel_y"])
+            original = PixelPoint(gcp["pixel_x"], gcp["pixel_y"])
 
             # Forward then inverse
             map_point = homography.camera_to_map(original)
-            map_coord = (map_point.pixel_x, map_point.pixel_y)
+            map_coord = PixelPoint(map_point.pixel_x, map_point.pixel_y)
             recovered = homography.map_to_camera(map_coord)
 
             # Calculate round-trip error
-            error = np.linalg.norm(np.array(recovered) - np.array(original))
+            error = np.linalg.norm(
+                np.array([recovered.x, recovered.y]) - np.array([original.x, original.y])
+            )
             errors.append(error)
 
         mean_error = np.mean(errors)
@@ -270,15 +274,17 @@ class TestRoundTripConsistency:
 
         for gcp in valte_gcps:
             map_point = map_registry.points[gcp["map_point_id"]]
-            original = (map_point.pixel_x, map_point.pixel_y)
+            original = PixelPoint(map_point.pixel_x, map_point.pixel_y)
 
             # Inverse then forward
             camera_pixel = homography.map_to_camera(original)
             recovered_point = homography.camera_to_map(camera_pixel)
-            recovered = (recovered_point.pixel_x, recovered_point.pixel_y)
+            recovered = PixelPoint(recovered_point.pixel_x, recovered_point.pixel_y)
 
             # Calculate round-trip error in meters
-            error = np.linalg.norm(np.array(recovered) - np.array(original))
+            error = np.linalg.norm(
+                np.array([recovered.x, recovered.y]) - np.array([original.x, original.y])
+            )
             errors.append(error)
 
         mean_error = np.mean(errors)

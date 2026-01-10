@@ -28,6 +28,7 @@ from poc_homography.homography_interface import (
     HomographyResult,
 )
 from poc_homography.map_points import MapPoint
+from poc_homography.pixel_point import PixelPoint  # noqa: TC001 - used at runtime
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
@@ -707,9 +708,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
 
         return confidence
 
-    def _calculate_point_confidence(
-        self, image_point: tuple[float, float], base_confidence: float
-    ) -> float:
+    def _calculate_point_confidence(self, image_point: PixelPoint, base_confidence: float) -> float:
         """
         Calculate per-point confidence based on distance from image center.
 
@@ -717,13 +716,13 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         and perspective effects.
 
         Args:
-            image_point: (u, v) pixel coordinates
+            image_point: Pixel coordinates
             base_confidence: Base confidence from homography quality
 
         Returns:
             float: Adjusted confidence score in range [0.0, 1.0]
         """
-        u, v = image_point
+        u, v = image_point.x, image_point.y
 
         # Calculate distance from image center (normalized)
         # Protect against division by zero
@@ -756,19 +755,17 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
 
         return base_confidence * edge_factor
 
-    def _project_image_point_to_world(
-        self, image_point: tuple[float, float]
-    ) -> tuple[Meters, Meters]:
+    def _project_image_point_to_world(self, image_point: PixelPoint) -> tuple[Meters, Meters]:
         """
         Project image point to world ground plane coordinates (meters).
 
         Args:
-            image_point: (u, v) pixel coordinates
+            image_point: Pixel coordinates
 
         Returns:
             (x_world, y_world): Coordinates in meters (East, North)
         """
-        u, v = image_point
+        u, v = image_point.x, image_point.y
 
         # Convert to homogeneous coordinates
         pt_homogeneous = np.array([u, v, 1.0])
@@ -953,12 +950,12 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             homography_matrix=self.H.copy(), confidence=self.confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
+    def project_point(self, image_point: PixelPoint, point_id: str = "") -> MapPoint:
         """
         Project image point to map pixel coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates in camera image
+            image_point: Pixel coordinates in camera image
             point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
@@ -971,7 +968,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
-        u, v = image_point
+        u, v = image_point.x, image_point.y
         if not (0 <= u < self.width) or not (0 <= v < self.height):
             raise ValueError(
                 f"Image point ({u}, {v}) outside valid bounds "
@@ -999,13 +996,13 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         )
 
     def project_points(
-        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+        self, image_points: list[PixelPoint], point_id_prefix: str = "proj"
     ) -> list[MapPoint]:
         """
         Project multiple image points to map pixel coordinates.
 
         Args:
-            image_points: List of (u, v) pixel coordinates
+            image_points: List of pixel coordinates
             point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:

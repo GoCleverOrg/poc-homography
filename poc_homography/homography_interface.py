@@ -22,6 +22,9 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import numpy.typing as npt
+
+from poc_homography.pixel_point import PixelPoint
 
 if TYPE_CHECKING:
     from poc_homography.map_points import MapPoint
@@ -42,7 +45,112 @@ class CoordinateSystemMode(Enum):
     MAP_BASED_ORIGIN = "map_based_origin"
 
 
-@dataclass
+@dataclass(frozen=True)
+class HomographyMatrix:
+    """Immutable wrapper for a 3x3 homography transformation matrix.
+
+    A homography matrix maps homogeneous coordinates between two planes:
+        [x']       [x]
+        [y']  = H  [y]
+        [w']       [1]
+
+    The final coordinates are (x'/w', y'/w').
+
+    Attributes:
+        data: 3x3 numpy array containing the homography coefficients.
+    """
+
+    data: npt.NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        """Validate matrix shape and type."""
+        if self.data.shape != (3, 3):
+            raise ValueError(f"Homography matrix must be 3x3, got shape {self.data.shape}")
+        # Ensure the data is float64 for numerical stability
+        if self.data.dtype != np.float64:
+            # Use object.__setattr__ since frozen=True
+            object.__setattr__(self, "data", np.asarray(self.data, dtype=np.float64))
+
+    @classmethod
+    def from_array(cls, array: npt.ArrayLike) -> HomographyMatrix:
+        """Create HomographyMatrix from a numpy array.
+
+        Args:
+            array: 3x3 array-like object.
+
+        Returns:
+            New HomographyMatrix instance.
+
+        Raises:
+            ValueError: If array is not 3x3.
+        """
+        return cls(data=np.asarray(array, dtype=np.float64))
+
+    @classmethod
+    def identity(cls) -> HomographyMatrix:
+        """Create identity homography matrix.
+
+        Returns:
+            HomographyMatrix representing the identity transformation.
+        """
+        return cls(data=np.eye(3, dtype=np.float64))
+
+    def inverse(self) -> HomographyMatrix:
+        """Compute the inverse homography matrix.
+
+        Returns:
+            New HomographyMatrix representing the inverse transformation.
+
+        Raises:
+            ValueError: If matrix is singular (non-invertible).
+        """
+        det = np.linalg.det(self.data)
+        if abs(det) < 1e-15:
+            raise ValueError("Homography matrix is singular and cannot be inverted")
+        return HomographyMatrix(data=np.asarray(np.linalg.inv(self.data), dtype=np.float64))
+
+    @property
+    def determinant(self) -> float:
+        """Compute the determinant of the matrix.
+
+        Returns:
+            Determinant value. Non-zero indicates invertibility.
+        """
+        return float(np.linalg.det(self.data))
+
+    @property
+    def is_valid(self) -> bool:
+        """Check if the homography is valid (non-singular, non-identity).
+
+        Returns:
+            True if the matrix is valid for transformations.
+        """
+        if np.allclose(self.data, np.eye(3)):
+            return False
+        if abs(self.determinant) < 1e-15:
+            return False
+        return True
+
+    def transform(self, point: PixelPoint) -> PixelPoint:
+        """Apply homography transformation to a point.
+
+        Args:
+            point: Input pixel coordinates.
+
+        Returns:
+            Transformed pixel coordinates.
+
+        Raises:
+            ValueError: If point transforms to infinity (w ≈ 0).
+        """
+        pt = np.array([point.x, point.y, 1.0])
+        result = self.data @ pt
+        if abs(result[2]) < 1e-10:
+            raise ValueError("Point transforms to infinity (on horizon)")
+        return PixelPoint(float(result[0] / result[2]), float(result[1] / result[2]))
+
+
+@dataclass(frozen=True)
 class HomographyResult:
     """Result of homography computation including matrix and metadata.
 
@@ -87,11 +195,11 @@ class HomographyProvider(ABC):
         pass
 
     @abstractmethod
-    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
+    def project_point(self, image_point: PixelPoint, point_id: str = "") -> MapPoint:
         """Project single image coordinate to map coordinate.
 
         Args:
-            image_point: (u, v) pixel coordinates in camera image
+            image_point: Pixel coordinates in camera image
             point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
@@ -101,12 +209,12 @@ class HomographyProvider(ABC):
 
     @abstractmethod
     def project_points(
-        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+        self, image_points: list[PixelPoint], point_id_prefix: str = "proj"
     ) -> list[MapPoint]:
         """Project multiple image points to map coordinates.
 
         Args:
-            image_points: List of (u, v) pixel coordinates
+            image_points: List of pixel coordinates
             point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:

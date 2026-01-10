@@ -20,9 +20,10 @@ import numpy as np
 import numpy.typing as npt
 
 from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 
-@dataclass
+@dataclass(frozen=True)
 class MapPointComputationResult:
     """Result of MapPoint homography computation including matrix and quality metrics.
 
@@ -211,13 +212,13 @@ class MapPointHomography:
 
     def camera_to_map(
         self,
-        camera_pixel: tuple[float, float],
+        camera_pixel: PixelPoint,
         point_id: str = "",
     ) -> MapPoint:
         """Transform camera pixel to map coordinate.
 
         Args:
-            camera_pixel: (x, y) pixel coordinates in camera image
+            camera_pixel: Pixel coordinates in camera image
             point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
@@ -227,7 +228,7 @@ class MapPointHomography:
             RuntimeError: If no valid homography has been computed
         """
         H = self._require_forward_homography()
-        point = np.array([[[camera_pixel[0], camera_pixel[1]]]], dtype=np.float32)
+        point = np.array([[[camera_pixel.x, camera_pixel.y]]], dtype=np.float32)
         transformed = cv2.perspectiveTransform(point, H)
 
         if not point_id:
@@ -241,32 +242,32 @@ class MapPointHomography:
             map_id=self._map_id,
         )
 
-    def map_to_camera(self, map_coord: tuple[float, float]) -> tuple[float, float]:
+    def map_to_camera(self, map_coord: PixelPoint) -> PixelPoint:
         """Transform map coordinate to camera pixel.
 
         Args:
-            map_coord: (pixel_x, pixel_y) coordinates on the map
+            map_coord: Pixel coordinates on the map
 
         Returns:
-            (x, y) pixel coordinates in camera image
+            Pixel coordinates in camera image
 
         Raises:
             RuntimeError: If no valid homography has been computed
         """
         H_inv = self._require_inverse_homography()
-        point = np.array([[[map_coord[0], map_coord[1]]]], dtype=np.float32)
+        point = np.array([[[map_coord.x, map_coord.y]]], dtype=np.float32)
         transformed = cv2.perspectiveTransform(point, H_inv)
-        return float(transformed[0, 0, 0]), float(transformed[0, 0, 1])
+        return PixelPoint(float(transformed[0, 0, 0]), float(transformed[0, 0, 1]))
 
     def camera_to_map_batch(
         self,
-        camera_pixels: list[tuple[float, float]],
+        camera_pixels: list[PixelPoint],
         point_id_prefix: str = "proj",
     ) -> list[MapPoint]:
         """Transform multiple camera pixels to map coordinates.
 
         Args:
-            camera_pixels: List of (x, y) pixel coordinates
+            camera_pixels: List of pixel coordinates
             point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:
@@ -276,7 +277,7 @@ class MapPointHomography:
             RuntimeError: If no valid homography has been computed
         """
         H = self._require_forward_homography()
-        points = np.array([[[p[0], p[1]]] for p in camera_pixels], dtype=np.float32)
+        points = np.array([[[p.x, p.y]] for p in camera_pixels], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H)
 
         results = []
@@ -292,24 +293,22 @@ class MapPointHomography:
             )
         return results
 
-    def map_to_camera_batch(
-        self, map_coords: list[tuple[float, float]]
-    ) -> list[tuple[float, float]]:
+    def map_to_camera_batch(self, map_coords: list[PixelPoint]) -> list[PixelPoint]:
         """Transform multiple map coordinates to camera pixels.
 
         Args:
-            map_coords: List of (pixel_x, pixel_y) coordinates on the map
+            map_coords: List of pixel coordinates on the map
 
         Returns:
-            List of (x, y) pixel coordinates
+            List of pixel coordinates in camera image
 
         Raises:
             RuntimeError: If no valid homography has been computed
         """
         H_inv = self._require_inverse_homography()
-        points = np.array([[[c[0], c[1]]] for c in map_coords], dtype=np.float32)
+        points = np.array([[[c.x, c.y]] for c in map_coords], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H_inv)
-        return [(float(t[0][0]), float(t[0][1])) for t in transformed]
+        return [PixelPoint(float(t[0][0]), float(t[0][1])) for t in transformed]
 
     def is_valid(self) -> bool:
         """Check if a valid homography has been computed."""
