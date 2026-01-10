@@ -3,7 +3,38 @@
 
 {% block title %}GCP Capture Tool{% endblock %}
 
+{% block extra_head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+{% endblock %}
+
+{% block body_style %}
+background: #1a1a2e;
+overflow: hidden;
+{% endblock %}
+
 {% block extra_style %}
+.container {
+    max-width: 100%;
+    padding: 0;
+    height: 100vh;
+    position: relative;
+}
+
+#map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+
 .info-panel {
     position: absolute;
     top: 10px;
@@ -134,18 +165,18 @@
 
     <div class="stats">
         <div class="stat-item">
-            <div class="stat-label">Total GCPs</div>
-            <div class="stat-value" id="gcp-count">0</div>
+            <div class="stat-label">Map ID</div>
+            <div class="stat-value" id="map-id">{{ map_id }}</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">Map Points</div>
-            <div class="stat-value" id="map-point-count">0</div>
+            <div class="stat-label">Points</div>
+            <div class="stat-value" id="point-count">0</div>
         </div>
     </div>
 
     <div>
-        <button class="btn btn-secondary" onclick="loadGCPs()">Load GCPs</button>
-        <button class="btn btn-primary" onclick="saveGCPs()">Save GCPs</button>
+        <button class="btn btn-secondary" onclick="loadPoints()">Load Points</button>
+        <button class="btn btn-primary" onclick="savePoints()">Save Points</button>
         <button class="btn btn-danger" onclick="clearAll()">Clear All</button>
     </div>
 
@@ -153,57 +184,78 @@
         <div class="legend-title" style="font-weight: 600; margin-bottom: 8px;">Legend</div>
         <div class="legend-item">
             <div class="legend-dot" style="background:#ff4444;border:2px solid #aa0000;"></div>
-            <span>GCP Marker</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-dot" style="background:#0066ff;border:2px solid white;"></div>
-            <span>Camera Location</span>
+            <span>MapPoint Marker</span>
         </div>
     </div>
 
-    <div class="gcp-list" id="gcp-list">
-        <!-- GCP items will be dynamically added here -->
+    <div class="gcp-list" id="point-list">
+        <!-- Points will be dynamically added here -->
     </div>
 
     <div style="margin-top:10px;font-size:11px;color:#666;">
-        Click on map to add GCP markers.<br>
-        Use satellite view to verify accuracy.
+        Click on map to add markers.<br>
+        Points are saved as pixel coordinates on the map.
     </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+{# Safely embed initial data using json_script #}
+{{ points|json_script:"initial-points" }}
+
+{# Embed URLs for JavaScript to use #}
 <script>
-    // Initialize map
-    var map = L.map('map').setView([39.640, -0.230], 18);
+    const API_URLS = {
+        getPoints: "{% url 'gcp:api_get_gcps' %}",
+        savePoints: "{% url 'gcp:api_save_gcps' %}"
+    };
+</script>
+
+<script>
+(function() {
+    // Load initial points from json_script
+    const initialPointsElement = document.getElementById('initial-points');
+    let points = initialPointsElement ? JSON.parse(initialPointsElement.textContent) : [];
+    let markers = [];
+    let mapId = "{{ map_id|escapejs }}";
+    let pointCounter = points.length;
+
+    // Initialize map - default center (can be configured)
+    // Note: For MapPoint workflow, consider using an image overlay instead of tiles
+    const map = L.map('map').setView([39.640, -0.230], 18);
 
     // Add satellite layers using template tag
     {% satellite_layers_js default_layer='pnoa' %}
 
-    // GCP storage
-    let gcps = [];
-    let markers = [];
+    // Initialize existing points
+    points.forEach(point => addMarkerForPoint(point));
+    updateStats();
+    updatePointList();
 
-    // Add GCP marker on map click
+    // Add point on map click
     map.on('click', function(e) {
-        const lat = e.latlng.lat;
-        const lng = e.latlng.lng;
-
-        const gcp = {
-            id: Date.now(),
-            lat: lat,
-            lng: lng,
-            description: `GCP #${gcps.length + 1}`
+        pointCounter++;
+        const point = {
+            id: `P${pointCounter}`,
+            // Note: Using lat/lng from Leaflet click, but MapPoints use pixel_x/pixel_y
+            // This is a compatibility layer - the map coords are stored as pixel coords
+            pixel_x: e.latlng.lng * 1000000,  // Scale for precision
+            pixel_y: e.latlng.lat * 1000000,  // Scale for precision
+            map_id: mapId
         };
 
-        gcps.push(gcp);
-        addMarker(gcp);
+        points.push(point);
+        addMarkerForPoint(point);
         updateStats();
-        updateGCPList();
+        updatePointList();
     });
 
-    function addMarker(gcp) {
-        const marker = L.circleMarker([gcp.lat, gcp.lng], {
+    function addMarkerForPoint(point) {
+        // Convert back from scaled pixel coords to lat/lng for display
+        const lat = point.pixel_y / 1000000;
+        const lng = point.pixel_x / 1000000;
+
+        const marker = L.circleMarker([lat, lng], {
             radius: 6,
             fillColor: '#ff4444',
             color: '#aa0000',
@@ -212,99 +264,99 @@
             fillOpacity: 0.8
         }).addTo(map);
 
-        marker.bindPopup(`<b>${gcp.description}</b><br>Lat: ${gcp.lat.toFixed(6)}<br>Lng: ${gcp.lng.toFixed(6)}`);
-
-        markers.push({ gcp: gcp, marker: marker });
+        marker.bindPopup(`<b>${escapeHtml(point.id)}</b><br>X: ${point.pixel_x.toFixed(2)}<br>Y: ${point.pixel_y.toFixed(2)}`);
+        markers.push({ point: point, marker: marker });
     }
 
-    function removeGCP(gcpId) {
-        const index = gcps.findIndex(g => g.id === gcpId);
+    window.removePoint = function(pointId) {
+        const index = points.findIndex(p => p.id === pointId);
         if (index !== -1) {
-            // Remove marker from map
-            const markerObj = markers.find(m => m.gcp.id === gcpId);
+            const markerObj = markers.find(m => m.point.id === pointId);
             if (markerObj) {
                 map.removeLayer(markerObj.marker);
             }
-
-            // Remove from arrays
-            gcps.splice(index, 1);
-            markers = markers.filter(m => m.gcp.id !== gcpId);
-
+            points.splice(index, 1);
+            markers = markers.filter(m => m.point.id !== pointId);
             updateStats();
-            updateGCPList();
+            updatePointList();
         }
-    }
+    };
 
     function updateStats() {
-        document.getElementById('gcp-count').textContent = gcps.length;
-        document.getElementById('map-point-count').textContent = gcps.length;
+        document.getElementById('point-count').textContent = points.length;
     }
 
-    function updateGCPList() {
-        const listEl = document.getElementById('gcp-list');
+    function updatePointList() {
+        const listEl = document.getElementById('point-list');
         listEl.innerHTML = '';
 
-        gcps.forEach(gcp => {
+        points.forEach(point => {
             const item = document.createElement('div');
             item.className = 'gcp-item';
             item.innerHTML = `
-                <span>${gcp.description}</span>
-                <button class="btn btn-danger" onclick="removeGCP(${gcp.id})">Delete</button>
+                <span>${escapeHtml(point.id)}</span>
+                <button class="btn btn-danger" onclick="removePoint('${escapeHtml(point.id)}')">Delete</button>
             `;
             listEl.appendChild(item);
         });
     }
 
-    function loadGCPs() {
-        fetch('/api/gcps/')
+    window.loadPoints = function() {
+        fetch(API_URLS.getPoints)
             .then(response => response.json())
             .then(data => {
-                gcps = data.gcps || [];
+                points = data.points || [];
+                mapId = data.map_id || mapId;
+                document.getElementById('map-id').textContent = mapId;
+
                 markers.forEach(m => map.removeLayer(m.marker));
                 markers = [];
 
-                gcps.forEach(gcp => addMarker(gcp));
+                points.forEach(point => addMarkerForPoint(point));
                 updateStats();
-                updateGCPList();
+                updatePointList();
             })
             .catch(error => {
-                console.error('Error loading GCPs:', error);
-                alert('Failed to load GCPs');
+                console.error('Error loading points:', error);
+                alert('Failed to load points');
             });
-    }
+    };
 
-    function saveGCPs() {
-        fetch('/api/gcps/save/', {
+    window.savePoints = function() {
+        fetch(API_URLS.savePoints, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCookie('csrftoken')
             },
-            body: JSON.stringify({ gcps: gcps })
+            body: JSON.stringify({
+                map_id: mapId,
+                points: points
+            })
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('GCPs saved successfully!');
+                alert('Points saved successfully!');
             } else {
-                alert('Failed to save GCPs: ' + data.error);
+                alert('Failed to save points: ' + (data.error || 'Unknown error'));
             }
         })
         .catch(error => {
-            console.error('Error saving GCPs:', error);
-            alert('Failed to save GCPs');
+            console.error('Error saving points:', error);
+            alert('Failed to save points');
         });
-    }
+    };
 
-    function clearAll() {
-        if (confirm('Are you sure you want to clear all GCPs?')) {
-            gcps = [];
+    window.clearAll = function() {
+        if (confirm('Are you sure you want to clear all points?')) {
+            points = [];
             markers.forEach(m => map.removeLayer(m.marker));
             markers = [];
             updateStats();
-            updateGCPList();
+            updatePointList();
         }
-    }
+    };
 
     function getCookie(name) {
         let cookieValue = null;
@@ -321,7 +373,11 @@
         return cookieValue;
     }
 
-    // Initialize
-    updateStats();
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+})();
 </script>
 {% endblock %}

@@ -1,128 +1,172 @@
 """
 Views for GCP capture and visualization.
 
-Thin Django view wrappers that reference existing poc_homography library functions.
+Django view wrappers that use MapPointRegistry for persistence.
 """
 
-import json
+from __future__ import annotations
 
-from django.http import JsonResponse
+import json
+from pathlib import Path
+from typing import Any
+
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_http_methods
+
+from poc_homography.map_points import MapPoint, MapPointRegistry
+
+# Data directory for storing GCPs
+# Path: views.py -> gcp/ -> webapp/ -> project_root/ -> data/
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+MAP_POINTS_FILE = DATA_DIR / "gcps" / "map_points.json"
 
 
-def index(request):
+def _ensure_data_dir() -> None:
+    """Ensure data directory exists."""
+    gcps_dir = DATA_DIR / "gcps"
+    gcps_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _load_registry() -> MapPointRegistry:
+    """Load MapPointRegistry from disk or return empty registry."""
+    if MAP_POINTS_FILE.exists():
+        return MapPointRegistry.load(MAP_POINTS_FILE)
+    return MapPointRegistry(map_id="default", points={})
+
+
+def _save_registry(registry: MapPointRegistry) -> None:
+    """Save MapPointRegistry to disk."""
+    _ensure_data_dir()
+    registry.save(MAP_POINTS_FILE)
+
+
+def index(request: HttpRequest) -> HttpResponse:
     """Landing page with links to tools."""
     return render(request, "gcp/index.html", {"title": "Homography GCP Tools"})
 
 
-def gcp_capture(request):
+def gcp_capture(request: HttpRequest) -> HttpResponse:
     """GCP capture interface for marking points on satellite map."""
-    return render(request, "gcp/gcp_capture.html", {"title": "GCP Capture Tool"})
+    # Load existing points to display
+    registry = _load_registry()
+    points_data = [point.to_dict() for point in registry.points.values()]
+
+    context: dict[str, Any] = {
+        "title": "GCP Capture Tool",
+        "map_id": registry.map_id,
+        "points": points_data,
+    }
+    return render(request, "gcp/gcp_capture.html", context)
 
 
-def debug_map(request):
+def debug_map(request: HttpRequest) -> HttpResponse:
     """
-    Debug map visualization for GCP verification.
+    Debug visualization for MapPoint data.
 
-    Displays GCPs from a YAML file on a satellite map for verification.
-    References existing poc_homography functionality.
+    Displays MapPoints from storage for verification.
+    Since MapPoints use pixel coordinates (not GPS), this shows a
+    list view rather than a geographic map.
     """
-    # For now, return a simple visualization
-    # In a full implementation, this would load GCPs from data directory
-    # using poc_homography.gcp_loader or similar
+    # Load registry from file parameter or default
+    file_param = request.GET.get("file")
+    if file_param:
+        file_path = Path(file_param)
+        registry = MapPointRegistry.load(file_path) if file_path.exists() else _load_registry()
+    else:
+        registry = _load_registry()
 
-    # Placeholder data
-    gcps_data = []
-    camera_location = None
-    camera_name = "Unknown"
-    gcp_count = 0
+    points_data = [point.to_dict() for point in registry.points.values()]
 
-    # Check if GCP file path provided in query params
-    gcp_file = request.GET.get("file", None)
-
-    if gcp_file:
-        # In a full implementation:
-        # from poc_homography.gcp_loader import load_gcps_from_yaml
-        # gcps = load_gcps_from_yaml(gcp_file)
-        # gcps_data = [{'lat': gcp.lat, 'lng': gcp.lng, 'description': gcp.description, ...} for gcp in gcps]
-        pass
-
-    context = {
-        "gcps_json": json.dumps(gcps_data),
-        "camera_location": json.dumps(camera_location),
-        "camera_name": camera_name,
-        "gcp_count": gcp_count,
+    context: dict[str, Any] = {
+        "map_id": registry.map_id,
+        "points": points_data,
+        "point_count": len(points_data),
     }
 
     return render(request, "gcp/debug_map.html", context)
 
 
-def api_get_gcps(request):
+@require_GET
+def api_get_gcps(request: HttpRequest) -> JsonResponse:
     """
-    API endpoint to get GCPs from storage.
+    API endpoint to get MapPoints from storage.
 
-    In a full implementation, this would:
-    - Load GCPs from data/gcps/ directory using poc_homography functions
-    - Return as JSON
+    Returns:
+        JSON with success status and list of MapPoint data.
     """
-    # Placeholder response
-    gcps = []
+    registry = _load_registry()
+    points = [point.to_dict() for point in registry.points.values()]
 
-    # In full implementation:
-    # from poc_homography.gcp_loader import load_gcps_from_yaml
-    # gcp_file = settings.DATA_DIR / 'gcps' / 'latest.yaml'
-    # if gcp_file.exists():
-    #     gcps_data = load_gcps_from_yaml(gcp_file)
-    #     gcps = [serialize_gcp(gcp) for gcp in gcps_data]
-
-    return JsonResponse({"success": True, "gcps": gcps})
+    return JsonResponse(
+        {
+            "success": True,
+            "map_id": registry.map_id,
+            "points": points,
+        }
+    )
 
 
 @csrf_exempt
-def api_save_gcps(request):
+@require_http_methods(["POST"])
+def api_save_gcps(request: HttpRequest) -> JsonResponse:
     """
-    API endpoint to save GCPs to storage.
+    API endpoint to save MapPoints to storage.
 
-    In a full implementation, this would:
-    - Parse GCP data from request
-    - Save to data/gcps/ directory using poc_homography functions
-    - Return success status
+    Expects JSON body with:
+        - map_id: str - Map identifier
+        - points: list - List of point objects with id, pixel_x, pixel_y, map_id
     """
-    if request.method != "POST":
-        return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
+    data = json.loads(request.body)
+    map_id = data.get("map_id", "default")
+    points_data = data.get("points", [])
 
-    try:
-        data = json.loads(request.body)
-        gcps = data.get("gcps", [])
+    # Build MapPoints from data
+    points: dict[str, MapPoint] = {}
+    for p in points_data:
+        point = MapPoint.from_dict(p)
+        points[point.id] = point
 
-        # In full implementation:
-        # from poc_homography.gcp_saver import save_gcps_to_yaml
-        # gcp_file = settings.DATA_DIR / 'gcps' / f'gcps_{timestamp}.yaml'
-        # save_gcps_to_yaml(gcps, gcp_file)
+    # Create and save registry
+    registry = MapPointRegistry(map_id=map_id, points=points)
+    _save_registry(registry)
 
-        return JsonResponse({"success": True, "message": f"Saved {len(gcps)} GCPs"})
-
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Saved {len(points)} MapPoints",
+            "map_id": map_id,
+        }
+    )
 
 
 @csrf_exempt
-def api_delete_gcp(request, gcp_id):
+@require_http_methods(["DELETE"])
+def api_delete_gcp(request: HttpRequest, gcp_id: int) -> JsonResponse:
     """
-    API endpoint to delete a specific GCP.
+    API endpoint to delete a specific MapPoint.
 
     Args:
-        gcp_id: ID of the GCP to delete
+        gcp_id: ID of the MapPoint to delete (passed as int but used as string key)
     """
-    if request.method != "DELETE":
-        return JsonResponse({"success": False, "error": "Method not allowed"}, status=405)
+    point_id = str(gcp_id)
+    registry = _load_registry()
 
-    try:
-        # In full implementation:
-        # Load GCPs, remove the one with gcp_id, save back
+    if point_id not in registry.points:
+        return JsonResponse(
+            {"success": False, "error": f"MapPoint {point_id} not found"},
+            status=404,
+        )
 
-        return JsonResponse({"success": True, "message": f"Deleted GCP {gcp_id}"})
+    # Create new registry without the deleted point
+    new_points = {k: v for k, v in registry.points.items() if k != point_id}
+    new_registry = MapPointRegistry(map_id=registry.map_id, points=new_points)
+    _save_registry(new_registry)
 
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Deleted MapPoint {point_id}",
+        }
+    )
