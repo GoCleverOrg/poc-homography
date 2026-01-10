@@ -17,10 +17,12 @@ This refactoring clarifies the conceptual model:
 - **CaptureContext**: Camera state (camera name, pan/tilt/zoom) when the frame was captured
 - **Observation**: Runtime computed projection (not persisted)
 
+**Dependency**: This issue should be implemented after PR #163 (Phase 1 - Frozen Value Objects) is merged, as `Annotation` will use the `PixelPoint` frozen value object introduced there.
+
 ## Scope
 
 ### In Scope
-- Create `Annotation` dataclass with `gcp_id`, `image_u`, `image_v` fields
+- Create `Annotation` dataclass with `gcp_id: str` and `pixel: PixelPoint` fields (reusing frozen value object from PR #163)
 - Create/formalize `CaptureContext` dataclass with `camera`, `pan_raw`, `tilt_deg`, `zoom` fields
 - Remove `id` field from `MapPoint` dataclass
 - Update all YAML/JSON calibration files to new format with `capture.context` and `capture.annotations` structure
@@ -38,7 +40,7 @@ This refactoring clarifies the conceptual model:
 - GPU or performance optimizations
 
 ## Definition of Done
-- [ ] `Annotation` dataclass exists in `poc_homography/` with `gcp_id: str`, `image_u: float`, `image_v: float` fields
+- [ ] `Annotation` dataclass exists in `poc_homography/` with `gcp_id: str` and `pixel: PixelPoint` fields
 - [ ] `CaptureContext` dataclass exists in `poc_homography/` with `camera: str`, `pan_raw: float`, `tilt_deg: float`, `zoom: float` fields
 - [ ] `MapPoint` dataclass has `id` field removed, retaining only `pixel_x`, `pixel_y`, `map_id`
 - [ ] All YAML files in `config/` directory use new format with `capture.context` and `capture.annotations` sections
@@ -73,26 +75,28 @@ This refactoring clarifies the conceptual model:
 
 **Requirements**:
 - Create new `Annotation` dataclass in `poc_homography/` (suggest `poc_homography/calibration/annotation.py` or similar location)
-- Fields: `gcp_id: str`, `image_u: float`, `image_v: float`
+- Fields: `gcp_id: str`, `pixel: PixelPoint` (reuse frozen value object from `poc_homography/pixel_point.py`)
 - Make dataclass frozen for immutability
 - Implement `to_dict()` and `from_dict()` for serialization
 - Add docstring clarifying: "An annotation links a Ground Control Point (GCP) to its observed pixel location in a camera image"
 
 **Example**:
 ```python
+from poc_homography.pixel_point import PixelPoint
+
 @dataclass(frozen=True)
 class Annotation:
     """Camera observation linking a GCP to its pixel location in an image.
 
     Attributes:
         gcp_id: ID of the GCP in the map point registry
-        image_u: Pixel x-coordinate in camera image
-        image_v: Pixel y-coordinate in camera image
+        pixel: Pixel coordinates in camera image (PixelPoint value object)
     """
     gcp_id: str
-    image_u: float
-    image_v: float
+    pixel: PixelPoint
 ```
+
+**Reference**: See `poc_homography/pixel_point.py` for the `PixelPoint` frozen value object (enhanced in PR #163 with `to_pixel` property).
 
 ### CaptureContext Dataclass Formalization
 
@@ -155,18 +159,20 @@ capture:
     zoom: 1.0
   annotations:
     - gcp_id: Z1
-      image_u: 960
-      image_v: 540
+      pixel:
+        x: 960.0
+        y: 540.0
     - gcp_id: Z2
-      image_u: 1200
-      image_v: 600
+      pixel:
+        x: 1200.0
+        y: 600.0
 ```
 
 **Migration Requirements**:
 - Update all files in `config/` directory: `config/gcps_valte_test.yaml`, `config/gcps_valte_test2.yaml`, `config/valte_gcps.yaml`
 - Rename `gcps` arrays to `annotations` everywhere
 - Extract shared PTZ state into single `context` object per capture
-- Update field names: `map_point_id` → `gcp_id`, `pixel_u` → `image_u`, `pixel_v` → `image_v`
+- Update field names: `map_point_id` → `gcp_id`, `pixel_u`/`pixel_v` → `pixel.x`/`pixel.y` (nested PixelPoint structure)
 - Handle legacy formats in loading functions (detect old format, convert on read, warn user)
 
 **Note**: Some YAML files like `config/gcps_valte_test.yaml` use a different structure with `ground_control_points` containing GPS coordinates and image pixels. Determine if these need migration or are a separate format (homography feature_match approach). If they are GCP-based, map the `image.u`/`image.v` fields to the new annotation structure.
