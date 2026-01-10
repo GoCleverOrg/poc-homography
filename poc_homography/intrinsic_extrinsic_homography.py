@@ -1,7 +1,7 @@
 """
 Intrinsic/Extrinsic Homography Provider Implementation.
 
-This module implements the HomographyProviderExtended interface using camera
+This module implements the HomographyProvider interface using camera
 intrinsic parameters (focal length, principal point) and extrinsic parameters
 (rotation, translation) to compute homography transformations.
 
@@ -13,6 +13,7 @@ Coordinate Systems:
     - Camera Frame: X=Right, Y=Down, Z=Forward (standard CV, right-handed)
     - Image Frame: origin top-left, u=right, v=down (pixels)
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,21 +22,18 @@ from typing import Any
 
 import numpy as np
 
-from poc_homography.coordinate_converter import local_xy_to_gps
 from poc_homography.homography_interface import (
-    GPSPositionMixin,
     HomographyApproach,
-    HomographyProviderExtended,
+    HomographyProvider,
     HomographyResult,
-    MapCoordinate,
-    WorldPoint,
 )
+from poc_homography.map_points import MapPoint
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
 
 
-class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended):
+class IntrinsicExtrinsicHomography(HomographyProvider):
     """
     Homography provider using camera intrinsic/extrinsic parameters.
 
@@ -63,13 +61,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         map_height: Height of map visualization in pixels
         pixels_per_meter: Scale factor for map visualization (default: 100)
         calibration_table: Optional dict mapping zoom_factor to intrinsic parameters
-        _camera_gps_lat: Camera GPS latitude for WorldPoint conversion
-        _camera_gps_lon: Camera GPS longitude for WorldPoint conversion
-
-    Note:
-        GPS coordinates (_camera_gps_lat, _camera_gps_lon) default to None.
-        Call set_camera_gps_position(lat, lon) before using project_point()
-        to get WorldPoint results with GPS coordinates.
+        map_id: Identifier of the map for generated MapPoints
     """
 
     # Minimum determinant threshold for valid homography
@@ -115,6 +107,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self,
         width: Pixels,
         height: Pixels,
+        map_id: str,
         pixels_per_meter: Unitless = Unitless(100.0),
         sensor_width_mm: Millimeters = Millimeters(7.18),
         base_focal_length_mm: Millimeters = Millimeters(5.9),
@@ -127,6 +120,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         Args:
             width: Image width in pixels
             height: Image height in pixels
+            map_id: Identifier of the map for generated MapPoints (e.g., "map_valte")
             pixels_per_meter: Scale factor for map visualization (default: 100)
             sensor_width_mm: Physical sensor width in millimeters (default: 7.18)
             base_focal_length_mm: Base focal length at 1x zoom in mm (default: 5.9).
@@ -154,6 +148,7 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         self.width = width
         self.height = height
+        self.map_id = map_id
         self.pixels_per_meter = pixels_per_meter
         self.sensor_width_mm = sensor_width_mm
         self.base_focal_length_mm = base_focal_length_mm
@@ -168,12 +163,11 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self.map_width = 640
         self.map_height = 640
 
-        # GPS reference point for WorldPoint conversion
-        self._camera_gps_lat: float | None = None
-        self._camera_gps_lon: float | None = None
-
         # Current roll angle (degrees, default 0.0 for backward compatibility)
         self.roll_deg: float = 0.0
+
+        # Counter for generating unique point IDs
+        self._point_counter: int = 0
 
         # Last used camera parameters (for metadata)
         self._last_camera_matrix: np.ndarray | None = None
@@ -762,33 +756,6 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
 
         return base_confidence * edge_factor
 
-    def _local_to_gps(self, x_meters: Meters, y_meters: Meters) -> tuple[Degrees, Degrees]:
-        """
-        Convert local metric coordinates to GPS coordinates.
-
-        Uses the shared coordinate_converter module for consistency across
-        the codebase.
-
-        Args:
-            x_meters: X coordinate in meters (East)
-            y_meters: Y coordinate in meters (North)
-
-        Returns:
-            (latitude, longitude): GPS coordinates in decimal degrees
-
-        Raises:
-            RuntimeError: If camera GPS position not set
-        """
-        if self._camera_gps_lat is None or self._camera_gps_lon is None:
-            raise RuntimeError("Camera GPS position not set. Call set_camera_gps_position() first.")
-
-        return local_xy_to_gps(
-            Degrees(self._camera_gps_lat),
-            Degrees(self._camera_gps_lon),
-            Meters(x_meters),
-            Meters(y_meters),
-        )
-
     def _project_image_point_to_world(
         self, image_point: tuple[float, float]
     ) -> tuple[Meters, Meters]:
@@ -949,7 +916,9 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         self.map_height = map_height
 
         # Calculate homography (includes roll rotation)
-        self.H = self._calculate_ground_homography(K, camera_position, pan_deg, tilt_deg, roll_deg)
+        self.H = self._calculate_ground_homography(
+            K, camera_position, Degrees(pan_deg), Degrees(tilt_deg), Degrees(roll_deg)
+        )
 
         # Calculate inverse homography
         det_H = np.linalg.det(self.H)
@@ -984,26 +953,21 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             homography_matrix=self.H.copy(), confidence=self.confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
         """
-        Project image point to GPS world coordinates.
+        Project image point to map pixel coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates
+            image_point: (u, v) pixel coordinates in camera image
+            point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
-            WorldPoint with GPS latitude/longitude and confidence
+            MapPoint with pixel coordinates on the map
 
         Raises:
-            RuntimeError: If no valid homography computed or GPS position not set
+            RuntimeError: If no valid homography computed
             ValueError: If image_point is outside valid bounds
         """
-        if self._camera_gps_lat is None or self._camera_gps_lon is None:
-            raise RuntimeError(
-                "Camera GPS position must be set before projecting to WorldPoint. "
-                "Call set_camera_gps_position(lat, lon) first."
-            )
-
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
@@ -1017,39 +981,53 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         # Project to world coordinates (meters)
         x_world, y_world = self._project_image_point_to_world(image_point)
 
-        # Convert to GPS
-        latitude, longitude = self._local_to_gps(x_world, y_world)
+        # Convert world coordinates to map pixel coordinates
+        map_pixel_x, map_pixel_y = self._world_to_map_pixels(
+            Meters(x_world), Meters(y_world), Pixels(self.map_width), Pixels(self.map_height)
+        )
 
-        # Calculate point-specific confidence
-        point_confidence = self._calculate_point_confidence(image_point, self.confidence)
+        # Generate point ID if not provided
+        if not point_id:
+            self._point_counter += 1
+            point_id = f"proj_{self._point_counter}"
 
-        return WorldPoint(latitude=latitude, longitude=longitude, confidence=point_confidence)
+        return MapPoint(
+            id=point_id,
+            pixel_x=float(map_pixel_x),
+            pixel_y=float(map_pixel_y),
+            map_id=self.map_id,
+        )
 
-    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
+    def project_points(
+        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+    ) -> list[MapPoint]:
         """
-        Project multiple image points to GPS world coordinates.
+        Project multiple image points to map pixel coordinates.
 
         Args:
             image_points: List of (u, v) pixel coordinates
+            point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:
-            List of WorldPoint objects with GPS coordinates
+            List of MapPoint objects with pixel coordinates on the map
 
         Raises:
-            RuntimeError: If no valid homography computed or GPS position not set
+            RuntimeError: If no valid homography computed
             ValueError: If any image_point is outside valid bounds
         """
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
         # Iterate over points
-        world_points = []
+        map_points = []
 
         for image_point in image_points:
-            world_point = self.project_point(image_point)
-            world_points.append(world_point)
+            self._point_counter += 1
+            point_id = f"{point_id_prefix}_{self._point_counter}"
+            map_point = self.project_point(image_point, point_id=point_id)
+            map_points.append(map_point)
 
-        return world_points
+        return map_points
 
     def get_confidence(self) -> float:
         """
@@ -1080,73 +1058,6 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
             return False
 
         return True
-
-    # =========================================================================
-    # HomographyProviderExtended Interface Implementation
-    # =========================================================================
-
-    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
-        """
-        Project image point to local map coordinates.
-
-        Args:
-            image_point: (u, v) pixel coordinates
-
-        Returns:
-            MapCoordinate with x, y in meters from camera position
-
-        Raises:
-            RuntimeError: If no valid homography computed
-            ValueError: If image_point is outside valid bounds
-        """
-        if not self.is_valid():
-            raise RuntimeError("No valid homography available. Call compute_homography() first.")
-
-        u, v = image_point
-        if not (0 <= u < self.width) or not (0 <= v < self.height):
-            raise ValueError(
-                f"Image point ({u}, {v}) outside valid bounds "
-                f"[0, {self.width}) x [0, {self.height})"
-            )
-
-        # Project to world coordinates (meters)
-        x_world, y_world = self._project_image_point_to_world(image_point)
-
-        # Calculate point-specific confidence
-        point_confidence = self._calculate_point_confidence(image_point, self.confidence)
-
-        return MapCoordinate(
-            x=x_world,
-            y=y_world,
-            confidence=point_confidence,
-            elevation=0.0,  # Ground plane assumption
-        )
-
-    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
-        """
-        Project multiple image points to local map coordinates.
-
-        Args:
-            image_points: List of (u, v) pixel coordinates
-
-        Returns:
-            List of MapCoordinate objects with x, y in meters
-
-        Raises:
-            RuntimeError: If no valid homography computed
-            ValueError: If any image_point is outside valid bounds
-        """
-        if not self.is_valid():
-            raise RuntimeError("No valid homography available. Call compute_homography() first.")
-
-        # Iterate over points
-        map_coords = []
-
-        for image_point in image_points:
-            map_coord = self.project_point_to_map(image_point)
-            map_coords.append(map_coord)
-
-        return map_coords
 
     # =========================================================================
     # Additional Utility Methods (from camera_geometry.py)
@@ -1223,12 +1134,10 @@ class IntrinsicExtrinsicHomography(GPSPositionMixin, HomographyProviderExtended)
         Returns:
             (x_px, y_px): Pixel coordinates in map visualization
         """
-        if sw is None:
-            sw = self.map_width
-        if sh is None:
-            sh = self.map_height
+        width = sw if sw is not None else self.map_width
+        height = sh if sh is not None else self.map_height
 
-        return self._world_to_map_pixels(Meters(Xw), Meters(Yw), Pixels(sw), Pixels(sh))
+        return self._world_to_map_pixels(Meters(Xw), Meters(Yw), Pixels(width), Pixels(height))
 
     def get_camera_position(self) -> np.ndarray | None:
         """

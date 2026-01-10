@@ -36,11 +36,15 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.100",
-    "mypy>=1.8",
+    "pyright>=1.1.390",
     "ruff>=0.4",
     "pre-commit>=3.5",
     "types-PyYAML",
     "types-requests",
+    "matplotlib>=3.7",
+    "vulture>=2.14",
+    "deadcode>=2.4",
+    "poethepoet>=0.31",
 ]
 
 [tool.ruff]
@@ -106,23 +110,49 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.mypy]
-python_version = "3.10"
-strict = false
-warn_return_any = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-check_untyped_defs = true
-ignore_missing_imports = true
-exclude = [
-    "build",
-    "dist",
-    ".venv",
-]
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+include = ["poc_homography", "tests", "tools", "examples"]
+exclude = ["build", "dist", ".venv", "**/__pycache__", "main.py", "ptz_discovery_and_control"]
+extraPaths = ["."]
+reportMissingImports = true
+reportMissingTypeStubs = false
 
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
+# Per-directory overrides: relaxed type checking for tests/tools
+# Production code (poc_homography/) uses default strict NewType checking
+# Tests/tools use relaxed checking since they intentionally pass raw literals
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportArgumentType = "none"
+reportOptionalSubscript = "none"
+reportOptionalMemberAccess = "none"
+reportOptionalIterable = "none"
+reportCallIssue = "none"
+reportOperatorIssue = "none"
+reportReturnType = "none"
+reportAbstractUsage = "none"
+reportMissingImports = "none"
+reportUndefinedVariable = "none"
+
+[[tool.pyright.executionEnvironments]]
+root = "tools"
+reportArgumentType = "none"
+reportOptionalSubscript = "none"
+reportOptionalMemberAccess = "none"
+reportOptionalCall = "none"
+reportAttributeAccessIssue = "none"
+reportCallIssue = "none"
+reportOperatorIssue = "none"
+reportMissingImports = "none"
+reportGeneralTypeIssues = "none"
+reportIndexIssue = "none"
+reportAssignmentType = "none"
+reportReturnType = "none"
+
+[[tool.pyright.executionEnvironments]]
+root = "examples"
+reportArgumentType = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -154,3 +184,36 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["poc_homography"]
+exclude = ["tests/", "tools/", "examples/", "build/", "dist/"]
+
+[tool.deadcode]
+exclude = ["build", "dist"]
+
+[tool.poe.tasks]
+lint = "ruff check poc_homography"
+lint-fix = "ruff check poc_homography --fix"
+format = "ruff format poc_homography"
+format-check = "ruff format --check poc_homography"
+typecheck = "pyright poc_homography"
+vulture = "vulture poc_homography --min-confidence 80"
+deadcode = "deadcode . --only poc_homography/"
+deadcode-fix = "deadcode . --only poc_homography/ --fix"
+test = "pytest tests/ -v"
+test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
+pre-commit = "pre-commit run --all-files"
+
+[tool.poe.tasks.validate]
+sequence = ["lint", "format-check", "typecheck", "vulture"]
+help = "Run all validation checks (no tests)"
+
+[tool.poe.tasks.ci]
+sequence = ["lint", "format-check", "typecheck", "vulture", "test"]
+help = "Run full CI: validation + tests"
+
+[tool.poe.tasks.clean]
+shell = "rm -rf build/ dist/ *.egg-info .pytest_cache .coverage htmlcov/ && find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
+help = "Clean build artifacts"

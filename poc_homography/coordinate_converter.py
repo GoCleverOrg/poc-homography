@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
 """
-GPS and local coordinate conversion utilities.
+UTM coordinate conversion utilities.
 
 This module provides coordinate conversion functions between GPS (latitude/longitude)
-and local Cartesian (X, Y) coordinate systems using either:
+and local Cartesian (X, Y) coordinate systems using UTM projection via pyproj.
 
-1. Equirectangular projection (simple spherical approximation)
-2. UTM projection via pyproj (accurate ellipsoidal model)
-
-The UTM-based approach is recommended when working with georeferenced imagery
-that uses UTM coordinates (e.g., ETRS89 / UTM Zone 30N - EPSG:25830).
+The UTM-based approach provides accurate conversions that match georeferenced
+imagery using UTM coordinates (e.g., ETRS89 / UTM Zone 30N - EPSG:25830).
 
 Coordinate System Convention:
     - X axis: East-West direction (positive = East, negative = West)
     - Y axis: North-South direction (positive = North, negative = South)
     - Reference point: (0, 0) in local coordinates
-
-Accuracy Notes (Equirectangular):
-    - Best accuracy: distances < 1 km
-    - Good accuracy: distances < 10 km
-    - Decreasing accuracy: distances > 10 km
-    - Has anisotropic scale errors (~2% X, ~5% Y vs UTM)
 
 Accuracy Notes (UTM via pyproj):
     - High accuracy at all reasonable distances
@@ -45,9 +36,8 @@ Axis Order Convention (CRITICAL):
 
     See: https://pyproj4.github.io/pyproj/stable/api/transformer.html#pyproj.transformer.Transformer.from_crs
 """
-from __future__ import annotations
 
-import math
+from __future__ import annotations
 
 from poc_homography.types import Degrees, Meters
 
@@ -129,6 +119,12 @@ class UTMConverter:
         self._ref_lat = lat
         self._ref_lon = lon
 
+    def _require_reference(self) -> tuple[float, float]:
+        """Return (easting, northing) or raise ValueError if not set."""
+        if self._ref_easting is None or self._ref_northing is None:
+            raise ValueError("Reference point not set. Call set_reference() first.")
+        return self._ref_easting, self._ref_northing
+
     def gps_to_local_xy(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
         """
         Convert GPS coordinates to local X, Y relative to reference point.
@@ -140,13 +136,9 @@ class UTMConverter:
         Returns:
             Tuple of (x_meters, y_meters) relative to reference point
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
+        ref_easting, ref_northing = self._require_reference()
         easting, northing = self._to_utm.transform(lon, lat)
-        x = Meters(easting - self._ref_easting)
-        y = Meters(northing - self._ref_northing)
-        return x, y
+        return Meters(easting - ref_easting), Meters(northing - ref_northing)
 
     def utm_to_local_xy(self, easting: Meters, northing: Meters) -> tuple[Meters, Meters]:
         """
@@ -159,12 +151,8 @@ class UTMConverter:
         Returns:
             Tuple of (x_meters, y_meters) relative to reference point
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
-        x = Meters(easting - self._ref_easting)
-        y = Meters(northing - self._ref_northing)
-        return x, y
+        ref_easting, ref_northing = self._require_reference()
+        return Meters(easting - ref_easting), Meters(northing - ref_northing)
 
     def local_xy_to_gps(self, x: Meters, y: Meters) -> tuple[Degrees, Degrees]:
         """
@@ -177,12 +165,8 @@ class UTMConverter:
         Returns:
             Tuple of (latitude, longitude) in decimal degrees
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
-        easting = self._ref_easting + x
-        northing = self._ref_northing + y
-        lon, lat = self._to_wgs84.transform(easting, northing)
+        ref_easting, ref_northing = self._require_reference()
+        lon, lat = self._to_wgs84.transform(ref_easting + x, ref_northing + y)
         return Degrees(lat), Degrees(lon)
 
     def local_xy_to_utm(self, x: Meters, y: Meters) -> tuple[Meters, Meters]:
@@ -196,12 +180,8 @@ class UTMConverter:
         Returns:
             Tuple of (easting, northing) in UTM coordinates
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
-
-        easting = Meters(self._ref_easting + x)
-        northing = Meters(self._ref_northing + y)
-        return easting, northing
+        ref_easting, ref_northing = self._require_reference()
+        return Meters(ref_easting + x), Meters(ref_northing + y)
 
     def gps_to_utm(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
         """
@@ -250,187 +230,6 @@ def get_utm_converter(utm_crs: str = DEFAULT_UTM_CRS) -> UTMConverter:
     if _utm_converter is None or _utm_converter.utm_crs != utm_crs:
         _utm_converter = UTMConverter(utm_crs)
     return _utm_converter
-
-
-def gps_to_local_xy_utm(
-    ref_lat: Degrees, ref_lon: Degrees, lat: Degrees, lon: Degrees, utm_crs: str = DEFAULT_UTM_CRS
-) -> tuple[Meters, Meters]:
-    """
-    Convert GPS to local XY using UTM projection (accurate method).
-
-    This is the recommended method when working with georeferenced imagery.
-
-    Args:
-        ref_lat: Reference latitude in decimal degrees
-        ref_lon: Reference longitude in decimal degrees
-        lat: Target latitude in decimal degrees
-        lon: Target longitude in decimal degrees
-        utm_crs: UTM coordinate reference system (default: EPSG:25830)
-
-    Returns:
-        Tuple of (x_meters, y_meters)
-    """
-    converter = get_utm_converter(utm_crs)
-    converter.set_reference(ref_lat, ref_lon)
-    return converter.gps_to_local_xy(lat, lon)
-
-
-def local_xy_to_gps_utm(
-    ref_lat: Degrees, ref_lon: Degrees, x: Meters, y: Meters, utm_crs: str = DEFAULT_UTM_CRS
-) -> tuple[Degrees, Degrees]:
-    """
-    Convert local XY to GPS using UTM projection (accurate method).
-
-    Args:
-        ref_lat: Reference latitude in decimal degrees
-        ref_lon: Reference longitude in decimal degrees
-        x: East-West distance in meters
-        y: North-South distance in meters
-        utm_crs: UTM coordinate reference system (default: EPSG:25830)
-
-    Returns:
-        Tuple of (latitude, longitude)
-    """
-    converter = get_utm_converter(utm_crs)
-    converter.set_reference(ref_lat, ref_lon)
-    return converter.local_xy_to_gps(x, y)
-
-
-def gps_to_local_xy(
-    ref_lat: Degrees, ref_lon: Degrees, lat: Degrees, lon: Degrees
-) -> tuple[Meters, Meters]:
-    """
-    Convert GPS coordinates to local X, Y coordinates relative to a reference point.
-
-    Uses equirectangular projection approximation, which is accurate for small
-    distances (< 10 km). The conversion assumes a spherical Earth model.
-
-    Formula:
-        x = Δλ × cos(φ_avg) × R
-        y = Δφ × R
-
-    where:
-        Δλ = difference in longitude (radians)
-        Δφ = difference in latitude (radians)
-        φ_avg = average latitude of reference and target points (radians)
-        R = Earth's mean radius (6,371,000 meters)
-
-    Args:
-        ref_lat: Reference point latitude in decimal degrees
-        ref_lon: Reference point longitude in decimal degrees
-        lat: Target point latitude in decimal degrees
-        lon: Target point longitude in decimal degrees
-
-    Returns:
-        Tuple of (x_meters, y_meters) where:
-            x_meters: East-West distance (positive = East of reference)
-            y_meters: North-South distance (positive = North of reference)
-
-    Raises:
-        ValueError: If latitude values are outside valid range [-90, 90] or
-                   if near polar regions (absolute latitude > 85 degrees)
-
-    Example:
-        >>> ref_lat, ref_lon = 39.640472, -0.230194
-        >>> lat, lon = 39.640444, -0.230111
-        >>> x, y = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
-        >>> print(f"Point is {x:.2f}m East and {y:.2f}m North of reference")
-    """
-    # Validate latitude range
-    if not -90 <= ref_lat <= 90 or not -90 <= lat <= 90:
-        raise ValueError(f"Latitude must be in range [-90, 90]. Got ref_lat={ref_lat}, lat={lat}")
-
-    # Warn about polar regions where equirectangular projection is inaccurate
-    if abs(ref_lat) > 85 or abs(lat) > 85:
-        raise ValueError(
-            f"Equirectangular projection is not accurate near poles. "
-            f"Latitude should be within [-85, 85]. "
-            f"Got ref_lat={ref_lat}, lat={lat}"
-        )
-
-    # Convert to radians
-    ref_lat_rad = math.radians(ref_lat)
-    lat_rad = math.radians(lat)
-    delta_lat = math.radians(lat - ref_lat)
-    delta_lon = math.radians(lon - ref_lon)
-
-    # Equirectangular projection
-    # Use average latitude for better accuracy across the distance
-    avg_lat_rad = (ref_lat_rad + lat_rad) / 2
-
-    x = delta_lon * math.cos(avg_lat_rad) * EARTH_RADIUS_M
-    y = delta_lat * EARTH_RADIUS_M
-
-    return Meters(x), Meters(y)
-
-
-def local_xy_to_gps(
-    ref_lat: Degrees, ref_lon: Degrees, x_meters: Meters, y_meters: Meters
-) -> tuple[Degrees, Degrees]:
-    """
-    Convert local X, Y coordinates to GPS coordinates (inverse of gps_to_local_xy).
-
-    Uses the inverse equirectangular projection to convert local Cartesian
-    coordinates back to GPS latitude/longitude.
-
-    This is the more accurate Formula B approach:
-        Δφ = y / R
-        Δλ = x / (R × cos(φ_ref))
-
-    where:
-        Δφ = latitude difference (radians)
-        Δλ = longitude difference (radians)
-        φ_ref = reference latitude (radians)
-        R = Earth's mean radius (6,371,000 meters)
-
-    Args:
-        ref_lat: Reference point latitude in decimal degrees
-        ref_lon: Reference point longitude in decimal degrees
-        x_meters: East-West distance in meters (positive = East)
-        y_meters: North-South distance in meters (positive = North)
-
-    Returns:
-        Tuple of (latitude, longitude) in decimal degrees
-
-    Raises:
-        ValueError: If reference latitude is outside valid range [-90, 90] or
-                   if near polar regions (absolute latitude > 85 degrees)
-
-    Example:
-        >>> ref_lat, ref_lon = 39.640472, -0.230194
-        >>> x_meters, y_meters = 5.5, -3.0
-        >>> lat, lon = local_xy_to_gps(ref_lat, ref_lon, x_meters, y_meters)
-        >>> print(f"GPS: {lat:.6f}°, {lon:.6f}°")
-
-    Note:
-        This function uses the reference latitude (not average latitude) for the
-        cosine correction term, which is appropriate for the inverse transformation
-        and matches Formula B specifications.
-    """
-    # Validate latitude range
-    if not -90 <= ref_lat <= 90:
-        raise ValueError(f"Reference latitude must be in range [-90, 90]. Got ref_lat={ref_lat}")
-
-    # Warn about polar regions where equirectangular projection is inaccurate
-    if abs(ref_lat) > 85:
-        raise ValueError(
-            f"Equirectangular projection is not accurate near poles. "
-            f"Reference latitude should be within [-85, 85]. "
-            f"Got ref_lat={ref_lat}"
-        )
-
-    # Convert reference position to radians
-    ref_lat_rad = math.radians(ref_lat)
-
-    # Calculate latitude/longitude deltas in radians (Formula B)
-    delta_lat_rad = y_meters / EARTH_RADIUS_M
-    delta_lon_rad = x_meters / (EARTH_RADIUS_M * math.cos(ref_lat_rad))
-
-    # Convert to degrees and add to reference position
-    lat = ref_lat + math.degrees(delta_lat_rad)
-    lon = ref_lon + math.degrees(delta_lon_rad)
-
-    return Degrees(lat), Degrees(lon)
 
 
 class GCPCoordinateConverter:
@@ -483,10 +282,18 @@ class GCPCoordinateConverter:
         """Return True if using UTM projection, False if using equirectangular."""
         return self.prefer_utm and self._utm_converter is not None
 
-    @property
-    def method_name(self) -> str:
-        """Return the name of the conversion method being used."""
-        return f"UTM ({self.utm_crs})" if self.using_utm else "Equirectangular"
+    def _require_gps_reference(self) -> None:
+        """Raise ValueError if GPS reference point not set."""
+        if self._ref_lat is None or self._ref_lon is None:
+            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+
+    def _require_utm_reference(self) -> tuple[float, float]:
+        """Return (easting, northing) or raise ValueError if not set."""
+        if self._ref_easting is None or self._ref_northing is None:
+            raise ValueError(
+                "Reference point not set. Call set_reference_gps() or set_reference_utm() first."
+            )
+        return self._ref_easting, self._ref_northing
 
     def set_reference_gps(self, lat: Degrees, lon: Degrees):
         """
@@ -534,13 +341,12 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (x_meters, y_meters)
         """
-        if self._ref_lat is None or self._ref_lon is None:
-            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+        self._require_gps_reference()
 
         if self._utm_converter:
             return self._utm_converter.gps_to_local_xy(lat, lon)
         else:
-            return gps_to_local_xy(Degrees(self._ref_lat), Degrees(self._ref_lon), lat, lon)
+            raise ValueError("GPS conversion requires pyproj. Install with: pip install pyproj")
 
     def utm_to_local(self, easting: Meters, northing: Meters) -> tuple[Meters, Meters]:
         """
@@ -553,16 +359,10 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (x_meters, y_meters)
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError(
-                "Reference point not set. Call set_reference_gps() or set_reference_utm() first."
-            )
-
+        ref_easting, ref_northing = self._require_utm_reference()
         if self._utm_converter:
             return self._utm_converter.utm_to_local_xy(easting, northing)
-        else:
-            # Direct calculation without pyproj
-            return Meters(easting - self._ref_easting), Meters(northing - self._ref_northing)
+        return Meters(easting - ref_easting), Meters(northing - ref_northing)
 
     def local_to_gps(self, x: Meters, y: Meters) -> tuple[Degrees, Degrees]:
         """
@@ -575,13 +375,12 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (latitude, longitude)
         """
-        if self._ref_lat is None or self._ref_lon is None:
-            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+        self._require_gps_reference()
 
         if self._utm_converter:
             return self._utm_converter.local_xy_to_gps(x, y)
         else:
-            return local_xy_to_gps(Degrees(self._ref_lat), Degrees(self._ref_lon), x, y)
+            raise ValueError("GPS conversion requires pyproj. Install with: pip install pyproj")
 
     def local_to_utm(self, x: Meters, y: Meters) -> tuple[Meters, Meters]:
         """
@@ -594,13 +393,10 @@ class GCPCoordinateConverter:
         Returns:
             Tuple of (easting, northing)
         """
-        if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set with UTM.")
-
+        ref_easting, ref_northing = self._require_utm_reference()
         if self._utm_converter:
             return self._utm_converter.local_xy_to_utm(x, y)
-        else:
-            return Meters(self._ref_easting + x), Meters(self._ref_northing + y)
+        return Meters(ref_easting + x), Meters(ref_northing + y)
 
     def convert_point(self, point: dict) -> tuple[Meters, Meters]:
         """

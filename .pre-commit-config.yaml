@@ -17,14 +17,18 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  # mypy disabled in pre-commit due to existing type errors
-  # Run manually with: uv run mypy poc_homography/
-  # - repo: local
-  #   hooks:
-  #     - id: mypy
-  #       name: mypy
-  #       entry: uv run mypy
-  #       language: system
-  #       types: [python]
-  #       args: [poc_homography/]
-  #       pass_filenames: false
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: vulture
+        name: vulture (dead code)
+        entry: uv run vulture poc_homography --min-confidence 80
+        language: system
+        types: [python]
+        pass_filenames: false

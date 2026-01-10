@@ -48,7 +48,9 @@ def main():
     print(f"    Loaded {len(gcps)} ground control points")
     print(f"    Camera location: ({camera_info['latitude']:.6f}, {camera_info['longitude']:.6f})")
     print(f"    Camera height: {camera_info['height_meters']:.2f}m")
-    print(f"    Camera orientation: pan={camera_info['pan_deg']:.1f}°, tilt={camera_info['tilt_deg']:.1f}°")
+    print(
+        f"    Camera orientation: pan={camera_info['pan_deg']:.1f}°, tilt={camera_info['tilt_deg']:.1f}°"
+    )
 
     # Step 3: Load image (optional, for visualization)
     print("\n[3] Loading camera image...")
@@ -61,7 +63,7 @@ def main():
 
     # Step 4: Compute homography
     print("\n[4] Computing homography from GCPs...")
-    homography = MapPointHomography()
+    homography = MapPointHomography(map_id=map_registry.map_id)
     result = homography.compute_from_gcps(gcps, map_registry, ransac_threshold=50.0)
 
     print(f"    GCPs used: {result.num_gcps}")
@@ -83,9 +85,11 @@ def main():
 
     for name, camera_pixel in test_points:
         try:
-            map_coord = homography.camera_to_map(camera_pixel)
-            print(f"    {name:20s} ({camera_pixel[0]:7.1f}, {camera_pixel[1]:6.1f}) px "
-                  f"-> ({map_coord[0]:10.2f}, {map_coord[1]:11.2f}) m")
+            map_point = homography.camera_to_map(camera_pixel)
+            print(
+                f"    {name:20s} ({camera_pixel[0]:7.1f}, {camera_pixel[1]:6.1f}) px "
+                f"-> ({map_point.pixel_x:10.2f}, {map_point.pixel_y:11.2f}) px"
+            )
         except Exception as e:
             print(f"    {name:20s} - Error: {e}")
 
@@ -101,8 +105,10 @@ def main():
 
             try:
                 camera_pixel = homography.map_to_camera(map_coord)
-                print(f"    Point {point_id:5s} ({map_coord[0]:10.2f}, {map_coord[1]:11.2f}) m "
-                      f"-> ({camera_pixel[0]:7.1f}, {camera_pixel[1]:6.1f}) px")
+                print(
+                    f"    Point {point_id:5s} ({map_coord[0]:10.2f}, {map_coord[1]:11.2f}) m "
+                    f"-> ({camera_pixel[0]:7.1f}, {camera_pixel[1]:6.1f}) px"
+                )
             except Exception as e:
                 print(f"    Point {point_id:5s} - Error: {e}")
 
@@ -121,14 +127,16 @@ def main():
         error = np.linalg.norm(np.array(recovered_pixel) - np.array(original_pixel))
         errors.append(error)
 
-        print(f"    GCP {i+1} ({gcp['map_point_id']:5s}): "
-              f"original=({original_pixel[0]:7.1f}, {original_pixel[1]:6.1f}), "
-              f"recovered=({recovered_pixel[0]:7.1f}, {recovered_pixel[1]:6.1f}), "
-              f"error={error:.2f} px")
+        print(
+            f"    GCP {i + 1} ({gcp['map_point_id']:5s}): "
+            f"original=({original_pixel[0]:7.1f}, {original_pixel[1]:6.1f}), "
+            f"recovered=({recovered_pixel[0]:7.1f}, {recovered_pixel[1]:6.1f}), "
+            f"error={error:.2f} px"
+        )
 
     mean_error = np.mean(errors)
     max_error = np.max(errors)
-    print(f"\n    Round-trip statistics:")
+    print("\n    Round-trip statistics:")
     print(f"      Mean error: {mean_error:.2f} pixels")
     print(f"      Max error: {max_error:.2f} pixels")
 
@@ -140,10 +148,12 @@ def main():
     map_coords = homography.camera_to_map_batch(camera_pixels)
 
     print(f"    Projected {len(camera_pixels)} camera pixels to map coordinates in batch")
-    print(f"    Sample results:")
+    print("    Sample results:")
     for i in range(min(3, len(map_coords))):
-        print(f"      {i+1}. ({camera_pixels[i][0]:7.1f}, {camera_pixels[i][1]:6.1f}) px "
-              f"-> ({map_coords[i][0]:10.2f}, {map_coords[i][1]:11.2f}) m")
+        print(
+            f"      {i + 1}. ({camera_pixels[i][0]:7.1f}, {camera_pixels[i][1]:6.1f}) px "
+            f"-> ({map_coords[i].pixel_x:10.2f}, {map_coords[i].pixel_y:11.2f}) px"
+        )
 
     # Summary
     print("\n" + "=" * 80)

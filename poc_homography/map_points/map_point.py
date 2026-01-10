@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache as cache
 from typing import Any
+
+from poc_homography.pixel_point import PixelPoint
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,12 @@ class MapPoint:
     pixel_y: float
     map_id: str
 
+    @property
+    @cache(maxsize=1)  # noqa: B019 - safe on frozen dataclass
+    def pixel(self) -> PixelPoint:
+        """Get pixel coordinates as a PixelPoint."""
+        return PixelPoint(self.pixel_x, self.pixel_y)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert MapPoint to a dictionary for JSON serialization.
 
@@ -40,7 +49,7 @@ class MapPoint:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MapPoint":
+    def from_dict(cls, data: dict[str, Any]) -> MapPoint:
         """Create MapPoint from a dictionary.
 
         Args:

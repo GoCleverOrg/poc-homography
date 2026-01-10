@@ -350,7 +350,7 @@ class TestHomographySyntheticProjection:
         width, height = dimensions
 
         # Setup IntrinsicExtrinsicHomography
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
         K = CameraGeometry.get_intrinsics(zoom, width, height)
 
         # Calculate homography
@@ -438,7 +438,7 @@ class TestHomographyShapeAndNormalization:
         """Property: IntrinsicExtrinsicHomography must be 3x3 (not 3x4)."""
         width, height = dimensions
 
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
         K = CameraGeometry.get_intrinsics(zoom, width, height)
         H = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
 
@@ -485,7 +485,7 @@ class TestHomographyShapeAndNormalization:
         """Property: IntrinsicExtrinsicHomography must be normalized (H[2,2] = 1)."""
         width, height = dimensions
 
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
         K = CameraGeometry.get_intrinsics(zoom, width, height)
         H = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
 
@@ -528,7 +528,7 @@ class TestHomographyConsistencyBetweenModules:
         H_geo = geo.H
 
         # Setup IntrinsicExtrinsicHomography
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
         H_ieh = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
 
         # Both should be 3x3
@@ -642,7 +642,7 @@ class TestSpecificCameraConfigurations:
             K = CameraGeometry.get_intrinsics(zoom, width, height)
             geo.set_camera_parameters(K, pos, pan_deg, tilt_deg, 640, 640)
 
-            ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+            ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
             H_ieh = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
 
             # Verify both are 3x3

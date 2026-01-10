@@ -3,7 +3,7 @@
 Map Debug Server Module for POC Homography Project.
 
 This module provides a lightweight web server for visualizing GCP validation results
-with side-by-side camera frame and satellite map views. Uses Python's built-in
+with side-by-side camera frame and map image views. Uses Python's built-in
 http.server module for zero-dependency deployment.
 
 Example Usage:
@@ -13,35 +13,29 @@ Example Usage:
     start_server(
         output_dir='output',
         camera_frame_path='output/annotated_frame.jpg',
-        kml_path='output/gcp_validation.kml',
-        camera_gps={'latitude': 39.640500, 'longitude': -0.230000},
+        map_image_path='output/map_image.jpg',
         gcps=[...],
         validation_results={...},
         auto_open=True
     )
-
-Environment Variables:
-    GOOGLE_MAPS_API_KEY: Optional API key for Google Maps satellite layer
 """
+
 from __future__ import annotations
 
 import http.server
 import json
-import os
 import shutil
 import socketserver
 import webbrowser
 from pathlib import Path
 from typing import Any
 
-from poc_homography.satellite_layers import generate_satellite_layers_js
 from poc_homography.server_utils import find_available_port
 
 
 def generate_html(
     camera_frame_path: str,
-    kml_path: str,
-    camera_gps: dict[str, float],
+    map_image_path: str,
     gcps: list[dict[str, Any]],
     validation_results: dict[str, Any],
     homography_matrix: list[list[float]] | None = None,
@@ -49,17 +43,15 @@ def generate_html(
     """
     Generate self-contained HTML string for the debug visualization.
 
-    Creates an HTML page with side-by-side camera frame and map views.
-    The camera frame includes canvas overlay with GCP markers, and the map
-    uses Leaflet.js with ESRI World Imagery tiles.
+    Creates an HTML page with side-by-side camera frame and map image views.
+    Both panels include canvas overlays with GCP markers showing pixel coordinates.
 
     Args:
         camera_frame_path: Relative path to camera frame image (from output_dir)
-        kml_path: Relative path to KML file (from output_dir)
-        camera_gps: Camera GPS position {'latitude': float, 'longitude': float}
+        map_image_path: Relative path to map image (from output_dir)
         gcps: List of GCP dictionaries with structure:
             {
-                'gps': {'latitude': float, 'longitude': float},
+                'map': {'pixel_x': float, 'pixel_y': float},
                 'image': {'u': float, 'v': float},
                 'metadata': {'description': str}
             }
@@ -67,14 +59,14 @@ def generate_html(
             {
                 'details': [
                     {
-                        'projected_gps': (lat, lon),
+                        'projected_map': (pixel_x, pixel_y),
                         'projected_pixel': (u, v),
-                        'error_meters': float
+                        'error_pixels': float
                     },
                     ...
                 ]
             }
-        homography_matrix: Optional 3x3 inverse homography matrix (image -> local metric)
+        homography_matrix: Optional 3x3 inverse homography matrix (image -> map)
             for interactive projection. If provided, enables click-to-project feature.
 
     Returns:
@@ -83,38 +75,31 @@ def generate_html(
     Example:
         >>> html = generate_html(
         ...     'annotated_frame.jpg',
-        ...     'gcp_validation.kml',
-        ...     {'latitude': 39.640500, 'longitude': -0.230000},
+        ...     'map_image.jpg',
         ...     gcps=[...],
         ...     validation_results={...}
         ... )
     """
-    # Check for Google Maps API key and generate satellite layers
-    google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
-    satellite_layers_js = generate_satellite_layers_js(
-        google_api_key=google_maps_api_key if google_maps_api_key else None, default_layer="google"
-    )
-
     # Prepare GCP data for JavaScript
     gcp_data = []
     for i, gcp in enumerate(gcps):
-        gps = gcp.get("gps", {})
+        map_coords = gcp.get("map", {})
         image = gcp.get("image", {})
         metadata = gcp.get("metadata", {})
 
         gcp_entry = {
             "name": metadata.get("description", f"GCP {i + 1}"),
-            "original_gps": {"lat": gps.get("latitude", 0), "lon": gps.get("longitude", 0)},
+            "original_map": {"x": map_coords.get("pixel_x", 0), "y": map_coords.get("pixel_y", 0)},
             "pixel": {"u": image.get("u", 0), "v": image.get("v", 0)},
         }
 
-        # Add projected GPS and projected pixel if available
+        # Add projected map coordinates and projected pixel if available
         if validation_results and "details" in validation_results:
             details = validation_results["details"]
-            if i < len(details) and "projected_gps" in details[i]:
-                proj_lat, proj_lon = details[i]["projected_gps"]
-                gcp_entry["projected_gps"] = {"lat": proj_lat, "lon": proj_lon}
-                gcp_entry["error_meters"] = details[i].get("error_meters", 0)
+            if i < len(details) and "projected_map" in details[i]:
+                proj_x, proj_y = details[i]["projected_map"]
+                gcp_entry["projected_map"] = {"x": proj_x, "y": proj_y}
+                gcp_entry["error_pixels"] = details[i].get("error_pixels", 0)
 
                 # Add projected pixel coordinates if available
                 if "projected_pixel" in details[i]:
@@ -131,10 +116,10 @@ def generate_html(
         validation_results.get("gcps_tested", len(gcps)) if validation_results else len(gcps)
     )
 
-    # GPS error stats (in meters)
-    mean_gps_error = validation_results.get("mean_error_m", 0) if validation_results else 0
-    min_gps_error = validation_results.get("min_error_m", 0) if validation_results else 0
-    max_gps_error = validation_results.get("max_error_m", 0) if validation_results else 0
+    # Map pixel error stats
+    mean_map_error = validation_results.get("mean_error_px", 0) if validation_results else 0
+    min_map_error = validation_results.get("min_error_px", 0) if validation_results else 0
+    max_map_error = validation_results.get("max_error_px", 0) if validation_results else 0
 
     # Pixel reprojection error stats
     reproj = validation_results.get("reprojection_error", {}) if validation_results else {}
@@ -144,12 +129,13 @@ def generate_html(
 
     # Determine CSS classes for color coding
     conf_class = "good" if confidence >= 0.7 else ("warn" if confidence >= 0.5 else "bad")
-    mean_gps_class = "good" if mean_gps_error < 1.0 else ("warn" if mean_gps_error < 3.0 else "bad")
+    mean_map_class = (
+        "good" if mean_map_error < 5.0 else ("warn" if mean_map_error < 10.0 else "bad")
+    )
     mean_px_class = "good" if mean_px_error < 5.0 else ("warn" if mean_px_error < 10.0 else "bad")
 
     # Convert data to JSON for embedding in HTML
     gcp_data_json = json.dumps(gcp_data)
-    camera_gps_json = json.dumps(camera_gps)
     homography_json = json.dumps(homography_matrix) if homography_matrix else "null"
 
     # Generate HTML with embedded data
@@ -159,11 +145,6 @@ def generate_html(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GCP Map Debug Visualization</title>
-
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossorigin=""/>
 
     <style>
         * {{
@@ -281,7 +262,7 @@ def generate_html(
             background: #404040;
         }}
 
-        /* Camera frame styling */
+        /* Image container styling (for both camera and map) */
         .image-container {{
             position: relative;
             width: 100%;
@@ -292,24 +273,18 @@ def generate_html(
             background: #1a1a1a;
         }}
 
-        #cameraFrame {{
+        .image-container img {{
             max-width: 100%;
             max-height: 100%;
             display: block;
         }}
 
-        #gcpCanvas {{
+        .image-container canvas {{
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
-        }}
-
-        /* Map styling */
-        #map {{
-            width: 100%;
-            height: 100%;
         }}
 
         /* Legend styling */
@@ -348,11 +323,6 @@ def generate_html(
             font-size: 13px;
         }}
 
-        .legend-item svg {{
-            margin-right: 8px;
-            flex-shrink: 0;
-        }}
-
         .legend-color {{
             width: 20px;
             height: 20px;
@@ -367,13 +337,7 @@ def generate_html(
             margin-right: 8px;
         }}
 
-        /* Remove default Leaflet marker styling for custom icons */
-        .custom-marker {{
-            background: transparent;
-            border: none;
-        }}
-
-        /* Tooltip styling - use fixed positioning to render on top of all panels */
+        /* Tooltip styling */
         .gcp-tooltip {{
             position: fixed;
             background: rgba(0, 0, 0, 0.9);
@@ -399,8 +363,8 @@ def generate_html(
         }}
 
         /* Interactive canvas cursor */
-        #gcpCanvas.interactive {{
-            pointer-events: auto;
+        .interactive {{
+            pointer-events: auto !important;
             cursor: crosshair;
         }}
 
@@ -423,7 +387,6 @@ def generate_html(
 
         /* Control buttons */
         .control-btn {{
-            position: absolute;
             background: rgba(45, 45, 45, 0.95);
             border: 1px solid #555;
             color: #e0e0e0;
@@ -431,29 +394,12 @@ def generate_html(
             border-radius: 6px;
             font-size: 12px;
             cursor: pointer;
-            z-index: 1001;
             transition: all 0.2s ease;
         }}
 
         .control-btn:hover {{
             background: rgba(60, 60, 60, 0.95);
             border-color: #777;
-        }}
-
-        .control-btn.active {{
-            background: rgba(76, 175, 80, 0.3);
-            border-color: #4CAF50;
-            color: #4CAF50;
-        }}
-
-        .control-btn.reset {{
-            top: 10px;
-            right: 10px;
-        }}
-
-        .control-btn.zoom-mode {{
-            top: 10px;
-            left: 10px;
         }}
 
         .control-btn:disabled {{
@@ -480,9 +426,9 @@ def generate_html(
                 </div>
                 <div class="stat-group">
                     <div class="stat">
-                        <span class="stat-label">GPS Error:</span>
-                        <span class="stat-value {mean_gps_class}">{mean_gps_error:.2f}m</span>
-                        <span class="stat-label">(min: {min_gps_error:.2f}m, max: {max_gps_error:.2f}m)</span>
+                        <span class="stat-label">Map Error:</span>
+                        <span class="stat-value {mean_map_class}">{mean_map_error:.2f}px</span>
+                        <span class="stat-label">(min: {min_map_error:.2f}px, max: {max_map_error:.2f}px)</span>
                     </div>
                 </div>
                 <div class="stat-group">
@@ -505,7 +451,6 @@ def generate_html(
                         <canvas id="gcpCanvas"></canvas>
                         <div id="leftTooltip" class="gcp-tooltip" style="display: none;"></div>
                         <div id="clickInstruction" class="click-instruction">Click to project point to map</div>
-                        <button id="zoomModeBtn" class="control-btn zoom-mode">Precision Zoom: OFF</button>
                     </div>
                     <div class="legend top-right">
                         <div class="legend-title">Legend</div>
@@ -531,37 +476,28 @@ def generate_html(
 
             <div class="divider"></div>
 
-            <!-- Right Panel: Satellite Map -->
+            <!-- Right Panel: Map Image -->
             <div class="panel">
-                <div class="panel-header">
-                    Satellite Map
-                    <button id="resetViewBtn" class="control-btn reset header-btn">Reset View</button>
-                </div>
+                <div class="panel-header">Map Image</div>
                 <div class="panel-content">
-                    <div id="map"></div>
-                    <div id="rightTooltip" class="gcp-tooltip" style="display: none;"></div>
+                    <div class="image-container">
+                        <img id="mapImage" src="{map_image_path}" alt="Map Image">
+                        <canvas id="mapCanvas"></canvas>
+                        <div id="rightTooltip" class="gcp-tooltip" style="display: none;"></div>
+                    </div>
                     <div class="legend">
                         <div class="legend-title">Legend</div>
                         <div class="legend-item">
-                            <svg width="20" height="20" viewBox="0 0 24 24">
-                                <polygon points="12,2 15,9 22,9 17,14 19,21 12,17 5,21 7,14 2,9 9,9"
-                                         fill="#00ff00" stroke="white" stroke-width="1.5"/>
-                            </svg>
+                            <div class="legend-color" style="background: #00ff00;"></div>
                             <span>Original GCP</span>
                         </div>
                         <div class="legend-item">
-                            <svg width="20" height="20" viewBox="0 0 24 24">
-                                <polygon points="12,2 22,12 12,22 2,12"
-                                         fill="#ff0000" stroke="white" stroke-width="1.5"/>
-                            </svg>
+                            <div class="legend-color" style="background: #ff0000;"></div>
                             <span>Projected GCP</span>
                         </div>
                         <div class="legend-item">
-                            <svg width="20" height="20" viewBox="0 0 24 24">
-                                <polygon points="12,2 15,9 22,9 17,14 19,21 12,17 5,21 7,14 2,9 9,9"
-                                         fill="#ffd700" stroke="white" stroke-width="1.5"/>
-                            </svg>
-                            <span>Accurate GCP (&lt;50cm)</span>
+                            <div class="legend-color" style="background: #ffd700;"></div>
+                            <span>Accurate GCP (&lt;5px)</span>
                         </div>
                         <div class="legend-item">
                             <div class="legend-line" style="background: #ffff00;"></div>
@@ -573,25 +509,15 @@ def generate_html(
         </div>
     </div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-            crossorigin=""></script>
-
     <script>
         // Embedded data
         const gcpData = {gcp_data_json};
-        const cameraGPS = {camera_gps_json};
         const homographyMatrix = {homography_json};
-        const EARTH_RADIUS_M = 6371000;
 
         // Interactive projection state
-        let clickedMarkers = [];  // Store markers from clicks
+        let clickedMarkers = [];  // Store clicked markers
         let hoveredGcpIndex = null;  // Currently hovered GCP index
         let hoveredClickedIndex = null;  // Currently hovered clicked point index
-        let savedMapView = null;  // Store map view before zoom
-        let initialMapView = null;  // Store initial map view for reset
-        let precisionZoomEnabled = false;  // Precision zoom mode toggle
 
         // Make legends draggable
         function makeDraggable(element) {{
@@ -599,9 +525,6 @@ def generate_html(
             let startX, startY, startLeft, startTop;
 
             element.addEventListener('mousedown', function(e) {{
-                // Ignore if clicking on interactive elements
-                if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
-
                 isDragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -611,7 +534,6 @@ def generate_html(
                 startLeft = rect.left - parentRect.left;
                 startTop = rect.top - parentRect.top;
 
-                // Reset right/bottom positioning to use left/top
                 element.style.right = 'auto';
                 element.style.bottom = 'auto';
                 element.style.left = startLeft + 'px';
@@ -640,646 +562,29 @@ def generate_html(
             document.querySelectorAll('.legend').forEach(makeDraggable);
         }});
 
-        // Initialize map with high max zoom for over-zooming
-        const map = L.map('map', {{
-            maxZoom: 23  // Allow over-zooming for precision inspection
-        }});
+        // ============================================================
+        // Camera Frame Canvas
+        // ============================================================
 
-        // Satellite layer configuration (from shared module)
-        {satellite_layers_js}
+        const cameraImg = document.getElementById('cameraFrame');
+        const gcpCanvas = document.getElementById('gcpCanvas');
+        const gcpCtx = gcpCanvas.getContext('2d');
 
-        // Haversine distance function
-        function haversineDistance(lat1, lon1, lat2, lon2) {{
-            const R = 6371000; // Earth radius in meters
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
-        }}
+        function drawCameraMarkers() {{
+            const displayWidth = cameraImg.width;
+            const displayHeight = cameraImg.height;
+            const naturalWidth = cameraImg.naturalWidth;
+            const naturalHeight = cameraImg.naturalHeight;
 
-        // Create custom SVG icons
-        function createStarIcon(color, size = 24, opacity = 1) {{
-            const svg = `
-                <svg width="${{size}}" height="${{size}}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <polygon points="12,2 15,9 22,9 17,14 19,21 12,17 5,21 7,14 2,9 9,9"
-                             fill="${{color}}" fill-opacity="${{opacity}}" stroke="white" stroke-width="1.5" stroke-opacity="${{opacity}}"/>
-                </svg>`;
-            return L.divIcon({{
-                html: svg,
-                className: 'custom-marker',
-                iconSize: [size, size],
-                iconAnchor: [size/2, size/2],
-                popupAnchor: [0, -size/2]
-            }});
-        }}
+            gcpCanvas.width = displayWidth;
+            gcpCanvas.height = displayHeight;
 
-        function createDiamondIcon(color, size = 20, opacity = 1) {{
-            const svg = `
-                <svg width="${{size}}" height="${{size}}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <polygon points="12,2 22,12 12,22 2,12"
-                             fill="${{color}}" fill-opacity="${{opacity}}" stroke="white" stroke-width="1.5" stroke-opacity="${{opacity}}"/>
-                </svg>`;
-            return L.divIcon({{
-                html: svg,
-                className: 'custom-marker',
-                iconSize: [size, size],
-                iconAnchor: [size/2, size/2],
-                popupAnchor: [0, -size/2]
-            }});
-        }}
-
-        // Calculate bounds from GCP data
-        function calculateGCPBounds() {{
-            const latLngs = [];
-            gcpData.forEach(gcp => {{
-                latLngs.push([gcp.original_gps.lat, gcp.original_gps.lon]);
-                if (gcp.projected_gps) {{
-                    latLngs.push([gcp.projected_gps.lat, gcp.projected_gps.lon]);
-                }}
-            }});
-            if (latLngs.length > 0) {{
-                return L.latLngBounds(latLngs);
-            }}
-            return null;
-        }}
-
-        // Fit map to GCP bounds
-        const bounds = calculateGCPBounds();
-        if (bounds) {{
-            map.fitBounds(bounds, {{ padding: [50, 50] }});
-        }} else {{
-            // Fallback to camera position
-            map.setView([cameraGPS.latitude, cameraGPS.longitude], 18);
-        }}
-
-        // Store initial map view after a short delay to ensure map has settled
-        setTimeout(() => {{
-            initialMapView = {{
-                center: map.getCenter(),
-                zoom: map.getZoom()
-            }};
-        }}, 100);
-
-        // Canvas overlay for GCP markers on camera frame
-        const img = document.getElementById('cameraFrame');
-        const canvas = document.getElementById('gcpCanvas');
-        const ctx = canvas.getContext('2d');
-
-        function drawGCPMarkers() {{
-            // Get actual displayed image dimensions
-            const displayWidth = img.width;
-            const displayHeight = img.height;
-
-            // Get natural (original) image dimensions
-            const naturalWidth = img.naturalWidth;
-            const naturalHeight = img.naturalHeight;
-
-            // Set canvas size to match displayed image
-            canvas.width = displayWidth;
-            canvas.height = displayHeight;
-
-            // Calculate scale factor
             const scaleX = displayWidth / naturalWidth;
             const scaleY = displayHeight / naturalHeight;
 
-            // Clear canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            gcpCtx.clearRect(0, 0, gcpCanvas.width, gcpCanvas.height);
 
             // Draw GCP markers
-            gcpData.forEach((gcp, index) => {{
-                const u = gcp.pixel.u * scaleX;
-                const v = gcp.pixel.v * scaleY;
-
-                if (gcp.projected_pixel) {{
-                    const projU = gcp.projected_pixel.u * scaleX;
-                    const projV = gcp.projected_pixel.v * scaleY;
-
-                    // Calculate distance between original and projected pixels
-                    const dx = u - projU;
-                    const dy = v - projV;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    const threshold = 5;
-
-                    if (distance <= threshold) {{
-                        // Draw single gold marker at original position
-                        ctx.fillStyle = '#ffd700';  // Gold
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.arc(u, v, 4, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.stroke();
-                    }} else {{
-                        // Draw error line (yellow)
-                        ctx.strokeStyle = '#ffff00';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(u, v);
-                        ctx.lineTo(projU, projV);
-                        ctx.stroke();
-
-                        // Draw projected marker (red)
-                        ctx.fillStyle = '#ff0000';
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.arc(projU, projV, 3, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.stroke();
-
-                        // Draw original marker (green)
-                        ctx.fillStyle = '#00ff00';
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.arc(u, v, 4, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.stroke();
-                    }}
-                }} else {{
-                    // No projected pixel - draw only original marker (green)
-                    ctx.fillStyle = '#00ff00';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(u, v, 4, 0, 2 * Math.PI);
-                    ctx.fill();
-                    ctx.stroke();
-                }}
-            }});
-        }}
-
-        // Draw markers when image loads
-        img.addEventListener('load', drawGCPMarkers);
-
-        // Redraw on window resize
-        window.addEventListener('resize', drawGCPMarkers);
-
-        // Draw immediately if image is already loaded
-        if (img.complete) {{
-            drawGCPMarkers();
-        }}
-
-        // ============================================================
-        // Interactive Projection Functions
-        // ============================================================
-
-        // Project image point to GPS using homography matrix
-        function projectImageToGPS(u, v) {{
-            if (!homographyMatrix) return null;
-
-            // Apply inverse homography: H_inv * [u, v, 1]^T
-            const H = homographyMatrix;
-            const w = H[2][0] * u + H[2][1] * v + H[2][2];
-
-            if (Math.abs(w) < 1e-10) {{
-                return null; // Point at infinity
-            }}
-
-            const x_local = (H[0][0] * u + H[0][1] * v + H[0][2]) / w;
-            const y_local = (H[1][0] * u + H[1][1] * v + H[1][2]) / w;
-
-            // Convert local metric to GPS (equirectangular projection)
-            const ref_lat_rad = cameraGPS.latitude * Math.PI / 180;
-            const delta_lat_rad = y_local / EARTH_RADIUS_M;
-            const delta_lon_rad = x_local / (EARTH_RADIUS_M * Math.cos(ref_lat_rad));
-
-            const lat = cameraGPS.latitude + delta_lat_rad * 180 / Math.PI;
-            const lon = cameraGPS.longitude + delta_lon_rad * 180 / Math.PI;
-
-            return {{ lat, lon, x_local, y_local }};
-        }}
-
-        // Store map markers for hover highlighting
-        const mapMarkers = [];
-
-        // Redraw map markers and store references
-        function drawMapMarkersWithRefs() {{
-            const threshold = 0.5; // meters (50cm)
-
-            gcpData.forEach((gcp, index) => {{
-                const origLat = gcp.original_gps.lat;
-                const origLon = gcp.original_gps.lon;
-
-                if (gcp.projected_gps) {{
-                    const projLat = gcp.projected_gps.lat;
-                    const projLon = gcp.projected_gps.lon;
-                    const distance = gcp.error_meters ?? haversineDistance(origLat, origLon, projLat, projLon);
-
-                    if (distance <= threshold) {{
-                        const marker = L.marker([origLat, origLon], {{
-                            icon: createStarIcon('#ffd700', 28)
-                        }}).addTo(map).bindPopup(`${{gcp.name}}<br>Accurate: ${{distance.toFixed(2)}}m`);
-                        mapMarkers.push({{ marker, index, type: 'accurate', iconType: 'star', color: '#ffd700', size: 28 }});
-                        addMarkerHoverHandlers(marker, index);
-                    }} else {{
-                        L.polyline([[origLat, origLon], [projLat, projLon]], {{
-                            color: '#ffff00',
-                            weight: 2
-                        }}).addTo(map);
-
-                        const projMarker = L.marker([projLat, projLon], {{
-                            icon: createDiamondIcon('#ff0000', 20)
-                        }}).addTo(map).bindPopup(`${{gcp.name}} (projected)<br>Error: ${{distance.toFixed(2)}}m`);
-                        mapMarkers.push({{ marker: projMarker, index, type: 'projected', iconType: 'diamond', color: '#ff0000', size: 20 }});
-                        addMarkerHoverHandlers(projMarker, index);
-
-                        const origMarker = L.marker([origLat, origLon], {{
-                            icon: createStarIcon('#00ff00', 24)
-                        }}).addTo(map).bindPopup(`${{gcp.name}} (original)`);
-                        mapMarkers.push({{ marker: origMarker, index, type: 'original', iconType: 'star', color: '#00ff00', size: 24 }});
-                        addMarkerHoverHandlers(origMarker, index);
-                    }}
-                }} else {{
-                    const marker = L.marker([origLat, origLon], {{
-                        icon: createStarIcon('#00ff00', 24)
-                    }}).addTo(map).bindPopup(`${{gcp.name}}`);
-                    mapMarkers.push({{ marker, index, type: 'original', iconType: 'star', color: '#00ff00', size: 24 }});
-                    addMarkerHoverHandlers(marker, index);
-                }}
-            }});
-        }}
-
-        // Add hover handlers to map markers
-        function addMarkerHoverHandlers(marker, index) {{
-            marker.on('mouseover', () => highlightGCP(index));
-            marker.on('mouseout', () => unhighlightGCP());
-        }}
-
-        // Highlight GCP on both panels
-        function highlightGCP(index) {{
-            // State reconciliation: unhighlight any previously highlighted marker first
-            // This prevents stuck highlights when mouseout events are missed during rapid movement
-            if (hoveredGcpIndex !== null && hoveredGcpIndex !== index) {{
-                // Restore ALL previous markers to original state (GCPs with error > 0.5m have 2 markers)
-                mapMarkers.filter(m => m.index === hoveredGcpIndex).forEach(prevMarker => {{
-                    const originalIcon = prevMarker.iconType === 'star'
-                        ? createStarIcon(prevMarker.color, prevMarker.size, 1)
-                        : createDiamondIcon(prevMarker.color, prevMarker.size, 1);
-                    prevMarker.marker.setIcon(originalIcon);
-                }});
-            }}
-
-            hoveredGcpIndex = index;
-            const gcp = gcpData[index];
-            if (!gcp) return;
-
-            // Show left tooltip (pixel error)
-            const leftTooltip = document.getElementById('leftTooltip');
-
-            // Calculate distance from camera to this GCP
-            const distToCamera = haversineDistance(
-                cameraGPS.latitude, cameraGPS.longitude,
-                gcp.original_gps.lat, gcp.original_gps.lon
-            );
-
-            if (gcp.projected_pixel) {{
-                const dx = gcp.pixel.u - gcp.projected_pixel.u;
-                const dy = gcp.pixel.v - gcp.projected_pixel.v;
-                const pixelError = Math.sqrt(dx * dx + dy * dy);
-                leftTooltip.innerHTML = `
-                    <div class="tooltip-title">${{gcp.name}}</div>
-                    <div class="tooltip-row">Pixel: (${{gcp.pixel.u.toFixed(1)}}, ${{gcp.pixel.v.toFixed(1)}})</div>
-                    <div class="tooltip-row">Pixel Error: ${{pixelError.toFixed(2)}}px</div>
-                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
-                `;
-            }} else {{
-                leftTooltip.innerHTML = `
-                    <div class="tooltip-title">${{gcp.name}}</div>
-                    <div class="tooltip-row">Pixel: (${{gcp.pixel.u.toFixed(1)}}, ${{gcp.pixel.v.toFixed(1)}})</div>
-                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
-                `;
-            }}
-            leftTooltip.style.display = 'block';
-
-            // Position left tooltip using viewport coordinates (fixed positioning)
-            const displayWidth = img.width;
-            const displayHeight = img.height;
-            const naturalWidth = img.naturalWidth;
-            const naturalHeight = img.naturalHeight;
-            const scaleX = displayWidth / naturalWidth;
-            const scaleY = displayHeight / naturalHeight;
-            const u = gcp.pixel.u * scaleX;
-            const v = gcp.pixel.v * scaleY;
-
-            // Get viewport position of the GCP marker
-            const imgRect = img.getBoundingClientRect();
-            const tooltipX = imgRect.left + u + 15;
-            const tooltipY = imgRect.top + v - 30;
-
-            // Ensure tooltip doesn't go off-screen
-            const tooltipRect = leftTooltip.getBoundingClientRect();
-            const maxX = window.innerWidth - tooltipRect.width - 10;
-            const maxY = window.innerHeight - tooltipRect.height - 10;
-
-            leftTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
-            leftTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
-
-            // Only zoom when precision mode is enabled
-            if (precisionZoomEnabled) {{
-                // Save current map view before zooming
-                if (!savedMapView) {{
-                    savedMapView = {{
-                        center: map.getCenter(),
-                        zoom: map.getZoom()
-                    }};
-                }}
-
-                // Zoom to the GCP location for precision inspection
-                const zoomTarget = L.latLng(gcp.original_gps.lat, gcp.original_gps.lon);
-                map.setView(zoomTarget, 22, {{ animate: true, duration: 0.3 }});
-
-                // Change map marker icons to cyan with 35% opacity for transparency
-                mapMarkers.forEach(m => {{
-                    if (m.index === index) {{
-                        // Semi-transparent (35% opacity) cyan marker for accuracy testing
-                        const cyanIcon = m.iconType === 'star'
-                            ? createStarIcon('#00ffff', m.size * 1.5, 0.35)
-                            : createDiamondIcon('#00ffff', m.size * 1.5, 0.35);
-                        m.marker.setIcon(cyanIcon);
-                    }}
-                }});
-            }} else {{
-                // Just highlight without zoom - use cyan with full opacity
-                mapMarkers.forEach(m => {{
-                    if (m.index === index) {{
-                        const cyanIcon = m.iconType === 'star'
-                            ? createStarIcon('#00ffff', m.size * 1.3, 1)
-                            : createDiamondIcon('#00ffff', m.size * 1.3, 1);
-                        m.marker.setIcon(cyanIcon);
-                    }}
-                }});
-            }}
-
-            // Show right tooltip (GPS error) - positioned after zoom completes
-            const rightTooltip = document.getElementById('rightTooltip');
-            if (gcp.projected_gps) {{
-                const errorMeters = gcp.error_meters ?? haversineDistance(
-                    gcp.original_gps.lat, gcp.original_gps.lon,
-                    gcp.projected_gps.lat, gcp.projected_gps.lon
-                );
-                rightTooltip.innerHTML = `
-                    <div class="tooltip-title">${{gcp.name}}</div>
-                    <div class="tooltip-row">Original: (${{gcp.original_gps.lat.toFixed(6)}}, ${{gcp.original_gps.lon.toFixed(6)}})</div>
-                    <div class="tooltip-row">GPS Error: ${{errorMeters.toFixed(2)}}m</div>
-                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
-                `;
-            }} else {{
-                rightTooltip.innerHTML = `
-                    <div class="tooltip-title">${{gcp.name}}</div>
-                    <div class="tooltip-row">GPS: (${{gcp.original_gps.lat.toFixed(6)}}, ${{gcp.original_gps.lon.toFixed(6)}})</div>
-                    <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
-                `;
-            }}
-            rightTooltip.style.display = 'block';
-
-            // Position right tooltip using viewport coordinates (fixed positioning)
-            const positionRightTooltip = () => {{
-                const mapContainer = document.getElementById('map');
-                const mapRect = mapContainer.getBoundingClientRect();
-                const markerLatLng = L.latLng(gcp.original_gps.lat, gcp.original_gps.lon);
-                const markerPoint = map.latLngToContainerPoint(markerLatLng);
-
-                // Convert to viewport coordinates
-                const tooltipX = mapRect.left + markerPoint.x + 20;
-                const tooltipY = mapRect.top + markerPoint.y - 20;
-
-                // Ensure tooltip doesn't go off-screen
-                const tooltipRect = rightTooltip.getBoundingClientRect();
-                const maxX = window.innerWidth - tooltipRect.width - 10;
-                const maxY = window.innerHeight - tooltipRect.height - 10;
-
-                rightTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
-                rightTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
-            }};
-
-            if (precisionZoomEnabled) {{
-                // Wait for zoom animation to complete
-                setTimeout(positionRightTooltip, 350);
-            }} else {{
-                // Position immediately
-                positionRightTooltip();
-            }}
-
-            // Redraw canvas with highlight
-            drawGCPMarkers();
-        }}
-
-        // Remove highlight
-        function unhighlightGCP() {{
-            hoveredGcpIndex = null;
-            document.getElementById('leftTooltip').style.display = 'none';
-            document.getElementById('rightTooltip').style.display = 'none';
-
-            // Restore original map view (zoom out) only if we saved it
-            if (savedMapView && precisionZoomEnabled) {{
-                map.setView(savedMapView.center, savedMapView.zoom, {{ animate: true, duration: 0.3 }});
-            }}
-            savedMapView = null;
-
-            // Restore original map marker icons with full opacity
-            mapMarkers.forEach(m => {{
-                const originalIcon = m.iconType === 'star'
-                    ? createStarIcon(m.color, m.size, 1)
-                    : createDiamondIcon(m.color, m.size, 1);
-                m.marker.setIcon(originalIcon);
-            }});
-
-            drawGCPMarkers();
-        }}
-
-        // Reset map to initial view (failsafe button)
-        function resetMapView() {{
-            // Clear any hover state
-            hoveredGcpIndex = null;
-            hoveredClickedIndex = null;
-            savedMapView = null;
-            document.getElementById('leftTooltip').style.display = 'none';
-            document.getElementById('rightTooltip').style.display = 'none';
-
-            // Restore all GCP markers to original state
-            mapMarkers.forEach(m => {{
-                const originalIcon = m.iconType === 'star'
-                    ? createStarIcon(m.color, m.size, 1)
-                    : createDiamondIcon(m.color, m.size, 1);
-                m.marker.setIcon(originalIcon);
-            }});
-
-            // Restore all clicked markers to original state
-            clickedMarkers.forEach(cm => {{
-                cm.marker.setIcon(createDiamondIcon('#ff00ff', 22, 1));
-            }});
-
-            // Reset to initial view
-            if (initialMapView) {{
-                map.setView(initialMapView.center, initialMapView.zoom, {{ animate: true, duration: 0.3 }});
-            }} else {{
-                // Fallback: recalculate bounds
-                const bounds = calculateGCPBounds();
-                if (bounds) {{
-                    map.fitBounds(bounds, {{ padding: [50, 50] }});
-                }} else {{
-                    map.setView([cameraGPS.latitude, cameraGPS.longitude], 18);
-                }}
-            }}
-
-            drawGCPMarkers();
-        }}
-
-        // Toggle precision zoom mode
-        function togglePrecisionZoom() {{
-            precisionZoomEnabled = !precisionZoomEnabled;
-            const btn = document.getElementById('zoomModeBtn');
-            if (precisionZoomEnabled) {{
-                btn.textContent = 'Precision Zoom: ON';
-                btn.classList.add('active');
-            }} else {{
-                btn.textContent = 'Precision Zoom: OFF';
-                btn.classList.remove('active');
-                // Reset map if we're turning off precision mode
-                if (savedMapView) {{
-                    map.setView(savedMapView.center, savedMapView.zoom, {{ animate: true, duration: 0.3 }});
-                    savedMapView = null;
-                }}
-            }}
-        }}
-
-        // Highlight clicked point on both panels
-        function highlightClickedPoint(index) {{
-            hoveredClickedIndex = index;
-            const cm = clickedMarkers[index];
-            if (!cm) return;
-
-            // Calculate distance from camera to this clicked point
-            const distToCamera = haversineDistance(
-                cameraGPS.latitude, cameraGPS.longitude,
-                cm.lat, cm.lon
-            );
-
-            // Show left tooltip
-            const leftTooltip = document.getElementById('leftTooltip');
-            leftTooltip.innerHTML = `
-                <div class="tooltip-title">Clicked Point</div>
-                <div class="tooltip-row">Pixel: (${{cm.origU.toFixed(1)}}, ${{cm.origV.toFixed(1)}})</div>
-                <div class="tooltip-row">GPS: (${{cm.lat.toFixed(6)}}, ${{cm.lon.toFixed(6)}})</div>
-                <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
-            `;
-            leftTooltip.style.display = 'block';
-
-            // Position left tooltip using viewport coordinates (fixed positioning)
-            const imgRect = img.getBoundingClientRect();
-            const tooltipX = imgRect.left + cm.displayU + 15;
-            const tooltipY = imgRect.top + cm.displayV - 30;
-
-            // Ensure tooltip doesn't go off-screen
-            const tooltipRect = leftTooltip.getBoundingClientRect();
-            const maxX = window.innerWidth - tooltipRect.width - 10;
-            const maxY = window.innerHeight - tooltipRect.height - 10;
-
-            leftTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
-            leftTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
-
-            // Only zoom when precision mode is enabled
-            if (precisionZoomEnabled) {{
-                // Save current map view before zooming
-                if (!savedMapView) {{
-                    savedMapView = {{
-                        center: map.getCenter(),
-                        zoom: map.getZoom()
-                    }};
-                }}
-
-                // Zoom to the clicked point location
-                const zoomTarget = L.latLng(cm.lat, cm.lon);
-                map.setView(zoomTarget, 22, {{ animate: true, duration: 0.3 }});
-
-                // Change marker to semi-transparent cyan
-                cm.marker.setIcon(createDiamondIcon('#00ffff', 30, 0.35));
-            }} else {{
-                // Just highlight without zoom
-                cm.marker.setIcon(createDiamondIcon('#00ffff', 28, 1));
-            }}
-
-            // Show right tooltip
-            const rightTooltip = document.getElementById('rightTooltip');
-            rightTooltip.innerHTML = `
-                <div class="tooltip-title">Clicked Point</div>
-                <div class="tooltip-row">GPS: (${{cm.lat.toFixed(6)}}, ${{cm.lon.toFixed(6)}})</div>
-                <div class="tooltip-row">Distance to camera: ${{distToCamera.toFixed(1)}}m</div>
-            `;
-            rightTooltip.style.display = 'block';
-
-            // Position right tooltip using viewport coordinates (fixed positioning)
-            const positionRightTooltip = () => {{
-                const mapContainer = document.getElementById('map');
-                const mapRect = mapContainer.getBoundingClientRect();
-                const markerLatLng = L.latLng(cm.lat, cm.lon);
-                const markerPoint = map.latLngToContainerPoint(markerLatLng);
-
-                // Convert to viewport coordinates
-                const tooltipX = mapRect.left + markerPoint.x + 20;
-                const tooltipY = mapRect.top + markerPoint.y - 20;
-
-                // Ensure tooltip doesn't go off-screen
-                const tooltipRect = rightTooltip.getBoundingClientRect();
-                const maxX = window.innerWidth - tooltipRect.width - 10;
-                const maxY = window.innerHeight - tooltipRect.height - 10;
-
-                rightTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
-                rightTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
-            }};
-
-            if (precisionZoomEnabled) {{
-                setTimeout(positionRightTooltip, 350);
-            }} else {{
-                positionRightTooltip();
-            }}
-
-            drawGCPMarkers();
-        }}
-
-        // Remove clicked point highlight
-        function unhighlightClickedPoint() {{
-            if (hoveredClickedIndex === null) return;
-
-            const cm = clickedMarkers[hoveredClickedIndex];
-            hoveredClickedIndex = null;
-
-            document.getElementById('leftTooltip').style.display = 'none';
-            document.getElementById('rightTooltip').style.display = 'none';
-
-            // Restore original map view if precision mode is on
-            if (savedMapView && precisionZoomEnabled) {{
-                map.setView(savedMapView.center, savedMapView.zoom, {{ animate: true, duration: 0.3 }});
-            }}
-            savedMapView = null;
-
-            // Restore marker to original magenta
-            if (cm) {{
-                cm.marker.setIcon(createDiamondIcon('#ff00ff', 22, 1));
-            }}
-
-            drawGCPMarkers();
-        }}
-
-        // Override drawGCPMarkers to support hover highlighting
-        const originalDrawGCPMarkers = drawGCPMarkers;
-        drawGCPMarkers = function() {{
-            const displayWidth = img.width;
-            const displayHeight = img.height;
-            const naturalWidth = img.naturalWidth;
-            const naturalHeight = img.naturalHeight;
-
-            canvas.width = displayWidth;
-            canvas.height = displayHeight;
-            const scaleX = displayWidth / naturalWidth;
-            const scaleY = displayHeight / naturalHeight;
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
             gcpData.forEach((gcp, index) => {{
                 const u = gcp.pixel.u * scaleX;
                 const v = gcp.pixel.v * scaleY;
@@ -1290,203 +595,483 @@ def generate_html(
                 if (gcp.projected_pixel) {{
                     const projU = gcp.projected_pixel.u * scaleX;
                     const projV = gcp.projected_pixel.v * scaleY;
+
                     const dx = u - projU;
                     const dy = v - projV;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     const threshold = 5;
 
                     if (distance <= threshold) {{
-                        ctx.fillStyle = highlightColor || '#ffd700';
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.arc(u, v, 4 * highlightScale, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.stroke();
+                        // Draw single gold marker
+                        gcpCtx.fillStyle = highlightColor || '#ffd700';
+                        gcpCtx.strokeStyle = '#ffffff';
+                        gcpCtx.lineWidth = 2;
+                        gcpCtx.beginPath();
+                        gcpCtx.arc(u, v, 4 * highlightScale, 0, 2 * Math.PI);
+                        gcpCtx.fill();
+                        gcpCtx.stroke();
                     }} else {{
-                        ctx.strokeStyle = highlightColor || '#ffff00';
-                        ctx.lineWidth = isHovered ? 3 : 2;
-                        ctx.beginPath();
-                        ctx.moveTo(u, v);
-                        ctx.lineTo(projU, projV);
-                        ctx.stroke();
+                        // Draw error line
+                        gcpCtx.strokeStyle = highlightColor || '#ffff00';
+                        gcpCtx.lineWidth = isHovered ? 3 : 2;
+                        gcpCtx.beginPath();
+                        gcpCtx.moveTo(u, v);
+                        gcpCtx.lineTo(projU, projV);
+                        gcpCtx.stroke();
 
-                        ctx.fillStyle = highlightColor || '#ff0000';
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.arc(projU, projV, 3 * highlightScale, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.stroke();
+                        // Draw projected marker (red)
+                        gcpCtx.fillStyle = highlightColor || '#ff0000';
+                        gcpCtx.strokeStyle = '#ffffff';
+                        gcpCtx.lineWidth = 2;
+                        gcpCtx.beginPath();
+                        gcpCtx.arc(projU, projV, 3 * highlightScale, 0, 2 * Math.PI);
+                        gcpCtx.fill();
+                        gcpCtx.stroke();
 
-                        ctx.fillStyle = highlightColor || '#00ff00';
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.arc(u, v, 4 * highlightScale, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.stroke();
+                        // Draw original marker (green)
+                        gcpCtx.fillStyle = highlightColor || '#00ff00';
+                        gcpCtx.strokeStyle = '#ffffff';
+                        gcpCtx.lineWidth = 2;
+                        gcpCtx.beginPath();
+                        gcpCtx.arc(u, v, 4 * highlightScale, 0, 2 * Math.PI);
+                        gcpCtx.fill();
+                        gcpCtx.stroke();
                     }}
                 }} else {{
-                    ctx.fillStyle = highlightColor || '#00ff00';
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(u, v, 4 * highlightScale, 0, 2 * Math.PI);
-                    ctx.fill();
-                    ctx.stroke();
+                    // No projected pixel - draw only original marker
+                    gcpCtx.fillStyle = highlightColor || '#00ff00';
+                    gcpCtx.strokeStyle = '#ffffff';
+                    gcpCtx.lineWidth = 2;
+                    gcpCtx.beginPath();
+                    gcpCtx.arc(u, v, 4 * highlightScale, 0, 2 * Math.PI);
+                    gcpCtx.fill();
+                    gcpCtx.stroke();
                 }}
             }});
 
-            // Draw clicked markers (magenta, or cyan if hovered)
+            // Draw clicked markers
             clickedMarkers.forEach((cm, idx) => {{
                 const isHovered = hoveredClickedIndex === idx;
-                ctx.fillStyle = isHovered ? '#00ffff' : '#ff00ff';
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(cm.displayU, cm.displayV, isHovered ? 9 : 6, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.stroke();
+                gcpCtx.fillStyle = isHovered ? '#00ffff' : '#ff00ff';
+                gcpCtx.strokeStyle = '#ffffff';
+                gcpCtx.lineWidth = 2;
+                gcpCtx.beginPath();
+                gcpCtx.arc(cm.displayU, cm.displayV, isHovered ? 9 : 6, 0, 2 * Math.PI);
+                gcpCtx.fill();
+                gcpCtx.stroke();
             }});
-        }};
+        }}
+
+        cameraImg.addEventListener('load', drawCameraMarkers);
+        window.addEventListener('resize', drawCameraMarkers);
+        if (cameraImg.complete) drawCameraMarkers();
 
         // ============================================================
-        // Click to Project
+        // Map Image Canvas
         // ============================================================
 
-        // Enable interactive mode if homography is available
+        const mapImg = document.getElementById('mapImage');
+        const mapCanvas = document.getElementById('mapCanvas');
+        const mapCtx = mapCanvas.getContext('2d');
+
+        function drawMapMarkers() {{
+            const displayWidth = mapImg.width;
+            const displayHeight = mapImg.height;
+            const naturalWidth = mapImg.naturalWidth;
+            const naturalHeight = mapImg.naturalHeight;
+
+            mapCanvas.width = displayWidth;
+            mapCanvas.height = displayHeight;
+
+            const scaleX = displayWidth / naturalWidth;
+            const scaleY = displayHeight / naturalHeight;
+
+            mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+            // Draw GCP markers
+            gcpData.forEach((gcp, index) => {{
+                const x = gcp.original_map.x * scaleX;
+                const y = gcp.original_map.y * scaleY;
+                const isHovered = hoveredGcpIndex === index;
+                const highlightScale = isHovered ? 1.5 : 1;
+                const highlightColor = isHovered ? '#00ffff' : null;
+
+                if (gcp.projected_map) {{
+                    const projX = gcp.projected_map.x * scaleX;
+                    const projY = gcp.projected_map.y * scaleY;
+
+                    const dx = x - projX;
+                    const dy = y - projY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const threshold = 5;
+
+                    if (distance <= threshold) {{
+                        // Draw single gold marker
+                        mapCtx.fillStyle = highlightColor || '#ffd700';
+                        mapCtx.strokeStyle = '#ffffff';
+                        mapCtx.lineWidth = 2;
+                        mapCtx.beginPath();
+                        mapCtx.arc(x, y, 4 * highlightScale, 0, 2 * Math.PI);
+                        mapCtx.fill();
+                        mapCtx.stroke();
+                    }} else {{
+                        // Draw error line
+                        mapCtx.strokeStyle = highlightColor || '#ffff00';
+                        mapCtx.lineWidth = isHovered ? 3 : 2;
+                        mapCtx.beginPath();
+                        mapCtx.moveTo(x, y);
+                        mapCtx.lineTo(projX, projY);
+                        mapCtx.stroke();
+
+                        // Draw projected marker (red)
+                        mapCtx.fillStyle = highlightColor || '#ff0000';
+                        mapCtx.strokeStyle = '#ffffff';
+                        mapCtx.lineWidth = 2;
+                        mapCtx.beginPath();
+                        mapCtx.arc(projX, projY, 3 * highlightScale, 0, 2 * Math.PI);
+                        mapCtx.fill();
+                        mapCtx.stroke();
+
+                        // Draw original marker (green)
+                        mapCtx.fillStyle = highlightColor || '#00ff00';
+                        mapCtx.strokeStyle = '#ffffff';
+                        mapCtx.lineWidth = 2;
+                        mapCtx.beginPath();
+                        mapCtx.arc(x, y, 4 * highlightScale, 0, 2 * Math.PI);
+                        mapCtx.fill();
+                        mapCtx.stroke();
+                    }}
+                }} else {{
+                    // No projected map - draw only original marker
+                    mapCtx.fillStyle = highlightColor || '#00ff00';
+                    mapCtx.strokeStyle = '#ffffff';
+                    mapCtx.lineWidth = 2;
+                    mapCtx.beginPath();
+                    mapCtx.arc(x, y, 4 * highlightScale, 0, 2 * Math.PI);
+                    mapCtx.fill();
+                    mapCtx.stroke();
+                }}
+            }});
+
+            // Draw clicked markers
+            clickedMarkers.forEach((cm, idx) => {{
+                const isHovered = hoveredClickedIndex === idx;
+                mapCtx.fillStyle = isHovered ? '#00ffff' : '#ff00ff';
+                mapCtx.strokeStyle = '#ffffff';
+                mapCtx.lineWidth = 2;
+                mapCtx.beginPath();
+                mapCtx.arc(cm.mapX, cm.mapY, isHovered ? 9 : 6, 0, 2 * Math.PI);
+                mapCtx.fill();
+                mapCtx.stroke();
+            }});
+        }}
+
+        mapImg.addEventListener('load', drawMapMarkers);
+        window.addEventListener('resize', drawMapMarkers);
+        if (mapImg.complete) drawMapMarkers();
+
+        // ============================================================
+        // Interactive Projection
+        // ============================================================
+
+        function projectImageToMap(u, v) {{
+            if (!homographyMatrix) return null;
+
+            const H = homographyMatrix;
+            const w = H[2][0] * u + H[2][1] * v + H[2][2];
+
+            if (Math.abs(w) < 1e-10) return null;
+
+            const map_x = (H[0][0] * u + H[0][1] * v + H[0][2]) / w;
+            const map_y = (H[1][0] * u + H[1][1] * v + H[1][2]) / w;
+
+            return {{ map_x, map_y }};
+        }}
+
+        // Highlight GCP on both panels
+        function highlightGCP(index) {{
+            hoveredGcpIndex = index;
+            const gcp = gcpData[index];
+            if (!gcp) return;
+
+            // Show left tooltip (pixel info)
+            const leftTooltip = document.getElementById('leftTooltip');
+
+            if (gcp.projected_pixel) {{
+                const dx = gcp.pixel.u - gcp.projected_pixel.u;
+                const dy = gcp.pixel.v - gcp.projected_pixel.v;
+                const pixelError = Math.sqrt(dx * dx + dy * dy);
+                leftTooltip.innerHTML = `
+                    <div class="tooltip-title">${{gcp.name}}</div>
+                    <div class="tooltip-row">Pixel: (${{gcp.pixel.u.toFixed(1)}}, ${{gcp.pixel.v.toFixed(1)}})</div>
+                    <div class="tooltip-row">Pixel Error: ${{pixelError.toFixed(2)}}px</div>
+                `;
+            }} else {{
+                leftTooltip.innerHTML = `
+                    <div class="tooltip-title">${{gcp.name}}</div>
+                    <div class="tooltip-row">Pixel: (${{gcp.pixel.u.toFixed(1)}}, ${{gcp.pixel.v.toFixed(1)}})</div>
+                `;
+            }}
+            leftTooltip.style.display = 'block';
+
+            // Position left tooltip
+            const displayWidth = cameraImg.width;
+            const displayHeight = cameraImg.height;
+            const naturalWidth = cameraImg.naturalWidth;
+            const naturalHeight = cameraImg.naturalHeight;
+            const scaleX = displayWidth / naturalWidth;
+            const scaleY = displayHeight / naturalHeight;
+            const u = gcp.pixel.u * scaleX;
+            const v = gcp.pixel.v * scaleY;
+
+            const imgRect = cameraImg.getBoundingClientRect();
+            const tooltipX = imgRect.left + u + 15;
+            const tooltipY = imgRect.top + v - 30;
+
+            const tooltipRect = leftTooltip.getBoundingClientRect();
+            const maxX = window.innerWidth - tooltipRect.width - 10;
+            const maxY = window.innerHeight - tooltipRect.height - 10;
+
+            leftTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
+            leftTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
+
+            // Show right tooltip (map info)
+            const rightTooltip = document.getElementById('rightTooltip');
+            if (gcp.projected_map) {{
+                const dx = gcp.original_map.x - gcp.projected_map.x;
+                const dy = gcp.original_map.y - gcp.projected_map.y;
+                const mapError = Math.sqrt(dx * dx + dy * dy);
+                rightTooltip.innerHTML = `
+                    <div class="tooltip-title">${{gcp.name}}</div>
+                    <div class="tooltip-row">Map: (${{gcp.original_map.x.toFixed(1)}}, ${{gcp.original_map.y.toFixed(1)}})</div>
+                    <div class="tooltip-row">Map Error: ${{mapError.toFixed(2)}}px</div>
+                `;
+            }} else {{
+                rightTooltip.innerHTML = `
+                    <div class="tooltip-title">${{gcp.name}}</div>
+                    <div class="tooltip-row">Map: (${{gcp.original_map.x.toFixed(1)}}, ${{gcp.original_map.y.toFixed(1)}})</div>
+                `;
+            }}
+            rightTooltip.style.display = 'block';
+
+            // Position right tooltip
+            const mapImgRect = mapImg.getBoundingClientRect();
+            const mapDisplayWidth = mapImg.width;
+            const mapDisplayHeight = mapImg.height;
+            const mapNaturalWidth = mapImg.naturalWidth;
+            const mapNaturalHeight = mapImg.naturalHeight;
+            const mapScaleX = mapDisplayWidth / mapNaturalWidth;
+            const mapScaleY = mapDisplayHeight / mapNaturalHeight;
+            const mapX = gcp.original_map.x * mapScaleX;
+            const mapY = gcp.original_map.y * mapScaleY;
+
+            const mapTooltipX = mapImgRect.left + mapX + 15;
+            const mapTooltipY = mapImgRect.top + mapY - 30;
+
+            const rightTooltipRect = rightTooltip.getBoundingClientRect();
+            const rightMaxX = window.innerWidth - rightTooltipRect.width - 10;
+            const rightMaxY = window.innerHeight - rightTooltipRect.height - 10;
+
+            rightTooltip.style.left = Math.min(mapTooltipX, rightMaxX) + 'px';
+            rightTooltip.style.top = Math.max(10, Math.min(mapTooltipY, rightMaxY)) + 'px';
+
+            drawCameraMarkers();
+            drawMapMarkers();
+        }}
+
+        function unhighlightGCP() {{
+            hoveredGcpIndex = null;
+            document.getElementById('leftTooltip').style.display = 'none';
+            document.getElementById('rightTooltip').style.display = 'none';
+            drawCameraMarkers();
+            drawMapMarkers();
+        }}
+
+        // Hover detection on camera canvas
+        gcpCanvas.addEventListener('mousemove', (e) => {{
+            const rect = gcpCanvas.getBoundingClientRect();
+            const displayX = e.clientX - rect.left;
+            const displayY = e.clientY - rect.top;
+
+            const displayWidth = cameraImg.width;
+            const displayHeight = cameraImg.height;
+            const naturalWidth = cameraImg.naturalWidth;
+            const naturalHeight = cameraImg.naturalHeight;
+            const scaleX = displayWidth / naturalWidth;
+            const scaleY = displayHeight / naturalHeight;
+
+            // Check clicked points first
+            let foundClickedIndex = -1;
+            clickedMarkers.forEach((cm, index) => {{
+                const dist = Math.sqrt((displayX - cm.displayU) ** 2 + (displayY - cm.displayV) ** 2);
+                if (dist < 15) foundClickedIndex = index;
+            }});
+
+            if (foundClickedIndex >= 0) {{
+                if (hoveredGcpIndex !== null) unhighlightGCP();
+                if (hoveredClickedIndex !== foundClickedIndex) highlightClickedPoint(foundClickedIndex);
+                return;
+            }}
+
+            // Check GCPs
+            let foundGcpIndex = -1;
+            gcpData.forEach((gcp, index) => {{
+                const u = gcp.pixel.u * scaleX;
+                const v = gcp.pixel.v * scaleY;
+                const dist = Math.sqrt((displayX - u) ** 2 + (displayY - v) ** 2);
+                if (dist < 15) foundGcpIndex = index;
+            }});
+
+            if (foundGcpIndex >= 0) {{
+                if (hoveredClickedIndex !== null) unhighlightClickedPoint();
+                if (hoveredGcpIndex !== foundGcpIndex) highlightGCP(foundGcpIndex);
+            }} else {{
+                if (hoveredGcpIndex !== null) unhighlightGCP();
+                if (hoveredClickedIndex !== null) unhighlightClickedPoint();
+            }}
+        }});
+
+        // Hover detection on map canvas
+        mapCanvas.addEventListener('mousemove', (e) => {{
+            const rect = mapCanvas.getBoundingClientRect();
+            const displayX = e.clientX - rect.left;
+            const displayY = e.clientY - rect.top;
+
+            const displayWidth = mapImg.width;
+            const naturalWidth = mapImg.naturalWidth;
+            const scaleX = displayWidth / naturalWidth;
+            const scaleY = displayWidth / naturalWidth;
+
+            // Check clicked points first
+            let foundClickedIndex = -1;
+            clickedMarkers.forEach((cm, index) => {{
+                const dist = Math.sqrt((displayX - cm.mapX) ** 2 + (displayY - cm.mapY) ** 2);
+                if (dist < 15) foundClickedIndex = index;
+            }});
+
+            if (foundClickedIndex >= 0) {{
+                if (hoveredGcpIndex !== null) unhighlightGCP();
+                if (hoveredClickedIndex !== foundClickedIndex) highlightClickedPoint(foundClickedIndex);
+                return;
+            }}
+
+            // Check GCPs
+            let foundGcpIndex = -1;
+            gcpData.forEach((gcp, index) => {{
+                const x = gcp.original_map.x * scaleX;
+                const y = gcp.original_map.y * scaleY;
+                const dist = Math.sqrt((displayX - x) ** 2 + (displayY - y) ** 2);
+                if (dist < 15) foundGcpIndex = index;
+            }});
+
+            if (foundGcpIndex >= 0) {{
+                if (hoveredClickedIndex !== null) unhighlightClickedPoint();
+                if (hoveredGcpIndex !== foundGcpIndex) highlightGCP(foundGcpIndex);
+            }} else {{
+                if (hoveredGcpIndex !== null) unhighlightGCP();
+                if (hoveredClickedIndex !== null) unhighlightClickedPoint();
+            }}
+        }});
+
+        function highlightClickedPoint(index) {{
+            hoveredClickedIndex = index;
+            const cm = clickedMarkers[index];
+            if (!cm) return;
+
+            const leftTooltip = document.getElementById('leftTooltip');
+            leftTooltip.innerHTML = `
+                <div class="tooltip-title">Clicked Point</div>
+                <div class="tooltip-row">Pixel: (${{cm.origU.toFixed(1)}}, ${{cm.origV.toFixed(1)}})</div>
+                <div class="tooltip-row">Map: (${{cm.map_x.toFixed(1)}}, ${{cm.map_y.toFixed(1)}})</div>
+            `;
+            leftTooltip.style.display = 'block';
+
+            const imgRect = cameraImg.getBoundingClientRect();
+            const tooltipX = imgRect.left + cm.displayU + 15;
+            const tooltipY = imgRect.top + cm.displayV - 30;
+
+            const tooltipRect = leftTooltip.getBoundingClientRect();
+            const maxX = window.innerWidth - tooltipRect.width - 10;
+            const maxY = window.innerHeight - tooltipRect.height - 10;
+
+            leftTooltip.style.left = Math.min(tooltipX, maxX) + 'px';
+            leftTooltip.style.top = Math.max(10, Math.min(tooltipY, maxY)) + 'px';
+
+            const rightTooltip = document.getElementById('rightTooltip');
+            rightTooltip.innerHTML = `
+                <div class="tooltip-title">Clicked Point</div>
+                <div class="tooltip-row">Map: (${{cm.map_x.toFixed(1)}}, ${{cm.map_y.toFixed(1)}})</div>
+            `;
+            rightTooltip.style.display = 'block';
+
+            const mapImgRect = mapImg.getBoundingClientRect();
+            const mapTooltipX = mapImgRect.left + cm.mapX + 15;
+            const mapTooltipY = mapImgRect.top + cm.mapY - 30;
+
+            const rightTooltipRect = rightTooltip.getBoundingClientRect();
+            const rightMaxX = window.innerWidth - rightTooltipRect.width - 10;
+            const rightMaxY = window.innerHeight - rightTooltipRect.height - 10;
+
+            rightTooltip.style.left = Math.min(mapTooltipX, rightMaxX) + 'px';
+            rightTooltip.style.top = Math.max(10, Math.min(mapTooltipY, rightMaxY)) + 'px';
+
+            drawCameraMarkers();
+            drawMapMarkers();
+        }}
+
+        function unhighlightClickedPoint() {{
+            hoveredClickedIndex = null;
+            document.getElementById('leftTooltip').style.display = 'none';
+            document.getElementById('rightTooltip').style.display = 'none';
+            drawCameraMarkers();
+            drawMapMarkers();
+        }}
+
+        // Click to project
         if (homographyMatrix) {{
-            canvas.classList.add('interactive');
+            gcpCanvas.classList.add('interactive');
             document.getElementById('clickInstruction').classList.add('active');
 
-            canvas.addEventListener('click', (e) => {{
-                const rect = canvas.getBoundingClientRect();
+            gcpCanvas.addEventListener('click', (e) => {{
+                const rect = gcpCanvas.getBoundingClientRect();
                 const displayX = e.clientX - rect.left;
                 const displayY = e.clientY - rect.top;
 
-                // Convert to original image coordinates
-                const displayWidth = img.width;
-                const displayHeight = img.height;
-                const naturalWidth = img.naturalWidth;
-                const naturalHeight = img.naturalHeight;
+                const displayWidth = cameraImg.width;
+                const displayHeight = cameraImg.height;
+                const naturalWidth = cameraImg.naturalWidth;
+                const naturalHeight = cameraImg.naturalHeight;
                 const scaleX = naturalWidth / displayWidth;
                 const scaleY = naturalHeight / displayHeight;
                 const origU = displayX * scaleX;
                 const origV = displayY * scaleY;
 
-                // Project to GPS
-                const result = projectImageToGPS(origU, origV);
+                const result = projectImageToMap(origU, origV);
                 if (result) {{
-                    // Add marker to map
-                    const marker = L.marker([result.lat, result.lon], {{
-                        icon: createDiamondIcon('#ff00ff', 22)
-                    }}).addTo(map).bindPopup(
-                        `Clicked Point<br>Pixel: (${{origU.toFixed(1)}}, ${{origV.toFixed(1)}})<br>GPS: (${{result.lat.toFixed(6)}}, ${{result.lon.toFixed(6)}})`
-                    );
+                    const mapDisplayWidth = mapImg.width;
+                    const mapNaturalWidth = mapImg.naturalWidth;
+                    const mapScaleX = mapDisplayWidth / mapNaturalWidth;
+                    const mapScaleY = mapDisplayWidth / mapNaturalWidth;
 
-                    const clickedIndex = clickedMarkers.length;
                     clickedMarkers.push({{
                         displayU: displayX,
                         displayV: displayY,
                         origU, origV,
-                        lat: result.lat,
-                        lon: result.lon,
-                        marker
+                        map_x: result.map_x,
+                        map_y: result.map_y,
+                        mapX: result.map_x * mapScaleX,
+                        mapY: result.map_y * mapScaleY
                     }});
 
-                    // Add hover handlers to clicked marker
-                    marker.on('mouseover', () => highlightClickedPoint(clickedIndex));
-                    marker.on('mouseout', () => unhighlightClickedPoint());
+                    drawCameraMarkers();
+                    drawMapMarkers();
 
-                    // Pan map to show the point
-                    map.panTo([result.lat, result.lon]);
-
-                    // Redraw canvas
-                    drawGCPMarkers();
-
-                    console.log(`Projected: (${{origU.toFixed(1)}}, ${{origV.toFixed(1)}}) -> (${{result.lat.toFixed(6)}}, ${{result.lon.toFixed(6)}})`);
-                }}
-            }});
-
-            // Add hover detection on canvas for GCPs and clicked points
-            canvas.addEventListener('mousemove', (e) => {{
-                const rect = canvas.getBoundingClientRect();
-                const displayX = e.clientX - rect.left;
-                const displayY = e.clientY - rect.top;
-
-                const displayWidth = img.width;
-                const displayHeight = img.height;
-                const naturalWidth = img.naturalWidth;
-                const naturalHeight = img.naturalHeight;
-                const scaleX = displayWidth / naturalWidth;
-                const scaleY = displayHeight / naturalHeight;
-
-                // Check if hovering over a clicked point first (they're drawn on top)
-                let foundClickedIndex = -1;
-                clickedMarkers.forEach((cm, index) => {{
-                    const dist = Math.sqrt((displayX - cm.displayU) ** 2 + (displayY - cm.displayV) ** 2);
-                    if (dist < 15) {{
-                        foundClickedIndex = index;
-                    }}
-                }});
-
-                if (foundClickedIndex >= 0) {{
-                    // Unhighlight GCP if we're now on a clicked point
-                    if (hoveredGcpIndex !== null) {{
-                        unhighlightGCP();
-                    }}
-                    if (hoveredClickedIndex !== foundClickedIndex) {{
-                        highlightClickedPoint(foundClickedIndex);
-                    }}
-                    return;
-                }}
-
-                // Check if hovering over a GCP
-                let foundGcpIndex = -1;
-                gcpData.forEach((gcp, index) => {{
-                    const u = gcp.pixel.u * scaleX;
-                    const v = gcp.pixel.v * scaleY;
-                    const dist = Math.sqrt((displayX - u) ** 2 + (displayY - v) ** 2);
-                    if (dist < 15) {{
-                        foundGcpIndex = index;
-                    }}
-                }});
-
-                if (foundGcpIndex >= 0) {{
-                    // Unhighlight clicked point if we're now on a GCP
-                    if (hoveredClickedIndex !== null) {{
-                        unhighlightClickedPoint();
-                    }}
-                    if (hoveredGcpIndex !== foundGcpIndex) {{
-                        highlightGCP(foundGcpIndex);
-                    }}
-                }} else {{
-                    // Not hovering over anything - unhighlight both
-                    if (hoveredGcpIndex !== null) {{
-                        unhighlightGCP();
-                    }}
-                    if (hoveredClickedIndex !== null) {{
-                        unhighlightClickedPoint();
-                    }}
+                    console.log(`Projected: (${{origU.toFixed(1)}}, ${{origV.toFixed(1)}}) -> (${{result.map_x.toFixed(1)}}, ${{result.map_y.toFixed(1)}})`);
                 }}
             }});
         }} else {{
             document.getElementById('clickInstruction').textContent = 'Interactive mode disabled (no homography)';
         }}
-
-        // ============================================================
-        // Control Button Event Listeners
-        // ============================================================
-
-        // Precision Zoom Mode toggle button
-        document.getElementById('zoomModeBtn').addEventListener('click', togglePrecisionZoom);
-
-        // Reset View button
-        document.getElementById('resetViewBtn').addEventListener('click', resetMapView);
-
-        // Replace drawMapMarkers with version that stores refs
-        drawMapMarkersWithRefs();
     </script>
 </body>
 </html>
@@ -1498,8 +1083,7 @@ def generate_html(
 def start_server(
     output_dir: str,
     camera_frame_path: str,
-    kml_path: str,
-    camera_gps: dict[str, float],
+    map_image_path: str,
     gcps: list[dict[str, Any]],
     validation_results: dict[str, Any],
     homography_matrix: list[list[float]] | None = None,
@@ -1515,8 +1099,7 @@ def start_server(
     Args:
         output_dir: Directory where HTML and assets will be served from
         camera_frame_path: Absolute path to camera frame image
-        kml_path: Absolute path to KML file
-        camera_gps: Camera GPS position {'latitude': float, 'longitude': float}
+        map_image_path: Absolute path to map image
         gcps: List of GCP dictionaries
         validation_results: Validation results dictionary
         homography_matrix: Optional 3x3 inverse homography matrix for interactive projection
@@ -1530,8 +1113,7 @@ def start_server(
         >>> start_server(
         ...     output_dir='output',
         ...     camera_frame_path='output/annotated_frame.jpg',
-        ...     kml_path='output/gcp_validation.kml',
-        ...     camera_gps={'latitude': 39.640500, 'longitude': -0.230000},
+        ...     map_image_path='output/map_image.jpg',
         ...     gcps=[...],
         ...     validation_results={...},
         ...     auto_open=True
@@ -1549,14 +1131,14 @@ def start_server(
     # Convert paths to Path objects
     output_path = Path(output_dir).resolve()
     camera_frame_src = Path(camera_frame_path).resolve()
-    kml_src = Path(kml_path).resolve()
+    map_image_src = Path(map_image_path).resolve()
 
     # Ensure output directory exists
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Determine relative paths for HTML
     camera_frame_filename = camera_frame_src.name
-    kml_filename = kml_src.name
+    map_image_filename = map_image_src.name
 
     # Copy camera frame to output dir if not already there
     camera_frame_dest = output_path / camera_frame_filename
@@ -1567,20 +1149,19 @@ def start_server(
         else:
             raise OSError(f"Camera frame not found: {camera_frame_src}")
 
-    # Copy KML file to output dir if not already there
-    kml_dest = output_path / kml_filename
-    if kml_src != kml_dest:
-        if kml_src.exists():
-            shutil.copy2(kml_src, kml_dest)
-            print(f"Copied KML file to {kml_dest}")
+    # Copy map image to output dir if not already there
+    map_image_dest = output_path / map_image_filename
+    if map_image_src != map_image_dest:
+        if map_image_src.exists():
+            shutil.copy2(map_image_src, map_image_dest)
+            print(f"Copied map image to {map_image_dest}")
         else:
-            raise OSError(f"KML file not found: {kml_src}")
+            raise OSError(f"Map image not found: {map_image_src}")
 
     # Generate HTML
     html_content = generate_html(
         camera_frame_filename,  # Use relative path in HTML
-        kml_filename,  # Use relative path in HTML
-        camera_gps,
+        map_image_filename,  # Use relative path in HTML
         gcps,
         validation_results,
         homography_matrix,
@@ -1633,17 +1214,17 @@ if __name__ == "__main__":
     # Create sample data
     sample_gcps = [
         {
-            "gps": {"latitude": 39.640600, "longitude": -0.230200},
+            "map": {"pixel_x": 1234.5, "pixel_y": 5678.9},
             "image": {"u": 400.0, "v": 300.0},
             "metadata": {"description": "P#01"},
         },
         {
-            "gps": {"latitude": 39.640620, "longitude": -0.229800},
+            "map": {"pixel_x": 2345.6, "pixel_y": 6789.0},
             "image": {"u": 2100.0, "v": 320.0},
             "metadata": {"description": "P#02"},
         },
         {
-            "gps": {"latitude": 39.640400, "longitude": -0.230000},
+            "map": {"pixel_x": 3456.7, "pixel_y": 7890.1},
             "image": {"u": 1280.0, "v": 720.0},
             "metadata": {"description": "P#03"},
         },
@@ -1652,43 +1233,35 @@ if __name__ == "__main__":
     sample_results = {
         "details": [
             {
-                "projected_gps": (39.640605, -0.230205),
+                "projected_map": (1236.8, 5680.4),
                 "projected_pixel": (402.3, 301.5),
-                "error_meters": 0.56,
+                "error_pixels": 2.8,
             },
             {
-                "projected_gps": (39.640618, -0.229805),
+                "projected_map": (2347.3, 6790.5),
                 "projected_pixel": (2098.7, 318.2),
-                "error_meters": 0.45,
+                "error_pixels": 2.1,
             },
             {
-                "projected_gps": (39.640398, -0.230002),
+                "projected_map": (3457.8, 7891.0),
                 "projected_pixel": (1281.1, 719.8),
-                "error_meters": 0.23,
+                "error_pixels": 1.4,
             },
         ]
     }
-
-    sample_camera = {"latitude": 39.640500, "longitude": -0.230000}
 
     # Get project root
     module_dir = Path(__file__).parent
     project_root = module_dir.parent
     output_dir = project_root / "output"
 
-    # Use example KML file if it exists
-    example_kml = output_dir / "example_gcp_validation.kml"
-
-    if not example_kml.exists():
-        print("Error: Example KML file not found.")
-        print(f"Please run kml_generator.py first to create {example_kml}")
-        exit(1)
-
     # Create a dummy camera frame for testing
     import cv2
     import numpy as np
 
     dummy_frame_path = output_dir / "dummy_frame.jpg"
+    dummy_map_path = output_dir / "dummy_map.jpg"
+
     if not dummy_frame_path.exists():
         # Create a simple test image
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
@@ -1703,13 +1276,26 @@ if __name__ == "__main__":
         cv2.imwrite(str(dummy_frame_path), frame)
         print(f"Created dummy frame at {dummy_frame_path}")
 
+    if not dummy_map_path.exists():
+        # Create a simple test map
+        map_img = np.zeros((2000, 3000, 3), dtype=np.uint8)
+        map_img[:, :] = (40, 60, 40)  # Dark greenish background
+
+        # Draw grid
+        for i in range(0, 3000, 200):
+            cv2.line(map_img, (i, 0), (i, 2000), (60, 90, 60), 1)
+        for i in range(0, 2000, 200):
+            cv2.line(map_img, (0, i), (3000, i), (60, 90, 60), 1)
+
+        cv2.imwrite(str(dummy_map_path), map_img)
+        print(f"Created dummy map at {dummy_map_path}")
+
     # Start server
     print("Starting map debug server with example data...")
     start_server(
         output_dir=str(output_dir),
         camera_frame_path=str(dummy_frame_path),
-        kml_path=str(example_kml),
-        camera_gps=sample_camera,
+        map_image_path=str(dummy_map_path),
         gcps=sample_gcps,
         validation_results=sample_results,
         auto_open=True,

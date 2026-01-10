@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""CLI for unified GCP tool."""
+"""CLI for unified GCP tool.
+
+DEPRECATION WARNING:
+This tool is deprecated and incompatible with the MapPoint migration (issue #156).
+It relies heavily on GPS coordinates (latitude/longitude) and KML files, which have
+been removed from the codebase in favor of map-relative pixel coordinates (MapPoint).
+
+For map-based homography, use MapPointHomography with map pixel coordinates instead.
+"""
 
 import sys
 from pathlib import Path

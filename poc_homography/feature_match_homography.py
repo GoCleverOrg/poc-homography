@@ -1,71 +1,64 @@
 """
 GCP-based Homography Provider Implementation.
 
-This module implements the HomographyProviderExtended interface using Ground
+This module implements the HomographyProvider interface using Ground
 Control Points (GCPs) - known correspondences between image coordinates and
-GPS coordinates.
+map pixel coordinates.
 
 The homography is computed directly from these point correspondences using
 cv2.findHomography with RANSAC for robust outlier rejection.
 
 Coordinate Systems:
-    - Image coordinates: (u, v) in pixels, origin at top-left
-    - World coordinates: (latitude, longitude) in decimal degrees (WGS84)
-    - Local metric coordinates: (x, y) in meters using equirectangular projection
-    - Map coordinates: (x, y) in meters from reference point on ground plane
+    - Image coordinates: (u, v) in pixels, origin at top-left of camera image
+    - Map coordinates: (pixel_x, pixel_y) in pixels on the reference map image
 """
+
 from __future__ import annotations
 
 import logging
 import math
+import uuid
 from typing import Any
 
 import cv2
 import numpy as np
 
-from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
 from poc_homography.homography_interface import (
-    GPSPositionMixin,
     HomographyApproach,
-    HomographyProviderExtended,
+    HomographyProvider,
     HomographyResult,
-    MapCoordinate,
-    WorldPoint,
     validate_homography_matrix,
 )
-from poc_homography.types import Degrees, Meters
+from poc_homography.map_points import MapPoint
 
 logger = logging.getLogger(__name__)
 
 
-class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
+class FeatureMatchHomography(HomographyProvider):
     """
     GCP-based homography computation provider.
 
     This implementation computes homography using Ground Control Points (GCPs),
-    which are known correspondences between image pixel coordinates and GPS
-    world coordinates. The homography maps between image space and local metric
-    space (derived from GPS coordinates).
+    which are known correspondences between image pixel coordinates and map
+    pixel coordinates. The homography maps between image space and map space.
 
     The computation process:
-    1. Extract GCPs from reference data (pixel coords + GPS coords)
-    2. Convert GPS coordinates to local metric coordinates using equirectangular projection
-    3. Compute homography using cv2.findHomography with RANSAC
-    4. Store homography matrix and inverse for bidirectional projection
-    5. Calculate confidence based on inlier ratio, reprojection error, and spatial distribution
+    1. Extract GCPs from reference data (image pixel coords + map pixel coords)
+    2. Compute homography using cv2.findHomography with RANSAC
+    3. Store homography matrix and inverse for bidirectional projection
+    4. Calculate confidence based on inlier ratio, reprojection error, and spatial distribution
 
     Attributes:
         width: Image width in pixels
         height: Image height in pixels
+        map_id: Identifier of the reference map
         detector: Feature detector type (kept for API compatibility, not used)
         min_matches: Minimum number of GCP matches required for valid homography
         ransac_threshold: Maximum reprojection error (pixels) for RANSAC inlier
         confidence_threshold: Minimum confidence score to consider homography valid
-        H: Current homography matrix (3x3) mapping local metric to image
-        H_inv: Inverse homography matrix mapping image to local metric
+        H: Current homography matrix (3x3) mapping map pixels to image
+        H_inv: Inverse homography matrix mapping image to map pixels
         _confidence: Current homography confidence score [0.0, 1.0]
-        _camera_gps_lat: Reference GPS latitude for local metric conversion
-        _camera_gps_lon: Reference GPS longitude for local metric conversion
     """
 
     # Minimum determinant threshold for valid homography
@@ -100,6 +93,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         self,
         width: int,
         height: int,
+        map_id: str,
         detector: str = "gcp",  # Not used, kept for API compatibility
         min_matches: int = 4,
         ransac_threshold: float = 3.0,
@@ -112,6 +106,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         Args:
             width: Image width in pixels (e.g., 1920)
             height: Image height in pixels (e.g., 1080)
+            map_id: Identifier of the reference map for projected points
             detector: Detector type (kept for API compatibility, not used for GCP)
             min_matches: Minimum number of GCP matches required for computing
                 homography. Must be at least 4 (minimum for homography estimation).
@@ -149,6 +144,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         self.width = width
         self.height = height
+        self.map_id = map_id
         self.detector = detector
         self.min_matches = min_matches
         self.ransac_threshold = ransac_threshold
@@ -156,75 +152,10 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         self.fitting_method = fitting_method
 
         # Homography state
-        self.H = np.eye(3)  # Maps local metric to image
-        self.H_inv = np.eye(3)  # Maps image to local metric
+        self.H = np.eye(3)  # Maps map pixels to image
+        self.H_inv = np.eye(3)  # Maps image to map pixels
         self._confidence: float = 0.0
         self._last_metadata: dict[str, Any] = {}
-
-        # GPS reference point for local metric to GPS conversion
-        # This will be set from the first GCP or can be set explicitly
-        self._camera_gps_lat: float | None = None
-        self._camera_gps_lon: float | None = None
-        self._reference_lat: float | None = None
-        self._reference_lon: float | None = None
-
-    def _gps_to_local(self, lat: float, lon: float) -> tuple[float, float]:
-        """
-        Convert GPS coordinates to local metric coordinates.
-
-        Uses the shared coordinate_converter module for consistency.
-
-        Args:
-            lat: Latitude in decimal degrees
-            lon: Longitude in decimal degrees
-
-        Returns:
-            (x, y): Local metric coordinates in meters (East, North)
-
-        Raises:
-            RuntimeError: If reference GPS position not set
-        """
-        if self._reference_lat is None or self._reference_lon is None:
-            raise RuntimeError(
-                "Reference GPS position not set. This should be initialized "
-                "during compute_homography() from GCPs."
-            )
-
-        return gps_to_local_xy(
-            Degrees(self._reference_lat),
-            Degrees(self._reference_lon),
-            Degrees(lat),
-            Degrees(lon),
-        )
-
-    def _local_to_gps(self, x_meters: float, y_meters: float) -> tuple[float, float]:
-        """
-        Convert local metric coordinates to GPS coordinates.
-
-        Uses the shared coordinate_converter module for consistency.
-
-        Args:
-            x_meters: X coordinate in meters (East)
-            y_meters: Y coordinate in meters (North)
-
-        Returns:
-            (latitude, longitude): GPS coordinates in decimal degrees
-
-        Raises:
-            RuntimeError: If reference GPS position not set
-        """
-        if self._reference_lat is None or self._reference_lon is None:
-            raise RuntimeError(
-                "Reference GPS position not set. Call compute_homography() first "
-                "to initialize from GCPs."
-            )
-
-        return local_xy_to_gps(
-            Degrees(self._reference_lat),
-            Degrees(self._reference_lon),
-            Meters(x_meters),
-            Meters(y_meters),
-        )
 
     def _calculate_spatial_distribution(self, image_points: np.ndarray) -> dict[str, Any]:
         """
@@ -385,7 +316,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 # Small bonus for well-distributed GCPs (capped at 1.0)
                 confidence *= self.DIST_BONUS_GOOD_COVERAGE
 
-        return min(1.0, confidence)
+        return float(min(1.0, confidence))
 
     def _get_suggested_action(
         self, confidence_breakdown: dict[str, Any], outlier_analysis: list[dict[str, Any]]
@@ -420,7 +351,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             if num_outliers > 5:
                 suggestions.append(
                     f"Consider increasing RANSAC threshold (current: {self.ransac_threshold}px) or "
-                    "verifying GPS coordinate accuracy"
+                    "verifying map coordinate accuracy"
                 )
 
         # Check if confidence is below threshold
@@ -489,17 +420,15 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         return base_confidence * edge_factor
 
-    def _project_image_point_to_local(
-        self, image_point: tuple[float, float]
-    ) -> tuple[float, float]:
+    def _project_image_point_to_map(self, image_point: tuple[float, float]) -> tuple[float, float]:
         """
-        Project image point to local metric coordinates.
+        Project image point to map pixel coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates
+            image_point: (u, v) pixel coordinates in camera image
 
         Returns:
-            (x_local, y_local): Local metric coordinates in meters
+            (pixel_x, pixel_y): Pixel coordinates on the reference map
 
         Raises:
             ValueError: If point projects to infinity (on horizon)
@@ -509,18 +438,18 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         # Convert to homogeneous coordinates
         pt_homogeneous = np.array([u, v, 1.0])
 
-        # Project to local metric using inverse homography
-        local_homogeneous = self.H_inv @ pt_homogeneous
+        # Project to map pixels using inverse homography
+        map_homogeneous = self.H_inv @ pt_homogeneous
 
         # Check for division by zero (point at infinity/horizon)
-        if abs(local_homogeneous[2]) < 1e-10:
+        if abs(map_homogeneous[2]) < 1e-10:
             raise ValueError("Point projects to infinity (on horizon line)")
 
         # Normalize
-        x_local = local_homogeneous[0] / local_homogeneous[2]
-        y_local = local_homogeneous[1] / local_homogeneous[2]
+        pixel_x = map_homogeneous[0] / map_homogeneous[2]
+        pixel_y = map_homogeneous[1] / map_homogeneous[2]
 
-        return x_local, y_local
+        return pixel_x, pixel_y
 
     def _compute_homography_with_method(
         self, local_points: np.ndarray, image_points: np.ndarray
@@ -618,7 +547,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             frame: Image frame (not used for GCP approach, but required by interface)
             reference: Dictionary with required key:
                 - 'ground_control_points': List of GCP dictionaries, each with:
-                    - 'gps': {'latitude': float, 'longitude': float}
+                    - 'map': {'pixel_x': float, 'pixel_y': float} OR MapPoint object
                     - 'image': {'u': float, 'v': float}
 
         Returns:
@@ -641,71 +570,43 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
         # Extract GCP data
         image_pts_list: list[list[float]] = []
-        gps_pts_list: list[list[float]] = []
+        map_pts_list: list[list[float]] = []
 
         for gcp in gcps:
-            if "gps" not in gcp or "image" not in gcp:
-                raise ValueError("Each GCP must have 'gps' and 'image' keys")
+            # Support both MapPoint objects and dict format
+            if isinstance(gcp.get("map"), MapPoint):
+                map_point = gcp["map"]
+                map_pts_list.append([map_point.pixel_x, map_point.pixel_y])
+            elif "map" in gcp:
+                map_data = gcp["map"]
+                if "pixel_x" not in map_data or "pixel_y" not in map_data:
+                    raise ValueError("Map must have 'pixel_x' and 'pixel_y' keys")
+                map_pts_list.append([map_data["pixel_x"], map_data["pixel_y"]])
+            else:
+                raise ValueError("Each GCP must have 'map' key with pixel coordinates")
 
-            gps = gcp["gps"]
+            if "image" not in gcp:
+                raise ValueError("Each GCP must have 'image' key")
+
             img = gcp["image"]
-
-            if "latitude" not in gps or "longitude" not in gps:
-                raise ValueError("GPS must have 'latitude' and 'longitude' keys")
-
             if "u" not in img or "v" not in img:
                 raise ValueError("Image must have 'u' and 'v' keys")
 
             image_pts_list.append([img["u"], img["v"]])
-            gps_pts_list.append([gps["latitude"], gps["longitude"]])
 
         # Convert to numpy arrays
         image_points: np.ndarray = np.array(image_pts_list, dtype=np.float32)
-        gps_points: np.ndarray = np.array(gps_pts_list, dtype=np.float64)
-
-        # Set reference point for local coordinate system
-        # Priority: 1) camera_gps from reference, 2) GCP centroid (more stable than first GCP)
-        camera_gps = reference.get("camera_gps")
-        if camera_gps and "latitude" in camera_gps and "longitude" in camera_gps:
-            # Use explicit camera position as reference
-            self._reference_lat = camera_gps["latitude"]
-            self._reference_lon = camera_gps["longitude"]
-            self._camera_gps_lat = self._reference_lat
-            self._camera_gps_lon = self._reference_lon
-            logger.info(
-                "Using camera GPS as reference: lat=%.6f, lon=%.6f",
-                self._reference_lat,
-                self._reference_lon,
-            )
-        else:
-            # Fall back to GCP centroid (more stable than arbitrary first point)
-            self._reference_lat = float(np.mean(gps_points[:, 0]))
-            self._reference_lon = float(np.mean(gps_points[:, 1]))
-            self._camera_gps_lat = self._reference_lat
-            self._camera_gps_lon = self._reference_lon
-            logger.info(
-                "Using GCP centroid as reference (no camera_gps provided): lat=%.6f, lon=%.6f",
-                self._reference_lat,
-                self._reference_lon,
-            )
-
-        # Convert GPS points to local metric coordinates
-        local_pts_list: list[list[float]] = []
-        for lat, lon in gps_points:
-            x, y = self._gps_to_local(lat, lon)
-            local_pts_list.append([x, y])
-
-        local_points: np.ndarray = np.array(local_pts_list, dtype=np.float32)
+        map_points: np.ndarray = np.array(map_pts_list, dtype=np.float32)
 
         logger.info(
-            "Computing homography from %d GCPs (image -> local metric), method=%s",
+            "Computing homography from %d GCPs (image -> map pixels), method=%s",
             len(image_points),
             self.fitting_method,
         )
 
         # Compute homography using specified fitting method
-        # H maps local metric coordinates to image coordinates
-        H, mask, method_used = self._compute_homography_with_method(local_points, image_points)
+        # H maps map pixel coordinates to image coordinates
+        H, mask, method_used = self._compute_homography_with_method(map_points, image_points)
 
         if H is None:
             logger.error("Failed to compute homography from GCPs")
@@ -714,7 +615,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             self._confidence = 0.0
             raise RuntimeError("Failed to compute homography. Check GCP quality and distribution.")
 
-        # Store homography (local metric -> image)
+        # Store homography (map pixels -> image)
         self.H = H
 
         # Calculate spatial distribution of GCPs (for confidence calculation)
@@ -728,7 +629,11 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         mean_reproj_error = None
         max_reproj_error = None
 
-        # Compute inverse (image -> local metric)
+        # Initialize inlier tracking (will be updated if homography is valid)
+        num_inliers = 0
+        total_points = len(image_points)
+
+        # Compute inverse (image -> map pixels)
         det_H = np.linalg.det(self.H)
         if abs(det_H) < self.MIN_DET_THRESHOLD:
             logger.warning("Homography is singular (det=%.2e). Inverse may be unstable.", det_H)
@@ -743,13 +648,13 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
 
             # Calculate reprojection errors for inliers
             if mask is not None and num_inliers > 0:
-                inlier_local = local_points[mask.ravel() == 1]
+                inlier_map = map_points[mask.ravel() == 1]
                 inlier_image = image_points[mask.ravel() == 1]
 
-                # Project local points to image using homography
-                projected = cv2.perspectiveTransform(
-                    inlier_local.reshape(-1, 1, 2), self.H
-                ).reshape(-1, 2)
+                # Project map points to image using homography
+                projected = cv2.perspectiveTransform(inlier_map.reshape(-1, 1, 2), self.H).reshape(
+                    -1, 2
+                )
 
                 # Calculate reprojection errors
                 errors = np.linalg.norm(projected - inlier_image, axis=1)
@@ -767,9 +672,9 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         outlier_analysis = []
         if mask is not None:
             # Calculate errors for ALL points (not just inliers)
-            all_projected = cv2.perspectiveTransform(
-                local_points.reshape(-1, 1, 2), self.H
-            ).reshape(-1, 2)
+            all_projected = cv2.perspectiveTransform(map_points.reshape(-1, 1, 2), self.H).reshape(
+                -1, 2
+            )
             all_errors = np.linalg.norm(all_projected - image_points, axis=1)
 
             for i in range(len(gcps)):
@@ -784,8 +689,8 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                         "description": desc,
                         "is_inlier": is_inlier,
                         "error_px": error,
-                        "pixel": [float(image_points[i][0]), float(image_points[i][1])],
-                        "gps": [float(gps_points[i][0]), float(gps_points[i][1])],
+                        "image_pixel": [float(image_points[i][0]), float(image_points[i][1])],
+                        "map_pixel": [float(map_points[i][0]), float(map_points[i][1])],
                     }
                 )
 
@@ -793,7 +698,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         outlier_analysis.sort(key=lambda x: x["error_px"], reverse=True)
 
         # Build confidence breakdown for diagnostics
-        inlier_ratio = num_inliers / total_points if "num_inliers" in dir() else 0
+        inlier_ratio = num_inliers / total_points if total_points > 0 else 0
         confidence_breakdown: dict[str, Any] = {
             "inlier_ratio": inlier_ratio,
             "inlier_penalty_applied": inlier_ratio < self.MIN_INLIER_RATIO,
@@ -836,7 +741,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             "inlier_ratio": float(np.sum(mask)) / len(image_points) if mask is not None else 0.0,
             "inlier_mask": mask.flatten().astype(bool).tolist() if mask is not None else None,
             "determinant": det_H,
-            "reference_gps": {"latitude": self._reference_lat, "longitude": self._reference_lon},
+            "map_id": self.map_id,
             # Distribution metrics
             "distribution": {
                 "coverage_ratio": distribution_metrics["coverage_ratio"],
@@ -852,7 +757,7 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 "max_px": max_reproj_error,
                 "threshold_px": self.ransac_threshold,
             },
-            # NEW: Detailed diagnostics
+            # Detailed diagnostics
             "confidence_breakdown": confidence_breakdown,
             "outlier_analysis": outlier_analysis,
             "top_outliers": [o for o in outlier_analysis if not o["is_inlier"]][:5],
@@ -874,18 +779,19 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             homography_matrix=self.H.copy(), confidence=self._confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
         """
-        Project image point to GPS world coordinates.
+        Project image point to map pixel coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates
+            image_point: (u, v) pixel coordinates in camera image
+            point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
-            WorldPoint with GPS latitude/longitude and confidence
+            MapPoint with pixel coordinates on the reference map
 
         Raises:
-            RuntimeError: If no valid homography computed or GPS position not set
+            RuntimeError: If no valid homography computed
             ValueError: If image_point is outside valid bounds
         """
         if not self.is_valid():
@@ -898,26 +804,32 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
                 f"[0, {self.width}) x [0, {self.height})"
             )
 
-        # Project to local metric coordinates
-        x_local, y_local = self._project_image_point_to_local(image_point)
+        # Project to map pixel coordinates
+        pixel_x, pixel_y = self._project_image_point_to_map(image_point)
 
-        # Convert to GPS
-        latitude, longitude = self._local_to_gps(x_local, y_local)
+        # Generate a unique ID for this projected point if not provided
+        if not point_id:
+            point_id = f"proj_{uuid.uuid4().hex[:8]}"
 
-        # Calculate point-specific confidence
-        point_confidence = self._calculate_point_confidence(image_point, self._confidence)
+        return MapPoint(
+            id=point_id,
+            pixel_x=pixel_x,
+            pixel_y=pixel_y,
+            map_id=self.map_id,
+        )
 
-        return WorldPoint(latitude=latitude, longitude=longitude, confidence=point_confidence)
-
-    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
+    def project_points(
+        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+    ) -> list[MapPoint]:
         """
-        Project multiple image points to GPS world coordinates.
+        Project multiple image points to map pixel coordinates.
 
         Args:
-            image_points: List of (u, v) pixel coordinates
+            image_points: List of (u, v) pixel coordinates in camera image
+            point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:
-            List of WorldPoint objects with GPS coordinates
+            List of MapPoint objects with pixel coordinates on the reference map
 
         Raises:
             RuntimeError: If no valid homography computed
@@ -926,12 +838,13 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
-        world_points = []
-        for image_point in image_points:
-            world_point = self.project_point(image_point)
-            world_points.append(world_point)
+        map_points = []
+        for i, image_point in enumerate(image_points):
+            point_id = f"{point_id_prefix}_{i}"
+            map_point = self.project_point(image_point, point_id=point_id)
+            map_points.append(map_point)
 
-        return world_points
+        return map_points
 
     def get_confidence(self) -> float:
         """
@@ -954,68 +867,3 @@ class FeatureMatchHomography(GPSPositionMixin, HomographyProviderExtended):
             self._confidence,
             self.confidence_threshold,
         )
-
-    # =========================================================================
-    # HomographyProviderExtended Interface Implementation
-    # =========================================================================
-
-    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
-        """
-        Project image point to local map coordinates.
-
-        Args:
-            image_point: (u, v) pixel coordinates
-
-        Returns:
-            MapCoordinate with x, y in meters from reference point
-
-        Raises:
-            RuntimeError: If no valid homography computed
-            ValueError: If image_point is outside valid bounds
-        """
-        if not self.is_valid():
-            raise RuntimeError("No valid homography available. Call compute_homography() first.")
-
-        u, v = image_point
-        if not (0 <= u < self.width) or not (0 <= v < self.height):
-            raise ValueError(
-                f"Image point ({u}, {v}) outside valid bounds "
-                f"[0, {self.width}) x [0, {self.height})"
-            )
-
-        # Project to local metric coordinates
-        x_local, y_local = self._project_image_point_to_local(image_point)
-
-        # Calculate point-specific confidence
-        point_confidence = self._calculate_point_confidence(image_point, self._confidence)
-
-        return MapCoordinate(
-            x=x_local,
-            y=y_local,
-            confidence=point_confidence,
-            elevation=0.0,  # Ground plane assumption
-        )
-
-    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
-        """
-        Project multiple image points to local map coordinates.
-
-        Args:
-            image_points: List of (u, v) pixel coordinates
-
-        Returns:
-            List of MapCoordinate objects with x, y in meters
-
-        Raises:
-            RuntimeError: If no valid homography computed
-            ValueError: If any image_point is outside valid bounds
-        """
-        if not self.is_valid():
-            raise RuntimeError("No valid homography available. Call compute_homography() first.")
-
-        map_coords = []
-        for image_point in image_points:
-            map_coord = self.project_point_to_map(image_point)
-            map_coords.append(map_coord)
-
-        return map_coords

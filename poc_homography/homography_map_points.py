@@ -2,50 +2,18 @@
 """
 Homography provider using map points for coordinate transformation.
 
-This module implements homography-based transformation between camera image pixels
-and map coordinates (UTM) using map point references instead of GPS coordinates.
-
-Key Concepts:
-    - Map Points: Reference points on a map with known UTM coordinates
-    - GCPs (Ground Control Points): Correspondences between camera pixels and map point IDs
-    - Homography: 3x3 transformation matrix mapping between coordinate systems
-    - Round-trip validation: Camera -> Map -> Camera consistency checks
+Implements homography-based transformation between camera image pixels
+and map coordinates using map point references instead of GPS coordinates.
 
 Coordinate Systems:
     - Camera pixels: (u, v) in image space, origin at top-left
-    - Map coordinates: (easting, northing) in UTM meters
-
-Example usage:
-    >>> from poc_homography.map_points import MapPointRegistry
-    >>> from poc_homography.homography_map_points import MapPointHomography
-    >>>
-    >>> # Load map points
-    >>> registry = MapPointRegistry.load("map_points.json")
-    >>>
-    >>> # Create homography provider
-    >>> homography = MapPointHomography()
-    >>>
-    >>> # Compute homography from GCPs
-    >>> gcps = [
-    ...     {"pixel_x": 800, "pixel_y": 580, "map_point_id": "A7"},
-    ...     {"pixel_x": 1082, "pixel_y": 390, "map_point_id": "A6"},
-    ...     # ... more GCPs
-    ... ]
-    >>> result = homography.compute_from_gcps(gcps, registry)
-    >>>
-    >>> # Project camera pixel to map coordinates
-    >>> map_coord = homography.camera_to_map((960, 540))
-    >>> print(f"Map: ({map_coord[0]:.2f}, {map_coord[1]:.2f}) meters")
-    >>>
-    >>> # Project map coordinate back to camera pixel
-    >>> camera_pixel = homography.map_to_camera((251500.0, -360500.0))
-    >>> print(f"Camera: ({camera_pixel[0]:.1f}, {camera_pixel[1]:.1f}) pixels")
+    - Map coordinates: (pixel_x, pixel_y) in map image space
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -55,8 +23,12 @@ from poc_homography.map_points import MapPoint, MapPointRegistry
 
 
 @dataclass
-class HomographyResult:
-    """Result of homography computation including matrix and quality metrics.
+class MapPointComputationResult:
+    """Result of MapPoint homography computation including matrix and quality metrics.
+
+    This class is distinct from HomographyResult in homography_interface.py, which
+    provides a generic result structure. This class contains detailed metrics
+    specific to MapPoint-based GCP homography computation.
 
     Attributes:
         homography_matrix: 3x3 transformation matrix (camera pixels -> map coords)
@@ -64,9 +36,9 @@ class HomographyResult:
         num_gcps: Total number of ground control points used
         num_inliers: Number of inlier points after RANSAC
         inlier_ratio: Ratio of inliers to total points [0.0, 1.0]
-        mean_reproj_error: Mean reprojection error in meters
-        max_reproj_error: Maximum reprojection error in meters
-        rmse: Root mean square error in meters
+        mean_reproj_error: Mean reprojection error in pixels
+        max_reproj_error: Maximum reprojection error in pixels
+        rmse: Root mean square error in pixels
     """
 
     homography_matrix: npt.NDArray[np.float64]
@@ -82,23 +54,40 @@ class HomographyResult:
 class MapPointHomography:
     """Homography provider for transforming between camera pixels and map coordinates.
 
-    This class computes and applies homography transformations using map point
-    references. It maintains internal state of the current homography matrix
-    and provides methods for bidirectional coordinate transformation.
-
-    Attributes:
-        _H: Forward homography matrix (camera -> map), shape (3, 3)
-        _H_inv: Inverse homography matrix (map -> camera), shape (3, 3)
-        _is_valid: Whether a valid homography has been computed
-        _result: Last computation result with quality metrics
+    Computes and applies homography transformations using map point references.
+    Maintains internal state of the current homography matrix for bidirectional
+    coordinate transformation.
     """
 
-    def __init__(self) -> None:
-        """Initialize homography provider with no computed homography."""
-        self._H: Optional[npt.NDArray[np.float64]] = None
-        self._H_inv: Optional[npt.NDArray[np.float64]] = None
+    def __init__(self, map_id: str) -> None:
+        """Initialize homography provider with map identifier.
+
+        Args:
+            map_id: Identifier of the map for generated MapPoints (e.g., "map_valte")
+        """
+        self._map_id = map_id
+        self._H: npt.NDArray[np.float64] | None = None
+        self._H_inv: npt.NDArray[np.float64] | None = None
         self._is_valid: bool = False
-        self._result: Optional[HomographyResult] = None
+        self._result: MapPointComputationResult | None = None
+        self._point_counter: int = 0
+
+    def _require_forward_homography(self) -> npt.NDArray[np.float64]:
+        """Return forward homography matrix or raise RuntimeError if not computed."""
+        if not self._is_valid or self._H is None:
+            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
+        return self._H
+
+    def _require_inverse_homography(self) -> npt.NDArray[np.float64]:
+        """Return inverse homography matrix or raise RuntimeError if not computed."""
+        if not self._is_valid or self._H_inv is None:
+            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
+        return self._H_inv
+
+    @property
+    def map_id(self) -> str:
+        """Get the map identifier."""
+        return self._map_id
 
     def compute_from_gcps(
         self,
@@ -106,7 +95,7 @@ class MapPointHomography:
         map_registry: MapPointRegistry,
         ransac_threshold: float = 50.0,
         min_inlier_ratio: float = 0.5,
-    ) -> HomographyResult:
+    ) -> MapPointComputationResult:
         """Compute homography from ground control points.
 
         This method extracts camera pixel coordinates and corresponding map
@@ -118,12 +107,12 @@ class MapPointHomography:
                 - "pixel_x": Camera pixel x coordinate
                 - "pixel_y": Camera pixel y coordinate
                 - "map_point_id": ID of map point in registry
-            map_registry: Registry containing map points with UTM coordinates
-            ransac_threshold: RANSAC reprojection error threshold in meters (default: 50.0)
+            map_registry: Registry containing map points with pixel coordinates
+            ransac_threshold: RANSAC reprojection error threshold in pixels (default: 50.0)
             min_inlier_ratio: Minimum ratio of inliers to consider valid (default: 0.5)
 
         Returns:
-            HomographyResult with computed matrices and quality metrics
+            MapPointComputationResult with computed matrices and quality metrics
 
         Raises:
             ValueError: If insufficient GCPs, missing map points, or poor fit quality
@@ -154,30 +143,28 @@ class MapPointHomography:
 
         # Compute homography using RANSAC
         H, mask = cv2.findHomography(
-            camera_pixels_array,
-            map_coords_array,
-            cv2.RANSAC,
-            ransac_threshold
+            camera_pixels_array, map_coords_array, cv2.RANSAC, ransac_threshold
         )
 
         if H is None:
             raise RuntimeError("Homography computation failed")
 
+        # Convert to numpy array for type safety
+        H_array: npt.NDArray[np.float64] = np.asarray(H, dtype=np.float64)
+
         # Check validity
-        if np.linalg.det(H) == 0:
-            raise RuntimeError("Computed homography is singular")
+        if abs(np.linalg.det(H_array)) < 1e-15:
+            raise RuntimeError("Computed homography is singular or near-singular")
 
         # Count inliers
         num_inliers = int(np.sum(mask))
         inlier_ratio = num_inliers / len(gcps)
 
         if inlier_ratio < min_inlier_ratio:
-            raise ValueError(
-                f"Inlier ratio too low: {inlier_ratio:.2%} < {min_inlier_ratio:.2%}"
-            )
+            raise ValueError(f"Inlier ratio too low: {inlier_ratio:.2%} < {min_inlier_ratio:.2%}")
 
         # Compute inverse
-        H_inv = np.linalg.inv(H)
+        H_inv = np.asarray(np.linalg.inv(H_array), dtype=np.float64)
 
         # Compute reprojection errors
         errors = []
@@ -194,7 +181,7 @@ class MapPointHomography:
             map_point = map_registry.points[gcp["map_point_id"]]
             expected = np.array([map_point.pixel_x, map_point.pixel_y])
 
-            # Calculate error in meters
+            # Calculate error in pixels
             error = float(np.linalg.norm(projected - expected))
             errors.append(error)
 
@@ -203,13 +190,13 @@ class MapPointHomography:
         rmse = float(np.sqrt(np.mean(np.array(errors) ** 2)))
 
         # Store state
-        self._H = H
+        self._H = H_array
         self._H_inv = H_inv
         self._is_valid = True
 
         # Create result
-        result = HomographyResult(
-            homography_matrix=H,
+        result = MapPointComputationResult(
+            homography_matrix=H_array,
             inverse_matrix=H_inv,
             num_gcps=len(gcps),
             num_inliers=num_inliers,
@@ -224,36 +211,41 @@ class MapPointHomography:
 
     def camera_to_map(
         self,
-        camera_pixel: tuple[float, float]
-    ) -> tuple[float, float]:
-        """Transform camera pixel to map coordinate (UTM).
+        camera_pixel: tuple[float, float],
+        point_id: str = "",
+    ) -> MapPoint:
+        """Transform camera pixel to map coordinate.
 
         Args:
             camera_pixel: (x, y) pixel coordinates in camera image
+            point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
-            (easting, northing) coordinates in UTM meters
+            MapPoint with pixel coordinates on the map
 
         Raises:
             RuntimeError: If no valid homography has been computed
         """
-        if not self._is_valid or self._H is None:
-            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
-
-        # Convert to required shape for cv2.perspectiveTransform
+        H = self._require_forward_homography()
         point = np.array([[[camera_pixel[0], camera_pixel[1]]]], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(point, self._H)
+        transformed = cv2.perspectiveTransform(point, H)
 
-        return float(transformed[0, 0, 0]), float(transformed[0, 0, 1])
+        if not point_id:
+            self._point_counter += 1
+            point_id = f"proj_{self._point_counter}"
 
-    def map_to_camera(
-        self,
-        map_coord: tuple[float, float]
-    ) -> tuple[float, float]:
-        """Transform map coordinate (UTM) to camera pixel.
+        return MapPoint(
+            id=point_id,
+            pixel_x=float(transformed[0, 0, 0]),
+            pixel_y=float(transformed[0, 0, 1]),
+            map_id=self._map_id,
+        )
+
+    def map_to_camera(self, map_coord: tuple[float, float]) -> tuple[float, float]:
+        """Transform map coordinate to camera pixel.
 
         Args:
-            map_coord: (easting, northing) coordinates in UTM meters
+            map_coord: (pixel_x, pixel_y) coordinates on the map
 
         Returns:
             (x, y) pixel coordinates in camera image
@@ -261,48 +253,52 @@ class MapPointHomography:
         Raises:
             RuntimeError: If no valid homography has been computed
         """
-        if not self._is_valid or self._H_inv is None:
-            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
-
-        # Convert to required shape for cv2.perspectiveTransform
+        H_inv = self._require_inverse_homography()
         point = np.array([[[map_coord[0], map_coord[1]]]], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(point, self._H_inv)
-
+        transformed = cv2.perspectiveTransform(point, H_inv)
         return float(transformed[0, 0, 0]), float(transformed[0, 0, 1])
 
     def camera_to_map_batch(
         self,
-        camera_pixels: list[tuple[float, float]]
-    ) -> list[tuple[float, float]]:
+        camera_pixels: list[tuple[float, float]],
+        point_id_prefix: str = "proj",
+    ) -> list[MapPoint]:
         """Transform multiple camera pixels to map coordinates.
 
         Args:
             camera_pixels: List of (x, y) pixel coordinates
+            point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:
-            List of (easting, northing) coordinates in UTM meters
+            List of MapPoints with pixel coordinates on the map
 
         Raises:
             RuntimeError: If no valid homography has been computed
         """
-        if not self._is_valid or self._H is None:
-            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
-
-        # Convert to required shape
+        H = self._require_forward_homography()
         points = np.array([[[p[0], p[1]]] for p in camera_pixels], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(points, self._H)
+        transformed = cv2.perspectiveTransform(points, H)
 
-        # Extract results
-        return [(float(t[0, 0]), float(t[0, 1])) for t in transformed]
+        results = []
+        for t in transformed:
+            self._point_counter += 1
+            results.append(
+                MapPoint(
+                    id=f"{point_id_prefix}_{self._point_counter}",
+                    pixel_x=float(t[0][0]),
+                    pixel_y=float(t[0][1]),
+                    map_id=self._map_id,
+                )
+            )
+        return results
 
     def map_to_camera_batch(
-        self,
-        map_coords: list[tuple[float, float]]
+        self, map_coords: list[tuple[float, float]]
     ) -> list[tuple[float, float]]:
         """Transform multiple map coordinates to camera pixels.
 
         Args:
-            map_coords: List of (easting, northing) coordinates in UTM meters
+            map_coords: List of (pixel_x, pixel_y) coordinates on the map
 
         Returns:
             List of (x, y) pixel coordinates
@@ -310,56 +306,23 @@ class MapPointHomography:
         Raises:
             RuntimeError: If no valid homography has been computed
         """
-        if not self._is_valid or self._H_inv is None:
-            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
-
-        # Convert to required shape
+        H_inv = self._require_inverse_homography()
         points = np.array([[[c[0], c[1]]] for c in map_coords], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(points, self._H_inv)
-
-        # Extract results
-        return [(float(t[0, 0]), float(t[0, 1])) for t in transformed]
+        transformed = cv2.perspectiveTransform(points, H_inv)
+        return [(float(t[0][0]), float(t[0][1])) for t in transformed]
 
     def is_valid(self) -> bool:
-        """Check if a valid homography has been computed.
-
-        Returns:
-            True if homography is valid and ready for projections
-        """
+        """Check if a valid homography has been computed."""
         return self._is_valid
 
-    def get_result(self) -> Optional[HomographyResult]:
-        """Get the last computation result.
-
-        Returns:
-            HomographyResult if compute_from_gcps was called, None otherwise
-        """
+    def get_result(self) -> MapPointComputationResult | None:
+        """Get the last computation result."""
         return self._result
 
     def get_homography_matrix(self) -> npt.NDArray[np.float64]:
-        """Get the forward homography matrix (camera -> map).
-
-        Returns:
-            3x3 homography matrix
-
-        Raises:
-            RuntimeError: If no valid homography has been computed
-        """
-        if not self._is_valid or self._H is None:
-            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
-
-        return self._H.copy()
+        """Get the forward homography matrix (camera -> map)."""
+        return self._require_forward_homography().copy()
 
     def get_inverse_matrix(self) -> npt.NDArray[np.float64]:
-        """Get the inverse homography matrix (map -> camera).
-
-        Returns:
-            3x3 inverse homography matrix
-
-        Raises:
-            RuntimeError: If no valid homography has been computed
-        """
-        if not self._is_valid or self._H_inv is None:
-            raise RuntimeError("No valid homography. Call compute_from_gcps() first.")
-
-        return self._H_inv.copy()
+        """Get the inverse homography matrix (map -> camera)."""
+        return self._require_inverse_homography().copy()

@@ -33,7 +33,6 @@ import pytest
 
 from poc_homography.map_points import MapPoint, MapPointRegistry
 
-
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent
 MAP_POINTS_PATH = TEST_DATA_DIR / "map_points.json"
@@ -97,8 +96,9 @@ class TestMapPointRegistryLoading:
         """Test that all GCPs reference valid map points."""
         for gcp in valte_gcp_data["gcps"]:
             map_point_id = gcp["map_point_id"]
-            assert map_point_id in map_point_registry.points, \
+            assert map_point_id in map_point_registry.points, (
                 f"GCP references missing map point: {map_point_id}"
+            )
 
 
 class TestGCPCorrespondenceExtraction:
@@ -160,12 +160,20 @@ class TestHomographyComputation:
     def test_compute_homography_from_gcps(self, map_point_registry, valte_gcp_data):
         """Test computing homography matrix using cv2.findHomography."""
         # Extract correspondences
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
-        map_coords = np.array([[map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                               map_point_registry.points[gcp["map_point_id"]].pixel_y]
-                              for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        map_coords = np.array(
+            [
+                [
+                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
+                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                ]
+                for gcp in valte_gcp_data["gcps"]
+            ],
+            dtype=np.float32,
+        )
 
         # Compute homography (camera pixels -> map UTM coords)
         H, mask = cv2.findHomography(camera_pixels, map_coords, cv2.RANSAC, 50.0)
@@ -184,12 +192,20 @@ class TestHomographyComputation:
 
     def test_homography_matrix_properties(self, map_point_registry, valte_gcp_data):
         """Test mathematical properties of homography matrix."""
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
-        map_coords = np.array([[map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                               map_point_registry.points[gcp["map_point_id"]].pixel_y]
-                              for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        map_coords = np.array(
+            [
+                [
+                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
+                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                ]
+                for gcp in valte_gcp_data["gcps"]
+            ],
+            dtype=np.float32,
+        )
 
         H, _ = cv2.findHomography(camera_pixels, map_coords, cv2.RANSAC, 50.0)
 
@@ -199,8 +215,7 @@ class TestHomographyComputation:
 
         # Test that H * H_inv ≈ I
         identity = H @ H_inv
-        assert np.allclose(identity, np.eye(3), atol=1e-6), \
-            "H * H_inv should equal identity matrix"
+        assert np.allclose(identity, np.eye(3), atol=1e-6), "H * H_inv should equal identity matrix"
 
 
 class TestForwardProjection:
@@ -209,12 +224,20 @@ class TestForwardProjection:
     @pytest.fixture
     def homography_matrix(self, map_point_registry, valte_gcp_data):
         """Compute and return homography matrix."""
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
-        map_coords = np.array([[map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                               map_point_registry.points[gcp["map_point_id"]].pixel_y]
-                              for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        map_coords = np.array(
+            [
+                [
+                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
+                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                ]
+                for gcp in valte_gcp_data["gcps"]
+            ],
+            dtype=np.float32,
+        )
 
         H, _ = cv2.findHomography(camera_pixels, map_coords, cv2.RANSAC, 50.0)
         return H
@@ -234,10 +257,7 @@ class TestForwardProjection:
         assert -362000 < map_y < -359000, f"Map Y (northing) out of expected range: {map_y}"
 
     def test_project_gcp_camera_pixels_to_map(
-        self,
-        homography_matrix,
-        map_point_registry,
-        valte_gcp_data
+        self, homography_matrix, map_point_registry, valte_gcp_data
     ):
         """Test that projecting GCP camera pixels yields expected map coords."""
         errors = []
@@ -263,15 +283,14 @@ class TestForwardProjection:
 
         # For real-world data with scale differences, accept larger errors
         # These are in meters in UTM space
-        assert mean_error < 50.0, \
-            f"Mean reprojection error too high: {mean_error:.2f} meters"
-        assert median_error < 30.0, \
-            f"Median reprojection error too high: {median_error:.2f} meters"
+        assert mean_error < 50.0, f"Mean reprojection error too high: {mean_error:.2f} meters"
+        assert median_error < 30.0, f"Median reprojection error too high: {median_error:.2f} meters"
 
     def test_forward_projection_batch(self, homography_matrix, valte_gcp_data):
         """Test batch projection of multiple camera pixels."""
-        camera_pixels = np.array([[[gcp["pixel_x"], gcp["pixel_y"]]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[[gcp["pixel_x"], gcp["pixel_y"]]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
         map_coords = cv2.perspectiveTransform(camera_pixels, homography_matrix)
 
@@ -285,12 +304,20 @@ class TestInverseProjection:
     @pytest.fixture
     def homography_matrix(self, map_point_registry, valte_gcp_data):
         """Compute and return homography matrix."""
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
-        map_coords = np.array([[map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                               map_point_registry.points[gcp["map_point_id"]].pixel_y]
-                              for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        map_coords = np.array(
+            [
+                [
+                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
+                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                ]
+                for gcp in valte_gcp_data["gcps"]
+            ],
+            dtype=np.float32,
+        )
 
         H, _ = cv2.findHomography(camera_pixels, map_coords, cv2.RANSAC, 50.0)
         return H
@@ -319,10 +346,7 @@ class TestInverseProjection:
         assert -100 <= cam_y < 1180, f"Camera y out of reasonable bounds: {cam_y}"
 
     def test_inverse_projection_of_gcps(
-        self,
-        inverse_homography_matrix,
-        map_point_registry,
-        valte_gcp_data
+        self, inverse_homography_matrix, map_point_registry, valte_gcp_data
     ):
         """Test that projecting map coords back yields original camera pixels."""
         errors = []
@@ -332,7 +356,9 @@ class TestInverseProjection:
             map_coord = np.array([[[map_point.pixel_x, map_point.pixel_y]]], dtype=np.float32)
 
             # Project to camera
-            projected_camera_pt = cv2.perspectiveTransform(map_coord, inverse_homography_matrix)[0, 0]
+            projected_camera_pt = cv2.perspectiveTransform(map_coord, inverse_homography_matrix)[
+                0, 0
+            ]
 
             # Expected camera pixel
             expected = np.array([gcp["pixel_x"], gcp["pixel_y"]])
@@ -346,10 +372,10 @@ class TestInverseProjection:
         max_error = np.max(errors)
 
         # Inverse projection errors in pixels should be reasonable
-        assert mean_error < 20.0, \
+        assert mean_error < 20.0, (
             f"Mean inverse reprojection error too high: {mean_error:.2f} pixels"
-        assert max_error < 40.0, \
-            f"Max inverse reprojection error too high: {max_error:.2f} pixels"
+        )
+        assert max_error < 40.0, f"Max inverse reprojection error too high: {max_error:.2f} pixels"
 
 
 class TestRoundTripProjection:
@@ -358,12 +384,20 @@ class TestRoundTripProjection:
     @pytest.fixture
     def homography_matrices(self, map_point_registry, valte_gcp_data):
         """Compute and return forward and inverse homography matrices."""
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
-        map_coords = np.array([[map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                               map_point_registry.points[gcp["map_point_id"]].pixel_y]
-                              for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        map_coords = np.array(
+            [
+                [
+                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
+                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                ]
+                for gcp in valte_gcp_data["gcps"]
+            ],
+            dtype=np.float32,
+        )
 
         H = cv2.findHomography(camera_pixels, map_coords, cv2.RANSAC, 50.0)[0]
         H_inv = np.linalg.inv(H)
@@ -392,16 +426,11 @@ class TestRoundTripProjection:
         max_error = np.max(errors)
 
         # Round-trip error should be small (in pixels)
-        assert mean_error < 5.0, \
-            f"High mean round-trip error: {mean_error:.2f} pixels"
-        assert max_error < 15.0, \
-            f"High max round-trip error: {max_error:.2f} pixels"
+        assert mean_error < 5.0, f"High mean round-trip error: {mean_error:.2f} pixels"
+        assert max_error < 15.0, f"High max round-trip error: {max_error:.2f} pixels"
 
     def test_round_trip_map_to_camera_to_map(
-        self,
-        homography_matrices,
-        map_point_registry,
-        valte_gcp_data
+        self, homography_matrices, map_point_registry, valte_gcp_data
     ):
         """Test map -> camera -> map preserves coordinates."""
         H, H_inv = homography_matrices
@@ -426,10 +455,8 @@ class TestRoundTripProjection:
         max_error = np.max(errors)
 
         # Round-trip error in meters should be acceptable
-        assert mean_error < 30.0, \
-            f"High mean round-trip error: {mean_error:.2f} meters"
-        assert max_error < 80.0, \
-            f"High max round-trip error: {max_error:.2f} meters"
+        assert mean_error < 30.0, f"High mean round-trip error: {mean_error:.2f} meters"
+        assert max_error < 80.0, f"High max round-trip error: {max_error:.2f} meters"
 
 
 class TestReprojectionErrorMetrics:
@@ -438,22 +465,25 @@ class TestReprojectionErrorMetrics:
     @pytest.fixture
     def homography_matrix(self, map_point_registry, valte_gcp_data):
         """Compute and return homography matrix."""
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]]
-                                 for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        camera_pixels = np.array(
+            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+        )
 
-        map_coords = np.array([[map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                               map_point_registry.points[gcp["map_point_id"]].pixel_y]
-                              for gcp in valte_gcp_data["gcps"]], dtype=np.float32)
+        map_coords = np.array(
+            [
+                [
+                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
+                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                ]
+                for gcp in valte_gcp_data["gcps"]
+            ],
+            dtype=np.float32,
+        )
 
         H, _ = cv2.findHomography(camera_pixels, map_coords, cv2.RANSAC, 50.0)
         return H
 
-    def test_mean_reprojection_error(
-        self,
-        homography_matrix,
-        map_point_registry,
-        valte_gcp_data
-    ):
+    def test_mean_reprojection_error(self, homography_matrix, map_point_registry, valte_gcp_data):
         """Test computing mean reprojection error across all GCPs."""
         errors = []
 
@@ -475,7 +505,7 @@ class TestReprojectionErrorMetrics:
         std_error = np.std(errors)
 
         # Log statistics for debugging
-        print(f"\nReprojection error statistics (meters):")
+        print("\nReprojection error statistics (meters):")
         print(f"  Mean: {mean_error:.2f}")
         print(f"  Max: {max_error:.2f}")
         print(f"  Std: {std_error:.2f}")
@@ -484,12 +514,7 @@ class TestReprojectionErrorMetrics:
         assert mean_error < 50.0, f"Mean reprojection error too high: {mean_error:.2f} meters"
         assert max_error < 100.0, f"Max reprojection error too high: {max_error:.2f} meters"
 
-    def test_rmse_reprojection_error(
-        self,
-        homography_matrix,
-        map_point_registry,
-        valte_gcp_data
-    ):
+    def test_rmse_reprojection_error(self, homography_matrix, map_point_registry, valte_gcp_data):
         """Test computing RMSE (Root Mean Square Error) of reprojection."""
         squared_errors = []
 
