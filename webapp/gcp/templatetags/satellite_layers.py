@@ -1,25 +1,48 @@
 """
-Shared Satellite Layer Configuration Module.
+Django Template Tag for Satellite Layer Configuration.
 
-Provides reusable Leaflet.js satellite layer configuration for map visualization tools.
-Supports multiple satellite layer providers with consistent configuration across tools.
+Provides reusable Leaflet.js satellite layer configuration for map visualization.
+Converted from poc_homography.satellite_layers for Django template usage.
 
-Usage:
-    from poc_homography.satellite_layers import generate_satellite_layers_js
-
-    # Generate JavaScript code for embedding in HTML
-    js_code = generate_satellite_layers_js(google_api_key='your-key', default_layer='google')
+Usage in templates:
+    {% load satellite_layers %}
+    <script>
+        {% satellite_layers_js google_api_key=api_key default_layer='google' %}
+    </script>
 """
 
 from __future__ import annotations
 
+from django import template
+from django.utils.safestring import SafeString, mark_safe
 
-def generate_satellite_layers_js(
+register = template.Library()
+
+# Configuration constants
+DEFAULT_MAX_ZOOM = 23
+DEFAULT_MAX_NATIVE_ZOOM = 19
+DEFAULT_LAYER = "google"
+
+# Valid layer names
+VALID_LAYERS = frozenset({"osm", "esri", "pnoa", "google", "hybrid"})
+
+# Map layer names to JavaScript variable names
+LAYER_VAR_NAMES: dict[str, str] = {
+    "osm": "osm",
+    "esri": "satellite",
+    "pnoa": "pnoa",
+    "google": "google",
+    "hybrid": "hybrid",
+}
+
+
+@register.simple_tag
+def satellite_layers_js(
     google_api_key: str | None = None,
-    default_layer: str = "google",
-    max_zoom: int = 23,
-    max_native_zoom: int = 19,
-) -> str:
+    default_layer: str = DEFAULT_LAYER,
+    max_zoom: int = DEFAULT_MAX_ZOOM,
+    max_native_zoom: int = DEFAULT_MAX_NATIVE_ZOOM,
+) -> SafeString:
     """
     Generate JavaScript code for Leaflet.js satellite layer definitions.
 
@@ -32,35 +55,21 @@ def generate_satellite_layers_js(
 
     Args:
         google_api_key: Optional Google Maps API key. If None or empty,
-            Google Satellite layer is excluded from the layer control.
+            Google Satellite layer uses unauthenticated endpoint.
         default_layer: Which layer to activate by default. Options:
             'google', 'esri', 'pnoa', 'osm', 'hybrid'.
-            Google works without API key (uses unauthenticated endpoint).
-        max_zoom: Maximum zoom level for over-zooming support (default: 23).
-        max_native_zoom: Native tile resolution zoom level (default: 19).
+        max_zoom: Maximum zoom level for over-zooming support.
+        max_native_zoom: Native tile resolution zoom level.
 
     Returns:
         JavaScript code string defining baseLayers object and adding default to map.
         The code assumes a Leaflet map object named 'map' already exists.
-
-    Example:
-        >>> js = generate_satellite_layers_js(google_api_key='AIza...', default_layer='google')
-        >>> # Embed js in HTML template
     """
-    # Map layer names to JavaScript variable names
-    layer_var_names = {
-        "osm": "osm",
-        "esri": "satellite",
-        "pnoa": "pnoa",
-        "google": "google",
-        "hybrid": "hybrid",
-    }
-
-    # Get JavaScript variable name for default layer (no fallback - Google works without API key)
-    default_js_var = layer_var_names.get(default_layer, "google")
+    # Get JavaScript variable name for default layer
+    default_js_var = LAYER_VAR_NAMES.get(default_layer, LAYER_VAR_NAMES[DEFAULT_LAYER])
 
     # Build JavaScript code
-    js_parts = []
+    js_parts: list[str] = []
 
     # OSM Street Map
     js_parts.append("""
@@ -74,7 +83,7 @@ def generate_satellite_layers_js(
     js_parts.append(f"""
         // ESRI Satellite with over-zoom support
         var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+            attribution: 'Tiles &copy; Esri',
             maxNativeZoom: {max_native_zoom},
             maxZoom: {max_zoom}
         }});""")
@@ -86,7 +95,7 @@ def generate_satellite_layers_js(
             layers: 'OI.OrthoimageCoverage',
             format: 'image/png',
             transparent: true,
-            attribution: 'PNOA &copy; IGN Espa\\u00f1a',
+            attribution: 'PNOA &copy; IGN',
             maxZoom: 22
         });""")
 
@@ -137,4 +146,4 @@ def generate_satellite_layers_js(
 
         L.control.layers(baseLayers).addTo(map);""")
 
-    return "\n".join(js_parts)
+    return mark_safe("\n".join(js_parts))
