@@ -27,6 +27,7 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from tools.calibrate_projection import dms_to_dd
 from tools.get_camera_intrinsics import get_ptz_status
 
 from poc_homography.camera_config import (
@@ -36,7 +37,6 @@ from poc_homography.camera_config import (
     get_camera_by_name,
     get_rtsp_url,
 )
-from poc_homography.gps_distance_calculator import dms_to_dd
 from poc_homography.map_points import MapPointRegistry
 from poc_homography.server_utils import find_available_port
 
