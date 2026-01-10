@@ -17,9 +17,7 @@ from poc_homography.homography_interface import (
     HomographyResult,
 )
 from poc_homography.homography_map_points import (
-    HomographyResult as MapPointHomographyResult,
-)
-from poc_homography.homography_map_points import (
+    MapPointComputationResult,
     MapPointHomography,
 )
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
@@ -34,7 +32,7 @@ __all__ = [
     "MapPoint",
     "MapPointRegistry",
     "MapPointHomography",
-    "MapPointHomographyResult",
+    "MapPointComputationResult",
     "PixelPoint",
     "IntrinsicExtrinsicHomography",
     "FeatureMatchHomography",

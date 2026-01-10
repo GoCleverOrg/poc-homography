@@ -87,13 +87,31 @@ class HomographyProvider(ABC):
         pass
 
     @abstractmethod
-    def project_point(self, image_point: tuple[float, float]) -> MapPoint:
-        """Project single image coordinate to map coordinate."""
+    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
+        """Project single image coordinate to map coordinate.
+
+        Args:
+            image_point: (u, v) pixel coordinates in camera image
+            point_id: Optional ID for the generated MapPoint (auto-generated if empty)
+
+        Returns:
+            MapPoint with pixel coordinates on the map
+        """
         pass
 
     @abstractmethod
-    def project_points(self, image_points: list[tuple[float, float]]) -> list[MapPoint]:
-        """Project multiple image points to map coordinates."""
+    def project_points(
+        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+    ) -> list[MapPoint]:
+        """Project multiple image points to map coordinates.
+
+        Args:
+            image_points: List of (u, v) pixel coordinates
+            point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
+
+        Returns:
+            List of MapPoint objects with pixel coordinates on the map
+        """
         pass
 
     @abstractmethod

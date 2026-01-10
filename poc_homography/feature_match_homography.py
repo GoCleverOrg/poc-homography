@@ -779,12 +779,13 @@ class FeatureMatchHomography(HomographyProvider):
             homography_matrix=self.H.copy(), confidence=self._confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: tuple[float, float]) -> MapPoint:
+    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
         """
         Project image point to map pixel coordinates.
 
         Args:
             image_point: (u, v) pixel coordinates in camera image
+            point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
             MapPoint with pixel coordinates on the reference map
@@ -806,8 +807,9 @@ class FeatureMatchHomography(HomographyProvider):
         # Project to map pixel coordinates
         pixel_x, pixel_y = self._project_image_point_to_map(image_point)
 
-        # Generate a unique ID for this projected point
-        point_id = f"proj_{uuid.uuid4().hex[:8]}"
+        # Generate a unique ID for this projected point if not provided
+        if not point_id:
+            point_id = f"proj_{uuid.uuid4().hex[:8]}"
 
         return MapPoint(
             id=point_id,

@@ -23,8 +23,12 @@ from poc_homography.map_points import MapPoint, MapPointRegistry
 
 
 @dataclass
-class HomographyResult:
-    """Result of homography computation including matrix and quality metrics.
+class MapPointComputationResult:
+    """Result of MapPoint homography computation including matrix and quality metrics.
+
+    This class is distinct from HomographyResult in homography_interface.py, which
+    provides a generic result structure. This class contains detailed metrics
+    specific to MapPoint-based GCP homography computation.
 
     Attributes:
         homography_matrix: 3x3 transformation matrix (camera pixels -> map coords)
@@ -65,7 +69,7 @@ class MapPointHomography:
         self._H: npt.NDArray[np.float64] | None = None
         self._H_inv: npt.NDArray[np.float64] | None = None
         self._is_valid: bool = False
-        self._result: HomographyResult | None = None
+        self._result: MapPointComputationResult | None = None
         self._point_counter: int = 0
 
     def _require_forward_homography(self) -> npt.NDArray[np.float64]:
@@ -91,7 +95,7 @@ class MapPointHomography:
         map_registry: MapPointRegistry,
         ransac_threshold: float = 50.0,
         min_inlier_ratio: float = 0.5,
-    ) -> HomographyResult:
+    ) -> MapPointComputationResult:
         """Compute homography from ground control points.
 
         This method extracts camera pixel coordinates and corresponding map
@@ -108,7 +112,7 @@ class MapPointHomography:
             min_inlier_ratio: Minimum ratio of inliers to consider valid (default: 0.5)
 
         Returns:
-            HomographyResult with computed matrices and quality metrics
+            MapPointComputationResult with computed matrices and quality metrics
 
         Raises:
             ValueError: If insufficient GCPs, missing map points, or poor fit quality
@@ -149,8 +153,8 @@ class MapPointHomography:
         H_array: npt.NDArray[np.float64] = np.asarray(H, dtype=np.float64)
 
         # Check validity
-        if np.linalg.det(H_array) == 0:
-            raise RuntimeError("Computed homography is singular")
+        if abs(np.linalg.det(H_array)) < 1e-15:
+            raise RuntimeError("Computed homography is singular or near-singular")
 
         # Count inliers
         num_inliers = int(np.sum(mask))
@@ -191,7 +195,7 @@ class MapPointHomography:
         self._is_valid = True
 
         # Create result
-        result = HomographyResult(
+        result = MapPointComputationResult(
             homography_matrix=H_array,
             inverse_matrix=H_inv,
             num_gcps=len(gcps),
@@ -276,9 +280,8 @@ class MapPointHomography:
         transformed = cv2.perspectiveTransform(points, H)
 
         results = []
-        for i in range(len(transformed)):
+        for t in transformed:
             self._point_counter += 1
-            t = transformed[i]
             results.append(
                 MapPoint(
                     id=f"{point_id_prefix}_{self._point_counter}",
@@ -306,16 +309,13 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         points = np.array([[[c[0], c[1]]] for c in map_coords], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H_inv)
-        return [
-            (float(transformed[i][0][0]), float(transformed[i][0][1]))
-            for i in range(len(transformed))
-        ]
+        return [(float(t[0][0]), float(t[0][1])) for t in transformed]
 
     def is_valid(self) -> bool:
         """Check if a valid homography has been computed."""
         return self._is_valid
 
-    def get_result(self) -> HomographyResult | None:
+    def get_result(self) -> MapPointComputationResult | None:
         """Get the last computation result."""
         return self._result
 

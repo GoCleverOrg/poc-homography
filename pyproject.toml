@@ -208,7 +208,11 @@ pre-commit = "pre-commit run --all-files"
 
 [tool.poe.tasks.validate]
 sequence = ["lint", "format-check", "typecheck", "vulture"]
-help = "Run all validation checks"
+help = "Run all validation checks (no tests)"
+
+[tool.poe.tasks.ci]
+sequence = ["lint", "format-check", "typecheck", "vulture", "test"]
+help = "Run full CI: validation + tests"
 
 [tool.poe.tasks.clean]
 shell = "rm -rf build/ dist/ *.egg-info .pytest_cache .coverage htmlcov/ && find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
