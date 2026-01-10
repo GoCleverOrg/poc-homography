@@ -13,6 +13,7 @@ from poc_homography.homography_config import HomographyConfig, get_default_confi
 from poc_homography.homography_interface import (
     CoordinateSystemMode,
     HomographyApproach,
+    HomographyMatrix,
     HomographyProvider,
     HomographyResult,
 )
@@ -27,6 +28,7 @@ from poc_homography.pixel_point import PixelPoint
 __all__ = [
     "HomographyProvider",
     "HomographyApproach",
+    "HomographyMatrix",
     "HomographyResult",
     "CoordinateSystemMode",
     "MapPoint",

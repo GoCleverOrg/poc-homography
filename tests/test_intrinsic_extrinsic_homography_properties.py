@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.pixel_point import PixelPoint
 
 # ============================================================================
 # Hypothesis Strategies for Camera Parameters
@@ -515,7 +516,7 @@ class TestConfidenceProperties:
         ]
 
         for u, v in test_points:
-            point_confidence = ieh._calculate_point_confidence((u, v), result.confidence)
+            point_confidence = ieh._calculate_point_confidence(PixelPoint(u, v), result.confidence)
 
             assert 0.0 <= point_confidence <= 1.0, (
                 f"Point confidence {point_confidence:.4f} is outside [0.0, 1.0]\n"
