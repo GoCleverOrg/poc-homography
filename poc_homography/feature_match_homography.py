@@ -539,12 +539,12 @@ class FeatureMatchHomography(HomographyProvider):
     # HomographyProvider Interface Implementation
     # =========================================================================
 
-    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
+    def compute_homography(self, _frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """
         Compute homography from Ground Control Points.
 
         Args:
-            frame: Image frame (not used for GCP approach, but required by interface)
+            _frame: Image frame (not used for GCP approach, but required by interface)
             reference: Dictionary with required key:
                 - 'ground_control_points': List of GCP dictionaries, each with:
                     - 'map': {'pixel_x': float, 'pixel_y': float} OR MapPoint object

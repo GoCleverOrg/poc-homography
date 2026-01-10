@@ -112,7 +112,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         sensor_width_mm: Millimeters = Millimeters(7.18),
         base_focal_length_mm: Millimeters = Millimeters(5.9),
         calibration_table: dict[float, dict[str, float]] | None = None,
-        **kwargs,  # Accept and ignore other kwargs for forward compatibility
+        **_kwargs,  # Accept and ignore other kwargs for forward compatibility
     ):
         """
         Initialize intrinsic/extrinsic homography provider.
@@ -818,7 +818,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
     # HomographyProvider Interface Implementation
     # =========================================================================
 
-    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
+    def compute_homography(self, _frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """
         Compute homography from camera parameters.
 
@@ -826,7 +826,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         The homography is computed from camera calibration and pose.
 
         Args:
-            frame: Image frame (not used for this approach, but required by interface)
+            _frame: Image frame (not used for this approach, but required by interface)
             reference: Dictionary with required keys:
                 - 'camera_matrix': 3x3 intrinsic camera matrix K
                 - 'camera_position': Camera position [X, Y, Z] in meters

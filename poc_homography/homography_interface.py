@@ -82,7 +82,7 @@ class HomographyProvider(ABC):
     """Abstract base class for homography computation and coordinate projection."""
 
     @abstractmethod
-    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
+    def compute_homography(self, _frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
         """Compute homography matrix from image frame to map plane."""
         pass
 
