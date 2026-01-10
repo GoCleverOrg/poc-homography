@@ -1,0 +1,327 @@
+{% extends "gcp/base.html" %}
+{% load satellite_layers %}
+
+{% block title %}GCP Capture Tool{% endblock %}
+
+{% block extra_style %}
+.info-panel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    max-width: 350px;
+    font-size: 13px;
+}
+
+.info-panel h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.gcp-list {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 10px;
+    border-top: 1px solid #ddd;
+    padding-top: 10px;
+}
+
+.gcp-item {
+    padding: 8px;
+    margin: 4px 0;
+    background: #f5f5f5;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gcp-item:hover {
+    background: #e8e8e8;
+}
+
+.btn {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin: 2px;
+}
+
+.btn-primary {
+    background: #4CAF50;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #45a049;
+}
+
+.btn-danger {
+    background: #f44336;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #da190b;
+}
+
+.btn-secondary {
+    background: #2196F3;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #0b7dda;
+}
+
+.stats {
+    display: flex;
+    gap: 15px;
+    margin: 10px 0;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.stat-item {
+    flex: 1;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+}
+
+.legend {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin: 5px 0;
+    font-size: 12px;
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+{% endblock %}
+
+{% block content %}
+<div id="map"></div>
+<div class="info-panel">
+    <h3>GCP Capture Tool</h3>
+
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-label">Total GCPs</div>
+            <div class="stat-value" id="gcp-count">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Map Points</div>
+            <div class="stat-value" id="map-point-count">0</div>
+        </div>
+    </div>
+
+    <div>
+        <button class="btn btn-secondary" onclick="loadGCPs()">Load GCPs</button>
+        <button class="btn btn-primary" onclick="saveGCPs()">Save GCPs</button>
+        <button class="btn btn-danger" onclick="clearAll()">Clear All</button>
+    </div>
+
+    <div class="legend">
+        <div class="legend-title" style="font-weight: 600; margin-bottom: 8px;">Legend</div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#ff4444;border:2px solid #aa0000;"></div>
+            <span>GCP Marker</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#0066ff;border:2px solid white;"></div>
+            <span>Camera Location</span>
+        </div>
+    </div>
+
+    <div class="gcp-list" id="gcp-list">
+        <!-- GCP items will be dynamically added here -->
+    </div>
+
+    <div style="margin-top:10px;font-size:11px;color:#666;">
+        Click on map to add GCP markers.<br>
+        Use satellite view to verify accuracy.
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Initialize map
+    var map = L.map('map').setView([39.640, -0.230], 18);
+
+    // Add satellite layers using template tag
+    {% satellite_layers_js default_layer='pnoa' %}
+
+    // GCP storage
+    let gcps = [];
+    let markers = [];
+
+    // Add GCP marker on map click
+    map.on('click', function(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        const gcp = {
+            id: Date.now(),
+            lat: lat,
+            lng: lng,
+            description: `GCP #${gcps.length + 1}`
+        };
+
+        gcps.push(gcp);
+        addMarker(gcp);
+        updateStats();
+        updateGCPList();
+    });
+
+    function addMarker(gcp) {
+        const marker = L.circleMarker([gcp.lat, gcp.lng], {
+            radius: 6,
+            fillColor: '#ff4444',
+            color: '#aa0000',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+        }).addTo(map);
+
+        marker.bindPopup(`<b>${gcp.description}</b><br>Lat: ${gcp.lat.toFixed(6)}<br>Lng: ${gcp.lng.toFixed(6)}`);
+
+        markers.push({ gcp: gcp, marker: marker });
+    }
+
+    function removeGCP(gcpId) {
+        const index = gcps.findIndex(g => g.id === gcpId);
+        if (index !== -1) {
+            // Remove marker from map
+            const markerObj = markers.find(m => m.gcp.id === gcpId);
+            if (markerObj) {
+                map.removeLayer(markerObj.marker);
+            }
+
+            // Remove from arrays
+            gcps.splice(index, 1);
+            markers = markers.filter(m => m.gcp.id !== gcpId);
+
+            updateStats();
+            updateGCPList();
+        }
+    }
+
+    function updateStats() {
+        document.getElementById('gcp-count').textContent = gcps.length;
+        document.getElementById('map-point-count').textContent = gcps.length;
+    }
+
+    function updateGCPList() {
+        const listEl = document.getElementById('gcp-list');
+        listEl.innerHTML = '';
+
+        gcps.forEach(gcp => {
+            const item = document.createElement('div');
+            item.className = 'gcp-item';
+            item.innerHTML = `
+                <span>${gcp.description}</span>
+                <button class="btn btn-danger" onclick="removeGCP(${gcp.id})">Delete</button>
+            `;
+            listEl.appendChild(item);
+        });
+    }
+
+    function loadGCPs() {
+        fetch('/api/gcps/')
+            .then(response => response.json())
+            .then(data => {
+                gcps = data.gcps || [];
+                markers.forEach(m => map.removeLayer(m.marker));
+                markers = [];
+
+                gcps.forEach(gcp => addMarker(gcp));
+                updateStats();
+                updateGCPList();
+            })
+            .catch(error => {
+                console.error('Error loading GCPs:', error);
+                alert('Failed to load GCPs');
+            });
+    }
+
+    function saveGCPs() {
+        fetch('/api/gcps/save/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ gcps: gcps })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('GCPs saved successfully!');
+            } else {
+                alert('Failed to save GCPs: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving GCPs:', error);
+            alert('Failed to save GCPs');
+        });
+    }
+
+    function clearAll() {
+        if (confirm('Are you sure you want to clear all GCPs?')) {
+            gcps = [];
+            markers.forEach(m => map.removeLayer(m.marker));
+            markers = [];
+            updateStats();
+            updateGCPList();
+        }
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    // Initialize
+    updateStats();
+</script>
+{% endblock %}

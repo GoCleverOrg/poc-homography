@@ -1,0 +1,171 @@
+{% extends "gcp/base.html" %}
+{% load satellite_layers %}
+
+{% block title %}Debug Map - GCP Visualization{% endblock %}
+
+{% block extra_style %}
+.info-panel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    max-width: 300px;
+    font-size: 13px;
+}
+
+.info-panel h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.stats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px 0;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 12px;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: #333;
+}
+
+.legend {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin: 5px 0;
+    font-size: 12px;
+}
+
+.legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+{% endblock %}
+
+{% block content %}
+<div id="map"></div>
+<div class="info-panel">
+    <h3>GCP Debug Map</h3>
+
+    <div class="stats">
+        <div class="stat-row">
+            <span class="stat-label">Total GCPs:</span>
+            <span class="stat-value">{{ gcp_count }}</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Camera:</span>
+            <span class="stat-value">{{ camera_name }}</span>
+        </div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-title" style="font-weight: 600; margin-bottom: 8px;">Legend</div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#ff4444;border:2px solid #aa0000;"></div>
+            <span>GCP Location</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#0066ff;border:2px solid white;"></div>
+            <span>Camera</span>
+        </div>
+    </div>
+
+    <div style="margin-top:10px;font-size:11px;color:#666;">
+        Click markers for details.<br>
+        Use satellite view to verify GPS accuracy.
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // GCP data from server
+    const gcpData = {{ gcps_json|safe }};
+    const cameraLocation = {{ camera_location|safe }};
+
+    // Calculate bounds from GCPs
+    let minLat = Infinity, maxLat = -Infinity;
+    let minLng = Infinity, maxLng = -Infinity;
+
+    gcpData.forEach(gcp => {
+        minLat = Math.min(minLat, gcp.lat);
+        maxLat = Math.max(maxLat, gcp.lat);
+        minLng = Math.min(minLng, gcp.lng);
+        maxLng = Math.max(maxLng, gcp.lng);
+    });
+
+    // Include camera in bounds
+    if (cameraLocation) {
+        minLat = Math.min(minLat, cameraLocation.lat);
+        maxLat = Math.max(maxLat, cameraLocation.lat);
+        minLng = Math.min(minLng, cameraLocation.lng);
+        maxLng = Math.max(maxLng, cameraLocation.lng);
+    }
+
+    // Initialize map with calculated bounds
+    const map = L.map('map').fitBounds([
+        [minLat, minLng],
+        [maxLat, maxLng]
+    ]);
+
+    // Add satellite layers
+    {% satellite_layers_js default_layer='pnoa' %}
+
+    // Add GCP markers
+    gcpData.forEach(gcp => {
+        L.circleMarker([gcp.lat, gcp.lng], {
+            radius: 6,
+            fillColor: '#ff4444',
+            color: '#aa0000',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+        }).addTo(map)
+        .bindPopup(`
+            <b>${gcp.description}</b><br>
+            GPS: ${gcp.lat.toFixed(6)}, ${gcp.lng.toFixed(6)}<br>
+            Pixel: (${gcp.pixel_x}, ${gcp.pixel_y})
+        `);
+    });
+
+    // Add camera marker if available
+    if (cameraLocation) {
+        L.circleMarker([cameraLocation.lat, cameraLocation.lng], {
+            radius: 8,
+            fillColor: '#0066ff',
+            color: 'white',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9
+        }).addTo(map)
+        .bindPopup(`<b>Camera: ${cameraLocation.name}</b><br>GPS: ${cameraLocation.lat.toFixed(6)}, ${cameraLocation.lng.toFixed(6)}`);
+    }
+</script>
+{% endblock %}

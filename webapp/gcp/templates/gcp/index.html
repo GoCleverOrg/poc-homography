@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homography GCP Tools</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            font-size: 32px;
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 32px;
+            font-size: 16px;
+        }
+
+        .tool-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .tool-card {
+            display: block;
+            padding: 24px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .tool-card:hover {
+            background: #e9ecef;
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .tool-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .tool-description {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+
+        .footer {
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Homography GCP Tools</h1>
+        <p class="subtitle">Ground Control Point management and visualization for camera homography</p>
+
+        <div class="tool-grid">
+            <a href="{% url 'gcp:gcp_capture' %}" class="tool-card">
+                <div class="tool-title">GCP Capture Tool <span class="badge">Primary</span></div>
+                <div class="tool-description">
+                    Interactive map interface for capturing and managing Ground Control Points.
+                    Click on satellite imagery to mark precise GCP locations.
+                </div>
+            </a>
+
+            <a href="{% url 'gcp:debug_map' %}" class="tool-card">
+                <div class="tool-title">Debug Map Visualization</div>
+                <div class="tool-description">
+                    Visualize existing GCPs on a satellite map to verify GPS accuracy and
+                    spatial distribution. Useful for debugging homography calculations.
+                </div>
+            </a>
+        </div>
+
+        <div class="footer">
+            <p>POC Homography Project &middot; <a href="https://github.com/goclever" target="_blank">GitHub</a></p>
+            <p style="margin-top: 8px; font-size: 12px;">Built with Django and Leaflet.js</p>
+        </div>
+    </div>
+</body>
+</html>
