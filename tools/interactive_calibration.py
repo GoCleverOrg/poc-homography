@@ -15,7 +15,6 @@ The tool will:
 import json
 import math
 import os
-import re
 import sys
 
 import numpy as np
@@ -32,39 +31,6 @@ except ImportError:
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.map_points import MapPointRegistry
-
-
-def dms_to_dd(dms_str: str) -> float:
-    """
-    Convert DMS (degrees, minutes, seconds) string to decimal degrees.
-
-    Supports formats like:
-    - "39°38'25.72\"N"
-    - "0°13'48.63\"W"
-
-    Args:
-        dms_str: DMS coordinate string
-
-    Returns:
-        Decimal degrees (negative for S/W)
-    """
-    pattern = r"""(\d+)°(\d+)'([\d.]+)"?([NSEW])"""
-    match = re.match(pattern, dms_str)
-    if not match:
-        raise ValueError(f"Invalid DMS format: {dms_str}")
-
-    degrees = int(match.group(1))
-    minutes = int(match.group(2))
-    seconds = float(match.group(3))
-    direction = match.group(4)
-
-    dd = degrees + minutes / 60 + seconds / 3600
-
-    if direction in ("S", "W"):
-        dd = -dd
-
-    return dd
-
 
 # Try to import camera modules
 try:
