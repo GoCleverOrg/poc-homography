@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""CLI for web-based GCP capture tool."""
+"""CLI for web-based GCP capture tool.
+
+DEPRECATED: This tool is no longer supported after the MapPoint migration.
+See tools/capture_gcps_web.py for migration information.
+"""
 
 import sys
 from pathlib import Path

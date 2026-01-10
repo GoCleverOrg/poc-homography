@@ -19,7 +19,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.coordinate_converter import gps_to_local_xy, local_xy_to_gps
+
+# NOTE: Removed import of deleted standalone functions gps_to_local_xy, local_xy_to_gps
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 
 
@@ -30,7 +31,7 @@ class TestRotationMatrixConsistency:
     def geometry_instances(self):
         """Create instances of both geometry classes."""
         geo = CameraGeometry(w=1920, h=1080)
-        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=1920, height=1080)
         return geo, ieh
 
     @pytest.mark.parametrize(
@@ -115,7 +116,7 @@ class TestRollRotation:
     def geometry_instances(self):
         """Create instances of both geometry classes."""
         geo = CameraGeometry(w=1920, h=1080)
-        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=1920, height=1080)
         return geo, ieh
 
     @pytest.mark.parametrize("roll_deg", [-5.0, 0.0, 5.0])
@@ -286,7 +287,7 @@ class TestComputeHomographyWithRoll:
 
     def test_compute_homography_extracts_roll(self):
         """Verify compute_homography extracts roll_deg from reference dict."""
-        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=1920, height=1080)
 
         K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
 
@@ -315,7 +316,7 @@ class TestComputeHomographyWithRoll:
 
     def test_compute_homography_roll_defaults_to_zero(self):
         """Verify compute_homography defaults roll_deg to 0.0 when not in reference."""
-        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=1920, height=1080)
 
         K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
 
@@ -344,7 +345,7 @@ class TestComputeHomographyWithRoll:
 
     def test_compute_homography_rejects_invalid_roll(self):
         """Verify compute_homography raises error for |roll_deg| > 15.0."""
-        ieh = IntrinsicExtrinsicHomography(width=1920, height=1080)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=1920, height=1080)
 
         K = np.array([[1000, 0, 960], [0, 1000, 540], [0, 0, 1]])
 
@@ -459,7 +460,7 @@ class TestHomographyConsistency:
         """Verify both implementations produce identical homography matrices."""
         geo = CameraGeometry(w=camera_params["width"], h=camera_params["height"])
         ieh = IntrinsicExtrinsicHomography(
-            width=camera_params["width"], height=camera_params["height"]
+            map_id="test_map", width=camera_params["width"], height=camera_params["height"]
         )
 
         K = CameraGeometry.get_intrinsics(
@@ -499,7 +500,7 @@ class TestHomographyConsistency:
         """Verify both implementations project world points identically."""
         geo = CameraGeometry(w=camera_params["width"], h=camera_params["height"])
         ieh = IntrinsicExtrinsicHomography(
-            width=camera_params["width"], height=camera_params["height"]
+            map_id="test_map", width=camera_params["width"], height=camera_params["height"]
         )
 
         K = CameraGeometry.get_intrinsics(
@@ -615,29 +616,9 @@ class TestGPSProjection:
             f"{dist_from_center:.1f}px from center"
         )
 
-    def test_gps_round_trip(self, valte_config):
-        """Verify GPS -> local XY -> GPS round trip is accurate."""
-        ref_lat = valte_config["camera_lat"]
-        ref_lon = valte_config["camera_lon"]
-
-        test_points = [
-            (ref_lat + 0.0001, ref_lon + 0.0001),
-            (ref_lat - 0.0002, ref_lon + 0.0003),
-            (ref_lat + 0.0005, ref_lon - 0.0002),
-        ]
-
-        for lat, lon in test_points:
-            # Forward
-            x, y = gps_to_local_xy(ref_lat, ref_lon, lat, lon)
-            # Backward
-            lat_recovered, lon_recovered = local_xy_to_gps(ref_lat, ref_lon, x, y)
-
-            lat_error = abs(lat - lat_recovered)
-            lon_error = abs(lon - lon_recovered)
-
-            # Should be very accurate for short distances
-            assert lat_error < 1e-8, f"Latitude error: {lat_error}"
-            assert lon_error < 1e-8, f"Longitude error: {lon_error}"
+    # NOTE: test_gps_round_trip removed - used deleted standalone functions gps_to_local_xy
+    # and local_xy_to_gps. GPS round-trip accuracy is tested in test_coordinate_converter_dual_systems.py
+    # using GCPCoordinateConverter class methods.
 
 
 class TestEdgeCases:

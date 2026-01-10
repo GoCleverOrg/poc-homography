@@ -21,14 +21,15 @@ Mathematical Background:
     Camera position in world frame: C = -R.T @ t
 
 Coordinate Systems:
-    - World Frame: X=East, Y=North, Z=Up (right-handed)
+    - World Frame: Map pixel coordinates with X=right, Y=down, Z=Up (right-handed)
     - Camera Frame: X=Right, Y=Down, Z=Forward (standard CV, right-handed)
     - Image Frame: origin top-left, u=right, v=down (pixels)
-    - GCP GPS: latitude/longitude in decimal degrees (WGS84)
+    - GCP Map Coordinates: map_pixel_x/map_pixel_y in pixels on the map image
 
 Reference:
     ptz_intrinsics_and_pose.md Section 2 Method B (PnP Solver)
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,9 +40,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-
-from poc_homography.gps_distance_calculator import gps_to_local_xy
-from poc_homography.types import Degrees
 
 logger = logging.getLogger(__name__)
 
@@ -70,30 +68,32 @@ class AccuracyLevel(Enum):
 @dataclass
 class GroundControlPoint:
     """
-    A ground control point with GPS world coordinates and image pixel coordinates.
+    A ground control point with map pixel coordinates and camera image pixel coordinates.
 
     Attributes:
-        latitude: GPS latitude in decimal degrees (-90 to 90)
-        longitude: GPS longitude in decimal degrees (-180 to 180)
-        u: Pixel x-coordinate (column, 0 at left)
-        v: Pixel y-coordinate (row, 0 at top)
+        map_id: Identifier of the map this point belongs to
+        map_pixel_x: X pixel coordinate on the map (0 at left)
+        map_pixel_y: Y pixel coordinate on the map (0 at top)
+        image_u: Pixel x-coordinate in camera image (column, 0 at left)
+        image_v: Pixel y-coordinate in camera image (row, 0 at top)
     """
 
-    latitude: float
-    longitude: float
-    u: float
-    v: float
+    map_id: str
+    map_pixel_x: float
+    map_pixel_y: float
+    image_u: float
+    image_v: float
 
     def __post_init__(self):
         """Validate GCP coordinate ranges."""
-        if not -90.0 <= self.latitude <= 90.0:
-            raise ValueError(f"Latitude {self.latitude} outside valid range [-90, 90]")
-        if not -180.0 <= self.longitude <= 180.0:
-            raise ValueError(f"Longitude {self.longitude} outside valid range [-180, 180]")
-        if self.u < 0:
-            raise ValueError(f"Pixel u-coordinate {self.u} must be non-negative")
-        if self.v < 0:
-            raise ValueError(f"Pixel v-coordinate {self.v} must be non-negative")
+        if self.map_pixel_x < 0:
+            raise ValueError(f"Map pixel x-coordinate {self.map_pixel_x} must be non-negative")
+        if self.map_pixel_y < 0:
+            raise ValueError(f"Map pixel y-coordinate {self.map_pixel_y} must be non-negative")
+        if self.image_u < 0:
+            raise ValueError(f"Image u-coordinate {self.image_u} must be non-negative")
+        if self.image_v < 0:
+            raise ValueError(f"Image v-coordinate {self.image_v} must be non-negative")
 
 
 @dataclass
@@ -103,7 +103,7 @@ class PnPResult:
 
     Attributes:
         success: Whether derivation succeeded
-        position: Camera position [X, Y, Z] in meters (world frame)
+        position: Camera position [X, Y, Z] in map pixel coordinates (world frame)
         rotation_matrix: 3x3 rotation matrix (world to camera)
         rotation_vector: Rodrigues rotation vector (3,)
         pan_deg: Pan angle in degrees (positive = right/clockwise from above)
@@ -160,24 +160,22 @@ class CameraPositionDeriver:
     and continuous drift correction (LOW accuracy).
 
     Coordinate Frame Conventions:
-        - World Frame: X=East, Y=North, Z=Up (meters from reference GPS point)
+        - World Frame: Map pixel coordinates with X=right, Y=down, Z=Up
         - Camera Frame: X=Right, Y=Down, Z=Forward
-        - GPS coordinates are converted to local metric coordinates using equirectangular
-          approximation (accurate for distances < 10km)
+        - Map pixel coordinates are used directly as world X, Y coordinates
 
     Example:
         >>> # Initialize with camera intrinsics
         >>> K = homography_provider.get_intrinsics(zoom_factor=5.0)
         >>> deriver = CameraPositionDeriver(
         ...     K=K,
-        ...     reference_lat=39.640583,
-        ...     reference_lon=-0.230194,
         ...     accuracy=AccuracyLevel.HIGH
         ... )
         >>>
         >>> # Provide ground control points
         >>> gcps = [
-        ...     GroundControlPoint(lat=39.6406, lon=-0.2302, u=1280, v=720),
+        ...     GroundControlPoint(map_id="map1", map_pixel_x=500, map_pixel_y=300,
+        ...                        image_u=1280, image_v=720),
         ...     # ... at least 6 GCPs total
         ... ]
         >>>
@@ -221,8 +219,6 @@ class CameraPositionDeriver:
     def __init__(
         self,
         K: np.ndarray,
-        reference_lat: float,
-        reference_lon: float,
         accuracy: AccuracyLevel = AccuracyLevel.MEDIUM,
         ransac_iterations: int | None = None,
         ransac_reprojection_threshold: float | None = None,
@@ -236,8 +232,6 @@ class CameraPositionDeriver:
 
         Args:
             K: Camera intrinsic matrix (3x3 numpy array)
-            reference_lat: Reference GPS latitude for coordinate conversion
-            reference_lon: Reference GPS longitude for coordinate conversion
             accuracy: Accuracy level (LOW, MEDIUM, HIGH) controlling RANSAC parameters
             ransac_iterations: Override RANSAC iteration count (None = use accuracy default)
             ransac_reprojection_threshold: Override RANSAC reprojection threshold in pixels
@@ -247,7 +241,7 @@ class CameraPositionDeriver:
             min_inlier_ratio: Override minimum inlier ratio threshold for validation (0.0-1.0)
 
         Raises:
-            ValueError: If K matrix is invalid or reference coordinates are out of range
+            ValueError: If K matrix is invalid
         """
         # Validate intrinsic matrix
         if not isinstance(K, np.ndarray) or K.shape != (3, 3):
@@ -255,15 +249,7 @@ class CameraPositionDeriver:
                 f"K must be a 3x3 numpy array, got shape {K.shape if isinstance(K, np.ndarray) else type(K)}"
             )
 
-        # Validate reference GPS coordinates
-        if not -90.0 <= reference_lat <= 90.0:
-            raise ValueError(f"Reference latitude {reference_lat} outside valid range [-90, 90]")
-        if not -180.0 <= reference_lon <= 180.0:
-            raise ValueError(f"Reference longitude {reference_lon} outside valid range [-180, 180]")
-
         self.K = K.astype(np.float64)
-        self.reference_lat = reference_lat
-        self.reference_lon = reference_lon
         self.accuracy = accuracy
         self.solver_method = solver_method
 
@@ -304,33 +290,26 @@ class CameraPositionDeriver:
         self, gcps: list[GroundControlPoint]
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Convert GCPs from GPS coordinates to local metric 3D coordinates.
+        Convert GCPs from map pixel coordinates to 3D world coordinates.
 
-        Uses equirectangular approximation to convert GPS coordinates to local
-        metric coordinates relative to the reference point. All GCPs are assumed
-        to be on the ground plane (Z=0).
+        Map pixel coordinates are used directly as world X, Y coordinates.
+        All GCPs are assumed to be on the ground plane (Z=0).
 
         Args:
-            gcps: List of ground control points with GPS coordinates
+            gcps: List of ground control points with map pixel coordinates
 
         Returns:
-            object_points: Nx3 array of world coordinates [X, Y, Z] in meters
-            image_points: Nx2 array of pixel coordinates [u, v]
+            object_points: Nx3 array of world coordinates [X, Y, Z] in map pixels
+            image_points: Nx2 array of camera image pixel coordinates [u, v]
         """
         object_points = []
         image_points = []
 
         for gcp in gcps:
-            # Convert GPS to local X, Y (meters)
-            x, y = gps_to_local_xy(
-                Degrees(self.reference_lat),
-                Degrees(self.reference_lon),
-                Degrees(gcp.latitude),
-                Degrees(gcp.longitude),
-            )
+            # Use map pixel coordinates directly as world X, Y
             # Ground plane assumption: Z = 0
-            object_points.append([x, y, 0.0])
-            image_points.append([gcp.u, gcp.v])
+            object_points.append([gcp.map_pixel_x, gcp.map_pixel_y, 0.0])
+            image_points.append([gcp.image_u, gcp.image_v])
 
         return (np.array(object_points, dtype=np.float64), np.array(image_points, dtype=np.float64))
 
@@ -437,20 +416,21 @@ class CameraPositionDeriver:
         self,
         gcps: list[GroundControlPoint]
         | list[dict[str, Any]]
-        | list[tuple[float, float, float, float]],
+        | list[tuple[str, float, float, float, float]],
     ) -> PnPResult:
         """
         Derive camera position from ground control points using PnP solver.
 
         Uses OpenCV's solvePnPRansac for robust estimation with outlier rejection.
-        Returns camera position in world coordinates, rotation matrix, and
+        Returns camera position in world coordinates (map pixels), rotation matrix, and
         pan/tilt angles compatible with the PTZ camera convention.
 
         Args:
             gcps: Ground control points in one of these formats:
                 - List[GroundControlPoint]: Dataclass objects
-                - List[Dict]: Dicts with 'lat'/'latitude', 'lon'/'longitude', 'u', 'v'
-                - List[Tuple]: Tuples of (latitude, longitude, u, v)
+                - List[Dict]: Dicts with 'map_id', 'map_pixel_x', 'map_pixel_y',
+                              'image_u', 'image_v'
+                - List[Tuple]: Tuples of (map_id, map_pixel_x, map_pixel_y, image_u, image_v)
 
         Returns:
             PnPResult: Result containing position, rotation, angles, and quality metrics
@@ -584,15 +564,15 @@ class CameraPositionDeriver:
         self,
         gcps: list[GroundControlPoint]
         | list[dict[str, Any]]
-        | list[tuple[float, float, float, float]],
+        | list[tuple[str, float, float, float, float]],
     ) -> list[GroundControlPoint]:
         """
         Normalize GCP input to list of GroundControlPoint objects.
 
         Supports multiple input formats for flexibility:
             - GroundControlPoint dataclass objects
-            - Dicts with 'lat'/'latitude', 'lon'/'longitude', 'u', 'v' keys
-            - Tuples of (latitude, longitude, u, v)
+            - Dicts with 'map_id', 'map_pixel_x', 'map_pixel_y', 'image_u', 'image_v' keys
+            - Tuples of (map_id, map_pixel_x, map_pixel_y, image_u, image_v)
 
         Args:
             gcps: GCPs in any supported format
@@ -609,38 +589,52 @@ class CameraPositionDeriver:
             if isinstance(gcp, GroundControlPoint):
                 normalized.append(gcp)
             elif isinstance(gcp, dict):
-                # Extract latitude (support both 'lat' and 'latitude' keys)
-                lat = gcp.get("lat", gcp.get("latitude"))
-                if lat is None:
-                    raise ValueError(f"GCP {i}: missing 'lat' or 'latitude' field")
+                # Extract map_id
+                map_id = gcp.get("map_id")
+                if map_id is None:
+                    raise ValueError(f"GCP {i}: missing 'map_id' field")
 
-                # Extract longitude (support both 'lon' and 'longitude' keys)
-                lon = gcp.get("lon", gcp.get("longitude"))
-                if lon is None:
-                    raise ValueError(f"GCP {i}: missing 'lon' or 'longitude' field")
+                # Extract map pixel coordinates
+                map_pixel_x = gcp.get("map_pixel_x")
+                map_pixel_y = gcp.get("map_pixel_y")
+                if map_pixel_x is None:
+                    raise ValueError(f"GCP {i}: missing 'map_pixel_x' field")
+                if map_pixel_y is None:
+                    raise ValueError(f"GCP {i}: missing 'map_pixel_y' field")
 
-                # Extract pixel coordinates
-                u = gcp.get("u")
-                v = gcp.get("v")
-                if u is None or v is None:
-                    raise ValueError(f"GCP {i}: missing 'u' or 'v' field")
+                # Extract image pixel coordinates
+                image_u = gcp.get("image_u")
+                image_v = gcp.get("image_v")
+                if image_u is None:
+                    raise ValueError(f"GCP {i}: missing 'image_u' field")
+                if image_v is None:
+                    raise ValueError(f"GCP {i}: missing 'image_v' field")
 
                 normalized.append(
                     GroundControlPoint(
-                        latitude=float(lat), longitude=float(lon), u=float(u), v=float(v)
+                        map_id=str(map_id),
+                        map_pixel_x=float(map_pixel_x),
+                        map_pixel_y=float(map_pixel_y),
+                        image_u=float(image_u),
+                        image_v=float(image_v),
                     )
                 )
-            elif isinstance(gcp, (tuple, list)) and len(gcp) == 4:
-                lat, lon, u, v = gcp
+            elif isinstance(gcp, (tuple, list)) and len(gcp) == 5:
+                map_id, map_pixel_x, map_pixel_y, image_u, image_v = gcp
                 normalized.append(
                     GroundControlPoint(
-                        latitude=float(lat), longitude=float(lon), u=float(u), v=float(v)
+                        map_id=str(map_id),
+                        map_pixel_x=float(map_pixel_x),
+                        map_pixel_y=float(map_pixel_y),
+                        image_u=float(image_u),
+                        image_v=float(image_v),
                     )
                 )
             else:
                 raise ValueError(
                     f"GCP {i}: invalid format. Expected GroundControlPoint, "
-                    f"dict with lat/lon/u/v, or tuple (lat, lon, u, v), got {type(gcp)}"
+                    f"dict with map_id/map_pixel_x/map_pixel_y/image_u/image_v, "
+                    f"or tuple (map_id, map_pixel_x, map_pixel_y, image_u, image_v), got {type(gcp)}"
                 )
 
         return normalized

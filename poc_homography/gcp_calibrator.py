@@ -7,6 +7,11 @@ reprojection error between observed Ground Control Points (GCPs) and predicted
 pixel locations. The calibration optimizes camera orientation (pan, tilt, roll)
 and position (X, Y, Z) to find the best fit to observed GCP data.
 
+GCPs use map pixel coordinates (not GPS). Each GCP contains:
+- map_id: Identifier for the map
+- map_pixel_x, map_pixel_y: Position on the map in pixels
+- image_u, image_v: Position in the camera image in pixels
+
 Mathematical Model:
     For parameter vector p = {Δpan, Δtilt, Δroll, ΔX, ΔY, ΔZ}, minimize:
 
@@ -15,14 +20,14 @@ Mathematical Model:
     where:
     - eᵢ = x_observed,i - x_predicted,i is the residual for GCP i
     - x_observed,i is the observed camera pixel location [u_cam, v_cam]ᵀ
-    - x_predicted,i = π(H_pred(p) × x_world,i) is the predicted camera pixel
-    - x_world,i is the world coordinate [X_world, Y_world]ᵀ from GPS
+    - x_predicted,i = π(H_pred(p) × x_map,i) is the predicted camera pixel
+    - x_map,i is the map pixel coordinate [map_pixel_x, map_pixel_y]ᵀ
     - π() is the perspective projection (homogeneous coordinate normalization)
     - ρ() is a robust loss function (Huber or Cauchy) to handle outliers
     - H_pred(p) is the predicted homography from updated camera parameters
 
 Key Concepts:
-    - GCP (Ground Control Point): Known correspondence between GPS and image pixel
+    - GCP (Ground Control Point): Known correspondence between map pixel and camera pixel
     - Reprojection error: Distance between observed and predicted pixel locations
     - Robust loss: Reduces influence of outlier GCPs on optimization
     - Parameter increments: Optimization adjusts camera parameters incrementally
@@ -63,19 +68,19 @@ Regularization (Prior-Based Constraints):
           (parameter can deviate more freely).
 
     Prior Configuration (prior_sigmas dict):
-        Default values represent typical sensor uncertainties:
+        Default values represent typical uncertainties:
 
         | Key              | Default | Unit    | Description                    |
         |------------------|---------|---------|--------------------------------|
-        | gps_position_m   | 10.0    | meters  | X, Y position (horizontal GPS) |
-        | height_m         | 2.0     | meters  | Z position (barometer/GPS alt) |
+        | map_position_px  | 10.0    | pixels  | X, Y position on map           |
+        | height_m         | 2.0     | meters  | Z position (camera height)     |
         | pan_deg          | 3.0     | degrees | Compass heading accuracy       |
         | tilt_deg         | 3.0     | degrees | IMU pitch accuracy             |
         | roll_deg         | 1.0     | degrees | IMU roll accuracy              |
 
-        Adjusting sigmas based on sensor quality:
-        - RTK GPS (cm accuracy): gps_position_m = 0.5 - 2.0
-        - Consumer GPS (5-15m):  gps_position_m = 10.0 - 20.0
+        Adjusting sigmas based on GCP quality:
+        - High-precision GCPs:   map_position_px = 1.0 - 5.0
+        - Standard GCPs:         map_position_px = 10.0 - 20.0
         - Survey-grade IMU:      pan_deg = 0.5, tilt_deg = 0.5
         - Phone magnetometer:    pan_deg = 5.0 - 10.0 (high interference)
 
@@ -98,7 +103,7 @@ Regularization (Prior-Based Constraints):
         ...     camera_geometry=geo,
         ...     gcps=gcps,
         ...     prior_sigmas={
-        ...         'gps_position_m': 2.0,   # RTK GPS, high accuracy
+        ...         'map_position_px': 5.0,  # High precision GCPs
         ...         'pan_deg': 5.0,          # Consumer compass, less trusted
         ...     },
         ...     regularization_weight=1.0    # Balanced trade-off
@@ -117,10 +122,10 @@ Usage Example:
     ...     map_width=640, map_height=640
     ... )
     >>>
-    >>> # GCPs with observed camera pixels and GPS coordinates
+    >>> # GCPs with map pixel and camera pixel coordinates
     >>> gcps = [
-    ...     {'gps': {'latitude': 39.640444, 'longitude': -0.230111},
-    ...      'image': {'u': 960, 'v': 540}},
+    ...     {'map_id': 'map1', 'map_pixel_x': 320.0, 'map_pixel_y': 240.0,
+    ...      'image_u': 960.0, 'image_v': 540.0},
     ...     # ... more GCPs ...
     ... ]
     >>>
@@ -133,6 +138,7 @@ Usage Example:
     >>> print(f"Final error: {result.final_error:.2f}px")
     >>> print(f"Inliers: {result.num_inliers}/{result.num_inliers + result.num_outliers}")
 """
+
 from __future__ import annotations
 
 import copy
@@ -149,7 +155,7 @@ if TYPE_CHECKING:
 # Import scipy for optimization
 from scipy.optimize import least_squares
 
-from poc_homography.types import Degrees, Pixels
+from poc_homography.types import Pixels
 
 # Import matplotlib for visualization (optional, lazy import)
 try:
@@ -159,30 +165,6 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
     plt = None
-
-# Import coordinate conversion for GPS to local metric
-try:
-    from poc_homography.coordinate_converter import UTMConverter, gps_to_local_xy
-
-    UTM_CONVERTER_AVAILABLE = True
-except ImportError:
-    UTM_CONVERTER_AVAILABLE = False
-
-    from poc_homography.types import Meters
-
-    # Fallback if coordinate_converter is not available
-    def gps_to_local_xy(
-        ref_lat: Degrees, ref_lon: Degrees, lat: Degrees, lon: Degrees
-    ) -> tuple[Meters, Meters]:
-        """Simple equirectangular approximation for testing."""
-        import math
-
-        R_EARTH = 6371000  # meters
-        ref_lat_rad = math.radians(ref_lat)
-        # Convert degree differences to radians, then scale by Earth radius
-        x = math.radians(lon - ref_lon) * math.cos(ref_lat_rad) * R_EARTH
-        y = math.radians(lat - ref_lat) * R_EARTH
-        return Meters(x), Meters(y)
 
 
 logger = logging.getLogger(__name__)
@@ -248,9 +230,13 @@ class GCPCalibrator:
     The optimization uses scipy.optimize.least_squares with robust loss functions
     to handle outlier GCPs gracefully.
 
+    GCPs use map pixel coordinates (flat structure):
+        {'map_id': str, 'map_pixel_x': float, 'map_pixel_y': float,
+         'image_u': float, 'image_v': float}
+
     Attributes:
         camera_geometry: Initial CameraGeometry instance (defines camera model)
-        gcps: List of Ground Control Points with 'gps' and 'image' keys
+        gcps: List of Ground Control Points with map pixel and image pixel coordinates
         loss_function: Robust loss function name ('huber' or 'cauchy')
         loss_scale: Scale parameter for robust loss (pixels)
         validation_split: Fraction of GCPs to reserve for validation (0.0-0.5)
@@ -281,7 +267,7 @@ class GCPCalibrator:
     # Default prior standard deviations for regularization
     # These represent typical uncertainties in camera pose estimates
     DEFAULT_PRIOR_SIGMAS: dict[str, float] = {
-        "gps_position_m": 10.0,  # X, Y position uncertainty (meters)
+        "map_position_px": 10.0,  # X, Y position uncertainty (map pixels)
         "height_m": 2.0,  # Z position uncertainty (meters)
         "pan_deg": 3.0,  # Pan angle uncertainty (degrees)
         "tilt_deg": 3.0,  # Tilt angle uncertainty (degrees)
@@ -294,9 +280,6 @@ class GCPCalibrator:
         gcps: list[dict[str, Any]],
         loss_function: str = "huber",
         loss_scale: float = 1.0,
-        reference_lat: Degrees | None = None,
-        reference_lon: Degrees | None = None,
-        utm_crs: str | None = None,
         validation_split: float = 0.0,
         random_seed: int | None = None,
         prior_sigmas: dict[str, float] | None = None,
@@ -307,20 +290,17 @@ class GCPCalibrator:
 
         Args:
             camera_geometry: Initial CameraGeometry instance with camera parameters
-            gcps: List of Ground Control Point dictionaries, each with:
-                - 'gps': {'latitude': float, 'longitude': float}
-                - 'image': {'u': float, 'v': float}  # Camera pixel coordinates
+            gcps: List of Ground Control Point dictionaries with flat structure:
+                - 'map_id': str - Identifier for the map
+                - 'map_pixel_x': float - X coordinate on map in pixels
+                - 'map_pixel_y': float - Y coordinate on map in pixels
+                - 'image_u': float - U coordinate in camera image in pixels
+                - 'image_v': float - V coordinate in camera image in pixels
             loss_function: Robust loss function to use ('huber' or 'cauchy')
             loss_scale: Scale parameter for robust loss (pixels). Determines the
                        threshold at which errors are considered outliers.
                        - For 'huber': transition from quadratic to linear at loss_scale
                        - For 'cauchy': scale of the Cauchy distribution
-            reference_lat: Reference latitude for GPS-to-local conversion (should be camera lat).
-                          If None, uses GCP centroid (not recommended - causes coordinate mismatch).
-            reference_lon: Reference longitude for GPS-to-local conversion (should be camera lon).
-                          If None, uses GCP centroid (not recommended - causes coordinate mismatch).
-            utm_crs: UTM coordinate reference system (e.g., "EPSG:25830"). If provided and GCPs
-                    have UTM coordinates, uses UTM for more accurate local XY conversion.
             validation_split: Fraction of GCPs to reserve for validation (0.0-0.5).
                              Default 0.0 (no split, all GCPs used for training).
                              If > 0, randomly splits GCPs into train and test sets.
@@ -328,7 +308,7 @@ class GCPCalibrator:
                         If None, uses non-deterministic splitting.
             prior_sigmas: Dictionary of prior standard deviations for regularization.
                          Keys and default values:
-                         - 'gps_position_m': X, Y position uncertainty (default: 10.0 meters)
+                         - 'map_position_px': X, Y position uncertainty (default: 10.0 pixels)
                          - 'height_m': Z position uncertainty (default: 2.0 meters)
                          - 'pan_deg': Pan angle uncertainty (default: 3.0 degrees)
                          - 'tilt_deg': Tilt angle uncertainty (default: 3.0 degrees)
@@ -354,26 +334,16 @@ class GCPCalibrator:
         if not gcps:
             raise ValueError("gcps list cannot be empty")
 
-        # Validate GCP structure (basic check, detailed validation in gcp_validation.py)
+        # Validate GCP structure (flat map-pixel format)
+        required_keys = ["map_id", "map_pixel_x", "map_pixel_y", "image_u", "image_v"]
         for i, gcp in enumerate(gcps):
             if not isinstance(gcp, dict):
                 raise ValueError(f"GCP at index {i} must be a dictionary")
-            if "gps" not in gcp:
-                raise ValueError(f"GCP at index {i} missing required 'gps' key")
-            if "image" not in gcp:
-                raise ValueError(f"GCP at index {i} missing required 'image' key")
 
-            # Check GPS keys
-            gps = gcp["gps"]
-            if "latitude" not in gps or "longitude" not in gps:
-                raise ValueError(
-                    f"GCP at index {i}: 'gps' must have 'latitude' and 'longitude' keys"
-                )
-
-            # Check image keys
-            image = gcp["image"]
-            if "u" not in image or "v" not in image:
-                raise ValueError(f"GCP at index {i}: 'image' must have 'u' and 'v' keys")
+            # Check required keys for flat map-pixel format
+            for key in required_keys:
+                if key not in gcp:
+                    raise ValueError(f"GCP at index {i} missing required '{key}' key")
 
         # Validate loss_scale
         if loss_scale <= 0:
@@ -420,82 +390,26 @@ class GCPCalibrator:
                 merged_sigmas["pan_deg"],  # sigma_pan (degrees)
                 merged_sigmas["tilt_deg"],  # sigma_tilt (degrees)
                 merged_sigmas["roll_deg"],  # sigma_roll (degrees)
-                merged_sigmas["gps_position_m"],  # sigma_X (meters)
-                merged_sigmas["gps_position_m"],  # sigma_Y (meters)
+                merged_sigmas["map_position_px"],  # sigma_X (map pixels)
+                merged_sigmas["map_position_px"],  # sigma_Y (map pixels)
                 merged_sigmas["height_m"],  # sigma_Z (meters)
             ],
             dtype=np.float64,
         )
 
-        # Set reference GPS coordinates for local coordinate conversion
-        # IMPORTANT: This should be the camera position so that world coordinates
-        # are relative to the camera (camera at origin), matching CameraGeometry expectations
-        if reference_lat is not None and reference_lon is not None:
-            self._reference_lat = reference_lat
-            self._reference_lon = reference_lon
-            logger.info(
-                f"Using camera position as reference: ({reference_lat:.6f}, {reference_lon:.6f})"
-            )
-        else:
-            # Fallback to GCP centroid (NOT recommended - will cause coordinate mismatch)
-            gps_lats = [gcp["gps"]["latitude"] for gcp in gcps]
-            gps_lons = [gcp["gps"]["longitude"] for gcp in gcps]
-            self._reference_lat = np.mean(gps_lats)
-            self._reference_lon = np.mean(gps_lons)
-            logger.warning(
-                f"No reference coordinates provided, using GCP centroid ({self._reference_lat:.6f}, {self._reference_lon:.6f}). "
-                "This may cause large errors - pass camera GPS coordinates as reference_lat/reference_lon."
-            )
-
-        # Set up UTM converter if available and CRS provided
-        self._utm_converter = None
-        if utm_crs and UTM_CONVERTER_AVAILABLE:
-            try:
-                self._utm_converter = UTMConverter(utm_crs)
-                self._utm_converter.set_reference(self._reference_lat, self._reference_lon)
-                logger.info(
-                    f"Using UTM converter with CRS {utm_crs} for accurate coordinate conversion"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to initialize UTM converter: {e}, falling back to GPS conversion"
-                )
-                self._utm_converter = None
-
-        # Convert GCPs to world coordinates (cached for efficiency)
-        # PRIORITY: UTM coordinates > GPS coordinates
-        world_coords_list: list[list[float]] = []
-        utm_count = 0
-        gps_count = 0
+        # Extract map pixel coordinates from GCPs (cached for efficiency)
+        # Map pixel coordinates are used directly - no GPS/UTM conversion needed
+        map_coords_list: list[list[float]] = []
         for gcp in gcps:
-            # Try UTM coordinates first (more accurate)
-            if self._utm_converter and "utm" in gcp and gcp["utm"]:
-                utm = gcp["utm"]
-                if utm.get("easting") is not None and utm.get("northing") is not None:
-                    x, y = self._utm_converter.utm_to_local_xy(utm["easting"], utm["northing"])
-                    world_coords_list.append([float(x), float(y)])
-                    utm_count += 1
-                    continue
+            x = float(gcp["map_pixel_x"])
+            y = float(gcp["map_pixel_y"])
+            map_coords_list.append([x, y])
+        self._map_coords: np.ndarray = np.array(map_coords_list, dtype=np.float64)
 
-            # Fall back to GPS conversion
-            lat = gcp["gps"]["latitude"]
-            lon = gcp["gps"]["longitude"]
-            if self._utm_converter:
-                x, y = self._utm_converter.gps_to_local_xy(lat, lon)
-            else:
-                x, y = gps_to_local_xy(self._reference_lat, self._reference_lon, lat, lon)
-            world_coords_list.append([float(x), float(y)])
-            gps_count += 1
-        self._world_coords: np.ndarray = np.array(world_coords_list, dtype=np.float64)
-
-        # Log coordinate source breakdown
-        if utm_count > 0:
-            print(f"GCPCalibrator: Using {utm_count} UTM coordinates, {gps_count} GPS coordinates")
-
-        # DEBUG: Print first GCP's local XY for verification
-        if len(self._world_coords) > 0:
-            print(
-                f"GCPCalibrator DEBUG: First GCP local XY = ({self._world_coords[0][0]:.2f}, {self._world_coords[0][1]:.2f}) meters"
+        # DEBUG: Print first GCP's map pixel coordinates for verification
+        if len(self._map_coords) > 0:
+            logger.debug(
+                f"First GCP map pixel = ({self._map_coords[0][0]:.2f}, {self._map_coords[0][1]:.2f})"
             )
 
         # Initialize train/test split indices (will be set in calibrate() if validation_split > 0)
@@ -561,8 +475,8 @@ class GCPCalibrator:
         Compute reprojection residuals for specified GCPs.
 
         For each GCP:
-        1. Get world coordinates from GPS (cached in self._world_coords)
-        2. Compute predicted camera pixel via H_pred(params) × [x_world, y_world, 1]
+        1. Get map pixel coordinates (cached in self._map_coords)
+        2. Compute predicted camera pixel via H_pred(params) × [map_x, map_y, 1]
         3. Compare with observed camera pixel from GCP
         4. Return flattened residuals: [u_err_1, v_err_1, u_err_2, v_err_2, ...]
 
@@ -590,17 +504,17 @@ class GCPCalibrator:
         for res_idx, gcp_idx in enumerate(gcp_indices):
             gcp = self.gcps[gcp_idx]
 
-            # Get observed camera pixel coordinates
-            u_observed = gcp["image"]["u"]
-            v_observed = gcp["image"]["v"]
+            # Get observed camera pixel coordinates (flat structure)
+            u_observed = gcp["image_u"]
+            v_observed = gcp["image_v"]
 
-            # Get world coordinates (pre-computed from GPS)
-            x_world, y_world = self._world_coords[gcp_idx]
+            # Get map pixel coordinates (pre-computed)
+            map_x, map_y = self._map_coords[gcp_idx]
 
-            # Project world point to camera pixel using predicted homography
-            # [u, v, w] = H_pred @ [x_world, y_world, 1]
-            world_point_homogeneous = np.array([x_world, y_world, 1.0])
-            predicted_homogeneous = H_pred @ world_point_homogeneous
+            # Project map point to camera pixel using predicted homography
+            # [u, v, w] = H_pred @ [map_x, map_y, 1]
+            map_point_homogeneous = np.array([map_x, map_y, 1.0])
+            predicted_homogeneous = H_pred @ map_point_homogeneous
 
             # Normalize homogeneous coordinates (perspective division)
             if abs(predicted_homogeneous[2]) < 1e-10:
@@ -1108,7 +1022,9 @@ def generate_residual_plot(
 
     Args:
         calibration_result: CalibrationResult from calibration
-        gcps: List of GCP dictionaries with 'image' coordinates
+        gcps: List of GCP dictionaries with flat map-pixel format:
+              {'map_id': str, 'map_pixel_x': float, 'map_pixel_y': float,
+               'image_u': float, 'image_v': float}
         image_width: Camera image width in pixels
         image_height: Camera image height in pixels
         output_path: Optional path to save plot. If None, returns figure without saving.
@@ -1144,9 +1060,9 @@ def generate_residual_plot(
     )
     test_indices = calibration_result.test_indices if calibration_result.test_indices else []
 
-    # Extract image coordinates
-    u_coords = np.array([gcp["image"]["u"] for gcp in gcps])
-    v_coords = np.array([gcp["image"]["v"] for gcp in gcps])
+    # Extract image coordinates (flat format)
+    u_coords = np.array([gcp["image_u"] for gcp in gcps])
+    v_coords = np.array([gcp["image_v"] for gcp in gcps])
 
     # Compute unified color scale across all errors
     all_errors = np.array(calibration_result.per_gcp_errors)

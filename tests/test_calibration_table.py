@@ -50,7 +50,7 @@ class TestCalibrationTableInterpolation:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Exact match at zoom=1.0
@@ -95,7 +95,7 @@ class TestCalibrationTableInterpolation:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom at midpoint (3.0 is halfway between 1.0 and 5.0)
@@ -139,7 +139,7 @@ class TestCalibrationTableInterpolation:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom below minimum (0.5 < 1.0)
@@ -179,7 +179,7 @@ class TestCalibrationTableInterpolation:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom above maximum (10.0 > 5.0)
@@ -194,6 +194,7 @@ class TestCalibrationTableInterpolation:
     def test_no_calibration_table_uses_linear_approximation(self):
         """When calibration_table is None, fall back to linear focal length approximation."""
         homography = IntrinsicExtrinsicHomography(
+            map_id="test_map",
             width=2560,
             height=1440,
             sensor_width_mm=6.78,
@@ -216,7 +217,11 @@ class TestCalibrationTableInterpolation:
         """When calibration_table parameter is not provided, it defaults to None (linear approximation)."""
         # Don't pass calibration_table parameter at all
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, sensor_width_mm=6.78, base_focal_length_mm=5.9
+            map_id="test_map",
+            width=2560,
+            height=1440,
+            sensor_width_mm=6.78,
+            base_focal_length_mm=5.9,
         )
 
         K = homography.get_intrinsics(zoom_factor=5.0)
@@ -257,7 +262,7 @@ class TestDistortionCoefficientRetrieval:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Exact match at zoom=1.0
@@ -298,7 +303,7 @@ class TestDistortionCoefficientRetrieval:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom at midpoint (3.0)
@@ -341,7 +346,7 @@ class TestDistortionCoefficientRetrieval:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom below minimum
@@ -377,7 +382,7 @@ class TestDistortionCoefficientRetrieval:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Zoom above maximum
@@ -387,7 +392,9 @@ class TestDistortionCoefficientRetrieval:
 
     def test_no_calibration_table_returns_none(self):
         """When calibration_table is None, return None (no distortion from table)."""
-        homography = IntrinsicExtrinsicHomography(width=2560, height=1440, calibration_table=None)
+        homography = IntrinsicExtrinsicHomography(
+            map_id="test_map", width=2560, height=1440, calibration_table=None
+        )
 
         dist_coeffs = homography.get_distortion_coefficients(zoom_factor=5.0)
         assert dist_coeffs is None
@@ -435,7 +442,7 @@ class TestMultipleZoomLevels:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Interpolate between zoom=5.0 and zoom=10.0 at zoom=7.5 (midpoint)
@@ -527,7 +534,7 @@ class TestMultipleZoomLevels:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Test interpolation at zoom=12.5 (between 10.0 and 15.0)
@@ -559,7 +566,7 @@ class TestEdgeCases:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Any zoom should return the single calibrated value
@@ -575,6 +582,7 @@ class TestEdgeCases:
     def test_empty_calibration_table_falls_back_to_linear(self):
         """Empty calibration table {} falls back to linear approximation."""
         homography = IntrinsicExtrinsicHomography(
+            map_id="test_map",
             width=2560,
             height=1440,
             sensor_width_mm=6.78,
@@ -609,7 +617,7 @@ class TestEdgeCases:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Should raise TypeError when trying to use string as numeric key
@@ -624,7 +632,11 @@ class TestBackwardCompatibility:
         """Existing code that doesn't use calibration_table continues to work."""
         # Old-style initialization (no calibration_table parameter)
         homography = IntrinsicExtrinsicHomography(
-            width=1920, height=1080, sensor_width_mm=7.18, base_focal_length_mm=5.9
+            map_id="test_map",
+            width=1920,
+            height=1080,
+            sensor_width_mm=7.18,
+            base_focal_length_mm=5.9,
         )
 
         # Should work with linear approximation
@@ -664,7 +676,7 @@ class TestBackwardCompatibility:
         }
 
         homography = IntrinsicExtrinsicHomography(
-            width=2560, height=1440, calibration_table=calibration_table
+            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
         )
 
         # Get intrinsics using calibration table

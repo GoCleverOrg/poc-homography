@@ -185,7 +185,7 @@ class TestRotationMatrixProperties:
 
         # Create instances
         geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
         # Set parameters for CameraGeometry
         geo.pan_deg = pan_deg
@@ -228,7 +228,7 @@ class TestRotationMatrixProperties:
 
         # Test both implementations
         geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
         geo.pan_deg = pan_deg
         geo.tilt_deg = tilt_deg
@@ -300,7 +300,11 @@ class TestFocalLengthProperties:
 
         width, height = dimensions
         ieh = IntrinsicExtrinsicHomography(
-            width=width, height=height, sensor_width_mm=sensor_w, base_focal_length_mm=base_f
+            map_id="test_map",
+            width=width,
+            height=height,
+            sensor_width_mm=sensor_w,
+            base_focal_length_mm=base_f,
         )
 
         # Get intrinsic matrices at two different zoom levels
@@ -356,7 +360,11 @@ class TestFocalLengthProperties:
         """
         width, height = dimensions
         ieh = IntrinsicExtrinsicHomography(
-            width=width, height=height, sensor_width_mm=sensor_w, base_focal_length_mm=base_f
+            map_id="test_map",
+            width=width,
+            height=height,
+            sensor_width_mm=sensor_w,
+            base_focal_length_mm=base_f,
         )
 
         K = ieh.get_intrinsics(zoom_factor=zoom)
@@ -415,7 +423,7 @@ class TestConfidenceProperties:
         number, and parameter validity checks, all normalized to [0.0, 1.0].
         """
         width, height = dimensions
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
         K = CameraGeometry.get_intrinsics(zoom, width, height)
 
@@ -476,7 +484,7 @@ class TestConfidenceProperties:
         # Skip very small images where edge detection might be problematic
         assume(width >= 100 and height >= 100)
 
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
         K = CameraGeometry.get_intrinsics(zoom, width, height)
 
@@ -573,7 +581,7 @@ class TestHomographyConsistencyProperties:
         width, height = dimensions
 
         geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
         K = CameraGeometry.get_intrinsics(zoom, width, height)
 
@@ -632,7 +640,7 @@ class TestHomographyConsistencyProperties:
         width, height = dimensions
 
         geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(width=width, height=height)
+        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
         K = CameraGeometry.get_intrinsics(zoom, width, height)
 

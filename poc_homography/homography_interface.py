@@ -2,26 +2,29 @@
 Abstract interface for homography computation and coordinate projection.
 
 This module defines the core abstractions for computing homography transformations
-between image coordinates and world coordinates (GPS or local map coordinates).
+between image coordinates and map coordinates (pixel coordinates on a reference map).
 
 Coordinate Systems:
-    - Image coordinates: (u, v) in pixels, origin at top-left
-    - World coordinates: (latitude, longitude) in decimal degrees (WGS84)
-    - Map coordinates: (x, y) in meters from camera position on ground plane
+    - Image coordinates: (u, v) in pixels, origin at top-left of camera image
+    - Map coordinates: (pixel_x, pixel_y) in pixels on the reference map image
 
 The interface supports multiple homography computation approaches:
     - INTRINSIC_EXTRINSIC: Camera calibration parameters + pose
     - FEATURE_MATCH: Feature matching with known ground control points
     - LEARNED: Machine learning-based homography estimation
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from poc_homography.map_points import MapPoint
 
 
 class HomographyApproach(Enum):
@@ -53,78 +56,20 @@ class CoordinateSystemMode(Enum):
     In this mode:
     - Camera position is set to [0, 0, height] where height is camera elevation
     - World coordinate system origin is directly below the camera on the ground plane
-    - GPS coordinates (if available) are used only for geo-referencing projected points
-    - This is mathematically sufficient for single-camera homography
     - Projected points are measured as offsets from the camera position
 
     This is the default and recommended mode for single-camera applications.
     """
 
-    GPS_BASED_ORIGIN = "gps_based_origin"
-    """GPS-based world coordinates (Mode A).
+    MAP_BASED_ORIGIN = "map_based_origin"
+    """Map-based pixel coordinates (default for MapPoint system).
 
     In this mode:
-    - Camera position X,Y components are derived from GPS coordinates
-    - Camera position becomes [X_gps, Y_gps, height] in metric coordinates
-    - World coordinate system origin is at a reference GPS location (e.g., 0°, 0°)
-    - This mode is useful for multi-camera systems where cameras need a shared
-      world coordinate frame
-    - Projected points are in absolute metric coordinates relative to GPS origin
-
-    Note: For single-camera use, this mode may still result in [0, 0, height]
-    if the GPS reference point is set to the camera's GPS location. The key
-    difference is that the infrastructure is in place for multi-camera fusion.
+    - Projections return pixel coordinates on the reference map image
+    - Origin is at top-left of the map image (0, 0)
+    - Coordinates increase right (x) and down (y)
+    - This is the standard mode for MapPoint-based homography
     """
-
-
-@dataclass
-class WorldPoint:
-    """Represents a point in world coordinates with confidence score.
-
-    Attributes:
-        latitude: Latitude in decimal degrees (WGS84), range [-90, 90]
-        longitude: Longitude in decimal degrees (WGS84), range [-180, 180]
-        confidence: Confidence score for this projection, range [0.0, 1.0]
-            where 1.0 indicates highest confidence
-    """
-
-    latitude: float
-    longitude: float
-    confidence: float
-
-    def __post_init__(self):
-        """Validate coordinate ranges."""
-        if not -90 <= self.latitude <= 90:
-            raise ValueError(f"Latitude must be in range [-90, 90], got {self.latitude}")
-        if not -180 <= self.longitude <= 180:
-            raise ValueError(f"Longitude must be in range [-180, 180], got {self.longitude}")
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(f"Confidence must be in range [0.0, 1.0], got {self.confidence}")
-
-
-@dataclass
-class MapCoordinate:
-    """Represents a point in local map coordinates relative to camera.
-
-    Local map coordinates use a metric coordinate system with the camera
-    position as the origin, projected onto the ground plane.
-
-    Attributes:
-        x: Distance in meters along the x-axis (typically east-west)
-        y: Distance in meters along the y-axis (typically north-south)
-        confidence: Confidence score for this projection, range [0.0, 1.0]
-        elevation: Optional elevation above ground plane in meters
-    """
-
-    x: float
-    y: float
-    confidence: float
-    elevation: float | None = None
-
-    def __post_init__(self):
-        """Validate confidence range."""
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(f"Confidence must be in range [0.0, 1.0], got {self.confidence}")
 
 
 @dataclass
@@ -133,7 +78,7 @@ class HomographyResult:
 
     Attributes:
         homography_matrix: 3x3 homography transformation matrix mapping
-            image coordinates to ground plane coordinates. The matrix
+            image coordinates to map plane coordinates. The matrix
             transforms homogeneous coordinates [u, v, 1]^T to [x, y, w]^T
             where the final coordinates are (x/w, y/w).
         confidence: Overall confidence score for this homography, range [0.0, 1.0]
@@ -161,60 +106,6 @@ class HomographyResult:
             )
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(f"Confidence must be in range [0.0, 1.0], got {self.confidence}")
-
-
-class GPSPositionMixin:
-    """
-    Mixin class providing GPS position storage and validation.
-
-    Classes using this mixin must initialize _camera_gps_lat and _camera_gps_lon
-    attributes (typically to None) in their __init__.
-
-    IMPORTANT: Temporal Coupling Requirement
-    ----------------------------------------
-    When using GPS-based geo-referencing with homography providers:
-
-    1. Call set_camera_gps_position() BEFORE compute_homography()
-    2. GPS position must be set before calling project_point() or project_points()
-       that return WorldPoint with GPS coordinates
-
-    If GPS position is not set, project_point() will raise RuntimeError.
-
-    Example usage:
-        provider = IntrinsicExtrinsicHomography(1920, 1080)
-        provider.set_camera_gps_position(39.640, -0.230)  # Set GPS first
-        provider.compute_homography(frame, reference)      # Then compute homography
-        world_point = provider.project_point((1280, 720)) # Now projection works
-    """
-
-    _camera_gps_lat: float | None
-    _camera_gps_lon: float | None
-
-    def set_camera_gps_position(self, lat: float, lon: float) -> None:
-        """
-        Set camera GPS position for WorldPoint conversion.
-
-        This establishes the reference point for converting local metric
-        coordinates to GPS coordinates.
-
-        Note:
-            Must be called BEFORE compute_homography() if GPS geo-referencing
-            is needed. See class docstring for temporal coupling requirements.
-
-        Args:
-            lat: Camera latitude in decimal degrees [-90, 90]
-            lon: Camera longitude in decimal degrees [-180, 180]
-
-        Raises:
-            ValueError: If latitude or longitude out of valid range
-        """
-        if not -90 <= lat <= 90:
-            raise ValueError(f"Latitude must be in range [-90, 90], got {lat}")
-        if not -180 <= lon <= 180:
-            raise ValueError(f"Longitude must be in range [-180, 180], got {lon}")
-
-        self._camera_gps_lat = lat
-        self._camera_gps_lon = lon
 
 
 class HomographyProvider(ABC):
@@ -245,11 +136,11 @@ class HomographyProvider(ABC):
 
     @abstractmethod
     def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
-        """Compute homography matrix from image frame to ground plane.
+        """Compute homography matrix from image frame to map plane.
 
         This method analyzes the input frame and reference data to compute
         a homography transformation. The transformation maps image coordinates
-        to ground plane coordinates.
+        to map plane coordinates.
 
         Args:
             frame: Image frame as numpy array with shape (height, width, channels)
@@ -258,7 +149,7 @@ class HomographyProvider(ABC):
                 information. Common keys:
                 - 'camera_matrix': 3x3 intrinsic camera matrix (intrinsic/extrinsic)
                 - 'dist_coeffs': Distortion coefficients (intrinsic/extrinsic)
-                - 'ground_points': Known world coordinates (feature matching)
+                - 'ground_points': Known map coordinates (feature matching)
                 - 'image_points': Corresponding image points (feature matching)
                 - 'model_path': Path to trained model (learned approach)
 
@@ -279,10 +170,10 @@ class HomographyProvider(ABC):
         pass
 
     @abstractmethod
-    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
-        """Project single image coordinate to world coordinate (GPS).
+    def project_point(self, image_point: tuple[float, float]) -> MapPoint:
+        """Project single image coordinate to map coordinate.
 
-        Transforms a 2D image point to a GPS coordinate using the most
+        Transforms a 2D image point to a map coordinate using the most
         recently computed homography matrix. The point is assumed to lie
         on the ground plane.
 
@@ -292,12 +183,11 @@ class HomographyProvider(ABC):
                 v: vertical pixel coordinate (0 = top edge)
 
         Returns:
-            WorldPoint with:
-                - latitude: Projected latitude in decimal degrees
-                - longitude: Projected longitude in decimal degrees
-                - confidence: Point-specific confidence score [0.0, 1.0]
-                    May be lower than overall homography confidence if point
-                    is near image edges or in low-confidence regions
+            MapPoint with:
+                - id: Identifier for the projected point
+                - pixel_x: X coordinate on the map image
+                - pixel_y: Y coordinate on the map image
+                - map_id: Identifier of the reference map
 
         Raises:
             RuntimeError: If no valid homography has been computed yet
@@ -309,8 +199,8 @@ class HomographyProvider(ABC):
         pass
 
     @abstractmethod
-    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
-        """Project multiple image points to world coordinates (GPS).
+    def project_points(self, image_points: list[tuple[float, float]]) -> list[MapPoint]:
+        """Project multiple image points to map coordinates.
 
         Batch version of project_point() for efficiency when projecting
         many points. Uses the same homography matrix for all points.
@@ -319,8 +209,7 @@ class HomographyProvider(ABC):
             image_points: List of (u, v) pixel coordinates to project
 
         Returns:
-            List of WorldPoint objects, one per input point, in same order.
-            Each WorldPoint contains lat/lon and per-point confidence score.
+            List of MapPoint objects, one per input point, in same order.
 
         Raises:
             RuntimeError: If no valid homography has been computed yet
@@ -366,48 +255,6 @@ class HomographyProvider(ABC):
         Note:
             Always check this before calling project_point() or project_points()
             to avoid runtime errors.
-        """
-        pass
-
-
-class HomographyProviderExtended(HomographyProvider):
-    """Extended interface with additional coordinate projection methods.
-
-    This optional extension adds support for local map coordinate projections
-    in addition to GPS coordinates. Useful for applications that work in
-    metric local coordinate systems.
-
-    Implementers can choose to implement this extended interface if their
-    use case requires local map coordinates.
-    """
-
-    @abstractmethod
-    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
-        """Project image coordinate to local map coordinate system.
-
-        Args:
-            image_point: (u, v) pixel coordinates in image space
-
-        Returns:
-            MapCoordinate with x, y in meters from camera position
-
-        Raises:
-            RuntimeError: If no valid homography has been computed yet
-        """
-        pass
-
-    @abstractmethod
-    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
-        """Project multiple image points to local map coordinates.
-
-        Args:
-            image_points: List of (u, v) pixel coordinates
-
-        Returns:
-            List of MapCoordinate objects with x, y in meters
-
-        Raises:
-            RuntimeError: If no valid homography has been computed yet
         """
         pass
 

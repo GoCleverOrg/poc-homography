@@ -2,7 +2,7 @@
 """
 Unit tests for GCP (Ground Control Point) validation functions.
 
-Tests verify validation logic for GPS coordinates, elevation, pixel coordinates,
+Tests verify validation logic for map pixel coordinates, image pixel coordinates,
 duplicate detection, and overall GCP configuration.
 """
 
@@ -19,291 +19,305 @@ from poc_homography.gcp_validation import (
     _is_valid_finite_number,
     _validate_image_dimension,
     detect_duplicate_gcps,
-    validate_gcp_elevation,
-    validate_gcp_gps_coordinates,
-    validate_gcp_pixel_coordinates,
+    validate_gcp_image_coordinates,
+    validate_gcp_map_coordinates,
     validate_ground_control_points,
 )
 from poc_homography.homography_config import HomographyConfig
 
 
-class TestValidateGCPGPSCoordinates(unittest.TestCase):
-    """Test GPS coordinate validation for ground control points."""
+class TestValidateGCPMapCoordinates(unittest.TestCase):
+    """Test map pixel coordinate validation for ground control points."""
 
-    def test_valid_latitude_longitude_pass_validation(self):
-        """Test that valid latitude and longitude pass validation."""
-        gcp = {"gps": {"latitude": 39.640583, "longitude": -0.230194}}
+    def test_valid_map_coordinates_pass_validation(self):
+        """Test that valid map coordinates pass validation."""
+        gcp = {
+            "map_id": "map_valte",
+            "map_pixel_x": 1234.5,
+            "map_pixel_y": 567.8,
+        }
         # Should not raise any exception
-        validate_gcp_gps_coordinates(gcp, 0)
+        validate_gcp_map_coordinates(gcp, 0)
 
-    def test_latitude_below_min_raises_value_error(self):
-        """Test that latitude < -90 raises ValueError."""
-        gcp = {"gps": {"latitude": -91.0, "longitude": 0.0}}
-        with self.assertRaisesRegex(ValueError, "latitude -91.0 outside valid range"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_latitude_above_max_raises_value_error(self):
-        """Test that latitude > 90 raises ValueError."""
-        gcp = {"gps": {"latitude": 91.0, "longitude": 0.0}}
-        with self.assertRaisesRegex(ValueError, "latitude 91.0 outside valid range"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_latitude_at_boundaries_passes(self):
-        """Test that latitude at exactly -90 and 90 passes validation."""
-        gcp_min = {"gps": {"latitude": -90.0, "longitude": 0.0}}
-        gcp_max = {"gps": {"latitude": 90.0, "longitude": 0.0}}
-        # Should not raise
-        validate_gcp_gps_coordinates(gcp_min, 0)
-        validate_gcp_gps_coordinates(gcp_max, 1)
-
-    def test_longitude_below_min_raises_value_error(self):
-        """Test that longitude < -180 raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": -181.0}}
-        with self.assertRaisesRegex(ValueError, "longitude -181.0 outside valid range"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_longitude_above_max_raises_value_error(self):
-        """Test that longitude > 180 raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": 181.0}}
-        with self.assertRaisesRegex(ValueError, "longitude 181.0 outside valid range"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_longitude_at_boundaries_passes(self):
-        """Test that longitude at exactly -180 and 180 passes validation."""
-        gcp_min = {"gps": {"latitude": 0.0, "longitude": -180.0}}
-        gcp_max = {"gps": {"latitude": 0.0, "longitude": 180.0}}
-        # Should not raise
-        validate_gcp_gps_coordinates(gcp_min, 0)
-        validate_gcp_gps_coordinates(gcp_max, 1)
-
-    def test_missing_latitude_field_raises_value_error(self):
-        """Test that missing latitude field raises ValueError."""
-        gcp = {"gps": {"longitude": 0.0}}
-        with self.assertRaisesRegex(ValueError, "missing required 'latitude' field"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_missing_longitude_field_raises_value_error(self):
-        """Test that missing longitude field raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0}}
-        with self.assertRaisesRegex(ValueError, "missing required 'longitude' field"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_missing_gps_section_raises_value_error(self):
-        """Test that missing 'gps' section raises ValueError."""
-        gcp = {"image": {"u": 100.0, "v": 200.0}}
-        with self.assertRaisesRegex(ValueError, "missing required 'gps' section"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_non_numeric_latitude_raises_value_error(self):
-        """Test that non-numeric latitude raises ValueError."""
+    def test_valid_map_coordinates_with_dimensions_pass(self):
+        """Test that valid map coordinates pass with map dimensions provided."""
         gcp = {
-            "gps": {
-                "latitude": "39.640583",  # String instead of number
-                "longitude": 0.0,
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": 1234.5,
+            "map_pixel_y": 567.8,
         }
-        with self.assertRaisesRegex(ValueError, "latitude must be a number"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_non_numeric_longitude_raises_value_error(self):
-        """Test that non-numeric longitude raises ValueError."""
-        gcp = {
-            "gps": {
-                "latitude": 0.0,
-                "longitude": "-0.230194",  # String instead of number
-            }
-        }
-        with self.assertRaisesRegex(ValueError, "longitude must be a number"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-    def test_error_message_includes_description(self):
-        """Test that error messages include GCP description when available."""
-        gcp = {
-            "gps": {"latitude": 91.0, "longitude": 0.0},
-            "metadata": {"description": "Building corner NW"},
-        }
-        with self.assertRaisesRegex(ValueError, "Building corner NW"):
-            validate_gcp_gps_coordinates(gcp, 0)
-
-
-class TestValidateGCPElevation(unittest.TestCase):
-    """Test elevation validation for ground control points."""
-
-    def test_valid_elevation_passes_validation(self):
-        """Test that valid elevation passes validation."""
-        gcp = {"gps": {"latitude": 39.640583, "longitude": -0.230194, "elevation": 12.5}}
         # Should not raise any exception
-        validate_gcp_elevation(gcp, 0)
+        validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
 
-    def test_elevation_missing_is_ok(self):
-        """Test that missing elevation is OK (optional field)."""
-        gcp = {"gps": {"latitude": 39.640583, "longitude": -0.230194}}
-        # Should not raise any exception
-        validate_gcp_elevation(gcp, 0)
+    def test_missing_map_id_raises_value_error(self):
+        """Test that missing map_id field raises ValueError."""
+        gcp = {"map_pixel_x": 1234.5, "map_pixel_y": 567.8}
+        with self.assertRaisesRegex(ValueError, "missing required 'map_id'"):
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_elevation_below_min_raises_value_error(self):
-        """Test that elevation < -500 raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": -501.0}}
-        with self.assertRaisesRegex(ValueError, "elevation -501.0 meters outside valid range"):
-            validate_gcp_elevation(gcp, 0)
+    def test_empty_map_id_raises_value_error(self):
+        """Test that empty map_id raises ValueError."""
+        gcp = {"map_id": "", "map_pixel_x": 1234.5, "map_pixel_y": 567.8}
+        with self.assertRaisesRegex(ValueError, "must be a non-empty string"):
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_elevation_above_max_raises_value_error(self):
-        """Test that elevation > 9000 raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": 9001.0}}
-        with self.assertRaisesRegex(ValueError, "elevation 9001.0 meters outside valid range"):
-            validate_gcp_elevation(gcp, 0)
+    def test_whitespace_only_map_id_raises_value_error(self):
+        """Test that whitespace-only map_id raises ValueError."""
+        gcp = {"map_id": "   ", "map_pixel_x": 1234.5, "map_pixel_y": 567.8}
+        with self.assertRaisesRegex(ValueError, "must be a non-empty string"):
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_elevation_at_boundaries_passes(self):
-        """Test that elevation at exactly -500 and 9000 passes validation."""
-        gcp_min = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": -500.0}}
-        gcp_max = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": 9000.0}}
-        # Should not raise
-        validate_gcp_elevation(gcp_min, 0)
-        validate_gcp_elevation(gcp_max, 1)
+    def test_non_string_map_id_raises_value_error(self):
+        """Test that non-string map_id raises ValueError."""
+        gcp = {"map_id": 123, "map_pixel_x": 1234.5, "map_pixel_y": 567.8}
+        with self.assertRaisesRegex(ValueError, "must be a non-empty string"):
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_non_numeric_elevation_raises_value_error(self):
-        """Test that non-numeric elevation raises ValueError."""
+    def test_missing_map_pixel_x_raises_value_error(self):
+        """Test that missing map_pixel_x field raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_y": 567.8}
+        with self.assertRaisesRegex(ValueError, "missing required 'map_pixel_x'"):
+            validate_gcp_map_coordinates(gcp, 0)
+
+    def test_missing_map_pixel_y_raises_value_error(self):
+        """Test that missing map_pixel_y field raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_x": 1234.5}
+        with self.assertRaisesRegex(ValueError, "missing required 'map_pixel_y'"):
+            validate_gcp_map_coordinates(gcp, 0)
+
+    def test_non_numeric_map_pixel_x_raises_value_error(self):
+        """Test that non-numeric map_pixel_x raises ValueError."""
         gcp = {
-            "gps": {
-                "latitude": 0.0,
-                "longitude": 0.0,
-                "elevation": "12.5",  # String instead of number
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": "1234.5",  # String instead of number
+            "map_pixel_y": 567.8,
         }
-        with self.assertRaisesRegex(ValueError, "elevation must be a number"):
-            validate_gcp_elevation(gcp, 0)
+        with self.assertRaisesRegex(ValueError, "map_pixel_x must be a number"):
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_missing_gps_section_does_not_raise(self):
-        """Test that missing 'gps' section does not raise (deferred to GPS validation)."""
-        gcp = {"image": {"u": 100.0, "v": 200.0}}
-        # Should not raise - GPS validation will catch this
-        validate_gcp_elevation(gcp, 0)
-
-    def test_realistic_elevations_pass(self):
-        """Test realistic elevation values from sea level to mountain tops."""
-        test_cases = [
-            0.0,  # Sea level
-            12.5,  # Typical building
-            100.0,  # Hill
-            1000.0,  # Mountain
-            8848.0,  # Mount Everest
-            -430.0,  # Dead Sea
-        ]
-        for elevation in test_cases:
-            gcp = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": elevation}}
-            # Should not raise
-            validate_gcp_elevation(gcp, 0)
-
-
-class TestValidateGCPPixelCoordinates(unittest.TestCase):
-    """Test pixel coordinate validation for ground control points."""
-
-    def test_valid_pixel_coordinates_pass(self):
-        """Test that valid pixel coordinates pass validation."""
-        gcp = {"image": {"u": 1250.5, "v": 680.0}}
-        # Should not raise any exception
-        validate_gcp_pixel_coordinates(gcp, 0)
-
-    def test_valid_pixel_coordinates_with_dimensions_pass(self):
-        """Test that valid pixel coordinates pass with image dimensions provided."""
-        gcp = {"image": {"u": 1250.5, "v": 680.0}}
-        # Should not raise any exception
-        validate_gcp_pixel_coordinates(gcp, 0, image_width=2560, image_height=1440)
-
-    def test_missing_u_field_raises_value_error(self):
-        """Test that missing u field raises ValueError."""
-        gcp = {"image": {"v": 680.0}}
-        with self.assertRaisesRegex(ValueError, "missing required 'u'"):
-            validate_gcp_pixel_coordinates(gcp, 0)
-
-    def test_missing_v_field_raises_value_error(self):
-        """Test that missing v field raises ValueError."""
-        gcp = {"image": {"u": 1250.5}}
-        with self.assertRaisesRegex(ValueError, "missing required 'v'"):
-            validate_gcp_pixel_coordinates(gcp, 0)
-
-    def test_missing_image_section_raises_value_error(self):
-        """Test that missing 'image' section raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": 0.0}}
-        with self.assertRaisesRegex(ValueError, "missing required 'image' section"):
-            validate_gcp_pixel_coordinates(gcp, 0)
-
-    def test_u_outside_image_width_raises_value_error(self):
-        """Test that u outside image width raises ValueError when dimensions provided."""
+    def test_non_numeric_map_pixel_y_raises_value_error(self):
+        """Test that non-numeric map_pixel_y raises ValueError."""
         gcp = {
-            "image": {
-                "u": 2560.0,  # At or beyond right edge
-                "v": 680.0,
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": 1234.5,
+            "map_pixel_y": "567.8",  # String instead of number
         }
-        with self.assertRaisesRegex(ValueError, "u coordinate 2560.0 outside image width"):
-            validate_gcp_pixel_coordinates(gcp, 0, image_width=2560, image_height=1440)
+        with self.assertRaisesRegex(ValueError, "map_pixel_y must be a number"):
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_u_negative_raises_value_error(self):
-        """Test that negative u coordinate raises ValueError when dimensions provided."""
-        gcp = {"image": {"u": -1.0, "v": 680.0}}
-        with self.assertRaisesRegex(ValueError, "u coordinate -1.0 outside image width"):
-            validate_gcp_pixel_coordinates(gcp, 0, image_width=2560, image_height=1440)
-
-    def test_v_outside_image_height_raises_value_error(self):
-        """Test that v outside image height raises ValueError when dimensions provided."""
+    def test_map_pixel_x_outside_map_width_raises_value_error(self):
+        """Test that map_pixel_x outside map width raises ValueError."""
         gcp = {
-            "image": {
-                "u": 1250.5,
-                "v": 1440.0,  # At or beyond bottom edge
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": 2000.0,  # At or beyond right edge
+            "map_pixel_y": 567.8,
         }
-        with self.assertRaisesRegex(ValueError, "v coordinate 1440.0 outside image height"):
-            validate_gcp_pixel_coordinates(gcp, 0, image_width=2560, image_height=1440)
+        with self.assertRaisesRegex(ValueError, "map_pixel_x 2000.0 outside map width"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
 
-    def test_v_negative_raises_value_error(self):
-        """Test that negative v coordinate raises ValueError when dimensions provided."""
-        gcp = {"image": {"u": 1250.5, "v": -1.0}}
-        with self.assertRaisesRegex(ValueError, "v coordinate -1.0 outside image height"):
-            validate_gcp_pixel_coordinates(gcp, 0, image_width=2560, image_height=1440)
+    def test_map_pixel_x_negative_raises_value_error(self):
+        """Test that negative map_pixel_x raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_x": -1.0, "map_pixel_y": 567.8}
+        with self.assertRaisesRegex(ValueError, "map_pixel_x -1.0 outside map width"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
+
+    def test_map_pixel_y_outside_map_height_raises_value_error(self):
+        """Test that map_pixel_y outside map height raises ValueError."""
+        gcp = {
+            "map_id": "map_valte",
+            "map_pixel_x": 1234.5,
+            "map_pixel_y": 1500.0,  # At or beyond bottom edge
+        }
+        with self.assertRaisesRegex(ValueError, "map_pixel_y 1500.0 outside map height"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
+
+    def test_map_pixel_y_negative_raises_value_error(self):
+        """Test that negative map_pixel_y raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_x": 1234.5, "map_pixel_y": -1.0}
+        with self.assertRaisesRegex(ValueError, "map_pixel_y -1.0 outside map height"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
 
     def test_validation_passes_when_dimensions_not_provided(self):
         """Test that validation passes when dimensions not provided (skips bounds check)."""
         gcp = {
-            "image": {
-                "u": 5000.0,  # Would be out of bounds if we had dimensions
-                "v": 3000.0,
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": 5000.0,  # Would be out of bounds if we had dimensions
+            "map_pixel_y": 3000.0,
         }
         # Should not raise - bounds check is skipped
-        validate_gcp_pixel_coordinates(gcp, 0)
+        validate_gcp_map_coordinates(gcp, 0)
 
     def test_validation_passes_at_boundaries(self):
         """Test that coordinates at valid boundaries pass."""
-        # u and v at 0 (top-left corner)
-        gcp_origin = {"image": {"u": 0.0, "v": 0.0}}
-        # u and v just before max (bottom-right corner)
-        gcp_max = {"image": {"u": 2559.9, "v": 1439.9}}
+        # At origin (top-left corner)
+        gcp_origin = {"map_id": "map_valte", "map_pixel_x": 0.0, "map_pixel_y": 0.0}
+        # Just before max (bottom-right corner)
+        gcp_max = {"map_id": "map_valte", "map_pixel_x": 1999.9, "map_pixel_y": 1499.9}
         # Should not raise
-        validate_gcp_pixel_coordinates(gcp_origin, 0, image_width=2560, image_height=1440)
-        validate_gcp_pixel_coordinates(gcp_max, 1, image_width=2560, image_height=1440)
+        validate_gcp_map_coordinates(gcp_origin, 0, map_width=2000, map_height=1500)
+        validate_gcp_map_coordinates(gcp_max, 1, map_width=2000, map_height=1500)
 
-    def test_non_numeric_u_raises_value_error(self):
-        """Test that non-numeric u coordinate raises ValueError."""
+    def test_only_width_provided_validates_x(self):
+        """Test that map_pixel_x is validated when only width is provided."""
         gcp = {
-            "image": {
-                "u": "1250.5",  # String instead of number
-                "v": 680.0,
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": 3000.0,  # Out of bounds for width 2000
+            "map_pixel_y": 500.0,
         }
-        with self.assertRaisesRegex(ValueError, "u coordinate must be a number"):
-            validate_gcp_pixel_coordinates(gcp, 0)
+        with self.assertRaisesRegex(ValueError, "map_pixel_x 3000.0 outside map width"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=None)
 
-    def test_non_numeric_v_raises_value_error(self):
-        """Test that non-numeric v coordinate raises ValueError."""
+    def test_only_height_provided_validates_y(self):
+        """Test that map_pixel_y is validated when only height is provided."""
         gcp = {
-            "image": {
-                "u": 1250.5,
-                "v": "680.0",  # String instead of number
-            }
+            "map_id": "map_valte",
+            "map_pixel_x": 500.0,
+            "map_pixel_y": 2000.0,  # Out of bounds for height 1000
         }
-        with self.assertRaisesRegex(ValueError, "v coordinate must be a number"):
-            validate_gcp_pixel_coordinates(gcp, 0)
+        with self.assertRaisesRegex(ValueError, "map_pixel_y 2000.0 outside map height"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=None, map_height=1000)
+
+    def test_error_message_includes_description(self):
+        """Test that error messages include GCP description when available."""
+        gcp = {
+            "map_id": "map_valte",
+            "map_pixel_x": -1.0,
+            "map_pixel_y": 567.8,
+            "metadata": {"description": "Building corner NW"},
+        }
+        with self.assertRaisesRegex(ValueError, "Building corner NW"):
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
+
+
+class TestValidateGCPImageCoordinates(unittest.TestCase):
+    """Test image pixel coordinate validation for ground control points."""
+
+    def test_valid_image_coordinates_pass(self):
+        """Test that valid image coordinates pass validation."""
+        gcp = {"image_u": 1250.5, "image_v": 680.0}
+        # Should not raise any exception
+        validate_gcp_image_coordinates(gcp, 0)
+
+    def test_valid_image_coordinates_with_dimensions_pass(self):
+        """Test that valid image coordinates pass with image dimensions provided."""
+        gcp = {"image_u": 1250.5, "image_v": 680.0}
+        # Should not raise any exception
+        validate_gcp_image_coordinates(gcp, 0, image_width=2560, image_height=1440)
+
+    def test_missing_image_u_field_raises_value_error(self):
+        """Test that missing image_u field raises ValueError."""
+        gcp = {"image_v": 680.0}
+        with self.assertRaisesRegex(ValueError, "missing required 'image_u'"):
+            validate_gcp_image_coordinates(gcp, 0)
+
+    def test_missing_image_v_field_raises_value_error(self):
+        """Test that missing image_v field raises ValueError."""
+        gcp = {"image_u": 1250.5}
+        with self.assertRaisesRegex(ValueError, "missing required 'image_v'"):
+            validate_gcp_image_coordinates(gcp, 0)
+
+    def test_image_u_outside_image_width_raises_value_error(self):
+        """Test that image_u outside image width raises ValueError when dimensions provided."""
+        gcp = {
+            "image_u": 2560.0,  # At or beyond right edge
+            "image_v": 680.0,
+        }
+        with self.assertRaisesRegex(ValueError, "image_u 2560.0 outside image width"):
+            validate_gcp_image_coordinates(gcp, 0, image_width=2560, image_height=1440)
+
+    def test_image_u_negative_raises_value_error(self):
+        """Test that negative image_u coordinate raises ValueError when dimensions provided."""
+        gcp = {"image_u": -1.0, "image_v": 680.0}
+        with self.assertRaisesRegex(ValueError, "image_u -1.0 outside image width"):
+            validate_gcp_image_coordinates(gcp, 0, image_width=2560, image_height=1440)
+
+    def test_image_v_outside_image_height_raises_value_error(self):
+        """Test that image_v outside image height raises ValueError when dimensions provided."""
+        gcp = {
+            "image_u": 1250.5,
+            "image_v": 1440.0,  # At or beyond bottom edge
+        }
+        with self.assertRaisesRegex(ValueError, "image_v 1440.0 outside image height"):
+            validate_gcp_image_coordinates(gcp, 0, image_width=2560, image_height=1440)
+
+    def test_image_v_negative_raises_value_error(self):
+        """Test that negative image_v coordinate raises ValueError when dimensions provided."""
+        gcp = {"image_u": 1250.5, "image_v": -1.0}
+        with self.assertRaisesRegex(ValueError, "image_v -1.0 outside image height"):
+            validate_gcp_image_coordinates(gcp, 0, image_width=2560, image_height=1440)
+
+    def test_validation_passes_when_dimensions_not_provided(self):
+        """Test that validation passes when dimensions not provided (skips bounds check)."""
+        gcp = {
+            "image_u": 5000.0,  # Would be out of bounds if we had dimensions
+            "image_v": 3000.0,
+        }
+        # Should not raise - bounds check is skipped
+        validate_gcp_image_coordinates(gcp, 0)
+
+    def test_validation_passes_at_boundaries(self):
+        """Test that coordinates at valid boundaries pass."""
+        # At origin (top-left corner)
+        gcp_origin = {"image_u": 0.0, "image_v": 0.0}
+        # Just before max (bottom-right corner)
+        gcp_max = {"image_u": 2559.9, "image_v": 1439.9}
+        # Should not raise
+        validate_gcp_image_coordinates(gcp_origin, 0, image_width=2560, image_height=1440)
+        validate_gcp_image_coordinates(gcp_max, 1, image_width=2560, image_height=1440)
+
+    def test_non_numeric_image_u_raises_value_error(self):
+        """Test that non-numeric image_u coordinate raises ValueError."""
+        gcp = {
+            "image_u": "1250.5",  # String instead of number
+            "image_v": 680.0,
+        }
+        with self.assertRaisesRegex(ValueError, "image_u must be a number"):
+            validate_gcp_image_coordinates(gcp, 0)
+
+    def test_non_numeric_image_v_raises_value_error(self):
+        """Test that non-numeric image_v coordinate raises ValueError."""
+        gcp = {
+            "image_u": 1250.5,
+            "image_v": "680.0",  # String instead of number
+        }
+        with self.assertRaisesRegex(ValueError, "image_v must be a number"):
+            validate_gcp_image_coordinates(gcp, 0)
+
+    def test_only_width_provided_validates_u(self):
+        """Test that image_u is validated when only width is provided."""
+        gcp = {
+            "image_u": 3000.0,  # Out of bounds for width 2000
+            "image_v": 500.0,
+        }
+        with self.assertRaisesRegex(ValueError, "image_u 3000.0 outside image width"):
+            validate_gcp_image_coordinates(gcp, 0, image_width=2000, image_height=None)
+
+    def test_only_height_provided_validates_v(self):
+        """Test that image_v is validated when only height is provided."""
+        gcp = {
+            "image_u": 500.0,
+            "image_v": 2000.0,  # Out of bounds for height 1000
+        }
+        with self.assertRaisesRegex(ValueError, "image_v 2000.0 outside image height"):
+            validate_gcp_image_coordinates(gcp, 0, image_width=None, image_height=1000)
+
+    def test_only_width_provided_allows_any_v(self):
+        """Test that image_v is not validated when only width is provided."""
+        gcp = {
+            "image_u": 500.0,
+            "image_v": 999999.0,  # Would be out of bounds if height were checked
+        }
+        # Should not raise - v is not validated when height not provided
+        validate_gcp_image_coordinates(gcp, 0, image_width=1000, image_height=None)
+
+    def test_only_height_provided_allows_any_u(self):
+        """Test that image_u is not validated when only height is provided."""
+        gcp = {
+            "image_u": 999999.0,  # Would be out of bounds if width were checked
+            "image_v": 500.0,
+        }
+        # Should not raise - u is not validated when width not provided
+        validate_gcp_image_coordinates(gcp, 0, image_width=None, image_height=1000)
 
 
 class TestDetectDuplicateGCPs(unittest.TestCase):
@@ -313,80 +327,134 @@ class TestDetectDuplicateGCPs(unittest.TestCase):
         """Test that list with no duplicates passes validation."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640612, "longitude": -0.229856},
-                "image": {"u": 2456.2, "v": 695.5},
+                "map_id": "map_valte",
+                "map_pixel_x": 2456.2,
+                "map_pixel_y": 695.5,
+                "image_u": 2456.2,
+                "image_v": 695.5,
             },
             {
-                "gps": {"latitude": 39.640245, "longitude": -0.230301},
-                "image": {"u": 1180.0, "v": 1820.3},
+                "map_id": "map_valte",
+                "map_pixel_x": 1180.0,
+                "map_pixel_y": 1820.3,
+                "image_u": 1180.0,
+                "image_v": 1820.3,
             },
         ]
         # Should not raise any exception
         detect_duplicate_gcps(gcps)
 
-    def test_duplicate_gps_and_pixel_raises_value_error(self):
-        """Test that duplicate GPS AND pixel coordinates raises ValueError."""
+    def test_duplicate_map_and_image_pixels_raises_value_error(self):
+        """Test that duplicate map AND image pixel coordinates raises ValueError."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
                 "metadata": {"description": "Point A"},
             },
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},  # Same GPS
-                "image": {"u": 1250.5, "v": 680.0},  # Same pixels
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,  # Same map coords
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,  # Same image coords
+                "image_v": 680.0,
                 "metadata": {"description": "Point B"},
             },
         ]
         with self.assertRaisesRegex(ValueError, "Duplicate GCP detected"):
             detect_duplicate_gcps(gcps)
 
-    def test_same_gps_different_pixels_does_not_raise(self):
-        """Test that same GPS but different pixels does NOT raise (not a duplicate)."""
+    def test_same_map_different_image_does_not_raise(self):
+        """Test that same map coords but different image coords does NOT raise."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},  # Same GPS
-                "image": {"u": 2456.2, "v": 695.5},  # Different pixels
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,  # Same map coords
+                "map_pixel_y": 567.8,
+                "image_u": 2456.2,  # Different image coords
+                "image_v": 695.5,
             },
         ]
-        # Should not raise - different pixel coordinates
+        # Should not raise - different image coordinates
         detect_duplicate_gcps(gcps)
 
-    def test_same_pixels_different_gps_does_not_raise(self):
-        """Test that same pixels but different GPS does NOT raise (not a duplicate)."""
+    def test_same_image_different_map_does_not_raise(self):
+        """Test that same image coords but different map coords does NOT raise."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640612, "longitude": -0.229856},  # Different GPS
-                "image": {"u": 1250.5, "v": 680.0},  # Same pixels
+                "map_id": "map_valte",
+                "map_pixel_x": 2456.2,  # Different map coords
+                "map_pixel_y": 695.5,
+                "image_u": 1250.5,  # Same image coords
+                "image_v": 680.0,
             },
         ]
-        # Should not raise - different GPS coordinates
+        # Should not raise - different map coordinates
+        detect_duplicate_gcps(gcps)
+
+    def test_different_map_ids_not_duplicate(self):
+        """Test that same coordinates on different maps are not duplicates."""
+        gcps = [
+            {
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
+            },
+            {
+                "map_id": "map_other",  # Different map_id
+                "map_pixel_x": 1234.5,  # Same map pixel coords
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,  # Same image coords
+                "image_v": 680.0,
+            },
+        ]
+        # Should not raise - different map IDs
         detect_duplicate_gcps(gcps)
 
     def test_near_duplicate_within_epsilon_raises(self):
         """Test that near-duplicates within epsilon threshold raise ValueError."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                # GPS within default epsilon (1e-6 degrees)
-                "gps": {"latitude": 39.6405831, "longitude": -0.2301941},
-                # Pixels within default epsilon (0.5 pixels)
-                "image": {"u": 1250.6, "v": 680.1},
+                "map_id": "map_valte",
+                # Map pixels within default epsilon (0.5 pixels)
+                "map_pixel_x": 1234.6,
+                "map_pixel_y": 567.9,
+                # Image pixels within default epsilon (0.5 pixels)
+                "image_u": 1250.6,
+                "image_v": 680.1,
             },
         ]
         with self.assertRaisesRegex(ValueError, "Duplicate GCP detected"):
@@ -396,14 +464,20 @@ class TestDetectDuplicateGCPs(unittest.TestCase):
         """Test that near-duplicates outside epsilon threshold pass."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                # GPS outside default epsilon (1e-6 degrees)
-                "gps": {"latitude": 39.640584, "longitude": -0.230195},
-                # Pixels outside default epsilon (0.5 pixels)
-                "image": {"u": 1251.5, "v": 681.0},
+                "map_id": "map_valte",
+                # Map pixels outside default epsilon (0.5 pixels)
+                "map_pixel_x": 1235.5,
+                "map_pixel_y": 568.8,
+                # Image pixels outside default epsilon (0.5 pixels)
+                "image_u": 1251.5,
+                "image_v": 681.0,
             },
         ]
         # Should not raise - outside epsilon thresholds
@@ -413,24 +487,33 @@ class TestDetectDuplicateGCPs(unittest.TestCase):
         """Test duplicate detection with custom epsilon values."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640584, "longitude": -0.230195},
-                "image": {"u": 1250.6, "v": 680.1},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.6,
+                "map_pixel_y": 567.9,
+                "image_u": 1250.6,
+                "image_v": 680.1,
             },
         ]
         # With larger epsilon, these should be considered duplicates
         with self.assertRaisesRegex(ValueError, "Duplicate GCP detected"):
-            detect_duplicate_gcps(gcps, gps_epsilon=0.001, pixel_epsilon=1.0)
+            detect_duplicate_gcps(gcps, map_pixel_epsilon=1.0, image_pixel_epsilon=1.0)
 
     def test_single_gcp_passes(self):
         """Test that a single GCP passes (no duplicates possible)."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             }
         ]
         # Should not raise
@@ -450,12 +533,18 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         """Test that valid list format passes validation."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640612, "longitude": -0.229856},
-                "image": {"u": 2456.2, "v": 695.5},
+                "map_id": "map_valte",
+                "map_pixel_x": 2456.2,
+                "map_pixel_y": 695.5,
+                "image_u": 2456.2,
+                "image_v": 695.5,
             },
         ]
         result = validate_ground_control_points(gcps)
@@ -467,12 +556,18 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         gcps = {
             "set_1": [
                 {
-                    "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                    "image": {"u": 1250.5, "v": 680.0},
+                    "map_id": "map_valte",
+                    "map_pixel_x": 1234.5,
+                    "map_pixel_y": 567.8,
+                    "image_u": 1250.5,
+                    "image_v": 680.0,
                 },
                 {
-                    "gps": {"latitude": 39.640612, "longitude": -0.229856},
-                    "image": {"u": 2456.2, "v": 695.5},
+                    "map_id": "map_valte",
+                    "map_pixel_x": 2456.2,
+                    "map_pixel_y": 695.5,
+                    "image_u": 2456.2,
+                    "image_v": 695.5,
                 },
             ]
         }
@@ -491,12 +586,18 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         """Test that fewer than min_gcp_count logs warning but passes."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640612, "longitude": -0.229856},
-                "image": {"u": 2456.2, "v": 695.5},
+                "map_id": "map_valte",
+                "map_pixel_x": 2456.2,
+                "map_pixel_y": 695.5,
+                "image_u": 2456.2,
+                "image_v": 695.5,
             },
         ]
         # Should not raise, but logs warning (default min is 6)
@@ -515,49 +616,50 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "values must be lists"):
             validate_ground_control_points(gcps)
 
-    def test_nested_validation_errors_are_raised_gps(self):
-        """Test that nested GPS validation errors are raised."""
+    def test_nested_validation_errors_are_raised_map_coords(self):
+        """Test that nested map coordinate validation errors are raised."""
         gcps = [
             {
-                "gps": {"latitude": 91.0, "longitude": 0.0},  # Invalid latitude
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "",  # Invalid map_id
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             }
         ]
-        with self.assertRaisesRegex(ValueError, "latitude 91.0 outside valid range"):
+        with self.assertRaisesRegex(ValueError, "must be a non-empty string"):
             validate_ground_control_points(gcps)
 
-    def test_nested_validation_errors_are_raised_elevation(self):
-        """Test that nested elevation validation errors are raised."""
+    def test_nested_validation_errors_are_raised_image_coords(self):
+        """Test that nested image coordinate validation errors are raised."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194, "elevation": 10000.0},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 3000.0,  # Out of bounds
+                "image_v": 680.0,
             }
         ]
-        with self.assertRaisesRegex(ValueError, "elevation 10000.0 meters outside valid range"):
-            validate_ground_control_points(gcps)
-
-    def test_nested_validation_errors_are_raised_pixel(self):
-        """Test that nested pixel validation errors are raised."""
-        gcps = [
-            {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 3000.0, "v": 680.0},  # Out of bounds
-            }
-        ]
-        with self.assertRaisesRegex(ValueError, "u coordinate 3000.0 outside image width"):
+        with self.assertRaisesRegex(ValueError, "image_u 3000.0 outside image width"):
             validate_ground_control_points(gcps, image_width=2560, image_height=1440)
 
     def test_nested_validation_errors_are_raised_duplicates(self):
         """Test that duplicate detection errors are raised."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
         ]
         with self.assertRaisesRegex(ValueError, "Duplicate GCP detected"):
@@ -568,8 +670,11 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         gcps = [
             "not a dict",
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             },
         ]
         with self.assertRaisesRegex(ValueError, "must be a dictionary"):
@@ -579,8 +684,11 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         """Test that image dimensions are used for pixel bounds checking."""
         gcps = [
             {
-                "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                "image": {"u": 1250.5, "v": 680.0},
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
             }
         ]
         # Should pass with correct dimensions
@@ -588,22 +696,47 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         self.assertEqual(len(result), 1)
 
         # Should fail with too-small dimensions
-        with self.assertRaisesRegex(ValueError, "u coordinate 1250.5 outside image width"):
+        with self.assertRaisesRegex(ValueError, "image_u 1250.5 outside image width"):
             validate_ground_control_points(gcps, image_width=1000, image_height=1440)
+
+    def test_map_dimensions_used_for_bounds_checking(self):
+        """Test that map dimensions are used for map pixel bounds checking."""
+        gcps = [
+            {
+                "map_id": "map_valte",
+                "map_pixel_x": 1234.5,
+                "map_pixel_y": 567.8,
+                "image_u": 1250.5,
+                "image_v": 680.0,
+            }
+        ]
+        # Should pass with correct dimensions
+        result = validate_ground_control_points(gcps, map_width=2000, map_height=1500)
+        self.assertEqual(len(result), 1)
+
+        # Should fail with too-small dimensions
+        with self.assertRaisesRegex(ValueError, "map_pixel_x 1234.5 outside map width"):
+            validate_ground_control_points(gcps, map_width=1000, map_height=1500)
 
     def test_multiple_gcp_sets_uses_first_set(self):
         """Test that when multiple GCP sets provided, first set is used."""
         gcps = {
             "set_1": [
                 {
-                    "gps": {"latitude": 39.640583, "longitude": -0.230194},
-                    "image": {"u": 1250.5, "v": 680.0},
+                    "map_id": "map_valte",
+                    "map_pixel_x": 1234.5,
+                    "map_pixel_y": 567.8,
+                    "image_u": 1250.5,
+                    "image_v": 680.0,
                 }
             ],
             "set_2": [
                 {
-                    "gps": {"latitude": 39.640612, "longitude": -0.229856},
-                    "image": {"u": 2456.2, "v": 695.5},
+                    "map_id": "map_valte",
+                    "map_pixel_x": 2456.2,
+                    "map_pixel_y": 695.5,
+                    "image_u": 2456.2,
+                    "image_v": 695.5,
                 }
             ],
         }
@@ -663,12 +796,11 @@ class TestHomographyConfigIntegration(unittest.TestCase):
 
             # Verify first GCP has expected structure
             first_gcp = gcps[0]
-            self.assertIn("gps", first_gcp)
-            self.assertIn("image", first_gcp)
-            self.assertIn("latitude", first_gcp["gps"])
-            self.assertIn("longitude", first_gcp["gps"])
-            self.assertIn("u", first_gcp["image"])
-            self.assertIn("v", first_gcp["image"])
+            self.assertIn("map_id", first_gcp)
+            self.assertIn("map_pixel_x", first_gcp)
+            self.assertIn("map_pixel_y", first_gcp)
+            self.assertIn("image_u", first_gcp)
+            self.assertIn("image_v", first_gcp)
 
     def test_invalid_gcp_in_config_raises_error(self):
         """Test that loading config with invalid GCP raises appropriate error."""
@@ -682,8 +814,11 @@ class TestHomographyConfigIntegration(unittest.TestCase):
                     "ransac_threshold": 5.0,
                     "ground_control_points": [
                         {
-                            "gps": {"latitude": 91.0, "longitude": 0.0},  # Invalid!
-                            "image": {"u": 100.0, "v": 200.0},
+                            "map_id": "",  # Invalid - empty string
+                            "map_pixel_x": 1234.5,
+                            "map_pixel_y": 567.8,
+                            "image_u": 100.0,
+                            "image_v": 200.0,
                         }
                     ],
                 },
@@ -746,47 +881,41 @@ class TestIsValidFiniteNumber(unittest.TestCase):
 class TestNaNInfinityValidation(unittest.TestCase):
     """Test that NaN and Infinity values are properly rejected."""
 
-    def test_nan_latitude_raises_value_error(self):
-        """Test that NaN latitude raises ValueError."""
-        gcp = {"gps": {"latitude": float("nan"), "longitude": 0.0}}
+    def test_nan_map_pixel_x_raises_value_error(self):
+        """Test that NaN map_pixel_x raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_x": float("nan"), "map_pixel_y": 567.8}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_infinity_latitude_raises_value_error(self):
-        """Test that infinite latitude raises ValueError."""
-        gcp = {"gps": {"latitude": float("inf"), "longitude": 0.0}}
+    def test_infinity_map_pixel_x_raises_value_error(self):
+        """Test that infinite map_pixel_x raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_x": float("inf"), "map_pixel_y": 567.8}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_nan_longitude_raises_value_error(self):
-        """Test that NaN longitude raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": float("nan")}}
+    def test_nan_map_pixel_y_raises_value_error(self):
+        """Test that NaN map_pixel_y raises ValueError."""
+        gcp = {"map_id": "map_valte", "map_pixel_x": 1234.5, "map_pixel_y": float("nan")}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0)
 
-    def test_nan_elevation_raises_value_error(self):
-        """Test that NaN elevation raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": float("nan")}}
+    def test_nan_image_u_raises_value_error(self):
+        """Test that NaN image_u raises ValueError."""
+        gcp = {"image_u": float("nan"), "image_v": 100.0}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_elevation(gcp, 0)
+            validate_gcp_image_coordinates(gcp, 0)
 
-    def test_infinity_elevation_raises_value_error(self):
-        """Test that infinite elevation raises ValueError."""
-        gcp = {"gps": {"latitude": 0.0, "longitude": 0.0, "elevation": float("inf")}}
+    def test_infinity_image_u_raises_value_error(self):
+        """Test that infinite image_u raises ValueError."""
+        gcp = {"image_u": float("inf"), "image_v": 100.0}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_elevation(gcp, 0)
+            validate_gcp_image_coordinates(gcp, 0)
 
-    def test_nan_u_coordinate_raises_value_error(self):
-        """Test that NaN u coordinate raises ValueError."""
-        gcp = {"image": {"u": float("nan"), "v": 100.0}}
+    def test_nan_image_v_raises_value_error(self):
+        """Test that NaN image_v raises ValueError."""
+        gcp = {"image_u": 100.0, "image_v": float("nan")}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_pixel_coordinates(gcp, 0)
-
-    def test_nan_v_coordinate_raises_value_error(self):
-        """Test that NaN v coordinate raises ValueError."""
-        gcp = {"image": {"u": 100.0, "v": float("nan")}}
-        with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_pixel_coordinates(gcp, 0)
+            validate_gcp_image_coordinates(gcp, 0)
 
 
 class TestImageDimensionValidation(unittest.TestCase):
@@ -832,54 +961,6 @@ class TestImageDimensionValidation(unittest.TestCase):
             _validate_image_dimension(100001, "image_width")
 
 
-class TestIndependentPixelBoundsValidation(unittest.TestCase):
-    """Test that pixel bounds are validated independently when only one dimension is provided."""
-
-    def test_only_width_provided_validates_u(self):
-        """Test that u is validated when only width is provided."""
-        gcp = {
-            "image": {
-                "u": 3000.0,  # Out of bounds for width 2000
-                "v": 500.0,
-            }
-        }
-        with self.assertRaisesRegex(ValueError, "u coordinate 3000.0 outside image width"):
-            validate_gcp_pixel_coordinates(gcp, 0, image_width=2000, image_height=None)
-
-    def test_only_height_provided_validates_v(self):
-        """Test that v is validated when only height is provided."""
-        gcp = {
-            "image": {
-                "u": 500.0,
-                "v": 2000.0,  # Out of bounds for height 1000
-            }
-        }
-        with self.assertRaisesRegex(ValueError, "v coordinate 2000.0 outside image height"):
-            validate_gcp_pixel_coordinates(gcp, 0, image_width=None, image_height=1000)
-
-    def test_only_width_provided_allows_any_v(self):
-        """Test that v is not validated when only width is provided."""
-        gcp = {
-            "image": {
-                "u": 500.0,
-                "v": 999999.0,  # Would be out of bounds if height were checked
-            }
-        }
-        # Should not raise - v is not validated when height not provided
-        validate_gcp_pixel_coordinates(gcp, 0, image_width=1000, image_height=None)
-
-    def test_only_height_provided_allows_any_u(self):
-        """Test that u is not validated when only height is provided."""
-        gcp = {
-            "image": {
-                "u": 999999.0,  # Would be out of bounds if width were checked
-                "v": 500.0,
-            }
-        }
-        # Should not raise - u is not validated when width not provided
-        validate_gcp_pixel_coordinates(gcp, 0, image_width=None, image_height=1000)
-
-
 class TestMaxGCPCount(unittest.TestCase):
     """Test maximum GCP count limit."""
 
@@ -892,8 +973,11 @@ class TestMaxGCPCount(unittest.TestCase):
         # Create a list with too many GCPs
         gcps = [
             {
-                "gps": {"latitude": 0.0 + i * 0.01, "longitude": 0.0 + i * 0.01},
-                "image": {"u": float(i), "v": float(i)},
+                "map_id": "map_valte",
+                "map_pixel_x": float(i),
+                "map_pixel_y": float(i),
+                "image_u": float(i),
+                "image_v": float(i),
             }
             for i in range(MAX_GCP_COUNT + 1)
         ]
@@ -905,8 +989,11 @@ class TestMaxGCPCount(unittest.TestCase):
         # Create a list with exactly max GCPs
         gcps = [
             {
-                "gps": {"latitude": 0.0 + i * 0.01, "longitude": 0.0 + i * 0.01},
-                "image": {"u": float(i * 10), "v": float(i * 10)},
+                "map_id": "map_valte",
+                "map_pixel_x": float(i * 10),
+                "map_pixel_y": float(i * 10),
+                "image_u": float(i * 10),
+                "image_v": float(i * 10),
             }
             for i in range(MAX_GCP_COUNT)
         ]
@@ -922,14 +1009,13 @@ class TestDescriptionSanitization(unittest.TestCase):
         """Test that very long descriptions are truncated."""
         long_desc = "A" * 500  # 500 characters
         gcp = {
-            "gps": {
-                "latitude": 91.0,  # Invalid to trigger error
-                "longitude": 0.0,
-            },
+            "map_id": "map_valte",
+            "map_pixel_x": -1.0,  # Invalid to trigger error
+            "map_pixel_y": 567.8,
             "metadata": {"description": long_desc},
         }
         try:
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
             self.fail("Expected ValueError")
         except ValueError as e:
             error_msg = str(e)
@@ -942,14 +1028,13 @@ class TestDescriptionSanitization(unittest.TestCase):
         """Test that control characters are removed from description."""
         bad_desc = "Point\x00with\nnewline\rand\ttab"
         gcp = {
-            "gps": {
-                "latitude": 91.0,  # Invalid to trigger error
-                "longitude": 0.0,
-            },
+            "map_id": "map_valte",
+            "map_pixel_x": -1.0,  # Invalid to trigger error
+            "map_pixel_y": 567.8,
             "metadata": {"description": bad_desc},
         }
         try:
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0, map_width=2000, map_height=1500)
             self.fail("Expected ValueError")
         except ValueError as e:
             error_msg = str(e)
@@ -976,15 +1061,15 @@ class TestNumpyTypeSupport(unittest.TestCase):
             self.skipTest("numpy not available")
 
         gcp = {
-            "gps": {
-                "latitude": self.np.float64(39.640583),
-                "longitude": self.np.float64(-0.230194),
-            },
-            "image": {"u": self.np.float64(1250.5), "v": self.np.float64(680.0)},
+            "map_id": "map_valte",
+            "map_pixel_x": self.np.float64(1234.5),
+            "map_pixel_y": self.np.float64(567.8),
+            "image_u": self.np.float64(1250.5),
+            "image_v": self.np.float64(680.0),
         }
         # Should not raise
-        validate_gcp_gps_coordinates(gcp, 0)
-        validate_gcp_pixel_coordinates(gcp, 0)
+        validate_gcp_map_coordinates(gcp, 0)
+        validate_gcp_image_coordinates(gcp, 0)
 
     def test_numpy_int64_is_valid(self):
         """Test that numpy.int64 is accepted."""
@@ -992,30 +1077,33 @@ class TestNumpyTypeSupport(unittest.TestCase):
             self.skipTest("numpy not available")
 
         gcp = {
-            "gps": {"latitude": self.np.int64(39), "longitude": self.np.int64(0)},
-            "image": {"u": self.np.int64(1250), "v": self.np.int64(680)},
+            "map_id": "map_valte",
+            "map_pixel_x": self.np.int64(1234),
+            "map_pixel_y": self.np.int64(567),
+            "image_u": self.np.int64(1250),
+            "image_v": self.np.int64(680),
         }
         # Should not raise
-        validate_gcp_gps_coordinates(gcp, 0)
-        validate_gcp_pixel_coordinates(gcp, 0)
+        validate_gcp_map_coordinates(gcp, 0)
+        validate_gcp_image_coordinates(gcp, 0)
 
     def test_numpy_nan_is_rejected(self):
         """Test that numpy.nan is rejected."""
         if not self.numpy_available:
             self.skipTest("numpy not available")
 
-        gcp = {"gps": {"latitude": self.np.nan, "longitude": 0.0}}
+        gcp = {"map_id": "map_valte", "map_pixel_x": self.np.nan, "map_pixel_y": 567.8}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0)
 
     def test_numpy_infinity_is_rejected(self):
         """Test that numpy.inf is rejected."""
         if not self.numpy_available:
             self.skipTest("numpy not available")
 
-        gcp = {"gps": {"latitude": self.np.inf, "longitude": 0.0}}
+        gcp = {"map_id": "map_valte", "map_pixel_x": self.np.inf, "map_pixel_y": 567.8}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
-            validate_gcp_gps_coordinates(gcp, 0)
+            validate_gcp_map_coordinates(gcp, 0)
 
 
 class TestConfigGCPPixelBoundsCI(unittest.TestCase):
@@ -1032,7 +1120,7 @@ class TestConfigGCPPixelBoundsCI(unittest.TestCase):
         This test:
         1. Loads the production config file
         2. Extracts image dimensions from camera_capture_context
-        3. Validates all GCPs have u < image_width and v < image_height
+        3. Validates all GCPs have image_u < image_width and image_v < image_height
 
         If this test fails, the config contains GCPs that would cause RANSAC to fit
         invalid points, resulting in incorrect homography matrices.
@@ -1066,14 +1154,14 @@ class TestConfigGCPPixelBoundsCI(unittest.TestCase):
         # Validate each GCP's pixel coordinates are within bounds
         errors = []
         for i, gcp in enumerate(gcps):
-            u = gcp["image"]["u"]
-            v = gcp["image"]["v"]
+            image_u = gcp["image_u"]
+            image_v = gcp["image_v"]
             desc = gcp.get("metadata", {}).get("description", f"GCP {i + 1}")
 
-            if u < 0 or u >= image_width:
-                errors.append(f"{desc}: u={u} outside [0, {image_width})")
-            if v < 0 or v >= image_height:
-                errors.append(f"{desc}: v={v} outside [0, {image_height})")
+            if image_u < 0 or image_u >= image_width:
+                errors.append(f"{desc}: image_u={image_u} outside [0, {image_width})")
+            if image_v < 0 or image_v >= image_height:
+                errors.append(f"{desc}: image_v={image_v} outside [0, {image_height})")
 
         if errors:
             self.fail(

@@ -11,10 +11,18 @@ Tests cover:
 - Validation report generation
 """
 
+# Check if matplotlib is available
+import importlib.util
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
+HAS_MATPLOTLIB = importlib.util.find_spec("matplotlib") is not None
+
+requires_matplotlib = pytest.mark.skipif(
+    not HAS_MATPLOTLIB, reason="matplotlib is required for visualization tests"
+)
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.gcp_calibrator import (
@@ -52,20 +60,23 @@ def real_camera_geometry():
 def valid_gcps_large():
     """Create a larger list of valid GCP dictionaries for train/test split testing."""
     # Generate 20 GCPs around a reference point
-    ref_lat = 39.640444
-    ref_lon = -0.230111
+    ref_map_x = 320.0
+    ref_map_y = 320.0
 
     gcps = []
     rng = np.random.default_rng(42)  # Reproducible without polluting global state
     for i in range(20):
         # Scatter GCPs around reference
-        lat_offset = rng.uniform(-0.001, 0.001)
-        lon_offset = rng.uniform(-0.001, 0.001)
+        map_x_offset = rng.uniform(-50.0, 50.0)
+        map_y_offset = rng.uniform(-50.0, 50.0)
 
         gcps.append(
             {
-                "gps": {"latitude": ref_lat + lat_offset, "longitude": ref_lon + lon_offset},
-                "image": {"u": 960.0 + i * 20, "v": 540.0 + i * 10},
+                "map_id": "test_map",
+                "map_pixel_x": ref_map_x + map_x_offset,
+                "map_pixel_y": ref_map_y + map_y_offset,
+                "image_u": 960.0 + i * 20,
+                "image_v": 540.0 + i * 10,
             }
         )
 
@@ -134,8 +145,8 @@ def sample_calibration_result():
 def sample_gcps_for_plot():
     """Create sample GCPs with image coordinates for plotting tests."""
     gcps = []
-    ref_lat = 39.640444
-    ref_lon = -0.230111
+    ref_map_x = 320.0
+    ref_map_y = 320.0
 
     # Create 20 GCPs in a grid pattern
     for i in range(20):
@@ -143,11 +154,11 @@ def sample_gcps_for_plot():
         col = i % 5
         gcps.append(
             {
-                "gps": {"latitude": ref_lat + row * 0.0002, "longitude": ref_lon + col * 0.0002},
-                "image": {
-                    "u": 400.0 + col * 200,  # Spread across image width
-                    "v": 200.0 + row * 150,  # Spread across image height
-                },
+                "map_id": "test_map",
+                "map_pixel_x": ref_map_x + col * 30.0,
+                "map_pixel_y": ref_map_y + row * 30.0,
+                "image_u": 400.0 + col * 200,  # Spread across image width
+                "image_v": 200.0 + row * 150,  # Spread across image height
             }
         )
 
@@ -384,8 +395,11 @@ class TestTrainTestSplit:
         # Only 8 GCPs - not enough for 6 train + 3 test with 20% split
         few_gcps = [
             {
-                "gps": {"latitude": 39.640444 + i * 0.0001, "longitude": -0.230111 + i * 0.0001},
-                "image": {"u": 960.0 + i * 10, "v": 540.0 + i * 10},
+                "map_id": "test_map",
+                "map_pixel_x": 320.0 + i * 10.0,
+                "map_pixel_y": 320.0 + i * 10.0,
+                "image_u": 960.0 + i * 10,
+                "image_v": 540.0 + i * 10,
             }
             for i in range(8)
         ]
@@ -626,6 +640,7 @@ class TestSystematicErrorDetection:
 # ============================================================================
 
 
+@requires_matplotlib
 class TestGenerateResidualPlot:
     """Tests for generate_residual_plot() function."""
 
@@ -729,6 +744,7 @@ class TestGenerateResidualPlot:
 # ============================================================================
 
 
+@requires_matplotlib
 class TestGenerateResidualHistogram:
     """Tests for generate_residual_histogram() function."""
 
@@ -1000,6 +1016,7 @@ class TestGenerateValidationReport:
 # ============================================================================
 
 
+@requires_matplotlib
 class TestCalibrationValidationIntegration:
     """Integration tests for complete calibration validation workflow."""
 

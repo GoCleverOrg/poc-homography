@@ -18,7 +18,6 @@ import pytest
 from poc_homography.homography_map_points import MapPointHomography
 from poc_homography.map_points import MapPointRegistry
 
-
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent
 MAP_POINTS_PATH = TEST_DATA_DIR / "map_points.json"
@@ -42,7 +41,7 @@ def valte_gcps():
 @pytest.fixture
 def homography(map_registry, valte_gcps):
     """Create and compute homography from test data."""
-    h = MapPointHomography()
+    h = MapPointHomography(map_id="test_map")
     h.compute_from_gcps(valte_gcps, map_registry)
     return h
 
@@ -52,19 +51,19 @@ class TestMapPointHomographyInitialization:
 
     def test_initial_state_invalid(self):
         """Test that newly created homography is invalid."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
         assert not h.is_valid()
         assert h.get_result() is None
 
     def test_camera_to_map_before_compute_raises(self):
         """Test that projecting before computing raises error."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
         with pytest.raises(RuntimeError, match="No valid homography"):
             h.camera_to_map((960, 540))
 
     def test_map_to_camera_before_compute_raises(self):
         """Test that inverse projecting before computing raises error."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
         with pytest.raises(RuntimeError, match="No valid homography"):
             h.map_to_camera((251500.0, -360500.0))
 
@@ -74,7 +73,7 @@ class TestMapPointHomographyComputation:
 
     def test_compute_from_gcps_success(self, map_registry, valte_gcps):
         """Test successful homography computation."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
         result = h.compute_from_gcps(valte_gcps, map_registry)
 
         assert h.is_valid()
@@ -84,7 +83,7 @@ class TestMapPointHomographyComputation:
 
     def test_compute_with_insufficient_gcps_raises(self, map_registry):
         """Test that too few GCPs raises error."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
         gcps = [
             {"pixel_x": 800, "pixel_y": 580, "map_point_id": "A7"},
             {"pixel_x": 1082, "pixel_y": 390, "map_point_id": "A6"},
@@ -95,7 +94,7 @@ class TestMapPointHomographyComputation:
 
     def test_compute_with_missing_map_point_raises(self, map_registry):
         """Test that missing map point raises error."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
         gcps = [
             {"pixel_x": 800, "pixel_y": 580, "map_point_id": "A7"},
             {"pixel_x": 1082, "pixel_y": 390, "map_point_id": "A6"},
@@ -140,26 +139,28 @@ class TestForwardProjection:
 
     def test_project_camera_center(self, homography):
         """Test projecting camera center point."""
-        map_coord = homography.camera_to_map((960.0, 540.0))
+        map_point = homography.camera_to_map((960.0, 540.0))
 
-        # Should return valid UTM coordinates
-        assert isinstance(map_coord, tuple)
-        assert len(map_coord) == 2
-        assert 250000 < map_coord[0] < 253000, "Easting in expected range"
-        assert -362000 < map_coord[1] < -359000, "Northing in expected range"
+        # Should return valid MapPoint with UTM coordinates
+        assert hasattr(map_point, "pixel_x")
+        assert hasattr(map_point, "pixel_y")
+        assert 250000 < map_point.pixel_x < 253000, "Easting in expected range"
+        assert -362000 < map_point.pixel_y < -359000, "Northing in expected range"
 
     def test_project_gcp_points(self, homography, map_registry, valte_gcps):
         """Test projecting actual GCP points."""
         for gcp in valte_gcps[:5]:  # Test first 5 GCPs
             camera_pixel = (gcp["pixel_x"], gcp["pixel_y"])
-            map_coord = homography.camera_to_map(camera_pixel)
+            projected_point = homography.camera_to_map(camera_pixel)
 
             # Get expected map coordinate
-            map_point = map_registry.points[gcp["map_point_id"]]
-            expected = (map_point.pixel_x, map_point.pixel_y)
+            expected_point = map_registry.points[gcp["map_point_id"]]
 
-            # Calculate error
-            error = np.linalg.norm(np.array(map_coord) - np.array(expected))
+            # Calculate error using MapPoint attributes
+            error = np.linalg.norm(
+                np.array([projected_point.pixel_x, projected_point.pixel_y])
+                - np.array([expected_point.pixel_x, expected_point.pixel_y])
+            )
 
             # Should be close (within 50 meters)
             assert error < 50.0, f"Error for {gcp['map_point_id']}: {error:.2f}m"
@@ -167,14 +168,14 @@ class TestForwardProjection:
     def test_batch_projection(self, homography, valte_gcps):
         """Test batch projection of multiple camera pixels."""
         camera_pixels = [(gcp["pixel_x"], gcp["pixel_y"]) for gcp in valte_gcps]
-        map_coords = homography.camera_to_map_batch(camera_pixels)
+        map_points = homography.camera_to_map_batch(camera_pixels)
 
-        assert len(map_coords) == len(camera_pixels)
-        for coord in map_coords:
-            assert isinstance(coord, tuple)
-            assert len(coord) == 2
-            assert 250000 < coord[0] < 253000
-            assert -362000 < coord[1] < -359000
+        assert len(map_points) == len(camera_pixels)
+        for map_point in map_points:
+            assert hasattr(map_point, "pixel_x")
+            assert hasattr(map_point, "pixel_y")
+            assert 250000 < map_point.pixel_x < 253000
+            assert -362000 < map_point.pixel_y < -359000
 
 
 class TestInverseProjection:
@@ -248,7 +249,8 @@ class TestRoundTripConsistency:
             original = (gcp["pixel_x"], gcp["pixel_y"])
 
             # Forward then inverse
-            map_coord = homography.camera_to_map(original)
+            map_point = homography.camera_to_map(original)
+            map_coord = (map_point.pixel_x, map_point.pixel_y)
             recovered = homography.map_to_camera(map_coord)
 
             # Calculate round-trip error
@@ -272,7 +274,8 @@ class TestRoundTripConsistency:
 
             # Inverse then forward
             camera_pixel = homography.map_to_camera(original)
-            recovered = homography.camera_to_map(camera_pixel)
+            recovered_point = homography.camera_to_map(camera_pixel)
+            recovered = (recovered_point.pixel_x, recovered_point.pixel_y)
 
             # Calculate round-trip error in meters
             error = np.linalg.norm(np.array(recovered) - np.array(original))
@@ -315,7 +318,7 @@ class TestMatrixRetrieval:
 
     def test_get_matrix_before_compute_raises(self):
         """Test that getting matrices before compute raises error."""
-        h = MapPointHomography()
+        h = MapPointHomography(map_id="test_map")
 
         with pytest.raises(RuntimeError, match="No valid homography"):
             h.get_homography_matrix()

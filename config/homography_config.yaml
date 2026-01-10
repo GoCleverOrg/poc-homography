@@ -101,18 +101,18 @@ homography:
 
     # Ground Control Points (GCPs) for feature matching and camera pose estimation
     #
-    # GCPs are pairs of corresponding points: GPS coordinates in world space and
-    # pixel coordinates in the image. They establish the relationship between the
-    # camera view and real-world geography, enabling:
+    # GCPs are pairs of corresponding points: map pixel coordinates on a reference
+    # map and pixel coordinates in the camera image. They establish the relationship
+    # between the camera view and the reference map, enabling:
     # - Camera pose estimation (position and orientation)
-    # - Image-to-world coordinate transformation
+    # - Image-to-map coordinate transformation
     # - Geometric calibration and validation
     #
     # How to acquire GCPs:
-    # 1. GPS measurement: Use RTK-GPS or survey-grade GPS to measure precise
-    #    world coordinates of distinctive features (building corners, landmarks)
+    # 1. Map marking: On the reference map image, identify pixel coordinates of
+    #    distinctive features (building corners, landmarks)
     # 2. Pixel marking: In the camera image, manually mark the exact pixel
-    #    coordinates (u,v) corresponding to each GPS point
+    #    coordinates (image_u, image_v) corresponding to each map point
     # 3. Quality control: Verify measurements, prefer high-contrast features,
     #    distribute points across the entire image frame
     #
@@ -120,88 +120,65 @@ homography:
     # - At least 6 points recommended for RANSAC robustness
     # - Points should be well-distributed across the image
     # - Avoid collinear or co-planar point configurations
-    #
-    # Accuracy levels (GPS measurement precision):
-    # - high: <0.5m (RTK-GPS, surveyed points)
-    # - medium: 0.5-2m (consumer GPS with WAAS/EGNOS)
-    # - low: >2m (basic GPS without corrections)
     ground_control_points:
       # GCP 1: Building corner Northwest
-      - gps:
-          latitude: 39.640583   # Decimal degrees, range: -90 to 90
-          longitude: -0.230194  # Decimal degrees, range: -180 to 180
-          elevation: 12.5       # Optional: meters above sea level (for 3D PnP)
-        image:
-          u: 1250.5             # Horizontal pixel coordinate (0 = left edge)
-          v: 680.0              # Vertical pixel coordinate (0 = top edge)
-        metadata:               # Optional metadata
+      - map_id: "map_valte"
+        map_pixel_x: 1250.5
+        map_pixel_y: 680.0
+        image_u: 1250.5
+        image_v: 680.0
+        metadata:
           description: "Building corner NW"
-          accuracy: high        # high | medium | low
           timestamp: "2025-11-28T10:30:00Z"
 
       # GCP 2: Building corner Northeast
-      - gps:
-          latitude: 39.640612
-          longitude: -0.229856
-          elevation: 12.8
-        image:
-          u: 2456.2
-          v: 695.5
+      - map_id: "map_valte"
+        map_pixel_x: 2456.2
+        map_pixel_y: 695.5
+        image_u: 2456.2
+        image_v: 695.5
         metadata:
           description: "Building corner NE"
-          accuracy: high
           timestamp: "2025-11-28T10:31:15Z"
 
       # GCP 3: Road intersection Southwest
-      - gps:
-          latitude: 39.640245
-          longitude: -0.230301
-          elevation: 11.2
-        image:
-          u: 1180.0
-          v: 1365.2
+      - map_id: "map_valte"
+        map_pixel_x: 1180.0
+        map_pixel_y: 1365.2
+        image_u: 1180.0
+        image_v: 1365.2
         metadata:
           description: "Road intersection SW"
-          accuracy: medium
           timestamp: "2025-11-28T10:32:45Z"
 
       # GCP 4: Building corner Southeast
-      - gps:
-          latitude: 39.640198
-          longitude: -0.229782
-          elevation: 11.9
-        image:
-          u: 2520.8
-          v: 1398.8
+      - map_id: "map_valte"
+        map_pixel_x: 2520.8
+        map_pixel_y: 1398.8
+        image_u: 2520.8
+        image_v: 1398.8
         metadata:
           description: "Building corner SE"
-          accuracy: high
           timestamp: "2025-11-28T10:33:20Z"
 
       # GCP 5: Tree center
-      - gps:
-          latitude: 39.640420
-          longitude: -0.230050
-          elevation: 13.5
-        image:
-          u: 1680.5
-          v: 1120.0
+      - map_id: "map_valte"
+        map_pixel_x: 1680.5
+        map_pixel_y: 1120.0
+        image_u: 1680.5
+        image_v: 1120.0
         metadata:
           description: "Tree center"
-          accuracy: medium
           timestamp: "2025-11-28T10:34:00Z"
 
       # GCP 6: Parking lot marker
-      - gps:
-          latitude: 39.640350
-          longitude: -0.229920
-          elevation: 12.0
-        image:
-          u: 1920.3
-          v: 1088.0
+      - map_id: "map_valte"
+        map_pixel_x: 1920.3
+        map_pixel_y: 1088.0
+        image_u: 1920.3
+        image_v: 1088.0
         metadata:
           description: "Parking lot marker"
-          accuracy: high
           timestamp: "2025-11-28T10:35:30Z"
 
   # Configuration for learned approach

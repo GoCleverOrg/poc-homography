@@ -2,91 +2,96 @@
 Unified Homography Interface Package.
 
 This package provides a unified interface for computing homography transformations
-between image coordinates and world coordinates (GPS or local map coordinates).
+between camera image coordinates and map coordinates (pixel coordinates on reference map).
 
 The package supports multiple homography computation approaches:
     - Intrinsic/Extrinsic: Camera calibration + pose parameters
-    - Feature Matching: SIFT/ORB/LoFTR-based feature detection and matching
+    - Feature Matching: GCP-based feature matching
     - Learned: Neural network-based homography estimation
+    - MapPoint: Map-point-based pixel coordinate transformations
 
-All providers implement the HomographyProvider or HomographyProviderExtended
-interface, ensuring consistent API across different approaches.
+All providers implement the HomographyProvider interface, ensuring consistent API
+across different approaches.
 
 Example Usage:
-    >>> from homography_interface import (
-    ...     HomographyProvider,
-    ...     HomographyApproach,
-    ...     WorldPoint,
-    ...     MapCoordinate
-    ... )
-    >>> from intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+    >>> from poc_homography import MapPointHomography
+    >>> from poc_homography.map_points import MapPointRegistry
     >>>
-    >>> # Create provider
-    >>> provider = IntrinsicExtrinsicHomography(width=1920, height=1080)
-    >>> provider.set_camera_gps_position(lat=40.7128, lon=-74.0060)
+    >>> # Load map points
+    >>> registry = MapPointRegistry.load("map_points.json")
     >>>
-    >>> # Compute homography
-    >>> result = provider.compute_homography(
-    ...     frame=image,
-    ...     reference={
-    ...         'camera_matrix': K,
-    ...         'camera_position': np.array([0, 0, 5.0]),
-    ...         'pan_deg': 0.0,
-    ...         'tilt_deg': -30.0,
-    ...         'map_width': 640,
-    ...         'map_height': 640
-    ...     }
-    ... )
+    >>> # Create homography provider
+    >>> homography = MapPointHomography(map_id="map_valte")
     >>>
-    >>> # Project points
-    >>> if provider.is_valid():
-    ...     world_pt = provider.project_point((1280, 720))
-    ...     print(f"GPS: {world_pt.latitude}, {world_pt.longitude}")
+    >>> # Compute homography from GCPs
+    >>> gcps = [
+    ...     {"pixel_x": 800, "pixel_y": 580, "map_point_id": "A7"},
+    ...     {"pixel_x": 1082, "pixel_y": 390, "map_point_id": "A6"},
+    ... ]
+    >>> result = homography.compute_from_gcps(gcps, registry)
+    >>>
+    >>> # Project camera pixel to map - returns MapPoint
+    >>> map_point = homography.camera_to_map((960, 540))
+    >>> print(f"Map pixel: ({map_point.pixel_x}, {map_point.pixel_y})")
 
 Available Classes:
     Core Interface:
         - HomographyProvider: Base interface for all homography providers
-        - HomographyProviderExtended: Extended interface with map projections
         - HomographyApproach: Enum of supported approaches
         - HomographyResult: Result dataclass with matrix and metadata
-        - WorldPoint: GPS coordinate with confidence
-        - MapCoordinate: Local metric coordinate with confidence
 
-    Implementations:
-        - IntrinsicExtrinsicHomography: Fully implemented camera-based approach
-        - FeatureMatchHomography: Placeholder for feature matching (issue #14)
-        - LearnedHomography: Placeholder for learned approach (issue #14)
+    MapPoint System:
+        - MapPoint: Point on a map with pixel coordinates
+        - MapPointRegistry: Registry of map points
+        - MapPointHomography: MapPoint-based homography provider
+        - PixelPoint: Simple pixel coordinate pair
+
+    Legacy Implementations (for backward compatibility):
+        - IntrinsicExtrinsicHomography: Camera-based approach
+        - FeatureMatchHomography: GCP feature matching
+        - LearnedHomography: Placeholder for learned approach
 """
 
 # Core interface and data structures
+# Legacy homography provider implementations (for backward compatibility)
 from poc_homography.feature_match_homography import FeatureMatchHomography
 
 # Configuration and factory
 from poc_homography.homography_config import HomographyConfig, get_default_config
 from poc_homography.homography_factory import HomographyFactory
 from poc_homography.homography_interface import (
+    CoordinateSystemMode,
     HomographyApproach,
     HomographyProvider,
-    HomographyProviderExtended,
     HomographyResult,
-    MapCoordinate,
-    WorldPoint,
 )
 
-# Homography provider implementations
+# MapPoint system
+from poc_homography.homography_map_points import (
+    HomographyResult as MapPointHomographyResult,
+)
+from poc_homography.homography_map_points import (
+    MapPointHomography,
+)
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.learned_homography import LearnedHomography
+from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # Define public API
 __all__ = [
     # Core interface
     "HomographyProvider",
-    "HomographyProviderExtended",
     "HomographyApproach",
     "HomographyResult",
-    "WorldPoint",
-    "MapCoordinate",
-    # Implementations
+    "CoordinateSystemMode",
+    # MapPoint system
+    "MapPoint",
+    "MapPointRegistry",
+    "MapPointHomography",
+    "MapPointHomographyResult",
+    "PixelPoint",
+    # Legacy implementations
     "IntrinsicExtrinsicHomography",
     "FeatureMatchHomography",
     "LearnedHomography",
@@ -99,4 +104,4 @@ __all__ = [
 # Package metadata
 __version__ = "0.1.0"
 __author__ = "SmartTerminal Team"
-__description__ = "Unified interface for homography computation with multiple approaches"
+__description__ = "Unified interface for homography computation with MapPoint coordinates"

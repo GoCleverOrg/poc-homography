@@ -1,12 +1,25 @@
 """
 Unified GCP Tool - Combines KML extraction and GCP capture in a two-tab interface.
 
+DEPRECATION WARNING:
+This tool is deprecated and incompatible with the MapPoint migration (issue #156).
+It relies heavily on GPS coordinates (latitude/longitude) and KML files, which have
+been removed from the codebase in favor of map-relative pixel coordinates (MapPoint).
+
+The following features are no longer supported:
+- GPS coordinate projection (project_gps_to_image)
+- KML point extraction and conversion
+- GPS-based GCP export (latitude/longitude format)
+
+For map-based homography, use MapPointHomography with map pixel coordinates instead.
+
 This tool provides a unified workflow for:
-1. Extracting KML points from georeferenced images (Tab 1)
-2. Capturing GCPs with map-first mode (Tab 2)
+1. Extracting KML points from georeferenced images (Tab 1) - DEPRECATED
+2. Capturing GCPs with map-first mode (Tab 2) - NEEDS MAPPOINT MIGRATION
 
 The two tabs share a unified session with automatic point synchronization.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,14 +52,18 @@ from poc_homography.geotiff_utils import apply_geotransform
 from poc_homography.server_utils import find_available_port
 
 # Import for map-first mode projection
+# DEPRECATED: GPS-based imports removed in MapPoint migration
 try:
     from poc_homography.camera_geometry import CameraGeometry
     from poc_homography.coordinate_converter import UTMConverter
-    from poc_homography.gps_distance_calculator import dms_to_dd
+    # gps_distance_calculator module has been deleted
+    # from poc_homography.gps_distance_calculator import dms_to_dd
 
     GEOMETRY_AVAILABLE = True
 except ImportError:
     GEOMETRY_AVAILABLE = False
+    CameraGeometry = None
+    UTMConverter = None
 
 # Import GCP calibrator for reprojection error minimization
 try:
@@ -617,43 +634,19 @@ CRS: {crs}</description>
         """
         Project KML points to camera frame using actual camera projection.
 
-        Returns list of dictionaries with projected pixel coordinates.
+        DEPRECATED: This function relies on GPS coordinates which have been removed
+        in the MapPoint migration. Use MapPointHomography with map pixel coordinates instead.
+
+        Returns empty list (GPS projection no longer supported).
         """
-        if not GEOMETRY_AVAILABLE or self.camera_params is None:
-            return []
-
-        # Import the projection function
-        try:
-            from tools.capture_gcps_web import project_gps_to_image
-        except ImportError:
-            print("Warning: Could not import project_gps_to_image")
-            return []
-
-        # Convert points to format expected by project_gps_to_image
-        gps_points = []
-        for pt in self.points:
-            gps_points.append(
-                {
-                    "name": pt["name"],
-                    "latitude": pt["lat"],
-                    "longitude": pt["lon"],
-                    "utm_easting": pt["easting"],
-                    "utm_northing": pt["northing"],
-                    "utm_crs": self.utm_crs,
-                }
-            )
-
-        # Project points using camera geometry
-        projected = project_gps_to_image(
-            gps_points, self.camera_params, camera_name=self.camera_name
+        print(
+            "WARNING: project_points_to_image is deprecated (GPS projection removed in MapPoint migration)"
         )
+        return []
 
-        # Add category information
-        for i, proj_pt in enumerate(projected):
-            if i < len(self.points):
-                proj_pt["category"] = self.points[i]["category"]
-
-        return projected
+        # DEPRECATED CODE - Removed in MapPoint migration
+        # GPS-based projection is no longer supported
+        # Use MapPointHomography with map pixel coordinates instead
 
     def calculate_spatial_distribution(self) -> dict:
         """
@@ -1224,10 +1217,13 @@ CRS: {crs}</description>
                 continue
 
             name = proj_pt.get("name", "")
-            gps_lat = proj_pt.get("latitude")
-            gps_lon = proj_pt.get("longitude")
+            # DEPRECATED: GPS coordinates replaced with MapPoint in migration
+            # GCP structure now uses: map_id, map_pixel_x, map_pixel_y
+            map_pixel_x = proj_pt.get("map_pixel_x")
+            map_pixel_y = proj_pt.get("map_pixel_y")
+            map_id = proj_pt.get("map_id")
 
-            if gps_lat is None or gps_lon is None:
+            if map_pixel_x is None or map_pixel_y is None or map_id is None:
                 skipped_no_gps += 1
                 continue
 
@@ -1246,16 +1242,14 @@ CRS: {crs}</description>
                 skipped_no_pixel += 1
                 continue
 
-            # Get UTM coordinates if available (more accurate than GPS conversion)
-            utm_easting = proj_pt.get("utm_easting")
-            utm_northing = proj_pt.get("utm_northing")
-
+            # MapPoint-based GCP structure (replaces GPS/UTM)
             gcps.append(
                 {
-                    "gps": {"latitude": gps_lat, "longitude": gps_lon},
-                    "utm": {"easting": utm_easting, "northing": utm_northing}
-                    if utm_easting and utm_northing
-                    else None,
+                    "map": {
+                        "id": map_id,
+                        "pixel_x": map_pixel_x,
+                        "pixel_y": map_pixel_y,
+                    },
                     "image": {"u": pixel_u, "v": pixel_v},
                     "_name": name,
                 }
@@ -1266,11 +1260,9 @@ CRS: {crs}</description>
             g0 = gcps[0]
             print("\n--- DEBUG: First GCP coordinates ---")
             print(f"Name: {g0.get('_name')}")
-            print(f"GPS: lat={g0['gps']['latitude']:.6f}, lon={g0['gps']['longitude']:.6f}")
-            if g0.get("utm"):
-                print(f"UTM: E={g0['utm']['easting']:.2f}, N={g0['utm']['northing']:.2f}")
-            else:
-                print("UTM: None")
+            print(
+                f"Map: id={g0['map']['id']}, pixel_x={g0['map']['pixel_x']:.2f}, pixel_y={g0['map']['pixel_y']:.2f}"
+            )
             print(f"Image: u={g0['image']['u']:.1f}, v={g0['image']['v']:.1f}")
             print("---")
 
@@ -1278,7 +1270,7 @@ CRS: {crs}</description>
         print(f"Total projected points: {len(self.projected_points)}")
         print(f"Valid GCPs with real observations: {len(gcps)}")
         print(
-            f"Skipped: {skipped_not_visible} not visible, {skipped_no_gps} no GPS, {skipped_no_pixel} no observation"
+            f"Skipped: {skipped_not_visible} not visible, {skipped_no_gps} no map coords, {skipped_no_pixel} no observation"
         )
         print("----------------------------\n")
 
@@ -3394,7 +3386,7 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     )
                     return
 
-                # Build GCP list matching FeatureMatchHomography format
+                # Build GCP list with MapPoint format (replaces GPS format)
                 gcps = []
                 for proj_pt in self.session.projected_points:
                     if not proj_pt.get("visible", False):
@@ -3413,23 +3405,21 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     if pixel_u is None or pixel_v is None:
                         continue
 
-                    gps_lat = proj_pt.get("latitude")
-                    gps_lon = proj_pt.get("longitude")
+                    # MapPoint coordinates (replaces GPS lat/lon)
+                    map_pixel_x = proj_pt.get("map_pixel_x")
+                    map_pixel_y = proj_pt.get("map_pixel_y")
+                    map_id = proj_pt.get("map_id")
 
-                    if gps_lat is None or gps_lon is None:
+                    if map_pixel_x is None or map_pixel_y is None or map_id is None:
                         continue
-
-                    # Get elevation from camera height as approximation (ground plane)
-                    # Default to 0.0 if not available
-                    elevation = 0.0
 
                     gcps.append(
                         {
-                            "pixel": {"u": float(pixel_u), "v": float(pixel_v)},
-                            "gps": {
-                                "latitude": float(gps_lat),
-                                "longitude": float(gps_lon),
-                                "elevation": elevation,
+                            "image": {"u": float(pixel_u), "v": float(pixel_v)},
+                            "map": {
+                                "id": str(map_id),
+                                "pixel_x": float(map_pixel_x),
+                                "pixel_y": float(map_pixel_y),
                             },
                         }
                     )
@@ -3449,16 +3439,17 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 # Validate GCPs using gcp_validation module
+                # DEPRECATED: GPS-based validation needs migration to MapPoint format
                 try:
                     from poc_homography.gcp_validation import validate_ground_control_points
 
-                    # Convert to validation format (gps + image structure)
+                    # Convert to validation format (map + image structure)
                     validation_gcps = []
                     for gcp in gcps:
                         validation_gcps.append(
                             {
-                                "gps": gcp["gps"],
-                                "image": {"u": gcp["pixel"]["u"], "v": gcp["pixel"]["v"]},
+                                "map": gcp["map"],
+                                "image": gcp["image"],
                             }
                         )
 
@@ -3474,6 +3465,7 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                         else None
                     )
 
+                    # Note: validate_ground_control_points may need updates for MapPoint format
                     validate_ground_control_points(
                         validation_gcps,
                         image_width=image_width,
@@ -3491,6 +3483,8 @@ class UnifiedHTTPHandler(http.server.SimpleHTTPRequestHandler):
                     return
                 except ImportError:
                     print("Warning: gcp_validation module not available, skipping validation")
+                except Exception as e:
+                    print(f"Warning: GCP validation failed (may need MapPoint migration): {e}")
 
                 # Build export JSON
                 timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -4891,7 +4885,7 @@ def generate_unified_html(session: UnifiedSession) -> str:
                                 `Not visible (${{pt.reason || 'unknown'}})`
                             }}
                         </div>
-                        <div class="coords">GPS: ${{pt.latitude.toFixed(6)}}, ${{pt.longitude.toFixed(6)}}</div>
+                        <div class="coords">Map: ${{pt.map_id || 'N/A'}} (${{(pt.map_pixel_x || 0).toFixed(1)}}, ${{(pt.map_pixel_y || 0).toFixed(1)}})</div>
                     </div>
                 </div>
             `).join('');
@@ -7090,8 +7084,17 @@ def run_server(session: UnifiedSession, port: int = 8765):
 
 
 def main():
+    # Print deprecation warning
+    print("\n" + "=" * 70)
+    print("WARNING: DEPRECATED TOOL")
+    print("=" * 70)
+    print("This tool is deprecated and incompatible with MapPoint migration.")
+    print("It relies on GPS/KML coordinates which have been removed.")
+    print("\nFor map-based homography, use MapPointHomography instead.")
+    print("=" * 70 + "\n")
+
     parser = argparse.ArgumentParser(
-        description="Unified GCP Tool - KML Extraction + GCP Capture",
+        description="Unified GCP Tool - KML Extraction + GCP Capture (DEPRECATED)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -7103,7 +7106,9 @@ def main():
         help="Camera name to load configuration from (e.g., Valte)",
     )
     parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765)")
-    parser.add_argument("--kml", type=str, help="Path to KML file to pre-load points on startup")
+    parser.add_argument(
+        "--kml", type=str, help="Path to KML file to pre-load points on startup (DEPRECATED)"
+    )
     parser.add_argument(
         "--regularization",
         type=float,

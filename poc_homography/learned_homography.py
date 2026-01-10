@@ -1,7 +1,7 @@
 """
 Learned/Neural Network-based Homography Provider (Placeholder).
 
-This module will implement the HomographyProviderExtended interface using
+This module will implement the HomographyProvider interface using
 deep learning models for homography estimation. The approach uses trained
 neural networks to predict keypoints, correspondences, or homography matrices
 directly from image data.
@@ -17,8 +17,7 @@ The homography will be computed by:
 
 Coordinate Systems:
     - Image coordinates: (u, v) in pixels, origin at top-left
-    - World coordinates: (latitude, longitude) in decimal degrees (WGS84)
-    - Map coordinates: (x, y) in meters from camera position on ground plane
+    - Map coordinates: (pixel_x, pixel_y) in pixels on the reference map image
 
 When implemented, this approach will be suitable for scenarios where:
     - Traditional feature matching struggles (low texture, repetitive patterns)
@@ -32,26 +31,27 @@ Potential Model Architectures:
     - LoFTR: Detector-free local feature matching
     - Custom models trained on domain-specific data
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-import numpy as np
+from typing import TYPE_CHECKING, Any
 
 from poc_homography.homography_interface import (
-    GPSPositionMixin,
-    HomographyProviderExtended,
+    HomographyProvider,
     HomographyResult,
-    MapCoordinate,
-    WorldPoint,
     validate_homography_matrix,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from poc_homography.map_points import MapPoint
 
 logger = logging.getLogger(__name__)
 
 
-class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
+class LearnedHomography(HomographyProvider):
     """
     Placeholder for learned/neural network-based homography computation.
 
@@ -74,6 +74,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         >>> provider = LearnedHomography(
         ...     width=1920,
         ...     height=1080,
+        ...     map_id='map_valte',
         ...     model_path='models/homography_net.pth',
         ...     model_type='homography_net',
         ...     confidence_threshold=0.7
@@ -86,12 +87,13 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         ...     }
         ... )
         >>> if provider.is_valid():
-        ...     world_pt = provider.project_point((1280, 720))
-        ...     print(f"GPS: {world_pt.latitude}, {world_pt.longitude}")
+        ...     map_pt = provider.project_point((1280, 720))
+        ...     print(f"Map pixel: ({map_pt.pixel_x}, {map_pt.pixel_y})")
 
     Attributes:
         width: Image width in pixels
         height: Image height in pixels
+        map_id: Identifier of the reference map for projected points
         model_path: Path to trained model weights file
         model_type: Model architecture type ('homography_net', 'superpoint', etc.)
         confidence_threshold: Minimum confidence score to consider homography valid
@@ -103,6 +105,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         self,
         width: int,
         height: int,
+        map_id: str,
         model_path: str | None = None,
         model_type: str = "homography_net",
         confidence_threshold: float = 0.6,
@@ -115,6 +118,8 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         Args:
             width: Image width in pixels (e.g., 1920)
             height: Image height in pixels (e.g., 1080)
+            map_id: Identifier of the reference map (e.g., 'map_valte').
+                This will be used for all projected MapPoint results.
             model_path: Path to trained model weights. If None, will attempt
                 to load default pre-trained model. Model format depends on
                 model_type (e.g., .pth for PyTorch, .h5 for TensorFlow).
@@ -153,6 +158,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
 
         self.width = width
         self.height = height
+        self.map_id = map_id
         self.model_path = model_path
         self.model_type = model_type
         self.confidence_threshold = confidence_threshold
@@ -168,13 +174,12 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         self._model: Any | None = None  # Will be PyTorch/TF model object
         self._model_loaded: bool = False
 
-        # GPS reference point for WorldPoint conversion (to be set)
-        self._camera_gps_lat: float | None = None
-        self._camera_gps_lon: float | None = None
-
         # Preprocessing parameters (model-specific)
         self._mean: np.ndarray | None = None  # Normalization mean
         self._std: np.ndarray | None = None  # Normalization std
+
+        # Counter for generating unique point IDs
+        self._point_counter: int = 0
 
     def load_model(self, model_path: str | None = None) -> None:
         """
@@ -262,11 +267,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             "(HomographyNet, SuperPoint, LoFTR, etc.) for homography prediction."
         )
 
-    def project_point(self, image_point: tuple[float, float]) -> WorldPoint:
+    def project_point(self, image_point: tuple[float, float]) -> MapPoint:
         """
-        Project single image coordinate to world coordinate (GPS).
+        Project single image coordinate to map coordinate.
 
-        Future implementation will transform image points to GPS coordinates
+        Future implementation will transform image points to map pixel coordinates
         using the homography predicted by the neural network model.
 
         Args:
@@ -275,11 +280,11 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
                 v: vertical pixel coordinate (0 = top edge)
 
         Returns:
-            WorldPoint with:
-                - latitude: Projected latitude in decimal degrees
-                - longitude: Projected longitude in decimal degrees
-                - confidence: Point-specific confidence score [0.0, 1.0]
-                    May incorporate model uncertainty estimates
+            MapPoint with:
+                - id: Unique identifier for the projected point
+                - pixel_x: X coordinate on the map image
+                - pixel_y: Y coordinate on the map image
+                - map_id: Identifier of the reference map
 
         Raises:
             RuntimeError: If no valid homography has been computed yet
@@ -296,12 +301,12 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             "Point projection not yet implemented. "
             "See issue #14 for implementation tracking. "
             "Future implementation will use learned homography matrix to "
-            "transform image coordinates to GPS via ground plane projection."
+            "transform image coordinates to map pixel coordinates."
         )
 
-    def project_points(self, image_points: list[tuple[float, float]]) -> list[WorldPoint]:
+    def project_points(self, image_points: list[tuple[float, float]]) -> list[MapPoint]:
         """
-        Project multiple image points to world coordinates (GPS).
+        Project multiple image points to map coordinates.
 
         Future implementation will batch-project points using vectorized
         operations for efficiency.
@@ -310,8 +315,7 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
             image_points: List of (u, v) pixel coordinates to project
 
         Returns:
-            List of WorldPoint objects, one per input point, in same order.
-            Each WorldPoint contains lat/lon and per-point confidence score.
+            List of MapPoint objects, one per input point, in same order.
 
         Raises:
             RuntimeError: If no valid homography has been computed yet
@@ -381,63 +385,4 @@ class LearnedHomography(GPSPositionMixin, HomographyProviderExtended):
         """
         return validate_homography_matrix(
             self._homography_matrix, self._confidence, self.confidence_threshold
-        )
-
-    # =========================================================================
-    # HomographyProviderExtended Interface Implementation (Stubs)
-    # =========================================================================
-
-    def project_point_to_map(self, image_point: tuple[float, float]) -> MapCoordinate:
-        """
-        Project image coordinate to local map coordinate system.
-
-        Future implementation will transform image points to local metric
-        coordinates (meters from camera position) using learned homography.
-
-        Args:
-            image_point: (u, v) pixel coordinates in image space
-
-        Returns:
-            MapCoordinate with x, y in meters from camera position,
-            confidence score, and optional elevation.
-
-        Raises:
-            RuntimeError: If no valid homography has been computed yet
-            NotImplementedError: Currently not implemented (issue #14)
-        """
-        logger.warning(
-            "Learned homography map projection not implemented. Image point: %s", image_point
-        )
-        raise NotImplementedError(
-            "Map projection not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will project to local metric coordinates "
-            "using learned homography."
-        )
-
-    def project_points_to_map(self, image_points: list[tuple[float, float]]) -> list[MapCoordinate]:
-        """
-        Project multiple image points to local map coordinates.
-
-        Future implementation will batch-project points to local metric
-        coordinate system for efficiency.
-
-        Args:
-            image_points: List of (u, v) pixel coordinates
-
-        Returns:
-            List of MapCoordinate objects with x, y in meters
-
-        Raises:
-            RuntimeError: If no valid homography has been computed yet
-            NotImplementedError: Currently not implemented (issue #14)
-        """
-        logger.warning(
-            "Learned homography batch map projection not implemented. Number of points: %d",
-            len(image_points),
-        )
-        raise NotImplementedError(
-            "Batch map projection not yet implemented. "
-            "See issue #14 for implementation tracking. "
-            "Future implementation will vectorize projection for performance."
         )
