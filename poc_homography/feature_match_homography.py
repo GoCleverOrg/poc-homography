@@ -818,12 +818,15 @@ class FeatureMatchHomography(HomographyProvider):
             map_id=self.map_id,
         )
 
-    def project_points(self, image_points: list[tuple[float, float]]) -> list[MapPoint]:
+    def project_points(
+        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+    ) -> list[MapPoint]:
         """
         Project multiple image points to map pixel coordinates.
 
         Args:
             image_points: List of (u, v) pixel coordinates in camera image
+            point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:
             List of MapPoint objects with pixel coordinates on the reference map
@@ -836,8 +839,9 @@ class FeatureMatchHomography(HomographyProvider):
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
         map_points = []
-        for image_point in image_points:
-            map_point = self.project_point(image_point)
+        for i, image_point in enumerate(image_points):
+            point_id = f"{point_id_prefix}_{i}"
+            map_point = self.project_point(image_point, point_id=point_id)
             map_points.append(map_point)
 
         return map_points
