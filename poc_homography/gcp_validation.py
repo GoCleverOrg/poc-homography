@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import numbers
-from typing import Any, SupportsFloat, cast
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def _is_valid_finite_number(value: Any) -> bool:
 
     # Check for NaN and Infinity
     try:
-        float_value = float(cast("SupportsFloat", value))
+        float_value = float(value)  # type: ignore[arg-type]
         if math.isnan(float_value) or math.isinf(float_value):
             return False
     except (TypeError, ValueError):

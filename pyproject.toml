@@ -42,6 +42,9 @@ dev = [
     "types-PyYAML",
     "types-requests",
     "matplotlib>=3.7",
+    "vulture>=2.14",
+    "deadcode>=2.4",
+    "poethepoet>=0.31",
 ]
 
 [tool.ruff]
@@ -181,3 +184,32 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["poc_homography"]
+exclude = ["tests/", "tools/", "examples/", "build/", "dist/"]
+
+[tool.deadcode]
+exclude = ["build", "dist"]
+
+[tool.poe.tasks]
+lint = "ruff check poc_homography"
+lint-fix = "ruff check poc_homography --fix"
+format = "ruff format poc_homography"
+format-check = "ruff format --check poc_homography"
+typecheck = "pyright poc_homography"
+vulture = "vulture poc_homography --min-confidence 80"
+deadcode = "deadcode . --only poc_homography/"
+deadcode-fix = "deadcode . --only poc_homography/ --fix"
+test = "pytest tests/ -v"
+test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
+pre-commit = "pre-commit run --all-files"
+
+[tool.poe.tasks.validate]
+sequence = ["lint", "format-check", "typecheck", "vulture"]
+help = "Run all validation checks"
+
+[tool.poe.tasks.clean]
+shell = "rm -rf build/ dist/ *.egg-info .pytest_cache .coverage htmlcov/ && find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
+help = "Clean build artifacts"

@@ -10,6 +10,7 @@ Usage:
     # Generate JavaScript code for embedding in HTML
     js_code = generate_satellite_layers_js(google_api_key='your-key', default_layer='google')
 """
+
 from __future__ import annotations
 
 

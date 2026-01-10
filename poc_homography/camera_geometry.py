@@ -120,8 +120,12 @@ class CameraGeometry:
         self.roll_deg = 0.0  # Camera Roll (rotation around optical axis)
 
         # Height uncertainty for propagation (set via set_height_uncertainty)
-        self.height_uncertainty_lower: Meters | None = None  # Lower bound of height confidence interval
-        self.height_uncertainty_upper: Meters | None = None  # Upper bound of height confidence interval
+        self.height_uncertainty_lower: Meters | None = (
+            None  # Lower bound of height confidence interval
+        )
+        self.height_uncertainty_upper: Meters | None = (
+            None  # Upper bound of height confidence interval
+        )
 
         # Lens distortion coefficients (OpenCV model)
         # Radial: k1, k2, k3 (k3 often 0 for simple lenses)
