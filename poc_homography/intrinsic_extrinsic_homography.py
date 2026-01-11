@@ -983,8 +983,6 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             Meters(x_world), Meters(y_world), Pixels(self.map_width), Pixels(self.map_height)
         )
 
-        # Note: MapPoint no longer has id and map_id fields
-        # These are managed by the registry/caller
         return MapPoint(
             pixel_x=float(map_pixel_x),
             pixel_y=float(map_pixel_y),

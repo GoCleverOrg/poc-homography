@@ -6,14 +6,17 @@ Example usage:
         --gcps gcps.yaml --map-points map_points.json
 
 Where gcps.yaml contains:
-    camera: Valte
-    pan_raw: 0.0
-    tilt_deg: 30.0
-    zoom: 1.0
-    annotations:
-      - gcp_id: Z1
-        pixel_x: 960.0
-        pixel_y: 540.0
+    capture:
+      context:
+        camera: Valte
+        pan_raw: 0.0
+        tilt_deg: 30.0
+        zoom: 1.0
+      annotations:
+        - gcp_id: Z1
+          pixel:
+            x: 960.0
+            y: 540.0
 """
 
 import argparse
@@ -162,6 +165,7 @@ def main():
 
     # Run calibration
     optimized, mean_error, individual_errors = run_calibration(
+        camera_config,
         context,
         annotations,
         registry,

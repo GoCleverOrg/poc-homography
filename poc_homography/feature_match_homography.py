@@ -805,8 +805,6 @@ class FeatureMatchHomography(HomographyProvider):
         # Project to map pixel coordinates
         map_pixel = self._project_image_point_to_map(image_point)
 
-        # Note: MapPoint no longer has id and map_id fields
-        # These are managed by the registry/caller
         return MapPoint(
             pixel_x=map_pixel.x,
             pixel_y=map_pixel.y,

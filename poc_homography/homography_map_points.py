@@ -231,8 +231,6 @@ class MapPointHomography:
         point = np.array([[[camera_pixel.x, camera_pixel.y]]], dtype=np.float32)
         transformed = cv2.perspectiveTransform(point, H)
 
-        # Note: MapPoint no longer has id and map_id fields
-        # These are managed by the registry/caller
         return MapPoint(
             pixel_x=float(transformed[0, 0, 0]),
             pixel_y=float(transformed[0, 0, 1]),
@@ -278,8 +276,6 @@ class MapPointHomography:
 
         results = []
         for t in transformed:
-            # Note: MapPoint no longer has id and map_id fields
-            # These are managed by the registry/caller
             results.append(
                 MapPoint(
                     pixel_x=float(t[0][0]),
