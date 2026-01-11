@@ -3,6 +3,7 @@
 from poc_homography.calibration.annotation import Annotation, CaptureContext
 from poc_homography.calibration.comprehensive import (
     GCP,
+    TARGET_ERROR_THRESHOLD_PX,
     CalibrationParams,
     compute_projection_error,
     print_results,
@@ -36,5 +37,6 @@ __all__ = [
     "run_batch_calibration",
     "run_calibration",
     "run_interactive_session",
+    "TARGET_ERROR_THRESHOLD_PX",
     "undistort_point_simple",
 ]

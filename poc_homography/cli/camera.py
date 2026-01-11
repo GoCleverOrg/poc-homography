@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 
+from poc_homography.calibration import TARGET_ERROR_THRESHOLD_PX
 from poc_homography.camera import CameraIntrinsics, PTZStatus, get_camera_intrinsics
 from poc_homography.camera_config import (
     DEFAULT_BASE_FOCAL_LENGTH_MM,
@@ -242,12 +243,6 @@ def validate_command(
 
     camera_config = configs[camera]
 
-    # Verify camera_config is retrieved correctly
-    retrieved_camera = get_camera_by_name(camera)
-    if retrieved_camera is None:
-        typer.echo(f"Error: Failed to retrieve camera configuration for: {camera}", err=True)
-        raise typer.Exit(1)
-
     # Load GCPs from YAML file
     try:
         gcps = load_gcps_from_yaml(gcps_file)
@@ -280,9 +275,10 @@ def validate_command(
         typer.echo("\nError: All GCPs failed validation", err=True)
         raise typer.Exit(1)
 
-    if mean_error >= 5.0:
+    if mean_error >= TARGET_ERROR_THRESHOLD_PX:
         typer.echo(
-            f"\nValidation failed: Mean error {mean_error:.2f}px exceeds 5px threshold",
+            f"\nValidation failed: Mean error {mean_error:.2f}px exceeds "
+            f"{TARGET_ERROR_THRESHOLD_PX}px threshold",
             err=True,
         )
         raise typer.Exit(1)

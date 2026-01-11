@@ -1,6 +1,5 @@
 """GCP (Ground Control Point) CLI commands."""
 
-import re
 import webbrowser
 from pathlib import Path
 
@@ -8,44 +7,13 @@ import typer
 
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import gcp_app
+from poc_homography.coordinates import dms_to_dd
 from poc_homography.gcp.verify import (
     CameraLocation,
     generate_verification_map,
     load_gcps_from_yaml,
 )
 from poc_homography.types import Degrees, Meters
-
-
-def _dms_to_dd(dms_str: str) -> float:
-    """
-    Convert DMS (degrees, minutes, seconds) string to decimal degrees.
-
-    Supports formats like:
-    - "39°38'25.72\"N"
-    - "0°13'48.63\"W"
-
-    Args:
-        dms_str: DMS coordinate string
-
-    Returns:
-        Decimal degrees
-    """
-    pattern = r"""(\d+)°(\d+)'([\d.]+)"?([NSEW])"""
-    match = re.match(pattern, dms_str)
-    if not match:
-        raise ValueError(f"Invalid DMS format: {dms_str}")
-
-    degrees = int(match.group(1))
-    minutes = int(match.group(2))
-    seconds = float(match.group(3))
-    direction = match.group(4)
-
-    dd = degrees + minutes / 60 + seconds / 3600
-
-    if direction in ("S", "W"):
-        dd = -dd
-
-    return dd
 
 
 def _get_camera_config_decimal(camera_name: str) -> dict[str, float]:
@@ -66,8 +34,8 @@ def _get_camera_config_decimal(camera_name: str) -> dict[str, float]:
     cam = configs[camera_name]
 
     return {
-        "lat": _dms_to_dd(cam["lat"]),
-        "lon": _dms_to_dd(cam["lon"]),
+        "lat": dms_to_dd(cam["lat"]),
+        "lon": dms_to_dd(cam["lon"]),
         "height_m": cam["height_m"],
         "pan_offset_deg": cam["pan_offset_deg"],
     }

@@ -21,7 +21,7 @@ import io
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
@@ -33,8 +33,24 @@ from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFlo
 if TYPE_CHECKING:
     from poc_homography.map_points import MapPointRegistry
 
+# Module-level logger for debugging calibration issues
+_logger = logging.getLogger(__name__)
+
 # Suppress verbose logging during optimization
 logging.getLogger("poc_homography").setLevel(logging.ERROR)
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Target projection error threshold in pixels - calibration is considered
+# successful if mean error is below this value
+TARGET_ERROR_THRESHOLD_PX: float = 5.0
+
+# Penalty value assigned when a GCP cannot be projected (invalid parameters,
+# point behind camera, missing map point, etc.). This large value ensures
+# the optimizer avoids invalid parameter combinations.
+INVALID_PROJECTION_PENALTY: float = 1000.0
 
 
 @contextlib.contextmanager
@@ -70,6 +86,101 @@ class CalibrationParams:
     # Lens distortion coefficients (OpenCV model)
     k1: Unitless = field(default_factory=lambda: Unitless(0.0))  # Primary radial distortion
     k2: Unitless = field(default_factory=lambda: Unitless(0.0))  # Secondary radial distortion
+
+
+class OptimizationFlags(NamedTuple):
+    """Flags indicating which parameters to optimize."""
+
+    position: bool
+    focal: bool
+    pan: bool
+    tilt: bool
+    distortion: bool
+
+
+def _extract_params_from_array(
+    x: np.ndarray,
+    base_params: CalibrationParams,
+    flags: OptimizationFlags,
+) -> CalibrationParams:
+    """
+    Extract CalibrationParams from optimizer array based on optimization flags.
+
+    The array x contains parameters in a specific order based on which flags
+    are enabled:
+    - height_m (always first)
+    - pan_offset_deg (if flags.pan)
+    - x_offset, y_offset (if flags.position)
+    - focal_multiplier (if flags.focal)
+    - tilt_offset_deg (if flags.tilt)
+    - k1, k2 (if flags.distortion)
+
+    Args:
+        x: Optimizer array containing parameter values
+        base_params: Base calibration parameters for defaults
+        flags: Which parameters are being optimized
+
+    Returns:
+        CalibrationParams with extracted values
+    """
+    idx = 0
+
+    # Always optimize height
+    height_m = Meters(x[idx])
+    idx += 1
+
+    # Pan offset (optional)
+    if flags.pan:
+        pan_offset_deg = Degrees(x[idx])
+        idx += 1
+    else:
+        pan_offset_deg = base_params.pan_offset_deg
+
+    # Position offset (in map coordinates)
+    if flags.position:
+        x_offset = x[idx]
+        idx += 1
+        y_offset = x[idx]
+        idx += 1
+    else:
+        x_offset = 0.0
+        y_offset = 0.0
+
+    # Focal length multiplier
+    if flags.focal:
+        focal_multiplier = Unitless(x[idx])
+        idx += 1
+    else:
+        focal_multiplier = base_params.focal_multiplier
+
+    # Tilt offset
+    if flags.tilt:
+        tilt_offset_deg = Degrees(x[idx])
+        idx += 1
+    else:
+        tilt_offset_deg = base_params.tilt_offset_deg
+
+    # Distortion coefficients
+    if flags.distortion:
+        k1 = Unitless(x[idx])
+        idx += 1
+        k2 = Unitless(x[idx])
+        idx += 1
+    else:
+        k1 = base_params.k1
+        k2 = base_params.k2
+
+    return CalibrationParams(
+        camera_x=Meters(base_params.camera_x + x_offset),
+        camera_y=Meters(base_params.camera_y + y_offset),
+        height_m=height_m,
+        pan_offset_deg=pan_offset_deg,
+        focal_multiplier=focal_multiplier,
+        tilt_offset_deg=tilt_offset_deg,
+        sensor_width_mm=base_params.sensor_width_mm,
+        k1=k1,
+        k2=k2,
+    )
 
 
 def undistort_point_simple(
@@ -149,6 +260,11 @@ def compute_projection_error(
     for gcp in gcps:
         try:
             # Look up map point coordinates from registry
+            if gcp.map_point_id not in registry.points:
+                _logger.debug("GCP %s: map point not found in registry", gcp.map_point_id)
+                errors.append(INVALID_PROJECTION_PENALTY)
+                continue
+
             map_point = registry.points[gcp.map_point_id]
             # Compute local XY relative to camera position in map coordinates
             x_m = map_point.pixel_x - params.camera_x
@@ -166,7 +282,8 @@ def compute_projection_error(
 
             # Validate tilt is positive (pointing down)
             if tilt_deg <= 0:
-                errors.append(1000.0)  # Penalty for invalid tilt
+                _logger.debug("GCP %s: invalid tilt angle %.2f", gcp.map_point_id, tilt_deg)
+                errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
             # Create parameters and compute homography using immutable API
@@ -187,8 +304,9 @@ def compute_projection_error(
                         pixels_per_meter=Unitless(100.0),
                     )
                     result = CameraGeometry.compute(camera_params)
-            except ValueError:
-                errors.append(1000.0)  # Penalty for invalid parameters
+            except ValueError as e:
+                _logger.debug("GCP %s: invalid camera parameters: %s", gcp.map_point_id, e)
+                errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
             H = result.homography_matrix
@@ -198,7 +316,8 @@ def compute_projection_error(
             img_pt = H @ world_pt
 
             if img_pt[2, 0] <= 0:
-                errors.append(1000.0)  # Penalty for point behind camera
+                _logger.debug("GCP %s: point projects behind camera", gcp.map_point_id)
+                errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
             projected_u = img_pt[0, 0] / img_pt[2, 0]
@@ -214,11 +333,15 @@ def compute_projection_error(
             error = math.sqrt((gcp_u_undist - projected_u) ** 2 + (gcp_v_undist - projected_v) ** 2)
             errors.append(error)
 
-        except Exception:
-            errors.append(1000.0)  # Penalty for any error
+        except KeyError as e:
+            _logger.debug("GCP %s: missing key in data: %s", gcp.map_point_id, e)
+            errors.append(INVALID_PROJECTION_PENALTY)
+        except (TypeError, AttributeError) as e:
+            _logger.debug("GCP %s: type/attribute error: %s", gcp.map_point_id, e)
+            errors.append(INVALID_PROJECTION_PENALTY)
 
     if not errors:
-        return 1000.0, []
+        return INVALID_PROJECTION_PENALTY, []
 
     return float(np.mean(errors)), errors
 
@@ -228,11 +351,7 @@ def _objective_function(
     gcps: list[GCP],
     registry: MapPointRegistry,
     base_params: CalibrationParams,
-    optimize_position: bool,
-    optimize_focal: bool,
-    optimize_pan: bool,
-    optimize_tilt: bool,
-    optimize_distortion: bool,
+    flags: OptimizationFlags,
     image_width: Pixels,
     image_height: Pixels,
 ) -> float:
@@ -247,77 +366,14 @@ def _objective_function(
         gcps: List of ground control points
         registry: MapPointRegistry containing map point coordinates
         base_params: Base calibration parameters
-        optimize_position: Whether to optimize camera position
-        optimize_focal: Whether to optimize focal length
-        optimize_pan: Whether to optimize pan offset
-        optimize_tilt: Whether to optimize tilt offset
-        optimize_distortion: Whether to optimize distortion coefficients
+        flags: Which parameters are being optimized
         image_width: Image width in pixels
         image_height: Image height in pixels
 
     Returns:
         Mean projection error in pixels
     """
-    idx = 0
-
-    # Always optimize height
-    height_m = Meters(x[idx])
-    idx += 1
-
-    # Pan offset (optional)
-    if optimize_pan:
-        pan_offset_deg = Degrees(x[idx])
-        idx += 1
-    else:
-        pan_offset_deg = base_params.pan_offset_deg
-
-    # Position offset (in map coordinates)
-    if optimize_position:
-        x_offset = x[idx]
-        idx += 1
-        y_offset = x[idx]
-        idx += 1
-    else:
-        x_offset = 0.0
-        y_offset = 0.0
-
-    # Focal length multiplier
-    if optimize_focal:
-        focal_multiplier = Unitless(x[idx])
-        idx += 1
-    else:
-        focal_multiplier = base_params.focal_multiplier
-
-    # Tilt offset
-    if optimize_tilt:
-        tilt_offset_deg = Degrees(x[idx])
-        idx += 1
-    else:
-        tilt_offset_deg = base_params.tilt_offset_deg
-
-    # Distortion coefficients
-    if optimize_distortion:
-        k1 = Unitless(x[idx])
-        idx += 1
-        k2 = Unitless(x[idx])
-        idx += 1
-    else:
-        k1 = base_params.k1
-        k2 = base_params.k2
-
-    # Build params
-    params = CalibrationParams(
-        camera_x=Meters(base_params.camera_x + x_offset),
-        camera_y=Meters(base_params.camera_y + y_offset),
-        height_m=height_m,
-        pan_offset_deg=pan_offset_deg,
-        focal_multiplier=focal_multiplier,
-        tilt_offset_deg=tilt_offset_deg,
-        sensor_width_mm=base_params.sensor_width_mm,
-        k1=k1,
-        k2=k2,
-    )
-
+    params = _extract_params_from_array(x, base_params, flags)
     mean_error, _ = compute_projection_error(params, gcps, registry, image_width, image_height)
     return mean_error
 
@@ -354,6 +410,10 @@ def run_calibration(
     Returns:
         Tuple of (optimized_params, mean_error, individual_errors)
     """
+    # Validate inputs
+    if len(gcps) == 0:
+        raise ValueError("At least one GCP is required for calibration")
+
     # Initial parameters
     base_params = CalibrationParams(
         camera_x=Meters(camera_config.get("camera_x", 0.0)),
@@ -367,27 +427,36 @@ def run_calibration(
         k2=Unitless(camera_config.get("k2", 0.0)),
     )
 
+    # Create optimization flags
+    flags = OptimizationFlags(
+        position=optimize_position,
+        focal=optimize_focal,
+        pan=optimize_pan,
+        tilt=optimize_tilt,
+        distortion=optimize_distortion,
+    )
+
     # Build initial guess and bounds
     x0: list[float] = [float(base_params.height_m)]
     bounds: list[tuple[float, float]] = [(1.0, 30.0)]  # height
 
-    if optimize_pan:
+    if flags.pan:
         x0.append(float(base_params.pan_offset_deg))
         bounds.append((-180.0, 180.0))
 
-    if optimize_position:
+    if flags.position:
         x0.extend([0.0, 0.0])  # x/y offsets in map coordinates
         bounds.extend([(-50.0, 50.0), (-50.0, 50.0)])  # +/-50 units position adjustment
 
-    if optimize_focal:
+    if flags.focal:
         x0.append(float(base_params.focal_multiplier))  # focal multiplier
         bounds.extend([(0.5, 2.0)])  # +/-50-100% focal length adjustment (wider for exploration)
 
-    if optimize_tilt:
+    if flags.tilt:
         x0.append(0.0)  # tilt offset
         bounds.extend([(-10.0, 10.0)])  # +/-10 deg tilt adjustment
 
-    if optimize_distortion:
+    if flags.distortion:
         x0.extend([float(base_params.k1), float(base_params.k2)])  # k1, k2
         bounds.extend([(-1.0, 1.0), (-1.0, 1.0)])  # Extended distortion range
 
@@ -398,12 +467,12 @@ def run_calibration(
         print("\nOptimizing parameters:")
         print("  - Height: Yes")
         print(
-            f"  - Pan offset: {'Yes' if optimize_pan else 'No (fixed at ' + str(base_params.pan_offset_deg) + '°)'}"
+            f"  - Pan offset: {'Yes' if flags.pan else 'No (fixed at ' + str(base_params.pan_offset_deg) + '°)'}"
         )
-        print(f"  - Camera position: {'Yes' if optimize_position else 'No'}")
-        print(f"  - Focal length: {'Yes' if optimize_focal else 'No'}")
-        print(f"  - Tilt offset: {'Yes' if optimize_tilt else 'No'}")
-        print(f"  - Lens distortion: {'Yes' if optimize_distortion else 'No'}")
+        print(f"  - Camera position: {'Yes' if flags.position else 'No'}")
+        print(f"  - Focal length: {'Yes' if flags.focal else 'No'}")
+        print(f"  - Tilt offset: {'Yes' if flags.tilt else 'No'}")
+        print(f"  - Lens distortion: {'Yes' if flags.distortion else 'No'}")
         print(f"\nNumber of GCPs: {len(gcps)}")
 
     # Compute initial error
@@ -417,7 +486,7 @@ def run_calibration(
     iteration_count = [0]  # Use list for mutable in closure
 
     def _progress_callback(_xk: np.ndarray, convergence: float) -> None:
-        """Progress callback (xk unused but required by API)."""
+        """Progress callback (xk unused but required by scipy API)."""
         iteration_count[0] += 1
         if verbose and iteration_count[0] % 10 == 0:
             print(f"  Iteration {iteration_count[0]}, convergence: {convergence:.4f}")
@@ -429,18 +498,7 @@ def run_calibration(
     result_de = differential_evolution(
         _objective_function,
         bounds,
-        args=(
-            gcps,
-            registry,
-            base_params,
-            optimize_position,
-            optimize_focal,
-            optimize_pan,
-            optimize_tilt,
-            optimize_distortion,
-            image_width,
-            image_height,
-        ),
+        args=(gcps, registry, base_params, flags, image_width, image_height),
         rng=42,  # Random number generator seed for reproducibility
         maxiter=200,  # Reduced for faster convergence
         tol=0.01,
@@ -460,75 +518,14 @@ def run_calibration(
     result = minimize(
         _objective_function,
         result_de.x,
-        args=(
-            gcps,
-            registry,
-            base_params,
-            optimize_position,
-            optimize_focal,
-            optimize_pan,
-            optimize_tilt,
-            optimize_distortion,
-            image_width,
-            image_height,
-        ),
+        args=(gcps, registry, base_params, flags, image_width, image_height),
         method="L-BFGS-B",
         bounds=bounds,
         options={"maxiter": 1000, "ftol": 1e-8},
     )
 
-    # Extract optimized parameters
-    idx = 0
-    height_m = Meters(result.x[idx])
-    idx += 1
-
-    if optimize_pan:
-        pan_offset_deg = Degrees(result.x[idx])
-        idx += 1
-    else:
-        pan_offset_deg = base_params.pan_offset_deg
-
-    if optimize_position:
-        x_offset = result.x[idx]
-        idx += 1
-        y_offset = result.x[idx]
-        idx += 1
-    else:
-        x_offset = 0.0
-        y_offset = 0.0
-
-    if optimize_focal:
-        focal_multiplier = Unitless(result.x[idx])
-        idx += 1
-    else:
-        focal_multiplier = base_params.focal_multiplier
-
-    if optimize_tilt:
-        tilt_offset_deg = Degrees(result.x[idx])
-        idx += 1
-    else:
-        tilt_offset_deg = Degrees(0.0)
-
-    if optimize_distortion:
-        k1 = Unitless(result.x[idx])
-        idx += 1
-        k2 = Unitless(result.x[idx])
-        idx += 1
-    else:
-        k1 = base_params.k1
-        k2 = base_params.k2
-
-    optimized_params = CalibrationParams(
-        camera_x=Meters(base_params.camera_x + x_offset),
-        camera_y=Meters(base_params.camera_y + y_offset),
-        height_m=height_m,
-        pan_offset_deg=pan_offset_deg,
-        focal_multiplier=focal_multiplier,
-        tilt_offset_deg=tilt_offset_deg,
-        sensor_width_mm=base_params.sensor_width_mm,
-        k1=k1,
-        k2=k2,
-    )
+    # Extract optimized parameters using shared helper
+    optimized_params = _extract_params_from_array(result.x, base_params, flags)
 
     # Compute final errors
     mean_error, individual_errors = compute_projection_error(
@@ -560,14 +557,14 @@ def print_results(
     print("=" * 70)
 
     print(f"\nFinal mean error: {mean_error:.2f} pixels")
-    if mean_error < 5:
-        print("  [OK] Target accuracy achieved (< 5 pixels)")
+    if mean_error < TARGET_ERROR_THRESHOLD_PX:
+        print(f"  [OK] Target accuracy achieved (< {TARGET_ERROR_THRESHOLD_PX} pixels)")
     else:
-        print("  [FAIL] Target accuracy NOT achieved (need < 5 pixels)")
+        print(f"  [FAIL] Target accuracy NOT achieved (need < {TARGET_ERROR_THRESHOLD_PX} pixels)")
 
     print("\nIndividual GCP errors:")
     for i, (gcp, error) in enumerate(zip(gcps, individual_errors)):
-        status = "[OK]" if error < 5 else "[FAIL]"
+        status = "[OK]" if error < TARGET_ERROR_THRESHOLD_PX else "[FAIL]"
         print(f"  GCP {i + 1}: {error:.2f}px {status} (map_point_id: {gcp.map_point_id})")
 
     print("\n" + "-" * 70)

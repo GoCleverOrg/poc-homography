@@ -7,12 +7,14 @@ import yaml
 
 from poc_homography.calibration import (
     GCP,
+    TARGET_ERROR_THRESHOLD_PX,
     analyze_projection_error,
     print_results,
     run_calibration,
 )
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
+from poc_homography.coordinates import dms_to_dd
 from poc_homography.map_points import MapPointRegistry
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
@@ -33,28 +35,6 @@ def _get_camera_config(camera_name: str) -> dict[str, float]:
         raise ValueError(f"Unknown camera: {camera_name}. Available: {available}")
 
     cam = configs[camera_name]
-
-    # Convert DMS to decimal degrees
-    import re
-
-    def dms_to_dd(dms_str: str) -> float:
-        """Convert DMS string to decimal degrees."""
-        pattern = r"""(\d+)°(\d+)'([\d.]+)"?([NSEW])"""
-        match = re.match(pattern, dms_str)
-        if not match:
-            raise ValueError(f"Invalid DMS format: {dms_str}")
-
-        degrees = int(match.group(1))
-        minutes = int(match.group(2))
-        seconds = float(match.group(3))
-        direction = match.group(4)
-
-        dd = degrees + minutes / 60 + seconds / 3600
-
-        if direction in ("S", "W"):
-            dd = -dd
-
-        return dd
 
     return {
         "lat": dms_to_dd(cam["lat"]),
@@ -223,5 +203,5 @@ def comprehensive_command(
     print_results(camera_config, optimized_params, mean_error, individual_errors, gcps)
 
     # Exit with code 1 if target accuracy not achieved
-    if mean_error >= 5.0:
+    if mean_error >= TARGET_ERROR_THRESHOLD_PX:
         raise typer.Exit(1)
