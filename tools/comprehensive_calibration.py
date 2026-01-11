@@ -148,12 +148,12 @@ def parse_gcps_from_yaml(yaml_path: str) -> tuple[CaptureContext, list[Annotatio
         ValueError: If YAML format is invalid.
     """
     if YAML_AVAILABLE:
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     else:
         # Simple manual YAML parsing for flat structure (legacy format only)
         data = {"gcps": []}
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding="utf-8") as f:
             current_gcp = {}
             for line in f:
                 line = line.strip()

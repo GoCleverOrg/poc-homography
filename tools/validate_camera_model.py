@@ -92,7 +92,7 @@ def load_gcps_from_yaml(yaml_path: str) -> tuple[CaptureContext, list[Annotation
     if not YAML_AVAILABLE:
         raise ImportError("PyYAML required for YAML file loading")
 
-    with open(yaml_path) as f:
+    with open(yaml_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     # Check for new format first

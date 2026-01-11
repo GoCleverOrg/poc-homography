@@ -284,7 +284,7 @@ class CalibrationSession:
             "reference_points": [annotation.to_dict() for annotation in self.reference_points],
         }
 
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
 
         print(f"\nCalibration results saved to: {output_path}")
