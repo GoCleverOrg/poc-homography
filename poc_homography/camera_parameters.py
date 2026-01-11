@@ -8,14 +8,10 @@ easier testing/debugging of the camera geometry pipeline.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import numpy as np
 
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
-
-if TYPE_CHECKING:
-    from poc_homography.camera_geometry import CameraGeometry
 
 
 @dataclass(frozen=True)
@@ -340,65 +336,6 @@ class CameraParameters:
             _affine_matrix_data=A_bytes,
         )
 
-    @classmethod
-    def from_camera_geometry(cls, geometry: CameraGeometry) -> CameraParameters:
-        """Extract configuration from an existing CameraGeometry instance.
-
-        This factory method enables migration from mutable CameraGeometry
-        to immutable CameraParameters by capturing the current state.
-
-        Args:
-            geometry: CameraGeometry instance to extract parameters from.
-
-        Returns:
-            New CameraParameters instance capturing the geometry's state.
-
-        Raises:
-            ValueError: If geometry is not fully configured (missing K or w_pos).
-        """
-        if geometry.K is None:
-            raise ValueError("CameraGeometry.K (intrinsic matrix) is not set")
-        if geometry.w_pos is None:
-            raise ValueError("CameraGeometry.w_pos (camera position) is not set")
-
-        # Extract distortion coefficients if set
-        distortion: DistortionCoefficients | None = None
-        dist_coeffs = geometry.get_distortion_coefficients()
-        if dist_coeffs is not None and not np.allclose(dist_coeffs, 0.0):
-            distortion = DistortionCoefficients.from_array(dist_coeffs)
-
-        # Extract height uncertainty if set
-        height_uncertainty: HeightUncertainty | None = None
-        if (
-            geometry.height_uncertainty_lower is not None
-            and geometry.height_uncertainty_upper is not None
-        ):
-            height_uncertainty = HeightUncertainty(
-                lower=geometry.height_uncertainty_lower,
-                upper=geometry.height_uncertainty_upper,
-            )
-
-        # Extract affine matrix (None if identity)
-        affine_matrix: np.ndarray | None = None
-        if not np.allclose(geometry.A, np.eye(3)):
-            affine_matrix = geometry.A.copy()
-
-        return cls.create(
-            image_width=Pixels(geometry.w),
-            image_height=Pixels(geometry.h),
-            intrinsic_matrix=geometry.K,
-            camera_position=geometry.w_pos,
-            pan_deg=Degrees(geometry.pan_deg),
-            tilt_deg=Degrees(geometry.tilt_deg),
-            roll_deg=Degrees(geometry.roll_deg),
-            map_width=Pixels(geometry.map_width),
-            map_height=Pixels(geometry.map_height),
-            pixels_per_meter=Unitless(float(geometry.PPM)),
-            distortion=distortion,
-            height_uncertainty=height_uncertainty,
-            affine_matrix=affine_matrix,
-        )
-
     def __hash__(self) -> int:
         """Compute hash for use in sets and as dict keys."""
         return hash(
@@ -535,72 +472,6 @@ class CameraGeometryResult:
             is_valid=is_valid,
             validation_messages=validation_messages,
             center_projection_distance=center_projection_distance,
-        )
-
-    @classmethod
-    def from_camera_geometry(cls, geometry: CameraGeometry) -> CameraGeometryResult:
-        """Extract computed state from an existing CameraGeometry instance.
-
-        This factory method captures the current homography state from a
-        CameraGeometry instance for immutable storage or comparison.
-
-        Args:
-            geometry: CameraGeometry instance to extract state from.
-
-        Returns:
-            New CameraGeometryResult capturing the geometry's computed state.
-        """
-        H = geometry.H
-        H_inv = geometry.H_inv
-
-        # Compute quality metrics
-        det_H = float(np.linalg.det(H))
-        cond_H = float(np.linalg.cond(H))
-
-        # Collect validation messages
-        validation_messages: list[str] = []
-        is_valid = True
-
-        # Check condition number
-        if cond_H > 1e10:
-            validation_messages.append(
-                f"Condition number {cond_H:.2e} exceeds error threshold (1e10)"
-            )
-            is_valid = False
-        elif cond_H > 1e6:
-            validation_messages.append(
-                f"Condition number {cond_H:.2e} exceeds warning threshold (1e6)"
-            )
-
-        # Check determinant
-        if abs(det_H) < 1e-10:
-            validation_messages.append(f"Determinant {det_H:.2e} is near zero (singular matrix)")
-            is_valid = False
-
-        # Compute center projection distance if possible
-        center_distance: Meters | None = None
-        if geometry.w_pos is not None:
-            try:
-                image_center = np.array([geometry.w / 2.0, geometry.h / 2.0, 1.0])
-                world_point = H_inv @ image_center
-                if abs(world_point[2]) > 1e-10:
-                    Xw = world_point[0] / world_point[2]
-                    Yw = world_point[1] / world_point[2]
-                    distance = float(
-                        np.sqrt((Xw - geometry.w_pos[0]) ** 2 + (Yw - geometry.w_pos[1]) ** 2)
-                    )
-                    center_distance = Meters(distance)
-            except (ValueError, np.linalg.LinAlgError):
-                validation_messages.append("Failed to compute center projection distance")
-
-        return cls.create(
-            homography_matrix=H,
-            inverse_homography_matrix=H_inv,
-            condition_number=cond_H,
-            determinant=det_H,
-            is_valid=is_valid,
-            validation_messages=tuple(validation_messages),
-            center_projection_distance=center_distance,
         )
 
     def __hash__(self) -> int:

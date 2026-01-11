@@ -30,7 +30,9 @@ except ImportError:
     print("Warning: OpenCV not available. Interactive mode disabled.")
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.types import Degrees, Pixels, Unitless
 
 # Try to import camera modules
 try:
@@ -120,18 +122,30 @@ class CalibrationSession:
         # If we have calibration results, show projected points (red)
         if self.best_pan_offset is not None and self.best_height is not None:
             K = CameraGeometry.get_intrinsics(self.zoom, self.image_width, self.image_height, 7.18)
-            geo = CameraGeometry(w=self.image_width, h=self.image_height)
             pan_deg = self.pan_raw + self.best_pan_offset
             w_pos = np.array([0.0, 0.0, self.best_height])
 
             try:
-                geo.set_camera_parameters(K, w_pos, pan_deg, self.tilt_deg, 640, 640)
+                params = CameraParameters.create(
+                    image_width=Pixels(self.image_width),
+                    image_height=Pixels(self.image_height),
+                    intrinsic_matrix=K,
+                    camera_position=w_pos,
+                    pan_deg=Degrees(pan_deg),
+                    tilt_deg=Degrees(self.tilt_deg),
+                    roll_deg=Degrees(0.0),
+                    map_width=Pixels(640),
+                    map_height=Pixels(640),
+                    pixels_per_meter=Unitless(100.0),
+                )
+                result = CameraGeometry.compute(params)
+                H = result.homography_matrix
 
                 for pt in self.reference_points:
                     map_point = self.registry.points[pt["map_point_id"]]
                     x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
-                    img_pt = geo.H @ world_pt
+                    img_pt = H @ world_pt
                     if img_pt[2, 0] > 0:
                         proj_u = int(img_pt[0, 0] / img_pt[2, 0])
                         proj_v = int(img_pt[1, 0] / img_pt[2, 0])
@@ -194,7 +208,6 @@ class CalibrationSession:
         print(f"\nCalibrating with {len(self.reference_points)} reference points...")
 
         K = CameraGeometry.get_intrinsics(self.zoom, self.image_width, self.image_height, 7.18)
-        geo = CameraGeometry(w=self.image_width, h=self.image_height)
 
         best_error = float("inf")
         best_pan_offset = self.pan_offset_deg
@@ -206,10 +219,23 @@ class CalibrationSession:
             for test_height in np.arange(1.0, 20.0, 0.2):
                 test_w_pos = np.array([0.0, 0.0, test_height])
                 try:
-                    geo.set_camera_parameters(K, test_w_pos, test_pan, self.tilt_deg, 640, 640)
+                    params = CameraParameters.create(
+                        image_width=Pixels(self.image_width),
+                        image_height=Pixels(self.image_height),
+                        intrinsic_matrix=K,
+                        camera_position=test_w_pos,
+                        pan_deg=Degrees(test_pan),
+                        tilt_deg=Degrees(self.tilt_deg),
+                        roll_deg=Degrees(0.0),
+                        map_width=Pixels(640),
+                        map_height=Pixels(640),
+                        pixels_per_meter=Unitless(100.0),
+                    )
+                    result = CameraGeometry.compute(params)
                 except ValueError:
                     continue
 
+                H = result.homography_matrix
                 total_error = 0
                 valid_points = 0
 
@@ -217,7 +243,7 @@ class CalibrationSession:
                     map_point = self.registry.points[pt["map_point_id"]]
                     x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
-                    img_pt = geo.H @ world_pt
+                    img_pt = H @ world_pt
 
                     if img_pt[2, 0] > 0:
                         proj_u = img_pt[0, 0] / img_pt[2, 0]
@@ -240,7 +266,7 @@ class CalibrationSession:
         self.best_error = best_error
 
         print("\nCalibration Results:")
-        print(f"  Best pan_offset: {best_pan_offset:.1f}° (was {self.pan_offset_deg:.1f}°)")
+        print(f"  Best pan_offset: {best_pan_offset:.1f} (was {self.pan_offset_deg:.1f})")
         print(f"  Best height: {best_height:.2f}m (was {self.height_m:.2f}m)")
         print(f"  Average error: {best_error:.1f} pixels")
 

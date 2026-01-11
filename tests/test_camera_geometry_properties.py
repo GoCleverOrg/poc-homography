@@ -5,7 +5,7 @@ Property-based tests for CameraGeometry using Hypothesis.
 These tests verify mathematical invariants that MUST hold for all valid inputs:
 1. Rotation matrices are orthogonal (R @ R.T = I, det(R) = 1)
 2. Homographies are invertible (det(H) != 0, bounded condition number)
-3. Projection round-trip consistency (pixel → world → pixel)
+3. Projection round-trip consistency (pixel -> world -> pixel)
 4. Pan/tilt independence (orthogonal parameter effects)
 
 Property-based testing generates hundreds of random valid inputs to find edge cases
@@ -26,6 +26,8 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
+from poc_homography.types import Degrees, Pixels, Unitless
 
 # ============================================================================
 # Hypothesis Strategies for Valid Camera Parameters
@@ -49,7 +51,7 @@ def valid_tilt_angle():
     Tilt angle controls vertical camera rotation (elevation).
     Valid range: (0, 90] degrees (must point downward for ground plane projection).
 
-    We avoid very small tilts (<0.1°) and near-horizontal angles (>89.9°)
+    We avoid very small tilts (<0.1 deg) and near-horizontal angles (>89.9 deg)
     to prevent numerical instability in homography computation.
     """
     return st.floats(min_value=0.1, max_value=89.9, allow_nan=False, allow_infinity=False)
@@ -119,18 +121,16 @@ def test_rotation_matrix_orthogonality(pan, tilt):
     - rtol=1e-9, atol=1e-12 for floating-point comparisons
     - Stricter than typical because this is a fundamental mathematical property
     """
-    geo = CameraGeometry(w=1920, h=1080)
-    geo.pan_deg = pan
-    geo.tilt_deg = tilt
-
-    R = geo._get_rotation_matrix()
+    R = CameraGeometry._get_rotation_matrix_static(
+        pan_deg=Degrees(pan), tilt_deg=Degrees(tilt), roll_deg=Degrees(0.0)
+    )
 
     # Property 1a: R @ R.T = I (orthogonality)
     RRT = R @ R.T
     identity = np.eye(3)
 
     assert np.allclose(RRT, identity, rtol=1e-9, atol=1e-12), (
-        f"Rotation matrix not orthogonal at pan={pan:.2f}°, tilt={tilt:.2f}°\n"
+        f"Rotation matrix not orthogonal at pan={pan:.2f} deg, tilt={tilt:.2f} deg\n"
         f"R @ R.T =\n{RRT}\n"
         f"Expected identity:\n{identity}\n"
         f"Max difference: {np.max(np.abs(RRT - identity))}"
@@ -140,7 +140,7 @@ def test_rotation_matrix_orthogonality(pan, tilt):
     det_R = np.linalg.det(R)
 
     assert np.isclose(det_R, 1.0, rtol=1e-9, atol=1e-12), (
-        f"Rotation matrix determinant not 1.0 at pan={pan:.2f}°, tilt={tilt:.2f}°\n"
+        f"Rotation matrix determinant not 1.0 at pan={pan:.2f} deg, tilt={tilt:.2f} deg\n"
         f"det(R) = {det_R}, expected 1.0\n"
         f"Difference: {abs(det_R - 1.0)}"
     )
@@ -167,10 +167,10 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
         cond(H) < 1e10  (numerically stable inverse)
 
     WHY THIS MATTERS:
-    - Homography H maps world coords → image pixels
-    - Inverse H_inv maps image pixels → world coords
+    - Homography H maps world coords -> image pixels
+    - Inverse H_inv maps image pixels -> world coords
     - Singular H (det=0) means mapping is degenerate and cannot be inverted
-    - High condition number means inverse is numerically unstable (small input errors → large output errors)
+    - High condition number means inverse is numerically unstable (small input errors -> large output errors)
 
     VERIFICATION:
     - Compute det(H) and verify it's not close to zero (|det| > 1e-10)
@@ -178,25 +178,37 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
     - These bounds are from CameraGeometry.CONDITION_ERROR threshold
 
     EDGE CASES HANDLED:
-    - High zoom (narrow FOV) → may increase condition number
-    - Low tilt (near horizontal) → may increase condition number
-    - Extreme height ratios → validated by CameraGeometry height constraints
+    - High zoom (narrow FOV) -> may increase condition number
+    - Low tilt (near horizontal) -> may increase condition number
+    - Extreme height ratios -> validated by CameraGeometry height constraints
     """
     width, height_px = dims
 
-    geo = CameraGeometry(w=width, h=height_px)
-    K = CameraGeometry.get_intrinsics(zoom, width, height_px)
+    K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height_px))
     w_pos = np.array([0.0, 0.0, height])
 
-    geo.set_camera_parameters(K, w_pos, pan, tilt, 640, 640)
-    H = geo.H
+    params = CameraParameters.create(
+        image_width=Pixels(width),
+        image_height=Pixels(height_px),
+        intrinsic_matrix=K,
+        camera_position=w_pos,
+        pan_deg=Degrees(pan),
+        tilt_deg=Degrees(tilt),
+        roll_deg=Degrees(0.0),
+        map_width=Pixels(640),
+        map_height=Pixels(640),
+        pixels_per_meter=Unitless(100.0),
+    )
+
+    result = CameraGeometry.compute(params)
+    H = result.homography_matrix
 
     # Property 2a: det(H) != 0 (invertible)
     det_H = np.linalg.det(H)
 
     assert abs(det_H) > 1e-10, (
-        f"Homography is singular (det ≈ 0) at configuration:\n"
-        f"  pan={pan:.2f}°, tilt={tilt:.2f}°, height={height:.2f}m, zoom={zoom:.2f}\n"
+        f"Homography is singular (det ~ 0) at configuration:\n"
+        f"  pan={pan:.2f} deg, tilt={tilt:.2f} deg, height={height:.2f}m, zoom={zoom:.2f}\n"
         f"  det(H) = {det_H:.2e}"
     )
 
@@ -205,7 +217,7 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
 
     assert cond_H < 1e10, (
         f"Homography condition number too high (numerically unstable) at configuration:\n"
-        f"  pan={pan:.2f}°, tilt={tilt:.2f}°, height={height:.2f}m, zoom={zoom:.2f}\n"
+        f"  pan={pan:.2f} deg, tilt={tilt:.2f} deg, height={height:.2f}m, zoom={zoom:.2f}\n"
         f"  cond(H) = {cond_H:.2e}, threshold = 1e10"
     )
 
@@ -232,10 +244,10 @@ def test_projection_round_trip_consistency(
     PROPERTY: Projection round-trip MUST return to original pixel within tolerance.
 
     Mathematical invariant:
-        pixel → world → pixel = original pixel (within numerical tolerance)
+        pixel -> world -> pixel = original pixel (within numerical tolerance)
 
     WHY THIS MATTERS:
-    - H maps world → image, H_inv maps image → world
+    - H maps world -> image, H_inv maps image -> world
     - Round-trip tests that H and H_inv are true inverses
     - Failure indicates numerical instability or implementation bug
     - Critical for geo-localization accuracy (e.g., object tracking on map)
@@ -261,28 +273,40 @@ def test_projection_round_trip_consistency(
     pixel_u = pixel_u_fraction * width
     pixel_v = pixel_v_fraction * height_px
 
-    geo = CameraGeometry(w=width, h=height_px)
-    K = CameraGeometry.get_intrinsics(zoom, width, height_px)
+    K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height_px))
     w_pos = np.array([0.0, 0.0, height])
 
-    geo.set_camera_parameters(K, w_pos, pan, tilt, 640, 640)
+    params = CameraParameters.create(
+        image_width=Pixels(width),
+        image_height=Pixels(height_px),
+        intrinsic_matrix=K,
+        camera_position=w_pos,
+        pan_deg=Degrees(pan),
+        tilt_deg=Degrees(tilt),
+        roll_deg=Degrees(0.0),
+        map_width=Pixels(640),
+        map_height=Pixels(640),
+        pixels_per_meter=Unitless(100.0),
+    )
 
-    # Forward projection: pixel → world
+    result = CameraGeometry.compute(params)
+
+    # Forward projection: pixel -> world
     pixel_hom = np.array([[pixel_u], [pixel_v], [1.0]])
-    world_hom = geo.H_inv @ pixel_hom
+    world_hom = result.inverse_homography_matrix @ pixel_hom
 
     # Normalize world coordinates
     w_scale = world_hom[2, 0]
 
-    # Skip if point is near horizon (w_scale ≈ 0)
+    # Skip if point is near horizon (w_scale ~ 0)
     assume(abs(w_scale) > 1e-6)
 
     world_x = world_hom[0, 0] / w_scale
     world_y = world_hom[1, 0] / w_scale
 
-    # Backward projection: world → pixel
+    # Backward projection: world -> pixel
     world_hom_back = np.array([[world_x], [world_y], [1.0]])
-    pixel_hom_back = geo.H @ world_hom_back
+    pixel_hom_back = result.homography_matrix @ world_hom_back
 
     # Normalize pixel coordinates
     pixel_u_back = pixel_hom_back[0, 0] / pixel_hom_back[2, 0]
@@ -297,7 +321,7 @@ def test_projection_round_trip_consistency(
 
     assert pixel_error_total < pixel_tolerance, (
         f"Round-trip projection error too large at configuration:\n"
-        f"  pan={pan:.2f}°, tilt={tilt:.2f}°, height={height:.2f}m, zoom={zoom:.2f}\n"
+        f"  pan={pan:.2f} deg, tilt={tilt:.2f} deg, height={height:.2f}m, zoom={zoom:.2f}\n"
         f"  Original pixel: ({pixel_u:.2f}, {pixel_v:.2f})\n"
         f"  World coords: ({world_x:.2f}, {world_y:.2f}) meters\n"
         f"  Back-projected pixel: ({pixel_u_back:.2f}, {pixel_v_back:.2f})\n"
@@ -348,24 +372,22 @@ def test_pan_tilt_independence_pan_only(pan1, pan2, tilt_fixed, height):
     # Avoid testing pan angles that are too close (no meaningful difference)
     assume(abs(pan2 - pan1) > 1.0)
 
-    geo = CameraGeometry(w=1920, h=1080)
-
     # Configuration 1: pan1, tilt_fixed
-    geo.pan_deg = pan1
-    geo.tilt_deg = tilt_fixed
-    R1 = geo._get_rotation_matrix()
+    R1 = CameraGeometry._get_rotation_matrix_static(
+        pan_deg=Degrees(pan1), tilt_deg=Degrees(tilt_fixed), roll_deg=Degrees(0.0)
+    )
 
     # Camera forward direction in world coordinates
-    # Camera Z-axis [0, 0, 1] in camera frame → world frame via R.T
+    # Camera Z-axis [0, 0, 1] in camera frame -> world frame via R.T
     forward1 = R1.T @ np.array([0, 0, 1])
 
     # Elevation = arcsin(-forward_z) (negative because world +Z is up, camera forward has negative Z component)
     elevation1 = math.degrees(math.asin(-forward1[2]))
 
     # Configuration 2: pan2, tilt_fixed (only pan changed)
-    geo.pan_deg = pan2
-    geo.tilt_deg = tilt_fixed
-    R2 = geo._get_rotation_matrix()
+    R2 = CameraGeometry._get_rotation_matrix_static(
+        pan_deg=Degrees(pan2), tilt_deg=Degrees(tilt_fixed), roll_deg=Degrees(0.0)
+    )
 
     forward2 = R2.T @ np.array([0, 0, 1])
     elevation2 = math.degrees(math.asin(-forward2[2]))
@@ -376,9 +398,9 @@ def test_pan_tilt_independence_pan_only(pan1, pan2, tilt_fixed, height):
 
     assert elevation_diff < elevation_tolerance, (
         f"Pan change affected elevation (pan/tilt not independent):\n"
-        f"  pan1={pan1:.2f}°, pan2={pan2:.2f}°, tilt={tilt_fixed:.2f}°\n"
-        f"  elevation1={elevation1:.2f}°, elevation2={elevation2:.2f}°\n"
-        f"  Difference: {elevation_diff:.4f}° (tolerance: {elevation_tolerance}°)"
+        f"  pan1={pan1:.2f} deg, pan2={pan2:.2f} deg, tilt={tilt_fixed:.2f} deg\n"
+        f"  elevation1={elevation1:.2f} deg, elevation2={elevation2:.2f} deg\n"
+        f"  Difference: {elevation_diff:.4f} deg (tolerance: {elevation_tolerance} deg)"
     )
 
 
@@ -419,12 +441,10 @@ def test_pan_tilt_independence_tilt_only(tilt1, tilt2, pan_fixed, height):
     # Avoid testing tilt angles that are too close (no meaningful difference)
     assume(abs(tilt2 - tilt1) > 1.0)
 
-    geo = CameraGeometry(w=1920, h=1080)
-
     # Configuration 1: pan_fixed, tilt1
-    geo.pan_deg = pan_fixed
-    geo.tilt_deg = tilt1
-    R1 = geo._get_rotation_matrix()
+    R1 = CameraGeometry._get_rotation_matrix_static(
+        pan_deg=Degrees(pan_fixed), tilt_deg=Degrees(tilt1), roll_deg=Degrees(0.0)
+    )
 
     # Camera forward direction in world coordinates
     forward1 = R1.T @ np.array([0, 0, 1])
@@ -433,9 +453,9 @@ def test_pan_tilt_independence_tilt_only(tilt1, tilt2, pan_fixed, height):
     azimuth1 = math.degrees(math.atan2(forward1[0], forward1[1]))
 
     # Configuration 2: pan_fixed, tilt2 (only tilt changed)
-    geo.pan_deg = pan_fixed
-    geo.tilt_deg = tilt2
-    R2 = geo._get_rotation_matrix()
+    R2 = CameraGeometry._get_rotation_matrix_static(
+        pan_deg=Degrees(pan_fixed), tilt_deg=Degrees(tilt2), roll_deg=Degrees(0.0)
+    )
 
     forward2 = R2.T @ np.array([0, 0, 1])
     azimuth2 = math.degrees(math.atan2(forward2[0], forward2[1]))
@@ -443,7 +463,7 @@ def test_pan_tilt_independence_tilt_only(tilt1, tilt2, pan_fixed, height):
     # Verify azimuth unchanged
     azimuth_diff = abs(azimuth2 - azimuth1)
 
-    # Handle wrap-around at ±180°
+    # Handle wrap-around at +/-180 deg
     if azimuth_diff > 180:
         azimuth_diff = 360 - azimuth_diff
 
@@ -451,9 +471,9 @@ def test_pan_tilt_independence_tilt_only(tilt1, tilt2, pan_fixed, height):
 
     assert azimuth_diff < azimuth_tolerance, (
         f"Tilt change affected azimuth (pan/tilt not independent):\n"
-        f"  pan={pan_fixed:.2f}°, tilt1={tilt1:.2f}°, tilt2={tilt2:.2f}°\n"
-        f"  azimuth1={azimuth1:.2f}°, azimuth2={azimuth2:.2f}°\n"
-        f"  Difference: {azimuth_diff:.4f}° (tolerance: {azimuth_tolerance}°)"
+        f"  pan={pan_fixed:.2f} deg, tilt1={tilt1:.2f} deg, tilt2={tilt2:.2f} deg\n"
+        f"  azimuth1={azimuth1:.2f} deg, azimuth2={azimuth2:.2f} deg\n"
+        f"  Difference: {azimuth_diff:.4f} deg (tolerance: {azimuth_tolerance} deg)"
     )
 
 
@@ -471,24 +491,22 @@ def test_rotation_matrix_inverse_equals_transpose(pan, tilt):
         R^-1 = R.T  (fundamental property of orthogonal matrices)
 
     WHY THIS MATTERS:
-    - Computing inverse of rotation matrix is expensive (O(n³))
-    - Computing transpose is trivial (O(n²))
+    - Computing inverse of rotation matrix is expensive (O(n^3))
+    - Computing transpose is trivial (O(n^2))
     - If R is orthogonal, we can use transpose instead of inverse (huge performance gain)
     - This property is used throughout camera geometry for coordinate transformations
 
     VERIFICATION:
     - Compute R_inv = np.linalg.inv(R)
     - Compute R_transpose = R.T
-    - Verify: R_inv ≈ R_transpose (within numerical tolerance)
+    - Verify: R_inv ~ R_transpose (within numerical tolerance)
 
     TOLERANCES:
     - rtol=1e-9, atol=1e-12 for floating-point comparisons
     """
-    geo = CameraGeometry(w=1920, h=1080)
-    geo.pan_deg = pan
-    geo.tilt_deg = tilt
-
-    R = geo._get_rotation_matrix()
+    R = CameraGeometry._get_rotation_matrix_static(
+        pan_deg=Degrees(pan), tilt_deg=Degrees(tilt), roll_deg=Degrees(0.0)
+    )
 
     # Compute inverse (expensive)
     R_inv = np.linalg.inv(R)
@@ -498,7 +516,7 @@ def test_rotation_matrix_inverse_equals_transpose(pan, tilt):
 
     # Verify they're equal
     assert np.allclose(R_inv, R_transpose, rtol=1e-9, atol=1e-12), (
-        f"Rotation matrix inverse does not equal transpose at pan={pan:.2f}°, tilt={tilt:.2f}°\n"
+        f"Rotation matrix inverse does not equal transpose at pan={pan:.2f} deg, tilt={tilt:.2f} deg\n"
         f"R^-1 =\n{R_inv}\n"
         f"R.T =\n{R_transpose}\n"
         f"Max difference: {np.max(np.abs(R_inv - R_transpose))}"
@@ -531,7 +549,7 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     - Violation indicates non-projective distortion (e.g., lens distortion not accounted for)
 
     VERIFICATION:
-    1. Create three collinear points in world: A, B, C where B = αA + (1-α)C
+    1. Create three collinear points in world: A, B, C where B = alpha*A + (1-alpha)*C
     2. Project to image: a = H @ A, b = H @ B, c = H @ C
     3. Verify b lies on line segment ac (within numerical tolerance)
 
@@ -545,11 +563,23 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     """
     width, height_px = dims
 
-    geo = CameraGeometry(w=width, h=height_px)
-    K = CameraGeometry.get_intrinsics(zoom, width, height_px)
+    K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height_px))
     w_pos = np.array([0.0, 0.0, height])
 
-    geo.set_camera_parameters(K, w_pos, pan, tilt, 640, 640)
+    params = CameraParameters.create(
+        image_width=Pixels(width),
+        image_height=Pixels(height_px),
+        intrinsic_matrix=K,
+        camera_position=w_pos,
+        pan_deg=Degrees(pan),
+        tilt_deg=Degrees(tilt),
+        roll_deg=Degrees(0.0),
+        map_width=Pixels(640),
+        map_height=Pixels(640),
+        pixels_per_meter=Unitless(100.0),
+    )
+
+    result = CameraGeometry.compute(params)
 
     # Create three collinear points in world coordinates (along a line)
     # Point A: 10m in front of camera
@@ -563,9 +593,9 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     B_world = (A_world + C_world) / 2.0
 
     # Project all three points to image
-    a_img_hom = geo.H @ A_world.reshape(-1, 1)
-    b_img_hom = geo.H @ B_world.reshape(-1, 1)
-    c_img_hom = geo.H @ C_world.reshape(-1, 1)
+    a_img_hom = result.homography_matrix @ A_world.reshape(-1, 1)
+    b_img_hom = result.homography_matrix @ B_world.reshape(-1, 1)
+    c_img_hom = result.homography_matrix @ C_world.reshape(-1, 1)
 
     # Normalize to pixel coordinates
     a_img = np.array([a_img_hom[0, 0] / a_img_hom[2, 0], a_img_hom[1, 0] / a_img_hom[2, 0]])
@@ -597,7 +627,7 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
 
         assert distance_to_line < collinearity_tolerance, (
             f"Homography violated collinearity at configuration:\n"
-            f"  pan={pan:.2f}°, tilt={tilt:.2f}°, height={height:.2f}m, zoom={zoom:.2f}\n"
+            f"  pan={pan:.2f} deg, tilt={tilt:.2f} deg, height={height:.2f}m, zoom={zoom:.2f}\n"
             f"  Point a: ({a_img[0]:.2f}, {a_img[1]:.2f})\n"
             f"  Point b: ({b_img[0]:.2f}, {b_img[1]:.2f})\n"
             f"  Point c: ({c_img[0]:.2f}, {c_img[1]:.2f})\n"

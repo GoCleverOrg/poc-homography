@@ -8,6 +8,12 @@ Hypothesis explores the input space more thoroughly than example-based tests,
 catching edge cases and validating fundamental mathematical relationships.
 
 Run with: python -m pytest tests/test_intrinsic_extrinsic_homography_properties.py -v
+
+UPDATED: Refactored for immutable API (Phase 2)
+- Uses static methods for rotation matrices: CameraGeometry._get_rotation_matrix_static()
+- Uses static methods for homography: IntrinsicExtrinsicHomography._compute_ground_homography()
+- Uses CameraParameters.create() + CameraGeometry.compute() for parameter validation
+- Uses IntrinsicExtrinsicConfig.create() + compute_from_config() for IEH homography
 """
 
 import math
@@ -22,8 +28,10 @@ from hypothesis import strategies as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
+from poc_homography.homography_parameters import IntrinsicExtrinsicConfig
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 # ============================================================================
 # Hypothesis Strategies for Camera Parameters
@@ -184,17 +192,13 @@ class TestRotationMatrixProperties:
         """
         width, height = dimensions
 
-        # Create instances
-        geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
-
-        # Set parameters for CameraGeometry
-        geo.pan_deg = pan_deg
-        geo.tilt_deg = tilt_deg
-
-        # Get rotation matrices
-        R_geo = geo._get_rotation_matrix()
-        R_ieh = ieh._get_rotation_matrix(pan_deg, tilt_deg)
+        # Get rotation matrices using static methods
+        R_geo = CameraGeometry._get_rotation_matrix_static(
+            Degrees(pan_deg), Degrees(tilt_deg), Degrees(0.0)
+        )
+        R_ieh = IntrinsicExtrinsicHomography._compute_rotation_matrix(
+            Degrees(pan_deg), Degrees(tilt_deg), Degrees(0.0)
+        )
 
         # Verify matrices are identical (within floating-point tolerance)
         assert np.allclose(R_geo, R_ieh, rtol=1e-10, atol=1e-12), (
@@ -227,15 +231,13 @@ class TestRotationMatrixProperties:
         """
         width, height = dimensions
 
-        # Test both implementations
-        geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
-
-        geo.pan_deg = pan_deg
-        geo.tilt_deg = tilt_deg
-
-        R_geo = geo._get_rotation_matrix()
-        R_ieh = ieh._get_rotation_matrix(pan_deg, tilt_deg)
+        # Test both implementations using static methods
+        R_geo = CameraGeometry._get_rotation_matrix_static(
+            Degrees(pan_deg), Degrees(tilt_deg), Degrees(0.0)
+        )
+        R_ieh = IntrinsicExtrinsicHomography._compute_rotation_matrix(
+            Degrees(pan_deg), Degrees(tilt_deg), Degrees(0.0)
+        )
 
         for name, R in [("CameraGeometry", R_geo), ("IntrinsicExtrinsic", R_ieh)]:
             # Check determinant is 1
@@ -264,14 +266,16 @@ class TestFocalLengthProperties:
     and must follow a precise linear relationship with zoom factor.
     """
 
+    # Hardcoded base focal length from CameraGeometry (Hikvision DS-2DF8425IX-AELW)
+    BASE_FOCAL_LENGTH_MM = 5.9
+
     @given(
         zoom1=zoom_factor(),
         zoom2=zoom_factor(),
         dimensions=camera_dimensions(),
         sensor_w=sensor_width(),
-        base_f=base_focal_length(),
     )
-    def test_focal_length_linearity(self, zoom1, zoom2, dimensions, sensor_w, base_f):
+    def test_focal_length_linearity(self, zoom1, zoom2, dimensions, sensor_w):
         """
         Property: Focal length must scale linearly with zoom factor.
 
@@ -300,17 +304,20 @@ class TestFocalLengthProperties:
         assume(abs(zoom2 - zoom1) > 0.1)
 
         width, height = dimensions
-        ieh = IntrinsicExtrinsicHomography(
-            map_id="test_map",
-            width=width,
-            height=height,
-            sensor_width_mm=sensor_w,
-            base_focal_length_mm=base_f,
-        )
 
-        # Get intrinsic matrices at two different zoom levels
-        K1 = ieh.get_intrinsics(zoom_factor=zoom1)
-        K2 = ieh.get_intrinsics(zoom_factor=zoom2)
+        # Get intrinsic matrices at two different zoom levels using static method
+        K1 = CameraGeometry.get_intrinsics(
+            zoom_factor=Unitless(zoom1),
+            W_px=Pixels(width),
+            H_px=Pixels(height),
+            sensor_width_mm=Millimeters(sensor_w),
+        )
+        K2 = CameraGeometry.get_intrinsics(
+            zoom_factor=Unitless(zoom2),
+            W_px=Pixels(width),
+            H_px=Pixels(height),
+            sensor_width_mm=Millimeters(sensor_w),
+        )
 
         # Extract focal lengths (K[0,0] = fx)
         f_px_1 = K1[0, 0]
@@ -332,9 +339,8 @@ class TestFocalLengthProperties:
         zoom=zoom_factor(),
         dimensions=camera_dimensions(),
         sensor_w=sensor_width(),
-        base_f=base_focal_length(),
     )
-    def test_focal_length_formula(self, zoom, dimensions, sensor_w, base_f):
+    def test_focal_length_formula(self, zoom, dimensions, sensor_w):
         """
         Property: Focal length must exactly match the formula.
 
@@ -360,15 +366,14 @@ class TestFocalLengthProperties:
         Violation would indicate a fundamental implementation error.
         """
         width, height = dimensions
-        ieh = IntrinsicExtrinsicHomography(
-            map_id="test_map",
-            width=width,
-            height=height,
-            sensor_width_mm=sensor_w,
-            base_focal_length_mm=base_f,
-        )
+        base_f = self.BASE_FOCAL_LENGTH_MM
 
-        K = ieh.get_intrinsics(zoom_factor=zoom)
+        K = CameraGeometry.get_intrinsics(
+            zoom_factor=Unitless(zoom),
+            W_px=Pixels(width),
+            H_px=Pixels(height),
+            sensor_width_mm=Millimeters(sensor_w),
+        )
         f_px_actual = K[0, 0]
 
         # Calculate expected focal length using formula
@@ -424,22 +429,24 @@ class TestConfidenceProperties:
         number, and parameter validity checks, all normalized to [0.0, 1.0].
         """
         width, height = dimensions
-        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
 
-        K = CameraGeometry.get_intrinsics(zoom, width, height)
+        K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
 
-        # Compute homography
-        result = ieh.compute_homography(
-            frame=np.zeros((height, width, 3), dtype=np.uint8),  # Dummy frame
-            reference={
-                "camera_matrix": K,
-                "camera_position": pos,
-                "pan_deg": pan_deg,
-                "tilt_deg": tilt_deg,
-                "map_width": 640,
-                "map_height": 640,
-            },
+        # Compute homography using immutable API
+        config = IntrinsicExtrinsicConfig.create(
+            camera_matrix=K,
+            camera_position=pos,
+            pan_deg=Degrees(pan_deg),
+            tilt_deg=Degrees(tilt_deg),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+            sensor_width_mm=Millimeters(7.18),
+            base_focal_length_mm=Millimeters(5.9),
+            map_id="test",
         )
+        result = IntrinsicExtrinsicHomography.compute_from_config(config)
 
         confidence = result.confidence
 
@@ -450,86 +457,9 @@ class TestConfidenceProperties:
             f"height={pos[2]:.2f}m, zoom={zoom:.2f}"
         )
 
-    @given(
-        pos=camera_position(),
-        pan_deg=pan_angle(),
-        tilt_deg=tilt_angle(),
-        zoom=zoom_factor(),
-        dimensions=camera_dimensions(),
-    )
-    def test_point_confidence_bounds(self, pos, pan_deg, tilt_deg, zoom, dimensions):
-        """
-        Property: Point-specific confidence must also be bounded in [0.0, 1.0].
-
-        WHY THIS PROPERTY MUST HOLD:
-        Point confidence adjusts the base homography confidence based on the
-        image point's location. Points near image edges have lower confidence
-        due to:
-        1. Lens distortion effects (stronger at edges)
-        2. Perspective distortion (increases with distance from center)
-        3. Reduced accuracy of calibration at edges
-
-        The adjustment multiplies base confidence by an edge factor in [0.3, 1.0],
-        which should preserve the [0.0, 1.0] bound:
-        - base_confidence ∈ [0.0, 1.0]
-        - edge_factor ∈ [0.3, 1.0]
-        - point_confidence = base_confidence * edge_factor ∈ [0.0, 1.0]
-
-        Violation would indicate:
-        1. Edge factor calculation error
-        2. Incorrect bounds in edge factor constants
-        3. Arithmetic overflow/underflow
-        """
-        width, height = dimensions
-
-        # Skip very small images where edge detection might be problematic
-        assume(width >= 100 and height >= 100)
-
-        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
-
-        K = CameraGeometry.get_intrinsics(zoom, width, height)
-
-        # Compute homography
-        result = ieh.compute_homography(
-            frame=np.zeros((height, width, 3), dtype=np.uint8),
-            reference={
-                "camera_matrix": K,
-                "camera_position": pos,
-                "pan_deg": pan_deg,
-                "tilt_deg": tilt_deg,
-                "map_width": 640,
-                "map_height": 640,
-            },
-        )
-
-        # Test points at various locations (center, edges, corners)
-        test_points = [
-            (width / 2.0, height / 2.0),  # Center
-            (0.0, 0.0),  # Top-left corner
-            (width - 1.0, 0.0),  # Top-right corner
-            (0.0, height - 1.0),  # Bottom-left corner
-            (width - 1.0, height - 1.0),  # Bottom-right corner
-            (width / 2.0, 0.0),  # Top edge center
-            (width / 2.0, height - 1.0),  # Bottom edge center
-            (0.0, height / 2.0),  # Left edge center
-            (width - 1.0, height / 2.0),  # Right edge center
-        ]
-
-        for u, v in test_points:
-            point_confidence = ieh._calculate_point_confidence(PixelPoint(u, v), result.confidence)
-
-            assert 0.0 <= point_confidence <= 1.0, (
-                f"Point confidence {point_confidence:.4f} is outside [0.0, 1.0]\n"
-                f"Point: ({u:.1f}, {v:.1f}), Base confidence: {result.confidence:.4f}\n"
-                f"Image dimensions: {width}x{height}"
-            )
-
-            # Additional check: point confidence should not exceed base confidence
-            # (edge factor can only reduce confidence, not increase it)
-            assert point_confidence <= result.confidence + 1e-10, (
-                f"Point confidence {point_confidence:.4f} exceeds base confidence {result.confidence:.4f}\n"
-                f"Point: ({u:.1f}, {v:.1f})"
-            )
+    # NOTE: test_point_confidence_bounds was removed because the _calculate_point_confidence
+    # method was removed from the new immutable API. Point-level confidence is no longer
+    # a separate concept - only homography-level confidence exists.
 
 
 class TestHomographyConsistencyProperties:
@@ -581,17 +511,28 @@ class TestHomographyConsistencyProperties:
         """
         width, height = dimensions
 
-        geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
+        K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
 
-        K = CameraGeometry.get_intrinsics(zoom, width, height)
+        # CameraGeometry approach via immutable API
+        params = CameraParameters.create(
+            image_width=Pixels(width),
+            image_height=Pixels(height),
+            intrinsic_matrix=K,
+            camera_position=pos,
+            pan_deg=Degrees(pan_deg),
+            tilt_deg=Degrees(tilt_deg),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+        )
+        result_geo = CameraGeometry.compute(params)
+        H_geo = result_geo.homography_matrix
 
-        # CameraGeometry approach
-        geo.set_camera_parameters(K, pos, pan_deg, tilt_deg, 640, 640)
-        H_geo = geo.H
-
-        # IntrinsicExtrinsicHomography approach
-        H_ieh = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
+        # IntrinsicExtrinsicHomography approach via static method
+        H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
+            K, pos, Degrees(pan_deg), Degrees(tilt_deg)
+        )
         # Normalize to match CameraGeometry convention (H[2,2] = 1)
         H_ieh_norm = H_ieh / H_ieh[2, 2]
 
@@ -640,14 +581,28 @@ class TestHomographyConsistencyProperties:
         """
         width, height = dimensions
 
-        geo = CameraGeometry(w=width, h=height)
-        ieh = IntrinsicExtrinsicHomography(map_id="test_map", width=width, height=height)
+        K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
 
-        K = CameraGeometry.get_intrinsics(zoom, width, height)
+        # Setup CameraGeometry via immutable API
+        params = CameraParameters.create(
+            image_width=Pixels(width),
+            image_height=Pixels(height),
+            intrinsic_matrix=K,
+            camera_position=pos,
+            pan_deg=Degrees(pan_deg),
+            tilt_deg=Degrees(tilt_deg),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+        )
+        result_geo = CameraGeometry.compute(params)
+        H_geo = result_geo.homography_matrix
 
-        # Setup both implementations
-        geo.set_camera_parameters(K, pos, pan_deg, tilt_deg, 640, 640)
-        H_ieh = ieh._calculate_ground_homography(K, pos, pan_deg, tilt_deg)
+        # Setup IntrinsicExtrinsicHomography via static method
+        H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
+            K, pos, Degrees(pan_deg), Degrees(tilt_deg)
+        )
 
         # Test several world points at different positions
         world_points = [(5.0, 5.0), (10.0, 0.0), (0.0, 10.0), (-5.0, 8.0), (3.0, -3.0)]
@@ -655,7 +610,7 @@ class TestHomographyConsistencyProperties:
         for X, Y in world_points:
             # Project with CameraGeometry
             pt = np.array([[X], [Y], [1.0]])
-            p_geo = geo.H @ pt
+            p_geo = H_geo @ pt
             u_geo = p_geo[0, 0] / p_geo[2, 0]
             v_geo = p_geo[1, 0] / p_geo[2, 0]
 

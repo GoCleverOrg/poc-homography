@@ -17,7 +17,6 @@ from poc_homography.camera_config import (
     get_rtsp_url,
 )
 
-# Import camera_geometry for backward compatibility
 # Import GPS utilities
 from poc_homography.gps_distance_calculator import dms_to_dd
 from poc_homography.homography_config import HomographyConfig, get_default_config
@@ -29,7 +28,9 @@ from poc_homography.homography_interface import (
     HomographyProvider,
     HomographyProviderExtended,
 )
+from poc_homography.homography_parameters import IntrinsicExtrinsicConfig
 from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -776,28 +777,29 @@ def annotate_stream_with_args(
             else:
                 print("  GPS geo-referencing: disabled (no coordinates provided)")
 
-            # D. Compute homography using the new interface
+            # D. Compute homography using the new immutable API
             # NOTE: The tilt value from Hikvision cameras uses the convention where
             # positive = camera pointing down, which matches our geometry code expectations.
             # No normalization is needed.
-            reference = {
-                "camera_matrix": K,
-                "camera_position": camera_position,
-                "pan_deg": pan,
-                "tilt_deg": tilt,  # Hikvision convention: positive = down
-                "map_width": side_panel_width,
-                "map_height": annotator.frame_height,
-            }
-
-            # Compute homography (frame not needed for intrinsic/extrinsic approach)
-            result = annotator.geo.compute_homography(
-                frame=np.zeros((annotator.frame_height, annotator.frame_width, 3), dtype=np.uint8),
-                reference=reference,
+            config = IntrinsicExtrinsicConfig.create(
+                camera_matrix=K,
+                camera_position=camera_position,
+                pan_deg=Degrees(pan),
+                tilt_deg=Degrees(tilt),  # Hikvision convention: positive = down
+                roll_deg=Degrees(0.0),
+                map_width=Pixels(side_panel_width),
+                map_height=Pixels(annotator.frame_height),
+                pixels_per_meter=Unitless(annotator.geo.pixels_per_meter),
+                sensor_width_mm=Millimeters(annotator.geo.sensor_width_mm),
+                base_focal_length_mm=Millimeters(annotator.geo.base_focal_length_mm),
+                map_id=annotator.geo.map_id,
             )
 
+            # Compute homography using immutable classmethod
+            result = IntrinsicExtrinsicHomography.compute_from_config(config)
+
             print(f"Homography computed successfully (confidence: {result.confidence:.2f})")
-            print(f"  Approach: {result.metadata.get('approach', 'unknown')}")
-            print(f"  Determinant: {result.metadata.get('determinant', 'N/A')}")
+            print(f"  Determinant: {result.determinant:.2e}")
         else:
             # For other homography providers, they may have different setup requirements
             print(f"Using homography provider: {type(annotator.geo).__name__}")

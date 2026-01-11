@@ -51,7 +51,9 @@ def suppress_stdout():
 
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.types import Degrees, Pixels, Unitless
 
 # Try to import yaml, fallback to manual parsing if not available
 try:
@@ -232,20 +234,33 @@ def compute_projection_error(
                 errors.append(1000.0)  # Penalty for invalid tilt
                 continue
 
-            # Create geometry and compute homography
-            geo = CameraGeometry(w=image_width, h=image_height)
+            # Create parameters and compute homography using immutable API
             w_pos = np.array([0.0, 0.0, params.height_m])
 
             try:
                 with suppress_stdout():
-                    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, 640, 640)
+                    camera_params = CameraParameters.create(
+                        image_width=Pixels(image_width),
+                        image_height=Pixels(image_height),
+                        intrinsic_matrix=K,
+                        camera_position=w_pos,
+                        pan_deg=Degrees(pan_deg),
+                        tilt_deg=Degrees(tilt_deg),
+                        roll_deg=Degrees(0.0),
+                        map_width=Pixels(640),
+                        map_height=Pixels(640),
+                        pixels_per_meter=Unitless(100.0),
+                    )
+                    result = CameraGeometry.compute(camera_params)
             except ValueError:
                 errors.append(1000.0)  # Penalty for invalid parameters
                 continue
 
+            H = result.homography_matrix
+
             # Project world point to image (gives undistorted coordinates)
             world_pt = np.array([[x_m], [y_m], [1.0]])
-            img_pt = geo.H @ world_pt
+            img_pt = H @ world_pt
 
             if img_pt[2, 0] <= 0:
                 errors.append(1000.0)  # Penalty for point behind camera
@@ -270,7 +285,7 @@ def compute_projection_error(
     if not errors:
         return 1000.0, []
 
-    return np.mean(errors), errors
+    return float(np.mean(errors)), errors
 
 
 def objective_function(
@@ -392,7 +407,7 @@ def run_calibration(
         pan_offset_deg=camera_config.get("pan_offset_deg", 0.0),
         focal_multiplier=camera_config.get("focal_multiplier", 1.0),
         tilt_offset_deg=0.0,
-        sensor_width_mm=6.78,  # Calculated from 59.8° FOV at 5.9mm focal length
+        sensor_width_mm=6.78,  # Calculated from 59.8 FOV at 5.9mm focal length
         k1=camera_config.get("k1", 0.0),
         k2=camera_config.get("k2", 0.0),
     )
@@ -427,7 +442,7 @@ def run_calibration(
     print("\nOptimizing parameters:")
     print("  - Height: Yes")
     print(
-        f"  - Pan offset: {'Yes' if optimize_pan else 'No (fixed at ' + str(base_params.pan_offset_deg) + '°)'}"
+        f"  - Pan offset: {'Yes' if optimize_pan else 'No (fixed at ' + str(base_params.pan_offset_deg) + ')'}"
     )
     print(f"  - Camera position: {'Yes' if optimize_position else 'No'}")
     print(f"  - Focal length: {'Yes' if optimize_focal else 'No'}")

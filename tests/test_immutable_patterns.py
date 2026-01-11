@@ -3,8 +3,7 @@
 Comprehensive tests for immutable patterns in the camera geometry pipeline.
 
 This module tests the frozen dataclass behavior, factory methods, pure function
-behavior, and backward compatibility of the immutable state management patterns
-introduced in Phase 2.
+behavior of the immutable state management patterns.
 
 Classes tested:
     - CameraParameters (frozen dataclass)
@@ -271,72 +270,6 @@ class TestCameraParametersCreateFactory:
         assert np.allclose(params.affine_matrix, affine)
 
 
-class TestCameraParametersFromCameraGeometry:
-    """Test the CameraParameters.from_camera_geometry() migration path."""
-
-    def test_from_camera_geometry_basic(self, sample_intrinsic_matrix, sample_camera_position):
-        """Extract CameraParameters from configured CameraGeometry."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        geo.set_camera_parameters(
-            K=sample_intrinsic_matrix,
-            w_pos=sample_camera_position,
-            pan_deg=Degrees(30.0),
-            tilt_deg=Degrees(50.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            roll_deg=Degrees(2.0),
-        )
-
-        params = CameraParameters.from_camera_geometry(geo)
-
-        assert params.image_width == 1920
-        assert params.image_height == 1080
-        assert params.pan_deg == 30.0
-        assert params.tilt_deg == 50.0
-        assert params.roll_deg == 2.0
-        assert params.map_width == 640
-        assert params.map_height == 640
-        assert np.allclose(params.intrinsic_matrix, sample_intrinsic_matrix)
-        assert np.allclose(params.camera_position, sample_camera_position)
-
-    def test_from_camera_geometry_with_distortion(
-        self, sample_intrinsic_matrix, sample_camera_position
-    ):
-        """Extract CameraParameters preserves distortion coefficients."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        geo.set_distortion_coefficients(k1=Unitless(-0.15), k2=Unitless(0.02))
-        geo.set_camera_parameters(
-            K=sample_intrinsic_matrix,
-            w_pos=sample_camera_position,
-            pan_deg=Degrees(0.0),
-            tilt_deg=Degrees(45.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-        )
-
-        params = CameraParameters.from_camera_geometry(geo)
-
-        assert params.distortion is not None
-        assert np.isclose(params.distortion.k1, -0.15)
-        assert np.isclose(params.distortion.k2, 0.02)
-
-    def test_from_camera_geometry_missing_K_raises(self, sample_camera_position):
-        """Extracting from unconfigured CameraGeometry raises ValueError."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        geo.w_pos = sample_camera_position
-
-        with pytest.raises(ValueError, match="K.*not set"):
-            CameraParameters.from_camera_geometry(geo)
-
-    def test_from_camera_geometry_missing_pos_raises(self, sample_intrinsic_matrix):
-        """Extracting from CameraGeometry with no position raises ValueError."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        geo.K = sample_intrinsic_matrix
-
-        with pytest.raises(ValueError, match="w_pos.*not set"):
-            CameraParameters.from_camera_geometry(geo)
-
-
 class TestCameraParametersValidation:
     """Test __post_init__ validation in CameraParameters."""
 
@@ -590,31 +523,6 @@ class TestCameraGeometryResultCreateFactory:
         assert result.validation_messages == ("msg1", "msg2")
 
 
-class TestCameraGeometryResultFromCameraGeometry:
-    """Test the CameraGeometryResult.from_camera_geometry() extraction."""
-
-    def test_from_camera_geometry_extracts_state(
-        self, sample_intrinsic_matrix, sample_camera_position
-    ):
-        """Extract result from configured CameraGeometry."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        geo.set_camera_parameters(
-            K=sample_intrinsic_matrix,
-            w_pos=sample_camera_position,
-            pan_deg=Degrees(0.0),
-            tilt_deg=Degrees(45.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-        )
-
-        result = CameraGeometryResult.from_camera_geometry(geo)
-
-        assert result.is_valid is True
-        assert np.allclose(result.homography_matrix, geo.H)
-        assert np.allclose(result.inverse_homography_matrix, geo.H_inv)
-        assert result.center_projection_distance is not None
-
-
 # ============================================================================
 # CameraGeometry.compute() Tests (Pure Function)
 # ============================================================================
@@ -657,77 +565,6 @@ class TestCameraGeometryComputePureFunction:
 
         with pytest.raises(FrozenInstanceError):
             result.is_valid = False  # type: ignore[misc]  # Intentional for test
-
-
-class TestCameraGeometryComputeAndUpdate:
-    """Test that compute_and_update() updates instance state correctly."""
-
-    def test_compute_and_update_updates_state(self, sample_camera_params):
-        """compute_and_update() updates instance H, H_inv, K, etc."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-
-        # Initial state should be identity
-        assert np.allclose(geo.H, np.eye(3))
-
-        result = geo.compute_and_update(sample_camera_params)
-
-        # State should be updated
-        assert not np.allclose(geo.H, np.eye(3))
-        assert np.allclose(geo.H, result.homography_matrix)
-        assert np.allclose(geo.H_inv, result.inverse_homography_matrix)
-        assert geo.pan_deg == sample_camera_params.pan_deg
-        assert geo.tilt_deg == sample_camera_params.tilt_deg
-        assert geo.roll_deg == sample_camera_params.roll_deg
-
-    def test_compute_and_update_returns_result(self, sample_camera_params):
-        """compute_and_update() returns a CameraGeometryResult."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        result = geo.compute_and_update(sample_camera_params)
-
-        assert isinstance(result, CameraGeometryResult)
-        assert result.is_valid is True
-
-
-class TestCameraGeometryBackwardCompatibility:
-    """Test backward compatibility with set_camera_parameters()."""
-
-    def test_set_camera_parameters_returns_result(
-        self, sample_intrinsic_matrix, sample_camera_position
-    ):
-        """set_camera_parameters() now returns CameraGeometryResult."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-
-        result = geo.set_camera_parameters(
-            K=sample_intrinsic_matrix,
-            w_pos=sample_camera_position,
-            pan_deg=Degrees(0.0),
-            tilt_deg=Degrees(45.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-        )
-
-        assert isinstance(result, CameraGeometryResult)
-        assert result.is_valid is True
-
-    def test_set_camera_parameters_updates_instance_state(
-        self, sample_intrinsic_matrix, sample_camera_position
-    ):
-        """set_camera_parameters() still updates instance state."""
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-
-        geo.set_camera_parameters(
-            K=sample_intrinsic_matrix,
-            w_pos=sample_camera_position,
-            pan_deg=Degrees(30.0),
-            tilt_deg=Degrees(45.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-        )
-
-        assert geo.pan_deg == 30.0
-        assert geo.tilt_deg == 45.0
-        assert np.allclose(geo.K, sample_intrinsic_matrix)
-        assert np.allclose(geo.w_pos, sample_camera_position)
 
 
 # ============================================================================
@@ -991,84 +828,6 @@ class TestIntrinsicExtrinsicHomographyComputeFromConfig:
         with pytest.raises(FrozenInstanceError):
             result.confidence = 0.5  # type: ignore[misc]  # Intentional for test
 
-    def test_compute_from_config_no_side_effects(self, sample_ie_config):
-        """compute_from_config() does not modify any shared state."""
-        # Create an instance to verify it's not affected
-        ieh = IntrinsicExtrinsicHomography(
-            width=Pixels(1920),
-            height=Pixels(1080),
-            map_id="test_map",
-        )
-
-        # Store initial state
-        initial_H = ieh.H.copy()
-        initial_confidence = ieh.confidence
-
-        # Call the classmethod
-        _ = IntrinsicExtrinsicHomography.compute_from_config(sample_ie_config)
-
-        # Verify instance state is unchanged
-        assert np.allclose(ieh.H, initial_H)
-        assert ieh.confidence == initial_confidence
-
-
-class TestIntrinsicExtrinsicHomographyBackwardCompatibility:
-    """Test backward compatibility with compute_homography()."""
-
-    def test_compute_homography_still_works(self, sample_intrinsic_matrix, sample_camera_position):
-        """compute_homography() maintains backward compatibility."""
-        ieh = IntrinsicExtrinsicHomography(
-            width=Pixels(1920),
-            height=Pixels(1080),
-            map_id="test_map",
-        )
-
-        reference = {
-            "camera_matrix": sample_intrinsic_matrix,
-            "camera_position": sample_camera_position,
-            "pan_deg": 0.0,
-            "tilt_deg": 45.0,
-            "map_width": 640,
-            "map_height": 640,
-        }
-
-        result = ieh.compute_homography(
-            frame=np.zeros((1080, 1920, 3), dtype=np.uint8),
-            reference=reference,
-        )
-
-        assert result.confidence > 0
-        assert not np.allclose(ieh.H, np.eye(3))
-
-    def test_compute_homography_updates_instance_state(
-        self, sample_intrinsic_matrix, sample_camera_position
-    ):
-        """compute_homography() updates instance state."""
-        ieh = IntrinsicExtrinsicHomography(
-            width=Pixels(1920),
-            height=Pixels(1080),
-            map_id="test_map",
-        )
-
-        reference = {
-            "camera_matrix": sample_intrinsic_matrix,
-            "camera_position": sample_camera_position,
-            "pan_deg": 30.0,
-            "tilt_deg": 50.0,
-            "roll_deg": 2.0,
-            "map_width": 640,
-            "map_height": 640,
-        }
-
-        ieh.compute_homography(
-            frame=np.zeros((1080, 1920, 3), dtype=np.uint8),
-            reference=reference,
-        )
-
-        assert np.isclose(ieh._last_pan_deg, 30.0)
-        assert np.isclose(ieh._last_tilt_deg, 50.0)
-        assert np.isclose(ieh._last_roll_deg, 2.0)
-
 
 # ============================================================================
 # UTMConverter Factory Tests
@@ -1111,13 +870,12 @@ class TestUTMConverterFactoryMethods:
         assert converter1 is not converter2
         assert converter1._ref_lat != converter2._ref_lat
 
-    def test_set_reference_backward_compatibility(self):
-        """set_reference() still works for backward compatibility."""
+    def test_converter_without_reference_raises_on_conversion(self):
+        """UTMConverter without reference raises ValueError on conversion."""
         converter = UTMConverter()
-        easting, northing = converter.set_reference(lat=Degrees(39.5), lon=Degrees(-0.5))
 
-        assert converter._ref_lat == 39.5
-        assert converter._ref_easting == easting
+        with pytest.raises(ValueError, match="Reference point not set"):
+            converter.gps_to_local_xy(39.5, -0.5)
 
 
 # ============================================================================
@@ -1157,13 +915,12 @@ class TestGCPCoordinateConverterFactoryMethods:
         assert converter1 is not converter2
         assert converter1._ref_lat != converter2._ref_lat
 
-    def test_set_reference_gps_backward_compatibility(self):
-        """set_reference_gps() still works for backward compatibility."""
+    def test_converter_without_reference_raises_on_conversion(self):
+        """GCPCoordinateConverter without reference raises ValueError on conversion."""
         converter = GCPCoordinateConverter()
-        converter.set_reference_gps(lat=Degrees(39.640472), lon=Degrees(-0.230194))
 
-        assert converter._ref_lat == 39.640472
-        assert converter._ref_lon == -0.230194
+        with pytest.raises(ValueError, match="Reference point not set"):
+            converter.gps_to_local(39.5, -0.5)
 
 
 # ============================================================================
@@ -1174,31 +931,33 @@ class TestGCPCoordinateConverterFactoryMethods:
 class TestImmutablePatternIntegration:
     """Integration tests verifying the immutable patterns work together."""
 
-    def test_camera_geometry_roundtrip(self, sample_intrinsic_matrix, sample_camera_position):
-        """Full roundtrip: CameraGeometry -> CameraParameters -> compute() -> result."""
-        # Setup CameraGeometry
-        geo = CameraGeometry(w=Pixels(1920), h=Pixels(1080))
-        geo.set_camera_parameters(
-            K=sample_intrinsic_matrix,
-            w_pos=sample_camera_position,
+    def test_camera_geometry_full_pipeline(self, sample_intrinsic_matrix, sample_camera_position):
+        """Full pipeline: CameraParameters -> compute() -> result."""
+        # Create immutable params
+        params = CameraParameters.create(
+            image_width=Pixels(1920),
+            image_height=Pixels(1080),
+            intrinsic_matrix=sample_intrinsic_matrix,
+            camera_position=sample_camera_position,
             pan_deg=Degrees(30.0),
             tilt_deg=Degrees(45.0),
+            roll_deg=Degrees(0.0),
             map_width=Pixels(640),
             map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
         )
-
-        # Extract to immutable params
-        params = CameraParameters.from_camera_geometry(geo)
 
         # Compute using pure function
         result = CameraGeometry.compute(params)
 
-        # Results should match original
+        # Results should be valid
         assert result.is_valid is True
-        assert np.allclose(result.homography_matrix, geo.H, rtol=1e-9)
+        assert not np.allclose(result.homography_matrix, np.eye(3))
 
-    def test_intrinsic_extrinsic_roundtrip(self, sample_intrinsic_matrix, sample_camera_position):
-        """Full roundtrip: create config -> compute_from_config() -> verify."""
+    def test_intrinsic_extrinsic_full_pipeline(
+        self, sample_intrinsic_matrix, sample_camera_position
+    ):
+        """Full pipeline: IntrinsicExtrinsicConfig -> compute_from_config() -> result."""
         # Create config
         config = IntrinsicExtrinsicConfig.create(
             camera_matrix=sample_intrinsic_matrix,

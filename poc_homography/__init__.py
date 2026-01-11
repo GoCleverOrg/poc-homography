@@ -8,11 +8,17 @@ All providers implement the HomographyProvider interface, ensuring consistent AP
 across different approaches.
 """
 
+from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
     DistortionCoefficients,
     HeightUncertainty,
+)
+from poc_homography.coordinate_converter import (
+    GCPCoordinateConverter,
+    UTMConverter,
+    UTMConverterConfig,
 )
 from poc_homography.feature_match_homography import FeatureMatchHomography
 from poc_homography.homography_config import HomographyConfig, get_default_config
@@ -36,11 +42,16 @@ from poc_homography.map_points import MapPoint, MapPointRegistry
 from poc_homography.pixel_point import PixelPoint
 
 __all__ = [
-    # Immutable camera parameter types
+    # Core camera geometry (immutable API)
+    "CameraGeometry",
     "CameraParameters",
     "CameraGeometryResult",
     "DistortionCoefficients",
     "HeightUncertainty",
+    # Coordinate converters (immutable factory pattern)
+    "UTMConverter",
+    "UTMConverterConfig",
+    "GCPCoordinateConverter",
     # Homography interface
     "HomographyProvider",
     "HomographyApproach",

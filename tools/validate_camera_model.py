@@ -34,7 +34,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc_homography.camera_config import get_camera_by_name_safe
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.types import Degrees, Pixels, Unitless
 
 try:
     import yaml
@@ -142,19 +144,34 @@ def project_map_point_to_pixel(
         actual_pan = pan_deg + pan_offset_deg
         actual_tilt = tilt_deg + tilt_offset_deg
 
-        # Create geometry
-        geo = CameraGeometry(w=image_width, h=image_height)
+        # Create geometry using immutable API
         w_pos = np.array([0.0, 0.0, camera_height])
 
-        geo.set_camera_parameters(K, w_pos, actual_pan, actual_tilt, 640, 640)
-
-        # Set distortion if provided
+        # Set up distortion if needed
+        distortion = None
         if k1 != 0.0 or k2 != 0.0:
-            geo.set_distortion_coefficients(k1=k1, k2=k2)
+            distortion = DistortionCoefficients(k1=k1, k2=k2)
+
+        params = CameraParameters.create(
+            image_width=Pixels(image_width),
+            image_height=Pixels(image_height),
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=Degrees(actual_pan),
+            tilt_deg=Degrees(actual_tilt),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+            distortion=distortion,
+        )
+
+        result = CameraGeometry.compute(params)
+        H = result.homography_matrix
 
         # Project world point to image
         world_pt = np.array([[x_m], [y_m], [1.0]])
-        img_pt = geo.H @ world_pt
+        img_pt = H @ world_pt
 
         if img_pt[2, 0] <= 0:
             return None, None, False, "Point behind camera"
@@ -164,7 +181,13 @@ def project_map_point_to_pixel(
 
         # Apply distortion if set
         if k1 != 0.0 or k2 != 0.0:
-            u, v = geo.distort_point(u, v)
+            # Simple distortion model (approximate)
+            dx = u - cx
+            dy = v - cy
+            r2 = dx * dx + dy * dy
+            distort_factor = 1.0 + k1 * r2 / (f_px * f_px) + k2 * r2 * r2 / (f_px**4)
+            u = cx + dx * distort_factor
+            v = cy + dy * distort_factor
 
         return u, v, True, None
 
@@ -269,7 +292,7 @@ def validate_model(
             errors.append(1000.0)
 
     if errors:
-        mean_error = np.mean([e for e in errors if e < 1000])
+        mean_error = float(np.mean([e for e in errors if e < 1000]))
         if verbose:
             print("-" * 70)
             print(f"\nMean error: {mean_error:.2f} pixels")
