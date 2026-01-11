@@ -983,16 +983,11 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             Meters(x_world), Meters(y_world), Pixels(self.map_width), Pixels(self.map_height)
         )
 
-        # Generate point ID if not provided
-        if not point_id:
-            self._point_counter += 1
-            point_id = f"proj_{self._point_counter}"
-
+        # Note: MapPoint no longer has id and map_id fields
+        # These are managed by the registry/caller
         return MapPoint(
-            id=point_id,
             pixel_x=float(map_pixel_x),
             pixel_y=float(map_pixel_y),
-            map_id=self.map_id,
         )
 
     def project_points(

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import math
-import uuid
 from typing import Any
 
 import cv2
@@ -806,15 +805,11 @@ class FeatureMatchHomography(HomographyProvider):
         # Project to map pixel coordinates
         map_pixel = self._project_image_point_to_map(image_point)
 
-        # Generate a unique ID for this projected point if not provided
-        if not point_id:
-            point_id = f"proj_{uuid.uuid4().hex[:8]}"
-
+        # Note: MapPoint no longer has id and map_id fields
+        # These are managed by the registry/caller
         return MapPoint(
-            id=point_id,
             pixel_x=map_pixel.x,
             pixel_y=map_pixel.y,
-            map_id=self.map_id,
         )
 
     def project_points(

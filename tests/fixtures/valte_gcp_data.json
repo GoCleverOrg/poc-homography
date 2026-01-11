@@ -1,17 +1,22 @@
 {
+  "capture": {
+    "context": {
+      "camera": "Valte",
+      "pan_raw": 30.8,
+      "tilt_deg": 13.1,
+      "zoom": 1.0
+    }
+  },
   "camera_info": {
     "latitude": 39.640265,
     "longitude": -0.229972,
-    "height_meters": 4.71,
-    "pan_deg": 30.8,
-    "tilt_deg": 13.1,
-    "zoom_level": 1
+    "height_meters": 4.71
   },
   "image_dimensions": {
     "width": 1920,
     "height": 1080
   },
-  "gcps": [
+  "gps_gcps": [
     {"pixel_x": 805, "pixel_y": 583.125, "latitude": 39.64050439015013, "longitude": -0.22998479032275593},
     {"pixel_x": 1083, "pixel_y": 392.125, "latitude": 39.64048911025965, "longitude": -0.2298384901090573},
     {"pixel_x": 410, "pixel_y": 778.125, "latitude": 39.64051795978542, "longitude": -0.23005022042273737},

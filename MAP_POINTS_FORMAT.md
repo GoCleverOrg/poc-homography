@@ -1,6 +1,6 @@
 # Map Points Format
 
-This document describes the new `map_points.json` format for representing reference points using pixel coordinates only, without geographic (lat/lon) information.
+This document describes the `map_points.json` format for representing reference points using pixel coordinates only, without geographic (lat/lon) information.
 
 ## Overview
 
@@ -15,10 +15,13 @@ The Map Points format is designed to gradually phase out KML and geographic coor
     {
       "id": "Z1",
       "pixel_x": 251246.7732343846,
-      "pixel_y": -360159.9084134213,
-      "map_id": "map_valte"
+      "pixel_y": -360159.9084134213
     },
-    ...
+    {
+      "id": "Z2",
+      "pixel_x": 251255.1234567890,
+      "pixel_y": -360170.9876543210
+    }
   ]
 }
 ```
@@ -27,12 +30,30 @@ The Map Points format is designed to gradually phase out KML and geographic coor
 
 - **map_id** (string): Identifier for the map these points belong to (e.g., "map_valte" for Valencia Terminal)
 - **points** (array): List of map point objects
-  - **id** (string): Unique identifier for the point (e.g., "Z1", "P5", "A3")
+  - **id** (string): Unique identifier for the point (e.g., "Z1", "P5", "A3") - managed by the registry as dictionary keys
   - **pixel_x** (float): X coordinate in pixels (column)
   - **pixel_y** (float): Y coordinate in pixels (row)
-  - **map_id** (string): Reference back to the parent map identifier
+
+**Note:** The `id` field appears in the JSON format as part of each point object, but it is managed by the MapPointRegistry as dictionary keys. Individual MapPoint instances do not store their own IDs.
 
 ## Python API
+
+### MapPoint Data Structure
+
+MapPoint is a frozen dataclass that contains only the pixel coordinates. The ID and map association are managed externally by MapPointRegistry.
+
+```python
+from poc_homography.map_points import MapPoint
+
+# MapPoint only stores pixel coordinates
+point = MapPoint(pixel_x=100.5, pixel_y=200.3)
+
+# Access coordinates
+print(f"X: {point.pixel_x}, Y: {point.pixel_y}")
+
+# Access as PixelPoint
+pixel = point.pixel  # Returns PixelPoint(100.5, 200.3)
+```
 
 ### Loading Map Points
 
@@ -42,9 +63,16 @@ from poc_homography.map_points import MapPointRegistry
 # Load from JSON file
 registry = MapPointRegistry.load("map_points.json")
 
-# Access points by ID
+# Access the map ID
+print(f"Map: {registry.map_id}")
+
+# Access points by ID (stored as dictionary keys)
 point = registry.points["Z1"]
-print(f"Point {point.id} at ({point.pixel_x}, {point.pixel_y})")
+print(f"Point Z1 at ({point.pixel_x}, {point.pixel_y})")
+
+# Iterate over all points
+for point_id, point in registry.points.items():
+    print(f"{point_id}: ({point.pixel_x}, {point.pixel_y})")
 ```
 
 ### Creating Map Points
@@ -52,11 +80,11 @@ print(f"Point {point.id} at ({point.pixel_x}, {point.pixel_y})")
 ```python
 from poc_homography.map_points import MapPoint, MapPointRegistry
 
-# Create individual points
-point1 = MapPoint(id="P1", pixel_x=100.5, pixel_y=200.3, map_id="map_valte")
-point2 = MapPoint(id="P2", pixel_x=150.8, pixel_y=210.1, map_id="map_valte")
+# Create individual points (without IDs)
+point1 = MapPoint(pixel_x=100.5, pixel_y=200.3)
+point2 = MapPoint(pixel_x=150.8, pixel_y=210.1)
 
-# Create registry
+# Create registry (IDs are dictionary keys)
 registry = MapPointRegistry(
     map_id="map_valte",
     points={"P1": point1, "P2": point2}
@@ -65,6 +93,83 @@ registry = MapPointRegistry(
 # Save to JSON
 registry.save("my_points.json")
 ```
+
+## Calibration Data Model
+
+### New Annotation and CaptureContext
+
+The calibration system now uses structured dataclasses for capturing ground control point (GCP) observations:
+
+**Annotation**: Links a GCP to its observed pixel location in a camera image.
+```python
+from poc_homography.calibration.annotation import Annotation
+from poc_homography.pixel_point import PixelPoint
+
+annotation = Annotation(
+    gcp_id="Z1",
+    pixel=PixelPoint(x=960.0, y=540.0)
+)
+```
+
+**CaptureContext**: Camera state when a calibration frame was captured.
+```python
+from poc_homography.calibration.annotation import CaptureContext
+
+context = CaptureContext(
+    camera="Valte",
+    pan_raw=0.0,
+    tilt_deg=30.0,
+    zoom=1.0
+)
+```
+
+### New YAML Format
+
+The calibration tools now use a new YAML format that separates capture context from annotations:
+
+```yaml
+capture:
+  context:
+    camera: Valte
+    pan_raw: 0.0
+    tilt_deg: 30.0
+    zoom: 1.0
+  annotations:
+    - gcp_id: Z1
+      pixel:
+        x: 960.0
+        y: 540.0
+    - gcp_id: Z2
+      pixel:
+        x: 1100.0
+        y: 620.0
+```
+
+**Key features:**
+- `capture.context` contains camera state (camera name, PTZ values)
+- `capture.annotations` contains list of GCP observations
+- Each annotation uses `gcp_id` (references map_points.json IDs)
+- Pixel coordinates use `x` and `y` (not `pixel_u` and `pixel_v`)
+
+### Legacy YAML Format (Deprecated)
+
+The old format is still supported for backward compatibility, but emits deprecation warnings:
+
+```yaml
+gcps:
+  - map_point_id: Z1
+    pixel_u: 960
+    pixel_v: 540
+    pan_raw: 0.0
+    tilt_deg: 30.0
+    zoom: 1.0
+```
+
+**Deprecated features:**
+- `gcps` top-level key (use `capture` instead)
+- `map_point_id` field (use `gcp_id` instead)
+- `pixel_u` and `pixel_v` fields (use `pixel.x` and `pixel.y` instead)
+- PTZ values repeated for each GCP (use shared `capture.context` instead)
 
 ## Converting from KML
 
@@ -103,10 +208,13 @@ The goal is to gradually remove KML and geographic coordinate dependencies:
 ### Migration Steps
 
 1. ✅ Create map_points data structures (MapPoint, MapPointRegistry)
-2. ✅ Convert existing KML to map_points.json
-3. ✅ Update CLI calibration tools to use Map Points
-4. 🔄 Migrate workflows to use map_points by default
-5. 🔄 Remove KML dependencies where no longer needed
+2. ✅ Refactor MapPoint to remove id and map_id fields (managed by registry)
+3. ✅ Create Annotation and CaptureContext dataclasses for calibration
+4. ✅ Update calibration tools to use new YAML format
+5. ✅ Convert existing KML to map_points.json
+6. ✅ Update CLI calibration tools to use Map Points
+7. 🔄 Migrate workflows to use map_points by default
+8. 🔄 Remove KML dependencies where no longer needed
 
 ## CLI Tools Using Map Points
 
@@ -131,7 +239,26 @@ Arguments:
 
 Runs scipy optimization to calibrate all camera parameters using multiple GCPs.
 
-GCP YAML format:
+**New YAML format** (recommended):
+```yaml
+capture:
+  context:
+    camera: Valte
+    pan_raw: 0.0
+    tilt_deg: 30.0
+    zoom: 1.0
+  annotations:
+    - gcp_id: Z1
+      pixel:
+        x: 960.0
+        y: 540.0
+    - gcp_id: Z2
+      pixel:
+        x: 1100.0
+        y: 620.0
+```
+
+**Legacy YAML format** (deprecated, emits warnings):
 ```yaml
 gcps:
   - map_point_id: Z1
@@ -146,15 +273,25 @@ gcps:
 
 Validates camera model accuracy by comparing projected vs actual pixel positions.
 
-Uses the same GCP YAML format as comprehensive_calibration.py.
+Uses the same new YAML format as comprehensive_calibration.py:
+
+```yaml
+capture:
+  context:
+    camera: Valte
+    pan_raw: 0.0
+    tilt_deg: 30.0
+    zoom: 1.0
+  annotations:
+    - gcp_id: Z1
+      pixel:
+        x: 960.0
+        y: 540.0
+```
 
 ### interactive_calibration.py
 
 Interactive GUI for manual calibration. User clicks on known features in camera image and enters Map Point IDs.
-
-### test_data_generator.py
-
-Web-based tool for capturing camera frames and marking GCPs. Includes Map Point search functionality for selecting reference points.
 
 ## Point Categories
 
@@ -181,8 +318,29 @@ The canonical map_points file for Valencia Terminal is:
 5. **Smaller file size**: Less metadata and structure overhead
 6. **Language agnostic**: Any language can parse JSON easily
 
+## Data Model Design Principles
+
+### Separation of Concerns
+
+- **MapPoint**: Pure data structure containing only pixel coordinates
+- **MapPointRegistry**: Manages IDs and map association as dictionary keys
+- **Annotation**: Links GCP IDs to observed pixel locations
+- **CaptureContext**: Camera state information separate from observations
+
+### Frozen Dataclasses
+
+All data structures use `@dataclass(frozen=True)` for immutability:
+- Prevents accidental modifications
+- Enables safe caching with `@cache` decorators
+- Clearer value semantics
+
+### JSON Serialization
+
+All dataclasses provide `to_dict()` and `from_dict()` methods for JSON serialization without external dependencies.
+
 ## See Also
 
 - `poc_homography/map_points/` - Python implementation
+- `poc_homography/calibration/annotation.py` - Annotation and CaptureContext dataclasses
 - `tools/convert_kml_to_map_points.py` - Conversion tool
 - `Cartografia_valencia_recreated.kml` - Original KML file (legacy)

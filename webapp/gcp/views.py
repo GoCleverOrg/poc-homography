@@ -42,6 +42,11 @@ def _save_registry(registry: MapPointRegistry) -> None:
     registry.save(MAP_POINTS_FILE)
 
 
+def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
+    """Convert a MapPoint to dict with its id included."""
+    return {"id": point_id, **point.to_dict()}
+
+
 def index(request: HttpRequest) -> HttpResponse:
     """Landing page with links to tools."""
     return render(request, "gcp/index.html", {"title": "Homography GCP Tools"})
@@ -51,7 +56,7 @@ def gcp_capture(request: HttpRequest) -> HttpResponse:
     """GCP capture interface for marking points on satellite map."""
     # Load existing points to display
     registry = _load_registry()
-    points_data = [point.to_dict() for point in registry.points.values()]
+    points_data = [_point_to_dict(pid, p) for pid, p in registry.points.items()]
 
     context: dict[str, Any] = {
         "title": "GCP Capture Tool",
@@ -77,7 +82,7 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     else:
         registry = _load_registry()
 
-    points_data = [point.to_dict() for point in registry.points.values()]
+    points_data = [_point_to_dict(pid, p) for pid, p in registry.points.items()]
 
     context: dict[str, Any] = {
         "map_id": registry.map_id,
@@ -97,7 +102,7 @@ def api_get_gcps(request: HttpRequest) -> JsonResponse:
         JSON with success status and list of MapPoint data.
     """
     registry = _load_registry()
-    points = [point.to_dict() for point in registry.points.values()]
+    points = [_point_to_dict(pid, p) for pid, p in registry.points.items()]
 
     return JsonResponse(
         {
@@ -125,8 +130,9 @@ def api_save_gcps(request: HttpRequest) -> JsonResponse:
     # Build MapPoints from data
     points: dict[str, MapPoint] = {}
     for p in points_data:
-        point = MapPoint.from_dict(p)
-        points[point.id] = point
+        point_id = str(p["id"])  # Extract id
+        point = MapPoint.from_dict(p)  # MapPoint ignores the id field
+        points[point_id] = point  # Use id as key
 
     # Create and save registry
     registry = MapPointRegistry(map_id=map_id, points=points)
