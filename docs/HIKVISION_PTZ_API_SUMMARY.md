@@ -89,7 +89,7 @@ The following helper methods are available in `HikvisionPTZ` (see `hikvision_ptz
 - `send_3d_zoom_command(x_start, y_start, x_end, y_end)` — sends a PUT to `/ISAPI/PTZCtrl/channels/1/position3D`.
     This command is the endpoint called when you do a square zoom via the website when looking into the camera view
     the coordinates space is 0-255 on both axis
-    
+
     the endpoint operates in 2 different ways:
         BR,TL
         x_start, y_start corresponds to the BR coordinate of the rectangle
