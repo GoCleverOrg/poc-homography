@@ -19,17 +19,16 @@ from poc_homography.camera_config import (
 
 # Import GPS utilities
 from poc_homography.gps_distance_calculator import dms_to_dd
-from poc_homography.homography_config import HomographyConfig, get_default_config
-from poc_homography.homography_factory import HomographyFactory
-
-# Import unified homography interface
-from poc_homography.homography_interface import (
+from poc_homography.homography import (
     CoordinateSystemMode,
+    HomographyConfig,
     HomographyProvider,
-    HomographyProviderExtended,
+    IntrinsicExtrinsicConfig,
+    IntrinsicExtrinsicHomography,
+    get_default_config,
 )
-from poc_homography.homography_parameters import IntrinsicExtrinsicConfig
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.homography.interface import HomographyProviderExtended
+from poc_homography.homography_factory import HomographyFactory
 from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 # Configure logging

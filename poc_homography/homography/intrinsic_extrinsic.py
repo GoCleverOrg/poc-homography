@@ -44,11 +44,11 @@ import math
 
 import numpy as np
 
-from poc_homography.homography_interface import (
+from poc_homography.homography.interface import (
     HomographyProvider,
     HomographyResult,
 )
-from poc_homography.homography_parameters import (
+from poc_homography.homography.parameters import (
     IntrinsicExtrinsicConfig,
     IntrinsicExtrinsicResult,
 )

@@ -29,8 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters
-from poc_homography.homography_parameters import IntrinsicExtrinsicConfig
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.homography import IntrinsicExtrinsicConfig, IntrinsicExtrinsicHomography
 from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 # ============================================================================

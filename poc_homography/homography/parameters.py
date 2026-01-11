@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from poc_homography.homography_interface import HomographyApproach
+from poc_homography.homography.interface import HomographyApproach
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 

@@ -20,24 +20,21 @@ from poc_homography.coordinate_converter import (
     UTMConverter,
     UTMConverterConfig,
 )
-from poc_homography.feature_match_homography import FeatureMatchHomography
-from poc_homography.homography_config import HomographyConfig, get_default_config
-from poc_homography.homography_interface import (
+from poc_homography.homography import (
     CoordinateSystemMode,
+    FeatureMatchHomography,
     HomographyApproach,
+    HomographyConfig,
     HomographyMatrix,
     HomographyProvider,
     HomographyResult,
-)
-from poc_homography.homography_map_points import (
+    IntrinsicExtrinsicConfig,
+    IntrinsicExtrinsicHomography,
+    IntrinsicExtrinsicResult,
     MapPointComputationResult,
     MapPointHomography,
+    get_default_config,
 )
-from poc_homography.homography_parameters import (
-    IntrinsicExtrinsicConfig,
-    IntrinsicExtrinsicResult,
-)
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.map_points import MapPoint, MapPointRegistry
 from poc_homography.pixel_point import PixelPoint
 
