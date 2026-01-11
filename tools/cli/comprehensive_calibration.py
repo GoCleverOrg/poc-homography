@@ -2,17 +2,21 @@
 """CLI for comprehensive calibration tool.
 
 Example usage:
-    python tools/cli/comprehensive_calibration.py --camera Valte \\
+    python tools/cli/comprehensive_calibration.py --camera Valte \
         --gcps gcps.yaml --map-points map_points.json
 
 Where gcps.yaml contains:
-    gcps:
-      - map_point_id: Z1
-        pixel_u: 960
-        pixel_v: 540
+    capture:
+      context:
+        camera: Valte
         pan_raw: 0.0
         tilt_deg: 30.0
         zoom: 1.0
+      annotations:
+        - gcp_id: Z1
+          pixel:
+            x: 960.0
+            y: 540.0
 """
 
 import argparse
@@ -26,13 +30,14 @@ if parent_dir not in sys.path:
 
 from tools.comprehensive_calibration import (
     CAMERA_CONFIGS,
-    GCP,
     parse_gcps_from_yaml,
     print_results,
     run_calibration,
 )
 
+from poc_homography.calibration.annotation import Annotation, CaptureContext
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 
 def main():
@@ -46,8 +51,8 @@ def main():
         "-p",
         action="append",
         nargs=5,
-        metavar=("MAP_POINT_ID", "U", "V", "PAN", "TILT"),
-        help="Single GCP: MAP_POINT_ID PIXEL_U PIXEL_V PAN_RAW TILT_DEG (can be repeated)",
+        metavar=("GCP_ID", "X", "Y", "PAN", "TILT"),
+        help="Single GCP: GCP_ID PIXEL_X PIXEL_Y PAN_RAW TILT_DEG (can be repeated)",
     )
     parser.add_argument(
         "--map-points",
@@ -99,32 +104,48 @@ def main():
         sys.exit(1)
 
     # Parse GCPs
-    gcps = []
+    context = None
+    annotations = []
 
     if args.gcps:
-        gcps = parse_gcps_from_yaml(args.gcps)
+        context, annotations = parse_gcps_from_yaml(args.gcps)
 
     if args.gcp:
+        # Create context from command-line args if not from YAML
+        if context is None:
+            context = CaptureContext(
+                camera=args.camera,
+                pan_raw=0.0,  # Will be overridden by first GCP
+                tilt_deg=0.0,  # Will be overridden by first GCP
+                zoom=args.zoom,
+            )
+
         for gcp_args in args.gcp:
-            map_point_id, u, v, pan, tilt = gcp_args
+            gcp_id, x, y, pan, tilt = gcp_args
             # Validate map point exists
-            if map_point_id not in registry.points:
-                print(f"Error: Map point '{map_point_id}' not found in {args.map_points}")
+            if gcp_id not in registry.points:
+                print(f"Error: Map point '{gcp_id}' not found in {args.map_points}")
                 print(f"Available points: {list(registry.points.keys())[:10]}...")
                 sys.exit(1)
-            gcps.append(
-                GCP(
-                    map_point_id=map_point_id,
-                    pixel_u=float(u),
-                    pixel_v=float(v),
+
+            # Update context with first GCP's PTZ values
+            if not annotations:
+                context = CaptureContext(
+                    camera=args.camera,
                     pan_raw=float(pan),
                     tilt_deg=float(tilt),
                     zoom=args.zoom,
                 )
+
+            annotations.append(
+                Annotation(
+                    gcp_id=gcp_id,
+                    pixel=PixelPoint(x=float(x), y=float(y)),
+                )
             )
 
-    if not gcps:
-        print("Error: No GCPs provided. Use --gcps FILE or --gcp MAP_POINT_ID U V PAN TILT")
+    if not annotations:
+        print("Error: No GCPs provided. Use --gcps FILE or --gcp GCP_ID X Y PAN TILT")
         print("\nExample:")
         print("  python comprehensive_calibration.py --camera Valte \\")
         print("    --gcp Z1 960 540 0.0 30.0 \\")
@@ -132,20 +153,21 @@ def main():
         print("    --map-points map_points.json")
         sys.exit(1)
 
-    if len(gcps) < 2:
+    if len(annotations) < 2:
         print("Warning: Only 1 GCP provided. Using at least 3-4 GCPs is recommended")
         print("         for reliable calibration of all parameters.")
 
     # Validate all GCP map points exist in registry
-    for gcp in gcps:
-        if gcp.map_point_id not in registry.points:
-            print(f"Error: Map point '{gcp.map_point_id}' not found in {args.map_points}")
+    for annotation in annotations:
+        if annotation.gcp_id not in registry.points:
+            print(f"Error: Map point '{annotation.gcp_id}' not found in {args.map_points}")
             sys.exit(1)
 
     # Run calibration
     optimized, mean_error, individual_errors = run_calibration(
         camera_config,
-        gcps,
+        context,
+        annotations,
         registry,
         optimize_position=not args.no_position,
         optimize_focal=not args.no_focal,
@@ -157,7 +179,7 @@ def main():
     )
 
     # Print results
-    print_results(camera_config, optimized, mean_error, individual_errors, gcps)
+    print_results(camera_config, optimized, mean_error, individual_errors, annotations)
 
 
 if __name__ == "__main__":

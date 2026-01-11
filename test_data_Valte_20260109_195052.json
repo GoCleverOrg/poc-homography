@@ -1,92 +1,129 @@
 {
+  "capture": {
+    "context": {
+      "camera": "Valte",
+      "pan_raw": 30.8,
+      "tilt_deg": 13.1,
+      "zoom": 1.0
+    },
+    "annotations": [
+      {
+        "gcp_id": "A7",
+        "pixel": {
+          "x": 798.0078125,
+          "y": 578.3828125
+        }
+      },
+      {
+        "gcp_id": "A6",
+        "pixel": {
+          "x": 1082.0078125,
+          "y": 390.3828125
+        }
+      },
+      {
+        "gcp_id": "X15",
+        "pixel": {
+          "x": 408,
+          "y": 776.125
+        }
+      },
+      {
+        "gcp_id": "X16",
+        "pixel": {
+          "x": 568,
+          "y": 846.125
+        }
+      },
+      {
+        "gcp_id": "X17",
+        "pixel": {
+          "x": 768,
+          "y": 930.125
+        }
+      },
+      {
+        "gcp_id": "X18",
+        "pixel": {
+          "x": 1010,
+          "y": 1023.125
+        }
+      },
+      {
+        "gcp_id": "P17",
+        "pixel": {
+          "x": 468,
+          "y": 268.125
+        }
+      },
+      {
+        "gcp_id": "P15",
+        "pixel": {
+          "x": 666,
+          "y": 291.125
+        }
+      },
+      {
+        "gcp_id": "P13",
+        "pixel": {
+          "x": 926,
+          "y": 320.125
+        }
+      },
+      {
+        "gcp_id": "P11",
+        "pixel": {
+          "x": 1256,
+          "y": 360.125
+        }
+      },
+      {
+        "gcp_id": "P9",
+        "pixel": {
+          "x": 1683,
+          "y": 416.125
+        }
+      },
+      {
+        "gcp_id": "P10",
+        "pixel": {
+          "x": 1616,
+          "y": 299.125
+        }
+      },
+      {
+        "gcp_id": "P12",
+        "pixel": {
+          "x": 1352,
+          "y": 274.125
+        }
+      },
+      {
+        "gcp_id": "P14",
+        "pixel": {
+          "x": 1124,
+          "y": 254.125
+        }
+      },
+      {
+        "gcp_id": "P16",
+        "pixel": {
+          "x": 929,
+          "y": 237.125
+        }
+      },
+      {
+        "gcp_id": "X10",
+        "pixel": {
+          "x": 400,
+          "y": 258.125
+        }
+      }
+    ]
+  },
   "camera_info": {
     "latitude": 39.640477777777775,
     "longitude": -0.23017500000000002,
-    "height_meters": 4.71,
-    "pan_deg": 30.8,
-    "tilt_deg": 13.1,
-    "zoom_level": 1
-  },
-  "gcps": [
-    {
-      "pixel_x": 798.0078125,
-      "pixel_y": 578.3828125,
-      "map_point_id": "A7"
-    },
-    {
-      "pixel_x": 1082.0078125,
-      "pixel_y": 390.3828125,
-      "map_point_id": "A6"
-    },
-    {
-      "pixel_x": 408,
-      "pixel_y": 776.125,
-      "map_point_id": "X15"
-    },
-    {
-      "pixel_x": 568,
-      "pixel_y": 846.125,
-      "map_point_id": "X16"
-    },
-    {
-      "pixel_x": 768,
-      "pixel_y": 930.125,
-      "map_point_id": "X17"
-    },
-    {
-      "pixel_x": 1010,
-      "pixel_y": 1023.125,
-      "map_point_id": "X18"
-    },
-    {
-      "pixel_x": 468,
-      "pixel_y": 268.125,
-      "map_point_id": "P17"
-    },
-    {
-      "pixel_x": 666,
-      "pixel_y": 291.125,
-      "map_point_id": "P15"
-    },
-    {
-      "pixel_x": 926,
-      "pixel_y": 320.125,
-      "map_point_id": "P13"
-    },
-    {
-      "pixel_x": 1256,
-      "pixel_y": 360.125,
-      "map_point_id": "P11"
-    },
-    {
-      "pixel_x": 1683,
-      "pixel_y": 416.125,
-      "map_point_id": "P9"
-    },
-    {
-      "pixel_x": 1616,
-      "pixel_y": 299.125,
-      "map_point_id": "P10"
-    },
-    {
-      "pixel_x": 1352,
-      "pixel_y": 274.125,
-      "map_point_id": "P12"
-    },
-    {
-      "pixel_x": 1124,
-      "pixel_y": 254.125,
-      "map_point_id": "P14"
-    },
-    {
-      "pixel_x": 929,
-      "pixel_y": 237.125,
-      "map_point_id": "P16"
-    },
-    {
-      "pixel_x": 400,
-      "pixel_y": 258.125,
-      "map_point_id": "X10"
-    }
-  ]
+    "height_meters": 4.71
+  }
 }

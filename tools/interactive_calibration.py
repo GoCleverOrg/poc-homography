@@ -29,8 +29,10 @@ except ImportError:
     CV2_AVAILABLE = False
     print("Warning: OpenCV not available. Interactive mode disabled.")
 
+from poc_homography.calibration.annotation import Annotation, CaptureContext
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # Try to import camera modules
 try:
@@ -65,14 +67,19 @@ class CalibrationSession:
         self.registry = registry
         self.height_m = height_m
         self.pan_offset_deg = pan_offset_deg
-        self.pan_raw = pan_raw
-        self.tilt_deg = tilt_deg
-        self.zoom = zoom
 
         self.image_height, self.image_width = frame.shape[:2]
 
-        # Reference points: list of {pixel_u, pixel_v, map_point_id}
-        self.reference_points: list[dict] = []
+        # Capture context for PTZ state
+        self.capture_context = CaptureContext(
+            camera=camera_name,
+            pan_raw=pan_raw,
+            tilt_deg=tilt_deg,
+            zoom=zoom,
+        )
+
+        # Reference points: list of Annotation objects
+        self.reference_points: list[Annotation] = []
 
         # Current click position (for entering Map Point ID)
         self.pending_click: tuple[int, int] | None = None
@@ -88,13 +95,11 @@ class CalibrationSession:
             print(f"Error: Map Point ID '{map_point_id}' not found in registry")
             return
 
-        self.reference_points.append(
-            {
-                "pixel_u": pixel_u,
-                "pixel_v": pixel_v,
-                "map_point_id": map_point_id,
-            }
+        annotation = Annotation(
+            gcp_id=map_point_id,
+            pixel=PixelPoint(x=float(pixel_u), y=float(pixel_v)),
         )
+        self.reference_points.append(annotation)
         self._update_display()
 
     def _update_display(self):
@@ -102,11 +107,11 @@ class CalibrationSession:
         self.display_frame = self.frame.copy()
 
         # Draw reference points (green circles with labels)
-        for i, pt in enumerate(self.reference_points):
-            u, v = int(pt["pixel_u"]), int(pt["pixel_v"])
+        for i, annotation in enumerate(self.reference_points):
+            u, v = int(annotation.pixel.x), int(annotation.pixel.y)
             cv2.circle(self.display_frame, (u, v), 8, (0, 255, 0), 2)
             cv2.circle(self.display_frame, (u, v), 3, (0, 255, 0), -1)
-            label = f"{pt['map_point_id']}"
+            label = f"{annotation.gcp_id}"
             cv2.putText(
                 self.display_frame,
                 label,
@@ -119,16 +124,20 @@ class CalibrationSession:
 
         # If we have calibration results, show projected points (red)
         if self.best_pan_offset is not None and self.best_height is not None:
-            K = CameraGeometry.get_intrinsics(self.zoom, self.image_width, self.image_height, 7.18)
+            K = CameraGeometry.get_intrinsics(
+                self.capture_context.zoom, self.image_width, self.image_height, 7.18
+            )
             geo = CameraGeometry(w=self.image_width, h=self.image_height)
-            pan_deg = self.pan_raw + self.best_pan_offset
+            pan_deg = self.capture_context.pan_raw + self.best_pan_offset
             w_pos = np.array([0.0, 0.0, self.best_height])
 
             try:
-                geo.set_camera_parameters(K, w_pos, pan_deg, self.tilt_deg, 640, 640)
+                geo.set_camera_parameters(
+                    K, w_pos, pan_deg, self.capture_context.tilt_deg, 640, 640
+                )
 
-                for pt in self.reference_points:
-                    map_point = self.registry.points[pt["map_point_id"]]
+                for annotation in self.reference_points:
+                    map_point = self.registry.points[annotation.gcp_id]
                     x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = geo.H @ world_pt
@@ -148,7 +157,7 @@ class CalibrationSession:
                         # Draw line from actual to projected
                         cv2.line(
                             self.display_frame,
-                            (int(pt["pixel_u"]), int(pt["pixel_v"])),
+                            (int(annotation.pixel.x), int(annotation.pixel.y)),
                             (proj_u, proj_v),
                             (255, 0, 255),
                             1,
@@ -159,7 +168,7 @@ class CalibrationSession:
         # Draw status text
         status_lines = [
             f"Camera: {self.camera_name}",
-            f"Pan raw: {self.pan_raw:.1f}, Tilt: {self.tilt_deg:.1f}, Zoom: {self.zoom:.1f}x",
+            f"Pan raw: {self.capture_context.pan_raw:.1f}, Tilt: {self.capture_context.tilt_deg:.1f}, Zoom: {self.capture_context.zoom:.1f}x",
             f"Reference points: {len(self.reference_points)}",
             "",
             "Controls:",
@@ -193,7 +202,9 @@ class CalibrationSession:
 
         print(f"\nCalibrating with {len(self.reference_points)} reference points...")
 
-        K = CameraGeometry.get_intrinsics(self.zoom, self.image_width, self.image_height, 7.18)
+        K = CameraGeometry.get_intrinsics(
+            self.capture_context.zoom, self.image_width, self.image_height, 7.18
+        )
         geo = CameraGeometry(w=self.image_width, h=self.image_height)
 
         best_error = float("inf")
@@ -202,19 +213,21 @@ class CalibrationSession:
 
         # Joint optimization over pan offset and height
         for test_offset in np.arange(-180, 180, 1):
-            test_pan = self.pan_raw + test_offset
+            test_pan = self.capture_context.pan_raw + test_offset
             for test_height in np.arange(1.0, 20.0, 0.2):
                 test_w_pos = np.array([0.0, 0.0, test_height])
                 try:
-                    geo.set_camera_parameters(K, test_w_pos, test_pan, self.tilt_deg, 640, 640)
+                    geo.set_camera_parameters(
+                        K, test_w_pos, test_pan, self.capture_context.tilt_deg, 640, 640
+                    )
                 except ValueError:
                     continue
 
                 total_error = 0
                 valid_points = 0
 
-                for pt in self.reference_points:
-                    map_point = self.registry.points[pt["map_point_id"]]
+                for annotation in self.reference_points:
+                    map_point = self.registry.points[annotation.gcp_id]
                     x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = geo.H @ world_pt
@@ -223,7 +236,7 @@ class CalibrationSession:
                         proj_u = img_pt[0, 0] / img_pt[2, 0]
                         proj_v = img_pt[1, 0] / img_pt[2, 0]
                         error = math.sqrt(
-                            (pt["pixel_u"] - proj_u) ** 2 + (pt["pixel_v"] - proj_v) ** 2
+                            (annotation.pixel.x - proj_u) ** 2 + (annotation.pixel.y - proj_v) ** 2
                         )
                         total_error += error
                         valid_points += 1
@@ -267,15 +280,11 @@ class CalibrationSession:
                 "height_m": self.best_height,
             },
             "calibration_error_px": self.best_error,
-            "ptz_at_calibration": {
-                "pan_raw": self.pan_raw,
-                "tilt_deg": self.tilt_deg,
-                "zoom": self.zoom,
-            },
-            "reference_points": self.reference_points,
+            "capture_context": self.capture_context.to_dict(),
+            "reference_points": [annotation.to_dict() for annotation in self.reference_points],
         }
 
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
 
         print(f"\nCalibration results saved to: {output_path}")
@@ -364,12 +373,14 @@ def run_interactive_session(session: CalibrationSession):
     cv2.destroyAllWindows()
 
 
-def run_batch_calibration(session: CalibrationSession, reference_points: list[dict]):
+def run_batch_calibration(session: CalibrationSession, reference_points: list[Annotation]):
     """Run calibration in batch mode with pre-defined reference points."""
     print(f"\nBatch calibration with {len(reference_points)} reference points")
 
-    for pt in reference_points:
-        session.add_reference_point(pt["pixel_u"], pt["pixel_v"], pt["map_point_id"])
+    for annotation in reference_points:
+        session.add_reference_point(
+            int(annotation.pixel.x), int(annotation.pixel.y), annotation.gcp_id
+        )
 
     session.calibrate()
     session.save_results()

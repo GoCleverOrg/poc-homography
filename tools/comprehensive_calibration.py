@@ -12,7 +12,20 @@ Unlike the basic calibration tool which only sweeps pan_offset and height,
 this tool uses scipy.optimize to find the optimal combination of ALL parameters
 that minimizes projection error across multiple reference points.
 
-Where gcps.yaml contains:
+YAML format (new):
+    capture:
+      context:
+        camera: Valte
+        pan_raw: 0.0
+        tilt_deg: 30.0
+        zoom: 1.0
+      annotations:
+        - gcp_id: Z1
+          pixel:
+            x: 960.0
+            y: 540.0
+
+Legacy YAML format (deprecated):
     gcps:
       - map_point_id: Z1
         pixel_u: 960
@@ -22,9 +35,13 @@ Where gcps.yaml contains:
         zoom: 1.0
 """
 
+import contextlib
+import io
+import logging
 import math
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,12 +51,7 @@ from scipy.optimize import differential_evolution, minimize
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Suppress verbose logging during optimization
-import logging
-
 logging.getLogger("poc_homography").setLevel(logging.ERROR)
-
-import contextlib
-import io
 
 
 @contextlib.contextmanager
@@ -49,9 +61,11 @@ def suppress_stdout():
         yield
 
 
+from poc_homography.calibration.annotation import Annotation, CaptureContext
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # Try to import yaml, fallback to manual parsing if not available
 try:
@@ -60,18 +74,6 @@ try:
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
-
-
-@dataclass
-class GCP:
-    """Ground Control Point with map point ID and pixel coordinates."""
-
-    map_point_id: str
-    pixel_u: float
-    pixel_v: float
-    pan_raw: float
-    tilt_deg: float
-    zoom: float
 
 
 @dataclass
@@ -108,15 +110,50 @@ for cam in _camera_configs_list:
     CAMERA_CONFIGS[cam["name"]] = config
 
 
-def parse_gcps_from_yaml(yaml_path: str) -> list[GCP]:
-    """Parse GCPs from a YAML file."""
+def parse_gcps_from_yaml(yaml_path: str) -> tuple[CaptureContext, list[Annotation]]:
+    """Parse GCPs from a YAML file.
+
+    Supports both the new format (capture.context + capture.annotations) and
+    the legacy format (gcps list) for backward compatibility.
+
+    New YAML format:
+        capture:
+          context:
+            camera: Valte
+            pan_raw: 0.0
+            tilt_deg: 30.0
+            zoom: 1.0
+          annotations:
+            - gcp_id: Z1
+              pixel:
+                x: 960.0
+                y: 540.0
+
+    Legacy YAML format (deprecated):
+        gcps:
+          - map_point_id: Z1
+            pixel_u: 960
+            pixel_v: 540
+            pan_raw: 0.0
+            tilt_deg: 30.0
+            zoom: 1.0
+
+    Args:
+        yaml_path: Path to the YAML file.
+
+    Returns:
+        Tuple of (CaptureContext, list of Annotations).
+
+    Raises:
+        ValueError: If YAML format is invalid.
+    """
     if YAML_AVAILABLE:
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     else:
-        # Simple manual YAML parsing for flat structure
+        # Simple manual YAML parsing for flat structure (legacy format only)
         data = {"gcps": []}
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding="utf-8") as f:
             current_gcp = {}
             for line in f:
                 line = line.strip()
@@ -135,19 +172,70 @@ def parse_gcps_from_yaml(yaml_path: str) -> list[GCP]:
             if current_gcp:
                 data["gcps"].append(current_gcp)
 
-    gcps = []
-    for gcp_data in data.get("gcps", []):
-        gcps.append(
-            GCP(
-                map_point_id=gcp_data["map_point_id"],
-                pixel_u=gcp_data["pixel_u"],
-                pixel_v=gcp_data["pixel_v"],
-                pan_raw=gcp_data.get("pan_raw", 0.0),
-                tilt_deg=gcp_data.get("tilt_deg", 30.0),
-                zoom=gcp_data.get("zoom", 1.0),
+    # Check for new format first
+    if "capture" in data:
+        capture_data = data["capture"]
+
+        if "context" not in capture_data:
+            raise ValueError(
+                "New format requires 'capture.context' with camera, pan_raw, tilt_deg, zoom"
             )
+
+        if "annotations" not in capture_data:
+            raise ValueError("New format requires 'capture.annotations' list")
+
+        # Parse context
+        context = CaptureContext.from_dict(capture_data["context"])
+
+        # Parse annotations
+        annotations = [Annotation.from_dict(ann_data) for ann_data in capture_data["annotations"]]
+
+        return context, annotations
+
+    # Fall back to legacy format
+    if "gcps" in data:
+        warnings.warn(
+            "Legacy 'gcps' format is deprecated. Please migrate to new 'capture.context' "
+            "and 'capture.annotations' format. See issue #165 for migration guide.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-    return gcps
+
+        gcps = data["gcps"]
+
+        if not gcps:
+            raise ValueError("Legacy format: 'gcps' list is empty")
+
+        # Extract context from first GCP (assumes all GCPs share same PTZ values)
+        first_gcp = gcps[0]
+
+        # Try to infer camera name from file or default to "Unknown"
+        camera_name = first_gcp.get("camera", "Unknown")
+
+        context = CaptureContext(
+            camera=camera_name,
+            pan_raw=first_gcp.get("pan_raw", 0.0),
+            tilt_deg=first_gcp.get("tilt_deg", 30.0),
+            zoom=first_gcp.get("zoom", 1.0),
+        )
+
+        # Convert GCPs to annotations
+        annotations = [
+            Annotation(
+                gcp_id=gcp["map_point_id"],
+                pixel=PixelPoint(
+                    x=float(gcp["pixel_u"]),
+                    y=float(gcp["pixel_v"]),
+                ),
+            )
+            for gcp in gcps
+        ]
+
+        return context, annotations
+
+    raise ValueError(
+        "YAML file must contain either 'capture' (new format) or 'gcps' (legacy format)"
+    )
 
 
 def undistort_point_simple(
@@ -189,17 +277,19 @@ def undistort_point_simple(
 
 def compute_projection_error(
     params: CalibrationParams,
-    gcps: list[GCP],
+    context: CaptureContext,
+    annotations: list[Annotation],
     registry: MapPointRegistry,
     image_width: int = 1920,
     image_height: int = 1080,
 ) -> tuple[float, list[float]]:
     """
-    Compute total projection error for given parameters and GCPs.
+    Compute total projection error for given parameters and annotations.
 
     Args:
         params: Calibration parameters including camera position.
-        gcps: List of ground control points with map_point_id references.
+        context: CaptureContext containing camera PTZ values.
+        annotations: List of annotations with gcp_id and pixel coordinates.
         registry: MapPointRegistry containing the map point coordinates.
         image_width: Image width in pixels.
         image_height: Image height in pixels.
@@ -209,23 +299,23 @@ def compute_projection_error(
     """
     errors = []
 
-    for gcp in gcps:
+    for annotation in annotations:
         try:
             # Look up map point coordinates from registry
-            map_point = registry.points[gcp.map_point_id]
+            map_point = registry.points[annotation.gcp_id]
             # Compute local XY relative to camera position in map coordinates
             x_m = map_point.pixel_x - params.camera_x
             y_m = map_point.pixel_y - params.camera_y
 
             # Build intrinsic matrix with optimized parameters
-            effective_focal_mm = 5.9 * gcp.zoom * params.focal_multiplier
+            effective_focal_mm = 5.9 * context.zoom * params.focal_multiplier
             f_px = effective_focal_mm * (image_width / params.sensor_width_mm)
             cx, cy = image_width / 2.0, image_height / 2.0
             K = np.array([[f_px, 0, cx], [0, f_px, cy], [0, 0, 1]])
 
             # Compute pan and tilt with offsets
-            pan_deg = gcp.pan_raw + params.pan_offset_deg
-            tilt_deg = gcp.tilt_deg + params.tilt_offset_deg
+            pan_deg = context.pan_raw + params.pan_offset_deg
+            tilt_deg = context.tilt_deg + params.tilt_offset_deg
 
             # Validate tilt is positive (pointing down)
             if tilt_deg <= 0:
@@ -254,14 +344,14 @@ def compute_projection_error(
             projected_u = img_pt[0, 0] / img_pt[2, 0]
             projected_v = img_pt[1, 0] / img_pt[2, 0]
 
-            # Undistort the observed GCP pixel coordinates
-            # (GCP pixels are in distorted image space, projected coords are undistorted)
-            gcp_u_undist, gcp_v_undist = undistort_point_simple(
-                gcp.pixel_u, gcp.pixel_v, f_px, f_px, cx, cy, params.k1, params.k2
+            # Undistort the observed annotation pixel coordinates
+            # (Annotation pixels are in distorted image space, projected coords are undistorted)
+            ann_u_undist, ann_v_undist = undistort_point_simple(
+                annotation.pixel.x, annotation.pixel.y, f_px, f_px, cx, cy, params.k1, params.k2
             )
 
             # Compute pixel error in undistorted space
-            error = math.sqrt((gcp_u_undist - projected_u) ** 2 + (gcp_v_undist - projected_v) ** 2)
+            error = math.sqrt((ann_u_undist - projected_u) ** 2 + (ann_v_undist - projected_v) ** 2)
             errors.append(error)
 
         except Exception:
@@ -275,7 +365,8 @@ def compute_projection_error(
 
 def objective_function(
     x: np.ndarray,
-    gcps: list[GCP],
+    context: CaptureContext,
+    annotations: list[Annotation],
     registry: MapPointRegistry,
     base_params: CalibrationParams,
     optimize_position: bool,
@@ -352,13 +443,16 @@ def objective_function(
         k2=k2,
     )
 
-    mean_error, _ = compute_projection_error(params, gcps, registry, image_width, image_height)
+    mean_error, _ = compute_projection_error(
+        params, context, annotations, registry, image_width, image_height
+    )
     return mean_error
 
 
 def run_calibration(
     camera_config: dict[str, Any],
-    gcps: list[GCP],
+    context: CaptureContext,
+    annotations: list[Annotation],
     registry: MapPointRegistry,
     optimize_position: bool = True,
     optimize_focal: bool = True,
@@ -373,7 +467,8 @@ def run_calibration(
 
     Args:
         camera_config: Initial camera configuration
-        gcps: List of ground control points
+        context: CaptureContext containing camera PTZ values
+        annotations: List of annotations with gcp_id and pixel coordinates
         registry: MapPointRegistry containing map point coordinates
         optimize_position: Whether to optimize camera position (X/Y in map coordinates)
         optimize_focal: Whether to optimize focal length multiplier
@@ -433,12 +528,17 @@ def run_calibration(
     print(f"  - Focal length: {'Yes' if optimize_focal else 'No'}")
     print(f"  - Tilt offset: {'Yes' if optimize_tilt else 'No'}")
     print(f"  - Lens distortion: {'Yes' if optimize_distortion else 'No'}")
-    print(f"\nNumber of GCPs: {len(gcps)}")
+    print("\nCapture context:")
+    print(f"  - Camera: {context.camera}")
+    print(f"  - Pan (raw): {context.pan_raw:.1f}")
+    print(f"  - Tilt: {context.tilt_deg:.1f}deg")
+    print(f"  - Zoom: {context.zoom:.1f}")
+    print(f"\nNumber of annotations: {len(annotations)}")
     sys.stdout.flush()
 
     # Compute initial error
     initial_error, _ = compute_projection_error(
-        base_params, gcps, registry, image_width, image_height
+        base_params, context, annotations, registry, image_width, image_height
     )
     print(f"\nInitial mean error: {initial_error:.1f} pixels")
     sys.stdout.flush()
@@ -460,7 +560,8 @@ def run_calibration(
         objective_function,
         bounds,
         args=(
-            gcps,
+            context,
+            annotations,
             registry,
             base_params,
             optimize_position,
@@ -489,7 +590,8 @@ def run_calibration(
         objective_function,
         result_de.x,
         args=(
-            gcps,
+            context,
+            annotations,
             registry,
             base_params,
             optimize_position,
@@ -560,7 +662,7 @@ def run_calibration(
 
     # Compute final errors
     mean_error, individual_errors = compute_projection_error(
-        optimized_params, gcps, registry, image_width, image_height
+        optimized_params, context, annotations, registry, image_width, image_height
     )
 
     return optimized_params, mean_error, individual_errors
@@ -571,7 +673,7 @@ def print_results(
     optimized: CalibrationParams,
     mean_error: float,
     individual_errors: list[float],
-    gcps: list[GCP],
+    annotations: list[Annotation],
 ):
     """Print calibration results."""
     print("\n" + "=" * 70)
@@ -584,10 +686,10 @@ def print_results(
     else:
         print("  [FAIL] Target accuracy NOT achieved (need < 5 pixels)")
 
-    print("\nIndividual GCP errors:")
-    for i, (gcp, error) in enumerate(zip(gcps, individual_errors)):
+    print("\nIndividual annotation errors:")
+    for i, (annotation, error) in enumerate(zip(annotations, individual_errors)):
         status = "[OK]" if error < 5 else "[FAIL]"
-        print(f"  GCP {i + 1}: {error:.2f}px {status} (map_point_id: {gcp.map_point_id})")
+        print(f"  Annotation {i + 1}: {error:.2f}px {status} (gcp_id: {annotation.gcp_id})")
 
     print("\n" + "-" * 70)
     print("PARAMETER CHANGES")
