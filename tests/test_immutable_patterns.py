@@ -39,11 +39,11 @@ from poc_homography.coordinate_converter import (
     GCPCoordinateConverter,
     UTMConverter,
 )
-from poc_homography.homography_parameters import (
+from poc_homography.homography import (
     IntrinsicExtrinsicConfig,
+    IntrinsicExtrinsicHomography,
     IntrinsicExtrinsicResult,
 )
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 # ============================================================================

@@ -23,7 +23,7 @@ from poc_homography.gcp_validation import (
     validate_gcp_map_coordinates,
     validate_ground_control_points,
 )
-from poc_homography.homography_config import HomographyConfig
+from poc_homography.homography import HomographyConfig
 
 
 class TestValidateGCPMapCoordinates(unittest.TestCase):

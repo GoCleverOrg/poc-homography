@@ -16,12 +16,12 @@ import numpy as np
 import pytest
 
 from poc_homography.calibration.annotation import Annotation
-from poc_homography.homography_map_points import MapPointHomography
+from poc_homography.homography import MapPointHomography
 from poc_homography.map_points import MapPointRegistry
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
-TEST_DATA_DIR = Path(__file__).parent.parent
+TEST_DATA_DIR = Path(__file__).parent.parent.parent
 MAP_POINTS_PATH = TEST_DATA_DIR / "map_points.json"
 VALTE_GCP_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.json"
 

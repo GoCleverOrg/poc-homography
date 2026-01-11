@@ -41,7 +41,7 @@ from poc_homography.calibration.annotation import Annotation
 from poc_homography.map_points import MapPoint, MapPointRegistry
 
 # Test data paths
-TEST_DATA_DIR = Path(__file__).parent.parent
+TEST_DATA_DIR = Path(__file__).parent.parent.parent
 MAP_POINTS_PATH = TEST_DATA_DIR / "map_points.json"
 VALTE_GCP_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.json"
 VALTE_IMAGE_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.jpg"

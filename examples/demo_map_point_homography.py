@@ -17,7 +17,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from poc_homography.homography_map_points import MapPointHomography
+from poc_homography.homography import MapPointHomography
 from poc_homography.map_points import MapPointRegistry
 from poc_homography.pixel_point import PixelPoint
 

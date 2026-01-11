@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from poc_homography.intrinsic_extrinsic_homography import IntrinsicExtrinsicHomography
+from poc_homography.homography import IntrinsicExtrinsicHomography
 
 
 class TestCalibrationTableInterpolation:
@@ -650,7 +650,7 @@ class TestBackwardCompatibility:
 
     def test_compute_from_config_still_works_with_calibration_table(self):
         """compute_from_config() works correctly when calibration_table is used for intrinsics."""
-        from poc_homography.homography_parameters import IntrinsicExtrinsicConfig
+        from poc_homography.homography import IntrinsicExtrinsicConfig
         from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
         calibration_table = {

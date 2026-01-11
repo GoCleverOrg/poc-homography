@@ -22,7 +22,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from poc_homography.homography_interface import (
+from poc_homography.homography.interface import (
     HomographyApproach,
     HomographyProvider,
     HomographyResult,

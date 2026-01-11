@@ -15,7 +15,7 @@ import yaml
 from poc_homography.gcp_validation import (
     validate_ground_control_points,
 )
-from poc_homography.homography_interface import CoordinateSystemMode, HomographyApproach
+from poc_homography.homography.interface import CoordinateSystemMode, HomographyApproach
 
 logger = logging.getLogger(__name__)
 
