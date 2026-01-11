@@ -23,9 +23,12 @@ from typing import Any
 import numpy as np
 
 from poc_homography.homography_interface import (
-    HomographyApproach,
     HomographyProvider,
     HomographyResult,
+)
+from poc_homography.homography_parameters import (
+    IntrinsicExtrinsicConfig,
+    IntrinsicExtrinsicResult,
 )
 from poc_homography.map_points import MapPoint
 from poc_homography.pixel_point import PixelPoint  # noqa: TC001 - used at runtime
@@ -445,11 +448,15 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         # Should never reach here, but return None as fallback
         return None
 
-    def _get_rotation_matrix(
-        self, pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees = Degrees(0.0)
+    @staticmethod
+    def _compute_rotation_matrix(
+        pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees = Degrees(0.0)
     ) -> np.ndarray:
         """
-        Calculate rotation matrix from world to camera coordinates.
+        Calculate rotation matrix from world to camera coordinates (static version).
+
+        This is a pure function with no instance state dependencies, suitable for
+        use in both instance methods and classmethods.
 
         Computes the 3x3 rotation matrix based on pan (yaw), tilt (pitch), and roll.
         The transformation consists of:
@@ -535,16 +542,39 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         R: np.ndarray = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
         return R
 
-    def _calculate_ground_homography(
-        self,
+    def _get_rotation_matrix(
+        self, pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees = Degrees(0.0)
+    ) -> np.ndarray:
+        """
+        Calculate rotation matrix from world to camera coordinates.
+
+        This instance method delegates to the static _compute_rotation_matrix()
+        for backward compatibility.
+
+        Args:
+            pan_deg: Pan angle in degrees (positive = right/clockwise from above)
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
+
+        Returns:
+            R: 3x3 rotation matrix transforming world coordinates to camera frame
+        """
+        return self._compute_rotation_matrix(pan_deg, tilt_deg, roll_deg)
+
+    @staticmethod
+    def _compute_ground_homography(
         K: np.ndarray,
         camera_position: np.ndarray,
         pan_deg: Degrees,
         tilt_deg: Degrees,
         roll_deg: Degrees = Degrees(0.0),
+        min_det_threshold: float = 1e-10,
     ) -> np.ndarray:
         """
-        Calculate homography matrix mapping world ground plane (Z=0) to image.
+        Calculate homography matrix mapping world ground plane (Z=0) to image (static version).
+
+        This is a pure function with no instance state dependencies, suitable for
+        use in both instance methods and classmethods.
 
         Coordinate Frame Conventions:
             World Frame:
@@ -590,12 +620,13 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             pan_deg: Pan angle in degrees
             tilt_deg: Tilt angle in degrees
             roll_deg: Roll angle in degrees (default = 0.0)
+            min_det_threshold: Minimum threshold for H[2,2] normalization
 
         Returns:
             H (np.ndarray): 3x3 homography matrix mapping [X_world, Y_world, 1] -> [u, v, 1]
         """
         # Get rotation matrix (includes roll if specified)
-        R = self._get_rotation_matrix(pan_deg, tilt_deg, roll_deg)
+        R = IntrinsicExtrinsicHomography._compute_rotation_matrix(pan_deg, tilt_deg, roll_deg)
 
         # Camera position C in world coordinates
         C = camera_position
@@ -620,7 +651,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             raise ValueError(f"Homography must be 3x3, got {H.shape}")
 
         # Normalize so H[2, 2] = 1 for consistent scale
-        if abs(H[2, 2]) < self.MIN_DET_THRESHOLD:
+        if abs(H[2, 2]) < min_det_threshold:
             logger.warning(
                 f"Homography normalization failed (H[2,2]={H[2, 2]:.2e}). Returning identity."
             )
@@ -629,6 +660,139 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         H = H / H[2, 2]
 
         return np.asarray(H)
+
+    def _calculate_ground_homography(
+        self,
+        K: np.ndarray,
+        camera_position: np.ndarray,
+        pan_deg: Degrees,
+        tilt_deg: Degrees,
+        roll_deg: Degrees = Degrees(0.0),
+    ) -> np.ndarray:
+        """
+        Calculate homography matrix mapping world ground plane (Z=0) to image.
+
+        This instance method delegates to the static _compute_ground_homography()
+        for backward compatibility.
+
+        Args:
+            K: 3x3 camera intrinsic matrix
+            camera_position: Camera position [X, Y, Z] in world coordinates (meters)
+            pan_deg: Pan angle in degrees
+            tilt_deg: Tilt angle in degrees
+            roll_deg: Roll angle in degrees (default = 0.0)
+
+        Returns:
+            H (np.ndarray): 3x3 homography matrix mapping [X_world, Y_world, 1] -> [u, v, 1]
+        """
+        return self._compute_ground_homography(
+            K, camera_position, pan_deg, tilt_deg, roll_deg, self.MIN_DET_THRESHOLD
+        )
+
+    @staticmethod
+    def _compute_confidence(
+        H: np.ndarray,
+        camera_position: np.ndarray | None = None,
+        tilt_deg: float | None = None,
+        *,
+        min_det_threshold: float = 1e-10,
+        det_threshold_invalid: float = 1e-6,
+        det_threshold_low: float = 1e-3,
+        det_threshold_high: float = 1e3,
+        confidence_large_det: float = 0.7,
+        cond_threshold_degenerate: float = 1e10,
+        cond_threshold_unstable: float = 1e6,
+        cond_threshold_marginal: float = 1e3,
+        confidence_penalty_unstable: float = 0.5,
+        confidence_penalty_marginal: float = 0.9,
+        confidence_penalty_bad_height: float = 0.5,
+        confidence_penalty_bad_tilt: float = 0.8,
+        gimbal_lock_threshold_deg: float = 0.1,
+        confidence_penalty_gimbal_lock: float = 0.3,
+    ) -> float:
+        """
+        Calculate confidence score for the homography matrix (static version).
+
+        This is a pure function with no instance state dependencies, suitable for
+        use in both instance methods and classmethods.
+
+        Confidence is computed using threshold and penalty parameters:
+
+        1. Determinant-based checks:
+           - Degenerate, low quality, good, or poorly scaled based on |det|
+
+        2. Condition number checks:
+           - Penalties applied via multipliers
+
+        3. Camera parameter validity:
+           - Height and tilt range violations apply penalties
+
+        Args:
+            H: 3x3 homography matrix
+            camera_position: Camera position [X, Y, Z] in meters (optional)
+            tilt_deg: Tilt angle in degrees (optional)
+            min_det_threshold: Minimum determinant for non-singular matrix
+            det_threshold_invalid: Determinant below this is invalid
+            det_threshold_low: Determinant below this is low quality
+            det_threshold_high: Determinant above this is poorly scaled
+            confidence_large_det: Confidence for very large determinant
+            cond_threshold_degenerate: Condition number above this is degenerate
+            cond_threshold_unstable: Condition number above this is unstable
+            cond_threshold_marginal: Condition number above this is marginal
+            confidence_penalty_unstable: Penalty multiplier for unstable
+            confidence_penalty_marginal: Penalty multiplier for marginal
+            confidence_penalty_bad_height: Penalty for non-positive camera height
+            confidence_penalty_bad_tilt: Penalty for tilt outside [-90, 90]
+            gimbal_lock_threshold_deg: Threshold for gimbal lock zone
+            confidence_penalty_gimbal_lock: Penalty for near-gimbal-lock
+
+        Returns:
+            float: Confidence score in range [0.0, 1.0]
+        """
+        det_H = np.linalg.det(H)
+
+        # Check if homography is singular
+        if abs(det_H) < min_det_threshold:
+            return 0.0
+
+        # Base confidence on determinant magnitude
+        det_abs = abs(det_H)
+
+        # Threshold-based heuristic: good homographies have |det| in reasonable range
+        if det_abs < det_threshold_invalid:
+            confidence = 0.0
+        elif det_abs < det_threshold_low:
+            confidence = 0.5
+        elif det_abs < det_threshold_high:
+            confidence = 1.0
+        else:
+            confidence = confidence_large_det
+
+        # Apply condition number checks (measures numerical stability)
+        cond_H = np.linalg.cond(H)
+        if cond_H > cond_threshold_degenerate:
+            confidence = 0.0
+        elif cond_H > cond_threshold_unstable:
+            confidence *= confidence_penalty_unstable
+        elif cond_H > cond_threshold_marginal:
+            confidence *= confidence_penalty_marginal
+
+        # Factor in camera parameter validity
+        # Check camera height (should be positive)
+        if camera_position is not None:
+            camera_height = camera_position[2]
+            if camera_height <= 0:
+                confidence *= confidence_penalty_bad_height
+
+        # Check tilt angle (should be in [-90, 90] range)
+        if tilt_deg is not None:
+            if tilt_deg < -90.0 or tilt_deg > 90.0:
+                confidence *= confidence_penalty_bad_tilt
+            # Check for gimbal lock near ±90° (cos(90°) = 0 causes singularity)
+            elif abs(abs(tilt_deg) - 90.0) < gimbal_lock_threshold_deg:
+                confidence *= confidence_penalty_gimbal_lock
+
+        return confidence
 
     def _calculate_confidence(
         self,
@@ -639,18 +803,8 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         """
         Calculate confidence score for the homography matrix.
 
-        Confidence is computed using class constants for thresholds and penalties:
-
-        1. Determinant-based checks (DET_THRESHOLD_* constants):
-           - Degenerate, low quality, good, or poorly scaled based on |det|
-
-        2. Condition number checks (COND_THRESHOLD_* constants):
-           - Penalties applied via CONFIDENCE_PENALTY_* multipliers
-
-        3. Camera parameter validity:
-           - Height and tilt range violations apply penalties
-
-        See class constants for specific threshold and penalty values.
+        This instance method delegates to the static _compute_confidence()
+        for backward compatibility.
 
         Args:
             H: 3x3 homography matrix
@@ -660,53 +814,25 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         Returns:
             float: Confidence score in range [0.0, 1.0]
         """
-        det_H = np.linalg.det(H)
-
-        # Check if homography is singular
-        if abs(det_H) < self.MIN_DET_THRESHOLD:
-            return 0.0
-
-        # Base confidence on determinant magnitude
-        # Normalized determinant should be around 1.0 for well-conditioned matrices
-        # We use threshold-based scoring to map determinant to [0, 1]
-        det_abs = abs(det_H)
-
-        # Threshold-based heuristic: good homographies have |det| in reasonable range
-        # Too small -> singular, too large -> poorly scaled
-        if det_abs < self.DET_THRESHOLD_INVALID:
-            confidence = 0.0
-        elif det_abs < self.DET_THRESHOLD_LOW:
-            confidence = 0.5
-        elif det_abs < self.DET_THRESHOLD_HIGH:
-            confidence = 1.0
-        else:
-            confidence = self.CONFIDENCE_LARGE_DET
-
-        # Apply condition number checks (measures numerical stability)
-        cond_H = np.linalg.cond(H)
-        if cond_H > self.COND_THRESHOLD_DEGENERATE:
-            confidence = 0.0
-        elif cond_H > self.COND_THRESHOLD_UNSTABLE:
-            confidence *= self.CONFIDENCE_PENALTY_UNSTABLE
-        elif cond_H > self.COND_THRESHOLD_MARGINAL:
-            confidence *= self.CONFIDENCE_PENALTY_MARGINAL
-
-        # Factor in camera parameter validity
-        # Check camera height (should be positive)
-        if camera_position is not None:
-            camera_height = camera_position[2]
-            if camera_height <= 0:
-                confidence *= self.CONFIDENCE_PENALTY_BAD_HEIGHT
-
-        # Check tilt angle (should be in [-90, 90] range)
-        if tilt_deg is not None:
-            if tilt_deg < -90.0 or tilt_deg > 90.0:
-                confidence *= self.CONFIDENCE_PENALTY_BAD_TILT
-            # Check for gimbal lock near ±90° (cos(90°) = 0 causes singularity)
-            elif abs(abs(tilt_deg) - 90.0) < self.GIMBAL_LOCK_THRESHOLD_DEG:
-                confidence *= self.CONFIDENCE_PENALTY_GIMBAL_LOCK
-
-        return confidence
+        return self._compute_confidence(
+            H,
+            camera_position,
+            tilt_deg,
+            min_det_threshold=self.MIN_DET_THRESHOLD,
+            det_threshold_invalid=self.DET_THRESHOLD_INVALID,
+            det_threshold_low=self.DET_THRESHOLD_LOW,
+            det_threshold_high=self.DET_THRESHOLD_HIGH,
+            confidence_large_det=self.CONFIDENCE_LARGE_DET,
+            cond_threshold_degenerate=self.COND_THRESHOLD_DEGENERATE,
+            cond_threshold_unstable=self.COND_THRESHOLD_UNSTABLE,
+            cond_threshold_marginal=self.COND_THRESHOLD_MARGINAL,
+            confidence_penalty_unstable=self.CONFIDENCE_PENALTY_UNSTABLE,
+            confidence_penalty_marginal=self.CONFIDENCE_PENALTY_MARGINAL,
+            confidence_penalty_bad_height=self.CONFIDENCE_PENALTY_BAD_HEIGHT,
+            confidence_penalty_bad_tilt=self.CONFIDENCE_PENALTY_BAD_TILT,
+            gimbal_lock_threshold_deg=self.GIMBAL_LOCK_THRESHOLD_DEG,
+            confidence_penalty_gimbal_lock=self.CONFIDENCE_PENALTY_GIMBAL_LOCK,
+        )
 
     def _calculate_point_confidence(self, image_point: PixelPoint, base_confidence: float) -> float:
         """
@@ -812,6 +938,195 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         return x_px, y_px
 
     # =========================================================================
+    # Immutable Pattern Methods
+    # =========================================================================
+
+    @classmethod
+    def compute_from_config(cls, config: IntrinsicExtrinsicConfig) -> IntrinsicExtrinsicResult:
+        """
+        Compute homography from config as a pure function (classmethod).
+
+        This method performs all homography computation without modifying any
+        instance state. It takes an immutable IntrinsicExtrinsicConfig and
+        returns an immutable IntrinsicExtrinsicResult.
+
+        This is the recommended entry point for the immutable pattern, enabling:
+        - Pure functional computation with no side effects
+        - Easy caching based on config hash
+        - Thread-safe parallel computation
+        - Simplified testing with explicit inputs/outputs
+
+        Args:
+            config: Immutable configuration containing all parameters needed
+                for homography computation.
+
+        Returns:
+            IntrinsicExtrinsicResult containing the computed homography matrices,
+            confidence score, and metadata.
+
+        Example:
+            >>> config = IntrinsicExtrinsicConfig.create(
+            ...     camera_matrix=K,
+            ...     camera_position=np.array([0, 0, 10]),
+            ...     pan_deg=Degrees(45.0),
+            ...     tilt_deg=Degrees(30.0),
+            ...     roll_deg=Degrees(0.0),
+            ...     map_width=Pixels(640),
+            ...     map_height=Pixels(640),
+            ...     pixels_per_meter=Unitless(100.0),
+            ...     sensor_width_mm=Millimeters(7.18),
+            ...     base_focal_length_mm=Millimeters(5.9),
+            ...     map_id="map_valte",
+            ... )
+            >>> result = IntrinsicExtrinsicHomography.compute_from_config(config)
+            >>> print(result.confidence)
+            1.0
+        """
+        # Extract parameters from config
+        K = config.camera_matrix
+        camera_position = config.camera_position
+        pan_deg = config.pan_deg
+        tilt_deg = config.tilt_deg
+        roll_deg = config.roll_deg
+        map_width = config.map_width
+        map_height = config.map_height
+
+        # Collect validation messages
+        validation_messages: list[str] = []
+
+        # Validate camera height
+        if camera_position[2] <= 0:
+            validation_messages.append(
+                f"Camera height (Z={camera_position[2]}) should be positive for ground plane homography"
+            )
+
+        # Check for gimbal lock
+        if abs(abs(tilt_deg) - 90.0) < cls.GIMBAL_LOCK_THRESHOLD_DEG:
+            validation_messages.append(
+                f"Tilt angle ({tilt_deg:.2f} degrees) is near gimbal lock zone"
+            )
+
+        # Check roll angle warning
+        if abs(roll_deg) > cls.ROLL_WARN_THRESHOLD:
+            validation_messages.append(
+                f"Roll angle ({roll_deg:.2f} degrees) is unusually large (>{cls.ROLL_WARN_THRESHOLD} degrees)"
+            )
+
+        # Calculate homography using static method
+        H = cls._compute_ground_homography(
+            K,
+            camera_position,
+            Degrees(pan_deg),
+            Degrees(tilt_deg),
+            Degrees(roll_deg),
+            cls.MIN_DET_THRESHOLD,
+        )
+
+        # Calculate inverse homography
+        det_H = float(np.linalg.det(H))
+        if abs(det_H) < cls.MIN_DET_THRESHOLD:
+            H_inv = np.eye(3)
+            confidence = 0.0
+            validation_messages.append(
+                f"Homography is singular (det={det_H:.2e}). Inverse may be unstable."
+            )
+        else:
+            H_inv = np.asarray(np.linalg.inv(H))
+            confidence = cls._compute_confidence(
+                H,
+                camera_position,
+                float(tilt_deg),
+                min_det_threshold=cls.MIN_DET_THRESHOLD,
+                det_threshold_invalid=cls.DET_THRESHOLD_INVALID,
+                det_threshold_low=cls.DET_THRESHOLD_LOW,
+                det_threshold_high=cls.DET_THRESHOLD_HIGH,
+                confidence_large_det=cls.CONFIDENCE_LARGE_DET,
+                cond_threshold_degenerate=cls.COND_THRESHOLD_DEGENERATE,
+                cond_threshold_unstable=cls.COND_THRESHOLD_UNSTABLE,
+                cond_threshold_marginal=cls.COND_THRESHOLD_MARGINAL,
+                confidence_penalty_unstable=cls.CONFIDENCE_PENALTY_UNSTABLE,
+                confidence_penalty_marginal=cls.CONFIDENCE_PENALTY_MARGINAL,
+                confidence_penalty_bad_height=cls.CONFIDENCE_PENALTY_BAD_HEIGHT,
+                confidence_penalty_bad_tilt=cls.CONFIDENCE_PENALTY_BAD_TILT,
+                gimbal_lock_threshold_deg=cls.GIMBAL_LOCK_THRESHOLD_DEG,
+                confidence_penalty_gimbal_lock=cls.CONFIDENCE_PENALTY_GIMBAL_LOCK,
+            )
+
+        # Create immutable result
+        return IntrinsicExtrinsicResult.create(
+            homography_matrix=H,
+            inverse_homography_matrix=H_inv,
+            confidence=confidence,
+            camera_position=camera_position,
+            pan_deg=Degrees(pan_deg),
+            tilt_deg=Degrees(tilt_deg),
+            roll_deg=Degrees(roll_deg),
+            map_width=Pixels(map_width),
+            map_height=Pixels(map_height),
+            determinant=det_H,
+            validation_messages=validation_messages,
+        )
+
+    def compute_homography_with_config(self, config: IntrinsicExtrinsicConfig) -> HomographyResult:
+        """
+        Compute homography from config and update instance state.
+
+        This method bridges the immutable pattern with the existing stateful
+        interface. It calls compute_from_config() to perform the pure computation,
+        then updates instance state for backward compatibility.
+
+        Use this method when you want to:
+        - Use the new immutable config pattern
+        - Maintain compatibility with code that reads instance state
+        - Get a HomographyResult for interface compatibility
+
+        Args:
+            config: Immutable configuration containing all parameters needed
+                for homography computation.
+
+        Returns:
+            HomographyResult with computed homography matrix and confidence,
+            compatible with the HomographyProvider interface.
+
+        Example:
+            >>> homography = IntrinsicExtrinsicHomography(1920, 1080, "map_valte")
+            >>> config = IntrinsicExtrinsicConfig.from_reference_dict(
+            ...     reference,
+            ...     pixels_per_meter=homography.pixels_per_meter,
+            ...     sensor_width_mm=homography.sensor_width_mm,
+            ...     base_focal_length_mm=homography.base_focal_length_mm,
+            ...     map_id=homography.map_id,
+            ... )
+            >>> result = homography.compute_homography_with_config(config)
+        """
+        # Compute using pure function
+        ie_result = self.compute_from_config(config)
+
+        # Update instance state for backward compatibility
+        self.H = ie_result.homography_matrix.copy()
+        self.H_inv = ie_result.inverse_homography_matrix.copy()
+        self.confidence = ie_result.confidence
+
+        # Store map dimensions
+        self.map_width = int(config.map_width)
+        self.map_height = int(config.map_height)
+
+        # Store parameters for metadata
+        self._last_camera_matrix = config.camera_matrix.copy()
+        self._last_camera_position = config.camera_position.copy()
+        self._last_pan_deg = float(config.pan_deg)
+        self._last_tilt_deg = float(config.tilt_deg)
+        self._last_roll_deg = float(config.roll_deg)
+        self.roll_deg = float(config.roll_deg)
+
+        # Convert to HomographyResult for interface compatibility
+        return HomographyResult(
+            homography_matrix=self.H.copy(),
+            confidence=self.confidence,
+            metadata=ie_result.to_metadata_dict(),
+        )
+
+    # =========================================================================
     # HomographyProvider Interface Implementation
     # =========================================================================
 
@@ -821,6 +1136,9 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
 
         For intrinsic/extrinsic approach, the frame is not used directly.
         The homography is computed from camera calibration and pose.
+
+        This method maintains full backward compatibility while internally using
+        the new immutable pattern via compute_homography_with_config().
 
         Args:
             frame: Image frame (not used for this approach, but required by interface)
@@ -860,7 +1178,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         map_width = reference["map_width"]
         map_height = reference["map_height"]
 
-        # Validate inputs
+        # Validate inputs (backward-compatible validation with logging)
         if not isinstance(K, np.ndarray) or K.shape != (3, 3):
             raise ValueError(f"camera_matrix must be 3x3 numpy array, got shape {K.shape}")
 
@@ -908,47 +1226,29 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
                 self.ROLL_WARN_THRESHOLD,
             )
 
-        # Store map dimensions
-        self.map_width = map_width
-        self.map_height = map_height
-
-        # Calculate homography (includes roll rotation)
-        self.H = self._calculate_ground_homography(
-            K, camera_position, Degrees(pan_deg), Degrees(tilt_deg), Degrees(roll_deg)
-        )
-
-        # Calculate inverse homography
-        det_H = np.linalg.det(self.H)
-        if abs(det_H) < self.MIN_DET_THRESHOLD:
-            logger.warning("Homography is singular (det=%.2e). Inverse may be unstable.", det_H)
-            self.H_inv = np.eye(3)
-            self.confidence = 0.0
-        else:
-            self.H_inv = np.asarray(np.linalg.inv(self.H))
-            self.confidence = self._calculate_confidence(self.H, camera_position, tilt_deg)
-
-        # Store parameters for metadata
-        self._last_camera_matrix = K.copy()
-        self._last_camera_position = camera_position.copy()
-        self._last_pan_deg = pan_deg
-        self._last_tilt_deg = tilt_deg
-        self._last_roll_deg = roll_deg
-        self.roll_deg = roll_deg
-
-        # Build metadata
-        metadata = {
-            "approach": HomographyApproach.INTRINSIC_EXTRINSIC.value,
-            "camera_position": camera_position.tolist(),
+        # Create config from validated/clamped reference dict
+        # Note: We need to update reference with clamped values
+        validated_reference = {
+            "camera_matrix": K,
+            "camera_position": camera_position,
             "pan_deg": pan_deg,
-            "tilt_deg": tilt_deg,
+            "tilt_deg": tilt_deg,  # May have been clamped
             "roll_deg": roll_deg,
-            "determinant": det_H,
-            "map_dimensions": (map_width, map_height),
+            "map_width": map_width,
+            "map_height": map_height,
         }
 
-        return HomographyResult(
-            homography_matrix=self.H.copy(), confidence=self.confidence, metadata=metadata
+        config = IntrinsicExtrinsicConfig.from_reference_dict(
+            validated_reference,
+            pixels_per_meter=self.pixels_per_meter,
+            sensor_width_mm=self.sensor_width_mm,
+            base_focal_length_mm=self.base_focal_length_mm,
+            map_id=self.map_id,
+            calibration_table=self.calibration_table,
         )
+
+        # Delegate to compute_homography_with_config
+        return self.compute_homography_with_config(config)
 
     def project_point(self, image_point: PixelPoint, point_id: str = "") -> MapPoint:
         """

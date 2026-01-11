@@ -8,6 +8,12 @@ from typing import Any
 
 import numpy as np
 
+from poc_homography.camera_parameters import (
+    CameraGeometryResult,
+    CameraParameters,
+    DistortionCoefficients,
+    HeightUncertainty,
+)
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
@@ -611,6 +617,492 @@ class CameraGeometry:
     ROLL_WARN_THRESHOLD = 5.0  # Warning when |roll_deg| > 5.0
     ROLL_ERROR_THRESHOLD = 15.0  # Error when |roll_deg| > 15.0
 
+    @classmethod
+    def compute(cls, params: CameraParameters) -> CameraGeometryResult:
+        """Compute homography from camera parameters (pure function).
+
+        This is a pure classmethod that computes the ground plane homography
+        without modifying any instance state. It takes an immutable
+        CameraParameters config and returns an immutable CameraGeometryResult.
+
+        This enables functional-style programming patterns:
+        - Deterministic: same inputs always produce same outputs
+        - Parallelizable: no shared mutable state
+        - Testable: easy to test with known inputs/outputs
+        - Cacheable: results can be cached based on input parameters
+
+        Args:
+            params: Immutable camera configuration containing all required
+                parameters for homography computation.
+
+        Returns:
+            CameraGeometryResult containing the computed homography matrices
+            and validation state.
+
+        Raises:
+            ValueError: If parameters fail validation checks.
+
+        Example:
+            >>> params = CameraParameters.create(
+            ...     image_width=Pixels(1920),
+            ...     image_height=Pixels(1080),
+            ...     intrinsic_matrix=K,
+            ...     camera_position=np.array([0.0, 0.0, 10.0]),
+            ...     pan_deg=Degrees(0.0),
+            ...     tilt_deg=Degrees(45.0),
+            ...     roll_deg=Degrees(0.0),
+            ...     map_width=Pixels(640),
+            ...     map_height=Pixels(640),
+            ...     pixels_per_meter=Unitless(100.0),
+            ... )
+            >>> result = CameraGeometry.compute(params)
+            >>> if result.is_valid:
+            ...     H = result.homography_matrix
+        """
+        # Extract parameters from immutable config
+        K = params.intrinsic_matrix
+        w_pos = params.camera_position
+        pan_deg = params.pan_deg
+        tilt_deg = params.tilt_deg
+        roll_deg = params.roll_deg
+        image_width = params.image_width
+        image_height = params.image_height
+
+        # Validate parameters (using class validation constants)
+        cls._validate_parameters_static(K, w_pos, pan_deg, tilt_deg, roll_deg)
+
+        # Log parameters at INFO level
+        logger.info("Computing homography from CameraParameters:")
+        logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
+        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°, Roll: {roll_deg:.1f}°")
+        logger.info(f"  Image dimensions: {image_width}x{image_height} pixels")
+
+        # Compute rotation matrix
+        R = cls._get_rotation_matrix_static(pan_deg, tilt_deg, roll_deg)
+
+        # Compute homography matrix
+        H = cls._calculate_ground_homography_static(K, w_pos, R)
+
+        # Collect validation messages
+        validation_messages: list[str] = []
+        is_valid = True
+
+        # Validate and compute inverse homography with condition number checks
+        det_H = float(np.linalg.det(H))
+        if abs(det_H) < 1e-10:
+            validation_messages.append(
+                f"Homography matrix is singular (det={det_H:.2e}). Cannot compute inverse."
+            )
+            is_valid = False
+            # Return invalid result with identity inverse
+            return CameraGeometryResult.create(
+                homography_matrix=H,
+                inverse_homography_matrix=np.eye(3),
+                condition_number=float("inf"),
+                determinant=det_H,
+                is_valid=False,
+                validation_messages=tuple(validation_messages),
+                center_projection_distance=None,
+            )
+
+        # Compute condition number
+        cond_H = float(np.linalg.cond(H))
+        if cond_H > cls.CONDITION_ERROR:
+            validation_messages.append(
+                f"Homography condition number {cond_H:.2e} exceeds error threshold ({cls.CONDITION_ERROR:.2e}). "
+                f"Matrix is ill-conditioned."
+            )
+            is_valid = False
+        elif cond_H > cls.CONDITION_WARN:
+            validation_messages.append(
+                f"Homography condition number {cond_H:.2e} exceeds warning threshold ({cls.CONDITION_WARN:.2e}). "
+                f"Inverse may be numerically unstable."
+            )
+
+        # Compute inverse
+        H_inv = np.asarray(np.linalg.inv(H))
+
+        # Validate projection and compute center distance
+        center_distance = cls._compute_center_projection_distance(
+            H_inv, w_pos, image_width, image_height, validation_messages
+        )
+
+        # Check for unreasonable projection distance
+        height_m = w_pos[2]
+        if center_distance is not None:
+            max_reasonable_distance = height_m * cls.MAX_DISTANCE_HEIGHT_RATIO
+            if center_distance > max_reasonable_distance:
+                validation_messages.append(
+                    f"Projected ground distance {center_distance:.2f}m is very large "
+                    f"(>{max_reasonable_distance:.2f}m). Near-horizontal tilt angle suspected."
+                )
+
+        logger.info("Homography computation complete.")
+        logger.info(f"  Homography det(H): {det_H:.2e}")
+        logger.info(f"  Homography condition number: {cond_H:.2e}")
+        if center_distance is not None:
+            logger.info(f"  Image center projects to ground at distance: {center_distance:.2f}m")
+
+        return CameraGeometryResult.create(
+            homography_matrix=H,
+            inverse_homography_matrix=H_inv,
+            condition_number=cond_H,
+            determinant=det_H,
+            is_valid=is_valid,
+            validation_messages=tuple(validation_messages),
+            center_projection_distance=Meters(center_distance)
+            if center_distance is not None
+            else None,
+        )
+
+    def compute_and_update(self, params: CameraParameters) -> CameraGeometryResult:
+        """Compute homography and update instance state for backward compatibility.
+
+        This method provides a bridge between the new immutable pattern and
+        the existing mutable CameraGeometry API. It:
+        1. Calls compute(params) to get the immutable result
+        2. Updates instance state (H, H_inv, K, w_pos, etc.)
+        3. Returns the CameraGeometryResult
+
+        This enables gradual migration: new code can use the immutable result,
+        while existing code continues to work with mutable instance state.
+
+        Args:
+            params: Immutable camera configuration.
+
+        Returns:
+            CameraGeometryResult containing the computed homography matrices
+            and validation state.
+
+        Raises:
+            ValueError: If parameters fail validation or homography is invalid.
+
+        Example:
+            >>> geo = CameraGeometry(1920, 1080)
+            >>> params = CameraParameters.create(...)
+            >>> result = geo.compute_and_update(params)
+            >>> # Instance state is updated
+            >>> assert np.allclose(geo.H, result.homography_matrix)
+            >>> # Result can also be used immutably
+            >>> H = result.homography_matrix
+        """
+        # Compute using the pure function
+        result = CameraGeometry.compute(params)
+
+        # Check if result is valid before updating state
+        if not result.is_valid:
+            raise ValueError(
+                f"Homography computation failed: {'; '.join(result.validation_messages)}"
+            )
+
+        # Update instance state for backward compatibility
+        self.K = params.intrinsic_matrix.copy()
+        self.w_pos = params.camera_position.copy()
+        self.height_m = params.camera_height
+        self.pan_deg = float(params.pan_deg)
+        self.tilt_deg = float(params.tilt_deg)
+        self.roll_deg = float(params.roll_deg)
+        self.map_width = int(params.map_width)
+        self.map_height = int(params.map_height)
+        self.PPM = int(params.pixels_per_meter)
+
+        # Update homography matrices
+        self.H = result.homography_matrix.copy()
+        self.H_inv = result.inverse_homography_matrix.copy()
+
+        # Update distortion if provided
+        if params.distortion is not None and not params.distortion.is_zero():
+            self._dist_coeffs = params.distortion.to_array()
+            self._use_distortion = True
+        else:
+            self._dist_coeffs = None
+            self._use_distortion = False
+
+        # Update height uncertainty if provided
+        if params.height_uncertainty is not None:
+            self.height_uncertainty_lower = params.height_uncertainty.lower
+            self.height_uncertainty_upper = params.height_uncertainty.upper
+        else:
+            self.height_uncertainty_lower = None
+            self.height_uncertainty_upper = None
+
+        # Update affine matrix if provided
+        if params.affine_matrix is not None:
+            self.A = params.affine_matrix.copy()
+        else:
+            self.A = np.eye(3)
+
+        logger.info("Instance state updated from CameraGeometryResult.")
+
+        return result
+
+    @staticmethod
+    def _validate_parameters_static(
+        K: np.ndarray,
+        w_pos: np.ndarray,
+        _pan_deg: Degrees,  # Currently unused but kept for API consistency
+        tilt_deg: Degrees,
+        roll_deg: Degrees = Degrees(0.0),
+    ) -> None:
+        """Static version of parameter validation for use in compute().
+
+        This is a static method to enable pure function computation without
+        requiring an instance.
+
+        Args:
+            K: 3x3 intrinsic matrix
+            w_pos: Camera position in world coordinates [X, Y, Z] (meters)
+            _pan_deg: Pan angle in degrees (currently unused, kept for API consistency)
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
+            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
+
+        Raises:
+            ValueError: If any parameter is invalid or out of acceptable range.
+        """
+        # Use class constants
+        cls = CameraGeometry
+
+        # Validate K matrix shape
+        if K.shape != (3, 3):
+            raise ValueError(f"K must be 3x3, got shape {K.shape}")
+
+        # Validate K matrix for NaN/Infinity
+        if not np.all(np.isfinite(K)):
+            raise ValueError("K matrix contains NaN or Infinity values")
+
+        # Validate w_pos structure
+        if len(w_pos) != 3:
+            raise ValueError(f"w_pos must have 3 elements [X, Y, Z], got {len(w_pos)}")
+
+        # Validate w_pos for NaN/Infinity
+        if not np.all(np.isfinite(w_pos)):
+            raise ValueError("w_pos contains NaN or Infinity values")
+
+        # Camera height validation (w_pos[2])
+        height = w_pos[2]
+        if height < cls.HEIGHT_MIN or height > cls.HEIGHT_MAX:
+            raise ValueError(
+                f"Camera height {height:.2f}m is out of valid range "
+                f"[{cls.HEIGHT_MIN}, {cls.HEIGHT_MAX}]m"
+            )
+
+        if height < cls.HEIGHT_WARN_LOW:
+            logger.warning(
+                f"Camera height {height:.2f}m is very low (<{cls.HEIGHT_WARN_LOW}m). "
+                f"Ground projection accuracy may be reduced."
+            )
+        elif height > cls.HEIGHT_WARN_HIGH:
+            logger.warning(
+                f"Camera height {height:.2f}m is very high (>{cls.HEIGHT_WARN_HIGH}m). "
+                f"Ground projection accuracy may be reduced at extreme distances."
+            )
+
+        # Tilt angle validation
+        if tilt_deg <= cls.TILT_MIN or tilt_deg > cls.TILT_MAX:
+            raise ValueError(
+                f"Tilt angle {tilt_deg:.1f}° is out of valid range "
+                f"({cls.TILT_MIN}, {cls.TILT_MAX}]°. "
+                f"Camera must point downward (positive tilt) for ground plane projection."
+            )
+
+        if tilt_deg < cls.TILT_WARN_LOW:
+            logger.debug(
+                f"Tilt angle {tilt_deg:.1f}° is near horizontal (<{cls.TILT_WARN_LOW}°). "
+                f"Ground projection may be unstable or extend to very large distances."
+            )
+        elif tilt_deg > cls.TILT_WARN_HIGH:
+            logger.debug(
+                f"Tilt angle {tilt_deg:.1f}° is very steep (>{cls.TILT_WARN_HIGH}°). "
+                f"Ground coverage area will be very limited."
+            )
+
+        # FOV validation (calculated from K)
+        focal_length = K[0, 0]  # Assuming square pixels (fx = fy)
+        sensor_width_px = 2.0 * K[0, 2]  # Principal point is at center
+        fov_rad = 2.0 * math.atan(sensor_width_px / (2.0 * focal_length))
+        fov_deg = math.degrees(fov_rad)
+
+        if fov_deg < cls.FOV_MIN_DEG or fov_deg > cls.FOV_MAX_DEG:
+            raise ValueError(
+                f"Calculated FOV {fov_deg:.1f}° is out of reasonable range "
+                f"[{cls.FOV_MIN_DEG}, {cls.FOV_MAX_DEG}]°. "
+                f"Check intrinsic matrix K and zoom factor."
+            )
+
+        if fov_deg < cls.FOV_WARN_MIN_DEG or fov_deg > cls.FOV_WARN_MAX_DEG:
+            logger.warning(
+                f"FOV {fov_deg:.1f}° is unusual. Typical PTZ cameras have FOV between "
+                f"{cls.FOV_WARN_MIN_DEG}° and {cls.FOV_WARN_MAX_DEG}°."
+            )
+
+        # Roll angle validation
+        if abs(roll_deg) > cls.ROLL_ERROR_THRESHOLD:
+            raise ValueError(
+                f"Roll angle {roll_deg:.1f}° is outside valid range "
+                f"[-{cls.ROLL_ERROR_THRESHOLD}°, {cls.ROLL_ERROR_THRESHOLD}°]. "
+                f"Check camera mount alignment."
+            )
+
+        if abs(roll_deg) > cls.ROLL_WARN_THRESHOLD:
+            warnings.warn(
+                f"Roll angle {roll_deg:.1f}° is unusually large (>{cls.ROLL_WARN_THRESHOLD}°). "
+                f"Typical camera mount roll is ±2°. Verify configuration.",
+                UserWarning,
+            )
+
+    @staticmethod
+    def _get_rotation_matrix_static(
+        pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees
+    ) -> np.ndarray:
+        """Static version of rotation matrix calculation for use in compute().
+
+        Calculates the 3x3 rotation matrix R from world to camera coordinates
+        based on pan (Yaw), tilt (Pitch), and roll.
+
+        Args:
+            pan_deg: Pan angle in degrees
+            tilt_deg: Tilt angle in degrees
+            roll_deg: Roll angle in degrees
+
+        Returns:
+            R: 3x3 rotation matrix transforming world coordinates to camera frame
+        """
+        pan_rad = math.radians(pan_deg)
+        tilt_rad = math.radians(tilt_deg)
+        roll_rad = math.radians(roll_deg)
+
+        # Base transformation from World to Camera when pan=0, tilt=0
+        R_base = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+
+        # Pan rotation around world Z-axis (yaw)
+        Rz_pan = np.array(
+            [
+                [math.cos(pan_rad), -math.sin(pan_rad), 0],
+                [math.sin(pan_rad), math.cos(pan_rad), 0],
+                [0, 0, 1],
+            ]
+        )
+
+        # Roll rotation around camera Z-axis (optical axis)
+        Rz_roll = np.array(
+            [
+                [math.cos(roll_rad), -math.sin(roll_rad), 0],
+                [math.sin(roll_rad), math.cos(roll_rad), 0],
+                [0, 0, 1],
+            ]
+        )
+
+        # Tilt rotation around camera X-axis (pitch)
+        Rx_tilt = np.array(
+            [
+                [1, 0, 0],
+                [0, math.cos(tilt_rad), -math.sin(tilt_rad)],
+                [0, math.sin(tilt_rad), math.cos(tilt_rad)],
+            ]
+        )
+
+        # Full rotation: R = R_tilt @ R_roll @ R_base @ R_pan
+        R: np.ndarray = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
+        return R
+
+    @staticmethod
+    def _calculate_ground_homography_static(
+        K: np.ndarray, w_pos: np.ndarray, R: np.ndarray
+    ) -> np.ndarray:
+        """Static version of ground homography calculation for use in compute().
+
+        Calculates the Homography matrix H that maps world ground plane (Z=0)
+        to image pixels.
+
+        Args:
+            K: 3x3 intrinsic matrix
+            w_pos: Camera position [X, Y, Z] in world coordinates
+            R: 3x3 rotation matrix from world to camera frame
+
+        Returns:
+            H: 3x3 normalized homography matrix
+        """
+        # Translation from camera to world origin: t = -R @ C
+        t = -R @ w_pos
+
+        # Build homography: H = K @ [r1, r2, t]
+        r1 = R[:, 0]  # Column 0: world X-axis in camera frame
+        r2 = R[:, 1]  # Column 1: world Y-axis in camera frame
+
+        # Construct 3x3 extrinsic homography matrix
+        H_extrinsic = np.column_stack([r1, r2, t])
+        if H_extrinsic.shape != (3, 3):
+            raise ValueError(f"H_extrinsic must be 3x3, got {H_extrinsic.shape}")
+
+        H = K @ H_extrinsic
+        if H.shape != (3, 3):
+            raise ValueError(f"Homography must be 3x3, got {H.shape}")
+
+        # Normalize so H[2, 2] = 1 for consistent scale
+        if abs(H[2, 2]) < 1e-10:
+            logger.warning(
+                "Homography normalization failed (H[2,2] near zero). Returning identity."
+            )
+            return np.eye(3)
+
+        H_normalized: np.ndarray = H / H[2, 2]
+        return H_normalized
+
+    @staticmethod
+    def _compute_center_projection_distance(
+        H_inv: np.ndarray,
+        w_pos: np.ndarray,
+        image_width: int,
+        image_height: int,
+        validation_messages: list[str],
+    ) -> float | None:
+        """Compute distance from camera to where image center projects on ground.
+
+        Args:
+            H_inv: 3x3 inverse homography matrix
+            w_pos: Camera position [X, Y, Z] in world coordinates
+            image_width: Image width in pixels
+            image_height: Image height in pixels
+            validation_messages: List to append validation messages to
+
+        Returns:
+            Distance in meters, or None if projection is invalid
+        """
+        # Project image center to ground plane
+        image_center = np.array([image_width / 2.0, image_height / 2.0, 1.0])
+        world_point = H_inv @ image_center
+
+        # Normalize homogeneous coordinates
+        if abs(world_point[2]) < 1e-10:
+            validation_messages.append(
+                "Projection of image center yields invalid homogeneous coordinate (w near 0). "
+                "Check tilt angle and camera height."
+            )
+            return None
+
+        Xw = world_point[0] / world_point[2]
+        Yw = world_point[1] / world_point[2]
+
+        # Calculate distance from camera position to projected point
+        distance = math.sqrt((Xw - w_pos[0]) ** 2 + (Yw - w_pos[1]) ** 2)
+
+        # Validate distance
+        if not math.isfinite(distance):
+            validation_messages.append(
+                "Projected ground distance is infinite or NaN. "
+                "Check tilt angle - camera may be pointing too close to horizontal."
+            )
+            return None
+
+        if distance < 0:
+            validation_messages.append(
+                f"Projected ground distance is negative ({distance:.2f}m). "
+                f"This should not occur. Check homography calculation."
+            )
+            return None
+
+        return distance
+
     def _validate_parameters(
         self,
         K: np.ndarray,
@@ -729,9 +1221,15 @@ class CameraGeometry:
         map_width: Pixels,
         map_height: Pixels,
         roll_deg: Degrees = Degrees(0.0),
-    ):
+    ) -> CameraGeometryResult:
         """
         Sets all required parameters and calculates the Homography matrix H.
+
+        This method maintains full backward compatibility while internally using
+        the new immutable CameraParameters/CameraGeometryResult pattern. It:
+        1. Creates a CameraParameters instance from the provided arguments
+        2. Calls compute_and_update() to compute and update instance state
+        3. Returns the CameraGeometryResult (new in this version)
 
         Args:
             K: 3x3 intrinsic matrix
@@ -743,61 +1241,71 @@ class CameraGeometry:
             roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
                       Typical camera mount roll is ±2°
 
+        Returns:
+            CameraGeometryResult containing the computed homography matrices
+            and validation state. This is a new return value for forward
+            compatibility; existing code ignoring the return value will
+            continue to work unchanged.
+
         Raises:
             ValueError: If any parameter is invalid or out of acceptable range.
+
+        Example:
+            >>> geo = CameraGeometry(1920, 1080)
+            >>> K = CameraGeometry.get_intrinsics(1.0)
+            >>> w_pos = np.array([0.0, 0.0, 10.0])
+            >>> # Backward compatible usage (ignore return value)
+            >>> geo.set_camera_parameters(K, w_pos, 0.0, 45.0, 640, 640)
+            >>> # New usage (use the returned result)
+            >>> result = geo.set_camera_parameters(K, w_pos, 0.0, 45.0, 640, 640)
+            >>> if result.is_valid:
+            ...     print(f"Condition number: {result.condition_number}")
         """
-        # Validate all parameters before proceeding
-        self._validate_parameters(K, w_pos, pan_deg, tilt_deg, roll_deg)
-
-        # Log all parameters at INFO level
-        logger.info("Setting camera parameters:")
-        logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
-        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°, Roll: {roll_deg:.1f}°")
+        # Log parameters for debugging (mirrors original behavior)
+        logger.info("Setting camera parameters (via immutable pattern):")
         logger.info(f"  Intrinsic matrix K:\n{K}")
-        logger.info(f"  Map dimensions: {map_width}x{map_height} pixels")
 
-        self.K = K
-        self.w_pos = w_pos
-        self.height_m = w_pos[2]  # Z component is height
-        self.pan_deg = pan_deg
-        self.tilt_deg = tilt_deg
-        self.roll_deg = roll_deg
-        self.map_width = map_width
-        self.map_height = map_height
+        # Extract current distortion coefficients if set
+        distortion: DistortionCoefficients | None = None
+        if self._dist_coeffs is not None and not np.allclose(self._dist_coeffs, 0.0):
+            distortion = DistortionCoefficients.from_array(self._dist_coeffs)
 
-        self.H = self._calculate_ground_homography()
-
-        # Validate and invert homography with condition number checks
-        det_H = np.linalg.det(self.H)
-        if abs(det_H) < 1e-10:
-            raise ValueError(
-                f"Homography matrix is singular (det={det_H:.2e}). "
-                f"Cannot compute inverse. Check camera parameters."
+        # Extract current height uncertainty if set
+        height_uncertainty: HeightUncertainty | None = None
+        if self.height_uncertainty_lower is not None and self.height_uncertainty_upper is not None:
+            height_uncertainty = HeightUncertainty(
+                lower=self.height_uncertainty_lower,
+                upper=self.height_uncertainty_upper,
             )
 
-        # Compute condition number
-        cond_H = np.linalg.cond(self.H)
-        if cond_H > self.CONDITION_ERROR:
-            raise ValueError(
-                f"Homography condition number {cond_H:.2e} is too high (>{self.CONDITION_ERROR:.2e}). "
-                f"Matrix is ill-conditioned. Check camera parameters, especially tilt angle."
-            )
-        elif cond_H > self.CONDITION_WARN:
-            logger.warning(
-                f"Homography condition number {cond_H:.2e} is high (>{self.CONDITION_WARN:.2e}). "
-                f"Inverse may be numerically unstable."
-            )
+        # Extract current affine matrix if not identity
+        affine_matrix: np.ndarray | None = None
+        if not np.allclose(self.A, np.eye(3)):
+            affine_matrix = self.A.copy()
 
-        self.H_inv = np.asarray(np.linalg.inv(self.H))
+        # Create immutable CameraParameters
+        params = CameraParameters.create(
+            image_width=Pixels(self.w),
+            image_height=Pixels(self.h),
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=pan_deg,
+            tilt_deg=tilt_deg,
+            roll_deg=roll_deg,
+            map_width=map_width,
+            map_height=map_height,
+            pixels_per_meter=Unitless(float(self.PPM)),
+            distortion=distortion,
+            height_uncertainty=height_uncertainty,
+            affine_matrix=affine_matrix,
+        )
 
-        # Validate projected distance from image center
-        self._validate_projection()
+        # Use compute_and_update to compute homography and update instance state
+        result = self.compute_and_update(params)
 
         logger.info("Geometry setup complete. Homography matrix H calculated.")
-        logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
-        logger.info(f"  Pan: {pan_deg:.1f}°, Tilt: {tilt_deg:.1f}°, Roll: {roll_deg:.1f}°")
-        logger.info(f"  Homography det(H): {det_H:.2e}")
-        logger.info(f"  Homography condition number: {cond_H:.2e}")
+
+        return result
 
     def _validate_projection(self) -> None:
         """
