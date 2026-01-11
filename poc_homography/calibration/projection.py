@@ -1,7 +1,7 @@
 """
-Calibration tool to verify and fix projection parameters.
+Projection calibration analysis.
 
-This tool helps identify which parameter is causing projection misalignment:
+This module helps identify which parameter is causing projection misalignment:
 1. Pan offset
 2. Camera height
 3. Focal length / intrinsics
@@ -13,85 +13,64 @@ The tool will:
 """
 
 import math
-import os
-import re
-import sys
+from dataclasses import dataclass
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from poc_homography.camera_config import get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 
-def dms_to_dd(dms_str: str) -> float:
-    """
-    Convert DMS (degrees, minutes, seconds) string to decimal degrees.
+@dataclass
+class ProjectionAnalysisResult:
+    """Result of projection error analysis."""
 
-    Supports formats like:
-    - "39°38'25.72\"N"
-    - "0°13'48.63\"W"
+    # Current projection
+    projected_u: PixelsFloat | None
+    projected_v: PixelsFloat | None
+    error_pixels: float | None
 
-    Args:
-        dms_str: DMS coordinate string
+    # Parameter sweep results
+    best_pan_offset: Degrees
+    best_pan_error: PixelsFloat
+    best_height: Meters
+    best_height_error: PixelsFloat
 
-    Returns:
-        Decimal degrees (negative for S/W)
-    """
-    # Pattern to match DMS format
-    pattern = r"""(\d+)°(\d+)'([\d.]+)"?([NSEW])"""
-    match = re.match(pattern, dms_str)
-    if not match:
-        raise ValueError(f"Invalid DMS format: {dms_str}")
+    # Joint optimization
+    best_joint_pan_offset: Degrees
+    best_joint_height: Meters
+    best_joint_error: PixelsFloat
 
-    degrees = int(match.group(1))
-    minutes = int(match.group(2))
-    seconds = float(match.group(3))
-    direction = match.group(4)
-
-    dd = degrees + minutes / 60 + seconds / 3600
-
-    # Negative for South and West
-    if direction in ("S", "W"):
-        dd = -dd
-
-    return dd
-
-
-# Load camera configs from canonical source and convert DMS to decimal degrees
-def _convert_camera_config(cam):
-    """Convert camera config from DMS format to decimal degrees for this tool."""
-    return {
-        "lat": dms_to_dd(cam["lat"]),
-        "lon": dms_to_dd(cam["lon"]),
-        "height_m": cam["height_m"],
-        "pan_offset_deg": cam["pan_offset_deg"],
-    }
-
-
-CAMERA_CONFIGS = {cam["name"]: _convert_camera_config(cam) for cam in get_camera_configs()}
+    # Whether parameters need adjustment
+    needs_pan_adjustment: bool
+    needs_height_adjustment: bool
 
 
 def analyze_projection_error(
-    camera_config: dict,
-    map_point_x: float,
-    map_point_y: float,
-    actual_u: float,
-    actual_v: float,
-    pan_raw: float,
-    tilt_deg: float,
-    zoom: float,
-    image_width: int = 1920,
-    image_height: int = 1080,
-):
+    camera_lat: Degrees,
+    camera_lon: Degrees,
+    height_m: Meters,
+    pan_offset_deg: Degrees,
+    map_point_x: Meters,
+    map_point_y: Meters,
+    actual_u: PixelsFloat,
+    actual_v: PixelsFloat,
+    pan_raw: Degrees,
+    tilt_deg: Degrees,
+    zoom: Unitless,
+    image_width: Pixels = Pixels(1920),
+    image_height: Pixels = Pixels(1080),
+) -> ProjectionAnalysisResult:
     """
     Analyze the projection error for a known reference point.
 
     Args:
-        camera_config: Camera configuration dictionary
-        map_point_x: X coordinate from MapPoint (world/local coordinate)
-        map_point_y: Y coordinate from MapPoint (world/local coordinate)
+        camera_lat: Camera latitude in decimal degrees
+        camera_lon: Camera longitude in decimal degrees
+        height_m: Camera height in meters
+        pan_offset_deg: Pan offset calibration in degrees
+        map_point_x: X coordinate from MapPoint (meters, East)
+        map_point_y: Y coordinate from MapPoint (meters, North)
         actual_u: Actual image pixel U coordinate where user clicked
         actual_v: Actual image pixel V coordinate where user clicked
         pan_raw: Raw pan value from camera PTZ
@@ -99,14 +78,17 @@ def analyze_projection_error(
         zoom: Zoom factor
         image_width: Image width in pixels
         image_height: Image height in pixels
-    """
-    camera_lat = camera_config["lat"]
-    camera_lon = camera_config["lon"]
-    height_m = camera_config["height_m"]
-    pan_offset_deg = camera_config["pan_offset_deg"]
 
+    Returns:
+        ProjectionAnalysisResult containing analysis data
+    """
     # Current pan calculation
-    pan_deg = pan_raw + pan_offset_deg
+    pan_deg = Degrees(pan_raw + pan_offset_deg)
+
+    # Use map point coordinates directly as local XY
+    x_m, y_m = map_point_x, map_point_y
+    distance = math.sqrt(x_m**2 + y_m**2)
+    bearing = math.degrees(math.atan2(x_m, y_m))
 
     print("\n" + "=" * 70)
     print("PROJECTION ERROR ANALYSIS")
@@ -122,11 +104,6 @@ def analyze_projection_error(
     print(f"  Pan raw: {pan_raw}°, Offset: {pan_offset_deg}°, Applied: {pan_deg}°")
     print(f"  Tilt: {tilt_deg}°, Zoom: {zoom}x")
 
-    # Use map point coordinates directly as local XY
-    x_m, y_m = map_point_x, map_point_y
-    distance = math.sqrt(x_m**2 + y_m**2)
-    bearing = math.degrees(math.atan2(x_m, y_m))  # Bearing from camera to point
-
     print("\nLocal Coordinates:")
     print(f"  X (East): {x_m:.2f}m")
     print(f"  Y (North): {y_m:.2f}m")
@@ -134,33 +111,34 @@ def analyze_projection_error(
     print(f"  Bearing from camera: {bearing:.1f}°")
 
     # Get intrinsics
-    K = CameraGeometry.get_intrinsics(zoom, image_width, image_height, 7.18)
+    K = CameraGeometry.get_intrinsics(zoom, image_width, image_height, Millimeters(7.18))
 
     # Project with current parameters
     geo = CameraGeometry(w=image_width, h=image_height)
-    w_pos = np.array([0.0, 0.0, height_m])
-    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, 640, 640)
+    w_pos = np.array([0.0, 0.0, float(height_m)])
+    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, Pixels(640), Pixels(640))
 
-    world_pt = np.array([[x_m], [y_m], [1.0]])
+    world_pt = np.array([[float(x_m)], [float(y_m)], [1.0]])
     img_pt = geo.H @ world_pt
     if img_pt[2, 0] > 0:
-        projected_u = img_pt[0, 0] / img_pt[2, 0]
-        projected_v = img_pt[1, 0] / img_pt[2, 0]
-    else:
-        projected_u, projected_v = None, None
-
-    print("\nProjection Result:")
-    if projected_u is not None:
-        print(f"  Current projection: ({projected_u:.1f}, {projected_v:.1f})")
+        projected_u = PixelsFloat(img_pt[0, 0] / img_pt[2, 0])
+        projected_v = PixelsFloat(img_pt[1, 0] / img_pt[2, 0])
         error_u = actual_u - projected_u
         error_v = actual_v - projected_v
         error_dist = math.sqrt(error_u**2 + error_v**2)
+    else:
+        projected_u, projected_v = None, None
+        error_dist = None
+
+    print("\nProjection Result:")
+    if projected_u is not None and projected_v is not None and error_dist is not None:
+        print(f"  Current projection: ({projected_u:.1f}, {projected_v:.1f})")
         print(f"  Actual pixel: ({actual_u:.1f}, {actual_v:.1f})")
         print(f"  Error: ({error_u:.1f}, {error_v:.1f}) = {error_dist:.1f} pixels")
     else:
         print("  Point projects behind camera!")
 
-    # Now analyze what parameters would fix the projection
+    # Parameter sweep analysis
     print("\n" + "=" * 70)
     print("PARAMETER SWEEP ANALYSIS")
     print("=" * 70)
@@ -171,8 +149,8 @@ def analyze_projection_error(
     best_pan_offset = pan_offset_deg
 
     for test_offset in np.arange(-180, 180, 1):
-        test_pan = pan_raw + test_offset
-        geo.set_camera_parameters(K, w_pos, test_pan, tilt_deg, 640, 640)
+        test_pan = Degrees(pan_raw + float(test_offset))
+        geo.set_camera_parameters(K, w_pos, test_pan, tilt_deg, Pixels(640), Pixels(640))
         img_pt = geo.H @ world_pt
         if img_pt[2, 0] > 0:
             u = img_pt[0, 0] / img_pt[2, 0]
@@ -180,7 +158,7 @@ def analyze_projection_error(
             error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
             if error < best_pan_error:
                 best_pan_error = error
-                best_pan_offset = test_offset
+                best_pan_offset = Degrees(float(test_offset))
 
     print(f"  Current pan offset: {pan_offset_deg}°")
     print(f"  Best pan offset: {best_pan_offset}°")
@@ -195,7 +173,7 @@ def analyze_projection_error(
 
     for test_height in np.arange(1.0, 20.0, 0.1):
         test_w_pos = np.array([0.0, 0.0, test_height])
-        geo.set_camera_parameters(K, test_w_pos, pan_deg, tilt_deg, 640, 640)
+        geo.set_camera_parameters(K, test_w_pos, pan_deg, tilt_deg, Pixels(640), Pixels(640))
         img_pt = geo.H @ world_pt
         if img_pt[2, 0] > 0:
             u = img_pt[0, 0] / img_pt[2, 0]
@@ -203,7 +181,7 @@ def analyze_projection_error(
             error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
             if error < best_height_error:
                 best_height_error = error
-                best_height = test_height
+                best_height = Meters(test_height)
 
     print(f"  Current height: {height_m}m")
     print(f"  Best height: {best_height:.2f}m")
@@ -218,11 +196,13 @@ def analyze_projection_error(
     best_joint_height = height_m
 
     for test_offset in np.arange(-180, 180, 5):  # Coarser grid for speed
-        test_pan = pan_raw + test_offset
+        test_pan = Degrees(pan_raw + float(test_offset))
         for test_height in np.arange(1.0, 20.0, 0.5):
-            test_w_pos = np.array([0.0, 0.0, test_height])
+            test_w_pos = np.array([0.0, 0.0, float(test_height)])
             try:
-                geo.set_camera_parameters(K, test_w_pos, test_pan, tilt_deg, 640, 640)
+                geo.set_camera_parameters(
+                    K, test_w_pos, test_pan, tilt_deg, Pixels(640), Pixels(640)
+                )
             except ValueError:
                 continue
             img_pt = geo.H @ world_pt
@@ -232,8 +212,8 @@ def analyze_projection_error(
                 error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
                 if error < best_joint_error:
                     best_joint_error = error
-                    best_joint_pan = test_offset
-                    best_joint_height = test_height
+                    best_joint_pan = Degrees(float(test_offset))
+                    best_joint_height = Meters(float(test_height))
 
     print(f"  Best pan offset: {best_joint_pan}°")
     print(f"  Best height: {best_joint_height:.2f}m")
@@ -256,3 +236,18 @@ def analyze_projection_error(
         print("  - Camera GPS position may be inaccurate")
         print("  - Tilt angle may be incorrectly reported by camera")
         print("  - Map point coordinates may be inaccurate")
+
+    return ProjectionAnalysisResult(
+        projected_u=projected_u,
+        projected_v=projected_v,
+        error_pixels=error_dist,
+        best_pan_offset=best_pan_offset,
+        best_pan_error=PixelsFloat(best_pan_error),
+        best_height=best_height,
+        best_height_error=PixelsFloat(best_height_error),
+        best_joint_pan_offset=best_joint_pan,
+        best_joint_height=best_joint_height,
+        best_joint_error=PixelsFloat(best_joint_error),
+        needs_pan_adjustment=abs(best_pan_offset - pan_offset_deg) > 5,
+        needs_height_adjustment=abs(best_height - height_m) > 0.5,
+    )

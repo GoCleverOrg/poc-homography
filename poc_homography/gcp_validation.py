@@ -36,17 +36,13 @@ def _is_valid_finite_number(value: Any) -> bool:
     Returns:
         True if value is a valid finite number, False otherwise
     """
-    # Check for numeric types (includes numpy types via numbers.Number ABC)
-    if not isinstance(value, numbers.Number):
-        return False
-
-    # Reject complex numbers
-    if isinstance(value, complex):
+    # Check for real numeric types (excludes complex, includes numpy float/int)
+    if not isinstance(value, numbers.Real):
         return False
 
     # Check for NaN and Infinity
     try:
-        float_value = float(value)  # type: ignore[arg-type]
+        float_value = float(value)
         if math.isnan(float_value) or math.isinf(float_value):
             return False
     except (TypeError, ValueError):

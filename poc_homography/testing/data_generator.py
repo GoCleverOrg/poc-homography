@@ -1,7 +1,7 @@
 """
-Standalone test data generator tool for camera calibration GCPs.
+Test data generator for camera calibration GCPs.
 
-This tool captures full-resolution camera frames from PTZ cameras and enables
+This module captures full-resolution camera frames from PTZ cameras and enables
 interactive marking of Ground Control Points (GCPs) with map point references.
 Automatically fetches camera parameters (pan/tilt/zoom, GPS, height) and exports
 test data in JSON format.
@@ -9,109 +9,31 @@ test data in JSON format.
 
 from __future__ import annotations
 
-import argparse
 import http.server
 import json
 import os
-import sys
+import shutil
 import tempfile
 import webbrowser
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import cv2
 
-# Add parent directory to path for imports
-parent_dir = str(Path(__file__).parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+if TYPE_CHECKING:
+    from pathlib import Path
 
-from tools.calibrate_projection import dms_to_dd
-from tools.get_camera_intrinsics import get_ptz_status
-
+from poc_homography.camera.intrinsics import get_ptz_status
 from poc_homography.camera_config import (
-    CAMERAS,
     PASSWORD,
     USERNAME,
     get_camera_by_name,
     get_rtsp_url,
 )
+from poc_homography.coordinates import dms_to_dd
 from poc_homography.map_points import MapPointRegistry
 from poc_homography.server_utils import find_available_port
-
-
-def parse_arguments(argv: list[str]) -> argparse.Namespace:
-    """
-    Parse command-line arguments.
-
-    Args:
-        argv: Command-line arguments (typically sys.argv[1:])
-
-    Returns:
-        Parsed arguments namespace with fields:
-        - camera_name: str or None
-        - output: str or None
-        - list_cameras: bool
-        - map_points: str (path to map points JSON file)
-
-    Raises:
-        SystemExit: If arguments are invalid (argparse behavior)
-    """
-    parser = argparse.ArgumentParser(
-        description="Test data generator for camera calibration GCPs",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-
-    parser.add_argument(
-        "camera_name", type=str, nargs="?", help="Camera name (e.g., Valte, Setram)"
-    )
-
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="Output JSON file path (default: test_data_{camera}_{timestamp}.json)",
-    )
-
-    parser.add_argument(
-        "--list-cameras", action="store_true", help="List available cameras and exit"
-    )
-
-    parser.add_argument(
-        "--map-points",
-        type=str,
-        default="map_points.json",
-        help="Path to map points JSON file (default: map_points.json)",
-    )
-
-    args = parser.parse_args(argv)
-
-    # Validate that camera_name is provided if not listing cameras
-    if not args.list_cameras and not args.camera_name:
-        parser.error("camera_name is required unless --list-cameras is specified")
-
-    return args
-
-
-def validate_camera_name(camera_name: str, cameras: list[dict]) -> None:
-    """
-    Validate that camera name exists in camera list.
-
-    Args:
-        camera_name: Name of camera to validate
-        cameras: List of camera configuration dicts with 'name' field
-
-    Raises:
-        ValueError: If camera name not found in cameras list
-    """
-    available_names = [cam["name"] for cam in cameras]
-
-    if camera_name not in available_names:
-        raise ValueError(
-            f"Camera '{camera_name}' not found. Available: {', '.join(available_names)}"
-        )
 
 
 def validate_gps_ranges(latitude: float, longitude: float) -> None:
@@ -132,38 +54,6 @@ def validate_gps_ranges(latitude: float, longitude: float) -> None:
         raise ValueError(f"Longitude must be between -180 and 180 degrees, got {longitude}")
 
 
-def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
-    """
-    Load map points from JSON file using MapPointRegistry.
-
-    Args:
-        map_points_path: Path to map points JSON file
-
-    Returns:
-        MapPointRegistry containing loaded map points
-
-    Raises:
-        FileNotFoundError: If file doesn't exist
-        json.JSONDecodeError: If JSON is invalid
-        KeyError: If required keys are missing
-        ValueError: If data format is invalid
-    """
-    return MapPointRegistry.load(map_points_path)
-
-
-def convert_map_points_to_list(registry: MapPointRegistry) -> list[dict]:
-    """
-    Convert MapPointRegistry to list format for web interface.
-
-    Args:
-        registry: MapPointRegistry to convert
-
-    Returns:
-        List of dictionaries with id, pixel_x, pixel_y, map_id keys
-    """
-    return [point.to_dict() for point in registry.points.values()]
-
-
 def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> tuple[float, float]:
     """
     Convert GPS coordinates from DMS format to decimal degrees with validation.
@@ -178,7 +68,7 @@ def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> tuple[float, float]:
     Raises:
         ValueError: If converted coordinates are outside valid ranges
     """
-    # Convert using existing dms_to_dd function
+    # Convert using dms_to_dd function
     latitude = dms_to_dd(lat_dms)
     longitude = dms_to_dd(lon_dms)
 
@@ -188,7 +78,7 @@ def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> tuple[float, float]:
     return (latitude, longitude)
 
 
-def extract_camera_parameters(camera_config: dict) -> dict:
+def extract_camera_parameters(camera_config: dict[str, Any]) -> dict[str, float]:
     """
     Extract camera GPS position and height from camera config.
 
@@ -211,7 +101,7 @@ def extract_camera_parameters(camera_config: dict) -> dict:
     return {"latitude": latitude, "longitude": longitude, "height_meters": height_m}
 
 
-def fetch_ptz_status(camera_config: dict) -> dict:
+def fetch_ptz_status(camera_config: dict[str, Any]) -> dict[str, float]:
     """
     Fetch current PTZ status from camera.
 
@@ -223,19 +113,26 @@ def fetch_ptz_status(camera_config: dict) -> dict:
 
     Raises:
         RuntimeError: If PTZ status cannot be fetched
+        ValueError: If credentials are not configured
     """
+    if not USERNAME or not PASSWORD:
+        raise ValueError(
+            "Camera credentials not configured. "
+            "Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables."
+        )
+
     ip = camera_config["ip"]
 
     try:
         ptz_data = get_ptz_status(ip, USERNAME, PASSWORD, timeout=10.0)
 
         return {
-            "pan_deg": ptz_data["pan"],
-            "tilt_deg": ptz_data["tilt"],
-            "zoom_level": ptz_data["zoom"],
+            "pan_deg": float(ptz_data.pan),
+            "tilt_deg": float(ptz_data.tilt),
+            "zoom_level": float(ptz_data.zoom),
         }
     except RuntimeError as e:
-        raise RuntimeError(f"Failed to fetch PTZ status: {e}")
+        raise RuntimeError(f"Failed to fetch PTZ status: {e}") from e
 
 
 def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
@@ -298,18 +195,18 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
 
 
 def generate_json_output(
-    camera_info: dict,
-    gcps: list[dict],
+    camera_info: dict[str, float],
+    gcps: list[dict[str, Any]],
     camera_name: str,
     output_path: str | None = None,
     frame_path: str | None = None,
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     """
     Generate JSON output file with camera info and GCPs, and copy the frame image.
 
     Args:
-        camera_info: Dictionary with camera parameters (latitude, longitude, height_meters, pan_deg, tilt_deg, zoom_level)
-        gcps: List of GCP dictionaries with pixel_x, pixel_y, and either map_point_id or latitude/longitude
+        camera_info: Dictionary with camera parameters
+        gcps: List of GCP dictionaries
         camera_name: Name of the camera
         output_path: Optional custom output path for JSON
         frame_path: Optional path to the captured frame image
@@ -317,8 +214,6 @@ def generate_json_output(
     Returns:
         Dictionary with 'json_path' and 'image_path' keys
     """
-    import shutil
-
     # Generate default filename if not provided
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -331,7 +226,7 @@ def generate_json_output(
     with open(output_path, "w") as f:
         json.dump(data, f, indent=2)
 
-    result = {"json_path": output_path, "image_path": None}
+    result: dict[str, str | None] = {"json_path": output_path, "image_path": None}
 
     # Copy frame image with matching filename
     if frame_path and os.path.exists(frame_path):
@@ -343,14 +238,36 @@ def generate_json_output(
     return result
 
 
-# Global variables for server state
-SERVER_STATE = {
-    "frame_path": None,
-    "camera_info": {},
-    "camera_name": None,
-    "output_path": None,
-    "map_points": [],  # List of {id, pixel_x, pixel_y, map_id} from map points file
-}
+def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
+    """
+    Load map points from JSON file using MapPointRegistry.
+
+    Args:
+        map_points_path: Path to map points JSON file
+
+    Returns:
+        MapPointRegistry containing loaded map points
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        json.JSONDecodeError: If JSON is invalid
+        KeyError: If required keys are missing
+        ValueError: If data format is invalid
+    """
+    return MapPointRegistry.load(map_points_path)
+
+
+def convert_map_points_to_list(registry: MapPointRegistry) -> list[dict[str, Any]]:
+    """
+    Convert MapPointRegistry to list format for web interface.
+
+    Args:
+        registry: MapPointRegistry to convert
+
+    Returns:
+        List of dictionaries with id, pixel_x, pixel_y, map_id keys
+    """
+    return [point.to_dict() for point in registry.points.values()]
 
 
 def create_html_interface() -> str:
@@ -912,14 +829,27 @@ def create_html_interface() -> str:
 </html>"""
 
 
+# Global state for server
+class ServerState:
+    """Server state container."""
+
+    frame_path: str | None = None
+    camera_info: dict[str, float] = {}
+    camera_name: str | None = None
+    output_path: str | None = None
+    map_points: list[dict[str, Any]] = []
+
+
+SERVER_STATE = ServerState()
+
+
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     """HTTP request handler for test data generator web interface."""
 
-    def log_message(self, format, *args):
+    def log_message(self, _format: str, *_args: Any) -> None:
         """Suppress default logging."""
-        pass
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         """Handle GET requests."""
         parsed_url = urlparse(self.path)
 
@@ -936,25 +866,29 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             data = {
-                "camera_info": SERVER_STATE["camera_info"],
-                "camera_name": SERVER_STATE["camera_name"],
-                "map_points": SERVER_STATE["map_points"],
+                "camera_info": SERVER_STATE.camera_info,
+                "camera_name": SERVER_STATE.camera_name,
+                "map_points": SERVER_STATE.map_points,
             }
             self.wfile.write(json.dumps(data).encode())
 
         elif parsed_url.path == "/api/image":
             # Serve captured frame image
-            self.send_response(200)
-            self.send_header("Content-type", "image/jpeg")
-            self.end_headers()
-            with open(SERVER_STATE["frame_path"], "rb") as f:
-                self.wfile.write(f.read())
+            if SERVER_STATE.frame_path:
+                self.send_response(200)
+                self.send_header("Content-type", "image/jpeg")
+                self.end_headers()
+                with open(SERVER_STATE.frame_path, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(404)
+                self.end_headers()
 
         else:
             self.send_response(404)
             self.end_headers()
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         """Handle POST requests."""
         if self.path == "/api/export":
             # Handle JSON export
@@ -966,9 +900,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             result = generate_json_output(
                 camera_info=data["camera_info"],
                 gcps=data["gcps"],
-                camera_name=SERVER_STATE["camera_name"],
-                output_path=SERVER_STATE["output_path"],
-                frame_path=SERVER_STATE["frame_path"],
+                camera_name=SERVER_STATE.camera_name or "unknown",
+                output_path=SERVER_STATE.output_path,
+                frame_path=SERVER_STATE.frame_path,
             )
 
             self.send_response(200)
@@ -980,28 +914,29 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
 
-def main():
-    """Main entry point."""
-    args = parse_arguments(sys.argv[1:])
+def run_data_generator(
+    camera_name: str,
+    output_path: str | None = None,
+    map_points_path: Path | None = None,
+) -> None:
+    """
+    Run the test data generator for a camera.
 
-    # Handle --list-cameras
-    if args.list_cameras:
-        print("Available cameras:")
-        for cam in CAMERAS:
-            print(f"  - {cam['name']} ({cam['ip']})")
-        sys.exit(0)
+    Args:
+        camera_name: Name of the camera
+        output_path: Optional custom output path for JSON
+        map_points_path: Path to map points JSON file
 
-    # Validate camera name
-    try:
-        validate_camera_name(args.camera_name, CAMERAS)
-    except ValueError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-
+    Raises:
+        RuntimeError: If camera operations fail
+        ValueError: If camera not found
+    """
     # Get camera config
-    camera_config = get_camera_by_name(args.camera_name)
+    camera_config = get_camera_by_name(camera_name)
+    if not camera_config:
+        raise ValueError(f"Camera '{camera_name}' not found in configuration")
 
-    print(f"=== Test Data Generator for {args.camera_name} ===\n")
+    print(f"=== Test Data Generator for {camera_name} ===\n")
 
     # Step 1: Extract camera parameters
     print("1. Extracting camera parameters...")
@@ -1011,7 +946,7 @@ def main():
         print(f"   Height: {camera_params['height_meters']} m")
     except Exception as e:
         print(f"   Error: {e}")
-        sys.exit(1)
+        raise RuntimeError(f"Failed to extract camera parameters: {e}") from e
 
     # Step 2: Fetch PTZ status
     print("2. Fetching PTZ status...")
@@ -1031,34 +966,37 @@ def main():
     # Step 3: Capture frame
     print("3. Capturing frame from camera...")
     try:
-        frame_path = capture_frame_from_rtsp(args.camera_name, timeout_sec=10.0)
+        frame_path = capture_frame_from_rtsp(camera_name, timeout_sec=10.0)
     except RuntimeError as e:
         print(f"   Error: {e}")
-        sys.exit(1)
+        raise
 
     # Step 4: Load map points
-    map_points = []
-    print(f"4. Loading map points from {args.map_points}...")
-    try:
-        registry = load_map_points(args.map_points)
-        map_points = convert_map_points_to_list(registry)
-        print(f"   Loaded {len(map_points)} points from map '{registry.map_id}'")
-    except FileNotFoundError:
-        print(f"   Warning: Map points file not found: {args.map_points}")
-        print("   Continuing without map points (manual coordinate entry required)")
-    except Exception as e:
-        print(f"   Warning: Failed to load map points: {e}")
-        print("   Continuing without map points")
+    map_points: list[dict[str, Any]] = []
+    if map_points_path:
+        print(f"4. Loading map points from {map_points_path}...")
+        try:
+            registry = load_map_points(map_points_path)
+            map_points = convert_map_points_to_list(registry)
+            print(f"   Loaded {len(map_points)} points from map '{registry.map_id}'")
+        except FileNotFoundError:
+            print(f"   Warning: Map points file not found: {map_points_path}")
+            print("   Continuing without map points (manual coordinate entry required)")
+        except Exception as e:
+            print(f"   Warning: Failed to load map points: {e}")
+            print("   Continuing without map points")
+    else:
+        print("4. No map points file specified - skipping")
 
     # Step 5: Start web server
     print("\n5. Starting web server...")
 
     # Store state for server
-    SERVER_STATE["frame_path"] = frame_path
-    SERVER_STATE["camera_info"] = camera_info
-    SERVER_STATE["camera_name"] = args.camera_name
-    SERVER_STATE["output_path"] = args.output
-    SERVER_STATE["map_points"] = map_points
+    SERVER_STATE.frame_path = frame_path
+    SERVER_STATE.camera_info = camera_info
+    SERVER_STATE.camera_name = camera_name
+    SERVER_STATE.output_path = output_path
+    SERVER_STATE.map_points = map_points
 
     # Find available port
     port = find_available_port(start_port=8080, max_attempts=10)
@@ -1080,11 +1018,7 @@ def main():
         server.shutdown()
 
         # Clean up temp file
-        if os.path.exists(frame_path):
+        if frame_path and os.path.exists(frame_path):
             os.unlink(frame_path)
 
         print("Done!")
-
-
-if __name__ == "__main__":
-    main()
