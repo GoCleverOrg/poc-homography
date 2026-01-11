@@ -22,15 +22,19 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
+    "django>=5.0",
+    "jinja2>=3.1.6",
     "numpy>=1.24",
     "opencv-python>=4.7.0",
-    "requests>=2.28",
-    "PyYAML>=6.0",
-    "scipy>=1.9",
     "pyproj>=3.7.1",
-    "jinja2>=3.1.6",
-    "django>=5.0",
+    "PyYAML>=6.0",
+    "requests>=2.28",
+    "scipy>=1.9",
+    "typer>=0.9.0",
 ]
+
+[project.scripts]
+hom = "poc_homography.cli.main:app"
 
 [dependency-groups]
 dev = [
@@ -51,7 +55,7 @@ dev = [
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-src = ["poc_homography", "tools", "tests"]
+src = ["poc_homography", "tests"]
 
 [tool.ruff.lint]
 select = [
@@ -100,7 +104,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ARG", "B011", "E402", "S101", "SIM117"]  # Tests have asserts and path setup
-"tools/*" = ["ARG", "E402", "F401"]  # Tools have path setup and conditional imports
 
 [tool.ruff.lint.isort]
 known-first-party = ["poc_homography"]
@@ -114,15 +117,15 @@ line-ending = "auto"
 [tool.pyright]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
-include = ["poc_homography", "tests", "tools", "examples"]
+include = ["poc_homography", "tests", "examples"]
 exclude = ["build", "dist", ".venv", "**/__pycache__", "main.py", "ptz_discovery_and_control"]
 extraPaths = ["."]
 reportMissingImports = true
 reportMissingTypeStubs = false
 
-# Per-directory overrides: relaxed type checking for tests/tools
+# Per-directory overrides: relaxed type checking for tests
 # Production code (poc_homography/) uses default strict NewType checking
-# Tests/tools use relaxed checking since they intentionally pass raw literals
+# Tests use relaxed checking since they intentionally pass raw literals
 [[tool.pyright.executionEnvironments]]
 root = "tests"
 reportArgumentType = "none"
@@ -135,21 +138,6 @@ reportReturnType = "none"
 reportAbstractUsage = "none"
 reportMissingImports = "none"
 reportUndefinedVariable = "none"
-
-[[tool.pyright.executionEnvironments]]
-root = "tools"
-reportArgumentType = "none"
-reportOptionalSubscript = "none"
-reportOptionalMemberAccess = "none"
-reportOptionalCall = "none"
-reportAttributeAccessIssue = "none"
-reportCallIssue = "none"
-reportOperatorIssue = "none"
-reportMissingImports = "none"
-reportGeneralTypeIssues = "none"
-reportIndexIssue = "none"
-reportAssignmentType = "none"
-reportReturnType = "none"
 
 [[tool.pyright.executionEnvironments]]
 root = "examples"
@@ -175,7 +163,7 @@ markers = [
 [tool.coverage.run]
 source = ["poc_homography"]
 branch = true
-omit = ["tests/*", "tools/*"]
+omit = ["tests/*"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -189,7 +177,7 @@ exclude_lines = [
 [tool.vulture]
 min_confidence = 80
 paths = ["poc_homography"]
-exclude = ["tests/", "tools/", "examples/", "build/", "dist/"]
+exclude = ["tests/", "examples/", "build/", "dist/"]
 # Ignore interface parameters required by ABC but not used in all implementations
 ignore_names = ["frame", "kwargs"]
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache as cache
+from functools import cached_property
 from typing import Any
 
 from poc_homography.pixel_point import PixelPoint
@@ -28,8 +28,7 @@ class MapPoint:
     pixel_x: float
     pixel_y: float
 
-    @property
-    @cache(maxsize=1)  # noqa: B019 - safe on frozen dataclass
+    @cached_property
     def pixel(self) -> PixelPoint:
         """Get pixel coordinates as a PixelPoint."""
         return PixelPoint(self.pixel_x, self.pixel_y)
