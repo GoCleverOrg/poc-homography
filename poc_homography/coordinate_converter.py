@@ -8,36 +8,36 @@ and local Cartesian (X, Y) coordinate systems using UTM projection via pyproj.
 The UTM-based approach provides accurate conversions that match georeferenced
 imagery using UTM coordinates (e.g., ETRS89 / UTM Zone 30N - EPSG:25830).
 
+This module uses an IMMUTABLE pattern - converters are created via factory methods
+`with_reference()` and `with_reference_utm()` which return fully configured instances.
+
 Coordinate System Convention:
     - X axis: East-West direction (positive = East, negative = West)
     - Y axis: North-South direction (positive = North, negative = South)
     - Reference point: (0, 0) in local coordinates
 
-Accuracy Notes (UTM via pyproj):
-    - High accuracy at all reasonable distances
-    - Matches georeferenced imagery exactly
-    - Recommended for GCP work with orthorectified maps
+USAGE:
+======
+```python
+# Create converter with GPS reference (immutable pattern)
+converter = UTMConverter.with_reference(lat=39.5, lon=-0.5)
+x, y = converter.gps_to_local_xy(39.501, -0.499)
+
+# Create converter with UTM reference
+converter = UTMConverter.with_reference_utm(easting=737575.0, northing=4391595.0)
+x, y = converter.utm_to_local_xy(737580.0, 4391600.0)
+```
 
 Axis Order Convention (CRITICAL):
     All pyproj.Transformer instances MUST use always_xy=True to enforce
     traditional GIS axis ordering:
     - EPSG:4326 (WGS84 GPS): (longitude, latitude) - NOT authority order
     - EPSG:25830 (UTM 30N): (easting, northing)
-
-    Why always_xy=True is required:
-    - EPSG:4326 authority definition specifies (latitude, longitude) order
-    - GIS tools traditionally use (longitude, latitude) for consistency with (x,y)
-    - Without always_xy=True, axis order depends on CRS metadata (unpredictable)
-    - Axis swaps cause silent catastrophic calibration failures
-
-    Correct usage:
-        transformer = Transformer.from_crs("EPSG:4326", "EPSG:25830", always_xy=True)
-        easting, northing = transformer.transform(longitude, latitude)
-
-    See: https://pyproj4.github.io/pyproj/stable/api/transformer.html#pyproj.transformer.Transformer.from_crs
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from poc_homography.types import Degrees, Meters
 
@@ -56,6 +56,75 @@ EARTH_RADIUS_M = 6371000.0
 DEFAULT_UTM_CRS = "EPSG:25830"  # ETRS89 / UTM Zone 30N
 
 
+@dataclass(frozen=True)
+class UTMConverterConfig:
+    """
+    Immutable configuration for UTMConverter.
+
+    This frozen dataclass captures all the state needed to configure a UTMConverter,
+    enabling an immutable factory pattern for creating pre-configured converters.
+
+    Attributes:
+        utm_crs: The UTM coordinate reference system (e.g., "EPSG:25830")
+        reference_lat: Reference latitude in decimal degrees (or None if not set)
+        reference_lon: Reference longitude in decimal degrees (or None if not set)
+        reference_easting: Reference UTM easting in meters (or None if not set)
+        reference_northing: Reference UTM northing in meters (or None if not set)
+    """
+
+    utm_crs: str = DEFAULT_UTM_CRS
+    reference_lat: Degrees | None = None
+    reference_lon: Degrees | None = None
+    reference_easting: Meters | None = None
+    reference_northing: Meters | None = None
+
+    @classmethod
+    def from_gps(
+        cls, lat: Degrees, lon: Degrees, utm_crs: str = DEFAULT_UTM_CRS
+    ) -> UTMConverterConfig:
+        """
+        Create a config from GPS coordinates.
+
+        Args:
+            lat: Reference latitude in decimal degrees
+            lon: Reference longitude in decimal degrees
+            utm_crs: The UTM coordinate reference system
+
+        Returns:
+            UTMConverterConfig with GPS reference set
+        """
+        return cls(
+            utm_crs=utm_crs,
+            reference_lat=lat,
+            reference_lon=lon,
+            reference_easting=None,
+            reference_northing=None,
+        )
+
+    @classmethod
+    def from_utm(
+        cls, easting: Meters, northing: Meters, utm_crs: str = DEFAULT_UTM_CRS
+    ) -> UTMConverterConfig:
+        """
+        Create a config from UTM coordinates.
+
+        Args:
+            easting: Reference UTM easting in meters
+            northing: Reference UTM northing in meters
+            utm_crs: The UTM coordinate reference system
+
+        Returns:
+            UTMConverterConfig with UTM reference set
+        """
+        return cls(
+            utm_crs=utm_crs,
+            reference_lat=None,
+            reference_lon=None,
+            reference_easting=easting,
+            reference_northing=northing,
+        )
+
+
 class UTMConverter:
     """
     UTM-based coordinate converter using pyproj.
@@ -63,14 +132,32 @@ class UTMConverter:
     This provides accurate coordinate conversion that matches georeferenced
     imagery using UTM projections. Unlike the equirectangular approximation,
     this uses the proper ellipsoidal Earth model and conformal projection.
+
+    Use the factory methods `with_reference()` or `with_reference_utm()` to
+    create configured instances (immutable pattern).
     """
 
-    def __init__(self, utm_crs: str = DEFAULT_UTM_CRS):
+    def __init__(
+        self,
+        utm_crs: str = DEFAULT_UTM_CRS,
+        *,
+        _ref_easting: float | None = None,
+        _ref_northing: float | None = None,
+        _ref_lat: float | None = None,
+        _ref_lon: float | None = None,
+    ):
         """
         Initialize the UTM converter.
 
+        Note: For most use cases, prefer the factory methods `with_reference()`
+        or `with_reference_utm()` instead of calling __init__ directly.
+
         Args:
             utm_crs: The UTM coordinate reference system (e.g., "EPSG:25830")
+            _ref_easting: Internal - reference UTM easting (use factory methods)
+            _ref_northing: Internal - reference UTM northing (use factory methods)
+            _ref_lat: Internal - reference latitude (use factory methods)
+            _ref_lon: Internal - reference longitude (use factory methods)
         """
         if not PYPROJ_AVAILABLE:
             raise ImportError(
@@ -81,48 +168,112 @@ class UTMConverter:
         self._to_utm = Transformer.from_crs("EPSG:4326", utm_crs, always_xy=True)
         self._to_wgs84 = Transformer.from_crs(utm_crs, "EPSG:4326", always_xy=True)
 
-        # Reference point (set when first conversion is made)
-        self._ref_easting: float | None = None
-        self._ref_northing: float | None = None
-        self._ref_lat: float | None = None
-        self._ref_lon: float | None = None
+        # Reference point (immutable after construction)
+        self._ref_easting: float | None = _ref_easting
+        self._ref_northing: float | None = _ref_northing
+        self._ref_lat: float | None = _ref_lat
+        self._ref_lon: float | None = _ref_lon
 
-    def set_reference(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
+    @classmethod
+    def with_reference(
+        cls, lat: Degrees, lon: Degrees, utm_crs: str = DEFAULT_UTM_CRS
+    ) -> UTMConverter:
         """
-        Set the reference point for local coordinate conversion.
+        Factory method to create a UTMConverter with GPS reference already set.
+
+        This is the preferred immutable pattern for creating configured converters.
+        Returns a new instance with the reference point already configured.
 
         Args:
             lat: Reference latitude in decimal degrees
             lon: Reference longitude in decimal degrees
+            utm_crs: The UTM coordinate reference system (default: EPSG:25830)
 
         Returns:
-            Tuple of (easting, northing) in UTM coordinates
-        """
-        self._ref_lat = lat
-        self._ref_lon = lon
-        easting, northing = self._to_utm.transform(lon, lat)
-        self._ref_easting = Meters(easting)
-        self._ref_northing = Meters(northing)
-        return self._ref_easting, self._ref_northing
+            A new UTMConverter instance with the reference point set
 
-    def set_reference_utm(self, easting: Meters, northing: Meters):
+        Example:
+            >>> converter = UTMConverter.with_reference(lat=39.5, lon=-0.5)
+            >>> x, y = converter.gps_to_local_xy(39.501, -0.499)
         """
-        Set the reference point directly in UTM coordinates.
+        # Create temporary converter to compute UTM coordinates
+        temp = cls(utm_crs=utm_crs)
+        easting, northing = temp._to_utm.transform(lon, lat)
+
+        return cls(
+            utm_crs=utm_crs,
+            _ref_easting=Meters(easting),
+            _ref_northing=Meters(northing),
+            _ref_lat=lat,
+            _ref_lon=lon,
+        )
+
+    @classmethod
+    def with_reference_utm(
+        cls, easting: Meters, northing: Meters, utm_crs: str = DEFAULT_UTM_CRS
+    ) -> UTMConverter:
+        """
+        Factory method to create a UTMConverter with UTM reference already set.
+
+        This is the preferred immutable pattern for creating configured converters.
+        Returns a new instance with the reference point already configured.
 
         Args:
-            easting: Reference easting in meters
-            northing: Reference northing in meters
+            easting: Reference UTM easting in meters
+            northing: Reference UTM northing in meters
+            utm_crs: The UTM coordinate reference system (default: EPSG:25830)
+
+        Returns:
+            A new UTMConverter instance with the reference point set
+
+        Example:
+            >>> converter = UTMConverter.with_reference_utm(easting=737575.0, northing=4391595.0)
+            >>> x, y = converter.utm_to_local_xy(737580.0, 4391600.0)
         """
-        self._ref_easting = easting
-        self._ref_northing = northing
-        lon, lat = self._to_wgs84.transform(easting, northing)
-        self._ref_lat = lat
-        self._ref_lon = lon
+        # Create temporary converter to compute GPS coordinates
+        temp = cls(utm_crs=utm_crs)
+        lon, lat = temp._to_wgs84.transform(easting, northing)
+
+        return cls(
+            utm_crs=utm_crs,
+            _ref_easting=easting,
+            _ref_northing=northing,
+            _ref_lat=lat,
+            _ref_lon=lon,
+        )
+
+    @property
+    def has_reference(self) -> bool:
+        """Check if reference point is set."""
+        return self._ref_easting is not None and self._ref_northing is not None
+
+    @property
+    def reference_easting(self) -> Meters | None:
+        """Get reference UTM easting (read-only)."""
+        return Meters(self._ref_easting) if self._ref_easting is not None else None
+
+    @property
+    def reference_northing(self) -> Meters | None:
+        """Get reference UTM northing (read-only)."""
+        return Meters(self._ref_northing) if self._ref_northing is not None else None
+
+    @property
+    def reference_lat(self) -> Degrees | None:
+        """Get reference latitude (read-only)."""
+        return Degrees(self._ref_lat) if self._ref_lat is not None else None
+
+    @property
+    def reference_lon(self) -> Degrees | None:
+        """Get reference longitude (read-only)."""
+        return Degrees(self._ref_lon) if self._ref_lon is not None else None
 
     def _require_reference(self) -> tuple[float, float]:
         """Return (easting, northing) or raise ValueError if not set."""
         if self._ref_easting is None or self._ref_northing is None:
-            raise ValueError("Reference point not set. Call set_reference() first.")
+            raise ValueError(
+                "Reference point not set. Use with_reference() or with_reference_utm() "
+                "factory methods to create a converter with a reference point."
+            )
         return self._ref_easting, self._ref_northing
 
     def gps_to_local_xy(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
@@ -212,123 +363,148 @@ class UTMConverter:
         return lat, lon
 
 
-# Global UTM converter instance (lazily initialized)
-_utm_converter: UTMConverter | None = None
-
-
-def get_utm_converter(utm_crs: str = DEFAULT_UTM_CRS) -> UTMConverter:
-    """
-    Get or create a UTM converter instance.
-
-    Args:
-        utm_crs: The UTM coordinate reference system
-
-    Returns:
-        UTMConverter instance
-    """
-    global _utm_converter
-    if _utm_converter is None or _utm_converter.utm_crs != utm_crs:
-        _utm_converter = UTMConverter(utm_crs)
-    return _utm_converter
-
-
 class GCPCoordinateConverter:
     """
     Unified coordinate converter for GCP operations.
 
     This class provides a consistent interface for converting between GPS, UTM,
-    and local XY coordinates. It automatically uses UTM (via pyproj) when available
-    for maximum accuracy, falling back to equirectangular projection otherwise.
+    and local XY coordinates. It uses UTM (via pyproj) for maximum accuracy.
 
-    The converter maintains state about:
-    - Reference point (camera position or GCP centroid)
-    - UTM CRS (if using UTM coordinates)
-    - Conversion method (UTM or equirectangular)
+    Use the factory methods `with_reference_gps()` or `with_reference_utm()` to
+    create configured instances (immutable pattern).
 
     Usage:
-        >>> converter = GCPCoordinateConverter()
-        >>> converter.set_reference_gps(39.640472, -0.230194)
+        >>> converter = GCPCoordinateConverter.with_reference_gps(39.640472, -0.230194)
         >>> x, y = converter.gps_to_local(39.640500, -0.230100)
         >>> lat, lon = converter.local_to_gps(10.0, -5.0)
     """
 
-    def __init__(self, utm_crs: str = DEFAULT_UTM_CRS, prefer_utm: bool = True):
+    def __init__(
+        self,
+        utm_crs: str = DEFAULT_UTM_CRS,
+        *,
+        _utm_converter: UTMConverter | None = None,
+        _ref_lat: float | None = None,
+        _ref_lon: float | None = None,
+        _ref_easting: float | None = None,
+        _ref_northing: float | None = None,
+    ):
         """
         Initialize the coordinate converter.
 
+        Note: For most use cases, prefer the factory methods `with_reference_gps()`
+        or `with_reference_utm()` instead of calling __init__ directly.
+
         Args:
             utm_crs: UTM coordinate reference system (default: EPSG:25830)
-            prefer_utm: If True, use UTM when pyproj is available (default: True)
+            _utm_converter: Internal - pre-configured UTM converter
+            _ref_lat: Internal - reference latitude
+            _ref_lon: Internal - reference longitude
+            _ref_easting: Internal - reference UTM easting
+            _ref_northing: Internal - reference UTM northing
         """
         self.utm_crs = utm_crs
-        self.prefer_utm = prefer_utm and PYPROJ_AVAILABLE
-        self._utm_converter: UTMConverter | None = None
+        self._utm_converter = _utm_converter
+        self._ref_lat = _ref_lat
+        self._ref_lon = _ref_lon
+        self._ref_easting = _ref_easting
+        self._ref_northing = _ref_northing
 
-        # Reference point
-        self._ref_lat: float | None = None
-        self._ref_lon: float | None = None
-        self._ref_easting: float | None = None
-        self._ref_northing: float | None = None
+    @classmethod
+    def with_reference_gps(
+        cls, lat: Degrees, lon: Degrees, utm_crs: str = DEFAULT_UTM_CRS
+    ) -> GCPCoordinateConverter:
+        """
+        Factory method to create a GCPCoordinateConverter with GPS reference already set.
 
-        # Initialize UTM converter if available and preferred
-        if self.prefer_utm:
-            try:
-                self._utm_converter = UTMConverter(utm_crs)
-            except Exception:
-                self.prefer_utm = False
+        This is the preferred immutable pattern for creating configured converters.
+        Returns a new instance with the reference point already configured.
+
+        Args:
+            lat: Reference latitude in decimal degrees
+            lon: Reference longitude in decimal degrees
+            utm_crs: UTM coordinate reference system (default: EPSG:25830)
+
+        Returns:
+            A new GCPCoordinateConverter instance with the reference point set
+
+        Example:
+            >>> converter = GCPCoordinateConverter.with_reference_gps(lat=39.640472, lon=-0.230194)
+            >>> x, y = converter.gps_to_local(39.640500, -0.230100)
+        """
+        utm_converter = UTMConverter.with_reference(lat, lon, utm_crs)
+        return cls(
+            utm_crs=utm_crs,
+            _utm_converter=utm_converter,
+            _ref_lat=lat,
+            _ref_lon=lon,
+            _ref_easting=utm_converter.reference_easting,
+            _ref_northing=utm_converter.reference_northing,
+        )
+
+    @classmethod
+    def with_reference_utm(
+        cls,
+        easting: Meters,
+        northing: Meters,
+        utm_crs: str = DEFAULT_UTM_CRS,
+    ) -> GCPCoordinateConverter:
+        """
+        Factory method to create a GCPCoordinateConverter with UTM reference already set.
+
+        This is the preferred immutable pattern for creating configured converters.
+        Returns a new instance with the reference point already configured.
+
+        Args:
+            easting: Reference UTM easting in meters
+            northing: Reference UTM northing in meters
+            utm_crs: UTM coordinate reference system (default: EPSG:25830)
+
+        Returns:
+            A new GCPCoordinateConverter instance with the reference point set
+
+        Example:
+            >>> converter = GCPCoordinateConverter.with_reference_utm(
+            ...     easting=737575.0, northing=4391595.0
+            ... )
+            >>> x, y = converter.utm_to_local(737580.0, 4391600.0)
+        """
+        utm_converter = UTMConverter.with_reference_utm(easting, northing, utm_crs)
+        return cls(
+            utm_crs=utm_crs,
+            _utm_converter=utm_converter,
+            _ref_lat=utm_converter.reference_lat,
+            _ref_lon=utm_converter.reference_lon,
+            _ref_easting=easting,
+            _ref_northing=northing,
+        )
+
+    @property
+    def has_reference(self) -> bool:
+        """Check if reference point is set."""
+        return self._utm_converter is not None and self._utm_converter.has_reference
 
     @property
     def using_utm(self) -> bool:
-        """Return True if using UTM projection, False if using equirectangular."""
-        return self.prefer_utm and self._utm_converter is not None
+        """Return True if using UTM projection."""
+        return self._utm_converter is not None
 
     def _require_gps_reference(self) -> None:
         """Raise ValueError if GPS reference point not set."""
         if self._ref_lat is None or self._ref_lon is None:
-            raise ValueError("Reference point not set. Call set_reference_gps() first.")
+            raise ValueError(
+                "Reference point not set. Use with_reference_gps() or with_reference_utm() "
+                "factory methods to create a converter with a reference point."
+            )
 
     def _require_utm_reference(self) -> tuple[float, float]:
         """Return (easting, northing) or raise ValueError if not set."""
         if self._ref_easting is None or self._ref_northing is None:
             raise ValueError(
-                "Reference point not set. Call set_reference_gps() or set_reference_utm() first."
+                "Reference point not set. Use with_reference_gps() or with_reference_utm() "
+                "factory methods to create a converter with a reference point."
             )
         return self._ref_easting, self._ref_northing
-
-    def set_reference_gps(self, lat: Degrees, lon: Degrees):
-        """
-        Set the reference point using GPS coordinates.
-
-        Args:
-            lat: Reference latitude in decimal degrees
-            lon: Reference longitude in decimal degrees
-        """
-        self._ref_lat = lat
-        self._ref_lon = lon
-
-        if self._utm_converter:
-            self._ref_easting, self._ref_northing = self._utm_converter.set_reference(lat, lon)
-        else:
-            self._ref_easting = None
-            self._ref_northing = None
-
-    def set_reference_utm(self, easting: Meters, northing: Meters):
-        """
-        Set the reference point using UTM coordinates.
-
-        Args:
-            easting: Reference easting in meters
-            northing: Reference northing in meters
-        """
-        self._ref_easting = easting
-        self._ref_northing = northing
-
-        if self._utm_converter:
-            self._utm_converter.set_reference_utm(easting, northing)
-            self._ref_lat = self._utm_converter._ref_lat
-            self._ref_lon = self._utm_converter._ref_lon
-        else:
-            raise ValueError("UTM reference requires pyproj. Install with: pip install pyproj")
 
     def gps_to_local(self, lat: Degrees, lon: Degrees) -> tuple[Meters, Meters]:
         """
@@ -437,23 +613,3 @@ class GCPCoordinateConverter:
                 return self.gps_to_local(lat, lon)
             else:
                 raise ValueError("Point has only UTM coordinates but pyproj is not available")
-
-
-# Global converter instance for convenient access
-_global_converter: GCPCoordinateConverter | None = None
-
-
-def get_gcp_converter(utm_crs: str = DEFAULT_UTM_CRS) -> GCPCoordinateConverter:
-    """
-    Get or create a global GCP coordinate converter.
-
-    Args:
-        utm_crs: UTM coordinate reference system
-
-    Returns:
-        GCPCoordinateConverter instance
-    """
-    global _global_converter
-    if _global_converter is None or _global_converter.utm_crs != utm_crs:
-        _global_converter = GCPCoordinateConverter(utm_crs)
-    return _global_converter

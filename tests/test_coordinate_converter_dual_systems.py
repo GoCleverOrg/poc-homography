@@ -51,27 +51,26 @@ class TestUTMProjection:
         converter = UTMConverter()
         assert converter.utm_crs == DEFAULT_UTM_CRS
 
-    def test_utm_converter_set_reference_gps(self):
-        """Set reference using GPS coordinates."""
-        converter = UTMConverter()
-        easting, northing = converter.set_reference(VALENCIA_REF_LAT, VALENCIA_REF_LON)
+    def test_utm_converter_with_reference_gps(self):
+        """Create converter with GPS reference using factory method."""
+        converter = UTMConverter.with_reference(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
         # Should be reasonable UTM values for Valencia
-        assert 700000 < easting < 800000
-        assert 4300000 < northing < 4500000
+        assert converter.reference_easting is not None
+        assert converter.reference_northing is not None
+        assert 700000 < converter.reference_easting < 800000
+        assert 4300000 < converter.reference_northing < 4500000
 
-    def test_utm_converter_set_reference_utm(self):
-        """Set reference using UTM coordinates directly."""
-        converter = UTMConverter()
-        converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
+    def test_utm_converter_with_reference_utm(self):
+        """Create converter with UTM reference using factory method."""
+        converter = UTMConverter.with_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
 
         assert converter._ref_easting == VALENCIA_REF_UTM_E
         assert converter._ref_northing == VALENCIA_REF_UTM_N
 
     def test_utm_gps_to_local_identity(self):
         """Reference point should map to origin."""
-        converter = UTMConverter()
-        converter.set_reference(VALENCIA_REF_LAT, VALENCIA_REF_LON)
+        converter = UTMConverter.with_reference(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
         x, y = converter.gps_to_local_xy(VALENCIA_REF_LAT, VALENCIA_REF_LON)
         assert abs(x) < 0.001
@@ -79,8 +78,7 @@ class TestUTMProjection:
 
     def test_utm_to_local_xy_direct(self):
         """UTM coordinates should convert directly to local."""
-        converter = UTMConverter()
-        converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
+        converter = UTMConverter.with_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
 
         # Test point 100m east and 50m north
         test_e = VALENCIA_REF_UTM_E + 100
@@ -92,8 +90,7 @@ class TestUTMProjection:
 
     def test_utm_round_trip(self):
         """GPS -> UTM -> local -> UTM -> GPS should return original."""
-        converter = UTMConverter()
-        converter.set_reference(VALENCIA_REF_LAT, VALENCIA_REF_LON)
+        converter = UTMConverter.with_reference(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
         test_lat = VALENCIA_REF_LAT + 0.001
         test_lon = VALENCIA_REF_LON + 0.001
@@ -114,22 +111,22 @@ class TestGCPCoordinateConverter:
 
     def test_converter_prefers_utm(self):
         """By default, should prefer UTM when available."""
-        converter = GCPCoordinateConverter()
+        converter = GCPCoordinateConverter.with_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
         assert converter.using_utm is True
 
     def test_converter_with_gps_reference(self):
-        """Set reference using GPS coordinates."""
-        converter = GCPCoordinateConverter()
-        converter.set_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
+        """Create converter using GPS coordinates factory method."""
+        converter = GCPCoordinateConverter.with_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
         assert converter._ref_lat == VALENCIA_REF_LAT
         assert converter._ref_lon == VALENCIA_REF_LON
         assert converter._ref_easting is not None
 
     def test_converter_with_utm_reference(self):
-        """Set reference using UTM coordinates."""
-        converter = GCPCoordinateConverter()
-        converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
+        """Create converter using UTM coordinates factory method."""
+        converter = GCPCoordinateConverter.with_reference_utm(
+            VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N
+        )
 
         assert converter._ref_easting == VALENCIA_REF_UTM_E
         assert converter._ref_northing == VALENCIA_REF_UTM_N
@@ -137,8 +134,7 @@ class TestGCPCoordinateConverter:
 
     def test_convert_point_with_gps_only(self):
         """Convert a point that only has GPS coordinates."""
-        converter = GCPCoordinateConverter()
-        converter.set_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
+        converter = GCPCoordinateConverter.with_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
         point = {"latitude": VALENCIA_REF_LAT + 0.0001, "longitude": VALENCIA_REF_LON + 0.0001}
         x, y = converter.convert_point(point)
@@ -149,8 +145,9 @@ class TestGCPCoordinateConverter:
 
     def test_convert_point_with_utm_only(self):
         """Convert a point that only has UTM coordinates."""
-        converter = GCPCoordinateConverter()
-        converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
+        converter = GCPCoordinateConverter.with_reference_utm(
+            VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N
+        )
 
         point = {"utm_easting": VALENCIA_REF_UTM_E + 100, "utm_northing": VALENCIA_REF_UTM_N + 50}
         x, y = converter.convert_point(point)
@@ -160,8 +157,9 @@ class TestGCPCoordinateConverter:
 
     def test_convert_point_with_both_prefers_utm(self):
         """When both GPS and UTM are present, prefer UTM."""
-        converter = GCPCoordinateConverter()
-        converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
+        converter = GCPCoordinateConverter.with_reference_utm(
+            VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N
+        )
 
         # Point with both coordinate types (UTM is accurate, GPS is slightly off)
         point = {
@@ -191,9 +189,10 @@ class TestGCPPointStructures:
     @pytest.mark.skipif(not PYPROJ_AVAILABLE, reason="pyproj not installed")
     def test_full_gcp_point_structure(self):
         """Test with a complete GCP point structure as used in production."""
-        converter = GCPCoordinateConverter()
-        # Set reference using UTM to ensure consistency with test UTM values
-        converter.set_reference_utm(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
+        # Use factory method to create converter with UTM reference
+        converter = GCPCoordinateConverter.with_reference_utm(
+            VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N
+        )
 
         gcp_point = {
             "latitude": VALENCIA_REF_LAT + 0.0001,
@@ -210,10 +209,10 @@ class TestGCPPointStructures:
             assert abs(x - 10) < 0.01  # Exact 10m
             assert abs(y - 10) < 0.01
 
+    @pytest.mark.skipif(not PYPROJ_AVAILABLE, reason="pyproj not installed")
     def test_point_missing_both_coordinates_raises(self):
         """Point with neither GPS nor UTM should raise ValueError."""
-        converter = GCPCoordinateConverter(prefer_utm=False)
-        converter.set_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
+        converter = GCPCoordinateConverter.with_reference_gps(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
         invalid_point = {"some_other_field": 123}
 
@@ -224,11 +223,12 @@ class TestGCPPointStructures:
 class TestCoordinateConverterEdgeCases:
     """Test edge cases and error handling."""
 
+    @pytest.mark.skipif(not PYPROJ_AVAILABLE, reason="pyproj not installed")
     def test_reference_not_set_raises(self):
         """Operations without setting reference should raise ValueError."""
-        converter = GCPCoordinateConverter(prefer_utm=False)
+        converter = GCPCoordinateConverter()
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Reference point not set"):
             converter.gps_to_local(VALENCIA_REF_LAT, VALENCIA_REF_LON)
 
     @pytest.mark.skipif(not PYPROJ_AVAILABLE, reason="pyproj not installed")
@@ -236,7 +236,7 @@ class TestCoordinateConverterEdgeCases:
         """UTM operations without reference should raise ValueError."""
         converter = UTMConverter()
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Reference point not set"):
             converter.utm_to_local_xy(VALENCIA_REF_UTM_E, VALENCIA_REF_UTM_N)
 
     # NOTE: test_polar_region_raises removed - tested deleted standalone gps_to_local_xy function

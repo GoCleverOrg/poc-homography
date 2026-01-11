@@ -14,8 +14,16 @@ import cv2
 import numpy as np
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-from poc_homography.camera_config import PASSWORD, USERNAME, get_camera_by_name, get_rtsp_url
+from poc_homography.camera_config import (
+    CAMERAS,
+    PASSWORD,
+    USERNAME,
+    get_camera_by_name,
+    get_rtsp_url,
+)
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraGeometryResult, CameraParameters
+from poc_homography.types import Degrees, Pixels, Unitless
 
 
 class HomographyVerifier:
@@ -36,9 +44,11 @@ class HomographyVerifier:
         # RTSP setup
         self.rtsp_url = get_rtsp_url(camera_name)
         self.cap = None
-        self.geo = None
+        self.result: CameraGeometryResult | None = None
         self.current_frame = None
-        self.clicked_points = []  # Store (image_x, image_y, world_x, world_y)
+        self.clicked_points: list[
+            tuple[int, int, float, float]
+        ] = []  # Store (image_x, image_y, world_x, world_y)
 
     def setup_geometry(self, height: float = 5.0):
         """Initialize geometry with camera parameters."""
@@ -55,26 +65,29 @@ class HomographyVerifier:
         h, w = frame.shape[:2]
         self.current_frame = frame
 
-        # Setup geometry
-        self.geo = CameraGeometry(w, h)
-        K = self.geo.get_intrinsics(zoom_factor=self.status["zoom"], W_px=w, H_px=h)
-
+        # Get intrinsics and create parameters
+        K = CameraGeometry.get_intrinsics(zoom_factor=self.status["zoom"], W_px=w, H_px=h)
         w_pos = np.array([0.0, 0.0, height])
 
-        # Pass tilt directly - the internal _get_rotation_matrix() handles
-        # the Hikvision convention (positive = down) conversion
-        self.geo.set_camera_parameters(
-            K=K,
-            w_pos=w_pos,
-            pan_deg=self.status["pan"],
-            tilt_deg=self.status["tilt"],
-            map_width=w,
-            map_height=h,
+        # Create parameters and compute homography using immutable API
+        params = CameraParameters.create(
+            image_width=Pixels(w),
+            image_height=Pixels(h),
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=Degrees(self.status["pan"]),
+            tilt_deg=Degrees(self.status["tilt"]),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(w),
+            map_height=Pixels(h),
+            pixels_per_meter=Unitless(100.0),
         )
 
-        print(f"\n✓ Geometry initialized for {self.camera_name}")
+        self.result = CameraGeometry.compute(params)
+
+        print(f"\n[OK] Geometry initialized for {self.camera_name}")
         print(
-            f"  Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}"
+            f"  Pan: {self.status['pan']:.1f}, Tilt: {self.status['tilt']:.1f}, Zoom: {self.status['zoom']:.2f}"
         )
         print(f"  Height: {height}m\n")
 
@@ -82,12 +95,10 @@ class HomographyVerifier:
         """Handle mouse clicks to project points."""
         if event == cv2.EVENT_LBUTTONDOWN:
             # Project image point to world
-            pts_image = [(x, y)]
-
-            # Use homography to project to ground plane
-            if self.geo and self.geo.H_inv is not None:
+            if self.result is not None:
+                H_inv = self.result.inverse_homography_matrix
                 pts_homogeneous = np.array([[x], [y], [1.0]], dtype=np.float64)
-                pts_world = self.geo.H_inv @ pts_homogeneous
+                pts_world = H_inv @ pts_homogeneous
 
                 # Normalize
                 Xw = pts_world[0, 0] / pts_world[2, 0]
@@ -98,11 +109,11 @@ class HomographyVerifier:
 
                 self.clicked_points.append((x, y, Xw, Yw))
 
-                print(f"\n📍 Point {len(self.clicked_points)}:")
+                print(f"\n[*] Point {len(self.clicked_points)}:")
                 print(f"  Image: ({x}, {y}) pixels")
                 print(f"  World: ({Xw:.2f}, {Yw:.2f}) meters")
                 print(f"  Distance from camera: {distance:.2f}m")
-                print(f"  Angle from camera: {np.degrees(np.arctan2(Xw, Yw)):.1f}°")
+                print(f"  Angle from camera: {np.degrees(np.arctan2(Xw, Yw)):.1f}")
 
     def draw_annotations(self, frame):
         """Draw clicked points and their projections."""
@@ -156,10 +167,10 @@ class HomographyVerifier:
         print("  3. Compare with actual measured distances")
         print("  4. Press 'c' to clear points, 's' to save results, 'q' to quit")
         print("\nVerification Tips:")
-        print("  • Place objects at known distances (e.g., 5m, 10m, 15m)")
-        print("  • Click on the BASE of objects (where they touch the ground)")
-        print("  • Verify distances match your measurements")
-        print("  • Check angles are correct (X=East, Y=North)")
+        print("  - Place objects at known distances (e.g., 5m, 10m, 15m)")
+        print("  - Click on the BASE of objects (where they touch the ground)")
+        print("  - Verify distances match your measurements")
+        print("  - Check angles are correct (X=East, Y=North)")
         print("=" * 60 + "\n")
 
         while True:
@@ -180,7 +191,7 @@ class HomographyVerifier:
                 break
             elif key == ord("c"):
                 self.clicked_points.clear()
-                print("\n✓ Points cleared")
+                print("\n[OK] Points cleared")
             elif key == ord("s"):
                 self.save_results()
 
@@ -197,7 +208,7 @@ class HomographyVerifier:
             f.write("Homography Verification Results\n")
             f.write(f"Camera: {self.camera_name}\n")
             f.write(
-                f"Pan: {self.status['pan']:.1f}°, Tilt: {self.status['tilt']:.1f}°, Zoom: {self.status['zoom']:.2f}\n\n"
+                f"Pan: {self.status['pan']:.1f}, Tilt: {self.status['tilt']:.1f}, Zoom: {self.status['zoom']:.2f}\n\n"
             )
             f.write(f"{'Point':<8} {'Image (px)':<20} {'World (m)':<25} {'Distance (m)':<15}\n")
             f.write("-" * 70 + "\n")
@@ -208,7 +219,7 @@ class HomographyVerifier:
                     f"P{i + 1:<7} ({x:>4}, {y:>4}){' ' * 8} ({Xw:>6.2f}, {Yw:>6.2f}){' ' * 10} {dist:>6.2f}\n"
                 )
 
-        print(f"\n✓ Results saved to {filename}")
+        print(f"\n[OK] Results saved to {filename}")
 
     def cleanup(self):
         """Release resources."""

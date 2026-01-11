@@ -23,6 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
+from poc_homography.types import Degrees, Pixels, Unitless
 
 
 def dms_to_dd(dms_str: str) -> float:
@@ -30,8 +32,8 @@ def dms_to_dd(dms_str: str) -> float:
     Convert DMS (degrees, minutes, seconds) string to decimal degrees.
 
     Supports formats like:
-    - "39°38'25.72\"N"
-    - "0°13'48.63\"W"
+    - "39d38'25.72\"N"
+    - "0d13'48.63\"W"
 
     Args:
         dms_str: DMS coordinate string
@@ -119,8 +121,8 @@ def analyze_projection_error(
     print("\nCamera Parameters:")
     print(f"  GPS: ({camera_lat:.6f}, {camera_lon:.6f})")
     print(f"  Height: {height_m}m")
-    print(f"  Pan raw: {pan_raw}°, Offset: {pan_offset_deg}°, Applied: {pan_deg}°")
-    print(f"  Tilt: {tilt_deg}°, Zoom: {zoom}x")
+    print(f"  Pan raw: {pan_raw}, Offset: {pan_offset_deg}, Applied: {pan_deg}")
+    print(f"  Tilt: {tilt_deg}, Zoom: {zoom}x")
 
     # Use map point coordinates directly as local XY
     x_m, y_m = map_point_x, map_point_y
@@ -131,18 +133,31 @@ def analyze_projection_error(
     print(f"  X (East): {x_m:.2f}m")
     print(f"  Y (North): {y_m:.2f}m")
     print(f"  Distance: {distance:.2f}m")
-    print(f"  Bearing from camera: {bearing:.1f}°")
+    print(f"  Bearing from camera: {bearing:.1f}")
 
     # Get intrinsics
     K = CameraGeometry.get_intrinsics(zoom, image_width, image_height, 7.18)
-
-    # Project with current parameters
-    geo = CameraGeometry(w=image_width, h=image_height)
     w_pos = np.array([0.0, 0.0, height_m])
-    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, 640, 640)
+
+    # Create parameters and compute homography using immutable API
+    params = CameraParameters.create(
+        image_width=Pixels(image_width),
+        image_height=Pixels(image_height),
+        intrinsic_matrix=K,
+        camera_position=w_pos,
+        pan_deg=Degrees(pan_deg),
+        tilt_deg=Degrees(tilt_deg),
+        roll_deg=Degrees(0.0),
+        map_width=Pixels(640),
+        map_height=Pixels(640),
+        pixels_per_meter=Unitless(100.0),
+    )
+
+    result = CameraGeometry.compute(params)
+    H = result.homography_matrix
 
     world_pt = np.array([[x_m], [y_m], [1.0]])
-    img_pt = geo.H @ world_pt
+    img_pt = H @ world_pt
     if img_pt[2, 0] > 0:
         projected_u = img_pt[0, 0] / img_pt[2, 0]
         projected_v = img_pt[1, 0] / img_pt[2, 0]
@@ -172,8 +187,23 @@ def analyze_projection_error(
 
     for test_offset in np.arange(-180, 180, 1):
         test_pan = pan_raw + test_offset
-        geo.set_camera_parameters(K, w_pos, test_pan, tilt_deg, 640, 640)
-        img_pt = geo.H @ world_pt
+
+        test_params = CameraParameters.create(
+            image_width=Pixels(image_width),
+            image_height=Pixels(image_height),
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=Degrees(test_pan),
+            tilt_deg=Degrees(tilt_deg),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+        )
+
+        test_result = CameraGeometry.compute(test_params)
+        test_H = test_result.homography_matrix
+        img_pt = test_H @ world_pt
         if img_pt[2, 0] > 0:
             u = img_pt[0, 0] / img_pt[2, 0]
             v = img_pt[1, 0] / img_pt[2, 0]
@@ -182,8 +212,8 @@ def analyze_projection_error(
                 best_pan_error = error
                 best_pan_offset = test_offset
 
-    print(f"  Current pan offset: {pan_offset_deg}°")
-    print(f"  Best pan offset: {best_pan_offset}°")
+    print(f"  Current pan offset: {pan_offset_deg}")
+    print(f"  Best pan offset: {best_pan_offset}")
     print(f"  Best error at this offset: {best_pan_error:.1f} pixels")
     if abs(best_pan_offset - pan_offset_deg) > 5:
         print(f"  --> SUGGESTION: Change pan_offset_deg from {pan_offset_deg} to {best_pan_offset}")
@@ -195,8 +225,23 @@ def analyze_projection_error(
 
     for test_height in np.arange(1.0, 20.0, 0.1):
         test_w_pos = np.array([0.0, 0.0, test_height])
-        geo.set_camera_parameters(K, test_w_pos, pan_deg, tilt_deg, 640, 640)
-        img_pt = geo.H @ world_pt
+
+        test_params = CameraParameters.create(
+            image_width=Pixels(image_width),
+            image_height=Pixels(image_height),
+            intrinsic_matrix=K,
+            camera_position=test_w_pos,
+            pan_deg=Degrees(pan_deg),
+            tilt_deg=Degrees(tilt_deg),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+        )
+
+        test_result = CameraGeometry.compute(test_params)
+        test_H = test_result.homography_matrix
+        img_pt = test_H @ world_pt
         if img_pt[2, 0] > 0:
             u = img_pt[0, 0] / img_pt[2, 0]
             v = img_pt[1, 0] / img_pt[2, 0]
@@ -222,10 +267,23 @@ def analyze_projection_error(
         for test_height in np.arange(1.0, 20.0, 0.5):
             test_w_pos = np.array([0.0, 0.0, test_height])
             try:
-                geo.set_camera_parameters(K, test_w_pos, test_pan, tilt_deg, 640, 640)
+                test_params = CameraParameters.create(
+                    image_width=Pixels(image_width),
+                    image_height=Pixels(image_height),
+                    intrinsic_matrix=K,
+                    camera_position=test_w_pos,
+                    pan_deg=Degrees(test_pan),
+                    tilt_deg=Degrees(tilt_deg),
+                    roll_deg=Degrees(0.0),
+                    map_width=Pixels(640),
+                    map_height=Pixels(640),
+                    pixels_per_meter=Unitless(100.0),
+                )
+                test_result = CameraGeometry.compute(test_params)
             except ValueError:
                 continue
-            img_pt = geo.H @ world_pt
+            test_H = test_result.homography_matrix
+            img_pt = test_H @ world_pt
             if img_pt[2, 0] > 0:
                 u = img_pt[0, 0] / img_pt[2, 0]
                 v = img_pt[1, 0] / img_pt[2, 0]
@@ -235,7 +293,7 @@ def analyze_projection_error(
                     best_joint_pan = test_offset
                     best_joint_height = test_height
 
-    print(f"  Best pan offset: {best_joint_pan}°")
+    print(f"  Best pan offset: {best_joint_pan}")
     print(f"  Best height: {best_joint_height:.2f}m")
     print(f"  Best error: {best_joint_error:.1f} pixels")
 

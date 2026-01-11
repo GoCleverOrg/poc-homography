@@ -4,44 +4,39 @@ Simple camera model validation script.
 Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
 
-GCPs are defined in YAML format with the new capture.context and
-capture.annotations structure:
+GCPs are defined in YAML format with Map Point IDs referencing coordinates
+from a MapPointRegistry:
 
-    capture:
-      context:
-        camera: Valte
+    gcps:
+      - map_point_id: Z1
+        pixel_u: 960
+        pixel_v: 540
         pan_raw: 0.0
         tilt_deg: 30.0
         zoom: 1.0
-      annotations:
-        - gcp_id: Z1
-          pixel:
-            x: 960.0
-            y: 540.0
 
 Usage:
     from tools.validate_camera_model import load_gcps_from_yaml, validate_model
     from poc_homography.map_points import MapPointRegistry
 
-    context, annotations = load_gcps_from_yaml("gcps.yaml")
+    gcps = load_gcps_from_yaml("gcps.yaml")
     registry = MapPointRegistry.load("map_points.json")
-    mean_error, results = validate_model(context, annotations, registry)
+    mean_error, results = validate_model("Valte", gcps, registry)
 """
 
 import math
 import os
 import sys
-import warnings
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from poc_homography.calibration.annotation import Annotation, CaptureContext
 from poc_homography.camera_config import get_camera_by_name_safe
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
 from poc_homography.map_points import MapPointRegistry
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.types import Degrees, Pixels, Unitless
 
 try:
     import yaml
@@ -51,26 +46,10 @@ except ImportError:
     YAML_AVAILABLE = False
 
 
-def load_gcps_from_yaml(yaml_path: str) -> tuple[CaptureContext, list[Annotation]]:
-    """Load capture context and annotations from YAML file.
+def load_gcps_from_yaml(yaml_path: str) -> list:
+    """Load GCPs from YAML file.
 
-    Supports both the new format (capture.context + capture.annotations) and
-    the legacy format (gcps list) for backward compatibility.
-
-    New YAML format:
-        capture:
-          context:
-            camera: Valte
-            pan_raw: 0.0
-            tilt_deg: 30.0
-            zoom: 1.0
-          annotations:
-            - gcp_id: Z1
-              pixel:
-                x: 960.0
-                y: 540.0
-
-    Legacy YAML format (deprecated):
+    Expected YAML format:
         gcps:
           - map_point_id: Z1
             pixel_u: 960
@@ -79,86 +58,38 @@ def load_gcps_from_yaml(yaml_path: str) -> tuple[CaptureContext, list[Annotation
             tilt_deg: 30.0
             zoom: 1.0
 
-    Args:
-        yaml_path: Path to the YAML file.
-
-    Returns:
-        Tuple of (CaptureContext, list of Annotations).
-
-    Raises:
-        ImportError: If PyYAML is not available.
-        ValueError: If YAML format is invalid.
+    Each GCP references a Map Point by ID. The map point's world/map coordinates
+    (pixel_x, pixel_y) are looked up from the MapPointRegistry at projection time.
+    The pixel_u/pixel_v values are the image pixel coordinates where the point appears.
     """
     if not YAML_AVAILABLE:
         raise ImportError("PyYAML required for YAML file loading")
 
-    with open(yaml_path, encoding="utf-8") as f:
+    with open(yaml_path) as f:
         data = yaml.safe_load(f)
 
-    # Check for new format first
-    if "capture" in data:
-        capture_data = data["capture"]
+    gcps = []
 
-        if "context" not in capture_data:
-            raise ValueError(
-                "New format requires 'capture.context' with camera, pan_raw, tilt_deg, zoom"
-            )
+    if "gcps" not in data:
+        raise ValueError("YAML file must contain 'gcps' key with list of GCP entries")
 
-        if "annotations" not in capture_data:
-            raise ValueError("New format requires 'capture.annotations' list")
+    for gcp in data["gcps"]:
+        if "map_point_id" not in gcp:
+            raise ValueError(f"GCP entry missing required 'map_point_id' field: {gcp}")
 
-        # Parse context
-        context = CaptureContext.from_dict(capture_data["context"])
-
-        # Parse annotations
-        annotations = [Annotation.from_dict(ann_data) for ann_data in capture_data["annotations"]]
-
-        return context, annotations
-
-    # Fall back to legacy format
-    if "gcps" in data:
-        warnings.warn(
-            "Legacy 'gcps' format is deprecated. Please migrate to new 'capture.context' "
-            "and 'capture.annotations' format. See issue #165 for migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
+        gcps.append(
+            {
+                "map_point_id": gcp["map_point_id"],
+                "pixel_u": gcp["pixel_u"],
+                "pixel_v": gcp["pixel_v"],
+                "pan": gcp.get("pan_raw", 0.0),
+                "tilt": gcp.get("tilt_deg", 30.0),
+                "zoom": gcp.get("zoom", 1.0),
+                "name": gcp.get("name", gcp["map_point_id"]),
+            }
         )
 
-        gcps = data["gcps"]
-
-        if not gcps:
-            raise ValueError("Legacy format: 'gcps' list is empty")
-
-        # Extract context from first GCP (assumes all GCPs share same PTZ values)
-        first_gcp = gcps[0]
-
-        # Try to infer camera name from file or default to "Unknown"
-        camera_name = first_gcp.get("camera", "Unknown")
-
-        context = CaptureContext(
-            camera=camera_name,
-            pan_raw=first_gcp.get("pan_raw", 0.0),
-            tilt_deg=first_gcp.get("tilt_deg", 30.0),
-            zoom=first_gcp.get("zoom", 1.0),
-        )
-
-        # Convert GCPs to annotations
-        annotations = [
-            Annotation(
-                gcp_id=gcp["map_point_id"],
-                pixel=PixelPoint(
-                    x=float(gcp["pixel_u"]),
-                    y=float(gcp["pixel_v"]),
-                ),
-            )
-            for gcp in gcps
-        ]
-
-        return context, annotations
-
-    raise ValueError(
-        "YAML file must contain either 'capture' (new format) or 'gcps' (legacy format)"
-    )
+    return gcps
 
 
 def project_map_point_to_pixel(
@@ -213,19 +144,34 @@ def project_map_point_to_pixel(
         actual_pan = pan_deg + pan_offset_deg
         actual_tilt = tilt_deg + tilt_offset_deg
 
-        # Create geometry
-        geo = CameraGeometry(w=image_width, h=image_height)
+        # Create geometry using immutable API
         w_pos = np.array([0.0, 0.0, camera_height])
 
-        geo.set_camera_parameters(K, w_pos, actual_pan, actual_tilt, 640, 640)
-
-        # Set distortion if provided
+        # Set up distortion if needed
+        distortion = None
         if k1 != 0.0 or k2 != 0.0:
-            geo.set_distortion_coefficients(k1=k1, k2=k2)
+            distortion = DistortionCoefficients(k1=k1, k2=k2)
+
+        params = CameraParameters.create(
+            image_width=Pixels(image_width),
+            image_height=Pixels(image_height),
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=Degrees(actual_pan),
+            tilt_deg=Degrees(actual_tilt),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+            distortion=distortion,
+        )
+
+        result = CameraGeometry.compute(params)
+        H = result.homography_matrix
 
         # Project world point to image
         world_pt = np.array([[x_m], [y_m], [1.0]])
-        img_pt = geo.H @ world_pt
+        img_pt = H @ world_pt
 
         if img_pt[2, 0] <= 0:
             return None, None, False, "Point behind camera"
@@ -235,7 +181,13 @@ def project_map_point_to_pixel(
 
         # Apply distortion if set
         if k1 != 0.0 or k2 != 0.0:
-            u, v = geo.distort_point(u, v)
+            # Simple distortion model (approximate)
+            dx = u - cx
+            dy = v - cy
+            r2 = dx * dx + dy * dy
+            distort_factor = 1.0 + k1 * r2 / (f_px * f_px) + k2 * r2 * r2 / (f_px**4)
+            u = cx + dx * distort_factor
+            v = cy + dy * distort_factor
 
         return u, v, True, None
 
@@ -244,27 +196,27 @@ def project_map_point_to_pixel(
 
 
 def validate_model(
-    context: CaptureContext,
-    annotations: list[Annotation],
+    camera_name: str,
+    gcps: list,
     registry: MapPointRegistry,
     verbose: bool = True,
 ):
     """
-    Validate camera model with annotations using Map Point coordinates.
+    Validate camera model with GCPs using Map Point coordinates.
 
     Args:
-        context: CaptureContext containing camera name and PTZ values.
-        annotations: List of Annotation instances with gcp_id and pixel coordinates.
-        registry: MapPointRegistry containing the map point coordinates.
-        verbose: Whether to print detailed output.
+        camera_name: Name of the camera configuration to use
+        gcps: List of GCP dicts with map_point_id, pixel_u, pixel_v, pan, tilt, zoom
+        registry: MapPointRegistry containing the map point coordinates
+        verbose: Whether to print detailed output
 
     Returns:
         (mean_error, individual_errors) tuple
     """
     # Get camera config
-    cam_config = get_camera_by_name_safe(context.camera)
+    cam_config = get_camera_by_name_safe(camera_name)
     if not cam_config:
-        print(f"Error: Unknown camera '{context.camera}'")
+        print(f"Error: Unknown camera '{camera_name}'")
         return None, []
 
     # Extract camera parameters
@@ -279,43 +231,39 @@ def validate_model(
         print("\n" + "=" * 70)
         print("CAMERA MODEL VALIDATION")
         print("=" * 70)
-        print(f"\nCamera: {context.camera}")
+        print(f"\nCamera: {camera_name}")
         print(f"  Height: {camera_height:.2f}m")
         print(f"  Pan offset: {pan_offset:.1f}deg")
         print(f"  Tilt offset: {tilt_offset:+.2f}deg")
         print(f"  Focal multiplier: {focal_mult:.4f}")
         print(f"  Distortion: k1={k1:.4f}, k2={k2:.4f}")
-        print("\nCapture PTZ:")
-        print(f"  Pan (raw): {context.pan_raw:.1f}")
-        print(f"  Tilt: {context.tilt_deg:.1f}deg")
-        print(f"  Zoom: {context.zoom:.1f}")
-        print(f"\nNumber of annotations: {len(annotations)}")
+        print(f"\nNumber of GCPs: {len(gcps)}")
         print("-" * 70)
 
     errors = []
     results = []
 
-    for i, annotation in enumerate(annotations):
-        gcp_id = annotation.gcp_id
+    for i, gcp in enumerate(gcps):
+        map_point_id = gcp["map_point_id"]
 
         # Look up map point coordinates from registry
-        if gcp_id not in registry.points:
+        if map_point_id not in registry.points:
             if verbose:
                 print(
-                    f"Annotation {i + 1}: {gcp_id[:20]:20s} | FAILED: Map point '{gcp_id}' not found"
+                    f"GCP {i + 1}: {gcp['name'][:20]:20s} | FAILED: Map point '{map_point_id}' not found"
                 )
             errors.append(1000.0)
             continue
 
-        point = registry.points[gcp_id]
+        point = registry.points[map_point_id]
 
         proj_u, proj_v, success, err_msg = project_map_point_to_pixel(
             point.pixel_x,
             point.pixel_y,
             camera_height,
-            context.pan_raw,
-            context.tilt_deg,
-            context.zoom,
+            gcp["pan"],
+            gcp["tilt"],
+            gcp["zoom"],
             pan_offset,
             tilt_offset,
             focal_mult,
@@ -325,39 +273,31 @@ def validate_model(
         )
 
         if success:
-            error = math.sqrt(
-                (proj_u - annotation.pixel.x) ** 2 + (proj_v - annotation.pixel.y) ** 2
-            )
+            error = math.sqrt((proj_u - gcp["pixel_u"]) ** 2 + (proj_v - gcp["pixel_v"]) ** 2)
             errors.append(error)
 
             if verbose:
                 status = "OK" if error < 5 else "FAIL"
                 print(
-                    f"Annotation {i + 1}: {gcp_id[:20]:20s} | "
-                    f"Expected: ({annotation.pixel.x:7.1f}, {annotation.pixel.y:7.1f}) | "
+                    f"GCP {i + 1}: {gcp['name'][:20]:20s} | "
+                    f"Expected: ({gcp['pixel_u']:7.1f}, {gcp['pixel_v']:7.1f}) | "
                     f"Projected: ({proj_u:7.1f}, {proj_v:7.1f}) | "
                     f"Error: {error:6.1f}px {status}"
                 )
 
-            results.append(
-                {
-                    "annotation": annotation,
-                    "projected": (proj_u, proj_v),
-                    "error": error,
-                }
-            )
+            results.append({"gcp": gcp, "projected": (proj_u, proj_v), "error": error})
         else:
             if verbose:
-                print(f"Annotation {i + 1}: {gcp_id[:20]:20s} | FAILED: {err_msg}")
+                print(f"GCP {i + 1}: {gcp['name'][:20]:20s} | FAILED: {err_msg}")
             errors.append(1000.0)
 
     if errors:
-        mean_error = np.mean([e for e in errors if e < 1000])
+        mean_error = float(np.mean([e for e in errors if e < 1000]))
         if verbose:
             print("-" * 70)
             print(f"\nMean error: {mean_error:.2f} pixels")
             good = sum(1 for e in errors if e < 5)
-            print(f"Annotations with <5px error: {good}/{len(errors)}")
+            print(f"GCPs with <5px error: {good}/{len(errors)}")
 
             if mean_error < 5:
                 print("\n[OK] Camera model is well-calibrated!")

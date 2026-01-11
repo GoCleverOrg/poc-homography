@@ -648,8 +648,11 @@ class TestBackwardCompatibility:
         dist_coeffs = homography.get_distortion_coefficients(zoom_factor=10.0)
         assert dist_coeffs is None
 
-    def test_compute_homography_still_works_with_calibration_table(self):
-        """compute_homography() works correctly when calibration_table is used."""
+    def test_compute_from_config_still_works_with_calibration_table(self):
+        """compute_from_config() works correctly when calibration_table is used for intrinsics."""
+        from poc_homography.homography_parameters import IntrinsicExtrinsicConfig
+        from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
+
         calibration_table = {
             1.0: {
                 "fx": 1825.3,
@@ -682,21 +685,23 @@ class TestBackwardCompatibility:
         # Get intrinsics using calibration table
         K = homography.get_intrinsics(zoom_factor=3.0)
 
-        # Create dummy frame (not used for intrinsic/extrinsic approach)
-        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        # Create config for the immutable API
+        config = IntrinsicExtrinsicConfig.create(
+            camera_matrix=K,
+            camera_position=np.array([0.0, 0.0, 5.0]),
+            pan_deg=Degrees(0.0),
+            tilt_deg=Degrees(45.0),
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+            sensor_width_mm=Millimeters(7.18),
+            base_focal_length_mm=Millimeters(5.9),
+            map_id="test_map",
+        )
 
-        reference = {
-            "camera_matrix": K,
-            "camera_position": np.array([0.0, 0.0, 5.0]),
-            "pan_deg": 0.0,
-            "tilt_deg": 45.0,
-            "roll_deg": 0.0,
-            "map_width": 640,
-            "map_height": 640,
-        }
-
-        # Should compute homography without error
-        result = homography.compute_homography(frame, reference)
+        # Should compute homography without error using immutable API
+        result = IntrinsicExtrinsicHomography.compute_from_config(config)
 
         assert result is not None
         assert result.homography_matrix.shape == (3, 3)

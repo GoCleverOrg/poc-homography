@@ -187,12 +187,20 @@ class HomographyResult:
 
 
 class HomographyProvider(ABC):
-    """Abstract base class for homography computation and coordinate projection."""
+    """Abstract base class for homography computation and coordinate projection.
 
-    @abstractmethod
-    def compute_homography(self, frame: np.ndarray, reference: dict[str, Any]) -> HomographyResult:
-        """Compute homography matrix from image frame to map plane."""
-        pass
+    This interface uses an IMMUTABLE pattern - implementations should use
+    `compute_from_config()` classmethods that take immutable config objects
+    and return immutable result objects.
+
+    The legacy `compute_homography(frame, reference)` method has been removed.
+    Use the config-based pattern instead:
+
+    ```python
+    config = IntrinsicExtrinsicConfig.create(...)
+    result = IntrinsicExtrinsicHomography.compute_from_config(config)
+    ```
+    """
 
     @abstractmethod
     def project_point(self, image_point: PixelPoint, point_id: str = "") -> MapPoint:
