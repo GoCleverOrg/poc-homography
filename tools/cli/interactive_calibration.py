@@ -2,7 +2,7 @@
 """CLI for interactive calibration tool.
 
 Example usage:
-    python tools/cli/interactive_calibration.py --camera Valte \\
+    python tools/cli/interactive_calibration.py --camera Valte \
         --frame captured_frame.jpg --map-points map_points.json
 
 Interactive mode:
@@ -31,7 +31,9 @@ from tools.interactive_calibration import (
     run_interactive_session,
 )
 
+from poc_homography.calibration.annotation import Annotation
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 if CV2_AVAILABLE:
     import cv2
@@ -161,7 +163,35 @@ def main():
     if args.reference_file:
         with open(args.reference_file) as f:
             ref_data = json.load(f)
-        run_batch_calibration(session, ref_data["reference_points"])
+
+        # Convert reference points from dict to Annotation objects
+        reference_points = []
+        for point in ref_data["reference_points"]:
+            # Handle both old format (pixel_u/pixel_v) and new format (pixel_x/pixel_y)
+            if "pixel" in point:
+                # New format with nested pixel object
+                pixel_x = point["pixel"]["x"]
+                pixel_y = point["pixel"]["y"]
+            elif "pixel_x" in point and "pixel_y" in point:
+                # New flat format
+                pixel_x = point["pixel_x"]
+                pixel_y = point["pixel_y"]
+            else:
+                # Old format (pixel_u, pixel_v)
+                pixel_x = point.get("pixel_u", point.get("u", 0))
+                pixel_y = point.get("pixel_v", point.get("v", 0))
+
+            # Handle both gcp_id and map_point_id
+            gcp_id = point.get("gcp_id", point.get("map_point_id", ""))
+
+            reference_points.append(
+                Annotation(
+                    gcp_id=gcp_id,
+                    pixel=PixelPoint(x=float(pixel_x), y=float(pixel_y)),
+                )
+            )
+
+        run_batch_calibration(session, reference_points)
     else:
         run_interactive_session(session)
 

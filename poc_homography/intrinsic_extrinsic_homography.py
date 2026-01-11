@@ -722,9 +722,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
     def project_point_static(
         result: IntrinsicExtrinsicResult,
         image_point: PixelPoint,
-        map_id: str,
         pixels_per_meter: Unitless,
-        point_id: str = "",
     ) -> MapPoint:
         """
         Project image point to MapPoint using result (pure function).
@@ -732,9 +730,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         Args:
             result: The computed IntrinsicExtrinsicResult
             image_point: Pixel coordinates in camera image
-            map_id: Identifier for the map
             pixels_per_meter: Scale factor for world-to-map conversion
-            point_id: Optional ID for the generated MapPoint
 
         Returns:
             MapPoint with pixel coordinates on the map
@@ -751,10 +747,8 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         )
 
         return MapPoint(
-            id=point_id or "proj",
             pixel_x=float(map_pixel_x),
             pixel_y=float(map_pixel_y),
-            map_id=map_id,
         )
 
     @staticmethod
