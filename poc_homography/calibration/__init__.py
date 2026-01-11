@@ -1,5 +1,6 @@
 """Camera calibration utilities."""
 
+from poc_homography.calibration.annotation import Annotation, CaptureContext
 from poc_homography.calibration.comprehensive import (
     GCP,
     CalibrationParams,
@@ -22,9 +23,11 @@ from poc_homography.calibration.projection import (
 
 __all__ = [
     "analyze_projection_error",
+    "Annotation",
     "CalibrationParams",
     "CalibrationResults",
     "CalibrationSession",
+    "CaptureContext",
     "compute_projection_error",
     "GCP",
     "print_results",

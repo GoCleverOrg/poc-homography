@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 
@@ -101,25 +102,39 @@ def analyze_projection_error(
     print("\nCamera Parameters:")
     print(f"  GPS: ({camera_lat:.6f}, {camera_lon:.6f})")
     print(f"  Height: {height_m}m")
-    print(f"  Pan raw: {pan_raw}°, Offset: {pan_offset_deg}°, Applied: {pan_deg}°")
-    print(f"  Tilt: {tilt_deg}°, Zoom: {zoom}x")
+    print(f"  Pan raw: {pan_raw}, Offset: {pan_offset_deg}, Applied: {pan_deg}")
+    print(f"  Tilt: {tilt_deg}, Zoom: {zoom}x")
 
     print("\nLocal Coordinates:")
     print(f"  X (East): {x_m:.2f}m")
     print(f"  Y (North): {y_m:.2f}m")
     print(f"  Distance: {distance:.2f}m")
-    print(f"  Bearing from camera: {bearing:.1f}°")
+    print(f"  Bearing from camera: {bearing:.1f}")
 
     # Get intrinsics
     K = CameraGeometry.get_intrinsics(zoom, image_width, image_height, Millimeters(7.18))
-
-    # Project with current parameters
-    geo = CameraGeometry(w=image_width, h=image_height)
     w_pos = np.array([0.0, 0.0, float(height_m)])
-    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, Pixels(640), Pixels(640))
+
+    # Create parameters and compute homography using immutable API
+    params = CameraParameters.create(
+        image_width=image_width,
+        image_height=image_height,
+        intrinsic_matrix=K,
+        camera_position=w_pos,
+        pan_deg=pan_deg,
+        tilt_deg=tilt_deg,
+        roll_deg=Degrees(0.0),
+        map_width=Pixels(640),
+        map_height=Pixels(640),
+        pixels_per_meter=Unitless(100.0),
+    )
+
+    result = CameraGeometry.compute(params)
+    H = result.homography_matrix
 
     world_pt = np.array([[float(x_m)], [float(y_m)], [1.0]])
-    img_pt = geo.H @ world_pt
+    img_pt = H @ world_pt
+
     if img_pt[2, 0] > 0:
         projected_u = PixelsFloat(img_pt[0, 0] / img_pt[2, 0])
         projected_v = PixelsFloat(img_pt[1, 0] / img_pt[2, 0])
@@ -150,8 +165,24 @@ def analyze_projection_error(
 
     for test_offset in np.arange(-180, 180, 1):
         test_pan = Degrees(pan_raw + float(test_offset))
-        geo.set_camera_parameters(K, w_pos, test_pan, tilt_deg, Pixels(640), Pixels(640))
-        img_pt = geo.H @ world_pt
+
+        test_params = CameraParameters.create(
+            image_width=image_width,
+            image_height=image_height,
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=test_pan,
+            tilt_deg=tilt_deg,
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+        )
+
+        test_result = CameraGeometry.compute(test_params)
+        test_H = test_result.homography_matrix
+        img_pt = test_H @ world_pt
+
         if img_pt[2, 0] > 0:
             u = img_pt[0, 0] / img_pt[2, 0]
             v = img_pt[1, 0] / img_pt[2, 0]
@@ -160,8 +191,8 @@ def analyze_projection_error(
                 best_pan_error = error
                 best_pan_offset = Degrees(float(test_offset))
 
-    print(f"  Current pan offset: {pan_offset_deg}°")
-    print(f"  Best pan offset: {best_pan_offset}°")
+    print(f"  Current pan offset: {pan_offset_deg}")
+    print(f"  Best pan offset: {best_pan_offset}")
     print(f"  Best error at this offset: {best_pan_error:.1f} pixels")
     if abs(best_pan_offset - pan_offset_deg) > 5:
         print(f"  --> SUGGESTION: Change pan_offset_deg from {pan_offset_deg} to {best_pan_offset}")
@@ -173,8 +204,24 @@ def analyze_projection_error(
 
     for test_height in np.arange(1.0, 20.0, 0.1):
         test_w_pos = np.array([0.0, 0.0, test_height])
-        geo.set_camera_parameters(K, test_w_pos, pan_deg, tilt_deg, Pixels(640), Pixels(640))
-        img_pt = geo.H @ world_pt
+
+        test_params = CameraParameters.create(
+            image_width=image_width,
+            image_height=image_height,
+            intrinsic_matrix=K,
+            camera_position=test_w_pos,
+            pan_deg=pan_deg,
+            tilt_deg=tilt_deg,
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+        )
+
+        test_result = CameraGeometry.compute(test_params)
+        test_H = test_result.homography_matrix
+        img_pt = test_H @ world_pt
+
         if img_pt[2, 0] > 0:
             u = img_pt[0, 0] / img_pt[2, 0]
             v = img_pt[1, 0] / img_pt[2, 0]
@@ -200,12 +247,23 @@ def analyze_projection_error(
         for test_height in np.arange(1.0, 20.0, 0.5):
             test_w_pos = np.array([0.0, 0.0, float(test_height)])
             try:
-                geo.set_camera_parameters(
-                    K, test_w_pos, test_pan, tilt_deg, Pixels(640), Pixels(640)
+                test_params = CameraParameters.create(
+                    image_width=image_width,
+                    image_height=image_height,
+                    intrinsic_matrix=K,
+                    camera_position=test_w_pos,
+                    pan_deg=test_pan,
+                    tilt_deg=tilt_deg,
+                    roll_deg=Degrees(0.0),
+                    map_width=Pixels(640),
+                    map_height=Pixels(640),
+                    pixels_per_meter=Unitless(100.0),
                 )
+                test_result = CameraGeometry.compute(test_params)
             except ValueError:
                 continue
-            img_pt = geo.H @ world_pt
+            test_H = test_result.homography_matrix
+            img_pt = test_H @ world_pt
             if img_pt[2, 0] > 0:
                 u = img_pt[0, 0] / img_pt[2, 0]
                 v = img_pt[1, 0] / img_pt[2, 0]
@@ -215,7 +273,7 @@ def analyze_projection_error(
                     best_joint_pan = Degrees(float(test_offset))
                     best_joint_height = Meters(float(test_height))
 
-    print(f"  Best pan offset: {best_joint_pan}°")
+    print(f"  Best pan offset: {best_joint_pan}")
     print(f"  Best height: {best_joint_height:.2f}m")
     print(f"  Best error: {best_joint_error:.1f} pixels")
 

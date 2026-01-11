@@ -23,6 +23,7 @@ import numpy as np
 import numpy.typing as npt
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
 from poc_homography.map_points import MapPointRegistry
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
@@ -191,24 +192,34 @@ class CalibrationSession:
         if self.best_pan_offset is not None and self.best_height is not None:
             K = CameraGeometry.get_intrinsics(
                 self.zoom,
-                self.image_width,
-                self.image_height,
+                Pixels(self.image_width),
+                Pixels(self.image_height),
                 self.sensor_width_mm,
             )
-            geo = CameraGeometry(w=self.image_width, h=self.image_height)
             pan_deg = Degrees(self.pan_raw + self.best_pan_offset)
             w_pos = np.array([0.0, 0.0, float(self.best_height)])
 
             try:
-                geo.set_camera_parameters(
-                    K, w_pos, pan_deg, self.tilt_deg, Pixels(640), Pixels(640)
+                params = CameraParameters.create(
+                    image_width=Pixels(self.image_width),
+                    image_height=Pixels(self.image_height),
+                    intrinsic_matrix=K,
+                    camera_position=w_pos,
+                    pan_deg=pan_deg,
+                    tilt_deg=self.tilt_deg,
+                    roll_deg=Degrees(0.0),
+                    map_width=Pixels(640),
+                    map_height=Pixels(640),
+                    pixels_per_meter=Unitless(100.0),
                 )
+                result = CameraGeometry.compute(params)
+                H = result.homography_matrix
 
                 for pt in self.reference_points:
                     map_point = self.registry.points[pt.map_point_id]
                     x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
-                    img_pt = geo.H @ world_pt
+                    img_pt = H @ world_pt
                     if img_pt[2, 0] > 0:
                         proj_u = int(img_pt[0, 0] / img_pt[2, 0])
                         proj_v = int(img_pt[1, 0] / img_pt[2, 0])
@@ -283,11 +294,10 @@ class CalibrationSession:
 
         K = CameraGeometry.get_intrinsics(
             self.zoom,
-            self.image_width,
-            self.image_height,
+            Pixels(self.image_width),
+            Pixels(self.image_height),
             self.sensor_width_mm,
         )
-        geo = CameraGeometry(w=self.image_width, h=self.image_height)
 
         best_error = float("inf")
         best_pan_offset = self.pan_offset_deg
@@ -299,12 +309,23 @@ class CalibrationSession:
             for test_height in np.arange(1.0, 20.0, 0.2):
                 test_w_pos = np.array([0.0, 0.0, test_height])
                 try:
-                    geo.set_camera_parameters(
-                        K, test_w_pos, test_pan, self.tilt_deg, Pixels(640), Pixels(640)
+                    params = CameraParameters.create(
+                        image_width=Pixels(self.image_width),
+                        image_height=Pixels(self.image_height),
+                        intrinsic_matrix=K,
+                        camera_position=test_w_pos,
+                        pan_deg=test_pan,
+                        tilt_deg=self.tilt_deg,
+                        roll_deg=Degrees(0.0),
+                        map_width=Pixels(640),
+                        map_height=Pixels(640),
+                        pixels_per_meter=Unitless(100.0),
                     )
+                    result = CameraGeometry.compute(params)
                 except ValueError:
                     continue
 
+                H = result.homography_matrix
                 total_error = 0.0
                 valid_points = 0
 
@@ -312,7 +333,7 @@ class CalibrationSession:
                     map_point = self.registry.points[pt.map_point_id]
                     x_m, y_m = map_point.pixel_x, map_point.pixel_y
                     world_pt = np.array([[x_m], [y_m], [1.0]])
-                    img_pt = geo.H @ world_pt
+                    img_pt = H @ world_pt
 
                     if img_pt[2, 0] > 0:
                         proj_u = float(img_pt[0, 0] / img_pt[2, 0])

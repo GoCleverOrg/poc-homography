@@ -10,6 +10,8 @@ from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import Hikvisio
 
 from poc_homography.camera_config import CAMERAS, PASSWORD, USERNAME, get_camera_by_name
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
+from poc_homography.types import Degrees, Pixels, Unitless
 
 
 def debug_homography(camera_name: str, height: float = 5.0):
@@ -31,16 +33,15 @@ def debug_homography(camera_name: str, height: float = 5.0):
 
     status = camera.get_status()
     print("\n1. CAMERA STATUS:")
-    print(f"   Pan:  {status['pan']:.2f}°")
-    print(f"   Tilt: {status['tilt']:.2f}°")
+    print(f"   Pan:  {status['pan']:.2f}")
+    print(f"   Tilt: {status['tilt']:.2f}")
     print(f"   Zoom: {status['zoom']:.2f}x")
 
     # Setup geometry
     W_px, H_px = 2560, 1440
-    geo = CameraGeometry(W_px, H_px)
 
     # Calculate intrinsics
-    K = geo.get_intrinsics(zoom_factor=status["zoom"], W_px=W_px, H_px=H_px)
+    K = CameraGeometry.get_intrinsics(zoom_factor=status["zoom"], W_px=W_px, H_px=H_px)
 
     print("\n2. INTRINSIC MATRIX K:")
     print(f"   Focal length: {K[0, 0]:.2f} pixels")
@@ -53,20 +54,26 @@ def debug_homography(camera_name: str, height: float = 5.0):
     print("\n3. CAMERA WORLD POSITION:")
     print(f"   w_pos = {w_pos} meters")
 
-    # Set parameters
-    # Pass tilt directly - the internal _get_rotation_matrix() handles
-    # the Hikvision convention (positive = down) conversion
-    geo.set_camera_parameters(
-        K=K,
-        w_pos=w_pos,
-        pan_deg=status["pan"],
-        tilt_deg=status["tilt"],
-        map_width=640,
-        map_height=480,
+    # Create parameters and compute homography using immutable API
+    params = CameraParameters.create(
+        image_width=Pixels(W_px),
+        image_height=Pixels(H_px),
+        intrinsic_matrix=K,
+        camera_position=w_pos,
+        pan_deg=Degrees(status["pan"]),
+        tilt_deg=Degrees(status["tilt"]),
+        roll_deg=Degrees(0.0),
+        map_width=Pixels(640),
+        map_height=Pixels(480),
+        pixels_per_meter=Unitless(100.0),
     )
 
+    result = CameraGeometry.compute(params)
+
     print("\n4. ROTATION MATRIX R:")
-    R = geo._get_rotation_matrix()
+    R = CameraGeometry._get_rotation_matrix_static(
+        Degrees(status["pan"]), Degrees(status["tilt"]), Degrees(0.0)
+    )
     print(f"{R}")
     print(f"   det(R) = {np.linalg.det(R):.6f} (should be ~1.0)")
 
@@ -75,9 +82,11 @@ def debug_homography(camera_name: str, height: float = 5.0):
     print(f"   t = {t}")
 
     print("\n6. HOMOGRAPHY MATRIX H:")
-    print(f"{geo.H}")
-    print(f"   H[2,2] = {geo.H[2, 2]:.6f} (normalized to 1.0)")
-    print(f"   det(H) = {np.linalg.det(geo.H):.2e}")
+    H = result.homography_matrix
+    H_inv = result.inverse_homography_matrix
+    print(f"{H}")
+    print(f"   H[2,2] = {H[2, 2]:.6f} (normalized to 1.0)")
+    print(f"   det(H) = {np.linalg.det(H):.2e}")
 
     print("\n7. TEST PROJECTIONS:")
     print("-" * 70)
@@ -93,12 +102,12 @@ def debug_homography(camera_name: str, height: float = 5.0):
 
     for u, v, desc in test_points:
         pt_img = np.array([[u], [v], [1.0]])
-        pt_world = geo.H_inv @ pt_img
+        pt_world = H_inv @ pt_img
 
         # Check for valid projection
         if abs(pt_world[2, 0]) < 1e-6:
             print(f"\n   {desc} ({u}, {v})px:")
-            print("      → INVALID (near horizon, W≈0)")
+            print("      -> INVALID (near horizon, W~=0)")
             continue
 
         Xw = pt_world[0, 0] / pt_world[2, 0]
@@ -107,11 +116,11 @@ def debug_homography(camera_name: str, height: float = 5.0):
         angle = np.degrees(np.arctan2(Xw, Yw))
 
         print(f"\n   {desc} ({u}, {v})px:")
-        print(f"      → World: ({Xw:7.2f}, {Yw:7.2f}) meters")
-        print(f"      → Distance: {dist:7.2f}m")
-        print(f"      → Angle: {angle:6.1f}°")
+        print(f"      -> World: ({Xw:7.2f}, {Yw:7.2f}) meters")
+        print(f"      -> Distance: {dist:7.2f}m")
+        print(f"      -> Angle: {angle:6.1f}")
         print(
-            f"      → Raw homogeneous: [{pt_world[0, 0]:.2f}, {pt_world[1, 0]:.2f}, {pt_world[2, 0]:.6f}]"
+            f"      -> Raw homogeneous: [{pt_world[0, 0]:.2f}, {pt_world[1, 0]:.2f}, {pt_world[2, 0]:.6f}]"
         )
 
     print("\n" + "=" * 70)
@@ -120,15 +129,15 @@ def debug_homography(camera_name: str, height: float = 5.0):
 
     # Calculate expected distance for center point at given tilt
     tilt_rad = np.radians(status["tilt"])
-    if status["tilt"] < 0:  # Camera pointing down
-        expected_center_dist = height / np.tan(-tilt_rad)
-        print(f"\nFor tilt={status['tilt']:.1f}° and height={height}m:")
+    if status["tilt"] > 0:  # Camera pointing down (positive tilt)
+        expected_center_dist = height / np.tan(tilt_rad)
+        print(f"\nFor tilt={status['tilt']:.1f} and height={height}m:")
         print(f"  Expected center distance: ~{expected_center_dist:.2f}m")
-        print("  (Using formula: distance = height / tan(|tilt|))")
+        print("  (Using formula: distance = height / tan(tilt))")
 
     # Check if H_inv @ H = I
     print("\nRound-trip check (H @ H_inv):")
-    identity_test = geo.H @ geo.H_inv
+    identity_test = H @ H_inv
     print(identity_test)
     is_identity = np.allclose(identity_test, np.eye(3), atol=1e-4)
     print(f"  Is identity? {is_identity}")
@@ -140,34 +149,34 @@ def debug_homography(camera_name: str, height: float = 5.0):
     # Analyze results
     center_u, center_v = W_px // 2, H_px // 2
     pt_center = np.array([[center_u], [center_v], [1.0]])
-    pt_world_center = geo.H_inv @ pt_center
-    if abs(pt_world_center[2, 0]) > 1e-6:
+    pt_world_center = H_inv @ pt_center
+    if abs(pt_world_center[2, 0]) > 1e-6 and status["tilt"] > 0:
         Xw_center = pt_world_center[0, 0] / pt_world_center[2, 0]
         Yw_center = pt_world_center[1, 0] / pt_world_center[2, 0]
         actual_center_dist = np.sqrt(Xw_center**2 + Yw_center**2)
 
         if abs(actual_center_dist - expected_center_dist) / expected_center_dist > 0.2:
-            print("\n⚠️  CENTER DISTANCE MISMATCH:")
+            print("\n[!]  CENTER DISTANCE MISMATCH:")
             print(f"    Expected: {expected_center_dist:.2f}m")
             print(f"    Actual:   {actual_center_dist:.2f}m")
             print(f"    Error:    {abs(actual_center_dist - expected_center_dist):.2f}m")
 
             if actual_center_dist < expected_center_dist * 0.5:
                 print("\n    Possible causes:")
-                print("    • Rotation matrix order incorrect")
-                print("    • Camera coordinate frame wrong")
-                print("    • Tilt angle sign inverted")
+                print("    - Rotation matrix order incorrect")
+                print("    - Camera coordinate frame wrong")
+                print("    - Tilt angle sign inverted")
             elif actual_center_dist > expected_center_dist * 2:
                 print("\n    Possible causes:")
-                print("    • Height parameter wrong")
-                print("    • Focal length calculation error")
+                print("    - Height parameter wrong")
+                print("    - Focal length calculation error")
 
-    if abs(Xw_center) > 1.0:
-        print("\n⚠️  CENTER X-COORDINATE NOT NEAR ZERO:")
-        print(f"    X = {Xw_center:.2f}m (should be ~0)")
-        print("    Possible causes:")
-        print("    • Pan angle offset")
-        print("    • Rotation matrix error")
+        if abs(Xw_center) > 1.0:
+            print("\n[!]  CENTER X-COORDINATE NOT NEAR ZERO:")
+            print(f"    X = {Xw_center:.2f}m (should be ~0)")
+            print("    Possible causes:")
+            print("    - Pan angle offset")
+            print("    - Rotation matrix error")
 
     print("\n" + "=" * 70 + "\n")
 

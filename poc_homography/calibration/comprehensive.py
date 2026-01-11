@@ -27,6 +27,7 @@ import numpy as np
 from scipy.optimize import differential_evolution, minimize
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
@@ -168,20 +169,33 @@ def compute_projection_error(
                 errors.append(1000.0)  # Penalty for invalid tilt
                 continue
 
-            # Create geometry and compute homography
-            geo = CameraGeometry(w=image_width, h=image_height)
+            # Create parameters and compute homography using immutable API
             w_pos = np.array([0.0, 0.0, float(params.height_m)])
 
             try:
                 with suppress_stdout():
-                    geo.set_camera_parameters(K, w_pos, pan_deg, tilt_deg, Pixels(640), Pixels(640))
+                    camera_params = CameraParameters.create(
+                        image_width=image_width,
+                        image_height=image_height,
+                        intrinsic_matrix=K,
+                        camera_position=w_pos,
+                        pan_deg=pan_deg,
+                        tilt_deg=tilt_deg,
+                        roll_deg=Degrees(0.0),
+                        map_width=Pixels(640),
+                        map_height=Pixels(640),
+                        pixels_per_meter=Unitless(100.0),
+                    )
+                    result = CameraGeometry.compute(camera_params)
             except ValueError:
                 errors.append(1000.0)  # Penalty for invalid parameters
                 continue
 
+            H = result.homography_matrix
+
             # Project world point to image (gives undistorted coordinates)
             world_pt = np.array([[x_m], [y_m], [1.0]])
-            img_pt = geo.H @ world_pt
+            img_pt = H @ world_pt
 
             if img_pt[2, 0] <= 0:
                 errors.append(1000.0)  # Penalty for point behind camera

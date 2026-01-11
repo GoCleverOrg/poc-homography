@@ -25,6 +25,7 @@ import numpy as np
 import yaml
 
 from poc_homography.camera_geometry import CameraGeometry
+from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
@@ -166,19 +167,34 @@ def project_map_point_to_pixel(
         actual_pan = Degrees(float(pan_deg) + float(pan_offset_deg))
         actual_tilt = Degrees(float(tilt_deg) + float(tilt_offset_deg))
 
-        # Create geometry
-        geo = CameraGeometry(w=Pixels(int(image_width)), h=Pixels(int(image_height)))
+        # Create geometry using immutable API
         w_pos = np.array([0.0, 0.0, float(camera_height)])
 
-        geo.set_camera_parameters(K, w_pos, actual_pan, actual_tilt, Pixels(640), Pixels(640))
-
-        # Set distortion if provided
+        # Set up distortion if needed
+        distortion = None
         if k1 != 0.0 or k2 != 0.0:
-            geo.set_distortion_coefficients(k1=Unitless(k1), k2=Unitless(k2))
+            distortion = DistortionCoefficients(k1=Unitless(k1), k2=Unitless(k2))
+
+        params = CameraParameters.create(
+            image_width=image_width,
+            image_height=image_height,
+            intrinsic_matrix=K,
+            camera_position=w_pos,
+            pan_deg=actual_pan,
+            tilt_deg=actual_tilt,
+            roll_deg=Degrees(0.0),
+            map_width=Pixels(640),
+            map_height=Pixels(640),
+            pixels_per_meter=Unitless(100.0),
+            distortion=distortion,
+        )
+
+        result = CameraGeometry.compute(params)
+        H = result.homography_matrix
 
         # Project world point to image
         world_pt = np.array([[x_m], [y_m], [1.0]])
-        img_pt = geo.H @ world_pt
+        img_pt = H @ world_pt
 
         if img_pt[2, 0] <= 0:
             return ProjectionResult(None, None, False, "Point behind camera")
@@ -188,7 +204,13 @@ def project_map_point_to_pixel(
 
         # Apply distortion if set
         if k1 != 0.0 or k2 != 0.0:
-            u, v = geo.distort_point(u, v)
+            # Simple distortion model (approximate)
+            dx = u - cx
+            dy = v - cy
+            r2 = dx * dx + dy * dy
+            distort_factor = 1.0 + k1 * r2 / (f_px * f_px) + k2 * r2 * r2 / (f_px**4)
+            u = cx + dx * distort_factor
+            v = cy + dy * distort_factor
 
         return ProjectionResult(PixelsFloat(u), PixelsFloat(v), True, None)
 

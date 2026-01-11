@@ -14,3 +14,12 @@ class PixelPoint:
 
     x: float
     y: float
+
+    @property
+    def to_pixel(self) -> tuple[int, int]:
+        """Convert to integer pixel coordinates.
+
+        Returns:
+            Tuple of (x, y) rounded to nearest integer.
+        """
+        return (round(self.x), round(self.y))

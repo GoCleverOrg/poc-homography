@@ -19,6 +19,7 @@ import numpy as np
 
 from poc_homography.homography_map_points import MapPointHomography
 from poc_homography.map_points import MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 
 def main():
@@ -76,18 +77,18 @@ def main():
     print("\n[5] Forward projection (camera pixels -> map coordinates)...")
 
     test_points = [
-        ("Camera center", (960.0, 540.0)),
-        ("Top-left corner", (100.0, 100.0)),
-        ("Top-right corner", (1820.0, 100.0)),
-        ("Bottom-left corner", (100.0, 980.0)),
-        ("Bottom-right corner", (1820.0, 980.0)),
+        ("Camera center", PixelPoint(960.0, 540.0)),
+        ("Top-left corner", PixelPoint(100.0, 100.0)),
+        ("Top-right corner", PixelPoint(1820.0, 100.0)),
+        ("Bottom-left corner", PixelPoint(100.0, 980.0)),
+        ("Bottom-right corner", PixelPoint(1820.0, 980.0)),
     ]
 
     for name, camera_pixel in test_points:
         try:
             map_point = homography.camera_to_map(camera_pixel)
             print(
-                f"    {name:20s} ({camera_pixel[0]:7.1f}, {camera_pixel[1]:6.1f}) px "
+                f"    {name:20s} ({camera_pixel.x:7.1f}, {camera_pixel.y:6.1f}) px "
                 f"-> ({map_point.pixel_x:10.2f}, {map_point.pixel_y:11.2f}) px"
             )
         except Exception as e:
@@ -101,13 +102,13 @@ def main():
     for point_id in sample_map_points:
         if point_id in map_registry.points:
             map_point = map_registry.points[point_id]
-            map_coord = (map_point.pixel_x, map_point.pixel_y)
+            map_coord = PixelPoint(map_point.pixel_x, map_point.pixel_y)
 
             try:
                 camera_pixel = homography.map_to_camera(map_coord)
                 print(
-                    f"    Point {point_id:5s} ({map_coord[0]:10.2f}, {map_coord[1]:11.2f}) m "
-                    f"-> ({camera_pixel[0]:7.1f}, {camera_pixel[1]:6.1f}) px"
+                    f"    Point {point_id:5s} ({map_coord.x:10.2f}, {map_coord.y:11.2f}) m "
+                    f"-> ({camera_pixel.x:7.1f}, {camera_pixel.y:6.1f}) px"
                 )
             except Exception as e:
                 print(f"    Point {point_id:5s} - Error: {e}")
@@ -117,20 +118,24 @@ def main():
 
     errors = []
     for i, gcp in enumerate(gcps[:5]):  # Test first 5 GCPs
-        original_pixel = (gcp["pixel_x"], gcp["pixel_y"])
+        original_pixel = PixelPoint(gcp["pixel_x"], gcp["pixel_y"])
 
         # Forward then inverse
         map_coord = homography.camera_to_map(original_pixel)
-        recovered_pixel = homography.map_to_camera(map_coord)
+        map_coord_as_pixel = PixelPoint(map_coord.pixel_x, map_coord.pixel_y)
+        recovered_pixel = homography.map_to_camera(map_coord_as_pixel)
 
         # Calculate error
-        error = np.linalg.norm(np.array(recovered_pixel) - np.array(original_pixel))
+        error = np.linalg.norm(
+            np.array([recovered_pixel.x, recovered_pixel.y])
+            - np.array([original_pixel.x, original_pixel.y])
+        )
         errors.append(error)
 
         print(
             f"    GCP {i + 1} ({gcp['map_point_id']:5s}): "
-            f"original=({original_pixel[0]:7.1f}, {original_pixel[1]:6.1f}), "
-            f"recovered=({recovered_pixel[0]:7.1f}, {recovered_pixel[1]:6.1f}), "
+            f"original=({original_pixel.x:7.1f}, {original_pixel.y:6.1f}), "
+            f"recovered=({recovered_pixel.x:7.1f}, {recovered_pixel.y:6.1f}), "
             f"error={error:.2f} px"
         )
 
@@ -144,15 +149,15 @@ def main():
     print("\n[8] Batch projection demo...")
 
     # Project all GCP camera pixels at once
-    camera_pixels = [(gcp["pixel_x"], gcp["pixel_y"]) for gcp in gcps]
-    map_coords = homography.camera_to_map_batch(camera_pixels)
+    camera_pixels_batch = [PixelPoint(gcp["pixel_x"], gcp["pixel_y"]) for gcp in gcps]
+    map_coords_batch = homography.camera_to_map_batch(camera_pixels_batch)
 
-    print(f"    Projected {len(camera_pixels)} camera pixels to map coordinates in batch")
+    print(f"    Projected {len(camera_pixels_batch)} camera pixels to map coordinates in batch")
     print("    Sample results:")
-    for i in range(min(3, len(map_coords))):
+    for i in range(min(3, len(map_coords_batch))):
         print(
-            f"      {i + 1}. ({camera_pixels[i][0]:7.1f}, {camera_pixels[i][1]:6.1f}) px "
-            f"-> ({map_coords[i].pixel_x:10.2f}, {map_coords[i].pixel_y:11.2f}) px"
+            f"      {i + 1}. ({camera_pixels_batch[i].x:7.1f}, {camera_pixels_batch[i].y:6.1f}) px "
+            f"-> ({map_coords_batch[i].pixel_x:10.2f}, {map_coords_batch[i].pixel_y:11.2f}) px"
         )
 
     # Summary

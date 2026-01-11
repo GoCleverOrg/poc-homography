@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import math
-import uuid
 from typing import Any
 
 import cv2
@@ -30,6 +29,7 @@ from poc_homography.homography_interface import (
     validate_homography_matrix,
 )
 from poc_homography.map_points import MapPoint
+from poc_homography.pixel_point import PixelPoint
 
 logger = logging.getLogger(__name__)
 
@@ -377,9 +377,7 @@ class FeatureMatchHomography(HomographyProvider):
 
         return " | ".join(suggestions)
 
-    def _calculate_point_confidence(
-        self, image_point: tuple[float, float], base_confidence: float
-    ) -> float:
+    def _calculate_point_confidence(self, image_point: PixelPoint, base_confidence: float) -> float:
         """
         Calculate per-point confidence based on distance from image center.
 
@@ -387,13 +385,13 @@ class FeatureMatchHomography(HomographyProvider):
         and perspective effects.
 
         Args:
-            image_point: (u, v) pixel coordinates
+            image_point: Pixel coordinates
             base_confidence: Base confidence from homography quality
 
         Returns:
             float: Adjusted confidence score in range [0.0, 1.0]
         """
-        u, v = image_point
+        u, v = image_point.x, image_point.y
 
         # Calculate distance from image center (normalized)
         if self.width <= 0 or self.height <= 0:
@@ -420,20 +418,20 @@ class FeatureMatchHomography(HomographyProvider):
 
         return base_confidence * edge_factor
 
-    def _project_image_point_to_map(self, image_point: tuple[float, float]) -> tuple[float, float]:
+    def _project_image_point_to_map(self, image_point: PixelPoint) -> PixelPoint:
         """
         Project image point to map pixel coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates in camera image
+            image_point: Pixel coordinates in camera image
 
         Returns:
-            (pixel_x, pixel_y): Pixel coordinates on the reference map
+            Pixel coordinates on the reference map
 
         Raises:
             ValueError: If point projects to infinity (on horizon)
         """
-        u, v = image_point
+        u, v = image_point.x, image_point.y
 
         # Convert to homogeneous coordinates
         pt_homogeneous = np.array([u, v, 1.0])
@@ -449,7 +447,7 @@ class FeatureMatchHomography(HomographyProvider):
         pixel_x = map_homogeneous[0] / map_homogeneous[2]
         pixel_y = map_homogeneous[1] / map_homogeneous[2]
 
-        return pixel_x, pixel_y
+        return PixelPoint(float(pixel_x), float(pixel_y))
 
     def _compute_homography_with_method(
         self, local_points: np.ndarray, image_points: np.ndarray
@@ -779,12 +777,12 @@ class FeatureMatchHomography(HomographyProvider):
             homography_matrix=self.H.copy(), confidence=self._confidence, metadata=metadata
         )
 
-    def project_point(self, image_point: tuple[float, float], point_id: str = "") -> MapPoint:
+    def project_point(self, image_point: PixelPoint, point_id: str = "") -> MapPoint:
         """
         Project image point to map pixel coordinates.
 
         Args:
-            image_point: (u, v) pixel coordinates in camera image
+            image_point: Pixel coordinates in camera image
             point_id: Optional ID for the generated MapPoint (auto-generated if empty)
 
         Returns:
@@ -797,7 +795,7 @@ class FeatureMatchHomography(HomographyProvider):
         if not self.is_valid():
             raise RuntimeError("No valid homography available. Call compute_homography() first.")
 
-        u, v = image_point
+        u, v = image_point.x, image_point.y
         if not (0 <= u < self.width) or not (0 <= v < self.height):
             raise ValueError(
                 f"Image point ({u}, {v}) outside valid bounds "
@@ -805,27 +803,21 @@ class FeatureMatchHomography(HomographyProvider):
             )
 
         # Project to map pixel coordinates
-        pixel_x, pixel_y = self._project_image_point_to_map(image_point)
-
-        # Generate a unique ID for this projected point if not provided
-        if not point_id:
-            point_id = f"proj_{uuid.uuid4().hex[:8]}"
+        map_pixel = self._project_image_point_to_map(image_point)
 
         return MapPoint(
-            id=point_id,
-            pixel_x=pixel_x,
-            pixel_y=pixel_y,
-            map_id=self.map_id,
+            pixel_x=map_pixel.x,
+            pixel_y=map_pixel.y,
         )
 
     def project_points(
-        self, image_points: list[tuple[float, float]], point_id_prefix: str = "proj"
+        self, image_points: list[PixelPoint], point_id_prefix: str = "proj"
     ) -> list[MapPoint]:
         """
         Project multiple image points to map pixel coordinates.
 
         Args:
-            image_points: List of (u, v) pixel coordinates in camera image
+            image_points: List of pixel coordinates in camera image
             point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
 
         Returns:

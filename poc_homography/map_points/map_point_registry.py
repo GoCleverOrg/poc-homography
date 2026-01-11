@@ -59,10 +59,13 @@ class MapPointRegistry:
 
         Returns:
             Dictionary with map_id and points array.
+            Each point dict includes an "id" key from the registry's dictionary key.
         """
         return {
             "map_id": self.map_id,
-            "points": [point.to_dict() for point in self.points.values()],
+            "points": [
+                {"id": point_id, **point.to_dict()} for point_id, point in self.points.items()
+            ],
         }
 
     def to_json(self, indent: int = 2) -> str:
@@ -91,6 +94,7 @@ class MapPointRegistry:
 
         Args:
             data: Dictionary with map_id and points array.
+                  Each point dict must have an "id" key which becomes the dictionary key.
 
         Returns:
             New MapPointRegistry instance.
@@ -104,8 +108,12 @@ class MapPointRegistry:
 
         points: dict[str, MapPoint] = {}
         for point_data in points_data:
+            # Extract id from the point data (external key)
+            point_id = str(point_data["id"])
+            # Create MapPoint without id (it's not a field anymore)
             point = MapPoint.from_dict(point_data)
-            points[point.id] = point
+            # Use the extracted id as the dictionary key
+            points[point_id] = point
 
         return cls(map_id=map_id, points=points)
 

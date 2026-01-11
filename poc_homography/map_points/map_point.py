@@ -17,17 +17,16 @@ class MapPoint:
     without any geographic (lat/lon) reference. This is the core data structure
     for map-based reference points that don't require geographic transformations.
 
+    The ID and map association are managed externally by MapPointRegistry,
+    which stores points in a dictionary keyed by their IDs.
+
     Attributes:
-        id: Unique identifier for the point (e.g., "Z1", "P5", "A3").
         pixel_x: X coordinate in pixels (column).
         pixel_y: Y coordinate in pixels (row).
-        map_id: Identifier of the map this point belongs to (e.g., "map_valte").
     """
 
-    id: str
     pixel_x: float
     pixel_y: float
-    map_id: str
 
     @cached_property
     def pixel(self) -> PixelPoint:
@@ -38,13 +37,12 @@ class MapPoint:
         """Convert MapPoint to a dictionary for JSON serialization.
 
         Returns:
-            Dictionary with id, pixel_x, pixel_y, and map_id keys.
+            Dictionary with pixel_x and pixel_y keys.
+            Note: The id is managed by the MapPointRegistry and added during serialization.
         """
         return {
-            "id": self.id,
             "pixel_x": self.pixel_x,
             "pixel_y": self.pixel_y,
-            "map_id": self.map_id,
         }
 
     @classmethod
@@ -52,7 +50,8 @@ class MapPoint:
         """Create MapPoint from a dictionary.
 
         Args:
-            data: Dictionary with id, pixel_x, pixel_y, and map_id keys.
+            data: Dictionary with pixel_x and pixel_y keys.
+                  The id key (if present) is ignored as it's managed by MapPointRegistry.
 
         Returns:
             New MapPoint instance.
@@ -62,8 +61,6 @@ class MapPoint:
             ValueError: If data types are invalid.
         """
         return cls(
-            id=str(data["id"]),
             pixel_x=float(data["pixel_x"]),
             pixel_y=float(data["pixel_y"]),
-            map_id=str(data["map_id"]),
         )

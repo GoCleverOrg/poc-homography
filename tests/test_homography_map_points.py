@@ -8,15 +8,21 @@ principles and initially fail until homography module is updated.
 
 Test Data Structure:
     - map_points.json: Reference map points with UTM coordinates (stored as pixel_x, pixel_y)
-    - test_data_Valte_20260109_195052.json: GCPs linking camera pixels to map point IDs
+    - test_data_Valte_20260109_195052.json: Capture data with annotations linking
+      camera pixels to GCP IDs via the Annotation dataclass
     - test_data_Valte_20260109_195052.jpg: Camera image
 
-Note: The MapPoint "pixel_x" and "pixel_y" fields actually contain UTM easting/northing
-coordinates in meters, not pixel coordinates. This is a known naming issue.
+Data Model:
+    - Annotations are loaded from capture.annotations array in the JSON file
+    - Each Annotation contains:
+        - gcp_id: ID referencing a map point in the registry
+        - pixel: PixelPoint with x/y coordinates in camera image
+    - MapPoint "pixel_x" and "pixel_y" fields contain UTM easting/northing
+      coordinates in meters (naming is historical)
 
 Test Coverage:
     - Loading map points from registry
-    - Creating GCP correspondences from map point references
+    - Creating GCP correspondences from annotation data
     - Computing homography from camera pixels to map UTM coordinates
     - Projecting camera pixels to map coordinates (forward transform)
     - Projecting map coordinates back to camera pixels (inverse transform)
@@ -31,6 +37,7 @@ import cv2
 import numpy as np
 import pytest
 
+from poc_homography.calibration.annotation import Annotation
 from poc_homography.map_points import MapPoint, MapPointRegistry
 
 # Test data paths
@@ -48,9 +55,16 @@ def map_point_registry():
 
 @pytest.fixture
 def valte_gcp_data():
-    """Load Valte GCP test data from JSON file."""
+    """Load Valte GCP test data from JSON file.
+
+    Returns a list of Annotation objects parsed from the capture.annotations array.
+    """
     with open(VALTE_GCP_PATH) as f:
-        return json.load(f)
+        data = json.load(f)
+
+    # Parse annotations from the new format
+    annotations = [Annotation.from_dict(ann_data) for ann_data in data["capture"]["annotations"]]
+    return annotations
 
 
 @pytest.fixture
@@ -82,10 +96,9 @@ class TestMapPointRegistryLoading:
 
         point = map_point_registry.points[point_id]
         assert isinstance(point, MapPoint)
-        assert point.id == point_id
+        # Note: id and map_id are no longer fields of MapPoint - they're managed by the registry
         assert isinstance(point.pixel_x, (int, float))
         assert isinstance(point.pixel_y, (int, float))
-        assert point.map_id == "map_valte"
 
         # These are actually UTM coordinates (meters), not pixels
         # Valencia is in UTM zone 30N, so expect large values
@@ -94,10 +107,10 @@ class TestMapPointRegistryLoading:
 
     def test_all_test_gcps_have_map_points(self, map_point_registry, valte_gcp_data):
         """Test that all GCPs reference valid map points."""
-        for gcp in valte_gcp_data["gcps"]:
-            map_point_id = gcp["map_point_id"]
-            assert map_point_id in map_point_registry.points, (
-                f"GCP references missing map point: {map_point_id}"
+        for annotation in valte_gcp_data:
+            gcp_id = annotation.gcp_id
+            assert gcp_id in map_point_registry.points, (
+                f"GCP references missing map point: {gcp_id}"
             )
 
 
@@ -106,10 +119,9 @@ class TestGCPCorrespondenceExtraction:
 
     def test_extract_camera_pixels_from_gcps(self, valte_gcp_data):
         """Test extracting camera pixel coordinates from GCP data."""
-        gcps = valte_gcp_data["gcps"]
-        camera_pixels = np.array([[gcp["pixel_x"], gcp["pixel_y"]] for gcp in gcps])
+        camera_pixels = np.array([[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data])
 
-        assert camera_pixels.shape[0] == len(gcps)
+        assert camera_pixels.shape[0] == len(valte_gcp_data)
         assert camera_pixels.shape[1] == 2
 
         # Validate pixel ranges (1920x1080 image)
@@ -120,17 +132,16 @@ class TestGCPCorrespondenceExtraction:
 
     def test_extract_map_coords_from_registry(self, map_point_registry, valte_gcp_data):
         """Test extracting map UTM coordinates from map point registry."""
-        gcps = valte_gcp_data["gcps"]
         map_coords = []
 
-        for gcp in gcps:
-            map_point_id = gcp["map_point_id"]
-            map_point = map_point_registry.points[map_point_id]
+        for annotation in valte_gcp_data:
+            gcp_id = annotation.gcp_id
+            map_point = map_point_registry.points[gcp_id]
             map_coords.append([map_point.pixel_x, map_point.pixel_y])
 
         map_coords = np.array(map_coords)
 
-        assert map_coords.shape[0] == len(gcps)
+        assert map_coords.shape[0] == len(valte_gcp_data)
         assert map_coords.shape[1] == 2
 
         # Map coords should be in reasonable UTM range (not NaN/inf)
@@ -140,16 +151,14 @@ class TestGCPCorrespondenceExtraction:
 
     def test_create_correspondence_pairs(self, map_point_registry, valte_gcp_data):
         """Test creating matched pairs of camera pixels and map UTM coords."""
-        gcps = valte_gcp_data["gcps"]
-
         correspondences = []
-        for gcp in gcps:
-            camera_pt = (gcp["pixel_x"], gcp["pixel_y"])
-            map_point = map_point_registry.points[gcp["map_point_id"]]
+        for annotation in valte_gcp_data:
+            camera_pt = (annotation.pixel.x, annotation.pixel.y)
+            map_point = map_point_registry.points[annotation.gcp_id]
             map_coord = (map_point.pixel_x, map_point.pixel_y)
             correspondences.append((camera_pt, map_coord))
 
-        assert len(correspondences) == len(gcps)
+        assert len(correspondences) == len(valte_gcp_data)
         assert all(len(pair) == 2 for pair in correspondences)
         assert all(len(pair[0]) == 2 and len(pair[1]) == 2 for pair in correspondences)
 
@@ -161,16 +170,16 @@ class TestHomographyComputation:
         """Test computing homography matrix using cv2.findHomography."""
         # Extract correspondences
         camera_pixels = np.array(
-            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = np.array(
             [
                 [
-                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                    map_point_registry.points[ann.gcp_id].pixel_x,
+                    map_point_registry.points[ann.gcp_id].pixel_y,
                 ]
-                for gcp in valte_gcp_data["gcps"]
+                for ann in valte_gcp_data
             ],
             dtype=np.float32,
         )
@@ -193,16 +202,16 @@ class TestHomographyComputation:
     def test_homography_matrix_properties(self, map_point_registry, valte_gcp_data):
         """Test mathematical properties of homography matrix."""
         camera_pixels = np.array(
-            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = np.array(
             [
                 [
-                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                    map_point_registry.points[ann.gcp_id].pixel_x,
+                    map_point_registry.points[ann.gcp_id].pixel_y,
                 ]
-                for gcp in valte_gcp_data["gcps"]
+                for ann in valte_gcp_data
             ],
             dtype=np.float32,
         )
@@ -225,16 +234,16 @@ class TestForwardProjection:
     def homography_matrix(self, map_point_registry, valte_gcp_data):
         """Compute and return homography matrix."""
         camera_pixels = np.array(
-            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = np.array(
             [
                 [
-                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                    map_point_registry.points[ann.gcp_id].pixel_x,
+                    map_point_registry.points[ann.gcp_id].pixel_y,
                 ]
-                for gcp in valte_gcp_data["gcps"]
+                for ann in valte_gcp_data
             ],
             dtype=np.float32,
         )
@@ -261,15 +270,15 @@ class TestForwardProjection:
     ):
         """Test that projecting GCP camera pixels yields expected map coords."""
         errors = []
-        for gcp in valte_gcp_data["gcps"]:
+        for annotation in valte_gcp_data:
             # Camera pixel
-            camera_pt = np.array([[[gcp["pixel_x"], gcp["pixel_y"]]]], dtype=np.float32)
+            camera_pt = np.array([[[annotation.pixel.x, annotation.pixel.y]]], dtype=np.float32)
 
             # Project to map
             projected_map_coord = cv2.perspectiveTransform(camera_pt, homography_matrix)[0, 0]
 
             # Expected map coord
-            expected_map_point = map_point_registry.points[gcp["map_point_id"]]
+            expected_map_point = map_point_registry.points[annotation.gcp_id]
             expected = np.array([expected_map_point.pixel_x, expected_map_point.pixel_y])
 
             # Calculate reprojection error (in meters for UTM coords)
@@ -289,12 +298,12 @@ class TestForwardProjection:
     def test_forward_projection_batch(self, homography_matrix, valte_gcp_data):
         """Test batch projection of multiple camera pixels."""
         camera_pixels = np.array(
-            [[[gcp["pixel_x"], gcp["pixel_y"]]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[[ann.pixel.x, ann.pixel.y]] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = cv2.perspectiveTransform(camera_pixels, homography_matrix)
 
-        assert map_coords.shape[0] == len(valte_gcp_data["gcps"])
+        assert map_coords.shape[0] == len(valte_gcp_data)
         assert np.all(np.isfinite(map_coords))
 
 
@@ -305,16 +314,16 @@ class TestInverseProjection:
     def homography_matrix(self, map_point_registry, valte_gcp_data):
         """Compute and return homography matrix."""
         camera_pixels = np.array(
-            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = np.array(
             [
                 [
-                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                    map_point_registry.points[ann.gcp_id].pixel_x,
+                    map_point_registry.points[ann.gcp_id].pixel_y,
                 ]
-                for gcp in valte_gcp_data["gcps"]
+                for ann in valte_gcp_data
             ],
             dtype=np.float32,
         )
@@ -350,9 +359,9 @@ class TestInverseProjection:
     ):
         """Test that projecting map coords back yields original camera pixels."""
         errors = []
-        for gcp in valte_gcp_data["gcps"]:
+        for annotation in valte_gcp_data:
             # Map coord (UTM)
-            map_point = map_point_registry.points[gcp["map_point_id"]]
+            map_point = map_point_registry.points[annotation.gcp_id]
             map_coord = np.array([[[map_point.pixel_x, map_point.pixel_y]]], dtype=np.float32)
 
             # Project to camera
@@ -361,7 +370,7 @@ class TestInverseProjection:
             ]
 
             # Expected camera pixel
-            expected = np.array([gcp["pixel_x"], gcp["pixel_y"]])
+            expected = np.array([annotation.pixel.x, annotation.pixel.y])
 
             # Calculate reprojection error (in pixels)
             error = np.linalg.norm(projected_camera_pt - expected)
@@ -385,16 +394,16 @@ class TestRoundTripProjection:
     def homography_matrices(self, map_point_registry, valte_gcp_data):
         """Compute and return forward and inverse homography matrices."""
         camera_pixels = np.array(
-            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = np.array(
             [
                 [
-                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                    map_point_registry.points[ann.gcp_id].pixel_x,
+                    map_point_registry.points[ann.gcp_id].pixel_y,
                 ]
-                for gcp in valte_gcp_data["gcps"]
+                for ann in valte_gcp_data
             ],
             dtype=np.float32,
         )
@@ -408,9 +417,9 @@ class TestRoundTripProjection:
         H, H_inv = homography_matrices
 
         errors = []
-        for gcp in valte_gcp_data["gcps"]:
+        for annotation in valte_gcp_data:
             # Original camera pixel
-            original = np.array([[[gcp["pixel_x"], gcp["pixel_y"]]]], dtype=np.float32)
+            original = np.array([[[annotation.pixel.x, annotation.pixel.y]]], dtype=np.float32)
 
             # Project to map
             map_coord = cv2.perspectiveTransform(original, H)
@@ -436,9 +445,9 @@ class TestRoundTripProjection:
         H, H_inv = homography_matrices
 
         errors = []
-        for gcp in valte_gcp_data["gcps"]:
+        for annotation in valte_gcp_data:
             # Original map coord (UTM meters)
-            map_point = map_point_registry.points[gcp["map_point_id"]]
+            map_point = map_point_registry.points[annotation.gcp_id]
             original = np.array([[[map_point.pixel_x, map_point.pixel_y]]], dtype=np.float32)
 
             # Project to camera
@@ -466,16 +475,16 @@ class TestReprojectionErrorMetrics:
     def homography_matrix(self, map_point_registry, valte_gcp_data):
         """Compute and return homography matrix."""
         camera_pixels = np.array(
-            [[gcp["pixel_x"], gcp["pixel_y"]] for gcp in valte_gcp_data["gcps"]], dtype=np.float32
+            [[ann.pixel.x, ann.pixel.y] for ann in valte_gcp_data], dtype=np.float32
         )
 
         map_coords = np.array(
             [
                 [
-                    map_point_registry.points[gcp["map_point_id"]].pixel_x,
-                    map_point_registry.points[gcp["map_point_id"]].pixel_y,
+                    map_point_registry.points[ann.gcp_id].pixel_x,
+                    map_point_registry.points[ann.gcp_id].pixel_y,
                 ]
-                for gcp in valte_gcp_data["gcps"]
+                for ann in valte_gcp_data
             ],
             dtype=np.float32,
         )
@@ -487,13 +496,13 @@ class TestReprojectionErrorMetrics:
         """Test computing mean reprojection error across all GCPs."""
         errors = []
 
-        for gcp in valte_gcp_data["gcps"]:
+        for annotation in valte_gcp_data:
             # Project camera pixel to map
-            camera_pt = np.array([[[gcp["pixel_x"], gcp["pixel_y"]]]], dtype=np.float32)
+            camera_pt = np.array([[[annotation.pixel.x, annotation.pixel.y]]], dtype=np.float32)
             projected_map_coord = cv2.perspectiveTransform(camera_pt, homography_matrix)[0, 0]
 
             # Expected map coord
-            expected_map_point = map_point_registry.points[gcp["map_point_id"]]
+            expected_map_point = map_point_registry.points[annotation.gcp_id]
             expected = np.array([expected_map_point.pixel_x, expected_map_point.pixel_y])
 
             # Calculate error (in meters)
@@ -518,11 +527,11 @@ class TestReprojectionErrorMetrics:
         """Test computing RMSE (Root Mean Square Error) of reprojection."""
         squared_errors = []
 
-        for gcp in valte_gcp_data["gcps"]:
-            camera_pt = np.array([[[gcp["pixel_x"], gcp["pixel_y"]]]], dtype=np.float32)
+        for annotation in valte_gcp_data:
+            camera_pt = np.array([[[annotation.pixel.x, annotation.pixel.y]]], dtype=np.float32)
             projected_map_coord = cv2.perspectiveTransform(camera_pt, homography_matrix)[0, 0]
 
-            expected_map_point = map_point_registry.points[gcp["map_point_id"]]
+            expected_map_point = map_point_registry.points[annotation.gcp_id]
             expected = np.array([expected_map_point.pixel_x, expected_map_point.pixel_y])
 
             squared_error = np.sum((projected_map_coord - expected) ** 2)
