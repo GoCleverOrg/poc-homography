@@ -22,7 +22,7 @@ from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent.parent
-MAP_POINTS_PATH = TEST_DATA_DIR / "map_points.json"
+MAP_POINTS_PATH = TEST_DATA_DIR / "valte_map_points.yaml"
 VALTE_GCP_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.json"
 
 

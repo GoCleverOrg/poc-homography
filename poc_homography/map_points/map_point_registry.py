@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+import yaml
+
 from poc_homography.map_points.map_point import MapPoint
 
 
@@ -44,7 +46,7 @@ class MapPointRegistry:
     """Immutable registry for managing map points.
 
     This class stores a collection of map points, allowing efficient lookup by ID
-    and providing serialization to/from JSON format.
+    and providing serialization to/from JSON and YAML formats.
 
     Attributes:
         map_id: Identifier for the map these points belong to.
@@ -78,15 +80,6 @@ class MapPointRegistry:
             JSON string representation.
         """
         return json.dumps(self.to_dict(), indent=indent)
-
-    def save(self, path: str | Path, fs: FileSystem | None = None) -> None:
-        """Save registry to JSON file.
-
-        Args:
-            path: Path to output JSON file.
-            fs: File system implementation (default: DefaultFileSystem).
-        """
-        _get_fs(fs).write_text(path, self.to_json())
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MapPointRegistry:
@@ -136,11 +129,52 @@ class MapPointRegistry:
         return cls.from_dict(data)
 
     @classmethod
-    def load(cls, path: str | Path, fs: FileSystem | None = None) -> MapPointRegistry:
-        """Load registry from JSON file.
+    def from_yaml(cls, yaml_str: str) -> MapPointRegistry:
+        """Create registry from YAML string.
 
         Args:
-            path: Path to input JSON file.
+            yaml_str: YAML string representation.
+
+        Returns:
+            New MapPointRegistry instance.
+
+        Raises:
+            yaml.YAMLError: If YAML is invalid.
+            KeyError: If required keys are missing.
+            ValueError: If data format is invalid or content is empty.
+        """
+        data = yaml.safe_load(yaml_str)
+        if data is None:
+            raise ValueError("YAML content is empty or contains only whitespace")
+        return cls.from_dict(data)
+
+    def to_yaml(self) -> str:
+        """Convert registry to YAML string.
+
+        Returns:
+            YAML string representation.
+        """
+        return yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=False)
+
+    def save(self, path: str | Path, fs: FileSystem | None = None) -> None:
+        """Save registry to file (JSON or YAML based on extension).
+
+        Args:
+            path: Path to output file (.json or .yaml/.yml).
+            fs: File system implementation (default: DefaultFileSystem).
+        """
+        path = Path(path)
+        if path.suffix.lower() in (".yaml", ".yml"):
+            _get_fs(fs).write_text(path, self.to_yaml())
+        else:
+            _get_fs(fs).write_text(path, self.to_json())
+
+    @classmethod
+    def load(cls, path: str | Path, fs: FileSystem | None = None) -> MapPointRegistry:
+        """Load registry from file (JSON or YAML based on extension).
+
+        Args:
+            path: Path to input file (.json or .yaml/.yml).
             fs: File system implementation (default: DefaultFileSystem).
 
         Returns:
@@ -149,7 +183,12 @@ class MapPointRegistry:
         Raises:
             FileNotFoundError: If file doesn't exist.
             json.JSONDecodeError: If JSON is invalid.
+            yaml.YAMLError: If YAML is invalid.
             KeyError: If required keys are missing.
             ValueError: If data format is invalid.
         """
-        return cls.from_json(_get_fs(fs).read_text(path))
+        path = Path(path)
+        content = _get_fs(fs).read_text(path)
+        if path.suffix.lower() in (".yaml", ".yml"):
+            return cls.from_yaml(content)
+        return cls.from_json(content)

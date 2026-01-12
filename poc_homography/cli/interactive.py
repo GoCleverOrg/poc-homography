@@ -37,7 +37,7 @@ def interactive_command(
 
     Example:
         hom interactive --camera Valte --frame-path frame.png
-            --registry map_points.json --pan-raw 45.0 --tilt 30.0 --zoom 5.0
+            --registry valte_map_points.yaml --pan-raw 45.0 --tilt 30.0 --zoom 5.0
     """
     if not CV2_AVAILABLE:
         typer.echo("Error: OpenCV is required for interactive mode but is not installed", err=True)
