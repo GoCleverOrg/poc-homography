@@ -17,16 +17,53 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from poc_homography.map_points import MapPoint, MapPointRegistry
 
-# Data directory for storing GCPs
-# Path: views.py -> gcp/ -> webapp/ -> project_root/ -> data/
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
-MAP_POINTS_FILE = DATA_DIR / "gcps" / "valte_map_points.yaml"
+# Project root and data directories
+# Path: views.py -> gcp/ -> webapp/ -> project_root/
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+# Default map points file at project root (can also use data/gcps/ for custom files)
+MAP_POINTS_FILE = PROJECT_ROOT / "valte_map_points.yaml"
 
 
 def _ensure_data_dir() -> None:
     """Ensure data directory exists."""
     gcps_dir = DATA_DIR / "gcps"
     gcps_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_safe_file_path(filename: str) -> Path | None:
+    """
+    Safely resolve a filename to a path within the allowed gcps directory.
+
+    Prevents path traversal attacks by:
+    1. Extracting only the filename (stripping any directory components)
+    2. Constructing the path within DATA_DIR/gcps
+    3. Validating the resolved path is still within DATA_DIR
+
+    Args:
+        filename: User-provided filename (may contain malicious path components)
+
+    Returns:
+        Safe resolved Path within gcps directory, or None if invalid
+    """
+    # Extract just the filename, stripping any directory components
+    safe_name = Path(filename).name
+
+    # Reject empty filenames or hidden files
+    if not safe_name or safe_name.startswith("."):
+        return None
+
+    # Construct path within allowed directory
+    gcps_dir = DATA_DIR / "gcps"
+    file_path = (gcps_dir / safe_name).resolve()
+
+    # Verify the resolved path is still within DATA_DIR
+    try:
+        file_path.relative_to(DATA_DIR.resolve())
+    except ValueError:
+        return None
+
+    return file_path
 
 
 def _load_registry() -> MapPointRegistry:
@@ -75,10 +112,14 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     list view rather than a geographic map.
     """
     # Load registry from file parameter or default
+    # Uses safe path resolution to prevent path traversal attacks
     file_param = request.GET.get("file")
     if file_param:
-        file_path = Path(file_param)
-        registry = MapPointRegistry.load(file_path) if file_path.exists() else _load_registry()
+        file_path = _resolve_safe_file_path(file_param)
+        if file_path and file_path.exists():
+            registry = MapPointRegistry.load(file_path)
+        else:
+            registry = _load_registry()
     else:
         registry = _load_registry()
 

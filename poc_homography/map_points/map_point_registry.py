@@ -46,7 +46,7 @@ class MapPointRegistry:
     """Immutable registry for managing map points.
 
     This class stores a collection of map points, allowing efficient lookup by ID
-    and providing serialization to/from JSON format.
+    and providing serialization to/from JSON and YAML formats.
 
     Attributes:
         map_id: Identifier for the map these points belong to.
@@ -141,9 +141,11 @@ class MapPointRegistry:
         Raises:
             yaml.YAMLError: If YAML is invalid.
             KeyError: If required keys are missing.
-            ValueError: If data format is invalid.
+            ValueError: If data format is invalid or content is empty.
         """
         data = yaml.safe_load(yaml_str)
+        if data is None:
+            raise ValueError("YAML content is empty or contains only whitespace")
         return cls.from_dict(data)
 
     def to_yaml(self) -> str:

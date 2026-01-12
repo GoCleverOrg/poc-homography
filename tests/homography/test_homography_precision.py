@@ -61,10 +61,12 @@ def load_all_test_cases() -> list[dict[str, Any]]:
     if not GCPS_FILE.exists():
         return []
 
-    with open(GCPS_FILE) as f:
-        data = yaml.safe_load(f)
-
-    return data.get("test_cases", [])
+    try:
+        with open(GCPS_FILE, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data.get("test_cases", []) if data else []
+    except (yaml.YAMLError, OSError):
+        return []
 
 
 def get_test_case_names() -> list[str]:
@@ -85,10 +87,10 @@ def load_gcps_from_yaml(test_case_name: str | None = None) -> dict[str, Any]:
     if not GCPS_FILE.exists():
         pytest.skip(f"GCPs file not found: {GCPS_FILE}")
 
-    with open(GCPS_FILE) as f:
+    with open(GCPS_FILE, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
-    test_cases = data.get("test_cases", [])
+    test_cases = data.get("test_cases", []) if data else []
     if not test_cases:
         pytest.skip("No test cases found in GCPs file")
 
@@ -422,6 +424,8 @@ class TestAllTestCases:
         )
 
         # Randomly select 4 GCPs for computation, rest for validation
+        # Use fixed seed for reproducibility (based on test case name)
+        random.seed(hash(test_case_name) % (2**32))
         gcps_shuffled = gcps.copy()
         random.shuffle(gcps_shuffled)
 

@@ -157,9 +157,6 @@ def format_stats_human(stats: dict[str, Any]) -> str:
         lines.append(f"  Pan:  {live['pan_deg']:.2f}°")
         lines.append(f"  Tilt: {live['tilt_deg']:.2f}°")
         lines.append(f"  Zoom: {live['zoom']:.1f}x")
-    elif stats.get("live_status") is None and "live_status" in stats:
-        # Only show this message if live status was explicitly requested but failed
-        pass  # Will be handled by caller
 
     return "\n".join(lines)
 
