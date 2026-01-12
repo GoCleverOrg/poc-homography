@@ -20,8 +20,8 @@ import os
 import sys
 from typing import Any
 
+from poc_homography.camera.intrinsics import PTZStatus, get_ptz_status
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
-from poc_homography.camera.intrinsics import get_ptz_status, PTZStatus
 
 
 def fetch_live_ptz_status(ip: str, timeout: float = 5.0) -> PTZStatus | None:
