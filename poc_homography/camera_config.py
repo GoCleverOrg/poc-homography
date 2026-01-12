@@ -105,14 +105,9 @@ CAMERAS = [
         # If None, uses linear focal length approximation
         # See CALIBRATION TABLE FORMAT documentation above for details
         "calibration_table": None,
-        # GeoTIFF reference parameters for georeferencing
-        # Updated to use GDAL 6-parameter GeoTransform format (Issue #133)
-        # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
-        # For north-up rasters, row_rotation=0 and col_rotation=0
-        "geotiff_params": {
-            "geotransform": [737575.05, 0.15, 0, 4391595.45, 0, -0.15],
-            "utm_crs": "EPSG:25830",
-        },
+        # Site this camera observes (see sites_config.py for site definitions)
+        # GeoTIFF parameters are now stored at site level
+        "site": "Valte",
         "description": "Valte camera location",
     },
     {
@@ -133,6 +128,8 @@ CAMERAS = [
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
         # Zoom-dependent intrinsic calibration table (optional)
         "calibration_table": None,
+        # Site this camera observes (see sites_config.py for site definitions)
+        "site": "Setram",
         "description": "Setram camera location",
     },
 ]

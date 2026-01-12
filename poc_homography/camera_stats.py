@@ -22,6 +22,7 @@ from typing import Any
 
 from poc_homography.camera.intrinsics import PTZStatus, get_ptz_status
 from poc_homography.camera_config import get_camera_by_name, get_camera_configs
+from poc_homography.sites_config import get_site_by_name
 
 
 def fetch_live_ptz_status(ip: str, timeout: float = 5.0) -> PTZStatus | None:
@@ -87,10 +88,21 @@ def get_camera_stats(camera_name: str, include_live: bool = False) -> dict[str, 
             "sensor_width_mm": camera.get("sensor_width_mm"),
             "base_focal_length_mm": camera.get("base_focal_length_mm"),
         },
-        "geotiff_params": camera.get("geotiff_params"),
+        "site": camera.get("site"),
+        "site_geotransform": None,
         "calibration_table": camera.get("calibration_table"),
         "live_status": None,
     }
+
+    # Fetch site geotransform if camera has a site
+    site_name = camera.get("site")
+    if site_name:
+        site = get_site_by_name(site_name)
+        if site and site.is_configured:
+            stats["site_geotransform"] = {
+                "geotransform": site.geotransform,
+                "utm_crs": site.utm_crs,
+            }
 
     # Fetch live PTZ status if requested
     if include_live:
@@ -138,11 +150,14 @@ def format_stats_human(stats: dict[str, Any]) -> str:
     lines.append(f"  Sensor width:      {sensor['sensor_width_mm']} mm")
     lines.append(f"  Base focal length: {sensor['base_focal_length_mm']} mm")
 
-    if stats["geotiff_params"]:
-        lines.append("\nGeoTIFF Parameters:")
-        geo = stats["geotiff_params"]
-        lines.append(f"  GeoTransform: {geo.get('geotransform')}")
-        lines.append(f"  UTM CRS:      {geo.get('utm_crs')}")
+    if stats.get("site"):
+        lines.append(f"\nSite: {stats['site']}")
+        if stats.get("site_geotransform"):
+            geo = stats["site_geotransform"]
+            lines.append(f"  GeoTransform: {geo.get('geotransform')}")
+            lines.append(f"  UTM CRS:      {geo.get('utm_crs')}")
+        else:
+            lines.append("  (Site not configured with geotransform)")
 
     if stats["calibration_table"]:
         lines.append("\nCalibration Table:")

@@ -1,6 +1,6 @@
 {% extends "gcp/base.html" %}
 
-{% block title %}Homography GCP Tools{% endblock %}
+{% block title %}Homography Map Points Tools{% endblock %}
 
 {% block extra_style %}
 .hero {
@@ -92,15 +92,15 @@
 
 {% block content %}
 <div class="hero">
-    <h1>Homography GCP Tools</h1>
-    <p class="subtitle">Ground Control Point management and visualization for camera homography</p>
+    <h1>Homography Map Points Tools</h1>
+    <p class="subtitle">Map point management and visualization for camera homography</p>
 
     <div class="tool-grid">
         <a href="{% url 'gcp:gcp_capture' %}" class="tool-card">
-            <div class="tool-title">GCP Capture Tool <span class="badge">Primary</span></div>
+            <div class="tool-title">Map Points Capture Tool <span class="badge">Primary</span></div>
             <div class="tool-description">
-                Interactive map interface for capturing and managing Ground Control Points.
-                Click on satellite imagery to mark precise GCP locations.
+                Interactive interface for capturing and managing map points on site reference images.
+                Select a site and click on the image to mark precise pixel locations.
             </div>
         </a>
 

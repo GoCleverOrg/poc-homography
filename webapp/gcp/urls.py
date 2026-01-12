@@ -22,6 +22,8 @@ api_patterns = [
     path("api/gcps/", views.api_get_gcps, name="api_get_gcps"),
     path("api/gcps/save/", views.api_save_gcps, name="api_save_gcps"),
     path("api/gcps/delete/<int:gcp_id>/", views.api_delete_gcp, name="api_delete_gcp"),
+    path("api/sites/", views.api_get_sites, name="api_get_sites"),
+    path("api/sites/<str:site_name>/", views.api_get_site, name="api_get_site"),
 ]
 
 urlpatterns = page_patterns + api_patterns

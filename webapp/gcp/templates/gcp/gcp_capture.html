@@ -1,7 +1,7 @@
 {% extends "gcp/base.html" %}
-{% load satellite_layers %}
+{% load static %}
 
-{% block title %}GCP Capture Tool{% endblock %}
+{% block title %}Map Points Capture Tool{% endblock %}
 
 {% block extra_head %}
 <!-- Leaflet CSS -->
@@ -52,6 +52,26 @@ overflow: hidden;
     margin: 0 0 10px 0;
     font-size: 16px;
     font-weight: 600;
+}
+
+.site-selector {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+.site-selector label {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.site-selector select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
 }
 
 .gcp-list {
@@ -112,6 +132,11 @@ overflow: hidden;
     background: #0b7dda;
 }
 
+.btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
 .stats {
     display: flex;
     gap: 15px;
@@ -156,17 +181,83 @@ overflow: hidden;
     border-radius: 50%;
     margin-right: 8px;
 }
+
+.unconfigured-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(26, 26, 46, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+}
+
+.unconfigured-message {
+    background: white;
+    padding: 40px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.unconfigured-message .icon {
+    font-size: 48px;
+    margin-bottom: 20px;
+}
+
+.unconfigured-message h2 {
+    margin: 0 0 15px 0;
+    color: #333;
+}
+
+.unconfigured-message p {
+    color: #666;
+    margin: 0;
+    line-height: 1.6;
+}
+
+.unconfigured-message .site-name {
+    font-weight: 600;
+    color: #333;
+}
 {% endblock %}
 
 {% block content %}
 <div id="map"></div>
+<div id="unconfigured-overlay" class="unconfigured-overlay" style="display: none;">
+    <div class="unconfigured-message">
+        <div class="icon">&#9888;</div>
+        <h2>Image Not Configured</h2>
+        <p>The site "<span id="unconfigured-site-name" class="site-name"></span>" does not have a reference image configured.</p>
+        <p style="margin-top: 10px;">Map point capture is disabled until an image is added to the site configuration.</p>
+    </div>
+</div>
 <div class="info-panel">
-    <h3>GCP Capture Tool</h3>
+    <h3>Map Points Capture Tool</h3>
+
+    <div class="site-selector">
+        <label for="site-select">Select Site</label>
+        <select id="site-select">
+            {% for site in sites %}
+            <option value="{{ site.name }}"
+                    data-image-path="{{ site.image_path }}"
+                    data-geotransform="{{ site.geotransform|safe }}"
+                    data-is-configured="{{ site.is_configured|yesno:'true,false' }}"
+                    {% if site.name == default_site %}selected{% endif %}>
+                {{ site.name }}{% if not site.is_configured %} (not configured){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
 
     <div class="stats">
         <div class="stat-item">
-            <div class="stat-label">Map ID</div>
-            <div class="stat-value" id="map-id">{{ map_id }}</div>
+            <div class="stat-label">Site</div>
+            <div class="stat-value" id="current-site">{{ default_site }}</div>
         </div>
         <div class="stat-item">
             <div class="stat-label">Points</div>
@@ -175,9 +266,9 @@ overflow: hidden;
     </div>
 
     <div>
-        <button class="btn btn-secondary" onclick="loadPoints()">Load Points</button>
-        <button class="btn btn-primary" onclick="savePoints()">Save Points</button>
-        <button class="btn btn-danger" onclick="clearAll()">Clear All</button>
+        <button class="btn btn-secondary" id="btn-load" onclick="loadPoints()">Load Points</button>
+        <button class="btn btn-primary" id="btn-save" onclick="savePoints()">Save Points</button>
+        <button class="btn btn-danger" id="btn-clear" onclick="clearAll()">Clear All</button>
     </div>
 
     <div class="legend">
@@ -193,8 +284,8 @@ overflow: hidden;
     </div>
 
     <div style="margin-top:10px;font-size:11px;color:#666;">
-        Click on map to add markers.<br>
-        Points are saved as pixel coordinates on the map.
+        Click on image to add markers.<br>
+        Points are saved as pixel coordinates.
     </div>
 </div>
 {% endblock %}
@@ -202,46 +293,152 @@ overflow: hidden;
 {% block extra_scripts %}
 {# Safely embed initial data using json_script #}
 {{ points|json_script:"initial-points" }}
+{{ sites|json_script:"sites-data" }}
 
 {# Embed URLs for JavaScript to use #}
 <script>
     const API_URLS = {
         getPoints: "{% url 'gcp:api_get_gcps' %}",
-        savePoints: "{% url 'gcp:api_save_gcps' %}"
+        savePoints: "{% url 'gcp:api_save_gcps' %}",
+        getSites: "{% url 'gcp:api_get_sites' %}"
     };
+    const STATIC_URL = "{% get_static_prefix %}";
 </script>
 
 <script>
 (function() {
-    // Load initial points from json_script
+    // Load initial data from json_script
     const initialPointsElement = document.getElementById('initial-points');
+    const sitesDataElement = document.getElementById('sites-data');
+
     let points = initialPointsElement ? JSON.parse(initialPointsElement.textContent) : [];
+    let sitesData = sitesDataElement ? JSON.parse(sitesDataElement.textContent) : [];
     let markers = [];
-    let mapId = "{{ map_id|escapejs }}";
+    let currentSite = "{{ default_site|escapejs }}";
     let pointCounter = points.length;
+    let imageOverlay = null;
+    let map = null;
+    let mapClickHandler = null;
+    let isConfigured = false;
 
-    // Initialize map - default center (can be configured)
-    // Note: For MapPoint workflow, consider using an image overlay instead of tiles
-    const map = L.map('map').setView([39.640, -0.230], 18);
+    // Image dimensions for the reference image (will be set when image loads)
+    let imageWidth = 0;
+    let imageHeight = 0;
 
-    // Add satellite layers using template tag
-    {% satellite_layers_js default_layer='pnoa' %}
+    // Initialize map with CRS.Simple for pixel coordinates
+    map = L.map('map', {
+        crs: L.CRS.Simple,
+        minZoom: -5,
+        maxZoom: 5
+    });
+
+    // Site selector change handler
+    document.getElementById('site-select').addEventListener('change', function(e) {
+        const selectedOption = e.target.selectedOptions[0];
+        currentSite = selectedOption.value;
+
+        // Clear existing points and markers
+        clearMarkersOnly();
+        points = [];
+        pointCounter = 0;
+
+        // Update UI
+        document.getElementById('current-site').textContent = currentSite;
+
+        // Load site image and points
+        loadSiteImage(selectedOption);
+        loadPoints();
+    });
+
+    // Initialize with default site
+    const defaultOption = document.getElementById('site-select').selectedOptions[0];
+    if (defaultOption) {
+        loadSiteImage(defaultOption);
+    }
 
     // Initialize existing points
     points.forEach(point => addMarkerForPoint(point));
     updateStats();
     updatePointList();
 
+    function loadSiteImage(option) {
+        const imagePath = option.dataset.imagePath;
+        isConfigured = option.dataset.isConfigured === 'true';
+
+        // Remove existing overlay
+        if (imageOverlay) {
+            map.removeLayer(imageOverlay);
+            imageOverlay = null;
+        }
+
+        // Show/hide unconfigured overlay
+        const overlay = document.getElementById('unconfigured-overlay');
+        const siteName = document.getElementById('unconfigured-site-name');
+
+        if (!isConfigured || !imagePath) {
+            overlay.style.display = 'flex';
+            siteName.textContent = currentSite;
+            setButtonsEnabled(false);
+            return;
+        }
+
+        overlay.style.display = 'none';
+        setButtonsEnabled(true);
+
+        // Load the reference image
+        const img = new Image();
+        img.onload = function() {
+            imageWidth = img.width;
+            imageHeight = img.height;
+
+            // Create bounds from 0,0 to image dimensions
+            // Using Simple CRS, y coordinates go from 0 at top to height at bottom
+            const bounds = [[0, 0], [imageHeight, imageWidth]];
+
+            // Construct image URL - try project root first
+            const imageUrl = '/' + imagePath;
+
+            imageOverlay = L.imageOverlay(imageUrl, bounds).addTo(map);
+            map.fitBounds(bounds);
+        };
+        img.onerror = function() {
+            console.error('Failed to load image:', imagePath);
+            // Try alternate path in static folder
+            const staticUrl = STATIC_URL + 'images/' + imagePath;
+            const img2 = new Image();
+            img2.onload = function() {
+                imageWidth = img2.width;
+                imageHeight = img2.height;
+                const bounds = [[0, 0], [imageHeight, imageWidth]];
+                imageOverlay = L.imageOverlay(staticUrl, bounds).addTo(map);
+                map.fitBounds(bounds);
+            };
+            img2.onerror = function() {
+                console.error('Image not found in static folder either');
+                alert('Failed to load reference image: ' + imagePath);
+            };
+            img2.src = staticUrl;
+        };
+        img.src = '/' + imagePath;
+    }
+
+    function setButtonsEnabled(enabled) {
+        document.getElementById('btn-load').disabled = !enabled;
+        document.getElementById('btn-save').disabled = !enabled;
+        document.getElementById('btn-clear').disabled = !enabled;
+    }
+
     // Add point on map click
     map.on('click', function(e) {
+        if (!isConfigured) return;
+
         pointCounter++;
+        // In Simple CRS with imageOverlay, lat = y (row), lng = x (col)
         const point = {
             id: `P${pointCounter}`,
-            // Note: Using lat/lng from Leaflet click, but MapPoints use pixel_x/pixel_y
-            // This is a compatibility layer - the map coords are stored as pixel coords
-            pixel_x: e.latlng.lng * 1000000,  // Scale for precision
-            pixel_y: e.latlng.lat * 1000000,  // Scale for precision
-            map_id: mapId
+            pixel_x: e.latlng.lng,  // x coordinate (column)
+            pixel_y: e.latlng.lat,  // y coordinate (row)
+            map_id: currentSite.toLowerCase()
         };
 
         points.push(point);
@@ -251,11 +448,8 @@ overflow: hidden;
     });
 
     function addMarkerForPoint(point) {
-        // Convert back from scaled pixel coords to lat/lng for display
-        const lat = point.pixel_y / 1000000;
-        const lng = point.pixel_x / 1000000;
-
-        const marker = L.circleMarker([lat, lng], {
+        // In Simple CRS: lat = y (row), lng = x (col)
+        const marker = L.circleMarker([point.pixel_y, point.pixel_x], {
             radius: 6,
             fillColor: '#ff4444',
             color: '#aa0000',
@@ -266,6 +460,11 @@ overflow: hidden;
 
         marker.bindPopup(`<b>${escapeHtml(point.id)}</b><br>X: ${point.pixel_x.toFixed(2)}<br>Y: ${point.pixel_y.toFixed(2)}`);
         markers.push({ point: point, marker: marker });
+    }
+
+    function clearMarkersOnly() {
+        markers.forEach(m => map.removeLayer(m.marker));
+        markers = [];
     }
 
     window.removePoint = function(pointId) {
@@ -302,16 +501,29 @@ overflow: hidden;
     }
 
     window.loadPoints = function() {
-        fetch(API_URLS.getPoints)
+        if (!isConfigured) return;
+
+        fetch(API_URLS.getPoints + '?site=' + encodeURIComponent(currentSite))
             .then(response => response.json())
             .then(data => {
+                if (!data.success) {
+                    console.error('Failed to load points:', data.error);
+                    return;
+                }
+
                 points = data.points || [];
-                mapId = data.map_id || mapId;
-                document.getElementById('map-id').textContent = mapId;
 
-                markers.forEach(m => map.removeLayer(m.marker));
-                markers = [];
+                // Update point counter to avoid ID conflicts
+                let maxId = 0;
+                points.forEach(p => {
+                    const match = p.id.match(/P(\d+)/);
+                    if (match) {
+                        maxId = Math.max(maxId, parseInt(match[1]));
+                    }
+                });
+                pointCounter = maxId;
 
+                clearMarkersOnly();
                 points.forEach(point => addMarkerForPoint(point));
                 updateStats();
                 updatePointList();
@@ -323,6 +535,8 @@ overflow: hidden;
     };
 
     window.savePoints = function() {
+        if (!isConfigured) return;
+
         fetch(API_URLS.savePoints, {
             method: 'POST',
             headers: {
@@ -330,7 +544,8 @@ overflow: hidden;
                 'X-CSRFToken': getCookie('csrftoken')
             },
             body: JSON.stringify({
-                map_id: mapId,
+                site: currentSite,
+                map_id: currentSite.toLowerCase(),
                 points: points
             })
         })
@@ -349,10 +564,11 @@ overflow: hidden;
     };
 
     window.clearAll = function() {
+        if (!isConfigured) return;
+
         if (confirm('Are you sure you want to clear all points?')) {
             points = [];
-            markers.forEach(m => map.removeLayer(m.marker));
-            markers = [];
+            clearMarkersOnly();
             updateStats();
             updatePointList();
         }
