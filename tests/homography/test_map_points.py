@@ -7,7 +7,7 @@ pixels and map point coordinates using the Valte test data. Tests follow TDD
 principles and initially fail until homography module is updated.
 
 Test Data Structure:
-    - map_points.json: Reference map points with UTM coordinates (stored as pixel_x, pixel_y)
+    - valte_map_points.yaml: Reference map points with UTM coordinates (stored as pixel_x, pixel_y)
     - test_data_Valte_20260109_195052.json: Capture data with annotations linking
       camera pixels to GCP IDs via the Annotation dataclass
     - test_data_Valte_20260109_195052.jpg: Camera image
@@ -42,14 +42,14 @@ from poc_homography.map_points import MapPoint, MapPointRegistry
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent.parent
-MAP_POINTS_PATH = TEST_DATA_DIR / "map_points.json"
+MAP_POINTS_PATH = TEST_DATA_DIR / "valte_map_points.yaml"
 VALTE_GCP_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.json"
 VALTE_IMAGE_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.jpg"
 
 
 @pytest.fixture
 def map_point_registry():
-    """Load map point registry from JSON file."""
+    """Load map point registry from YAML file."""
     return MapPointRegistry.load(MAP_POINTS_PATH)
 
 
@@ -76,10 +76,10 @@ def valte_image():
 
 
 class TestMapPointRegistryLoading:
-    """Test loading map point registry from JSON."""
+    """Test loading map point registry from YAML."""
 
     def test_map_points_file_exists(self):
-        """Test that map_points.json file exists."""
+        """Test that valte_map_points.yaml file exists."""
         assert MAP_POINTS_PATH.exists(), f"Map points file not found: {MAP_POINTS_PATH}"
 
     def test_load_map_point_registry(self, map_point_registry):

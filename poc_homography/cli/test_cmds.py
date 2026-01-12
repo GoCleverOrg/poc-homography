@@ -196,7 +196,7 @@ def data_generator_command(
 
     Example:
         hom test data-generator Valte
-        hom test data-generator Setram --output my_test.json --map-points map_points.json
+        hom test data-generator Setram --output my_test.json --map-points valte_map_points.yaml
         hom test data-generator --list-cameras
     """
     # Handle --list-cameras

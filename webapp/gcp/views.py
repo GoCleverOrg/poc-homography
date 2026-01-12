@@ -20,7 +20,7 @@ from poc_homography.map_points import MapPoint, MapPointRegistry
 # Data directory for storing GCPs
 # Path: views.py -> gcp/ -> webapp/ -> project_root/ -> data/
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
-MAP_POINTS_FILE = DATA_DIR / "gcps" / "map_points.json"
+MAP_POINTS_FILE = DATA_DIR / "gcps" / "valte_map_points.yaml"
 
 
 def _ensure_data_dir() -> None:

@@ -240,10 +240,10 @@ def generate_json_output(
 
 def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
     """
-    Load map points from JSON file using MapPointRegistry.
+    Load map points from JSON or YAML file using MapPointRegistry.
 
     Args:
-        map_points_path: Path to map points JSON file
+        map_points_path: Path to map points file (.json or .yaml/.yml)
 
     Returns:
         MapPointRegistry containing loaded map points
@@ -251,6 +251,7 @@ def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
     Raises:
         FileNotFoundError: If file doesn't exist
         json.JSONDecodeError: If JSON is invalid
+        yaml.YAMLError: If YAML is invalid
         KeyError: If required keys are missing
         ValueError: If data format is invalid
     """

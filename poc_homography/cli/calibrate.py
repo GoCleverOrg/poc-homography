@@ -134,8 +134,8 @@ def comprehensive_command(
             ...
 
     Example:
-        hom calibrate comprehensive --camera Valte --gcps-file gcps.yaml
-            --registry-file map_points.json
+        hom calibrate comprehensive --camera Valte --gcps-file valte_gcps.yaml
+            --registry-file valte_map_points.yaml
     """
     # Get camera configuration
     configs = {cam["name"]: cam for cam in get_camera_configs()}
