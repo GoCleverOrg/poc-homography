@@ -80,8 +80,6 @@ CAMERAS = [
         "ip": "10.207.99.178",
         "name": "Valte",
         "model": "DS-2DF8425IX-AELW(T5)",
-        "lat": "39°38'25.72\"N",
-        "lon": "0°13'48.63\"W",
         "height_m": 4.71,  # Calibrated 2025-12-11 with comprehensive_calibration.py
         # Pan offset: angle from North when camera reports pan=0
         # True bearing = reported_pan + pan_offset_deg
@@ -119,8 +117,6 @@ CAMERAS = [
         "ip": "10.237.100.15",
         "name": "Setram",
         "model": "DS-2DF8425IX-AELW(T5)",  # Assumed same model
-        "lat": "41°19'46.8\"N",
-        "lon": "2°08'31.3\"E",
         "height_m": 5.0,  # Default height, calibrate with GPS validation
         "pan_offset_deg": 0.0,  # Pan=0 points north (default, needs calibration)
         "tilt_offset_deg": 0.0,  # Default, needs calibration
@@ -180,22 +176,6 @@ def get_camera_by_name_safe(camera_name: str) -> dict | None:
     return get_camera_by_name(camera_name)
 
 
-def get_camera_gps(camera_name: str) -> dict | None:
-    """
-    Get GPS coordinates for a camera.
-
-    Args:
-        camera_name: Name of the camera
-
-    Returns:
-        {"lat": "...", "lon": "..."} or None if not found
-    """
-    cam = get_camera_by_name(camera_name)
-    if cam:
-        return {"lat": cam["lat"], "lon": cam["lon"]}
-    return None
-
-
 def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     """
     Get RTSP URL for a camera.
@@ -235,6 +215,5 @@ if __name__ == "__main__":
     for cam in CAMERAS:
         print(f"\n{cam['name']}:")
         print(f"  IP: {cam['ip']}")
-        print(f"  GPS: {cam['lat']}, {cam['lon']}")
         print(f"  Height: {cam['height_m']}m")
         print(f"  RTSP: {get_rtsp_url(str(cam['name']))}")
