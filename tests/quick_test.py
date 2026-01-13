@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Quick homography sanity check - run this first!
 Tests the math without needing physical markers or camera access.

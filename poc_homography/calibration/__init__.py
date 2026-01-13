@@ -1,6 +1,6 @@
 """Camera calibration utilities."""
 
-from poc_homography.calibration.annotation import Annotation, CaptureContext
+from poc_homography.calibration.annotation import Annotation, CameraPose
 from poc_homography.calibration.comprehensive import (
     GCP,
     TARGET_ERROR_THRESHOLD_PX,
@@ -28,7 +28,7 @@ __all__ = [
     "CalibrationParams",
     "CalibrationResults",
     "CalibrationSession",
-    "CaptureContext",
+    "CameraPose",
     "compute_projection_error",
     "GCP",
     "print_results",

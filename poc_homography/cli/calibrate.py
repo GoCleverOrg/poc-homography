@@ -15,7 +15,7 @@ from poc_homography.calibration import (
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
 from poc_homography.coordinates import dms_to_dd
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
 
@@ -176,7 +176,7 @@ def comprehensive_command(
 
     # Load map point registry
     try:
-        registry = MapPointRegistry.load(registry_file)
+        registry = GroundControlPointCollection.load(registry_file)
     except FileNotFoundError:
         typer.echo(f"Error: Registry file not found: {registry_file}", err=True)
         raise typer.Exit(1)

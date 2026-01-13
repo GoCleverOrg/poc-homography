@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test suite for parameter validation in camera_geometry.py
 Tests Issue #6: Add parameter validation and sanity checks to homography pipeline.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Automated tests to verify homography consistency and correctness.
 

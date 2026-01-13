@@ -24,7 +24,7 @@ import numpy.typing as npt
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 # OpenCV is optional - not all environments have GUI support
@@ -97,7 +97,7 @@ class CalibrationSession:
         self,
         camera_name: str,
         frame: npt.NDArray[np.uint8],
-        registry: MapPointRegistry,
+        registry: GroundControlPointCollection,
         height_m: Meters,
         pan_offset_deg: Degrees,
         pan_raw: Degrees,

@@ -13,21 +13,24 @@ class Annotation:
     """An annotation links a Ground Control Point (GCP) to its observed pixel location in a camera image.
 
     Attributes:
-        gcp_id: ID of the GCP in the map point registry.
+        gcp_id: ID of the GCP in the GCP registry.
+        pose_id: ID of the camera pose when this observation was captured.
         pixel: Pixel coordinates in camera image.
     """
 
     gcp_id: str
+    pose_id: str
     pixel: PixelPoint
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Annotation to a dictionary for JSON serialization.
 
         Returns:
-            Dictionary with gcp_id and pixel (x, y) keys.
+            Dictionary with gcp_id, pose_id, and pixel (x, y) keys.
         """
         return {
             "gcp_id": self.gcp_id,
+            "pose_id": self.pose_id,
             "pixel": {
                 "x": self.pixel.x,
                 "y": self.pixel.y,
@@ -39,7 +42,9 @@ class Annotation:
         """Create Annotation from a dictionary.
 
         Args:
-            data: Dictionary with gcp_id and pixel keys.
+            data: Dictionary with gcp_id, pose_id, and pixel keys.
+                  Note: pose_id defaults to empty string if not present
+                  (for backward compatibility with older data files).
 
         Returns:
             New Annotation instance.
@@ -51,6 +56,7 @@ class Annotation:
         pixel_data = data["pixel"]
         return cls(
             gcp_id=str(data["gcp_id"]),
+            pose_id=str(data.get("pose_id", "")),
             pixel=PixelPoint(
                 x=float(pixel_data["x"]),
                 y=float(pixel_data["y"]),
@@ -59,7 +65,7 @@ class Annotation:
 
 
 @dataclass(frozen=True)
-class CaptureContext:
+class CameraPose:
     """Camera state when a calibration frame was captured.
 
     Attributes:
@@ -75,7 +81,7 @@ class CaptureContext:
     zoom: float
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert CaptureContext to a dictionary for JSON serialization.
+        """Convert CameraPose to a dictionary for JSON serialization.
 
         Returns:
             Dictionary with camera, pan_raw, tilt_deg, and zoom keys.
@@ -88,14 +94,14 @@ class CaptureContext:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> CaptureContext:
-        """Create CaptureContext from a dictionary.
+    def from_dict(cls, data: dict[str, Any]) -> CameraPose:
+        """Create CameraPose from a dictionary.
 
         Args:
             data: Dictionary with camera, pan_raw, tilt_deg, and zoom keys.
 
         Returns:
-            New CaptureContext instance.
+            New CameraPose instance.
 
         Raises:
             KeyError: If required keys are missing from data.

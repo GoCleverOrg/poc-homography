@@ -9,7 +9,6 @@ from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import gcp_app
 from poc_homography.coordinates import dms_to_dd
 from poc_homography.gcp.verify import (
-    CameraLocation,
     generate_verification_map,
     load_gcps_from_yaml,
 )
@@ -109,16 +108,16 @@ def verify_command(
         raise typer.Exit(1)
 
     # Get camera configuration if specified
-    camera_config: CameraLocation | None = None
+    camera_config: dict | None = None
     if camera:
         try:
             config = _get_camera_config_decimal(camera)
-            camera_config = CameraLocation(
-                lat=Degrees(config["lat"]),
-                lon=Degrees(config["lon"]),
-                height_m=Meters(config["height_m"]),
-                pan_offset_deg=Degrees(config["pan_offset_deg"]),
-            )
+            camera_config = {
+                "lat": Degrees(config["lat"]),
+                "lon": Degrees(config["lon"]),
+                "height_m": Meters(config["height_m"]),
+                "pan_offset_deg": Degrees(config["pan_offset_deg"]),
+            }
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(1)

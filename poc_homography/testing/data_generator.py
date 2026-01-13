@@ -32,7 +32,7 @@ from poc_homography.camera_config import (
     get_rtsp_url,
 )
 from poc_homography.coordinates import dms_to_dd
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.server_utils import find_available_port
 
 
@@ -238,15 +238,15 @@ def generate_json_output(
     return result
 
 
-def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
+def load_map_points(map_points_path: str | Path) -> GroundControlPointCollection:
     """
-    Load map points from JSON or YAML file using MapPointRegistry.
+    Load map points from JSON or YAML file using GroundControlPointCollection.
 
     Args:
         map_points_path: Path to map points file (.json or .yaml/.yml)
 
     Returns:
-        MapPointRegistry containing loaded map points
+        GroundControlPointCollection containing loaded map points
 
     Raises:
         FileNotFoundError: If file doesn't exist
@@ -255,15 +255,15 @@ def load_map_points(map_points_path: str | Path) -> MapPointRegistry:
         KeyError: If required keys are missing
         ValueError: If data format is invalid
     """
-    return MapPointRegistry.load(map_points_path)
+    return GroundControlPointCollection.load(map_points_path)
 
 
-def convert_map_points_to_list(registry: MapPointRegistry) -> list[dict[str, Any]]:
+def convert_map_points_to_list(registry: GroundControlPointCollection) -> list[dict[str, Any]]:
     """
-    Convert MapPointRegistry to list format for web interface.
+    Convert GroundControlPointCollection to list format for web interface.
 
     Args:
-        registry: MapPointRegistry to convert
+        registry: GroundControlPointCollection to convert
 
     Returns:
         List of dictionaries with id, pixel_x, pixel_y, map_id keys

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 TDD tests for homography using map points instead of GPS coordinates.
 
@@ -38,7 +37,7 @@ import numpy as np
 import pytest
 
 from poc_homography.calibration.annotation import Annotation
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import GroundControlPointCollection, MapPoint
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent.parent
@@ -50,7 +49,7 @@ VALTE_IMAGE_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.jpg"
 @pytest.fixture
 def map_point_registry():
     """Load map point registry from YAML file."""
-    return MapPointRegistry.load(MAP_POINTS_PATH)
+    return GroundControlPointCollection.load(MAP_POINTS_PATH)
 
 
 @pytest.fixture
@@ -75,8 +74,8 @@ def valte_image():
     return image
 
 
-class TestMapPointRegistryLoading:
-    """Test loading map point registry from YAML."""
+class TestGroundControlPointCollectionLoading:
+    """Test loading ground control point collection from YAML."""
 
     def test_map_points_file_exists(self):
         """Test that valte_map_points.yaml file exists."""

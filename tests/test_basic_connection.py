@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Quick test to check basic connectivity to Hikvision cameras"""
 
 import xml.etree.ElementTree as ET

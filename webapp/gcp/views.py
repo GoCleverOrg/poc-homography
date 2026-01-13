@@ -1,7 +1,7 @@
 """
 Views for GCP capture and visualization.
 
-Django view wrappers that use MapPointRegistry for persistence.
+Django view wrappers that use GroundControlPointCollection for persistence.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import GroundControlPointCollection, MapPoint
 
 # Project root and data directories
 # Path: views.py -> gcp/ -> webapp/ -> project_root/
@@ -66,15 +66,15 @@ def _resolve_safe_file_path(filename: str) -> Path | None:
     return file_path
 
 
-def _load_registry() -> MapPointRegistry:
-    """Load MapPointRegistry from disk or return empty registry."""
+def _load_registry() -> GroundControlPointCollection:
+    """Load GroundControlPointCollection from disk or return empty registry."""
     if MAP_POINTS_FILE.exists():
-        return MapPointRegistry.load(MAP_POINTS_FILE)
-    return MapPointRegistry(map_id="default", points={})
+        return GroundControlPointCollection.load(MAP_POINTS_FILE)
+    return GroundControlPointCollection(map_id="default", points={})
 
 
-def _save_registry(registry: MapPointRegistry) -> None:
-    """Save MapPointRegistry to disk."""
+def _save_registry(registry: GroundControlPointCollection) -> None:
+    """Save GroundControlPointCollection to disk."""
     _ensure_data_dir()
     registry.save(MAP_POINTS_FILE)
 
@@ -117,7 +117,7 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     if file_param:
         file_path = _resolve_safe_file_path(file_param)
         if file_path and file_path.exists():
-            registry = MapPointRegistry.load(file_path)
+            registry = GroundControlPointCollection.load(file_path)
         else:
             registry = _load_registry()
     else:
@@ -176,7 +176,7 @@ def api_save_gcps(request: HttpRequest) -> JsonResponse:
         points[point_id] = point  # Use id as key
 
     # Create and save registry
-    registry = MapPointRegistry(map_id=map_id, points=points)
+    registry = GroundControlPointCollection(map_id=map_id, points=points)
     _save_registry(registry)
 
     return JsonResponse(
@@ -208,7 +208,7 @@ def api_delete_gcp(request: HttpRequest, gcp_id: int) -> JsonResponse:
 
     # Create new registry without the deleted point
     new_points = {k: v for k, v in registry.points.items() if k != point_id}
-    new_registry = MapPointRegistry(map_id=registry.map_id, points=new_points)
+    new_registry = GroundControlPointCollection(map_id=registry.map_id, points=new_points)
     _save_registry(new_registry)
 
     return JsonResponse(

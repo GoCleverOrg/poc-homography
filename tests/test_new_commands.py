@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test script for the new PTZ command helpers.
 
 By default this script will:

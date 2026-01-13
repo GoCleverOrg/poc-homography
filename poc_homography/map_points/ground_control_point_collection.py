@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 import yaml
 
@@ -42,11 +44,11 @@ def _get_fs(fs: FileSystem | None) -> FileSystem:
 
 
 @dataclass(frozen=True)
-class MapPointRegistry:
+class GroundControlPointCollection:
     """Immutable registry for managing map points.
 
     This class stores a collection of map points, allowing efficient lookup by ID
-    and providing serialization to/from JSON and YAML formats.
+    and providing serialization to/from YAML format.
 
     Attributes:
         map_id: Identifier for the map these points belong to.
@@ -56,8 +58,16 @@ class MapPointRegistry:
     map_id: str
     points: dict[str, MapPoint] = field(default_factory=dict, hash=False)
 
+    def __iter__(self) -> Iterator[tuple[str, MapPoint]]:
+        """Iterate over GCPs as (gcp_id, map_point) tuples."""
+        return iter(self.points.items())
+
+    def __len__(self) -> int:
+        """Return number of GCPs in registry."""
+        return len(self.points)
+
     def to_dict(self) -> dict[str, Any]:
-        """Convert registry to dictionary for JSON serialization.
+        """Convert registry to dictionary for serialization.
 
         Returns:
             Dictionary with map_id and points array.
@@ -70,19 +80,8 @@ class MapPointRegistry:
             ],
         }
 
-    def to_json(self, indent: int = 2) -> str:
-        """Convert registry to JSON string.
-
-        Args:
-            indent: Number of spaces for JSON indentation (default: 2).
-
-        Returns:
-            JSON string representation.
-        """
-        return json.dumps(self.to_dict(), indent=indent)
-
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MapPointRegistry:
+    def from_dict(cls, data: dict[str, Any]) -> GroundControlPointCollection:
         """Create registry from dictionary.
 
         Args:
@@ -90,7 +89,7 @@ class MapPointRegistry:
                   Each point dict must have an "id" key which becomes the dictionary key.
 
         Returns:
-            New MapPointRegistry instance.
+            New GroundControlPointCollection instance.
 
         Raises:
             KeyError: If required keys are missing.
@@ -111,32 +110,14 @@ class MapPointRegistry:
         return cls(map_id=map_id, points=points)
 
     @classmethod
-    def from_json(cls, json_str: str) -> MapPointRegistry:
-        """Create registry from JSON string.
-
-        Args:
-            json_str: JSON string representation.
-
-        Returns:
-            New MapPointRegistry instance.
-
-        Raises:
-            json.JSONDecodeError: If JSON is invalid.
-            KeyError: If required keys are missing.
-            ValueError: If data format is invalid.
-        """
-        data = json.loads(json_str)
-        return cls.from_dict(data)
-
-    @classmethod
-    def from_yaml(cls, yaml_str: str) -> MapPointRegistry:
+    def from_yaml(cls, yaml_str: str) -> GroundControlPointCollection:
         """Create registry from YAML string.
 
         Args:
             yaml_str: YAML string representation.
 
         Returns:
-            New MapPointRegistry instance.
+            New GroundControlPointCollection instance.
 
         Raises:
             yaml.YAMLError: If YAML is invalid.
@@ -157,38 +138,39 @@ class MapPointRegistry:
         return yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=False)
 
     def save(self, path: str | Path, fs: FileSystem | None = None) -> None:
-        """Save registry to file (JSON or YAML based on extension).
+        """Save registry to YAML file.
 
         Args:
-            path: Path to output file (.json or .yaml/.yml).
+            path: Path to output file (.yaml or .yml).
             fs: File system implementation (default: DefaultFileSystem).
+
+        Raises:
+            ValueError: If file extension is not .yaml or .yml.
         """
         path = Path(path)
-        if path.suffix.lower() in (".yaml", ".yml"):
-            _get_fs(fs).write_text(path, self.to_yaml())
-        else:
-            _get_fs(fs).write_text(path, self.to_json())
+        if path.suffix.lower() not in (".yaml", ".yml"):
+            raise ValueError(f"Unsupported file extension: {path.suffix}. Use .yaml or .yml")
+        _get_fs(fs).write_text(path, self.to_yaml())
 
     @classmethod
-    def load(cls, path: str | Path, fs: FileSystem | None = None) -> MapPointRegistry:
-        """Load registry from file (JSON or YAML based on extension).
+    def load(cls, path: str | Path, fs: FileSystem | None = None) -> GroundControlPointCollection:
+        """Load registry from YAML file.
 
         Args:
-            path: Path to input file (.json or .yaml/.yml).
+            path: Path to input file (.yaml or .yml).
             fs: File system implementation (default: DefaultFileSystem).
 
         Returns:
-            New MapPointRegistry instance.
+            New GroundControlPointCollection instance.
 
         Raises:
             FileNotFoundError: If file doesn't exist.
-            json.JSONDecodeError: If JSON is invalid.
             yaml.YAMLError: If YAML is invalid.
             KeyError: If required keys are missing.
-            ValueError: If data format is invalid.
+            ValueError: If data format is invalid or file extension is not supported.
         """
         path = Path(path)
+        if path.suffix.lower() not in (".yaml", ".yml"):
+            raise ValueError(f"Unsupported file extension: {path.suffix}. Use .yaml or .yml")
         content = _get_fs(fs).read_text(path)
-        if path.suffix.lower() in (".yaml", ".yml"):
-            return cls.from_yaml(content)
-        return cls.from_json(content)
+        return cls.from_yaml(content)

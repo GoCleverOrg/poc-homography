@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Unit tests for MaskMatcher interface and DistanceTransformMatcher implementation.
 

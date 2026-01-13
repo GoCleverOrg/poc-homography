@@ -17,7 +17,7 @@ class MapPoint:
     without any geographic (lat/lon) reference. This is the core data structure
     for map-based reference points that don't require geographic transformations.
 
-    The ID and map association are managed externally by MapPointRegistry,
+    The ID and map association are managed externally by GroundControlPointCollection,
     which stores points in a dictionary keyed by their IDs.
 
     Attributes:
@@ -38,7 +38,7 @@ class MapPoint:
 
         Returns:
             Dictionary with pixel_x and pixel_y keys.
-            Note: The id is managed by the MapPointRegistry and added during serialization.
+            Note: The id is managed by the GroundControlPointCollection and added during serialization.
         """
         return {
             "pixel_x": self.pixel_x,
@@ -51,7 +51,7 @@ class MapPoint:
 
         Args:
             data: Dictionary with pixel_x and pixel_y keys.
-                  The id key (if present) is ignored as it's managed by MapPointRegistry.
+                  The id key (if present) is ignored as it's managed by GroundControlPointCollection.
 
         Returns:
             New MapPoint instance.

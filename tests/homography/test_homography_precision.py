@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test homography pixel precision using MapPointHomography.
 
@@ -24,10 +23,9 @@ import numpy as np
 import pytest
 import yaml
 
-from poc_homography.homography.map_points import MapPointHomography, MapPointComputationResult
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.homography.map_points import MapPointHomography
+from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.pixel_point import PixelPoint
-
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
@@ -43,7 +41,7 @@ GCPS_FILE = Path(__file__).parent / "test_data" / "valte_gcps.yaml"
 
 
 @pytest.fixture
-def map_registry() -> MapPointRegistry:
+def map_registry() -> GroundControlPointCollection:
     """
     Load map point registry from file.
 
@@ -53,7 +51,7 @@ def map_registry() -> MapPointRegistry:
     if not MAP_POINTS_FILE.exists():
         pytest.skip(f"Map points file not found: {MAP_POINTS_FILE}")
 
-    return MapPointRegistry.load(MAP_POINTS_FILE)
+    return GroundControlPointCollection.load(MAP_POINTS_FILE)
 
 
 def load_all_test_cases() -> list[dict[str, Any]]:
@@ -129,7 +127,7 @@ def test_image_path(gcps_test_case: dict[str, Any]) -> Path:
 
 
 @pytest.fixture
-def homography_provider(map_registry: MapPointRegistry) -> MapPointHomography:
+def homography_provider(map_registry: GroundControlPointCollection) -> MapPointHomography:
     """Create a MapPointHomography instance."""
     return MapPointHomography(map_id=map_registry.map_id)
 
@@ -142,7 +140,7 @@ def homography_provider(map_registry: MapPointRegistry) -> MapPointHomography:
 def compute_pixel_precision(
     gcps: list[dict[str, Any]],
     homography: MapPointHomography,
-    map_registry: MapPointRegistry,
+    map_registry: GroundControlPointCollection,
 ) -> dict[str, float]:
     """
     Measure pixel precision by reprojecting GCPs.
@@ -182,7 +180,7 @@ def compute_pixel_precision(
     return {
         "mean_error": float(np.mean(errors_array)),
         "max_error": float(np.max(errors_array)),
-        "rmse": float(np.sqrt(np.mean(errors_array ** 2))),
+        "rmse": float(np.sqrt(np.mean(errors_array**2))),
         "per_point_errors": errors,
     }
 
@@ -198,7 +196,7 @@ class TestMapPointHomographyComputation:
     def test_compute_homography_from_4_gcps(
         self,
         gcps_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
         homography_provider: MapPointHomography,
     ):
         """Test computing homography from exactly 4 GCPs."""
@@ -218,7 +216,7 @@ class TestMapPointHomographyComputation:
     def test_homography_matrix_is_invertible(
         self,
         gcps_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
         homography_provider: MapPointHomography,
     ):
         """Test that the homography matrix is invertible."""
@@ -241,7 +239,7 @@ class TestPixelPrecision:
     def test_pixel_precision_with_4_gcps(
         self,
         gcps_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
         homography_provider: MapPointHomography,
     ):
         """Test pixel precision when reprojecting GCPs."""
@@ -259,7 +257,7 @@ class TestPixelPrecision:
             map_registry=map_registry,
         )
 
-        print(f"\nPixel Precision Metrics:")
+        print("\nPixel Precision Metrics:")
         print(f"  Mean error: {precision['mean_error']:.2f} pixels")
         print(f"  Max error:  {precision['max_error']:.2f} pixels")
         print(f"  RMSE:       {precision['rmse']:.2f} pixels")
@@ -280,7 +278,7 @@ class TestPixelPrecision:
     def test_sub_pixel_precision(
         self,
         gcps_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
         homography_provider: MapPointHomography,
     ):
         """Test that homography achieves sub-pixel precision on GCPs."""
@@ -297,9 +295,7 @@ class TestPixelPrecision:
 
         # Check each point has sub-pixel error
         for i, error in enumerate(precision["per_point_errors"]):
-            assert error < 1.0, (
-                f"GCP {i} does not have sub-pixel precision: {error:.4f} pixels"
-            )
+            assert error < 1.0, f"GCP {i} does not have sub-pixel precision: {error:.4f} pixels"
 
 
 class TestRoundTrip:
@@ -308,7 +304,7 @@ class TestRoundTrip:
     def test_round_trip_camera_to_map_to_camera(
         self,
         gcps_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
         homography_provider: MapPointHomography,
     ):
         """Test that round-trip projection preserves coordinates."""
@@ -330,8 +326,8 @@ class TestRoundTrip:
 
             # Compare
             error = np.linalg.norm(
-                np.array([recovered_pixel.x, recovered_pixel.y]) -
-                np.array([original_pixel.x, original_pixel.y])
+                np.array([recovered_pixel.x, recovered_pixel.y])
+                - np.array([original_pixel.x, original_pixel.y])
             )
 
             # Round-trip should have low error (tolerance 0.1 pixel for numerical precision)
@@ -344,7 +340,7 @@ class TestReprojectionMetrics:
     def test_computation_result_metrics(
         self,
         gcps_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
         homography_provider: MapPointHomography,
     ):
         """Test that computation result contains valid metrics."""
@@ -363,7 +359,7 @@ class TestReprojectionMetrics:
         assert result.max_reproj_error >= result.mean_reproj_error
         assert result.rmse >= 0.0
 
-        print(f"\nMapPointHomography Metrics:")
+        print("\nMapPointHomography Metrics:")
         print(f"  Inliers: {result.num_inliers}/{result.num_gcps}")
         print(f"  Mean reproj error: {result.mean_reproj_error:.2f}")
         print(f"  Max reproj error:  {result.max_reproj_error:.2f}")
@@ -389,7 +385,7 @@ class TestAllTestCases:
     def test_homography_computation(
         self,
         test_case_name: str,
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
     ):
         """Test computing homography for each test case."""
         test_case = load_gcps_from_yaml(test_case_name)
@@ -417,7 +413,7 @@ class TestAllTestCases:
     def test_holdout_validation(
         self,
         test_case_name: str,
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
     ):
         """
         Test pixel precision using HOLDOUT validation.
@@ -477,7 +473,7 @@ class TestAllTestCases:
     def test_round_trip(
         self,
         test_case_name: str,
-        map_registry: MapPointRegistry,
+        map_registry: GroundControlPointCollection,
     ):
         """Test round-trip projection for each test case."""
         test_case = load_gcps_from_yaml(test_case_name)
@@ -497,10 +493,8 @@ class TestAllTestCases:
             recovered_pixel = homography.map_to_camera(map_as_pixel)
 
             error = np.linalg.norm(
-                np.array([recovered_pixel.x, recovered_pixel.y]) -
-                np.array([original_pixel.x, original_pixel.y])
+                np.array([recovered_pixel.x, recovered_pixel.y])
+                - np.array([original_pixel.x, original_pixel.y])
             )
 
-            assert error < 0.01, (
-                f"[{test_case_name}] Round-trip error too high: {error:.4f} pixels"
-            )
+            assert error < 0.01, f"[{test_case_name}] Round-trip error too high: {error:.4f} pixels"

@@ -5,7 +5,7 @@ Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
 
 GCPs are defined in YAML format with Map Point IDs referencing coordinates
-from a MapPointRegistry:
+from a GroundControlPointCollection:
 
     gcps:
       - map_point_id: Z1
@@ -31,7 +31,7 @@ from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from poc_homography.map_points import MapPointRegistry
+    from poc_homography.map_points import GroundControlPointCollection
 
 
 class GCPData(NamedTuple):
@@ -77,7 +77,7 @@ def load_gcps_from_yaml(yaml_path: Path) -> list[GCPData]:
             zoom: 1.0
 
     Each GCP references a Map Point by ID. The map point's world/map coordinates
-    (pixel_x, pixel_y) are looked up from the MapPointRegistry at projection time.
+    (pixel_x, pixel_y) are looked up from the GroundControlPointCollection at projection time.
     The pixel_u/pixel_v values are the image pixel coordinates where the point appears.
 
     Args:
@@ -221,7 +221,7 @@ def project_map_point_to_pixel(
 def validate_model(
     camera_config: dict[str, float | str],
     gcps: list[GCPData],
-    registry: MapPointRegistry,
+    registry: GroundControlPointCollection,
     verbose: bool = True,
 ) -> tuple[float | None, list[ValidationResult]]:
     """
@@ -230,7 +230,7 @@ def validate_model(
     Args:
         camera_config: Camera configuration dictionary with height_m, pan_offset_deg, etc.
         gcps: List of GCPData objects
-        registry: MapPointRegistry containing the map point coordinates
+        registry: GroundControlPointCollection containing the map point coordinates
         verbose: Whether to print detailed output
 
     Returns:

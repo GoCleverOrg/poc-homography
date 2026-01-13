@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Synthetic projection tests for planar homography H = K[r1, r2, t].
 

@@ -18,26 +18,9 @@ if TYPE_CHECKING:
 
 from poc_homography.types import Degrees, Meters, PixelsFloat
 
-
-@dataclass
-class GCPMarker:
-    """A ground control point marker for map visualization."""
-
-    lat: Degrees
-    lon: Degrees
-    name: str
-    pixel_u: PixelsFloat
-    pixel_v: PixelsFloat
-
-
-@dataclass
-class CameraLocation:
-    """Camera location and configuration for map visualization."""
-
-    lat: Degrees
-    lon: Degrees
-    height_m: Meters
-    pan_offset_deg: Degrees
+# Type aliases for dict-based GCP and camera data (replacing removed GPS-based dataclasses)
+# GCPDict: {"lat": Degrees, "lon": Degrees, "name": str, "pixel_u": PixelsFloat, "pixel_v": PixelsFloat}
+# CameraDict: {"lat": Degrees, "lon": Degrees, "height_m": Meters, "pan_offset_deg": Degrees}
 
 
 @dataclass
@@ -61,21 +44,30 @@ class GCPMetadata:
 
 def load_gcps_from_yaml(
     yaml_path: Path, image_height: int = 1080
-) -> tuple[list[GCPMarker], PTZInfo | None, GCPMetadata]:
+) -> tuple[list[dict], PTZInfo | None, GCPMetadata]:
     """
     Load GCPs from YAML file.
+
+    Note: This function returns GPS-based GCP data as dicts. The codebase has migrated
+    to map-based pixel coordinates (MapPoint) as the primary GCP representation.
+    This function will be updated separately to work with the new GCP registry.
 
     Args:
         yaml_path: Path to YAML file containing GCP data
         image_height: Image height in pixels (for legacy coordinate conversion)
 
     Returns:
-        Tuple of (gcps, ptz_info, metadata)
+        Tuple of (gcps, ptz_info, metadata) where gcps is a list of dicts with keys:
+        - lat: Degrees
+        - lon: Degrees
+        - name: str
+        - pixel_u: PixelsFloat
+        - pixel_v: PixelsFloat
     """
     with yaml_path.open() as f:
         data = yaml.safe_load(f)
 
-    gcps: list[GCPMarker] = []
+    gcps: list[dict] = []
     ptz_info: PTZInfo | None = None
     metadata = GCPMetadata()
 
@@ -83,13 +75,13 @@ def load_gcps_from_yaml(
         # Simple format
         for gcp in data["gcps"]:
             gcps.append(
-                GCPMarker(
-                    lat=Degrees(gcp["lat"]),
-                    lon=Degrees(gcp["lon"]),
-                    name=gcp.get("name", "GCP"),
-                    pixel_u=PixelsFloat(gcp.get("pixel_u", 0)),
-                    pixel_v=PixelsFloat(gcp.get("pixel_v", 0)),
-                )
+                {
+                    "lat": Degrees(gcp["lat"]),
+                    "lon": Degrees(gcp["lon"]),
+                    "name": gcp.get("name", "GCP"),
+                    "pixel_u": PixelsFloat(gcp.get("pixel_u", 0)),
+                    "pixel_v": PixelsFloat(gcp.get("pixel_v", 0)),
+                }
             )
     elif "homography" in data:
         # Complex format from capture tool
@@ -117,13 +109,13 @@ def load_gcps_from_yaml(
                 v = image_height - v
 
             gcps.append(
-                GCPMarker(
-                    lat=Degrees(gcp["gps"]["latitude"]),
-                    lon=Degrees(gcp["gps"]["longitude"]),
-                    name=gcp.get("metadata", {}).get("description", "GCP"),
-                    pixel_u=PixelsFloat(gcp["image"]["u"]),
-                    pixel_v=PixelsFloat(v),
-                )
+                {
+                    "lat": Degrees(gcp["gps"]["latitude"]),
+                    "lon": Degrees(gcp["gps"]["longitude"]),
+                    "name": gcp.get("metadata", {}).get("description", "GCP"),
+                    "pixel_u": PixelsFloat(gcp["image"]["u"]),
+                    "pixel_v": PixelsFloat(v),
+                }
             )
 
     return gcps, ptz_info, metadata
@@ -283,8 +275,8 @@ def _generate_satellite_layers_js(
 
 
 def generate_verification_map(
-    gcps: list[GCPMarker],
-    camera_config: CameraLocation | None = None,
+    gcps: list[dict],
+    camera_config: dict | None = None,
     ptz_info: PTZInfo | None = None,
     metadata: GCPMetadata | None = None,
     title: str = "GCP Verification Map",
@@ -292,9 +284,13 @@ def generate_verification_map(
     """
     Generate interactive HTML map with GCPs plotted.
 
+    Note: This function uses GPS-based GCP data. The codebase has migrated to map-based
+    pixel coordinates (MapPoint) as the primary GCP representation. This function will
+    be updated separately to work with the new GCP registry.
+
     Args:
-        gcps: List of GCP markers to plot
-        camera_config: Optional camera location for distance/bearing calculations
+        gcps: List of GCP dicts with keys: lat, lon, name, pixel_u, pixel_v
+        camera_config: Optional camera dict with keys: lat, lon, height_m, pan_offset_deg
         ptz_info: Optional PTZ info for FOV cone visualization
         metadata: Optional metadata to display
         title: Map title
@@ -311,20 +307,20 @@ def generate_verification_map(
 
     # Calculate center point
     if gcps:
-        center_lat = sum(g.lat for g in gcps) / len(gcps)
-        center_lon = sum(g.lon for g in gcps) / len(gcps)
+        center_lat = sum(g["lat"] for g in gcps) / len(gcps)
+        center_lon = sum(g["lon"] for g in gcps) / len(gcps)
     elif camera_config:
-        center_lat = camera_config.lat
-        center_lon = camera_config.lon
+        center_lat = camera_config["lat"]
+        center_lon = camera_config["lon"]
     else:
         center_lat, center_lon = Degrees(39.64), Degrees(-0.23)
 
     # Calculate bounds for zoom
     if gcps:
-        min_lat = min(g.lat for g in gcps)
-        max_lat = max(g.lat for g in gcps)
-        min_lon = min(g.lon for g in gcps)
-        max_lon = max(g.lon for g in gcps)
+        min_lat = min(g["lat"] for g in gcps)
+        max_lat = max(g["lat"] for g in gcps)
+        min_lon = min(g["lon"] for g in gcps)
+        max_lon = max(g["lon"] for g in gcps)
     else:
         min_lat, max_lat = center_lat - 0.001, center_lat + 0.001
         min_lon, max_lon = center_lon - 0.001, center_lon + 0.001
@@ -335,19 +331,23 @@ def generate_verification_map(
         # Calculate distance and bearing from camera if available
         extra_info = ""
         if camera_config:
-            dist = calculate_distance(camera_config.lat, camera_config.lon, gcp.lat, gcp.lon)
-            bearing = calculate_bearing(camera_config.lat, camera_config.lon, gcp.lat, gcp.lon)
+            dist = calculate_distance(
+                camera_config["lat"], camera_config["lon"], gcp["lat"], gcp["lon"]
+            )
+            bearing = calculate_bearing(
+                camera_config["lat"], camera_config["lon"], gcp["lat"], gcp["lon"]
+            )
             extra_info = f"<br>Distance: {dist:.1f}m<br>Bearing: {bearing:.1f}&deg;"
 
         popup_content = (
-            f"<b>{gcp.name}</b><br>"
-            f"GPS: {gcp.lat:.6f}, {gcp.lon:.6f}<br>"
-            f"Pixel: ({gcp.pixel_u:.1f}, {gcp.pixel_v:.1f})"
+            f"<b>{gcp['name']}</b><br>"
+            f"GPS: {gcp['lat']:.6f}, {gcp['lon']:.6f}<br>"
+            f"Pixel: ({gcp['pixel_u']:.1f}, {gcp['pixel_v']:.1f})"
             f"{extra_info}"
         )
 
         gcp_markers_js += f"""
-        L.circleMarker([{gcp.lat}, {gcp.lon}], {{
+        L.circleMarker([{gcp["lat"]}, {gcp["lon"]}], {{
             radius: 6,
             fillColor: '#ff4444',
             color: '#aa0000',
@@ -360,21 +360,26 @@ def generate_verification_map(
     # Camera marker and FOV cone
     camera_js = ""
     if camera_config:
+        cam_lat = camera_config["lat"]
+        cam_lon = camera_config["lon"]
+        cam_height = camera_config["height_m"]
+        cam_pan_offset = camera_config["pan_offset_deg"]
+
         camera_js = f"""
         // Camera position marker
-        L.marker([{camera_config.lat}, {camera_config.lon}], {{
+        L.marker([{cam_lat}, {cam_lon}], {{
             icon: L.divIcon({{
                 className: 'camera-icon',
                 html: '<div style="background:#0066ff;width:12px;height:12px;border-radius:50%;border:2px solid white;"></div>',
                 iconSize: [16, 16],
                 iconAnchor: [8, 8]
             }})
-        }}).addTo(map).bindPopup('<b>Camera</b><br>Height: {camera_config.height_m:.2f}m<br>Pan offset: {camera_config.pan_offset_deg:.1f}&deg;');
+        }}).addTo(map).bindPopup('<b>Camera</b><br>Height: {cam_height:.2f}m<br>Pan offset: {cam_pan_offset:.1f}&deg;');
         """
 
         # Add FOV cone if PTZ info available
         if ptz_info:
-            pan = ptz_info.pan + camera_config.pan_offset_deg
+            pan = ptz_info.pan + cam_pan_offset
             # Approximate FOV based on zoom (60° at zoom=1)
             fov = 60.0 / ptz_info.zoom
 
@@ -394,20 +399,16 @@ def generate_verification_map(
                 )
                 return Degrees(lat + dlat), Degrees(lon + dlon)
 
-            left_lat, left_lon = point_at_bearing(
-                camera_config.lat, camera_config.lon, left_bearing, cone_distance
-            )
-            right_lat, right_lon = point_at_bearing(
-                camera_config.lat, camera_config.lon, right_bearing, cone_distance
-            )
+            left_lat, left_lon = point_at_bearing(cam_lat, cam_lon, left_bearing, cone_distance)
+            right_lat, right_lon = point_at_bearing(cam_lat, cam_lon, right_bearing, cone_distance)
             center_lat_fov, center_lon_fov = point_at_bearing(
-                camera_config.lat, camera_config.lon, Degrees(pan), cone_distance
+                cam_lat, cam_lon, Degrees(pan), cone_distance
             )
 
             camera_js += f"""
             // FOV cone
             L.polygon([
-                [{camera_config.lat}, {camera_config.lon}],
+                [{cam_lat}, {cam_lon}],
                 [{left_lat}, {left_lon}],
                 [{right_lat}, {right_lon}]
             ], {{
@@ -419,7 +420,7 @@ def generate_verification_map(
 
             // Center line
             L.polyline([
-                [{camera_config.lat}, {camera_config.lon}],
+                [{cam_lat}, {cam_lon}],
                 [{center_lat_fov}, {center_lon_fov}]
             ], {{
                 color: '#0066ff',

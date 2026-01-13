@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Unit tests for GCP (Ground Control Point) validation functions.
 

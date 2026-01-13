@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test suite for GeoTIFF 6-parameter affine transform implementation.
 

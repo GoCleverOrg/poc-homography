@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Homography verification tool - click points in the stream to verify projection.
 

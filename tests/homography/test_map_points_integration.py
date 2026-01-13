@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Integration tests for MapPointHomography using real Valte test data.
 
@@ -17,7 +16,7 @@ import pytest
 
 from poc_homography.calibration.annotation import Annotation
 from poc_homography.homography import MapPointHomography
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
@@ -29,7 +28,7 @@ VALTE_GCP_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.json"
 @pytest.fixture
 def map_registry():
     """Load map point registry."""
-    return MapPointRegistry.load(MAP_POINTS_PATH)
+    return GroundControlPointCollection.load(MAP_POINTS_PATH)
 
 
 @pytest.fixture

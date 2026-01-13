@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Comprehensive tests for immutable patterns in the camera geometry pipeline.
 

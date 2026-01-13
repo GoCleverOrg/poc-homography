@@ -49,7 +49,7 @@ def interactive_command(
     import numpy as np
 
     from poc_homography.calibration.interactive import CalibrationSession, run_interactive_session
-    from poc_homography.map_points import MapPointRegistry
+    from poc_homography.map_points import GroundControlPointCollection
     from poc_homography.types import Degrees, Meters, Millimeters, Unitless
 
     # Load frame image
@@ -67,7 +67,7 @@ def interactive_command(
 
     # Load map point registry
     try:
-        map_registry = MapPointRegistry.load(registry)
+        map_registry = GroundControlPointCollection.load(registry)
     except FileNotFoundError:
         typer.echo(f"Error: Registry file not found: {registry}", err=True)
         raise typer.Exit(1)
