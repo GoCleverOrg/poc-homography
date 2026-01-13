@@ -610,10 +610,36 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 **Status**: ❌ Not started
 
-- [ ] Update `camera_config.py` to use new entities
-- [ ] Update `camera_geometry.py` to use new VOs
-- [ ] Update `homography/` modules
-- [ ] Update tests
+**CRITICAL**: The new domain model (Phases 1-4, 6) is FROZEN. Do NOT modify any files in:
+- `poc_homography/domain/` (entities, VOs, enums, repositories)
+- `poc_homography/infrastructure/repositories/`
+- `poc_homography/services/`
+
+Only update legacy code to USE the new domain model.
+
+#### 5.1 Delete Legacy GPS/UTM Code
+- [ ] Remove `lat`, `lon` fields from camera configs (use PixelPoint position instead)
+- [ ] Delete `data/gcps/valte.yaml` UTM coordinates and recreate with pixel coordinates
+- [ ] Remove GPS-to-UTM conversion utilities that are no longer needed
+- [ ] Delete any legacy coordinate transformation code
+
+#### 5.2 Update Legacy Modules
+- [ ] Update `poc_homography/camera_config.py` to use CameraConfig + CameraCalibration entities
+- [ ] Update `poc_homography/camera_geometry.py` to use new domain VOs
+- [ ] Update `poc_homography/homography/` modules to use new domain model
+- [ ] Update `poc_homography/map_points/` to use new domain MapPoint VO
+
+#### 5.3 Fix Skipped Tests
+- [ ] Fix `tests/calibration/test_annotation.py` - update to new Annotation API
+- [ ] Fix `tests/homography/test_map_points.py` - update data paths and imports
+- [ ] Fix `tests/homography/test_map_points_integration.py` - update data paths and imports
+- [ ] Fix `tests/map_points/test_ground_control_point_collection_serialization.py` - update MapPoint API
+
+#### 5.4 Validation
+- [ ] All pyright checks pass
+- [ ] All vulture checks pass
+- [ ] All tests pass (no skipped tests except intentional ones)
+- [ ] Pre-commit hooks pass
 
 ### Phase 6: Configuration Migration
 
@@ -631,8 +657,8 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 - [x] `YamlGroundControlPointRepository` - done (returns dict keyed by id)
 - [x] `YamlCameraConfigRepository` - done (file naming: camera_id with "/" replaced by "__")
 - [x] `YamlCameraCalibrationRepository` - done (file naming: camera_id with "/" replaced by "__")
-- [ ] **DATA ISSUE**: GCPs in `data/gcps/valte.yaml` have coordinates that appear to be UTM (e.g., 251246, -360159) rather than pixel coordinates. Needs migration/verification.
-- [ ] **DATA ISSUE**: Camera calibration position is estimated and needs proper GPS-to-pixel conversion.
+- [ ] **DATA ISSUE (Phase 5.1)**: GCPs in `data/gcps/valte.yaml` have UTM coordinates (e.g., 251246, -360159). DELETE and recreate with proper pixel coordinates.
+- [ ] **DATA ISSUE (Phase 5.1)**: Camera calibration position in `data/calibrations/valte__Valte.yaml` uses estimated pixel values. Needs proper calibration.
 
 ---
 
