@@ -6,6 +6,10 @@ Tests cover:
 - from_dict correctly parses pose_id
 - Backward compatibility (missing pose_id defaults to empty string)
 - Round-trip serialization preserves pose_id
+
+NOTE: These tests are SKIPPED pending Phase 5 migration.
+The Annotation entity no longer has to_dict/from_dict methods.
+Serialization should be handled by repositories/infrastructure layer.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ import pytest
 
 from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.vo.pixel_point import PixelPoint
+from poc_homography.domain.vo.ptz_state import PTZState
 
 # =============================================================================
 # Test Fixtures
@@ -25,8 +30,8 @@ def sample_annotation() -> Annotation:
     """Create a sample annotation for testing."""
     return Annotation(
         gcp_id="GCP_001",
-        camera_pose="pose_123",
-        pixel=PixelPoint(x=100.5, y=200.5),
+        camera_pose=PTZState(pan_raw=0.0, tilt_deg=0.0, zoom=1.0),
+        pixel=PixelPoint(_x=100.5, _y=200.5),
     )
 
 
@@ -35,8 +40,8 @@ def annotation_without_pose_id() -> Annotation:
     """Create an annotation with empty pose_id for testing."""
     return Annotation(
         gcp_id="GCP_002",
-        camera_pose="",
-        pixel=PixelPoint(x=300.0, y=400.0),
+        camera_pose=PTZState(pan_raw=0.0, tilt_deg=0.0, zoom=1.0),
+        pixel=PixelPoint(_x=300.0, _y=400.0),
     )
 
 
@@ -45,6 +50,7 @@ def annotation_without_pose_id() -> Annotation:
 # =============================================================================
 
 
+@pytest.mark.skip(reason="Annotation no longer has to_dict/from_dict - pending Phase 5 migration")
 class TestAnnotationSerialization:
     """Test Annotation to_dict and from_dict methods."""
 
