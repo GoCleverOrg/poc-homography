@@ -16,6 +16,10 @@ Note on CoordinateTransformService:
     having them on the VO is appropriate and a separate service is not needed.
 """
 
+from poc_homography.services.homography import (
+    HomographyStrategy,
+    IntrinsicExtrinsicStrategy,
+)
 from poc_homography.services.orientation import (
     AdditiveOrientationStrategy,
     OrientationStrategy,
@@ -24,6 +28,8 @@ from poc_homography.services.orientation import (
 
 __all__ = [
     "AdditiveOrientationStrategy",
+    "HomographyStrategy",
+    "IntrinsicExtrinsicStrategy",
     "OrientationStrategy",
     "RotationMatrixStrategy",
 ]
