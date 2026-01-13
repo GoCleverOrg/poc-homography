@@ -599,12 +599,12 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 4: Services
 
-**Status**: 🟡 Partial
+**Status**: ✅ Complete
 
 - [x] `ServiceOrientation` with strategy pattern - done (AdditiveOrientationStrategy + RotationMatrixStrategy)
 - [x] Services README.md - done (documents naming conventions)
 - [x] `CoordinateTransformService` - NOT NEEDED (GeoTiff VO has pixel_to_geo/geo_to_pixel methods)
-- [ ] Refactor existing code into `ServiceHomography` using new VOs
+- [x] `ServiceHomography` with strategy pattern - done (IntrinsicExtrinsicStrategy wraps CameraGeometry)
 
 ### Phase 5: Migration of Existing Code
 
@@ -617,11 +617,11 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 6: Configuration Migration
 
-**Status**: 🟡 Partial
+**Status**: ✅ Complete
 
 - [x] Create `data/maps/` for Map YAML files
-- [ ] Create `data/cameras/` for Camera YAML files (directory exists but empty)
-- [ ] Create `data/calibrations/` for Calibration YAML files
+- [x] Create `data/cameras/` for Camera YAML files - done (valte__Valte.yaml)
+- [x] Create `data/calibrations/` for Calibration YAML files - done (valte__Valte.yaml)
 - [x] Create `data/gcps/` for GCP YAML files
 - [x] `MapRepository` interface - done (get, get_all, exists, save, delete)
 - [x] `GroundControlPointRepository` interface - done (get_by_map returns dict, save, delete, exists)
@@ -629,9 +629,10 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 - [x] `CameraCalibrationRepository` interface - done (get, save, delete, exists)
 - [x] `YamlMapRepository` - done (with save/delete)
 - [x] `YamlGroundControlPointRepository` - done (returns dict keyed by id)
-- [ ] `YamlCameraConfigRepository` - pending
-- [ ] `YamlCameraCalibrationRepository` - pending
+- [x] `YamlCameraConfigRepository` - done (file naming: camera_id with "/" replaced by "__")
+- [x] `YamlCameraCalibrationRepository` - done (file naming: camera_id with "/" replaced by "__")
 - [ ] **DATA ISSUE**: GCPs in `data/gcps/valte.yaml` have coordinates that appear to be UTM (e.g., 251246, -360159) rather than pixel coordinates. Needs migration/verification.
+- [ ] **DATA ISSUE**: Camera calibration position is estimated and needs proper GPS-to-pixel conversion.
 
 ---
 
@@ -675,19 +676,22 @@ poc_homography/
 │       ├── __init__.py         ✅
 │       ├── yaml_map_repository.py ✅
 │       ├── yaml_ground_control_point_repository.py ✅
-│       ├── yaml_camera_config_repository.py (pending)
-│       └── yaml_camera_calibration_repository.py (pending)
+│       ├── yaml_camera_config_repository.py ✅
+│       └── yaml_camera_calibration_repository.py ✅
 ├── services/
 │   ├── __init__.py             ✅ (exports strategies only)
 │   ├── README.md               ✅ (naming conventions doc)
 │   ├── service_orientation.py  ✅ (ServiceOrientation class)
+│   ├── service_homography.py   ✅ (ServiceHomography class)
 │   ├── orientation/            # Strategies folder
 │   │   ├── __init__.py         ✅ (exports strategies + service)
 │   │   ├── strategy.py         ✅ (OrientationStrategy protocol)
 │   │   ├── additive_strategy.py ✅ (AdditiveOrientationStrategy)
 │   │   └── rotation_matrix_strategy.py ✅ (RotationMatrixStrategy)
-│   ├── service_homography.py   (pending)
-│   ├── homography/             (pending - strategies folder)
+│   ├── homography/             # Strategies folder
+│   │   ├── __init__.py         ✅ (exports strategies + service)
+│   │   ├── strategy.py         ✅ (HomographyStrategy protocol)
+│   │   └── intrinsic_extrinsic_strategy.py ✅ (IntrinsicExtrinsicStrategy)
 │   ├── service_camera.py       (optional)
 │   └── camera/                 (optional - strategies folder)
 ├── data/
@@ -696,9 +700,9 @@ poc_homography/
 │   ├── gcps/
 │   │   └── valte.yaml          ✅
 │   ├── cameras/
-│   │   └── (pending)
+│   │   └── valte__Valte.yaml   ✅
 │   └── calibrations/
-│       └── (pending)
+│       └── valte__Valte.yaml   ✅
 └── ...
 ```
 
