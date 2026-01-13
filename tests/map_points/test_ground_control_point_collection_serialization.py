@@ -282,3 +282,70 @@ class TestYAMLFileRoundTrip:
                 restored = final.points[point_id]
                 assert restored.pixel_x == original.pixel_x
                 assert restored.pixel_y == original.pixel_y
+
+
+# =============================================================================
+# Iteration Protocol Tests
+# =============================================================================
+
+
+class TestIterationProtocol:
+    """Test __iter__ and __len__ protocol methods."""
+
+    def test_len_returns_number_of_points(self, sample_registry: GroundControlPointCollection):
+        """Test that len(registry) returns correct count."""
+        assert len(sample_registry) == 3
+
+    def test_iter_returns_gcp_id_mappoint_tuples(
+        self, sample_registry: GroundControlPointCollection
+    ):
+        """Test that iterating yields (gcp_id, MapPoint) tuples."""
+        items = list(sample_registry)
+
+        # Should have 3 items
+        assert len(items) == 3
+
+        # Each item should be a (str, MapPoint) tuple
+        for gcp_id, map_point in items:
+            assert isinstance(gcp_id, str)
+            assert isinstance(map_point, MapPoint)
+
+        # Check that the expected GCP IDs are present
+        gcp_ids = {gcp_id for gcp_id, _ in items}
+        assert gcp_ids == {"P1", "P2", "P3"}
+
+        # Verify correct point is associated with each ID
+        items_dict = dict(items)
+        assert items_dict["P1"].pixel_x == 100.5
+        assert items_dict["P1"].pixel_y == 200.5
+        assert items_dict["P2"].pixel_x == 300.0
+        assert items_dict["P2"].pixel_y == 400.0
+
+    def test_iter_empty_registry(self, empty_registry: GroundControlPointCollection):
+        """Test that iteration over empty registry yields nothing."""
+        items = list(empty_registry)
+        assert items == []
+
+        # Also verify with for loop
+        count = 0
+        for _ in empty_registry:
+            count += 1
+        assert count == 0
+
+    def test_len_empty_registry(self, empty_registry: GroundControlPointCollection):
+        """Test that len(empty_registry) returns 0."""
+        assert len(empty_registry) == 0
+
+    def test_list_conversion(self, sample_registry: GroundControlPointCollection):
+        """Test that list(registry) produces expected list of tuples."""
+        result = list(sample_registry)
+
+        # Verify it's a list
+        assert isinstance(result, list)
+
+        # Verify length matches
+        assert len(result) == len(sample_registry)
+
+        # Verify content matches points dictionary items
+        expected = list(sample_registry.points.items())
+        assert result == expected

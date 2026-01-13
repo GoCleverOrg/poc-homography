@@ -240,20 +240,19 @@ def generate_json_output(
 
 def load_map_points(map_points_path: str | Path) -> GroundControlPointCollection:
     """
-    Load map points from JSON or YAML file using GroundControlPointCollection.
+    Load map points from YAML file using GroundControlPointCollection.
 
     Args:
-        map_points_path: Path to map points file (.json or .yaml/.yml)
+        map_points_path: Path to map points file (.yaml or .yml)
 
     Returns:
         GroundControlPointCollection containing loaded map points
 
     Raises:
         FileNotFoundError: If file doesn't exist
-        json.JSONDecodeError: If JSON is invalid
+        ValueError: If file extension is not .yaml or .yml
         yaml.YAMLError: If YAML is invalid
         KeyError: If required keys are missing
-        ValueError: If data format is invalid
     """
     return GroundControlPointCollection.load(map_points_path)
 
