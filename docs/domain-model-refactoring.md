@@ -579,8 +579,8 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 **Status**: ✅ Complete
 
-- [x] `CameraInstallation` - done (position: PixelPoint, height, base_orientation: Orientation)
-- [x] `CameraSpec` - done (enum with intrinsics, distortion, tilt_convention per camera model)
+- [x] ~~`CameraInstallation`~~ - DELETED (replaced by `CameraCalibration` entity)
+- [x] `CameraSpec` - done (enum with intrinsics, tilt_convention per camera model; distortion removed)
 
 ### Phase 3: Entities
 
@@ -589,7 +589,10 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 - [x] `Annotation` - moved to entities/ directory
 - [x] `GroundControlPoint` - done (computed id: map_id/name)
 - [x] `Map` - done (id, photo, geotiff)
-- [x] `Camera` - done (map_id, name, computed id: map_id/name, installation, spec, ptz_state)
+- [x] ~~`Camera`~~ - DELETED and split into:
+  - [x] `CameraConfig` - done (map_id, name, spec, ip_address; computed id)
+  - [x] `CameraCalibration` - done (camera_id, position, height, base_orientation, distortion)
+- [x] `CameraSnapshot` VO - done (combines config + calibration + ptz_state)
 
 ### Phase 4: Services
 
@@ -618,8 +621,8 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 - [x] Create `data/gcps/` for GCP YAML files
 - [x] `MapRepository` interface - done (get, get_all, exists, save, delete)
 - [x] `GroundControlPointRepository` interface - done (get_by_map returns dict, save, delete, exists)
-- [ ] `CameraConfigRepository` interface - pending
-- [ ] `CameraCalibrationRepository` interface - pending
+- [x] `CameraConfigRepository` interface - done (get, get_by_map, save, delete, exists)
+- [x] `CameraCalibrationRepository` interface - done (get, save, delete, exists)
 - [x] `YamlMapRepository` - done (with save/delete)
 - [x] `YamlGroundControlPointRepository` - done (returns dict keyed by id)
 - [ ] `YamlCameraConfigRepository` - pending
@@ -643,25 +646,25 @@ poc_homography/
 │   │   ├── geotiff.py          ✅
 │   │   ├── orientation.py      ✅
 │   │   ├── lens_distortion.py  ✅
-│   │   ├── camera_snapshot.py  (pending)
+│   │   ├── camera_snapshot.py  ✅
 │   │   └── photo.py            ✅
 │   ├── entities/
 │   │   ├── __init__.py         ✅
 │   │   ├── map.py              ✅
-│   │   ├── camera_config.py    (pending) - replaces camera.py
-│   │   ├── camera_calibration.py (pending)
+│   │   ├── camera_config.py    ✅ (replaced camera.py)
+│   │   ├── camera_calibration.py ✅
 │   │   ├── annotation.py       ✅
 │   │   └── ground_control_point.py ✅
 │   ├── enums/
 │   │   ├── __init__.py         ✅
 │   │   ├── tilt_convention.py  ✅
-│   │   └── camera_spec.py      ✅ (needs distortion removed)
+│   │   └── camera_spec.py      ✅ (distortion removed)
 │   └── repositories/
 │       ├── __init__.py         ✅
 │       ├── map_repository.py   ✅
 │       ├── ground_control_point_repository.py ✅
-│       ├── camera_config_repository.py (pending)
-│       └── camera_calibration_repository.py (pending)
+│       ├── camera_config_repository.py ✅
+│       └── camera_calibration_repository.py ✅
 ├── infrastructure/
 │   ├── __init__.py             ✅
 │   └── repositories/
@@ -704,9 +707,9 @@ poc_homography/
 
 ---
 
-## 8. Pending Code Changes
+## 8. ~~Pending~~ Completed Code Changes
 
-### 8.1 Split Camera into CameraConfig + CameraCalibration
+### 8.1 Split Camera into CameraConfig + CameraCalibration ✅ DONE
 
 **Current state** (conflated):
 ```python
@@ -748,7 +751,7 @@ class CameraCalibration:
     distortion: LensDistortion
 ```
 
-### 8.2 Remove CameraInstallation VO
+### 8.2 Remove CameraInstallation VO ✅ DONE
 
 `CameraInstallation` is replaced by `CameraCalibration` entity. The fields move directly:
 
@@ -759,7 +762,7 @@ class CameraCalibration:
 | `base_orientation: Orientation` | `base_orientation: Orientation` |
 | (was in CameraSpec) | `distortion: LensDistortion` |
 
-### 8.3 CameraSpec Enum Refactoring
+### 8.3 CameraSpec Enum Refactoring ✅ DONE
 
 **Current state** (has distortion):
 ```python
@@ -785,7 +788,7 @@ class CameraSpec(Enum):
     )
 ```
 
-### 8.4 New VO: CameraSnapshot
+### 8.4 New VO: CameraSnapshot ✅ DONE
 
 ```python
 @dataclass(frozen=True)
@@ -796,7 +799,7 @@ class CameraSnapshot:
     ptz_state: PTZState
 ```
 
-### 8.5 New Repositories
+### 8.5 New Repositories ✅ DONE
 
 ```python
 class CameraConfigRepository(Protocol):
@@ -814,7 +817,7 @@ class CameraCalibrationRepository(Protocol):
     def exists(self, camera_id: str) -> bool: ...
 ```
 
-### 8.6 Summary of Changes
+### 8.6 Summary of Changes ✅ ALL DONE
 
 | Component | Change |
 |-----------|--------|
