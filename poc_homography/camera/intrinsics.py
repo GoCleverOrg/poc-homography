@@ -12,6 +12,7 @@ import numpy as np
 import requests
 from requests.auth import HTTPDigestAuth
 
+from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
 from poc_homography.types import Degrees, Millimeters, Pixels, PixelsFloat, Unitless
 
 
@@ -27,38 +28,6 @@ class PTZStatus:
 
     zoom: Unitless
     """Zoom factor (1.0 = no zoom)"""
-
-
-@dataclass
-class CameraIntrinsics:
-    """Camera intrinsic parameters."""
-
-    focal_length_mm: Millimeters
-    """Focal length in millimeters (zoom-adjusted)"""
-
-    focal_length_px: PixelsFloat
-    """Focal length in pixels"""
-
-    cx: PixelsFloat
-    """Principal point X coordinate (pixels)"""
-
-    cy: PixelsFloat
-    """Principal point Y coordinate (pixels)"""
-
-    sensor_width_mm: Millimeters
-    """Sensor width in millimeters"""
-
-    base_focal_length_mm: Millimeters
-    """Base focal length in millimeters (at 1x zoom)"""
-
-    image_width: Pixels
-    """Image width in pixels"""
-
-    image_height: Pixels
-    """Image height in pixels"""
-
-    K: np.ndarray
-    """Intrinsic matrix (3x3 numpy array)"""
 
 
 def get_ptz_status(
@@ -155,12 +124,12 @@ def compute_intrinsics(
     K = np.array([[f_px, 0, cx], [0, f_px, cy], [0, 0, 1]])
 
     return CameraIntrinsics(
-        focal_length_mm=f_mm,
+        focal_length=f_mm,
         focal_length_px=f_px,
         cx=cx,
         cy=cy,
-        sensor_width_mm=sensor_width_mm,
-        base_focal_length_mm=base_focal_length_mm,
+        sensor_width=sensor_width_mm,
+        base_focal_length=base_focal_length_mm,
         image_width=image_width,
         image_height=image_height,
         K=K,

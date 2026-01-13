@@ -36,7 +36,7 @@ import cv2
 import numpy as np
 import pytest
 
-from poc_homography.calibration.annotation import Annotation
+from poc_homography.domain.annotation import Annotation
 from poc_homography.map_points import GroundControlPointCollection, MapPoint
 
 # Test data paths

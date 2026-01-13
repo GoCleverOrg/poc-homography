@@ -1,8 +1,6 @@
 """Camera calibration utilities."""
 
-from poc_homography.calibration.annotation import Annotation, CameraPose
 from poc_homography.calibration.comprehensive import (
-    GCP,
     TARGET_ERROR_THRESHOLD_PX,
     CalibrationParams,
     compute_projection_error,
@@ -21,6 +19,7 @@ from poc_homography.calibration.projection import (
     ProjectionAnalysisResult,
     analyze_projection_error,
 )
+from poc_homography.domain import Annotation, GroundControlPoint, PTZState
 
 __all__ = [
     "analyze_projection_error",
@@ -28,9 +27,9 @@ __all__ = [
     "CalibrationParams",
     "CalibrationResults",
     "CalibrationSession",
-    "CameraPose",
+    "PTZState",
     "compute_projection_error",
-    "GCP",
+    "GroundControlPoint",
     "print_results",
     "ProjectionAnalysisResult",
     "ReferencePoint",

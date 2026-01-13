@@ -14,10 +14,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from poc_homography.calibration.annotation import Annotation
+from poc_homography.domain.annotation import Annotation
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography import MapPointHomography
 from poc_homography.map_points import GroundControlPointCollection
-from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent.parent.parent

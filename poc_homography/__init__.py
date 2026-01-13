@@ -20,6 +20,8 @@ from poc_homography.coordinate_converter import (
     UTMConverter,
     UTMConverterConfig,
 )
+from poc_homography.domain.vo import MapPoint
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography import (
     CoordinateSystemMode,
     FeatureMatchHomography,
@@ -35,8 +37,7 @@ from poc_homography.homography import (
     MapPointHomography,
     get_default_config,
 )
-from poc_homography.map_points import GroundControlPointCollection, MapPoint
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.map_points import GroundControlPointCollection
 
 __all__ = [
     # Core camera geometry (immutable API)

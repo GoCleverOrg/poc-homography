@@ -23,9 +23,9 @@ import numpy as np
 import pytest
 import yaml
 
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points import GroundControlPointCollection
-from poc_homography.pixel_point import PixelPoint
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data

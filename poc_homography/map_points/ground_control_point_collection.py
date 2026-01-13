@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 import yaml
 
-from poc_homography.map_points.map_point import MapPoint
+from poc_homography.domain.vo.map_point import MapPoint
 
 
 class FileSystem(Protocol):

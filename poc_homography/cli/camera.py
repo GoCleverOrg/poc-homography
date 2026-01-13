@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from poc_homography.calibration import TARGET_ERROR_THRESHOLD_PX
-from poc_homography.camera import CameraIntrinsics, PTZStatus, get_camera_intrinsics
+from poc_homography.camera import PTZStatus, get_camera_intrinsics
 from poc_homography.camera_config import (
     DEFAULT_BASE_FOCAL_LENGTH_MM,
     DEFAULT_SENSOR_WIDTH_MM,
@@ -17,6 +17,7 @@ from poc_homography.camera_config import (
     get_camera_configs,
 )
 from poc_homography.cli.main import camera_app
+from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
 from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.types import Millimeters, Pixels
 from poc_homography.validation import load_gcps_from_yaml, validate_model
@@ -126,9 +127,9 @@ def _format_human_readable(
         f"  Zoom factor:      {ptz.zoom:.1f}x",
         "",
         "Camera Intrinsics:",
-        f"  Sensor width:       {intr.sensor_width_mm} mm",
-        f"  Base focal length:  {intr.base_focal_length_mm} mm",
-        f"  Focal length (mm):  {intr.focal_length_mm:.2f} mm (at {ptz.zoom:.1f}x zoom)",
+        f"  Sensor width:       {intr.sensor_width} mm",
+        f"  Base focal length:  {intr.base_focal_length} mm",
+        f"  Focal length (mm):  {intr.focal_length:.2f} mm (at {ptz.zoom:.1f}x zoom)",
         f"  Focal length (px):  {intr.focal_length_px:.2f} px",
         f"  Principal point:    ({intr.cx:.1f}, {intr.cy:.1f})",
         "",
@@ -169,11 +170,11 @@ def _format_json(
             "zoom": ptz.zoom,
         },
         "intrinsics": {
-            "focal_length_mm": intr.focal_length_mm,
+            "focal_length_mm": intr.focal_length,
             "focal_length_px": intr.focal_length_px,
             "principal_point": {"cx": intr.cx, "cy": intr.cy},
-            "sensor_width_mm": intr.sensor_width_mm,
-            "base_focal_length_mm": intr.base_focal_length_mm,
+            "sensor_width_mm": intr.sensor_width,
+            "base_focal_length_mm": intr.base_focal_length,
             "image_width": intr.image_width,
             "image_height": intr.image_height,
         },

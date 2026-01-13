@@ -6,7 +6,6 @@ import typer
 import yaml
 
 from poc_homography.calibration import (
-    GCP,
     TARGET_ERROR_THRESHOLD_PX,
     analyze_projection_error,
     print_results,
@@ -15,6 +14,7 @@ from poc_homography.calibration import (
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
 from poc_homography.coordinates import dms_to_dd
+from poc_homography.domain.ground_control_point import GroundControlPoint
 from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
@@ -157,10 +157,10 @@ def comprehensive_command(
         typer.echo(f"Error: Invalid YAML in {gcps_file}: {e}", err=True)
         raise typer.Exit(1)
 
-    gcps: list[GCP] = []
+    gcps: list[GroundControlPoint] = []
     for gcp_data in data.get("gcps", []):
         gcps.append(
-            GCP(
+            GroundControlPoint(
                 map_point_id=gcp_data["map_point_id"],
                 pixel_u=PixelsFloat(gcp_data["pixel_u"]),
                 pixel_v=PixelsFloat(gcp_data["pixel_v"]),

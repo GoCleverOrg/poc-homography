@@ -178,8 +178,8 @@ exclude_lines = [
 min_confidence = 80
 paths = ["poc_homography"]
 exclude = ["tests/", "examples/", "build/", "dist/"]
-# Ignore interface parameters required by ABC but not used in all implementations
-ignore_names = ["frame", "kwargs"]
+# Ignore interface parameters required by ABC/Protocol but not used in all implementations
+ignore_names = ["frame", "kwargs", "gcp_id", "map_id", "gcp"]
 
 [tool.deadcode]
 exclude = ["build", "dist"]

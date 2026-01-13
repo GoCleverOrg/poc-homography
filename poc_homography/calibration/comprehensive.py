@@ -31,6 +31,7 @@ from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
+    from poc_homography.domain.ground_control_point import GroundControlPoint
     from poc_homography.map_points import GroundControlPointCollection
 
 # Module-level logger for debugging calibration issues
@@ -58,18 +59,6 @@ def suppress_stdout():
     """Context manager to suppress stdout."""
     with contextlib.redirect_stdout(io.StringIO()):
         yield
-
-
-@dataclass
-class GCP:
-    """Ground Control Point with map point ID and pixel coordinates."""
-
-    map_point_id: str
-    pixel_u: PixelsFloat
-    pixel_v: PixelsFloat
-    pan_raw: Degrees
-    tilt_deg: Degrees
-    zoom: Unitless
 
 
 @dataclass
@@ -237,7 +226,7 @@ def undistort_point_simple(
 
 def compute_projection_error(
     params: CalibrationParams,
-    gcps: list[GCP],
+    gcps: list[GroundControlPoint],
     registry: GroundControlPointCollection,
     image_width: Pixels = Pixels(1920),
     image_height: Pixels = Pixels(1080),
@@ -348,7 +337,7 @@ def compute_projection_error(
 
 def _objective_function(
     x: np.ndarray,
-    gcps: list[GCP],
+    gcps: list[GroundControlPoint],
     registry: GroundControlPointCollection,
     base_params: CalibrationParams,
     flags: OptimizationFlags,
@@ -380,7 +369,7 @@ def _objective_function(
 
 def run_calibration(
     camera_config: dict[str, Any],
-    gcps: list[GCP],
+    gcps: list[GroundControlPoint],
     registry: GroundControlPointCollection,
     optimize_position: bool = True,
     optimize_focal: bool = True,
@@ -540,7 +529,7 @@ def print_results(
     optimized: CalibrationParams,
     mean_error: float,
     individual_errors: list[float],
-    gcps: list[GCP],
+    gcps: list[GroundControlPoint],
 ) -> None:
     """
     Print calibration results.

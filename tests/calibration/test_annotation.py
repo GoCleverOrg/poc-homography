@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from poc_homography.calibration.annotation import Annotation
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.annotation import Annotation
+from poc_homography.domain.vo.pixel_point import PixelPoint
 
 # =============================================================================
 # Test Fixtures
@@ -25,7 +25,7 @@ def sample_annotation() -> Annotation:
     """Create a sample annotation for testing."""
     return Annotation(
         gcp_id="GCP_001",
-        pose_id="pose_123",
+        camera_pose="pose_123",
         pixel=PixelPoint(x=100.5, y=200.5),
     )
 
@@ -35,7 +35,7 @@ def annotation_without_pose_id() -> Annotation:
     """Create an annotation with empty pose_id for testing."""
     return Annotation(
         gcp_id="GCP_002",
-        pose_id="",
+        camera_pose="",
         pixel=PixelPoint(x=300.0, y=400.0),
     )
 
@@ -96,7 +96,7 @@ class TestAnnotationSerialization:
 
         # All fields should be preserved
         assert restored.gcp_id == sample_annotation.gcp_id
-        assert restored.pose_id == sample_annotation.pose_id
+        assert restored.pose_id == sample_annotation.camera_pose
         assert restored.pixel.x == sample_annotation.pixel.x
         assert restored.pixel.y == sample_annotation.pixel.y
 

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.vo.pixel_point import PixelPoint
 
 if TYPE_CHECKING:
     from poc_homography.map_points import MapPoint

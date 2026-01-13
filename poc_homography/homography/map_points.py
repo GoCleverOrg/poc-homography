@@ -19,8 +19,8 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.map_points import GroundControlPointCollection, MapPoint
-from poc_homography.pixel_point import PixelPoint
 
 
 @dataclass(frozen=True)
