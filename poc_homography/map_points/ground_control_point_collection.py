@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 import yaml
 
 from poc_homography.domain.vo.map_point import MapPoint
+from poc_homography.domain.vo.pixel_point import PixelPoint
 
 
 class FileSystem(Protocol):
@@ -71,12 +72,18 @@ class GroundControlPointCollection:
 
         Returns:
             Dictionary with map_id and points array.
-            Each point dict includes an "id" key from the registry's dictionary key.
+            Each point dict includes an "id" key from the registry's dictionary key
+            and pixel_x/pixel_y coordinates extracted from the MapPoint's pixel_point.
         """
         return {
             "map_id": self.map_id,
             "points": [
-                {"id": point_id, **point.to_dict()} for point_id, point in self.points.items()
+                {
+                    "id": point_id,
+                    "pixel_x": float(point.pixel_point.x),
+                    "pixel_y": float(point.pixel_point.y),
+                }
+                for point_id, point in self.points.items()
             ],
         }
 
@@ -86,7 +93,8 @@ class GroundControlPointCollection:
 
         Args:
             data: Dictionary with map_id and points array.
-                  Each point dict must have an "id" key which becomes the dictionary key.
+                  Each point dict must have an "id" key which becomes the dictionary key,
+                  plus pixel_x and pixel_y for coordinates.
 
         Returns:
             New GroundControlPointCollection instance.
@@ -102,8 +110,14 @@ class GroundControlPointCollection:
         for point_data in points_data:
             # Extract id from the point data (external key)
             point_id = str(point_data["id"])
-            # Create MapPoint without id (it's not a field anymore)
-            point = MapPoint.from_dict(point_data)
+            # Create MapPoint with map_id and pixel coordinates
+            point = MapPoint(
+                map_id=map_id,
+                pixel_point=PixelPoint(
+                    _x=float(point_data["pixel_x"]),
+                    _y=float(point_data["pixel_y"]),
+                ),
+            )
             # Use the extracted id as the dictionary key
             points[point_id] = point
 

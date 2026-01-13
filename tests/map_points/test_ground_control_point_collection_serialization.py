@@ -6,10 +6,6 @@ Tests cover:
 - Format detection by file extension
 - Error handling for invalid content
 - Edge cases (empty registry, unicode, special characters)
-
-NOTE: This file is SKIPPED pending Phase 5 migration.
-The MapPoint class API has changed (pixel_x/pixel_y -> map_id/pixel_point).
-Tests need to be updated to use the new domain model.
 """
 
 from __future__ import annotations
@@ -20,12 +16,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-# Skip entire module - pending Phase 5 migration
-pytest.skip(
-    "MapPoint API changed - pending Phase 5 migration",
-    allow_module_level=True,
-)
-
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.map_points import GroundControlPointCollection, MapPoint
 
 # =============================================================================
@@ -37,9 +28,9 @@ from poc_homography.map_points import GroundControlPointCollection, MapPoint
 def sample_registry() -> GroundControlPointCollection:
     """Create a sample registry for testing."""
     points = {
-        "P1": MapPoint(pixel_x=100.5, pixel_y=200.5),
-        "P2": MapPoint(pixel_x=300.0, pixel_y=400.0),
-        "P3": MapPoint(pixel_x=-50.25, pixel_y=150.75),
+        "P1": MapPoint(map_id="test_map", pixel_point=PixelPoint(_x=100.5, _y=200.5)),
+        "P2": MapPoint(map_id="test_map", pixel_point=PixelPoint(_x=300.0, _y=400.0)),
+        "P3": MapPoint(map_id="test_map", pixel_point=PixelPoint(_x=-50.25, _y=150.75)),
     }
     return GroundControlPointCollection(map_id="test_map", points=points)
 
@@ -53,12 +44,13 @@ def empty_registry() -> GroundControlPointCollection:
 @pytest.fixture
 def unicode_registry() -> GroundControlPointCollection:
     """Create a registry with unicode characters for testing."""
+    map_id = "地图_карта"
     points = {
-        "点1": MapPoint(pixel_x=100.0, pixel_y=200.0),
-        "Pöint_2": MapPoint(pixel_x=300.0, pixel_y=400.0),
-        "точка_3": MapPoint(pixel_x=500.0, pixel_y=600.0),
+        "点1": MapPoint(map_id=map_id, pixel_point=PixelPoint(_x=100.0, _y=200.0)),
+        "Pöint_2": MapPoint(map_id=map_id, pixel_point=PixelPoint(_x=300.0, _y=400.0)),
+        "точка_3": MapPoint(map_id=map_id, pixel_point=PixelPoint(_x=500.0, _y=600.0)),
     }
-    return GroundControlPointCollection(map_id="地图_карта", points=points)
+    return GroundControlPointCollection(map_id=map_id, points=points)
 
 
 # =============================================================================
@@ -99,8 +91,8 @@ class TestYAMLSerialization:
 
         for point_id, original_point in sample_registry.points.items():
             restored_point = restored.points[point_id]
-            assert restored_point.pixel_x == original_point.pixel_x
-            assert restored_point.pixel_y == original_point.pixel_y
+            assert float(restored_point.pixel_point.x) == float(original_point.pixel_point.x)
+            assert float(restored_point.pixel_point.y) == float(original_point.pixel_point.y)
 
     def test_from_yaml_empty_content_raises_error(self):
         """Test that from_yaml() raises ValueError for empty content."""
@@ -248,8 +240,8 @@ class TestYAMLFileRoundTrip:
 
             for point_id, original in sample_registry.points.items():
                 loaded = restored.points[point_id]
-                assert loaded.pixel_x == original.pixel_x
-                assert loaded.pixel_y == original.pixel_y
+                assert float(loaded.pixel_point.x) == float(original.pixel_point.x)
+                assert float(loaded.pixel_point.y) == float(original.pixel_point.y)
         finally:
             temp_path.unlink()
 
@@ -290,8 +282,8 @@ class TestYAMLFileRoundTrip:
 
             for point_id, original in sample_registry.points.items():
                 restored = final.points[point_id]
-                assert restored.pixel_x == original.pixel_x
-                assert restored.pixel_y == original.pixel_y
+                assert float(restored.pixel_point.x) == float(original.pixel_point.x)
+                assert float(restored.pixel_point.y) == float(original.pixel_point.y)
 
 
 # =============================================================================
@@ -326,10 +318,10 @@ class TestIterationProtocol:
 
         # Verify correct point is associated with each ID
         items_dict = dict(items)
-        assert items_dict["P1"].pixel_x == 100.5
-        assert items_dict["P1"].pixel_y == 200.5
-        assert items_dict["P2"].pixel_x == 300.0
-        assert items_dict["P2"].pixel_y == 400.0
+        assert float(items_dict["P1"].pixel_point.x) == 100.5
+        assert float(items_dict["P1"].pixel_point.y) == 200.5
+        assert float(items_dict["P2"].pixel_point.x) == 300.0
+        assert float(items_dict["P2"].pixel_point.y) == 400.0
 
     def test_iter_empty_registry(self, empty_registry: GroundControlPointCollection):
         """Test that iteration over empty registry yields nothing."""
