@@ -165,7 +165,7 @@ def compute_pixel_precision(
         map_point = map_registry.points[gcp["map_point_id"]]
 
         # Project map coordinate back to camera pixel
-        map_coord = PixelPoint(map_point.pixel_x, map_point.pixel_y)
+        map_coord = PixelPoint(float(map_point.pixel_point.x), float(map_point.pixel_point.y))
         projected_pixel = homography.map_to_camera(map_coord)
 
         # Compare with original GCP pixel coordinate
@@ -321,7 +321,7 @@ class TestRoundTrip:
             map_point = homography_provider.camera_to_map(original_pixel)
 
             # Map -> Camera
-            map_as_pixel = PixelPoint(map_point.pixel_x, map_point.pixel_y)
+            map_as_pixel = PixelPoint(float(map_point.pixel_point.x), float(map_point.pixel_point.y))
             recovered_pixel = homography_provider.map_to_camera(map_as_pixel)
 
             # Compare
@@ -489,7 +489,7 @@ class TestAllTestCases:
         for gcp in gcps[:4]:
             original_pixel = PixelPoint(gcp["pixel_x"], gcp["pixel_y"])
             map_point = homography.camera_to_map(original_pixel)
-            map_as_pixel = PixelPoint(map_point.pixel_x, map_point.pixel_y)
+            map_as_pixel = PixelPoint(float(map_point.pixel_point.x), float(map_point.pixel_point.y))
             recovered_pixel = homography.map_to_camera(map_as_pixel)
 
             error = np.linalg.norm(

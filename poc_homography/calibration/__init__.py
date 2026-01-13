@@ -3,6 +3,7 @@
 from poc_homography.calibration.comprehensive import (
     TARGET_ERROR_THRESHOLD_PX,
     CalibrationParams,
+    GCPObservation,
     compute_projection_error,
     print_results,
     run_calibration,
@@ -27,6 +28,7 @@ __all__ = [
     "CalibrationParams",
     "CalibrationResults",
     "CalibrationSession",
+    "GCPObservation",
     "PTZState",
     "compute_projection_error",
     "GroundControlPoint",

@@ -1,5 +1,6 @@
 """Calibration CLI commands."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -14,9 +15,24 @@ from poc_homography.calibration import (
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
 from poc_homography.coordinates import dms_to_dd
-from poc_homography.domain.ground_control_point import GroundControlPoint
 from poc_homography.map_points import GroundControlPointCollection
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
+
+
+@dataclass
+class GCPObservationData:
+    """GCP observation data for calibration.
+
+    This represents an observation of a GCP in a camera image, including
+    the camera pose (pan/tilt/zoom) when the observation was captured.
+    """
+
+    map_point_id: str
+    pixel_u: PixelsFloat
+    pixel_v: PixelsFloat
+    pan_raw: Degrees
+    tilt_deg: Degrees
+    zoom: Unitless
 
 
 def _get_camera_config(camera_name: str) -> dict[str, float]:
@@ -157,10 +173,10 @@ def comprehensive_command(
         typer.echo(f"Error: Invalid YAML in {gcps_file}: {e}", err=True)
         raise typer.Exit(1)
 
-    gcps: list[GroundControlPoint] = []
+    gcps: list[GCPObservationData] = []
     for gcp_data in data.get("gcps", []):
         gcps.append(
-            GroundControlPoint(
+            GCPObservationData(
                 map_point_id=gcp_data["map_point_id"],
                 pixel_u=PixelsFloat(gcp_data["pixel_u"]),
                 pixel_v=PixelsFloat(gcp_data["pixel_v"]),
@@ -184,10 +200,10 @@ def comprehensive_command(
         typer.echo(f"Error: Failed to load registry: {e}", err=True)
         raise typer.Exit(1)
 
-    # Run calibration
+    # Run calibration (GCPObservationData satisfies GCPObservation protocol)
     optimized_params, mean_error, individual_errors = run_calibration(
         camera_config=camera_config,
-        gcps=gcps,
+        gcps=gcps,  # type: ignore[arg-type]
         registry=registry,
         optimize_position=optimize_position,
         optimize_focal=optimize_focal,
@@ -200,7 +216,7 @@ def comprehensive_command(
     )
 
     # Print results
-    print_results(camera_config, optimized_params, mean_error, individual_errors, gcps)
+    print_results(camera_config, optimized_params, mean_error, individual_errors, gcps)  # type: ignore[arg-type]
 
     # Exit with code 1 if target accuracy not achieved
     if mean_error >= TARGET_ERROR_THRESHOLD_PX:

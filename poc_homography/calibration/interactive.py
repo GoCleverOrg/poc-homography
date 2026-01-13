@@ -217,7 +217,7 @@ class CalibrationSession:
 
                 for pt in self.reference_points:
                     map_point = self.registry.points[pt.map_point_id]
-                    x_m, y_m = map_point.pixel_x, map_point.pixel_y
+                    x_m, y_m = float(map_point.pixel_point.x), float(map_point.pixel_point.y)
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = H @ world_pt
                     if img_pt[2, 0] > 0:
@@ -331,7 +331,7 @@ class CalibrationSession:
 
                 for pt in self.reference_points:
                     map_point = self.registry.points[pt.map_point_id]
-                    x_m, y_m = map_point.pixel_x, map_point.pixel_y
+                    x_m, y_m = float(map_point.pixel_point.x), float(map_point.pixel_point.y)
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = H @ world_pt
 
@@ -498,7 +498,7 @@ def run_interactive_session(session: CalibrationSession) -> None:
                             print(
                                 f"Added reference point at ({session.pending_click[0]}, "
                                 f"{session.pending_click[1]}) -> {map_point_id} "
-                                f"(map coords: {map_point.pixel_x:.2f}, {map_point.pixel_y:.2f})"
+                                f"(map coords: {float(map_point.pixel_point.x):.2f}, {float(map_point.pixel_point.y):.2f})"
                             )
                         else:
                             print(f"Map Point ID '{map_point_id}' not found in registry")

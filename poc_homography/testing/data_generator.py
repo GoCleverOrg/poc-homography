@@ -265,9 +265,16 @@ def convert_map_points_to_list(registry: GroundControlPointCollection) -> list[d
         registry: GroundControlPointCollection to convert
 
     Returns:
-        List of dictionaries with id, pixel_x, pixel_y, map_id keys
+        List of dictionaries with pixel_x, pixel_y, map_id keys
     """
-    return [point.to_dict() for point in registry.points.values()]
+    return [
+        {
+            "pixel_x": float(point.pixel_point.x),
+            "pixel_y": float(point.pixel_point.y),
+            "map_id": point.map_id,
+        }
+        for point in registry.points.values()
+    ]
 
 
 def create_html_interface() -> str:

@@ -723,6 +723,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         result: IntrinsicExtrinsicResult,
         image_point: PixelPoint,
         pixels_per_meter: Unitless,
+        map_id: str,
     ) -> MapPoint:
         """
         Project image point to MapPoint using result (pure function).
@@ -731,6 +732,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             result: The computed IntrinsicExtrinsicResult
             image_point: Pixel coordinates in camera image
             pixels_per_meter: Scale factor for world-to-map conversion
+            map_id: Identifier of the map for the generated MapPoint
 
         Returns:
             MapPoint with pixel coordinates on the map
@@ -747,8 +749,11 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         )
 
         return MapPoint(
-            pixel_x=float(map_pixel_x),
-            pixel_y=float(map_pixel_y),
+            map_id=map_id,
+            pixel_point=PixelPoint(
+                _x=float(map_pixel_x),
+                _y=float(map_pixel_y),
+            ),
         )
 
     @staticmethod

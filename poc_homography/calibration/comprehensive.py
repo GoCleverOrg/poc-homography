@@ -21,7 +21,7 @@ import io
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
@@ -31,8 +31,22 @@ from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
-    from poc_homography.domain.ground_control_point import GroundControlPoint
     from poc_homography.map_points import GroundControlPointCollection
+
+
+class GCPObservation(Protocol):
+    """Protocol for GCP observation data used in calibration.
+
+    This represents an observation of a GCP in a camera image, including
+    the camera pose when the observation was captured.
+    """
+
+    map_point_id: str
+    pixel_u: PixelsFloat
+    pixel_v: PixelsFloat
+    pan_raw: Degrees
+    tilt_deg: Degrees
+    zoom: Unitless
 
 # Module-level logger for debugging calibration issues
 _logger = logging.getLogger(__name__)
@@ -226,7 +240,7 @@ def undistort_point_simple(
 
 def compute_projection_error(
     params: CalibrationParams,
-    gcps: list[GroundControlPoint],
+    gcps: list[GCPObservation],
     registry: GroundControlPointCollection,
     image_width: Pixels = Pixels(1920),
     image_height: Pixels = Pixels(1080),
@@ -256,8 +270,8 @@ def compute_projection_error(
 
             map_point = registry.points[gcp.map_point_id]
             # Compute local XY relative to camera position in map coordinates
-            x_m = map_point.pixel_x - params.camera_x
-            y_m = map_point.pixel_y - params.camera_y
+            x_m = float(map_point.pixel_point.x) - params.camera_x
+            y_m = float(map_point.pixel_point.y) - params.camera_y
 
             # Build intrinsic matrix with optimized parameters
             effective_focal_mm = 5.9 * gcp.zoom * params.focal_multiplier
@@ -337,7 +351,7 @@ def compute_projection_error(
 
 def _objective_function(
     x: np.ndarray,
-    gcps: list[GroundControlPoint],
+    gcps: list[GCPObservation],
     registry: GroundControlPointCollection,
     base_params: CalibrationParams,
     flags: OptimizationFlags,
@@ -369,7 +383,7 @@ def _objective_function(
 
 def run_calibration(
     camera_config: dict[str, Any],
-    gcps: list[GroundControlPoint],
+    gcps: list[GCPObservation],
     registry: GroundControlPointCollection,
     optimize_position: bool = True,
     optimize_focal: bool = True,
@@ -529,7 +543,7 @@ def print_results(
     optimized: CalibrationParams,
     mean_error: float,
     individual_errors: list[float],
-    gcps: list[GroundControlPoint],
+    gcps: list[GCPObservation],
 ) -> None:
     """
     Print calibration results.

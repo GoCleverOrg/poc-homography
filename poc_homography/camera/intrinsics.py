@@ -120,19 +120,13 @@ def compute_intrinsics(
     cx = PixelsFloat(image_width / 2.0)
     cy = PixelsFloat(image_height / 2.0)
 
-    # Intrinsic matrix
-    K = np.array([[f_px, 0, cx], [0, f_px, cy], [0, 0, 1]])
-
+    # CameraIntrinsics computes focal_length_px, cx, cy, and K automatically
     return CameraIntrinsics(
-        focal_length=f_mm,
-        focal_length_px=f_px,
-        cx=cx,
-        cy=cy,
         sensor_width=sensor_width_mm,
         base_focal_length=base_focal_length_mm,
         image_width=image_width,
         image_height=image_height,
-        K=K,
+        focal_length=f_mm,
     )
 
 

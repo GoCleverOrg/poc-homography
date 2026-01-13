@@ -277,8 +277,8 @@ def validate_model(
         point = registry.points[gcp.map_point_id]
 
         proj_result = project_map_point_to_pixel(
-            Meters(point.pixel_x),
-            Meters(point.pixel_y),
+            Meters(float(point.pixel_point.x)),
+            Meters(float(point.pixel_point.y)),
             camera_height,
             gcp.pan,
             gcp.tilt,

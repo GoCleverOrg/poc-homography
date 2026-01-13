@@ -136,7 +136,7 @@ class MapPointHomography:
                 raise ValueError(f"Map point not found in registry: {map_point_id}")
 
             map_point = map_registry.points[map_point_id]
-            map_coords.append([map_point.pixel_x, map_point.pixel_y])
+            map_coords.append([float(map_point.pixel_point.x), float(map_point.pixel_point.y)])
 
         # Convert to numpy arrays
         camera_pixels_array = np.array(camera_pixels, dtype=np.float32)
@@ -180,7 +180,7 @@ class MapPointHomography:
 
             # Expected map coordinate
             map_point = map_registry.points[gcp["map_point_id"]]
-            expected = np.array([map_point.pixel_x, map_point.pixel_y])
+            expected = np.array([float(map_point.pixel_point.x), float(map_point.pixel_point.y)])
 
             # Calculate error in pixels
             error = float(np.linalg.norm(projected - expected))
@@ -232,8 +232,11 @@ class MapPointHomography:
         transformed = cv2.perspectiveTransform(point, H)
 
         return MapPoint(
-            pixel_x=float(transformed[0, 0, 0]),
-            pixel_y=float(transformed[0, 0, 1]),
+            map_id=self.map_id,
+            pixel_point=PixelPoint(
+                _x=float(transformed[0, 0, 0]),
+                _y=float(transformed[0, 0, 1]),
+            ),
         )
 
     def map_to_camera(self, map_coord: PixelPoint) -> PixelPoint:
@@ -278,8 +281,11 @@ class MapPointHomography:
         for t in transformed:
             results.append(
                 MapPoint(
-                    pixel_x=float(t[0][0]),
-                    pixel_y=float(t[0][1]),
+                    map_id=self.map_id,
+                    pixel_point=PixelPoint(
+                        _x=float(t[0][0]),
+                        _y=float(t[0][1]),
+                    ),
                 )
             )
         return results

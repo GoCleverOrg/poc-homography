@@ -574,7 +574,7 @@ class FeatureMatchHomography(HomographyProvider):
             # Support both MapPoint objects and dict format
             if isinstance(gcp.get("map"), MapPoint):
                 map_point = gcp["map"]
-                map_pts_list.append([map_point.pixel_x, map_point.pixel_y])
+                map_pts_list.append([float(map_point.pixel_point.x), float(map_point.pixel_point.y)])
             elif "map" in gcp:
                 map_data = gcp["map"]
                 if "pixel_x" not in map_data or "pixel_y" not in map_data:
@@ -806,8 +806,11 @@ class FeatureMatchHomography(HomographyProvider):
         map_pixel = self._project_image_point_to_map(image_point)
 
         return MapPoint(
-            pixel_x=map_pixel.x,
-            pixel_y=map_pixel.y,
+            map_id=self.map_id,
+            pixel_point=PixelPoint(
+                _x=float(map_pixel.x),
+                _y=float(map_pixel.y),
+            ),
         )
 
     def project_points(
