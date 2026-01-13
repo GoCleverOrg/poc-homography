@@ -104,75 +104,125 @@ def apply_geotransform(px, py, gt) -> tuple[float, float]:
 
 ## 3. Target Domain Model
 
-### 3.1 Architecture Overview
+### 3.1 Data Lifecycle Separation
+
+Camera-related data has **three distinct lifecycles** that must be handled separately:
+
+| Data Type | Contents | Lifecycle | Persistence | Repository |
+|-----------|----------|-----------|-------------|------------|
+| **Configuration** | map_id, name, spec, ip_address | Rarely changes (camera registration) | YAML | `CameraConfigRepository` |
+| **Calibration** | position, height, orientation, distortion | Changes during calibration | YAML | `CameraCalibrationRepository` |
+| **Hardware State** | PTZ state (pan, tilt, zoom) | Changes constantly | None (transient) | None (passed as argument) |
+
+```
+┌───────────────────┐  ┌─────────────────────────┐  ┌─────────────────┐
+│   CameraConfig    │  │   CameraCalibration     │  │    PTZState     │
+├───────────────────┤  ├─────────────────────────┤  ├─────────────────┤
+│ map_id            │  │ camera_id               │  │ pan_raw         │
+│ name              │  │ position: PixelPoint    │  │ tilt_deg        │
+│ spec: CameraSpec  │  │ height: Meters          │  │ zoom            │
+│ ip_address        │  │ base_orientation        │  └─────────────────┘
+├───────────────────┤  │ distortion              │   ⚡ Transient
+│ id (computed)     │  └─────────────────────────┘   From hardware API
+└───────────────────┘   🔧 Refined during            No persistence
+ 📋 Set once            calibration
+ Rarely changes
+```
+
+**Key Design Decisions:**
+
+1. **Three separate concerns** - Config, Calibration, and PTZ State are distinct
+2. **Two repositories** - `CameraConfigRepository` and `CameraCalibrationRepository`
+3. **PTZState passed as argument** to domain services that need it (not stored)
+4. **All VOs/entities immutable** - no mutable state, no update methods
+5. **Domain Services** combine all three pieces for computations
+6. **CameraSnapshot** (optional) - immutable point-in-time combination for convenience
+
+### 3.2 Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ENTITIES                                        │
+│                              ENTITIES (Immutable)                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  ┌──────────────────┐         ┌──────────────────────────────────────────┐  │
-│  │       Map        │         │                 Camera                    │  │
-│  ├──────────────────┤         ├──────────────────────────────────────────┤  │
-│  │ id: str          │◄────────│ id: str                                  │  │
-│  │ photo_path: Path │         │ installation: CameraInstallation         │  │
-│  │ geotiff: GeoTiff │         │ intrinsics: CameraIntrinsics             │  │
-│  └──────────────────┘         │ ptz_state: PTZState (mutable)            │  │
-│                               └──────────────────────────────────────────┘  │
+│  ┌──────────────────┐  ┌────────────────────┐  ┌─────────────────────────┐  │
+│  │       Map        │  │    CameraConfig    │  │   CameraCalibration     │  │
+│  ├──────────────────┤  ├────────────────────┤  ├─────────────────────────┤  │
+│  │ id: str          │◄─│ map_id: str        │◄─│ camera_id: str          │  │
+│  │ photo: Photo     │  │ name: str          │  │ position: PixelPoint    │  │
+│  │ geotiff: GeoTiff │  │ id (computed)      │  │ height: Meters          │  │
+│  └──────────────────┘  │ spec: CameraSpec   │  │ base_orientation        │  │
+│                        │ ip_address         │  │ distortion              │  │
+│                        └────────────────────┘  └─────────────────────────┘  │
+│                         📋 Set once             🔧 Refined during           │
+│                         (registration)          calibration                 │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            VALUE OBJECTS                                     │
+│                       VALUE OBJECTS (All Immutable)                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  PERSISTED                                   TRANSIENT                       │
+│  ┌─────────────────┐  ┌──────────────┐       ┌─────────────────────────┐    │
+│  │   Orientation   │  │ LensDistort. │       │       PTZState          │    │
+│  ├─────────────────┤  ├──────────────┤       ├─────────────────────────┤    │
+│  │ yaw: Degrees    │  │ k1, k2       │       │ pan_raw: float          │    │
+│  │ pitch: Degrees  │  │ p1, p2       │       │ tilt_deg: float         │    │
+│  │ roll: Degrees   │  └──────────────┘       │ zoom: float             │    │
+│  │ rotation_matrix │                         └─────────────────────────┘    │
+│  └─────────────────┘                          ⚡ From hardware API          │
 │                                                                              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-│  │   PixelPoint    │  │    MapPoint     │  │      CameraIntrinsics       │  │
+│  │   PixelPoint    │  │    MapPoint     │  │       CameraSnapshot        │  │
 │  ├─────────────────┤  ├─────────────────┤  ├─────────────────────────────┤  │
-│  │ x: PixelsFloat  │  │ map_id: str     │  │ sensor_width: mm            │  │
-│  │ y: PixelsFloat  │  │ pixel: Pixel    │  │ base_focal_length: mm       │  │
-│  │ ─────────────── │  │     Point       │  │ image_width/height: px      │  │
-│  │ pixels_x: int   │  └─────────────────┘  │ focal_length: mm            │  │
-│  │ pixels_y: int   │                       │ ─────────────────────────── │  │
-│  └─────────────────┘                       │ focal_length_px (virtual)   │  │
-│                                            │ cx, cy (virtual)            │  │
-│  ┌─────────────────┐  ┌─────────────────┐  │ K matrix (virtual)          │  │
-│  │    PTZState     │  │    GeoTiff      │  └─────────────────────────────┘  │
+│  │ x, y: float     │  │ map_id: str     │  │ config: CameraConfig        │  │
+│  └─────────────────┘  │ pixel: PixelPt  │  │ calibration: CameraCalib.   │  │
+│                       └─────────────────┘  │ ptz_state: PTZState         │  │
+│  ┌─────────────────┐  ┌─────────────────┐  │ (point-in-time combination) │  │
+│  │     Photo       │  │    GeoTiff      │  └─────────────────────────────┘  │
 │  ├─────────────────┤  ├─────────────────┤                                   │
-│  │ pan: Degrees    │  │ geotransform:   │  ┌─────────────────────────────┐  │
-│  │ tilt: Degrees   │  │   float[6]      │  │    CameraInstallation       │  │
-│  │ zoom: Unitless  │  │ crs: str        │  ├─────────────────────────────┤  │
-│  └─────────────────┘  │ ─────────────── │  │ map_id: str                 │  │
-│                       │ pixel_width_m   │  │ position: MapPoint          │  │
-│  ┌─────────────────┐  │ pixel_height_m  │  │ height: Meters              │  │
-│  │ BaseOrientation │  │ is_north_up     │  │ base_orientation:           │  │
-│  ├─────────────────┤  └─────────────────┘  │   BaseOrientation           │  │
-│  │ yaw: Degrees    │                       │ tilt_convention: enum       │  │
-│  │ pitch: Degrees  │                       │ ─────────────────────────── │  │
-│  │ roll: Degrees   │                       │ distortion (virtual?)       │  │
-│  └─────────────────┘                       └─────────────────────────────┘  │
+│  │ path, w, h      │  │ geotransform    │                                   │
+│  └─────────────────┘  │ crs             │                                   │
+│                       └─────────────────┘                                   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SERVICES                                        │
+│                         ENUMS                                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────┐  ┌─────────────────────────────────────┐   │
+│  │       CameraSpec            │  │        TiltConvention               │   │
+│  ├─────────────────────────────┤  ├─────────────────────────────────────┤   │
+│  │ HIKVISION_DS_2DF8425IX      │  │ POSITIVE_UP                         │   │
+│  │   - sensor_width            │  │ POSITIVE_DOWN                       │   │
+│  │   - base_focal_length       │  └─────────────────────────────────────┘   │
+│  │   - image_width/height      │                                            │
+│  │   - tilt_convention         │  (No distortion - that's per-camera        │
+│  │   - max_zoom                │   calibration, not per-model)              │
+│  └─────────────────────────────┘                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    DOMAIN SERVICES (Stateless)                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Services receive all three pieces as arguments. They do NOT fetch data.    │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │                      OrientationService                              │    │
 │  ├─────────────────────────────────────────────────────────────────────┤    │
-│  │ compute_orientation(installation, ptz_state) -> FinalOrientation    │    │
+│  │ compute_final_orientation(calibration, ptz_state) -> Orientation    │    │
 │  │                                                                      │    │
 │  │ Strategies:                                                          │    │
 │  │   - AdditiveStrategy (simple angle addition, small angles)          │    │
 │  │   - RotationMatrixStrategy (proper SO(3) composition)               │    │
-│  │   - QuaternionStrategy (for interpolation use cases)                │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │                      HomographyService                               │    │
 │  ├─────────────────────────────────────────────────────────────────────┤    │
-│  │ compute_homography(intrinsics, orientation, height) -> Homography   │    │
+│  │ compute(config, calibration, ptz_state) -> Homography               │    │
 │  │ project_to_map(pixel, homography) -> MapPoint                       │    │
 │  │ project_to_camera(map_point, homography) -> PixelPoint              │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
@@ -182,8 +232,32 @@ def apply_geotransform(px, py, gt) -> tuple[float, float]:
 │  ├─────────────────────────────────────────────────────────────────────┤    │
 │  │ pixel_to_utm(pixel, geotiff) -> UTMCoord                            │    │
 │  │ utm_to_pixel(utm, geotiff) -> PixelPoint                            │    │
-│  │ pixel_to_gps(pixel, geotiff) -> GPSCoord                            │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                      CameraService (optional)                        │    │
+│  ├─────────────────────────────────────────────────────────────────────┤    │
+│  │ get_snapshot(camera_id, ptz_state) -> CameraSnapshot                │    │
+│  │   Combines Config + Calibration from repos + provided PTZState      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         REPOSITORIES                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Two repositories for the two persisted entities. PTZState has none.        │
+│                                                                              │
+│  ┌───────────────────────────────────┐  ┌────────────────────────────────┐  │
+│  │      CameraConfigRepository       │  │  CameraCalibrationRepository   │  │
+│  ├───────────────────────────────────┤  ├────────────────────────────────┤  │
+│  │ get(camera_id) -> Config | None   │  │ get(camera_id) -> Calib | None │  │
+│  │ get_by_map(map_id) -> dict        │  │ save(calibration) -> None      │  │
+│  │ save(config) -> None              │  │ delete(camera_id) -> bool      │  │
+│  │ delete(camera_id) -> bool         │  │ exists(camera_id) -> bool      │  │
+│  │ exists(camera_id) -> bool         │  └────────────────────────────────┘  │
+│  └───────────────────────────────────┘                                      │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -497,32 +571,37 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 - [x] `CameraIntrinsics` - done (with virtual properties: focal_length_px, cx, cy, K matrix)
 - [x] `PTZState` - done (renamed from CameraState)
 - [x] `GeoTiff` - done (with pixel_to_geo, geo_to_pixel methods)
-- [x] `BaseOrientation` - done (yaw, pitch, roll)
+- [x] `Orientation` - done (consolidated from BaseOrientation + FinalOrientation, with rotation_matrix)
 - [x] `TiltConvention` - done (enum with sign property)
+- [x] `LensDistortion` - done (k1, k2, p1, p2 coefficients)
 
 ### Phase 2: Composite Value Objects
 
 **Status**: ✅ Complete
 
-- [x] `CameraInstallation` - done (compose position + orientation + distortion)
-- [x] `FinalOrientation` - done (with rotation_matrix property)
+- [x] `CameraInstallation` - done (position: PixelPoint, height, base_orientation: Orientation)
+- [x] `CameraSpec` - done (enum with intrinsics, distortion, tilt_convention per camera model)
 
 ### Phase 3: Entities
 
 **Status**: ✅ Complete
 
 - [x] `Annotation` - moved to entities/ directory
-- [x] `GroundControlPoint` - moved to entities/ directory
-- [x] `Map` - done (id, name, photo_path, geotiff)
-- [x] `Camera` - done (installation + intrinsics + ptz_state)
+- [x] `GroundControlPoint` - done (computed id: map_id/name)
+- [x] `Map` - done (id, photo, geotiff)
+- [x] `Camera` - done (map_id, name, computed id: map_id/name, installation, spec, ptz_state)
 
 ### Phase 4: Services
+
+**Status**: ❌ Not started
 
 - [ ] `OrientationService` with strategy pattern
 - [ ] `CoordinateTransformService` - wrap geotiff_utils
 - [ ] Refactor existing `HomographyService` to use new VOs
 
 ### Phase 5: Migration of Existing Code
+
+**Status**: ❌ Not started
 
 - [ ] Update `camera_config.py` to use new entities
 - [ ] Update `camera_geometry.py` to use new VOs
@@ -531,11 +610,21 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 6: Configuration Migration
 
+**Status**: 🟡 Partial
+
 - [x] Create `data/maps/` for Map YAML files
-- [ ] Create `data/cameras/` for Camera YAML files
+- [ ] Create `data/cameras/` for Camera YAML files (directory exists but empty)
+- [ ] Create `data/calibrations/` for Calibration YAML files
 - [x] Create `data/gcps/` for GCP YAML files
-- [x] Add repository interfaces (MapRepository, GroundControlPointRepository)
-- [x] Implement YAML repositories (YamlMapRepository, YamlGroundControlPointRepository)
+- [x] `MapRepository` interface - done (get, get_all, exists, save, delete)
+- [x] `GroundControlPointRepository` interface - done (get_by_map returns dict, save, delete, exists)
+- [ ] `CameraConfigRepository` interface - pending
+- [ ] `CameraCalibrationRepository` interface - pending
+- [x] `YamlMapRepository` - done (with save/delete)
+- [x] `YamlGroundControlPointRepository` - done (returns dict keyed by id)
+- [ ] `YamlCameraConfigRepository` - pending
+- [ ] `YamlCameraCalibrationRepository` - pending
+- [ ] **DATA ISSUE**: GCPs in `data/gcps/valte.yaml` have coordinates that appear to be UTM (e.g., 251246, -360159) rather than pixel coordinates. Needs migration/verification.
 
 ---
 
@@ -550,42 +639,51 @@ poc_homography/
 │   │   ├── pixel_point.py      ✅
 │   │   ├── map_point.py        ✅
 │   │   ├── camera_intrinsics.py ✅
-│   │   ├── ptz_state.py        ✅ (renamed from camera_state.py)
+│   │   ├── ptz_state.py        ✅
 │   │   ├── geotiff.py          ✅
-│   │   ├── base_orientation.py ✅
-│   │   ├── final_orientation.py ✅
-│   │   ├── camera_installation.py ✅
+│   │   ├── orientation.py      ✅
+│   │   ├── lens_distortion.py  ✅
+│   │   ├── camera_snapshot.py  (pending)
 │   │   └── photo.py            ✅
 │   ├── entities/
 │   │   ├── __init__.py         ✅
 │   │   ├── map.py              ✅
-│   │   ├── camera.py           ✅
-│   │   ├── annotation.py       ✅ (moved from domain/)
-│   │   └── ground_control_point.py ✅ (moved from domain/)
+│   │   ├── camera_config.py    (pending) - replaces camera.py
+│   │   ├── camera_calibration.py (pending)
+│   │   ├── annotation.py       ✅
+│   │   └── ground_control_point.py ✅
 │   ├── enums/
 │   │   ├── __init__.py         ✅
-│   │   └── tilt_convention.py  ✅
+│   │   ├── tilt_convention.py  ✅
+│   │   └── camera_spec.py      ✅ (needs distortion removed)
 │   └── repositories/
 │       ├── __init__.py         ✅
 │       ├── map_repository.py   ✅
-│       └── ground_control_point_repository.py ✅
+│       ├── ground_control_point_repository.py ✅
+│       ├── camera_config_repository.py (pending)
+│       └── camera_calibration_repository.py (pending)
 ├── infrastructure/
 │   ├── __init__.py             ✅
 │   └── repositories/
 │       ├── __init__.py         ✅
 │       ├── yaml_map_repository.py ✅
-│       └── yaml_ground_control_point_repository.py ✅
+│       ├── yaml_ground_control_point_repository.py ✅
+│       ├── yaml_camera_config_repository.py (pending)
+│       └── yaml_camera_calibration_repository.py (pending)
 ├── services/
-│   ├── __init__.py
-│   ├── orientation_service.py  (new)
-│   ├── coordinate_transform_service.py (new, wrap geotiff_utils)
-│   └── homography_service.py   (refactor existing)
+│   ├── __init__.py             (pending)
+│   ├── orientation_service.py  (pending)
+│   ├── coordinate_transform_service.py (pending)
+│   ├── camera_service.py       (pending)
+│   └── homography_service.py   (pending)
 ├── data/
 │   ├── maps/
 │   │   └── valte.yaml          ✅
 │   ├── gcps/
 │   │   └── valte.yaml          ✅
-│   └── cameras/
+│   ├── cameras/
+│   │   └── (pending)
+│   └── calibrations/
 │       └── (pending)
 └── ...
 ```
@@ -594,19 +692,143 @@ poc_homography/
 
 ## 7. Open Questions
 
-1. **Distortion coefficients**: Should they be part of `CameraInstallation` or separate `LensDistortion` VO?
+1. ~~**Distortion coefficients**: Should they be part of `CameraInstallation` or separate `LensDistortion` VO?~~ **Resolved**: `LensDistortion` VO in `CameraInstallation` (calibrated per-camera).
 
-2. **Calibration table**: How to model zoom-dependent intrinsics? Separate VO or part of `Camera` entity?
+2. **Calibration table**: How to model zoom-dependent intrinsics? Separate VO or part of `Camera` entity? (Currently not implemented - using linear focal length approximation)
 
 3. **GPS coordinates**: Do we still need GPS lat/lon for cameras, or is MapPoint sufficient?
 
 4. ~~**Map loading**: Should `Map` entity load image dimensions from file, or require them as input?~~ **Resolved**: `Map.get_dimensions()` method computes from photo file on demand.
 
-5. **Mutability**: `Camera.ptz_state` needs to be mutable. Use `@dataclass` without `frozen=True`, or separate mutable state?
+5. ~~**Mutability**: `Camera.ptz_state` needs to be mutable. Use `@dataclass` without `frozen=True`, or separate mutable state?~~ **Resolved**: PTZState removed from Camera entity. Passed as argument to domain services.
 
 ---
 
-## 8. References
+## 8. Pending Code Changes
+
+### 8.1 Split Camera into CameraConfig + CameraCalibration
+
+**Current state** (conflated):
+```python
+@dataclass
+class Camera:
+    map_id: str
+    name: str
+    installation: CameraInstallation  # ❌ Mixed with config
+    spec: CameraSpec
+    ptz_state: PTZState  # ❌ Different lifecycle
+    ip_address: str | None = None
+
+    def update_ptz_state(self, new_state: PTZState) -> None:  # ❌ Mutability
+        ...
+```
+
+**Target state** (separated):
+```python
+@dataclass(frozen=True)
+class CameraConfig:
+    """Camera configuration. Set once during registration."""
+    map_id: str
+    name: str
+    spec: CameraSpec
+    ip_address: str | None = None
+
+    @property
+    def id(self) -> str:
+        return f"{self.map_id}/{self.name}"
+
+
+@dataclass(frozen=True)
+class CameraCalibration:
+    """Camera calibration data. Refined during calibration process."""
+    camera_id: str  # References CameraConfig.id
+    position: PixelPoint
+    height: Meters
+    base_orientation: Orientation
+    distortion: LensDistortion
+```
+
+### 8.2 Remove CameraInstallation VO
+
+`CameraInstallation` is replaced by `CameraCalibration` entity. The fields move directly:
+
+| CameraInstallation (remove) | CameraCalibration (new) |
+|-----------------------------|-------------------------|
+| `position: PixelPoint` | `position: PixelPoint` |
+| `height: Meters` | `height: Meters` |
+| `base_orientation: Orientation` | `base_orientation: Orientation` |
+| (was in CameraSpec) | `distortion: LensDistortion` |
+
+### 8.3 CameraSpec Enum Refactoring
+
+**Current state** (has distortion):
+```python
+class CameraSpec(Enum):
+    HIKVISION_DS_2DF8425IX = (
+        ...,
+        LensDistortion(k1=..., k2=...),  # ❌ REMOVE - not model-specific
+    )
+```
+
+**Target state** (only hardware-fixed values):
+```python
+class CameraSpec(Enum):
+    HIKVISION_DS_2DF8425IX = (
+        model_name,
+        sensor_width,
+        base_focal_length,
+        image_width,
+        image_height,
+        tilt_convention,
+        max_zoom,
+        # NO distortion - it's calibrated per-camera
+    )
+```
+
+### 8.4 New VO: CameraSnapshot
+
+```python
+@dataclass(frozen=True)
+class CameraSnapshot:
+    """Immutable point-in-time combination of all camera data."""
+    config: CameraConfig
+    calibration: CameraCalibration
+    ptz_state: PTZState
+```
+
+### 8.5 New Repositories
+
+```python
+class CameraConfigRepository(Protocol):
+    def get(self, camera_id: str) -> CameraConfig | None: ...
+    def get_by_map(self, map_id: str) -> dict[str, CameraConfig]: ...
+    def save(self, config: CameraConfig) -> None: ...
+    def delete(self, camera_id: str) -> bool: ...
+    def exists(self, camera_id: str) -> bool: ...
+
+
+class CameraCalibrationRepository(Protocol):
+    def get(self, camera_id: str) -> CameraCalibration | None: ...
+    def save(self, calibration: CameraCalibration) -> None: ...
+    def delete(self, camera_id: str) -> bool: ...
+    def exists(self, camera_id: str) -> bool: ...
+```
+
+### 8.6 Summary of Changes
+
+| Component | Change |
+|-----------|--------|
+| `Camera` entity | Split into `CameraConfig` + `CameraCalibration` |
+| `CameraInstallation` VO | Remove (replaced by `CameraCalibration` entity) |
+| `CameraSpec` enum | Remove `distortion` parameter |
+| `CameraSnapshot` VO | New - combines Config + Calibration + PTZState |
+| `CameraConfigRepository` | New repository interface |
+| `CameraCalibrationRepository` | New repository interface |
+| Domain Services | Take `config`, `calibration`, `ptz_state` as separate arguments |
+
+---
+
+## 9. References
 
 - GDAL GeoTransform: https://gdal.org/tutorials/geotransforms_tut.html
 - OpenCV Camera Calibration: https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html

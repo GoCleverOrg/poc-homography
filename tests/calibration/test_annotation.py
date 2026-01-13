@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from poc_homography.domain.annotation import Annotation
+from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.vo.pixel_point import PixelPoint
 
 # =============================================================================

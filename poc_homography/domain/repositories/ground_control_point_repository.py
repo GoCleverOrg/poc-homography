@@ -15,25 +15,15 @@ class GroundControlPointRepository(Protocol):
     (e.g., YamlGroundControlPointRepository, FileGroundControlPointRepository).
     """
 
-    def get(self, gcp_id: str) -> GroundControlPoint | None:
-        """Retrieve a GCP by its ID.
-
-        Args:
-            gcp_id: Unique identifier for the GCP (format: "map_id/name").
-
-        Returns:
-            The GroundControlPoint if found, None otherwise.
-        """
-        ...
-
-    def get_by_map(self, map_id: str) -> list[GroundControlPoint]:
+    def get_by_map(self, map_id: str) -> dict[str, GroundControlPoint]:
         """Retrieve all GCPs for a specific map.
 
         Args:
             map_id: Identifier for the map.
 
         Returns:
-            List of GroundControlPoints belonging to the map.
+            Dictionary mapping GCP ID to GroundControlPoint entity.
+            Empty dict if no GCPs exist for the map.
         """
         ...
 
@@ -49,7 +39,7 @@ class GroundControlPointRepository(Protocol):
         """Delete a GCP by its ID.
 
         Args:
-            gcp_id: Unique identifier for the GCP.
+            gcp_id: Unique identifier for the GCP (format: "map_id/name").
 
         Returns:
             True if the GCP was deleted, False if it didn't exist.
@@ -60,7 +50,7 @@ class GroundControlPointRepository(Protocol):
         """Check if a GCP exists.
 
         Args:
-            gcp_id: Unique identifier for the GCP.
+            gcp_id: Unique identifier for the GCP (format: "map_id/name").
 
         Returns:
             True if the GCP exists, False otherwise.

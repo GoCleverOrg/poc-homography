@@ -34,7 +34,9 @@ class YamlMapRepository:
                            If None, uses data_dir's parent.
         """
         self._data_dir = Path(data_dir)
-        self._base_photo_dir = Path(base_photo_dir) if base_photo_dir else self._data_dir.parent.parent
+        self._base_photo_dir = (
+            Path(base_photo_dir) if base_photo_dir else self._data_dir.parent.parent
+        )
         self._cache: dict[str, Map] = {}
 
     def get(self, map_id: str) -> Map | None:
@@ -85,6 +87,62 @@ class YamlMapRepository:
             return True
         yaml_path = self._data_dir / f"{map_id}.yaml"
         return yaml_path.exists()
+
+    def save(self, map_entity: Map) -> None:
+        """Save a map (create or update).
+
+        Args:
+            map_entity: The Map entity to save.
+        """
+        yaml_path = self._data_dir / f"{map_entity.id}.yaml"
+
+        # Convert photo path to relative if it's under base_photo_dir
+        photo_path = map_entity.photo.path
+        try:
+            relative_path = photo_path.relative_to(self._base_photo_dir)
+            photo_path_str = str(relative_path)
+        except ValueError:
+            # Path is not relative to base_photo_dir, use absolute
+            photo_path_str = str(photo_path)
+
+        data = {
+            "id": map_entity.id,
+            "photo": {
+                "path": photo_path_str,
+            },
+            "geotiff": {
+                "geotransform": list(map_entity.geotiff.geotransform),
+                "crs": map_entity.geotiff.crs,
+            },
+        }
+
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+        # Update cache
+        self._cache[map_entity.id] = map_entity
+
+    def delete(self, map_id: str) -> bool:
+        """Delete a map by its ID.
+
+        Args:
+            map_id: Unique identifier for the map.
+
+        Returns:
+            True if the map was deleted, False if it didn't exist.
+        """
+        yaml_path = self._data_dir / f"{map_id}.yaml"
+
+        if not yaml_path.exists():
+            return False
+
+        yaml_path.unlink()
+
+        # Remove from cache
+        if map_id in self._cache:
+            del self._cache[map_id]
+
+        return True
 
     def _load_map(self, yaml_path: Path) -> Map | None:
         """Load a Map entity from a YAML file.

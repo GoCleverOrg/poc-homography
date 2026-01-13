@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from poc_homography.domain.enums import CameraSpec
     from poc_homography.domain.vo.camera_installation import CameraInstallation
-    from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
     from poc_homography.domain.vo.ptz_state import PTZState
 
 
@@ -17,33 +17,32 @@ class Camera:
 
     This entity represents a physical PTZ camera, including:
     - Fixed installation parameters (position, orientation, distortion)
-    - Fixed intrinsic parameters (sensor, lens characteristics)
+    - Hardware/model-specific parameters (from CameraSpec enum)
     - Current PTZ state (pan, tilt, zoom - mutable)
 
+    The camera ID is computed from map_id and name, following the same
+    pattern as GroundControlPoint (format: "map_id/name").
+
     Attributes:
-        id: Unique identifier for the camera (e.g., "valte").
+        map_id: ID of the map this camera is installed on.
         name: Human-readable name for the camera.
         installation: Fixed installation parameters.
-        intrinsics: Camera intrinsic parameters (sensor/lens).
+        spec: Camera hardware specification (enum).
         ptz_state: Current PTZ state (mutable).
-        model: Camera model string (optional).
         ip_address: IP address for camera control (optional).
-        calibration_table: Zoom-dependent calibration data (optional).
     """
 
-    id: str
+    map_id: str
     name: str
     installation: CameraInstallation
-    intrinsics: CameraIntrinsics
+    spec: CameraSpec
     ptz_state: PTZState
-    model: str | None = None
     ip_address: str | None = None
-    calibration_table: dict[float, dict[str, Any]] | None = field(default=None)
 
     @property
-    def map_id(self) -> str:
-        """ID of the map this camera is installed on."""
-        return self.installation.map_id
+    def id(self) -> str:
+        """Computed unique identifier (format: map_id/name)."""
+        return f"{self.map_id}/{self.name}"
 
     def update_ptz_state(self, new_state: PTZState) -> None:
         """Update the current PTZ state.

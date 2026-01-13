@@ -44,3 +44,22 @@ class MapRepository(Protocol):
             True if the map exists, False otherwise.
         """
         ...
+
+    def save(self, map_entity: Map) -> None:
+        """Save a map (create or update).
+
+        Args:
+            map_entity: The Map entity to save.
+        """
+        ...
+
+    def delete(self, map_id: str) -> bool:
+        """Delete a map by its ID.
+
+        Args:
+            map_id: Unique identifier for the map.
+
+        Returns:
+            True if the map was deleted, False if it didn't exist.
+        """
+        ...

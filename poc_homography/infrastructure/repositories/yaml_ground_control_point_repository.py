@@ -32,36 +32,17 @@ class YamlGroundControlPointRepository:
             data_dir: Directory containing GCP YAML files (one per map).
         """
         self._data_dir = Path(data_dir)
-        self._cache: dict[str, list[GroundControlPoint]] = {}
+        self._cache: dict[str, dict[str, GroundControlPoint]] = {}
 
-    def get(self, gcp_id: str) -> GroundControlPoint | None:
-        """Retrieve a GCP by its ID.
-
-        Args:
-            gcp_id: Unique identifier for the GCP (format: "map_id/name").
-
-        Returns:
-            The GroundControlPoint if found, None otherwise.
-        """
-        if "/" not in gcp_id:
-            return None
-
-        map_id, name = gcp_id.split("/", 1)
-        gcps = self._get_gcps_for_map(map_id)
-
-        for gcp in gcps:
-            if gcp.name == name:
-                return gcp
-        return None
-
-    def get_by_map(self, map_id: str) -> list[GroundControlPoint]:
+    def get_by_map(self, map_id: str) -> dict[str, GroundControlPoint]:
         """Retrieve all GCPs for a specific map.
 
         Args:
             map_id: Identifier for the map.
 
         Returns:
-            List of GroundControlPoints belonging to the map.
+            Dictionary mapping GCP ID to GroundControlPoint entity.
+            Empty dict if no GCPs exist for the map.
         """
         return self._get_gcps_for_map(map_id)
 
@@ -74,16 +55,8 @@ class YamlGroundControlPointRepository:
         map_id = gcp.map_id
         gcps = self._get_gcps_for_map(map_id)
 
-        # Update or add
-        updated = False
-        for i, existing in enumerate(gcps):
-            if existing.name == gcp.name:
-                gcps[i] = gcp
-                updated = True
-                break
-
-        if not updated:
-            gcps.append(gcp)
+        # Update or add (dict handles uniqueness)
+        gcps[gcp.id] = gcp
 
         self._save_gcps_for_map(map_id, gcps)
 
@@ -91,7 +64,7 @@ class YamlGroundControlPointRepository:
         """Delete a GCP by its ID.
 
         Args:
-            gcp_id: Unique identifier for the GCP.
+            gcp_id: Unique identifier for the GCP (format: "map_id/name").
 
         Returns:
             True if the GCP was deleted, False if it didn't exist.
@@ -99,14 +72,13 @@ class YamlGroundControlPointRepository:
         if "/" not in gcp_id:
             return False
 
-        map_id, name = gcp_id.split("/", 1)
+        map_id, _ = gcp_id.split("/", 1)
         gcps = self._get_gcps_for_map(map_id)
 
-        for i, gcp in enumerate(gcps):
-            if gcp.name == name:
-                del gcps[i]
-                self._save_gcps_for_map(map_id, gcps)
-                return True
+        if gcp_id in gcps:
+            del gcps[gcp_id]
+            self._save_gcps_for_map(map_id, gcps)
+            return True
 
         return False
 
@@ -114,39 +86,44 @@ class YamlGroundControlPointRepository:
         """Check if a GCP exists.
 
         Args:
-            gcp_id: Unique identifier for the GCP.
+            gcp_id: Unique identifier for the GCP (format: "map_id/name").
 
         Returns:
             True if the GCP exists, False otherwise.
         """
-        return self.get(gcp_id) is not None
+        if "/" not in gcp_id:
+            return False
 
-    def _get_gcps_for_map(self, map_id: str) -> list[GroundControlPoint]:
+        map_id, _ = gcp_id.split("/", 1)
+        gcps = self._get_gcps_for_map(map_id)
+        return gcp_id in gcps
+
+    def _get_gcps_for_map(self, map_id: str) -> dict[str, GroundControlPoint]:
         """Load GCPs for a map, using cache if available."""
         if map_id in self._cache:
             return self._cache[map_id]
 
         yaml_path = self._data_dir / f"{map_id}.yaml"
         if not yaml_path.exists():
-            self._cache[map_id] = []
-            return []
+            self._cache[map_id] = {}
+            return {}
 
         gcps = self._load_gcps(yaml_path)
         self._cache[map_id] = gcps
         return gcps
 
-    def _load_gcps(self, yaml_path: Path) -> list[GroundControlPoint]:
+    def _load_gcps(self, yaml_path: Path) -> dict[str, GroundControlPoint]:
         """Load GCPs from a YAML file."""
         with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         if not data:
-            return []
+            return {}
 
         map_id = data.get("map_id", yaml_path.stem)
         points_data = data.get("points", [])
 
-        gcps = []
+        gcps: dict[str, GroundControlPoint] = {}
         for point_data in points_data:
             name = str(point_data["id"])
             pixel_x = float(point_data["pixel_x"])
@@ -155,21 +132,23 @@ class YamlGroundControlPointRepository:
             pixel_point = PixelPoint(_x=pixel_x, _y=pixel_y)
             map_point = MapPoint(map_id=map_id, pixel_point=pixel_point)
             gcp = GroundControlPoint(name=name, map_point=map_point)
-            gcps.append(gcp)
+            gcps[gcp.id] = gcp
 
         return gcps
 
-    def _save_gcps_for_map(self, map_id: str, gcps: list[GroundControlPoint]) -> None:
+    def _save_gcps_for_map(self, map_id: str, gcps: dict[str, GroundControlPoint]) -> None:
         """Save GCPs to a YAML file."""
         yaml_path = self._data_dir / f"{map_id}.yaml"
 
         points_data = []
-        for gcp in gcps:
-            points_data.append({
-                "id": gcp.name,
-                "pixel_x": float(gcp.map_point.pixel_point._x),
-                "pixel_y": float(gcp.map_point.pixel_point._y),
-            })
+        for gcp in gcps.values():
+            points_data.append(
+                {
+                    "id": gcp.name,
+                    "pixel_x": float(gcp.map_point.pixel_point._x),
+                    "pixel_y": float(gcp.map_point.pixel_point._y),
+                }
+            )
 
         data = {
             "map_id": map_id,

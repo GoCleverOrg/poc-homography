@@ -1,4 +1,4 @@
-"""Final orientation value object for computed camera orientation."""
+"""Orientation value object for camera yaw/pitch/roll angles."""
 
 import math
 from dataclasses import dataclass
@@ -10,27 +10,28 @@ from poc_homography.types import Degrees
 
 
 @dataclass(frozen=True)
-class FinalOrientation:
-    """Computed camera orientation in world coordinates.
+class Orientation:
+    """Camera orientation in 3D space (yaw, pitch, roll).
 
-    This is the result of combining the base installation orientation
-    with the current PTZ state. It represents the actual direction
-    the camera is pointing in world coordinates.
+    Used for both base installation orientation and computed final orientation.
+    The context determines the meaning:
+    - Base orientation: Camera direction when PTZ reports (0, 0)
+    - Final orientation: Actual camera direction after applying PTZ state
 
     Coordinate convention:
         - Yaw: Azimuth from map-north, clockwise positive (0=North, 90=East)
-        - Pitch: Elevation angle, positive = looking down (after convention applied)
-        - Roll: Rotation around optical axis
+        - Pitch: Elevation angle (sign convention depends on TiltConvention)
+        - Roll: Rotation around optical axis, clockwise when looking forward
 
     Attributes:
-        yaw: Final azimuth angle in degrees.
-        pitch: Final elevation angle in degrees.
-        roll: Final roll angle in degrees.
+        yaw: Azimuth angle in degrees.
+        pitch: Elevation angle in degrees.
+        roll: Roll angle in degrees.
     """
 
     yaw: Degrees
     pitch: Degrees
-    roll: Degrees
+    roll: Degrees = Degrees(0.0)  # noqa: RUF009
 
     @property
     def rotation_matrix(self) -> NDArray[np.float64]:
@@ -42,39 +43,32 @@ class FinalOrientation:
         Returns:
             3x3 rotation matrix R such that p_world = R @ p_camera
         """
-        # Convert to radians
         yaw_rad = math.radians(float(self.yaw))
         pitch_rad = math.radians(float(self.pitch))
         roll_rad = math.radians(float(self.roll))
 
         # Rotation around Z (yaw)
         cy, sy = math.cos(yaw_rad), math.sin(yaw_rad)
-        Rz = np.array(
-            [
-                [cy, -sy, 0],
-                [sy, cy, 0],
-                [0, 0, 1],
-            ]
-        )
+        Rz = np.array([
+            [cy, -sy, 0],
+            [sy, cy, 0],
+            [0, 0, 1],
+        ])
 
         # Rotation around Y (pitch)
         cp, sp = math.cos(pitch_rad), math.sin(pitch_rad)
-        Ry = np.array(
-            [
-                [cp, 0, sp],
-                [0, 1, 0],
-                [-sp, 0, cp],
-            ]
-        )
+        Ry = np.array([
+            [cp, 0, sp],
+            [0, 1, 0],
+            [-sp, 0, cp],
+        ])
 
         # Rotation around X (roll)
         cr, sr = math.cos(roll_rad), math.sin(roll_rad)
-        Rx = np.array(
-            [
-                [1, 0, 0],
-                [0, cr, -sr],
-                [0, sr, cr],
-            ]
-        )
+        Rx = np.array([
+            [1, 0, 0],
+            [0, cr, -sr],
+            [0, sr, cr],
+        ])
 
         return Rz @ Ry @ Rx
