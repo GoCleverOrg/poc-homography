@@ -160,6 +160,7 @@ output/*
 # Data folder (YAML configs stored here)
 data/**/*
 !data/**/.gitkeep
+!data/**/*.yaml
 !data/**/
 
 # Worktrees

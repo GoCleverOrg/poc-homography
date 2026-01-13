@@ -531,10 +531,11 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 6: Configuration Migration
 
-- [ ] Create `maps.yaml` for Map entities
-- [ ] Create `cameras.yaml` for Camera entities
-- [x] Add repository interfaces (MapRepository)
-- [ ] Implement file-based repository (FileMapRepository)
+- [x] Create `data/maps/` for Map YAML files
+- [ ] Create `data/cameras/` for Camera YAML files
+- [x] Create `data/gcps/` for GCP YAML files
+- [x] Add repository interfaces (MapRepository, GroundControlPointRepository)
+- [x] Implement YAML repositories (YamlMapRepository, YamlGroundControlPointRepository)
 
 ---
 
@@ -568,11 +569,24 @@ poc_homography/
 │       ├── __init__.py         ✅
 │       ├── map_repository.py   ✅
 │       └── ground_control_point_repository.py ✅
+├── infrastructure/
+│   ├── __init__.py             ✅
+│   └── repositories/
+│       ├── __init__.py         ✅
+│       ├── yaml_map_repository.py ✅
+│       └── yaml_ground_control_point_repository.py ✅
 ├── services/
 │   ├── __init__.py
 │   ├── orientation_service.py  (new)
 │   ├── coordinate_transform_service.py (new, wrap geotiff_utils)
 │   └── homography_service.py   (refactor existing)
+├── data/
+│   ├── maps/
+│   │   └── valte.yaml          ✅
+│   ├── gcps/
+│   │   └── valte.yaml          ✅
+│   └── cameras/
+│       └── (pending)
 └── ...
 ```
 
