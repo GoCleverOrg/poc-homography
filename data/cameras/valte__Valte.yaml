@@ -1,0 +1,13 @@
+# Camera configuration for Valte camera
+# This file contains static registration data that rarely changes
+#
+# NOTE: Credentials should be configured in production deployments.
+# These placeholder values are for development/testing only.
+
+map_id: valte
+name: Valte
+spec: HIKVISION_DS_2DF8425IX
+credential:
+  username: admin
+  password: REPLACE_ME
+ip_address: 10.207.99.178
