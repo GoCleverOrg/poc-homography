@@ -209,33 +209,36 @@ Camera-related data has **three distinct lifecycles** that must be handled separ
 │                                                                              │
 │  Services receive all three pieces as arguments. They do NOT fetch data.    │
 │                                                                              │
+│  NAMING CONVENTION:                                                          │
+│    - Service class: Service<Domain> (e.g., ServiceOrientation)              │
+│    - Service file: service_<domain>.py                                       │
+│    - Strategy protocol: <Domain>Strategy (e.g., OrientationStrategy)        │
+│    - Strategy file: <domain>/strategy.py                                     │
+│    - Strategy impl: <Name>Strategy (e.g., AdditiveOrientationStrategy)      │
+│    - Strategy impl file: <domain>/<name>_strategy.py                         │
+│                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      OrientationService                              │    │
+│  │                      ServiceOrientation                              │    │
 │  ├─────────────────────────────────────────────────────────────────────┤    │
-│  │ compute_final_orientation(calibration, ptz_state) -> Orientation    │    │
+│  │ compute_orientation(base, ptz_state, tilt_convention) -> Orientation│    │
 │  │                                                                      │    │
-│  │ Strategies:                                                          │    │
-│  │   - AdditiveStrategy (simple angle addition, small angles)          │    │
+│  │ Strategies (in orientation/ folder):                                 │    │
+│  │   - AdditiveOrientationStrategy (simple angle addition)             │    │
 │  │   - RotationMatrixStrategy (proper SO(3) composition)               │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      HomographyService                               │    │
+│  │                      ServiceHomography (pending)                     │    │
 │  ├─────────────────────────────────────────────────────────────────────┤    │
 │  │ compute(config, calibration, ptz_state) -> Homography               │    │
 │  │ project_to_map(pixel, homography) -> MapPoint                       │    │
 │  │ project_to_camera(map_point, homography) -> PixelPoint              │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    CoordinateTransformService                        │    │
-│  ├─────────────────────────────────────────────────────────────────────┤    │
-│  │ pixel_to_utm(pixel, geotiff) -> UTMCoord                            │    │
-│  │ utm_to_pixel(utm, geotiff) -> PixelPoint                            │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
+│  CoordinateTransformService: NOT NEEDED - GeoTiff VO has methods            │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      CameraService (optional)                        │    │
+│  │                      ServiceCamera (optional)                        │    │
 │  ├─────────────────────────────────────────────────────────────────────┤    │
 │  │ get_snapshot(camera_id, ptz_state) -> CameraSnapshot                │    │
 │  │   Combines Config + Calibration from repos + provided PTZState      │    │
@@ -596,11 +599,12 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 4: Services
 
-**Status**: ❌ Not started
+**Status**: 🟡 Partial
 
-- [ ] `OrientationService` with strategy pattern
-- [ ] `CoordinateTransformService` - wrap geotiff_utils
-- [ ] Refactor existing `HomographyService` to use new VOs
+- [x] `ServiceOrientation` with strategy pattern - done (AdditiveOrientationStrategy + RotationMatrixStrategy)
+- [x] Services README.md - done (documents naming conventions)
+- [x] `CoordinateTransformService` - NOT NEEDED (GeoTiff VO has pixel_to_geo/geo_to_pixel methods)
+- [ ] Refactor existing code into `ServiceHomography` using new VOs
 
 ### Phase 5: Migration of Existing Code
 
@@ -674,11 +678,18 @@ poc_homography/
 │       ├── yaml_camera_config_repository.py (pending)
 │       └── yaml_camera_calibration_repository.py (pending)
 ├── services/
-│   ├── __init__.py             (pending)
-│   ├── orientation_service.py  (pending)
-│   ├── coordinate_transform_service.py (pending)
-│   ├── camera_service.py       (pending)
-│   └── homography_service.py   (pending)
+│   ├── __init__.py             ✅ (exports strategies only)
+│   ├── README.md               ✅ (naming conventions doc)
+│   ├── service_orientation.py  ✅ (ServiceOrientation class)
+│   ├── orientation/            # Strategies folder
+│   │   ├── __init__.py         ✅ (exports strategies + service)
+│   │   ├── strategy.py         ✅ (OrientationStrategy protocol)
+│   │   ├── additive_strategy.py ✅ (AdditiveOrientationStrategy)
+│   │   └── rotation_matrix_strategy.py ✅ (RotationMatrixStrategy)
+│   ├── service_homography.py   (pending)
+│   ├── homography/             (pending - strategies folder)
+│   ├── service_camera.py       (optional)
+│   └── camera/                 (optional - strategies folder)
 ├── data/
 │   ├── maps/
 │   │   └── valte.yaml          ✅
