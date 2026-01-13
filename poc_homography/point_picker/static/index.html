@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoTIFF Point Picker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; display: flex; height: 100vh; }
+        #sidebar {
+            width: 280px; background: #f5f5f5; padding: 16px;
+            display: flex; flex-direction: column; gap: 16px;
+            border-right: 1px solid #ddd;
+        }
+        #viewer { flex: 1; background: #222; }
+        h1 { font-size: 18px; color: #333; }
+        .section { background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .section-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #666; }
+        .tag-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .tag-btn {
+            padding: 10px; border: 2px solid #ddd; border-radius: 6px;
+            background: white; cursor: pointer; font-size: 13px;
+            transition: all 0.2s;
+        }
+        .tag-btn:hover { border-color: #999; }
+        .tag-btn.active { border-color: #0066cc; background: #e6f0ff; }
+        .tag-btn.parking_spot.active { border-color: #e63946; background: #fde2e4; }
+        .tag-btn.arrows.active { border-color: #2a9d8f; background: #d8f3dc; }
+        .tag-btn.crosswalk.active { border-color: #f4a261; background: #fff3e0; }
+        .tag-btn.extra.active { border-color: #9c27b0; background: #f3e5f5; }
+        #next-id { font-size: 16px; font-weight: bold; color: #333; text-align: center; padding: 8px; }
+        .btn-group { display: flex; gap: 8px; }
+        .btn {
+            flex: 1; padding: 10px; border: none; border-radius: 6px;
+            cursor: pointer; font-size: 13px; font-weight: 500;
+        }
+        .btn-primary { background: #0066cc; color: white; }
+        .btn-primary:hover { background: #0052a3; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+        .btn-secondary:hover { background: #d0d0d0; }
+        #coords {
+            font-family: monospace; font-size: 12px; color: #666;
+            background: #fff; padding: 8px; border-radius: 4px;
+            white-space: pre-line;
+        }
+        #point-list { max-height: 200px; overflow-y: auto; font-size: 12px; }
+        .point-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 8px; border-bottom: 1px solid #eee; cursor: pointer;
+        }
+        .point-item:hover { background: #f0f0f0; }
+        .point-item.selected { background: #e6f0ff; }
+        .point-item .delete-btn {
+            background: #ff4444; color: white; border: none;
+            padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;
+        }
+        .marker {
+            width: 20px; height: 20px; margin-left: -10px; margin-top: -10px;
+            border-radius: 50%; border: 3px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            cursor: move; position: absolute;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; font-weight: bold; color: white;
+        }
+        .marker.parking_spot { background: #e63946; }
+        .marker.arrows { background: #2a9d8f; }
+        .marker.crosswalk { background: #f4a261; }
+        .marker.extra { background: #9c27b0; }
+        .marker.selected { border-color: #ffeb3b; box-shadow: 0 0 8px #ffeb3b; }
+        #filename { font-size: 12px; color: #888; word-break: break-all; }
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white; padding: 24px; border-radius: 12px;
+            min-width: 300px; max-width: 400px;
+        }
+        .modal-title { font-size: 18px; margin-bottom: 16px; }
+        .modal input {
+            width: 100%; padding: 10px; border: 1px solid #ddd;
+            border-radius: 6px; margin-bottom: 16px; font-size: 14px;
+        }
+        .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h1>Point Picker</h1>
+        <div id="filename"></div>
+        <div class="section">
+            <div class="section-title">Tag Category</div>
+            <div class="tag-buttons">
+                <button class="tag-btn parking_spot" data-tag="parking_spot">Parking Spot</button>
+                <button class="tag-btn arrows" data-tag="arrows">Arrows</button>
+                <button class="tag-btn crosswalk" data-tag="crosswalk">Crosswalk</button>
+                <button class="tag-btn extra" data-tag="extra">Extra</button>
+            </div>
+            <div id="next-id">Next: PS1</div>
+        </div>
+        <div class="section">
+            <div class="section-title">Coordinates</div>
+            <div id="coords">Hover over image...</div>
+        </div>
+        <div class="section">
+            <div class="section-title">Points</div>
+            <div id="point-list"></div>
+        </div>
+        <div class="section">
+            <div class="btn-group">
+                <button class="btn btn-primary" id="export-btn">Export YAML</button>
+                <button class="btn btn-secondary" id="import-btn">Import</button>
+            </div>
+        </div>
+    </div>
+    <div id="viewer"></div>
+
+    <div id="export-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">Export Points</div>
+            <input type="text" id="export-path" placeholder="filename.yaml">
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('export-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="doExport()">Export</button>
+            </div>
+        </div>
+    </div>
+    <div id="import-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">Import Points</div>
+            <input type="text" id="import-path" placeholder="path/to/file.yaml">
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="doImport()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let viewer;
+        let imageInfo;
+        let currentTag = 'parking_spot';
+        let selectedPointId = null;
+        let markers = {};
+        let isDragging = false;
+        let dragPointId = null;
+
+        async function init() {
+            // Get image info
+            const resp = await fetch('/api/image/info');
+            imageInfo = await resp.json();
+            document.getElementById('filename').textContent = imageInfo.filename;
+
+            // Initialize OpenSeadragon
+            viewer = OpenSeadragon({
+                id: 'viewer',
+                prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
+                tileSources: {
+                    height: imageInfo.height,
+                    width: imageInfo.width,
+                    tileSize: 256,
+                    getTileUrl: (level, x, y) => {
+                        const z = level;
+                        return `/api/image/tile?x=${x}&y=${y}&z=${z}`;
+                    }
+                },
+                showNavigator: true,
+                navigatorPosition: 'BOTTOM_RIGHT',
+                minZoomLevel: 0.5,
+                maxZoomLevel: 20,
+                visibilityRatio: 0.5,
+                constrainDuringPan: true,
+            });
+
+            // Add click handler for placing points
+            viewer.addHandler('canvas-click', async (e) => {
+                if (isDragging) return;
+                if (e.quick) {
+                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
+                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+
+                    if (imagePoint.x >= 0 && imagePoint.x < imageInfo.width &&
+                        imagePoint.y >= 0 && imagePoint.y < imageInfo.height) {
+                        await addPoint(imagePoint.x, imagePoint.y);
+                    }
+                }
+            });
+
+            // Add mouse move handler for coordinates
+            viewer.addHandler('canvas-drag', (e) => {
+                if (dragPointId) {
+                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
+                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+                    updateMarkerPosition(dragPointId, imagePoint.x, imagePoint.y);
+                }
+            });
+
+            viewer.addHandler('canvas-drag-end', async (e) => {
+                if (dragPointId) {
+                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
+                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+                    await updatePointCoords(dragPointId, imagePoint.x, imagePoint.y);
+                    dragPointId = null;
+                    isDragging = false;
+                }
+            });
+
+            new OpenSeadragon.MouseTracker({
+                element: viewer.canvas,
+                moveHandler: async (e) => {
+                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
+                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+                    await updateCoords(imagePoint.x, imagePoint.y);
+                }
+            });
+
+            // Setup tag buttons
+            document.querySelectorAll('.tag-btn').forEach(btn => {
+                btn.addEventListener('click', () => selectTag(btn.dataset.tag));
+            });
+
+            // Setup export/import
+            document.getElementById('export-btn').addEventListener('click', () => {
+                document.getElementById('export-path').value = imageInfo.filename.replace(/\.[^.]+$/, '_points.yaml');
+                openModal('export-modal');
+            });
+            document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
+
+            // Initial setup
+            selectTag('parking_spot');
+            await loadPoints();
+        }
+
+        function selectTag(tag) {
+            currentTag = tag;
+            document.querySelectorAll('.tag-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tag === tag);
+            });
+            updateNextId();
+        }
+
+        async function updateNextId() {
+            const resp = await fetch(`/api/points/next-id?tag=${currentTag}`);
+            const data = await resp.json();
+            document.getElementById('next-id').textContent = `Next: ${data.next_id}`;
+        }
+
+        async function updateCoords(x, y) {
+            if (x < 0 || x >= imageInfo.width || y < 0 || y >= imageInfo.height) {
+                document.getElementById('coords').textContent = 'Outside image';
+                return;
+            }
+
+            let text = `Pixel: ${x.toFixed(1)}, ${y.toFixed(1)}`;
+
+            if (imageInfo.geotransform) {
+                const resp = await fetch(`/api/geo-coords?pixel_x=${x}&pixel_y=${y}`);
+                const data = await resp.json();
+                if (data.easting !== null) {
+                    text += `\nGeo: ${data.easting.toFixed(2)}, ${data.northing.toFixed(2)}`;
+                    if (data.crs) text += `\nCRS: ${data.crs}`;
+                }
+            }
+            document.getElementById('coords').textContent = text;
+        }
+
+        async function addPoint(x, y) {
+            const resp = await fetch('/api/points', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag: currentTag, pixel_x: x, pixel_y: y })
+            });
+            const point = await resp.json();
+            addMarker(point);
+            updatePointList();
+            updateNextId();
+        }
+
+        async function loadPoints() {
+            const resp = await fetch('/api/points');
+            const data = await resp.json();
+            // Clear existing markers
+            Object.keys(markers).forEach(id => removeMarker(id));
+            // Add markers for all points
+            data.points.forEach(point => addMarker(point));
+            updatePointList();
+            updateNextId();
+        }
+
+        function addMarker(point) {
+            const element = document.createElement('div');
+            element.className = `marker ${point.tag}`;
+            element.dataset.pointId = point.id;
+            element.textContent = point.id.replace(/[A-Z]+/, '');
+
+            // Make marker draggable
+            element.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                isDragging = true;
+                dragPointId = point.id;
+                selectPoint(point.id);
+            });
+
+            const overlay = viewer.addOverlay({
+                element: element,
+                location: viewer.viewport.imageToViewportCoordinates(point.pixel_x, point.pixel_y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            markers[point.id] = { element, point };
+        }
+
+        function removeMarker(pointId) {
+            if (markers[pointId]) {
+                viewer.removeOverlay(markers[pointId].element);
+                delete markers[pointId];
+            }
+        }
+
+        function updateMarkerPosition(pointId, x, y) {
+            if (markers[pointId]) {
+                const location = viewer.viewport.imageToViewportCoordinates(x, y);
+                viewer.updateOverlay(markers[pointId].element, location);
+            }
+        }
+
+        async function updatePointCoords(pointId, x, y) {
+            await fetch(`/api/points/${pointId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pixel_x: x, pixel_y: y })
+            });
+            if (markers[pointId]) {
+                markers[pointId].point.pixel_x = x;
+                markers[pointId].point.pixel_y = y;
+            }
+            updatePointList();
+        }
+
+        function selectPoint(pointId) {
+            selectedPointId = pointId;
+            Object.values(markers).forEach(m => {
+                m.element.classList.toggle('selected', m.point.id === pointId);
+            });
+            updatePointList();
+        }
+
+        function updatePointList() {
+            const list = document.getElementById('point-list');
+            list.innerHTML = '';
+            Object.values(markers).forEach(m => {
+                const item = document.createElement('div');
+                item.className = `point-item ${m.point.id === selectedPointId ? 'selected' : ''}`;
+                item.innerHTML = `
+                    <span>${m.point.id}: (${m.point.pixel_x.toFixed(1)}, ${m.point.pixel_y.toFixed(1)})</span>
+                    <button class="delete-btn" onclick="deletePoint('${m.point.id}')">X</button>
+                `;
+                item.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('delete-btn')) {
+                        selectPoint(m.point.id);
+                        // Pan to point
+                        const location = viewer.viewport.imageToViewportCoordinates(m.point.pixel_x, m.point.pixel_y);
+                        viewer.viewport.panTo(location);
+                    }
+                });
+                list.appendChild(item);
+            });
+        }
+
+        async function deletePoint(pointId) {
+            await fetch(`/api/points/${pointId}`, { method: 'DELETE' });
+            removeMarker(pointId);
+            if (selectedPointId === pointId) selectedPointId = null;
+            updatePointList();
+            updateNextId();
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        async function doExport() {
+            const path = document.getElementById('export-path').value;
+            if (!path) return;
+            const resp = await fetch('/api/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            const result = await resp.json();
+            alert(`Exported ${result.count} points to ${result.exported}`);
+            closeModal('export-modal');
+        }
+
+        async function doImport() {
+            const path = document.getElementById('import-path').value;
+            if (!path) return;
+            try {
+                const resp = await fetch('/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert('Import failed: ' + err.detail);
+                    return;
+                }
+                const result = await resp.json();
+                alert(`Imported ${result.count} points from ${result.imported}`);
+                closeModal('import-modal');
+                await loadPoints();
+            } catch (e) {
+                alert('Import failed: ' + e.message);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
