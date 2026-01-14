@@ -57,13 +57,13 @@ def get_camera_stats(camera_name: str, include_live: bool = False) -> dict[str, 
     """
     ctx = ApplicationContext.default()
 
-    all_configs = ctx.camera_config_repo.get_all()
+    all_configs = ctx.repo_camera_config.get_all()
     camera = next((c for c in all_configs if c.name == camera_name), None)
     if camera is None:
         return None
 
     # Get calibration data
-    calibration = ctx.camera_calibration_repo.get(camera.id)
+    calibration = ctx.repo_camera_calibration.get(camera.id)
 
     # Build stats from domain entities
     stats: dict[str, Any] = {
@@ -175,7 +175,7 @@ def format_stats_human(stats: dict[str, Any]) -> str:
 def list_cameras() -> list[str]:
     """Get list of all available camera names."""
     ctx = ApplicationContext.default()
-    return [cam.name for cam in ctx.camera_config_repo.get_all()]
+    return [cam.name for cam in ctx.repo_camera_config.get_all()]
 
 
 def main() -> int:

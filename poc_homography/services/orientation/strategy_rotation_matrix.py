@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import PTZState
 
 
-class RotationMatrixStrategy:
+class StrategyRotationMatrix:
     """Rotation matrix strategy for proper SO(3) orientation composition.
 
     This strategy computes final orientation by composing rotation matrices.

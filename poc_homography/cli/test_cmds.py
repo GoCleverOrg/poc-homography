@@ -201,7 +201,7 @@ def data_generator_command(
     """
     # Get camera configurations from repository
     ctx = ApplicationContext.default()
-    all_configs = ctx.camera_config_repo.get_all()
+    all_configs = ctx.repo_camera_config.get_all()
 
     # Handle --list-cameras
     if list_cameras:

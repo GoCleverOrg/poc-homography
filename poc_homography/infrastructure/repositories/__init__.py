@@ -1,23 +1,23 @@
 """Repository implementations for the infrastructure layer."""
 
-from poc_homography.infrastructure.repositories.base import YamlRepositoryBase
-from poc_homography.infrastructure.repositories.yaml_camera_calibration_repository import (
-    YamlCameraCalibrationRepository,
+from poc_homography.infrastructure.repositories.base import RepoYaml
+from poc_homography.infrastructure.repositories.repo_yaml_camera_calibration import (
+    RepoYamlCameraCalibration,
 )
-from poc_homography.infrastructure.repositories.yaml_camera_config_repository import (
-    YamlCameraConfigRepository,
+from poc_homography.infrastructure.repositories.repo_yaml_camera_config import (
+    RepoYamlCameraConfig,
 )
-from poc_homography.infrastructure.repositories.yaml_ground_control_point_repository import (
-    YamlGroundControlPointRepository,
+from poc_homography.infrastructure.repositories.repo_yaml_ground_control_point import (
+    RepoYamlGroundControlPoint,
 )
-from poc_homography.infrastructure.repositories.yaml_map_repository import YamlMapRepository
+from poc_homography.infrastructure.repositories.repo_yaml_map import RepoYamlMap
 
 __all__ = [
     # Base class
-    "YamlRepositoryBase",
+    "RepoYaml",
     # Concrete repositories
-    "YamlCameraCalibrationRepository",
-    "YamlCameraConfigRepository",
-    "YamlGroundControlPointRepository",
-    "YamlMapRepository",
+    "RepoYamlCameraCalibration",
+    "RepoYamlCameraConfig",
+    "RepoYamlGroundControlPoint",
+    "RepoYamlMap",
 ]

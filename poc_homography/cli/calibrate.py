@@ -144,7 +144,7 @@ def comprehensive_command(
     # Get camera configuration and calibration from repositories
     ctx = ApplicationContext.default()
 
-    all_configs = ctx.camera_config_repo.get_all()
+    all_configs = ctx.repo_camera_config.get_all()
     cam_config = next((c for c in all_configs if c.name == camera), None)
 
     if not cam_config:
@@ -153,7 +153,7 @@ def comprehensive_command(
         raise typer.Exit(1)
 
     # Get calibration data
-    cam_calibration = ctx.camera_calibration_repo.get(cam_config.id)
+    cam_calibration = ctx.repo_camera_calibration.get(cam_config.id)
 
     # Build legacy dict for run_calibration compatibility
     camera_config = _build_legacy_camera_dict(cam_config, cam_calibration)

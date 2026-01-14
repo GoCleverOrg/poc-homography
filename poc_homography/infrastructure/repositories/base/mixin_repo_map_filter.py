@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.entities.entity import Entity
 
 
-class MapFilterMixin:
+class MixinRepoMapFilter:
     """Mixin providing get_by_map() for entities with a map_id property."""
 
     def _filter_by(self, field_name: str, value: object) -> dict[str, Any]:

@@ -883,7 +883,7 @@ def run_data_generator(
     # Get camera config from repository
     ctx = ApplicationContext.default()
 
-    all_configs = ctx.camera_config_repo.get_all()
+    all_configs = ctx.repo_camera_config.get_all()
     camera_config = next((c for c in all_configs if c.name == camera_name), None)
 
     if not camera_config:
@@ -896,7 +896,7 @@ def run_data_generator(
         raise ValueError(f"Camera '{camera_name}' has no IP address configured")
 
     # Get calibration data
-    calibration = ctx.camera_calibration_repo.get(camera_config.id)
+    calibration = ctx.repo_camera_calibration.get(camera_config.id)
 
     print(f"=== Test Data Generator for {camera_name} ===\n")
 

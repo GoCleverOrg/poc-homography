@@ -12,8 +12,8 @@ Usage:
     ctx = ApplicationContext(data_dir=Path("/custom/data"))
 
     # Access repositories
-    config = ctx.camera_config_repo.get("camera-1")
-    calibration = ctx.camera_calibration_repo.get("camera-1")
+    config = ctx.repo_camera_config.get("camera-1")
+    calibration = ctx.repo_camera_calibration.get("camera-1")
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ from functools import cached_property
 from pathlib import Path
 
 from poc_homography.infrastructure.repositories import (
-    YamlCameraCalibrationRepository,
-    YamlCameraConfigRepository,
-    YamlGroundControlPointRepository,
-    YamlMapRepository,
+    RepoYamlCameraCalibration,
+    RepoYamlCameraConfig,
+    RepoYamlGroundControlPoint,
+    RepoYamlMap,
 )
 
 
@@ -42,32 +42,32 @@ class ApplicationContext:
 
     Example:
         ctx = ApplicationContext.default()
-        cameras = ctx.camera_config_repo.get_all()
+        cameras = ctx.repo_camera_config.get_all()
         for camera in cameras:
-            calibration = ctx.camera_calibration_repo.get(camera.id)
+            calibration = ctx.repo_camera_calibration.get(camera.id)
     """
 
     data_dir: Path
 
     @cached_property
-    def camera_config_repo(self) -> YamlCameraConfigRepository:
+    def repo_camera_config(self) -> RepoYamlCameraConfig:
         """Repository for camera configuration entities."""
-        return YamlCameraConfigRepository(self.data_dir / "cameras")
+        return RepoYamlCameraConfig(self.data_dir / "cameras")
 
     @cached_property
-    def camera_calibration_repo(self) -> YamlCameraCalibrationRepository:
+    def repo_camera_calibration(self) -> RepoYamlCameraCalibration:
         """Repository for camera calibration entities."""
-        return YamlCameraCalibrationRepository(self.data_dir / "calibrations")
+        return RepoYamlCameraCalibration(self.data_dir / "calibrations")
 
     @cached_property
-    def map_repo(self) -> YamlMapRepository:
+    def repo_map(self) -> RepoYamlMap:
         """Repository for map entities."""
-        return YamlMapRepository(self.data_dir / "maps")
+        return RepoYamlMap(self.data_dir / "maps")
 
     @cached_property
-    def gcp_repo(self) -> YamlGroundControlPointRepository:
+    def repo_gcp(self) -> RepoYamlGroundControlPoint:
         """Repository for ground control point entities."""
-        return YamlGroundControlPointRepository(self.data_dir / "ground_control_points")
+        return RepoYamlGroundControlPoint(self.data_dir / "ground_control_points")
 
     @classmethod
     def default(cls) -> ApplicationContext:

@@ -25,7 +25,7 @@ import yaml
 
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
-from poc_homography.infrastructure.repositories import YamlGroundControlPointRepository
+from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.ground_control_point import GroundControlPoint
@@ -40,7 +40,7 @@ MAP_ID = "valte"
 def map_registry() -> dict[str, GroundControlPoint]:
     """Load map point registry from repository, keyed by simple name."""
 
-    repo = YamlGroundControlPointRepository(GCPS_DIR)
+    repo = RepoYamlGroundControlPoint(GCPS_DIR)
     gcps: dict[str, GroundControlPoint] = repo.get_by_map(MAP_ID)  # type: ignore[assignment]
 
     if not gcps:

@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from poc_homography.domain.entities.ground_control_point import GroundControlPoint
-from poc_homography.infrastructure.repositories.base import MapFilterMixin, YamlRepositoryBase
+from poc_homography.infrastructure.repositories.base import MixinRepoMapFilter, RepoYaml
 
 
-class YamlGroundControlPointRepository(YamlRepositoryBase[GroundControlPoint], MapFilterMixin):
+class RepoYamlGroundControlPoint(RepoYaml[GroundControlPoint], MixinRepoMapFilter):
     """Repository for GroundControlPoint entities stored as YAML files."""
 
     def __init__(self, data_dir: Path) -> None:

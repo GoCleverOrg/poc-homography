@@ -6,15 +6,80 @@ Homography computation system for PTZ cameras - transforms image coordinates to 
 
 ```
 poc-homography/
-├── poc_homography/          # Python library
-│   ├── homography/          # Homography providers (strategy pattern)
-│   ├── map_points/          # Map point registry
-│   ├── calibration/         # Calibration data structures
+├── poc_homography/              # Python library
+│   ├── application/             # Composition Root (DI container)
+│   ├── domain/                  # Domain layer (entities, VOs, protocols)
+│   │   ├── entities/            # Domain entities
+│   │   ├── vo/                  # Value objects
+│   │   ├── enums/               # Enumerations
+│   │   └── repositories/        # Repository protocols
+│   ├── infrastructure/          # Infrastructure layer
+│   │   └── repositories/        # YAML-backed repository implementations
+│   ├── services/                # Domain services with strategy pattern
+│   │   ├── orientation/         # Orientation strategies
+│   │   └── homography/          # Homography strategies
+│   ├── cli/                     # CLI commands (hom)
 │   └── ...
-├── tools/cli/               # CLI commands (hom)
-├── webapp/                  # Django web application
-└── tests/                   # Test suite
+├── webapp/                      # Django web application
+├── tests/                       # Test suite
+└── data/                        # YAML data files
+    ├── cameras/                 # Camera configurations
+    ├── calibrations/            # Camera calibrations
+    ├── maps/                    # Map definitions
+    └── ground_control_points/   # GCP data
 ```
+
+## Architecture
+
+This project follows Domain-Driven Design (DDD) with a layered architecture:
+
+### Domain Layer (`domain/`)
+
+Contains the core business logic, independent of infrastructure concerns.
+
+| Component | Location | Example |
+|-----------|----------|---------|
+| Entity | `entities/<name>.py` | `CameraConfig`, `Map` |
+| Value Object | `vo/<name>.py` | `Orientation`, `PTZState` |
+| Repository Protocol | `repositories/repo.py` | `Repo[T]` |
+
+### Infrastructure Layer (`infrastructure/`)
+
+Implements domain interfaces with concrete technologies.
+
+| Component | Pattern | Example |
+|-----------|---------|---------|
+| Repository class | `Repo<Tech><Entity>` | `RepoYamlCameraConfig` |
+| Repository file | `repo_<tech>_<entity>.py` | `repo_yaml_camera_config.py` |
+| Base class | `Repo<Tech>` | `RepoYaml` |
+| Base file | `repo_<tech>.py` | `repo_yaml.py` |
+| Mixin class | `Mixin<Component><Purpose>` | `MixinRepoMapFilter` |
+| Mixin file | `mixin_<component>_<purpose>.py` | `mixin_repo_map_filter.py` |
+
+### Application Layer (`application/`)
+
+Composition Root for dependency injection.
+
+```python
+from poc_homography.application import ApplicationContext
+
+ctx = ApplicationContext.default()
+cameras = ctx.repo_camera_config.get_all()
+calibration = ctx.repo_camera_calibration.get(camera.id)
+```
+
+### Services Layer (`services/`)
+
+Domain services with pluggable strategies.
+
+| Component | Pattern | Example |
+|-----------|---------|---------|
+| Service class | `Service<Domain>` | `ServiceOrientation` |
+| Service file | `service_<domain>.py` | `service_orientation.py` |
+| Strategy protocol | `Strategy<Domain>` | `StrategyOrientation` |
+| Strategy protocol file | `<domain>/strategy.py` | `orientation/strategy.py` |
+| Strategy impl | `Strategy<Domain><Name>` | `StrategyOrientationAdditive` |
+| Strategy impl file | `strategy_<name>.py` | `strategy_additive.py` |
 
 ## Getting Started
 
@@ -27,28 +92,17 @@ uv sync
 ### Library
 
 ```python
-from poc_homography import (
-    CameraGeometry,
-    CameraParameters,
-    IntrinsicExtrinsicHomography,
-    MapPointHomography,
-)
+from poc_homography.application import ApplicationContext
+from poc_homography.services import ServiceHomography
 
-# Create camera parameters
-params = CameraParameters.create(
-    pan_deg=45.0,
-    tilt_deg=30.0,
-    zoom_factor=2.0,
-    camera_height_m=5.0,
-    image_width=2560,
-    image_height=1440,
-)
+# Get camera config and calibration
+ctx = ApplicationContext.default()
+config = ctx.repo_camera_config.get("my-camera")
+calibration = ctx.repo_camera_calibration.get("my-camera")
 
 # Compute homography
-result = CameraGeometry.compute(params)
-
-# Project points
-world_x, world_y = CameraGeometry.project_image_to_world(result, u=1280, v=720)
+service = ServiceHomography()
+result = service.compute(config, calibration, ptz_state, map_entity)
 ```
 
 ### CLI
@@ -58,18 +112,14 @@ world_x, world_y = CameraGeometry.project_image_to_world(result, u=1280, v=720)
 hom --help
 
 # Camera operations
-hom camera intrinsics --zoom 5.0
-hom camera validate
+hom camera intrinsics --camera Valte
+hom camera validate --camera Valte
 
 # Calibration
-hom calibrate projection
-hom calibrate comprehensive
+hom calibrate comprehensive --camera Valte
 
-# GCP verification
-hom gcp verify
-
-# Interactive calibration UI
-hom interactive
+# Test data generator
+hom test data-generator --list-cameras
 ```
 
 ### Web Application
@@ -80,7 +130,7 @@ uv run python manage.py runserver
 ```
 
 Open http://localhost:8000/:
-- `/capture/` - GCP capture tool (click map to add ground control points)
+- `/capture/` - GCP capture tool
 - `/debug/` - Debug map visualization
 
 ## Development

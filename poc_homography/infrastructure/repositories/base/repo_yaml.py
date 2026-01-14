@@ -11,7 +11,7 @@ from poc_homography.domain.entities.entity import Entity
 TEntity = TypeVar("TEntity", bound=Entity)
 
 
-class YamlRepositoryBase(ABC, Generic[TEntity]):
+class RepoYaml(ABC, Generic[TEntity]):
     """Abstract base for YAML-backed single-entity-per-file repositories."""
 
     def __init__(

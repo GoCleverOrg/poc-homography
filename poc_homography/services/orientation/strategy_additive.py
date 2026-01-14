@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import PTZState
 
 
-class AdditiveOrientationStrategy:
+class StrategyOrientationAdditive:
     """Simple additive strategy for orientation composition.
 
     This strategy computes final orientation by directly adding PTZ angles

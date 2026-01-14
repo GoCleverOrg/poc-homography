@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from poc_homography.services.homography.intrinsic_extrinsic_strategy import (
-    IntrinsicExtrinsicStrategy,
+from poc_homography.services.homography.strategy_intrinsic_extrinsic import (
+    StrategyIntrinsicExtrinsic,
 )
 from poc_homography.services.orientation import ServiceOrientation
 
@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from poc_homography.camera_parameters import CameraGeometryResult
     from poc_homography.domain.entities import CameraCalibration, CameraConfig, Map
     from poc_homography.domain.vo import PTZState
-    from poc_homography.services.homography.strategy import HomographyStrategy
-    from poc_homography.services.orientation.strategy import OrientationStrategy
+    from poc_homography.services.homography.strategy import StrategyHomography
+    from poc_homography.services.orientation.strategy import StrategyOrientation
 
 
 class ServiceHomography:
@@ -32,7 +32,7 @@ class ServiceHomography:
     Example:
         >>> from poc_homography.services.homography import (
         ...     ServiceHomography,
-        ...     IntrinsicExtrinsicStrategy,
+        ...     StrategyIntrinsicExtrinsic,
         ... )
         >>> service = ServiceHomography()
         >>> result = service.compute(
@@ -47,18 +47,18 @@ class ServiceHomography:
 
     def __init__(
         self,
-        homography_strategy: HomographyStrategy | None = None,
-        orientation_strategy: OrientationStrategy | None = None,
+        homography_strategy: StrategyHomography | None = None,
+        orientation_strategy: StrategyOrientation | None = None,
     ) -> None:
         """Initialize the homography service.
 
         Args:
             homography_strategy: Strategy for homography computation.
-                Defaults to IntrinsicExtrinsicStrategy.
+                Defaults to StrategyIntrinsicExtrinsic.
             orientation_strategy: Strategy for orientation computation.
-                Defaults to AdditiveOrientationStrategy (via ServiceOrientation default).
+                Defaults to StrategyOrientationAdditive (via ServiceOrientation default).
         """
-        self._homography_strategy = homography_strategy or IntrinsicExtrinsicStrategy()
+        self._homography_strategy = homography_strategy or StrategyIntrinsicExtrinsic()
         self._orientation_service = ServiceOrientation(orientation_strategy)
 
     def compute(

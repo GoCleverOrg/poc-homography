@@ -11,7 +11,7 @@ from poc_homography.domain.entities.entity import Entity
 T = TypeVar("T", bound=Entity)
 
 
-class Repository(Protocol[T]):
+class Repo(Protocol[T]):
     """Generic repository protocol for entity persistence.
 
     Provides the standard CRUD interface that all repositories implement.

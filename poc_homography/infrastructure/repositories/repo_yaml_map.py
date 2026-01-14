@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from poc_homography.domain.entities.map import Map
-from poc_homography.infrastructure.repositories.base import YamlRepositoryBase
+from poc_homography.infrastructure.repositories.base import RepoYaml
 
 
-class YamlMapRepository(YamlRepositoryBase[Map]):
+class RepoYamlMap(RepoYaml[Map]):
     """Repository for Map entities stored as YAML files."""
 
     def __init__(self, data_dir: Path) -> None:

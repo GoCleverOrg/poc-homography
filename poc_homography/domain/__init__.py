@@ -9,7 +9,7 @@ from poc_homography.domain.entities import (
     Map,
 )
 from poc_homography.domain.enums import CameraSpec, TiltConvention
-from poc_homography.domain.repositories import Repository
+from poc_homography.domain.repositories import Repo
 from poc_homography.domain.vo import (
     CameraIntrinsics,
     CameraSnapshot,
@@ -35,7 +35,7 @@ __all__ = [
     "CameraSpec",
     "TiltConvention",
     # Repositories
-    "Repository",
+    "Repo",
     # Value Objects
     "CameraIntrinsics",
     "CameraSnapshot",

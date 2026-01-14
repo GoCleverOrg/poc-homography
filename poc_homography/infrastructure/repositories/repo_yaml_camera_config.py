@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from poc_homography.domain.entities.camera_config import CameraConfig
-from poc_homography.infrastructure.repositories.base import MapFilterMixin, YamlRepositoryBase
+from poc_homography.infrastructure.repositories.base import MixinRepoMapFilter, RepoYaml
 
 
-class YamlCameraConfigRepository(YamlRepositoryBase[CameraConfig], MapFilterMixin):
+class RepoYamlCameraConfig(RepoYaml[CameraConfig], MixinRepoMapFilter):
     """Repository for CameraConfig entities stored as YAML files."""
 
     def __init__(self, data_dir: Path) -> None:

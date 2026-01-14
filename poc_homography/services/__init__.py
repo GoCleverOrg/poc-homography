@@ -17,13 +17,13 @@ Note on CoordinateTransformService:
 """
 
 from poc_homography.services.homography import (
-    HomographyStrategy,
-    IntrinsicExtrinsicStrategy,
+    StrategyHomography,
+    StrategyIntrinsicExtrinsic,
 )
 from poc_homography.services.orientation import (
-    AdditiveOrientationStrategy,
-    OrientationStrategy,
-    RotationMatrixStrategy,
+    StrategyOrientation,
+    StrategyOrientationAdditive,
+    StrategyRotationMatrix,
 )
 from poc_homography.services.service_geotiff_import import (
     GeoTiffImportResult,
@@ -31,11 +31,11 @@ from poc_homography.services.service_geotiff_import import (
 )
 
 __all__ = [
-    "AdditiveOrientationStrategy",
     "GeoTiffImportResult",
     "ServiceGeoTiffImport",
-    "HomographyStrategy",
-    "IntrinsicExtrinsicStrategy",
-    "OrientationStrategy",
-    "RotationMatrixStrategy",
+    "StrategyHomography",
+    "StrategyIntrinsicExtrinsic",
+    "StrategyOrientation",
+    "StrategyOrientationAdditive",
+    "StrategyRotationMatrix",
 ]

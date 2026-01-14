@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import Orientation, PTZState
 
 
-class IntrinsicExtrinsicStrategy:
+class StrategyIntrinsicExtrinsic:
     """Strategy that computes homography using intrinsic/extrinsic decomposition.
 
     This strategy wraps the existing CameraGeometry.compute() method, translating

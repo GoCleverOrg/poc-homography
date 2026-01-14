@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from poc_homography.domain.entities.camera_calibration import CameraCalibration
-from poc_homography.infrastructure.repositories.base import YamlRepositoryBase
+from poc_homography.infrastructure.repositories.base import RepoYaml
 
 
-class YamlCameraCalibrationRepository(YamlRepositoryBase[CameraCalibration]):
+class RepoYamlCameraCalibration(RepoYaml[CameraCalibration]):
     """Repository for CameraCalibration entities stored as YAML files."""
 
     def __init__(self, data_dir: Path) -> None:

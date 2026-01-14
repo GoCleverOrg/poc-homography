@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from poc_homography.services.orientation.additive_strategy import AdditiveOrientationStrategy
+from poc_homography.services.orientation.strategy_additive import StrategyOrientationAdditive
 
 if TYPE_CHECKING:
     from poc_homography.domain.enums import TiltConvention
     from poc_homography.domain.vo import Orientation, PTZState
-    from poc_homography.services.orientation.strategy import OrientationStrategy
+    from poc_homography.services.orientation.strategy import StrategyOrientation
 
 
 class ServiceOrientation:
@@ -24,10 +24,10 @@ class ServiceOrientation:
 
     Example:
         >>> from poc_homography.services.orientation import (
-        ...     OrientationService,
-        ...     AdditiveOrientationStrategy,
+        ...     ServiceOrientation,
+        ...     StrategyOrientationAdditive,
         ... )
-        >>> service = OrientationService(AdditiveOrientationStrategy())
+        >>> service = ServiceOrientation(StrategyOrientationAdditive())
         >>> final = service.compute_orientation(
         ...     base_orientation=calibration.base_orientation,
         ...     ptz_state=ptz_state,
@@ -35,14 +35,14 @@ class ServiceOrientation:
         ... )
     """
 
-    def __init__(self, strategy: OrientationStrategy | None = None) -> None:
+    def __init__(self, strategy: StrategyOrientation | None = None) -> None:
         """Initialize the orientation service.
 
         Args:
             strategy: Strategy to use for orientation computation.
-                Defaults to AdditiveOrientationStrategy.
+                Defaults to StrategyOrientationAdditive.
         """
-        self._strategy = strategy or AdditiveOrientationStrategy()
+        self._strategy = strategy or StrategyOrientationAdditive()
 
     def compute_orientation(
         self,

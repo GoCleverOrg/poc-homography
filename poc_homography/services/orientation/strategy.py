@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import Orientation, PTZState
 
 
-class OrientationStrategy(Protocol):
+class StrategyOrientation(Protocol):
     """Strategy protocol for computing final orientation from base + PTZ state."""
 
     def compute(

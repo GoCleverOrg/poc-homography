@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import Orientation, PTZState
 
 
-class HomographyStrategy(Protocol):
+class StrategyHomography(Protocol):
     """Strategy protocol for computing homography from camera state.
 
     Implementations define how to compute the homography matrix that maps
