@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import io
+import math
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import tifffile
@@ -12,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from pydantic import BaseModel, Field
 
 from poc_homography.geotiff_utils import apply_geotransform
 from poc_homography.map_points.map_point import MapPoint
@@ -29,6 +31,39 @@ TAG_ABBREVIATIONS = {
 }
 
 ABBREVIATION_TO_TAG = {v: k for k, v in TAG_ABBREVIATIONS.items()}
+
+# Valid tag values for validation
+VALID_TAGS = Literal["parking_spot", "arrows", "crosswalk", "extra"]
+
+
+# Pydantic request models for input validation
+class AddPointRequest(BaseModel):
+    """Request model for adding a new point."""
+
+    tag: VALID_TAGS = Field(default="extra", description="Tag category for the point")
+    pixel_x: float = Field(..., description="X pixel coordinate")
+    pixel_y: float = Field(..., description="Y pixel coordinate")
+    id: str | None = Field(default=None, description="Optional custom point ID")
+
+
+class UpdatePointRequest(BaseModel):
+    """Request model for updating point coordinates."""
+
+    pixel_x: float = Field(..., description="New X pixel coordinate")
+    pixel_y: float = Field(..., description="New Y pixel coordinate")
+
+
+class ExportRequest(BaseModel):
+    """Request model for exporting points."""
+
+    path: str = Field(default="", description="Export file path")
+
+
+class ImportRequest(BaseModel):
+    """Request model for importing points."""
+
+    path: str = Field(..., description="Import file path")
+
 
 # GeoTIFF tag IDs
 TIFFTAG_GEOKEYDIRECTORY = 34735
@@ -118,25 +153,48 @@ def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, s
 class PointPickerState:
     """Mutable state for the point picker application."""
 
-    def __init__(self, geotiff_path: Path) -> None:
-        """Initialize state with GeoTIFF file.
+    def __init__(
+        self,
+        image_path: Path,
+        geotransform: list[float] | None = None,
+        crs: str | None = None,
+    ) -> None:
+        """Initialize state with image file.
 
         Args:
-            geotiff_path: Path to the GeoTIFF file.
+            image_path: Path to the image file (PNG, TIFF, etc.).
+            geotransform: Optional 6-parameter geotransform [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height].
+            crs: Optional CRS string (e.g., "EPSG:25830").
         """
-        self.geotiff_path = geotiff_path
-        self.map_id = geotiff_path.stem
+        self.geotiff_path = image_path  # Keep name for compatibility
+        self.map_id = image_path.stem
         self.registry = MapPointRegistry(map_id=self.map_id, points={})
 
-        # Load GeoTIFF metadata using tifffile
-        with tifffile.TiffFile(geotiff_path) as tif:
-            page = tif.pages[0]
-            # type: ignore needed because tifffile types are incomplete
-            self.width: int = page.imagewidth  # type: ignore[union-attr]
-            self.height: int = page.imagelength  # type: ignore[union-attr]
+        # Detect file type and load accordingly
+        suffix = image_path.suffix.lower()
+        if suffix in (".tif", ".tiff"):
+            # Load TIFF metadata using tifffile
+            with tifffile.TiffFile(image_path) as tif:
+                page = tif.pages[0]
+                # type: ignore needed because tifffile types are incomplete
+                self.width: int = page.imagewidth  # type: ignore[union-attr]
+                self.height: int = page.imagelength  # type: ignore[union-attr]
 
-            # Extract geotransform and CRS
-            self.geotransform, self.crs = _extract_geotransform(tif)
+                # Extract geotransform and CRS from TIFF if not provided
+                if geotransform is None or crs is None:
+                    tiff_gt, tiff_crs = _extract_geotransform(tif)
+                    if geotransform is None:
+                        geotransform = tiff_gt
+                    if crs is None:
+                        crs = tiff_crs
+        else:
+            # Load other image formats (PNG, JPG, etc.) using PIL
+            with Image.open(image_path) as img:
+                self.width = img.width
+                self.height = img.height
+
+        self.geotransform = geotransform
+        self.crs = crs
 
     def get_next_id(self, tag: str) -> str:
         """Get the next auto-incremented ID for a tag.
@@ -162,18 +220,22 @@ class PointPickerState:
                     pass
         return f"{abbrev}{max_num + 1}"
 
-    def add_point(self, tag: str, pixel_x: float, pixel_y: float) -> str:
-        """Add a new point with auto-generated ID.
+    def add_point(
+        self, tag: str, pixel_x: float, pixel_y: float, point_id: str | None = None
+    ) -> str:
+        """Add a new point with auto-generated or custom ID.
 
         Args:
             tag: Tag category.
             pixel_x: X pixel coordinate.
             pixel_y: Y pixel coordinate.
+            point_id: Optional custom ID. If None, auto-generates based on tag.
 
         Returns:
-            Generated point ID.
+            Point ID (generated or provided).
         """
-        point_id = self.get_next_id(tag)
+        if point_id is None:
+            point_id = self.get_next_id(tag)
         point = MapPoint(pixel_x=pixel_x, pixel_y=pixel_y)
 
         # Create new registry with added point (immutable pattern)
@@ -254,17 +316,23 @@ def get_state() -> PointPickerState:
     return _state
 
 
-def create_app(geotiff_path: Path) -> FastAPI:
+def create_app(
+    image_path: Path,
+    geotransform: list[float] | None = None,
+    crs: str | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
-        geotiff_path: Path to the GeoTIFF file.
+        image_path: Path to the image file (PNG, TIFF, etc.).
+        geotransform: Optional 6-parameter geotransform.
+        crs: Optional CRS string (e.g., "EPSG:25830").
 
     Returns:
         Configured FastAPI application.
     """
     global _state
-    _state = PointPickerState(geotiff_path)
+    _state = PointPickerState(image_path, geotransform=geotransform, crs=crs)
 
     app = FastAPI(
         title="GeoTIFF Point Picker",
@@ -289,9 +357,9 @@ def _register_routes(app: FastAPI) -> None:
     async def index() -> str:
         """Serve the main HTML page."""
         html_path = Path(__file__).parent / "static" / "index.html"
-        if html_path.exists():
-            return html_path.read_text()
-        return _get_embedded_html()
+        if not html_path.exists():
+            raise HTTPException(status_code=500, detail="index.html not found")
+        return html_path.read_text()
 
     @app.get("/api/image/info")
     async def image_info() -> dict:
@@ -312,19 +380,28 @@ def _register_routes(app: FastAPI) -> None:
         z: int = Query(..., description="Zoom level"),
         size: int = Query(256, description="Tile size"),
     ) -> Response:
-        """Get an image tile at specified coordinates and zoom level."""
+        """Get an image tile at specified coordinates and zoom level.
+
+        OpenSeadragon uses a pyramid where:
+        - Level 0 = most zoomed out (fewest tiles)
+        - Max level = full resolution (most tiles)
+
+        At level z, the image appears at resolution: original / 2^(max_level - z)
+        """
         state = get_state()
 
-        # Calculate tile bounds in image coordinates
-        # At zoom level z, there are 2^z tiles
-        scale = 2**z
-        tile_width = state.width / scale
-        tile_height = state.height / scale
+        # Calculate max level for the pyramid
+        max_level = math.ceil(math.log2(max(state.width, state.height)))
 
-        x0 = int(x * tile_width)
-        y0 = int(y * tile_height)
-        x1 = int((x + 1) * tile_width)
-        y1 = int((y + 1) * tile_height)
+        # At level z, each pixel in the tile grid corresponds to 2^(max_level-z) original pixels
+        level_scale = 2 ** (max_level - z)
+
+        # Calculate bounds in original image coordinates
+        # Each tile covers (size * level_scale) original pixels
+        x0 = x * size * level_scale
+        y0 = y * size * level_scale
+        x1 = (x + 1) * size * level_scale
+        y1 = (y + 1) * size * level_scale
 
         # Clamp to image bounds
         x0 = max(0, min(x0, state.width))
@@ -339,46 +416,50 @@ def _register_routes(app: FastAPI) -> None:
             img.save(buffer, format="PNG")
             return Response(content=buffer.getvalue(), media_type="image/png")
 
-        # Read the tile from the GeoTIFF using tifffile
-        with tifffile.TiffFile(state.geotiff_path) as tif:
-            page = tif.pages[0]
-            data = page.asarray()
+        # Read the tile based on file type
+        suffix = state.geotiff_path.suffix.lower()
+        if suffix in (".tif", ".tiff"):
+            # Read from TIFF using tifffile
+            with tifffile.TiffFile(state.geotiff_path) as tif:
+                page = tif.pages[0]
+                data = page.asarray()
 
-            # Extract the tile region
-            if data.ndim == 2:
-                # Single band - grayscale
-                tile_data = data[y0:y1, x0:x1]
-                img = Image.fromarray(normalize_array(tile_data), mode="L")
-                img = img.convert("RGB")
-            elif data.ndim == 3:
-                if data.shape[2] >= 3:
-                    # RGB or RGBA (height, width, channels)
-                    tile_data = data[y0:y1, x0:x1, :3]
-                    img = Image.fromarray(normalize_array(tile_data), mode="RGB")
-                else:
-                    # Use first channel
-                    tile_data = data[y0:y1, x0:x1, 0]
+                # Extract the tile region
+                if data.ndim == 2:
+                    tile_data = data[y0:y1, x0:x1]
                     img = Image.fromarray(normalize_array(tile_data), mode="L")
                     img = img.convert("RGB")
-            else:
-                # Fallback for other shapes
-                if data.shape[0] in (1, 3, 4):
-                    # Channels first format (channels, height, width)
-                    if data.shape[0] == 1:
-                        tile_data = data[0, y0:y1, x0:x1]
+                elif data.ndim == 3:
+                    if data.shape[2] >= 3:
+                        tile_data = data[y0:y1, x0:x1, :3]
+                        img = Image.fromarray(normalize_array(tile_data), mode="RGB")
+                    else:
+                        tile_data = data[y0:y1, x0:x1, 0]
                         img = Image.fromarray(normalize_array(tile_data), mode="L")
                         img = img.convert("RGB")
-                    else:
-                        tile_data = np.transpose(data[:3, y0:y1, x0:x1], (1, 2, 0))
-                        img = Image.fromarray(normalize_array(tile_data), mode="RGB")
                 else:
-                    # Treat as grayscale
-                    tile_data = data[y0:y1, x0:x1] if data.ndim == 2 else data[y0:y1, x0:x1, 0]
-                    img = Image.fromarray(normalize_array(tile_data), mode="L")
+                    if data.shape[0] in (1, 3, 4):
+                        if data.shape[0] == 1:
+                            tile_data = data[0, y0:y1, x0:x1]
+                            img = Image.fromarray(normalize_array(tile_data), mode="L")
+                            img = img.convert("RGB")
+                        else:
+                            tile_data = np.transpose(data[:3, y0:y1, x0:x1], (1, 2, 0))
+                            img = Image.fromarray(normalize_array(tile_data), mode="RGB")
+                    else:
+                        tile_data = data[y0:y1, x0:x1] if data.ndim == 2 else data[y0:y1, x0:x1, 0]
+                        img = Image.fromarray(normalize_array(tile_data), mode="L")
+                        img = img.convert("RGB")
+        else:
+            # Read from other formats (PNG, JPG, etc.) using PIL
+            with Image.open(state.geotiff_path) as full_img:
+                # Crop to tile region
+                img = full_img.crop((x0, y0, x1, y1))
+                if img.mode != "RGB":
                     img = img.convert("RGB")
 
-            # Resize to tile size
-            img = img.resize((size, size), Image.Resampling.LANCZOS)
+        # Resize to tile size
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
 
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
@@ -391,38 +472,44 @@ def _register_routes(app: FastAPI) -> None:
         """Get the full image scaled to max_size."""
         state = get_state()
 
-        with tifffile.TiffFile(state.geotiff_path) as tif:
-            page = tif.pages[0]
-            data = page.asarray()
+        suffix = state.geotiff_path.suffix.lower()
+        if suffix in (".tif", ".tiff"):
+            with tifffile.TiffFile(state.geotiff_path) as tif:
+                page = tif.pages[0]
+                data = page.asarray()
 
-            # Convert to image
-            if data.ndim == 2:
-                img = Image.fromarray(normalize_array(data), mode="L")
-                img = img.convert("RGB")
-            elif data.ndim == 3:
-                if data.shape[2] >= 3:
-                    img = Image.fromarray(normalize_array(data[:, :, :3]), mode="RGB")
-                else:
-                    img = Image.fromarray(normalize_array(data[:, :, 0]), mode="L")
-                    img = img.convert("RGB")
-            else:
-                if data.shape[0] in (1, 3, 4):
-                    if data.shape[0] == 1:
-                        img = Image.fromarray(normalize_array(data[0]), mode="L")
-                        img = img.convert("RGB")
-                    else:
-                        img_array = np.transpose(data[:3], (1, 2, 0))
-                        img = Image.fromarray(normalize_array(img_array), mode="RGB")
-                else:
+                # Convert to image
+                if data.ndim == 2:
                     img = Image.fromarray(normalize_array(data), mode="L")
                     img = img.convert("RGB")
+                elif data.ndim == 3:
+                    if data.shape[2] >= 3:
+                        img = Image.fromarray(normalize_array(data[:, :, :3]), mode="RGB")
+                    else:
+                        img = Image.fromarray(normalize_array(data[:, :, 0]), mode="L")
+                        img = img.convert("RGB")
+                else:
+                    if data.shape[0] in (1, 3, 4):
+                        if data.shape[0] == 1:
+                            img = Image.fromarray(normalize_array(data[0]), mode="L")
+                            img = img.convert("RGB")
+                        else:
+                            img_array = np.transpose(data[:3], (1, 2, 0))
+                            img = Image.fromarray(normalize_array(img_array), mode="RGB")
+                    else:
+                        img = Image.fromarray(normalize_array(data), mode="L")
+                        img = img.convert("RGB")
+        else:
+            # Load other formats with PIL using context manager to prevent resource leak
+            with Image.open(state.geotiff_path) as pil_img:
+                img = pil_img.convert("RGB") if pil_img.mode != "RGB" else pil_img.copy()
 
-            # Scale to max_size while preserving aspect ratio
-            ratio = min(max_size / img.width, max_size / img.height)
-            if ratio < 1:
-                new_width = int(img.width * ratio)
-                new_height = int(img.height * ratio)
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        # Scale to max_size while preserving aspect ratio
+        ratio = min(max_size / img.width, max_size / img.height)
+        if ratio < 1:
+            new_width = int(img.width * ratio)
+            new_height = int(img.height * ratio)
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
@@ -446,31 +533,25 @@ def _register_routes(app: FastAPI) -> None:
         }
 
     @app.post("/api/points")
-    async def add_point(data: dict) -> dict:
+    async def add_point(data: AddPointRequest) -> dict:
         """Add a new point."""
         state = get_state()
-        tag = data.get("tag", "extra")
-        pixel_x = float(data["pixel_x"])
-        pixel_y = float(data["pixel_y"])
-
-        point_id = state.add_point(tag, pixel_x, pixel_y)
+        point_id = state.add_point(data.tag, data.pixel_x, data.pixel_y, point_id=data.id)
         point = state.registry.points[point_id]
 
         return {
             "id": point_id,
             "pixel_x": point.pixel_x,
             "pixel_y": point.pixel_y,
-            "tag": tag,
+            "tag": _get_tag_from_id(point_id),
         }
 
     @app.put("/api/points/{point_id}")
-    async def update_point(point_id: str, data: dict) -> dict:
+    async def update_point(point_id: str, data: UpdatePointRequest) -> dict:
         """Update a point's coordinates."""
         state = get_state()
         try:
-            pixel_x = float(data["pixel_x"])
-            pixel_y = float(data["pixel_y"])
-            state.update_point(point_id, pixel_x, pixel_y)
+            state.update_point(point_id, data.pixel_x, data.pixel_y)
             point = state.registry.points[point_id]
             return {
                 "id": point_id,
@@ -526,18 +607,18 @@ def _register_routes(app: FastAPI) -> None:
         }
 
     @app.post("/api/export")
-    async def export_points(data: dict) -> dict:
+    async def export_points(data: ExportRequest) -> dict:
         """Export points to YAML file."""
         state = get_state()
-        path = Path(data.get("path", f"{state.map_id}_points.yaml"))
+        path = Path(data.path) if data.path else Path(f"{state.map_id}_points.yaml")
         state.save_registry(path)
         return {"exported": str(path), "count": len(state.registry.points)}
 
     @app.post("/api/import")
-    async def import_points(data: dict) -> dict:
+    async def import_points(data: ImportRequest) -> dict:
         """Import points from YAML file."""
         state = get_state()
-        path = Path(data["path"])
+        path = Path(data.path)
         if not path.exists():
             raise HTTPException(status_code=404, detail=f"File not found: {path}")
         state.load_registry(path)
@@ -586,434 +667,3 @@ def _get_tag_from_id(point_id: str) -> str:
         if point_id.startswith(abbrev):
             return tag
     return "extra"
-
-
-def _get_embedded_html() -> str:
-    """Return embedded HTML for the point picker UI."""
-    return """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoTIFF Point Picker</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; display: flex; height: 100vh; }
-        #sidebar {
-            width: 280px; background: #f5f5f5; padding: 16px;
-            display: flex; flex-direction: column; gap: 16px;
-            border-right: 1px solid #ddd;
-        }
-        #viewer { flex: 1; background: #222; }
-        h1 { font-size: 18px; color: #333; }
-        .section { background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .section-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #666; }
-        .tag-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .tag-btn {
-            padding: 10px; border: 2px solid #ddd; border-radius: 6px;
-            background: white; cursor: pointer; font-size: 13px;
-            transition: all 0.2s;
-        }
-        .tag-btn:hover { border-color: #999; }
-        .tag-btn.active { border-color: #0066cc; background: #e6f0ff; }
-        .tag-btn.parking_spot.active { border-color: #e63946; background: #fde2e4; }
-        .tag-btn.arrows.active { border-color: #2a9d8f; background: #d8f3dc; }
-        .tag-btn.crosswalk.active { border-color: #f4a261; background: #fff3e0; }
-        .tag-btn.extra.active { border-color: #9c27b0; background: #f3e5f5; }
-        #next-id { font-size: 16px; font-weight: bold; color: #333; text-align: center; padding: 8px; }
-        .btn-group { display: flex; gap: 8px; }
-        .btn {
-            flex: 1; padding: 10px; border: none; border-radius: 6px;
-            cursor: pointer; font-size: 13px; font-weight: 500;
-        }
-        .btn-primary { background: #0066cc; color: white; }
-        .btn-primary:hover { background: #0052a3; }
-        .btn-secondary { background: #e0e0e0; color: #333; }
-        .btn-secondary:hover { background: #d0d0d0; }
-        #coords {
-            font-family: monospace; font-size: 12px; color: #666;
-            background: #fff; padding: 8px; border-radius: 4px;
-        }
-        #point-list { max-height: 200px; overflow-y: auto; font-size: 12px; }
-        .point-item {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 6px 8px; border-bottom: 1px solid #eee; cursor: pointer;
-        }
-        .point-item:hover { background: #f0f0f0; }
-        .point-item.selected { background: #e6f0ff; }
-        .point-item .delete-btn {
-            background: #ff4444; color: white; border: none;
-            padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;
-        }
-        .marker {
-            width: 20px; height: 20px; margin-left: -10px; margin-top: -10px;
-            border-radius: 50%; border: 3px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            cursor: move; position: absolute;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 9px; font-weight: bold; color: white;
-        }
-        .marker.parking_spot { background: #e63946; }
-        .marker.arrows { background: #2a9d8f; }
-        .marker.crosswalk { background: #f4a261; }
-        .marker.extra { background: #9c27b0; }
-        .marker.selected { border-color: #ffeb3b; box-shadow: 0 0 8px #ffeb3b; }
-        #filename { font-size: 12px; color: #888; word-break: break-all; }
-        .modal {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
-            z-index: 1000;
-        }
-        .modal.active { display: flex; }
-        .modal-content {
-            background: white; padding: 24px; border-radius: 12px;
-            min-width: 300px; max-width: 400px;
-        }
-        .modal-title { font-size: 18px; margin-bottom: 16px; }
-        .modal input {
-            width: 100%; padding: 10px; border: 1px solid #ddd;
-            border-radius: 6px; margin-bottom: 16px; font-size: 14px;
-        }
-        .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
-    </style>
-</head>
-<body>
-    <div id="sidebar">
-        <h1>Point Picker</h1>
-        <div id="filename"></div>
-        <div class="section">
-            <div class="section-title">Tag Category</div>
-            <div class="tag-buttons">
-                <button class="tag-btn parking_spot" data-tag="parking_spot">Parking Spot</button>
-                <button class="tag-btn arrows" data-tag="arrows">Arrows</button>
-                <button class="tag-btn crosswalk" data-tag="crosswalk">Crosswalk</button>
-                <button class="tag-btn extra" data-tag="extra">Extra</button>
-            </div>
-            <div id="next-id">Next: PS1</div>
-        </div>
-        <div class="section">
-            <div class="section-title">Coordinates</div>
-            <div id="coords">Hover over image...</div>
-        </div>
-        <div class="section">
-            <div class="section-title">Points</div>
-            <div id="point-list"></div>
-        </div>
-        <div class="section">
-            <div class="btn-group">
-                <button class="btn btn-primary" id="export-btn">Export YAML</button>
-                <button class="btn btn-secondary" id="import-btn">Import</button>
-            </div>
-        </div>
-    </div>
-    <div id="viewer"></div>
-
-    <div id="export-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-title">Export Points</div>
-            <input type="text" id="export-path" placeholder="filename.yaml">
-            <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="closeModal('export-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doExport()">Export</button>
-            </div>
-        </div>
-    </div>
-    <div id="import-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-title">Import Points</div>
-            <input type="text" id="import-path" placeholder="path/to/file.yaml">
-            <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doImport()">Import</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        let viewer;
-        let imageInfo;
-        let currentTag = 'parking_spot';
-        let selectedPointId = null;
-        let markers = {};
-        let isDragging = false;
-        let dragPointId = null;
-
-        async function init() {
-            // Get image info
-            const resp = await fetch('/api/image/info');
-            imageInfo = await resp.json();
-            document.getElementById('filename').textContent = imageInfo.filename;
-
-            // Initialize OpenSeadragon
-            viewer = OpenSeadragon({
-                id: 'viewer',
-                prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
-                tileSources: {
-                    height: imageInfo.height,
-                    width: imageInfo.width,
-                    tileSize: 256,
-                    getTileUrl: (level, x, y) => {
-                        const z = level;
-                        return `/api/image/tile?x=${x}&y=${y}&z=${z}`;
-                    }
-                },
-                showNavigator: true,
-                navigatorPosition: 'BOTTOM_RIGHT',
-                minZoomLevel: 0.5,
-                maxZoomLevel: 20,
-                visibilityRatio: 0.5,
-                constrainDuringPan: true,
-            });
-
-            // Add click handler for placing points
-            viewer.addHandler('canvas-click', async (e) => {
-                if (isDragging) return;
-                if (e.quick) {
-                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
-                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
-
-                    if (imagePoint.x >= 0 && imagePoint.x < imageInfo.width &&
-                        imagePoint.y >= 0 && imagePoint.y < imageInfo.height) {
-                        await addPoint(imagePoint.x, imagePoint.y);
-                    }
-                }
-            });
-
-            // Add mouse move handler for coordinates
-            viewer.addHandler('canvas-drag', (e) => {
-                if (dragPointId) {
-                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
-                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
-                    updateMarkerPosition(dragPointId, imagePoint.x, imagePoint.y);
-                }
-            });
-
-            viewer.addHandler('canvas-drag-end', async (e) => {
-                if (dragPointId) {
-                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
-                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
-                    await updatePointCoords(dragPointId, imagePoint.x, imagePoint.y);
-                    dragPointId = null;
-                    isDragging = false;
-                }
-            });
-
-            new OpenSeadragon.MouseTracker({
-                element: viewer.canvas,
-                moveHandler: async (e) => {
-                    const viewportPoint = viewer.viewport.pointFromPixel(e.position);
-                    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
-                    await updateCoords(imagePoint.x, imagePoint.y);
-                }
-            });
-
-            // Setup tag buttons
-            document.querySelectorAll('.tag-btn').forEach(btn => {
-                btn.addEventListener('click', () => selectTag(btn.dataset.tag));
-            });
-
-            // Setup export/import
-            document.getElementById('export-btn').addEventListener('click', () => {
-                document.getElementById('export-path').value = imageInfo.filename.replace(/\\.[^.]+$/, '_points.yaml');
-                openModal('export-modal');
-            });
-            document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
-
-            // Initial setup
-            selectTag('parking_spot');
-            await loadPoints();
-        }
-
-        function selectTag(tag) {
-            currentTag = tag;
-            document.querySelectorAll('.tag-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.tag === tag);
-            });
-            updateNextId();
-        }
-
-        async function updateNextId() {
-            const resp = await fetch(`/api/points/next-id?tag=${currentTag}`);
-            const data = await resp.json();
-            document.getElementById('next-id').textContent = `Next: ${data.next_id}`;
-        }
-
-        async function updateCoords(x, y) {
-            if (x < 0 || x >= imageInfo.width || y < 0 || y >= imageInfo.height) {
-                document.getElementById('coords').textContent = 'Outside image';
-                return;
-            }
-
-            let text = `Pixel: ${x.toFixed(1)}, ${y.toFixed(1)}`;
-
-            if (imageInfo.geotransform) {
-                const resp = await fetch(`/api/geo-coords?pixel_x=${x}&pixel_y=${y}`);
-                const data = await resp.json();
-                if (data.easting !== null) {
-                    text += `\\nGeo: ${data.easting.toFixed(2)}, ${data.northing.toFixed(2)}`;
-                    if (data.crs) text += `\\nCRS: ${data.crs}`;
-                }
-            }
-            document.getElementById('coords').textContent = text;
-        }
-
-        async function addPoint(x, y) {
-            const resp = await fetch('/api/points', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag: currentTag, pixel_x: x, pixel_y: y })
-            });
-            const point = await resp.json();
-            addMarker(point);
-            updatePointList();
-            updateNextId();
-        }
-
-        async function loadPoints() {
-            const resp = await fetch('/api/points');
-            const data = await resp.json();
-            // Clear existing markers
-            Object.keys(markers).forEach(id => removeMarker(id));
-            // Add markers for all points
-            data.points.forEach(point => addMarker(point));
-            updatePointList();
-            updateNextId();
-        }
-
-        function addMarker(point) {
-            const element = document.createElement('div');
-            element.className = `marker ${point.tag}`;
-            element.dataset.pointId = point.id;
-            element.textContent = point.id.replace(/[A-Z]+/, '');
-
-            // Make marker draggable
-            element.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                isDragging = true;
-                dragPointId = point.id;
-                selectPoint(point.id);
-            });
-
-            const overlay = viewer.addOverlay({
-                element: element,
-                location: viewer.viewport.imageToViewportCoordinates(point.pixel_x, point.pixel_y),
-                placement: OpenSeadragon.Placement.CENTER
-            });
-
-            markers[point.id] = { element, point };
-        }
-
-        function removeMarker(pointId) {
-            if (markers[pointId]) {
-                viewer.removeOverlay(markers[pointId].element);
-                delete markers[pointId];
-            }
-        }
-
-        function updateMarkerPosition(pointId, x, y) {
-            if (markers[pointId]) {
-                const location = viewer.viewport.imageToViewportCoordinates(x, y);
-                viewer.updateOverlay(markers[pointId].element, location);
-            }
-        }
-
-        async function updatePointCoords(pointId, x, y) {
-            await fetch(`/api/points/${pointId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pixel_x: x, pixel_y: y })
-            });
-            if (markers[pointId]) {
-                markers[pointId].point.pixel_x = x;
-                markers[pointId].point.pixel_y = y;
-            }
-            updatePointList();
-        }
-
-        function selectPoint(pointId) {
-            selectedPointId = pointId;
-            Object.values(markers).forEach(m => {
-                m.element.classList.toggle('selected', m.point.id === pointId);
-            });
-            updatePointList();
-        }
-
-        function updatePointList() {
-            const list = document.getElementById('point-list');
-            list.innerHTML = '';
-            Object.values(markers).forEach(m => {
-                const item = document.createElement('div');
-                item.className = `point-item ${m.point.id === selectedPointId ? 'selected' : ''}`;
-                item.innerHTML = `
-                    <span>${m.point.id}: (${m.point.pixel_x.toFixed(1)}, ${m.point.pixel_y.toFixed(1)})</span>
-                    <button class="delete-btn" onclick="deletePoint('${m.point.id}')">X</button>
-                `;
-                item.addEventListener('click', (e) => {
-                    if (!e.target.classList.contains('delete-btn')) {
-                        selectPoint(m.point.id);
-                        // Pan to point
-                        const location = viewer.viewport.imageToViewportCoordinates(m.point.pixel_x, m.point.pixel_y);
-                        viewer.viewport.panTo(location);
-                    }
-                });
-                list.appendChild(item);
-            });
-        }
-
-        async function deletePoint(pointId) {
-            await fetch(`/api/points/${pointId}`, { method: 'DELETE' });
-            removeMarker(pointId);
-            if (selectedPointId === pointId) selectedPointId = null;
-            updatePointList();
-            updateNextId();
-        }
-
-        function openModal(id) {
-            document.getElementById(id).classList.add('active');
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-        }
-
-        async function doExport() {
-            const path = document.getElementById('export-path').value;
-            if (!path) return;
-            const resp = await fetch('/api/export', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path })
-            });
-            const result = await resp.json();
-            alert(`Exported ${result.count} points to ${result.exported}`);
-            closeModal('export-modal');
-        }
-
-        async function doImport() {
-            const path = document.getElementById('import-path').value;
-            if (!path) return;
-            try {
-                const resp = await fetch('/api/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
-                });
-                if (!resp.ok) {
-                    const err = await resp.json();
-                    alert('Import failed: ' + err.detail);
-                    return;
-                }
-                const result = await resp.json();
-                alert(`Imported ${result.count} points from ${result.imported}`);
-                closeModal('import-modal');
-                await loadPoints();
-            } catch (e) {
-                alert('Import failed: ' + e.message);
-            }
-        }
-
-        init();
-    </script>
-</body>
-</html>"""

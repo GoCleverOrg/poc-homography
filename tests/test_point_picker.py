@@ -315,3 +315,303 @@ class TestPointPickerStateGeoCoords:
         """Geo coords return None without geotransform."""
         coords = state_without_geotransform.get_geo_coords(10, 20)
         assert coords is None
+
+
+class TestPointPickerAPI:
+    """Integration tests for FastAPI endpoints using TestClient."""
+
+    @pytest.fixture
+    def test_client(self, tmp_path: Path):
+        """Create a test client with a mocked GeoTIFF."""
+        from fastapi.testclient import TestClient
+
+        from poc_homography.point_picker.app import create_app
+
+        # Create a minimal test image
+        geotiff_path = tmp_path / "test.tif"
+        geotiff_path.touch()
+
+        with patch("poc_homography.point_picker.app.tifffile.TiffFile") as mock_tif:
+            mock_tif.return_value = MockTiffFile(width=1000, height=800)
+            app = create_app(geotiff_path)
+
+        return TestClient(app)
+
+    def test_get_image_info(self, test_client) -> None:
+        """GET /api/image/info returns image metadata."""
+        resp = test_client.get("/api/image/info")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["width"] == 1000
+        assert data["height"] == 800
+        assert data["filename"] == "test.tif"
+        assert "geotransform" in data
+        assert "crs" in data
+
+    def test_get_points_empty(self, test_client) -> None:
+        """GET /api/points returns empty list initially."""
+        resp = test_client.get("/api/points")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["points"] == []
+
+    def test_add_point_success(self, test_client) -> None:
+        """POST /api/points creates a new point."""
+        resp = test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100.5, "pixel_y": 200.5},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "PS1"
+        assert data["pixel_x"] == 100.5
+        assert data["pixel_y"] == 200.5
+        assert data["tag"] == "parking_spot"
+
+    def test_add_point_default_tag(self, test_client) -> None:
+        """POST /api/points uses 'extra' as default tag."""
+        resp = test_client.post(
+            "/api/points",
+            json={"pixel_x": 50, "pixel_y": 50},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "EX1"
+        assert data["tag"] == "extra"
+
+    def test_add_point_invalid_tag_returns_422(self, test_client) -> None:
+        """POST /api/points with invalid tag returns 422."""
+        resp = test_client.post(
+            "/api/points",
+            json={"tag": "invalid_tag", "pixel_x": 100, "pixel_y": 200},
+        )
+        assert resp.status_code == 422
+
+    def test_add_point_missing_pixel_x_returns_422(self, test_client) -> None:
+        """POST /api/points without pixel_x returns 422."""
+        resp = test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_y": 200},
+        )
+        assert resp.status_code == 422
+
+    def test_add_point_missing_pixel_y_returns_422(self, test_client) -> None:
+        """POST /api/points without pixel_y returns 422."""
+        resp = test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100},
+        )
+        assert resp.status_code == 422
+
+    def test_get_points_after_adding(self, test_client) -> None:
+        """GET /api/points returns added points."""
+        # Add two points
+        test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+        )
+        test_client.post(
+            "/api/points",
+            json={"tag": "arrows", "pixel_x": 300, "pixel_y": 400},
+        )
+
+        resp = test_client.get("/api/points")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["points"]) == 2
+
+    def test_update_point_success(self, test_client) -> None:
+        """PUT /api/points/{point_id} updates coordinates."""
+        # Add a point first
+        test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+        )
+
+        # Update it
+        resp = test_client.put(
+            "/api/points/PS1",
+            json={"pixel_x": 150, "pixel_y": 250},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "PS1"
+        assert data["pixel_x"] == 150
+        assert data["pixel_y"] == 250
+
+    def test_update_point_not_found_returns_404(self, test_client) -> None:
+        """PUT /api/points/{point_id} returns 404 for nonexistent point."""
+        resp = test_client.put(
+            "/api/points/PS999",
+            json={"pixel_x": 100, "pixel_y": 200},
+        )
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+    def test_update_point_missing_pixel_returns_422(self, test_client) -> None:
+        """PUT /api/points/{point_id} without pixel_x returns 422."""
+        # Add a point first
+        test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+        )
+
+        resp = test_client.put(
+            "/api/points/PS1",
+            json={"pixel_y": 250},
+        )
+        assert resp.status_code == 422
+
+    def test_delete_point_success(self, test_client) -> None:
+        """DELETE /api/points/{point_id} removes the point."""
+        # Add a point first
+        test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+        )
+
+        # Delete it
+        resp = test_client.delete("/api/points/PS1")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == "PS1"
+
+        # Verify it's gone
+        resp = test_client.get("/api/points")
+        assert len(resp.json()["points"]) == 0
+
+    def test_delete_point_not_found_returns_404(self, test_client) -> None:
+        """DELETE /api/points/{point_id} returns 404 for nonexistent point."""
+        resp = test_client.delete("/api/points/PS999")
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+    def test_get_next_id(self, test_client) -> None:
+        """GET /api/points/next-id returns next ID for tag."""
+        resp = test_client.get("/api/points/next-id?tag=parking_spot")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tag"] == "parking_spot"
+        assert data["next_id"] == "PS1"
+
+        # Add a point and check again
+        test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+        )
+        resp = test_client.get("/api/points/next-id?tag=parking_spot")
+        assert resp.json()["next_id"] == "PS2"
+
+    def test_get_next_id_invalid_tag_returns_400(self, test_client) -> None:
+        """GET /api/points/next-id with invalid tag returns 400."""
+        resp = test_client.get("/api/points/next-id?tag=invalid_tag")
+        assert resp.status_code == 400
+
+    def test_get_geo_coords_without_geotransform(self, test_client) -> None:
+        """GET /api/geo-coords returns null when no geotransform."""
+        resp = test_client.get("/api/geo-coords?pixel_x=100&pixel_y=200")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["pixel_x"] == 100
+        assert data["pixel_y"] == 200
+        assert data["easting"] is None
+        assert data["northing"] is None
+
+    def test_export_points(self, test_client, tmp_path: Path) -> None:
+        """POST /api/export saves points to YAML file."""
+        # Add some points
+        test_client.post(
+            "/api/points",
+            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+        )
+        test_client.post(
+            "/api/points",
+            json={"tag": "arrows", "pixel_x": 300, "pixel_y": 400},
+        )
+
+        # Export
+        export_path = tmp_path / "exported.yaml"
+        resp = test_client.post(
+            "/api/export",
+            json={"path": str(export_path)},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 2
+        assert export_path.exists()
+
+    def test_import_points(self, test_client, tmp_path: Path) -> None:
+        """POST /api/import loads points from YAML file."""
+        # Create a YAML file with points (list format with id field)
+        yaml_content = """map_id: test
+points:
+  - id: PS1
+    pixel_x: 100.0
+    pixel_y: 200.0
+  - id: AR1
+    pixel_x: 300.0
+    pixel_y: 400.0
+"""
+        yaml_path = tmp_path / "import_test.yaml"
+        yaml_path.write_text(yaml_content)
+
+        # Import
+        resp = test_client.post(
+            "/api/import",
+            json={"path": str(yaml_path)},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 2
+
+        # Verify points were imported
+        resp = test_client.get("/api/points")
+        assert len(resp.json()["points"]) == 2
+
+    def test_import_file_not_found_returns_404(self, test_client, tmp_path: Path) -> None:
+        """POST /api/import returns 404 for nonexistent file."""
+        resp = test_client.post(
+            "/api/import",
+            json={"path": str(tmp_path / "nonexistent.yaml")},
+        )
+        assert resp.status_code == 404
+
+    def test_import_missing_path_returns_422(self, test_client) -> None:
+        """POST /api/import without path returns 422."""
+        resp = test_client.post(
+            "/api/import",
+            json={},
+        )
+        assert resp.status_code == 422
+
+    def test_full_point_lifecycle(self, test_client) -> None:
+        """Test complete point lifecycle: create -> read -> update -> delete."""
+        # Create
+        resp = test_client.post(
+            "/api/points",
+            json={"tag": "crosswalk", "pixel_x": 500, "pixel_y": 600},
+        )
+        assert resp.status_code == 200
+        point_id = resp.json()["id"]
+        assert point_id == "CW1"
+
+        # Read
+        resp = test_client.get("/api/points")
+        points = resp.json()["points"]
+        assert len(points) == 1
+        assert points[0]["id"] == "CW1"
+
+        # Update
+        resp = test_client.put(
+            f"/api/points/{point_id}",
+            json={"pixel_x": 550, "pixel_y": 650},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["pixel_x"] == 550
+
+        # Delete
+        resp = test_client.delete(f"/api/points/{point_id}")
+        assert resp.status_code == 200
+
+        # Verify deleted
+        resp = test_client.get("/api/points")
+        assert len(resp.json()["points"]) == 0
