@@ -1,9 +1,12 @@
 """CLI command for the GeoTIFF point picker web application."""
 
+from __future__ import annotations
+
+import os
+import sys
 from pathlib import Path
 
 import typer
-import uvicorn
 
 from poc_homography.cli.main import app
 
@@ -37,12 +40,6 @@ def serve(
         "-p",
         help="Port to bind to",
     ),
-    reload: bool = typer.Option(
-        False,
-        "--reload",
-        "-r",
-        help="Enable auto-reload for development",
-    ),
 ) -> None:
     """Launch the point picker web application.
 
@@ -56,8 +53,6 @@ def serve(
         hom picker serve path/to/image.png --camera Valte
         hom picker serve image.tif --port 8080
     """
-    from poc_homography.point_picker import create_app
-
     # Resolve to absolute path
     image_path = image_path.resolve()
 
@@ -84,10 +79,33 @@ def serve(
 
     typer.echo(f"Loading image: {image_path}")
 
-    # Create the FastAPI app
-    fastapi_app = create_app(image_path, geotransform=geotransform, crs=crs)
+    # Find the webapp directory
+    # Path: cli/point_picker.py -> cli/ -> poc_homography/ -> project_root/ -> webapp/
+    project_root = Path(__file__).parent.parent.parent
+    webapp_dir = project_root / "webapp"
 
-    typer.echo(f"Starting server at http://{host}:{port}")
+    if not webapp_dir.exists():
+        typer.echo(f"Error: webapp directory not found at {webapp_dir}", err=True)
+        raise typer.Exit(1)
+
+    # Add webapp to sys.path so Django can find the apps
+    if str(webapp_dir) not in sys.path:
+        sys.path.insert(0, str(webapp_dir))
+
+    # Set Django settings module
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "homography_web.settings")
+
+    # Initialize Django
+    import django
+
+    django.setup()
+
+    # Initialize the point picker state
+    from point_picker.state import initialize_state
+
+    initialize_state(image_path, geotransform=geotransform, crs=crs)
+
+    typer.echo(f"Starting server at http://{host}:{port}/point-picker/")
     typer.echo("Press Ctrl+C to stop")
 
     # Open browser after a short delay
@@ -98,9 +116,18 @@ def serve(
         import time
 
         time.sleep(1)
-        webbrowser.open(f"http://{host}:{port}")
+        webbrowser.open(f"http://{host}:{port}/point-picker/")
 
     threading.Thread(target=open_browser, daemon=True).start()
 
-    # Run the server
-    uvicorn.run(fastapi_app, host=host, port=port, reload=reload)
+    # Run Django development server
+    from django.core.management import execute_from_command_line
+
+    # Change to webapp directory for Django to find templates/static
+    original_cwd = os.getcwd()
+    os.chdir(webapp_dir)
+
+    try:
+        execute_from_command_line(["manage.py", "runserver", f"{host}:{port}", "--noreload"])
+    finally:
+        os.chdir(original_cwd)

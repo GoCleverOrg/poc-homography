@@ -20,5 +20,6 @@ from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("point-picker/", include("point_picker.urls")),
     path("", include("gcp.urls")),
 ]

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-import io
+import json
+import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,11 +15,19 @@ from PIL import Image
 
 from poc_homography.map_points.map_point import MapPoint
 from poc_homography.map_points.map_point_registry import MapPointRegistry
-from poc_homography.point_picker.app import (
+
+# Add webapp to path for Django imports
+PROJECT_ROOT = Path(__file__).parent.parent
+WEBAPP_DIR = PROJECT_ROOT / "webapp"
+if str(WEBAPP_DIR) not in sys.path:
+    sys.path.insert(0, str(WEBAPP_DIR))
+
+# Import from the new Django app location
+from point_picker.state import (
     ABBREVIATION_TO_TAG,
     TAG_ABBREVIATIONS,
     PointPickerState,
-    _get_tag_from_id,
+    get_tag_from_id,
     normalize_array,
 )
 
@@ -48,34 +58,34 @@ class TestTagAbbreviations:
 
 
 class TestGetTagFromId:
-    """Tests for _get_tag_from_id function."""
+    """Tests for get_tag_from_id function."""
 
     def test_parking_spot_ids(self) -> None:
         """Parking spot IDs return correct tag."""
-        assert _get_tag_from_id("PS1") == "parking_spot"
-        assert _get_tag_from_id("PS42") == "parking_spot"
-        assert _get_tag_from_id("PS999") == "parking_spot"
+        assert get_tag_from_id("PS1") == "parking_spot"
+        assert get_tag_from_id("PS42") == "parking_spot"
+        assert get_tag_from_id("PS999") == "parking_spot"
 
     def test_arrows_ids(self) -> None:
         """Arrows IDs return correct tag."""
-        assert _get_tag_from_id("AR1") == "arrows"
-        assert _get_tag_from_id("AR10") == "arrows"
+        assert get_tag_from_id("AR1") == "arrows"
+        assert get_tag_from_id("AR10") == "arrows"
 
     def test_crosswalk_ids(self) -> None:
         """Crosswalk IDs return correct tag."""
-        assert _get_tag_from_id("CW1") == "crosswalk"
-        assert _get_tag_from_id("CW5") == "crosswalk"
+        assert get_tag_from_id("CW1") == "crosswalk"
+        assert get_tag_from_id("CW5") == "crosswalk"
 
     def test_extra_ids(self) -> None:
         """Extra IDs return correct tag."""
-        assert _get_tag_from_id("EX1") == "extra"
-        assert _get_tag_from_id("EX100") == "extra"
+        assert get_tag_from_id("EX1") == "extra"
+        assert get_tag_from_id("EX100") == "extra"
 
     def test_unknown_prefix_returns_extra(self) -> None:
         """Unknown prefixes default to extra."""
-        assert _get_tag_from_id("XY1") == "extra"
-        assert _get_tag_from_id("Z99") == "extra"
-        assert _get_tag_from_id("UNKNOWN5") == "extra"
+        assert get_tag_from_id("XY1") == "extra"
+        assert get_tag_from_id("Z99") == "extra"
+        assert get_tag_from_id("UNKNOWN5") == "extra"
 
 
 class TestNormalizeArray:
@@ -163,7 +173,7 @@ class TestPointPickerState:
         geotiff_path = tmp_path / "test.tif"
         geotiff_path.touch()
 
-        with patch("poc_homography.point_picker.app.tifffile.TiffFile") as mock_tif:
+        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile(width=1000, height=800)
             state = PointPickerState(geotiff_path)
         return state
@@ -253,7 +263,7 @@ class TestPointPickerState:
         mock_state.save_registry(yaml_path)
 
         # Load into a new state
-        with patch("poc_homography.point_picker.app.tifffile.TiffFile") as mock_tif:
+        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile()
             geotiff_path = tmp_path / "test2.tif"
             geotiff_path.touch()
@@ -275,7 +285,7 @@ class TestPointPickerStateGeoCoords:
         geotiff_path = tmp_path / "test.tif"
         geotiff_path.touch()
 
-        with patch("poc_homography.point_picker.app.tifffile.TiffFile") as mock_tif:
+        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile()
             state = PointPickerState(geotiff_path)
 
@@ -289,7 +299,7 @@ class TestPointPickerStateGeoCoords:
         geotiff_path = tmp_path / "test.tif"
         geotiff_path.touch()
 
-        with patch("poc_homography.point_picker.app.tifffile.TiffFile") as mock_tif:
+        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile()
             state = PointPickerState(geotiff_path)
 
@@ -317,29 +327,37 @@ class TestPointPickerStateGeoCoords:
         assert coords is None
 
 
+# Django test setup
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "homography_web.settings")
+
+import django
+
+django.setup()
+
+from django.test import Client
+
+
 class TestPointPickerAPI:
-    """Integration tests for FastAPI endpoints using TestClient."""
+    """Integration tests for Django API endpoints using test Client."""
 
     @pytest.fixture
     def test_client(self, tmp_path: Path):
         """Create a test client with a mocked GeoTIFF."""
-        from fastapi.testclient import TestClient
-
-        from poc_homography.point_picker.app import create_app
+        from point_picker.state import initialize_state
 
         # Create a minimal test image
         geotiff_path = tmp_path / "test.tif"
         geotiff_path.touch()
 
-        with patch("poc_homography.point_picker.app.tifffile.TiffFile") as mock_tif:
+        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile(width=1000, height=800)
-            app = create_app(geotiff_path)
+            initialize_state(geotiff_path)
 
-        return TestClient(app)
+        return Client()
 
     def test_get_image_info(self, test_client) -> None:
-        """GET /api/image/info returns image metadata."""
-        resp = test_client.get("/api/image/info")
+        """GET /point-picker/api/image/info/ returns image metadata."""
+        resp = test_client.get("/point-picker/api/image/info/")
         assert resp.status_code == 200
         data = resp.json()
         assert data["width"] == 1000
@@ -349,17 +367,18 @@ class TestPointPickerAPI:
         assert "crs" in data
 
     def test_get_points_empty(self, test_client) -> None:
-        """GET /api/points returns empty list initially."""
-        resp = test_client.get("/api/points")
+        """GET /point-picker/api/points/ returns empty list initially."""
+        resp = test_client.get("/point-picker/api/points/")
         assert resp.status_code == 200
         data = resp.json()
         assert data["points"] == []
 
     def test_add_point_success(self, test_client) -> None:
-        """POST /api/points creates a new point."""
+        """POST /point-picker/api/points/ creates a new point."""
         resp = test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100.5, "pixel_y": 200.5},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100.5, "pixel_y": 200.5}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -369,10 +388,11 @@ class TestPointPickerAPI:
         assert data["tag"] == "parking_spot"
 
     def test_add_point_default_tag(self, test_client) -> None:
-        """POST /api/points uses 'extra' as default tag."""
+        """POST /point-picker/api/points/ uses 'extra' as default tag."""
         resp = test_client.post(
-            "/api/points",
-            json={"pixel_x": 50, "pixel_y": 50},
+            "/point-picker/api/points/",
+            data=json.dumps({"pixel_x": 50, "pixel_y": 50}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -380,58 +400,65 @@ class TestPointPickerAPI:
         assert data["tag"] == "extra"
 
     def test_add_point_invalid_tag_returns_422(self, test_client) -> None:
-        """POST /api/points with invalid tag returns 422."""
+        """POST /point-picker/api/points/ with invalid tag returns 422."""
         resp = test_client.post(
-            "/api/points",
-            json={"tag": "invalid_tag", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "invalid_tag", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
         assert resp.status_code == 422
 
     def test_add_point_missing_pixel_x_returns_422(self, test_client) -> None:
-        """POST /api/points without pixel_x returns 422."""
+        """POST /point-picker/api/points/ without pixel_x returns 422."""
         resp = test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_y": 200}),
+            content_type="application/json",
         )
         assert resp.status_code == 422
 
     def test_add_point_missing_pixel_y_returns_422(self, test_client) -> None:
-        """POST /api/points without pixel_y returns 422."""
+        """POST /point-picker/api/points/ without pixel_y returns 422."""
         resp = test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100}),
+            content_type="application/json",
         )
         assert resp.status_code == 422
 
     def test_get_points_after_adding(self, test_client) -> None:
-        """GET /api/points returns added points."""
+        """GET /point-picker/api/points/ returns added points."""
         # Add two points
         test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
         test_client.post(
-            "/api/points",
-            json={"tag": "arrows", "pixel_x": 300, "pixel_y": 400},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "arrows", "pixel_x": 300, "pixel_y": 400}),
+            content_type="application/json",
         )
 
-        resp = test_client.get("/api/points")
+        resp = test_client.get("/point-picker/api/points/")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["points"]) == 2
 
     def test_update_point_success(self, test_client) -> None:
-        """PUT /api/points/{point_id} updates coordinates."""
+        """PUT /point-picker/api/points/{point_id}/ updates coordinates."""
         # Add a point first
         test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
 
         # Update it
         resp = test_client.put(
-            "/api/points/PS1",
-            json={"pixel_x": 150, "pixel_y": 250},
+            "/point-picker/api/points/PS1/",
+            data=json.dumps({"pixel_x": 150, "pixel_y": 250}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -440,54 +467,58 @@ class TestPointPickerAPI:
         assert data["pixel_y"] == 250
 
     def test_update_point_not_found_returns_404(self, test_client) -> None:
-        """PUT /api/points/{point_id} returns 404 for nonexistent point."""
+        """PUT /point-picker/api/points/{point_id}/ returns 404 for nonexistent point."""
         resp = test_client.put(
-            "/api/points/PS999",
-            json={"pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/PS999/",
+            data=json.dumps({"pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
         assert resp.status_code == 404
-        assert "not found" in resp.json()["detail"].lower()
+        assert "not found" in resp.json()["error"].lower()
 
     def test_update_point_missing_pixel_returns_422(self, test_client) -> None:
-        """PUT /api/points/{point_id} without pixel_x returns 422."""
+        """PUT /point-picker/api/points/{point_id}/ without pixel_x returns 422."""
         # Add a point first
         test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
 
         resp = test_client.put(
-            "/api/points/PS1",
-            json={"pixel_y": 250},
+            "/point-picker/api/points/PS1/",
+            data=json.dumps({"pixel_y": 250}),
+            content_type="application/json",
         )
         assert resp.status_code == 422
 
     def test_delete_point_success(self, test_client) -> None:
-        """DELETE /api/points/{point_id} removes the point."""
+        """DELETE /point-picker/api/points/{point_id}/ removes the point."""
         # Add a point first
         test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
 
         # Delete it
-        resp = test_client.delete("/api/points/PS1")
+        resp = test_client.delete("/point-picker/api/points/PS1/")
         assert resp.status_code == 200
         assert resp.json()["deleted"] == "PS1"
 
         # Verify it's gone
-        resp = test_client.get("/api/points")
+        resp = test_client.get("/point-picker/api/points/")
         assert len(resp.json()["points"]) == 0
 
     def test_delete_point_not_found_returns_404(self, test_client) -> None:
-        """DELETE /api/points/{point_id} returns 404 for nonexistent point."""
-        resp = test_client.delete("/api/points/PS999")
+        """DELETE /point-picker/api/points/{point_id}/ returns 404 for nonexistent point."""
+        resp = test_client.delete("/point-picker/api/points/PS999/")
         assert resp.status_code == 404
-        assert "not found" in resp.json()["detail"].lower()
+        assert "not found" in resp.json()["error"].lower()
 
     def test_get_next_id(self, test_client) -> None:
-        """GET /api/points/next-id returns next ID for tag."""
-        resp = test_client.get("/api/points/next-id?tag=parking_spot")
+        """GET /point-picker/api/points/next-id/ returns next ID for tag."""
+        resp = test_client.get("/point-picker/api/points/next-id/?tag=parking_spot")
         assert resp.status_code == 200
         data = resp.json()
         assert data["tag"] == "parking_spot"
@@ -495,20 +526,21 @@ class TestPointPickerAPI:
 
         # Add a point and check again
         test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
-        resp = test_client.get("/api/points/next-id?tag=parking_spot")
+        resp = test_client.get("/point-picker/api/points/next-id/?tag=parking_spot")
         assert resp.json()["next_id"] == "PS2"
 
     def test_get_next_id_invalid_tag_returns_400(self, test_client) -> None:
-        """GET /api/points/next-id with invalid tag returns 400."""
-        resp = test_client.get("/api/points/next-id?tag=invalid_tag")
+        """GET /point-picker/api/points/next-id/ with invalid tag returns 400."""
+        resp = test_client.get("/point-picker/api/points/next-id/?tag=invalid_tag")
         assert resp.status_code == 400
 
     def test_get_geo_coords_without_geotransform(self, test_client) -> None:
-        """GET /api/geo-coords returns null when no geotransform."""
-        resp = test_client.get("/api/geo-coords?pixel_x=100&pixel_y=200")
+        """GET /point-picker/api/geo-coords/ returns null when no geotransform."""
+        resp = test_client.get("/point-picker/api/geo-coords/?pixel_x=100&pixel_y=200")
         assert resp.status_code == 200
         data = resp.json()
         assert data["pixel_x"] == 100
@@ -517,22 +549,25 @@ class TestPointPickerAPI:
         assert data["northing"] is None
 
     def test_export_points(self, test_client, tmp_path: Path) -> None:
-        """POST /api/export saves points to YAML file."""
+        """POST /point-picker/api/export/ saves points to YAML file."""
         # Add some points
         test_client.post(
-            "/api/points",
-            json={"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
+            content_type="application/json",
         )
         test_client.post(
-            "/api/points",
-            json={"tag": "arrows", "pixel_x": 300, "pixel_y": 400},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "arrows", "pixel_x": 300, "pixel_y": 400}),
+            content_type="application/json",
         )
 
         # Export
         export_path = tmp_path / "exported.yaml"
         resp = test_client.post(
-            "/api/export",
-            json={"path": str(export_path)},
+            "/point-picker/api/export/",
+            data=json.dumps({"path": str(export_path)}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -540,7 +575,7 @@ class TestPointPickerAPI:
         assert export_path.exists()
 
     def test_import_points(self, test_client, tmp_path: Path) -> None:
-        """POST /api/import loads points from YAML file."""
+        """POST /point-picker/api/import/ loads points from YAML file."""
         # Create a YAML file with points (list format with id field)
         yaml_content = """map_id: test
 points:
@@ -556,30 +591,33 @@ points:
 
         # Import
         resp = test_client.post(
-            "/api/import",
-            json={"path": str(yaml_path)},
+            "/point-picker/api/import/",
+            data=json.dumps({"path": str(yaml_path)}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 2
 
         # Verify points were imported
-        resp = test_client.get("/api/points")
+        resp = test_client.get("/point-picker/api/points/")
         assert len(resp.json()["points"]) == 2
 
     def test_import_file_not_found_returns_404(self, test_client, tmp_path: Path) -> None:
-        """POST /api/import returns 404 for nonexistent file."""
+        """POST /point-picker/api/import/ returns 404 for nonexistent file."""
         resp = test_client.post(
-            "/api/import",
-            json={"path": str(tmp_path / "nonexistent.yaml")},
+            "/point-picker/api/import/",
+            data=json.dumps({"path": str(tmp_path / "nonexistent.yaml")}),
+            content_type="application/json",
         )
         assert resp.status_code == 404
 
     def test_import_missing_path_returns_422(self, test_client) -> None:
-        """POST /api/import without path returns 422."""
+        """POST /point-picker/api/import/ without path returns 422."""
         resp = test_client.post(
-            "/api/import",
-            json={},
+            "/point-picker/api/import/",
+            data=json.dumps({}),
+            content_type="application/json",
         )
         assert resp.status_code == 422
 
@@ -587,31 +625,33 @@ points:
         """Test complete point lifecycle: create -> read -> update -> delete."""
         # Create
         resp = test_client.post(
-            "/api/points",
-            json={"tag": "crosswalk", "pixel_x": 500, "pixel_y": 600},
+            "/point-picker/api/points/",
+            data=json.dumps({"tag": "crosswalk", "pixel_x": 500, "pixel_y": 600}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         point_id = resp.json()["id"]
         assert point_id == "CW1"
 
         # Read
-        resp = test_client.get("/api/points")
+        resp = test_client.get("/point-picker/api/points/")
         points = resp.json()["points"]
         assert len(points) == 1
         assert points[0]["id"] == "CW1"
 
         # Update
         resp = test_client.put(
-            f"/api/points/{point_id}",
-            json={"pixel_x": 550, "pixel_y": 650},
+            f"/point-picker/api/points/{point_id}/",
+            data=json.dumps({"pixel_x": 550, "pixel_y": 650}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
         assert resp.json()["pixel_x"] == 550
 
         # Delete
-        resp = test_client.delete(f"/api/points/{point_id}")
+        resp = test_client.delete(f"/point-picker/api/points/{point_id}/")
         assert resp.status_code == 200
 
         # Verify deleted
-        resp = test_client.get("/api/points")
+        resp = test_client.get("/point-picker/api/points/")
         assert len(resp.json()["points"]) == 0

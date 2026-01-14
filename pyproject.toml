@@ -122,9 +122,9 @@ line-ending = "auto"
 [tool.pyright]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
-include = ["poc_homography", "tests", "examples"]
+include = ["poc_homography", "tests", "examples", "webapp"]
 exclude = ["build", "dist", ".venv", "**/__pycache__", "main.py", "ptz_discovery_and_control"]
-extraPaths = ["."]
+extraPaths = [".", "webapp"]
 reportMissingImports = true
 reportMissingTypeStubs = false
 
@@ -147,6 +147,13 @@ reportUndefinedVariable = "none"
 [[tool.pyright.executionEnvironments]]
 root = "examples"
 reportArgumentType = "none"
+
+# Django webapp uses relaxed checking due to Django's untyped request handling
+[[tool.pyright.executionEnvironments]]
+root = "webapp"
+reportArgumentType = "none"
+reportAssignmentType = "none"
+reportMissingImports = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
