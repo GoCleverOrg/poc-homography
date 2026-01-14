@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from poc_homography.domain.vo.lens_distortion import LensDistortion
@@ -36,3 +36,29 @@ class CameraCalibration:
     height: Meters
     base_orientation: Orientation
     distortion: LensDistortion
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "camera_id": self.camera_id,
+            "position": self.position.to_dict(),
+            "height": float(self.height),
+            "base_orientation": self.base_orientation.to_dict(),
+            "distortion": self.distortion.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CameraCalibration:
+        """Create CameraCalibration from dictionary."""
+        from poc_homography.domain.vo.lens_distortion import LensDistortion
+        from poc_homography.domain.vo.orientation import Orientation
+        from poc_homography.domain.vo.pixel_point import PixelPoint
+        from poc_homography.types import Meters
+
+        return cls(
+            camera_id=data["camera_id"],
+            position=PixelPoint.from_dict(data["position"]),
+            height=Meters(data["height"]),
+            base_orientation=Orientation.from_dict(data["base_orientation"]),
+            distortion=LensDistortion.from_dict(data["distortion"]),
+        )

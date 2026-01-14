@@ -1,6 +1,9 @@
 """Pixel coordinate representation."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Any
 
 from poc_homography.types import Pixels, PixelsFloat
 
@@ -40,3 +43,18 @@ class PixelPoint:
     @property
     def pixels_y(self) -> Pixels:
         return Pixels(self._pixel_y)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "x": float(self._x),
+            "y": float(self._y),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PixelPoint:
+        """Create PixelPoint from dictionary."""
+        return cls(
+            _x=PixelsFloat(data["x"]),
+            _y=PixelsFloat(data["y"]),
+        )

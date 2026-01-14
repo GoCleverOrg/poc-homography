@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from poc_homography.domain.vo.pixel_point import PixelPoint
@@ -27,3 +27,20 @@ class MapPoint:
 
     map_id: str
     pixel_point: PixelPoint
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "map_id": self.map_id,
+            "pixel_point": self.pixel_point.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MapPoint:
+        """Create MapPoint from dictionary."""
+        from poc_homography.domain.vo.pixel_point import PixelPoint
+
+        return cls(
+            map_id=data["map_id"],
+            pixel_point=PixelPoint.from_dict(data["pixel_point"]),
+        )

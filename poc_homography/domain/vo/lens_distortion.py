@@ -1,6 +1,9 @@
 """Lens distortion value object for optical distortion coefficients."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Any
 
 from poc_homography.types import Unitless
 
@@ -33,3 +36,22 @@ class LensDistortion:
     def coefficients(self) -> tuple[float, float, float, float]:
         """Return distortion coefficients as tuple (k1, k2, p1, p2)."""
         return (float(self.k1), float(self.k2), float(self.p1), float(self.p2))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "k1": float(self.k1),
+            "k2": float(self.k2),
+            "p1": float(self.p1),
+            "p2": float(self.p2),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LensDistortion:
+        """Create LensDistortion from dictionary."""
+        return cls(
+            k1=Unitless(data.get("k1", 0.0)),
+            k2=Unitless(data.get("k2", 0.0)),
+            p1=Unitless(data.get("p1", 0.0)),
+            p2=Unitless(data.get("p2", 0.0)),
+        )

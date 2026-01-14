@@ -1,6 +1,9 @@
 """Credential value object for camera authentication."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -17,3 +20,18 @@ class Credential:
 
     username: str
     password: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "username": self.username,
+            "password": self.password,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Credential:
+        """Create Credential from dictionary."""
+        return cls(
+            username=data["username"],
+            password=data["password"],
+        )

@@ -1,6 +1,9 @@
 """GeoTiff value object for coordinate transformations."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Any
 
 from poc_homography.types import Meters
 
@@ -105,3 +108,18 @@ class GeoTiff:
         pixel_x = (gt[5] * dx - gt[2] * dy) / det
         pixel_y = (gt[1] * dy - gt[4] * dx) / det
         return (pixel_x, pixel_y)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "geotransform": list(self.geotransform),
+            "crs": self.crs,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GeoTiff:
+        """Create GeoTiff from dictionary."""
+        return cls(
+            geotransform=tuple(data["geotransform"]),  # type: ignore[arg-type]
+            crs=data["crs"],
+        )
