@@ -268,8 +268,17 @@
             border-bottom: 1px solid #eee;
         }
 
-        .error-table tr:hover {
-            background: #f5f5f5;
+        .error-table tbody tr {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .error-table tbody tr:hover {
+            background: #e3f2fd;
+        }
+
+        .error-table tbody tr.selected {
+            background: #bbdefb;
         }
 
         .error-low { color: #2e7d32; }
@@ -335,44 +344,68 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Overlay Markers */
-        .overlay-marker {
+        /* Pin Markers - same style as point picker */
+        .marker {
+            width: 24px;
+            height: 32px;
+            cursor: default;
             position: absolute;
-            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+            color: white;
+            filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
             pointer-events: none;
         }
 
-        .marker-circle {
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            border: 2px solid;
-            background: transparent;
-        }
-
-        .marker-circle.blue { border-color: #2196f3; }
-        .marker-circle.green { border-color: #4caf50; }
-
-        .marker-diamond {
-            width: 12px;
-            height: 12px;
-            background: #f44336;
-            transform: rotate(45deg);
-            border: 2px solid #b71c1c;
-        }
-
-        .marker-label {
+        .marker::before {
+            content: '';
             position: absolute;
-            top: -18px;
+            top: 0;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            border: 2px solid white;
+        }
+
+        .marker::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
             left: 50%;
-            transform: translateX(-50%);
-            font-size: 10px;
-            font-weight: bold;
-            color: white;
-            background: rgba(0,0,0,0.7);
-            padding: 2px 4px;
-            border-radius: 2px;
-            white-space: nowrap;
+            width: 4px;
+            height: 4px;
+            margin-left: -2px;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .marker span {
+            position: absolute;
+            top: 2px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 1;
+        }
+
+        /* Color variations for markers */
+        .marker.blue::before { background: #2196f3; }
+        .marker.green::before { background: #4caf50; }
+        .marker.red::before { background: #f44336; }
+        .marker.orange::before { background: #ff9800; }
+
+        /* Highlighted state for selected point */
+        .marker.highlighted::before {
+            border-color: #ffeb3b;
+            box-shadow: 0 0 12px #ffeb3b;
+        }
+        .marker.highlighted::after {
+            background: #ffeb3b;
         }
 
         /* SVG Overlay for Error Lines */
@@ -777,6 +810,13 @@
             });
         }
 
+        // Point coordinate lookup for zoom-to-point
+        let cameraPointCoords = {};  // { gcp_id: { annotation: {x,y}, reprojected: {x,y} } }
+        let mapPointCoords = {};     // { gcp_id: { gcp: {x,y}, projected: {x,y} } }
+
+        // Currently selected/highlighted point
+        let selectedPointId = null;
+
         // Clear overlays from a viewer
         function clearOverlays(viewer, overlayList) {
             overlayList.forEach(el => {
@@ -789,74 +829,111 @@
             overlayList.length = 0;
         }
 
-        // Create a circle marker element
-        function createCircleMarker(colorClass, label) {
-            const container = document.createElement('div');
-            container.className = 'overlay-marker';
-
-            const circle = document.createElement('div');
-            circle.className = `marker-circle ${colorClass}`;
-            container.appendChild(circle);
+        // Create a pin marker element (same style as point picker)
+        function createPinMarker(colorClass, label, gcpId) {
+            const marker = document.createElement('div');
+            marker.className = `marker ${colorClass}`;
+            marker.dataset.gcpId = gcpId || '';
 
             if (label) {
-                const labelEl = document.createElement('div');
-                labelEl.className = 'marker-label';
-                labelEl.textContent = label;
-                container.appendChild(labelEl);
+                const labelSpan = document.createElement('span');
+                labelSpan.textContent = label;
+                marker.appendChild(labelSpan);
             }
 
-            return container;
+            return marker;
         }
 
-        // Create a diamond marker element
-        function createDiamondMarker(label) {
-            const container = document.createElement('div');
-            container.className = 'overlay-marker';
+        // Zoom viewer to a specific point
+        function zoomToPoint(viewer, x, y, zoomLevel = 4) {
+            if (!viewer) return;
 
-            const diamond = document.createElement('div');
-            diamond.className = 'marker-diamond';
-            container.appendChild(diamond);
+            const viewportPoint = viewer.viewport.imageToViewportCoordinates(x, y);
+            viewer.viewport.panTo(viewportPoint, false);
+            viewer.viewport.zoomTo(zoomLevel, viewportPoint, false);
+        }
 
-            if (label) {
-                const labelEl = document.createElement('div');
-                labelEl.className = 'marker-label';
-                labelEl.textContent = label;
-                container.appendChild(labelEl);
+        // Handle click on error table row - zoom to point
+        function handlePointClick(gcpId, viewerType) {
+            // Clear previous selection
+            document.querySelectorAll('.error-table tbody tr.selected').forEach(row => {
+                row.classList.remove('selected');
+            });
+
+            // Clear previous marker highlights
+            document.querySelectorAll('.marker.highlighted').forEach(marker => {
+                marker.classList.remove('highlighted');
+            });
+
+            selectedPointId = gcpId;
+
+            // Highlight the clicked row in both tables
+            document.querySelectorAll('.error-table tbody tr').forEach(row => {
+                if (row.cells[0] && row.cells[0].textContent === gcpId) {
+                    row.classList.add('selected');
+                }
+            });
+
+            // Highlight markers with this ID
+            document.querySelectorAll(`.marker[data-gcp-id="${gcpId}"]`).forEach(marker => {
+                marker.classList.add('highlighted');
+            });
+
+            // Zoom to the point in the appropriate viewer
+            if (viewerType === 'camera' && cameraPointCoords[gcpId]) {
+                const coords = cameraPointCoords[gcpId];
+                // Zoom to the midpoint between annotation and reprojected
+                const midX = (coords.annotation.x + coords.reprojected.x) / 2;
+                const midY = (coords.annotation.y + coords.reprojected.y) / 2;
+                zoomToPoint(cameraViewer, midX, midY, 5);
+            } else if (viewerType === 'map' && mapPointCoords[gcpId]) {
+                const coords = mapPointCoords[gcpId];
+                // Zoom to the midpoint between GCP and projected
+                const midX = (coords.gcp.x + coords.projected.x) / 2;
+                const midY = (coords.gcp.y + coords.projected.y) / 2;
+                zoomToPoint(mapViewer, midX, midY, 5);
             }
-
-            return container;
         }
 
         // Render camera viewer overlays
         function renderCameraOverlays() {
             clearOverlays(cameraViewer, cameraOverlays);
+            cameraPointCoords = {};
 
             if (!overlayData || !overlayData.overlays || !overlayData.overlays.camera) return;
 
             const data = overlayData.overlays.camera;
 
-            // Add annotation markers (blue circles)
-            data.annotations.forEach(point => {
-                const el = createCircleMarker('blue', point.gcp_id);
-                const location = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
-                cameraViewer.addOverlay({
-                    element: el,
-                    location: location,
-                    placement: OpenSeadragon.Placement.CENTER
-                });
-                cameraOverlays.push(el);
-            });
+            // Build coordinate lookup and add markers
+            data.annotations.forEach((point, i) => {
+                const gcpId = point.gcp_id;
+                const reprojected = data.reprojected_gcps[i];
 
-            // Add reprojected GCP markers (red diamonds)
-            data.reprojected_gcps.forEach(point => {
-                const el = createDiamondMarker(point.gcp_id);
-                const location = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
+                // Store coordinates for zoom-to-point
+                cameraPointCoords[gcpId] = {
+                    annotation: { x: point.x, y: point.y },
+                    reprojected: { x: reprojected.x, y: reprojected.y }
+                };
+
+                // Add annotation marker (blue pin)
+                const annMarker = createPinMarker('blue', gcpId, gcpId);
+                const annLocation = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
                 cameraViewer.addOverlay({
-                    element: el,
-                    location: location,
-                    placement: OpenSeadragon.Placement.CENTER
+                    element: annMarker,
+                    location: annLocation,
+                    placement: OpenSeadragon.Placement.BOTTOM
                 });
-                cameraOverlays.push(el);
+                cameraOverlays.push(annMarker);
+
+                // Add reprojected GCP marker (red pin)
+                const reprojMarker = createPinMarker('red', gcpId, gcpId);
+                const reprojLocation = cameraViewer.viewport.imageToViewportCoordinates(reprojected.x, reprojected.y);
+                cameraViewer.addOverlay({
+                    element: reprojMarker,
+                    location: reprojLocation,
+                    placement: OpenSeadragon.Placement.BOTTOM
+                });
+                cameraOverlays.push(reprojMarker);
             });
 
             // Add error lines - pair annotations with reprojected GCPs
@@ -872,33 +949,42 @@
         // Render map viewer overlays
         function renderMapOverlays() {
             clearOverlays(mapViewer, mapOverlays);
+            mapPointCoords = {};
 
             if (!overlayData || !overlayData.overlays || !overlayData.overlays.map) return;
 
             const data = overlayData.overlays.map;
 
-            // Add GCP markers (green circles)
-            data.gcps.forEach(point => {
-                const el = createCircleMarker('green', point.gcp_id);
-                const location = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
-                mapViewer.addOverlay({
-                    element: el,
-                    location: location,
-                    placement: OpenSeadragon.Placement.CENTER
-                });
-                mapOverlays.push(el);
-            });
+            // Build coordinate lookup and add markers
+            data.gcps.forEach((point, i) => {
+                const gcpId = point.gcp_id;
+                const projected = data.projected_annotations[i];
 
-            // Add projected annotation markers (red diamonds)
-            data.projected_annotations.forEach(point => {
-                const el = createDiamondMarker(point.gcp_id);
-                const location = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
+                // Store coordinates for zoom-to-point
+                mapPointCoords[gcpId] = {
+                    gcp: { x: point.x, y: point.y },
+                    projected: { x: projected.x, y: projected.y }
+                };
+
+                // Add GCP marker (green pin)
+                const gcpMarker = createPinMarker('green', gcpId, gcpId);
+                const gcpLocation = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
                 mapViewer.addOverlay({
-                    element: el,
-                    location: location,
-                    placement: OpenSeadragon.Placement.CENTER
+                    element: gcpMarker,
+                    location: gcpLocation,
+                    placement: OpenSeadragon.Placement.BOTTOM
                 });
-                mapOverlays.push(el);
+                mapOverlays.push(gcpMarker);
+
+                // Add projected annotation marker (red pin)
+                const projMarker = createPinMarker('red', gcpId, gcpId);
+                const projLocation = mapViewer.viewport.imageToViewportCoordinates(projected.x, projected.y);
+                mapViewer.addOverlay({
+                    element: projMarker,
+                    location: projLocation,
+                    placement: OpenSeadragon.Placement.BOTTOM
+                });
+                mapOverlays.push(projMarker);
             });
 
             // Add error lines - pair GCPs with projected annotations
@@ -1037,11 +1123,20 @@
                 return;
             }
 
+            // Determine which viewer this table controls
+            const viewerType = tableId.includes('camera') ? 'camera' : 'map';
+
             // Sort by error descending by default
             const sortedErrors = [...errors].sort((a, b) => b.error - a.error);
 
             sortedErrors.forEach(item => {
                 const row = document.createElement('tr');
+                row.dataset.gcpId = item.id;
+
+                // Add click handler for zoom-to-point
+                row.addEventListener('click', () => {
+                    handlePointClick(item.id, viewerType);
+                });
 
                 const idCell = document.createElement('td');
                 idCell.textContent = item.id;
