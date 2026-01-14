@@ -44,7 +44,7 @@ import math
 
 import numpy as np
 
-from poc_homography.domain.vo.pixel_point import PixelPoint  # noqa: TC001 - used at runtime
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.interface import (
     HomographyProvider,
     HomographyResult,

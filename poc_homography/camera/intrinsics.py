@@ -8,7 +8,6 @@ compute the intrinsic matrix based on zoom level and sensor parameters.
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
-import numpy as np
 import requests
 from requests.auth import HTTPDigestAuth
 

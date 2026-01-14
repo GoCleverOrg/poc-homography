@@ -31,7 +31,7 @@ from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
-    from poc_homography.map_points import GroundControlPointCollection
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 
 
 class GCPObservation(Protocol):
@@ -47,6 +47,7 @@ class GCPObservation(Protocol):
     pan_raw: Degrees
     tilt_deg: Degrees
     zoom: Unitless
+
 
 # Module-level logger for debugging calibration issues
 _logger = logging.getLogger(__name__)
@@ -241,7 +242,7 @@ def undistort_point_simple(
 def compute_projection_error(
     params: CalibrationParams,
     gcps: list[GCPObservation],
-    registry: GroundControlPointCollection,
+    registry: dict[str, GroundControlPoint],
     image_width: Pixels = Pixels(1920),
     image_height: Pixels = Pixels(1080),
 ) -> tuple[float, list[float]]:
@@ -251,7 +252,7 @@ def compute_projection_error(
     Args:
         params: Calibration parameters including camera position.
         gcps: List of ground control points with map_point_id references.
-        registry: GroundControlPointCollection containing the map point coordinates.
+        registry: dict[str, GroundControlPoint] keyed by GCP name.
         image_width: Image width in pixels.
         image_height: Image height in pixels.
 
@@ -263,12 +264,12 @@ def compute_projection_error(
     for gcp in gcps:
         try:
             # Look up map point coordinates from registry
-            if gcp.map_point_id not in registry.points:
+            if gcp.map_point_id not in registry:
                 _logger.debug("GCP %s: map point not found in registry", gcp.map_point_id)
                 errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
-            map_point = registry.points[gcp.map_point_id]
+            map_point = registry[gcp.map_point_id].map_point
             # Compute local XY relative to camera position in map coordinates
             x_m = float(map_point.pixel_point.x) - params.camera_x
             y_m = float(map_point.pixel_point.y) - params.camera_y
@@ -352,7 +353,7 @@ def compute_projection_error(
 def _objective_function(
     x: np.ndarray,
     gcps: list[GCPObservation],
-    registry: GroundControlPointCollection,
+    registry: dict[str, GroundControlPoint],
     base_params: CalibrationParams,
     flags: OptimizationFlags,
     image_width: Pixels,
@@ -367,7 +368,7 @@ def _objective_function(
     Args:
         x: Array of parameters being optimized
         gcps: List of ground control points
-        registry: GroundControlPointCollection containing map point coordinates
+        registry: dict[str, GroundControlPoint] containing map point coordinates
         base_params: Base calibration parameters
         flags: Which parameters are being optimized
         image_width: Image width in pixels
@@ -384,7 +385,7 @@ def _objective_function(
 def run_calibration(
     camera_config: dict[str, Any],
     gcps: list[GCPObservation],
-    registry: GroundControlPointCollection,
+    registry: dict[str, GroundControlPoint],
     optimize_position: bool = True,
     optimize_focal: bool = True,
     optimize_pan: bool = True,
@@ -400,7 +401,7 @@ def run_calibration(
     Args:
         camera_config: Initial camera configuration
         gcps: List of ground control points
-        registry: GroundControlPointCollection containing map point coordinates
+        registry: dict[str, GroundControlPoint] containing map point coordinates
         optimize_position: Whether to optimize camera position (X/Y in map coordinates)
         optimize_focal: Whether to optimize focal length multiplier
         optimize_pan: Whether to optimize pan offset

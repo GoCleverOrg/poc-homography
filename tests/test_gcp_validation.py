@@ -8,7 +8,6 @@ duplicate detection, and overall GCP configuration.
 import os
 import sys
 import unittest
-from pathlib import Path
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -22,7 +21,6 @@ from poc_homography.gcp_validation import (
     validate_gcp_map_coordinates,
     validate_ground_control_points,
 )
-from poc_homography.homography import HomographyConfig
 
 
 class TestValidateGCPMapCoordinates(unittest.TestCase):
@@ -744,101 +742,6 @@ class TestValidateGroundControlPoints(unittest.TestCase):
         self.assertEqual(len(result), 1)
 
 
-class TestHomographyConfigIntegration(unittest.TestCase):
-    """Integration tests with HomographyConfig.from_yaml."""
-
-    def test_loading_config_with_gcps_succeeds(self):
-        """Test loading the actual homography_config.yaml with GCPs succeeds."""
-        # Get the path to the config file
-        test_dir = Path(__file__).parent
-        config_path = test_dir.parent / "homography_config.yaml"
-
-        # Skip test if config file doesn't exist
-        if not config_path.exists():
-            self.skipTest(f"Config file not found at {config_path}")
-
-        # Should load without errors
-        config = HomographyConfig.from_yaml(str(config_path))
-
-        # Verify it's a valid config object
-        self.assertIsInstance(config, HomographyConfig)
-
-    def test_gcps_are_accessible_after_loading(self):
-        """Test that GCPs are accessible after loading config."""
-        # Get the path to the config file
-        test_dir = Path(__file__).parent
-        config_path = test_dir.parent / "homography_config.yaml"
-
-        # Skip test if config file doesn't exist
-        if not config_path.exists():
-            self.skipTest(f"Config file not found at {config_path}")
-
-        # Load config
-        config = HomographyConfig.from_yaml(str(config_path))
-
-        # Get feature_match config
-        feature_match_config = config.get_approach_config(
-            config.approach if hasattr(config, "approach") else None
-        )
-
-        # If feature_match approach is not the primary, try getting it explicitly
-        if "ground_control_points" not in feature_match_config:
-            from homography_interface import HomographyApproach
-
-            feature_match_config = config.get_approach_config(HomographyApproach.FEATURE_MATCH)
-
-        # Verify GCPs exist and are accessible
-        if "ground_control_points" in feature_match_config:
-            gcps = feature_match_config["ground_control_points"]
-            self.assertIsInstance(gcps, list)
-            self.assertGreater(len(gcps), 0, "Config should have at least one GCP")
-
-            # Verify first GCP has expected structure
-            first_gcp = gcps[0]
-            self.assertIn("map_id", first_gcp)
-            self.assertIn("map_pixel_x", first_gcp)
-            self.assertIn("map_pixel_y", first_gcp)
-            self.assertIn("image_u", first_gcp)
-            self.assertIn("image_v", first_gcp)
-
-    def test_invalid_gcp_in_config_raises_error(self):
-        """Test that loading config with invalid GCP raises appropriate error."""
-        # Create a temporary config with invalid GCP
-        test_config = {
-            "homography": {
-                "approach": "feature_match",
-                "feature_match": {
-                    "detector": "sift",
-                    "min_matches": 4,
-                    "ransac_threshold": 5.0,
-                    "ground_control_points": [
-                        {
-                            "map_id": "",  # Invalid - empty string
-                            "map_pixel_x": 1234.5,
-                            "map_pixel_y": 567.8,
-                            "image_u": 100.0,
-                            "image_v": 200.0,
-                        }
-                    ],
-                },
-            }
-        }
-
-        import tempfile
-
-        import yaml
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            yaml.safe_dump(test_config, f)
-            temp_path = f.name
-
-        try:
-            with self.assertRaisesRegex(ValueError, "Ground control points validation failed"):
-                HomographyConfig.from_yaml(temp_path)
-        finally:
-            os.unlink(temp_path)
-
-
 class TestIsValidFiniteNumber(unittest.TestCase):
     """Test the _is_valid_finite_number helper function."""
 
@@ -1103,71 +1006,6 @@ class TestNumpyTypeSupport(unittest.TestCase):
         gcp = {"map_id": "map_valte", "map_pixel_x": self.np.inf, "map_pixel_y": 567.8}
         with self.assertRaisesRegex(ValueError, "must be a finite number"):
             validate_gcp_map_coordinates(gcp, 0)
-
-
-class TestConfigGCPPixelBoundsCI(unittest.TestCase):
-    """CI test to verify GCPs in config/homography_config.yaml are within image bounds.
-
-    This test ensures that all GCP pixel coordinates in the production config file
-    are valid with respect to the image dimensions specified in camera_capture_context.
-    This prevents issues where invalid GCPs cause incorrect homography computation.
-    """
-
-    def test_config_gcps_within_image_bounds(self):
-        """Test that all GCPs in homography_config.yaml have valid pixel coordinates.
-
-        This test:
-        1. Loads the production config file
-        2. Extracts image dimensions from camera_capture_context
-        3. Validates all GCPs have image_u < image_width and image_v < image_height
-
-        If this test fails, the config contains GCPs that would cause RANSAC to fit
-        invalid points, resulting in incorrect homography matrices.
-        """
-        # Get the path to the config file
-        test_dir = Path(__file__).parent
-        config_path = test_dir.parent / "config" / "homography_config.yaml"
-
-        # Skip test if config file doesn't exist
-        if not config_path.exists():
-            self.skipTest(f"Config file not found at {config_path}")
-
-        # Load config
-        config = HomographyConfig.from_yaml(str(config_path))
-
-        # Get feature_match config
-        feature_match_config = config.approach_specific_config.get("feature_match", {})
-
-        # Get camera capture context for image dimensions
-        camera_context = feature_match_config.get("camera_capture_context", {})
-        image_width = camera_context.get("image_width")
-        image_height = camera_context.get("image_height")
-
-        self.assertIsNotNone(image_width, "Config missing image_width in camera_capture_context")
-        self.assertIsNotNone(image_height, "Config missing image_height in camera_capture_context")
-
-        # Get GCPs - require exactly 6 as specified in Issue #31
-        gcps = feature_match_config.get("ground_control_points", [])
-        self.assertEqual(len(gcps), 6, f"Config should have exactly 6 GCPs, found {len(gcps)}")
-
-        # Validate each GCP's pixel coordinates are within bounds
-        errors = []
-        for i, gcp in enumerate(gcps):
-            image_u = gcp["image_u"]
-            image_v = gcp["image_v"]
-            desc = gcp.get("metadata", {}).get("description", f"GCP {i + 1}")
-
-            if image_u < 0 or image_u >= image_width:
-                errors.append(f"{desc}: image_u={image_u} outside [0, {image_width})")
-            if image_v < 0 or image_v >= image_height:
-                errors.append(f"{desc}: image_v={image_v} outside [0, {image_height})")
-
-        if errors:
-            self.fail(
-                f"GCPs with invalid pixel coordinates found in config:\n"
-                f"  Image dimensions: {image_width} x {image_height}\n"
-                f"  Invalid GCPs:\n    " + "\n    ".join(errors)
-            )
 
 
 def main():

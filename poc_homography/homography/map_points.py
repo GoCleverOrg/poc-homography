@@ -13,14 +13,17 @@ Coordinate Systems:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 import numpy.typing as npt
 
+from poc_homography.domain.vo.map_point import MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
-from poc_homography.map_points import GroundControlPointCollection, MapPoint
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 
 
 @dataclass(frozen=True)
@@ -93,7 +96,7 @@ class MapPointHomography:
     def compute_from_gcps(
         self,
         gcps: list[dict[str, Any]],
-        map_registry: GroundControlPointCollection,
+        map_registry: dict[str, GroundControlPoint],
         ransac_threshold: float = 50.0,
         min_inlier_ratio: float = 0.5,
     ) -> MapPointComputationResult:
@@ -132,10 +135,10 @@ class MapPointHomography:
 
             # Extract map coordinate from registry
             map_point_id = gcp["map_point_id"]
-            if map_point_id not in map_registry.points:
+            if map_point_id not in map_registry:
                 raise ValueError(f"Map point not found in registry: {map_point_id}")
 
-            map_point = map_registry.points[map_point_id]
+            map_point = map_registry[map_point_id].map_point
             map_coords.append([float(map_point.pixel_point.x), float(map_point.pixel_point.y)])
 
         # Convert to numpy arrays
@@ -179,7 +182,7 @@ class MapPointHomography:
             projected = cv2.perspectiveTransform(camera_pt, H)[0, 0]
 
             # Expected map coordinate
-            map_point = map_registry.points[gcp["map_point_id"]]
+            map_point = map_registry[gcp["map_point_id"]].map_point
             expected = np.array([float(map_point.pixel_point.x), float(map_point.pixel_point.y)])
 
             # Calculate error in pixels

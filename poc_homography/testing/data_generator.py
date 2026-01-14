@@ -16,13 +16,11 @@ import shutil
 import tempfile
 import webbrowser
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import cv2
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 from poc_homography.camera.intrinsics import get_ptz_status
 from poc_homography.camera_config import (
@@ -32,7 +30,9 @@ from poc_homography.camera_config import (
     get_rtsp_url,
 )
 from poc_homography.coordinates import dms_to_dd
-from poc_homography.map_points import GroundControlPointCollection
+from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+from poc_homography.domain.vo.map_point import MapPoint
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.server_utils import find_available_port
 
 
@@ -238,15 +238,15 @@ def generate_json_output(
     return result
 
 
-def load_map_points(map_points_path: str | Path) -> GroundControlPointCollection:
+def load_map_points(map_points_path: str | Path) -> dict[str, GroundControlPoint]:
     """
-    Load map points from YAML file using GroundControlPointCollection.
+    Load map points from YAML file.
 
     Args:
         map_points_path: Path to map points file (.yaml or .yml)
 
     Returns:
-        GroundControlPointCollection containing loaded map points
+        Dictionary mapping GCP name to GroundControlPoint entity.
 
     Raises:
         FileNotFoundError: If file doesn't exist
@@ -254,26 +254,52 @@ def load_map_points(map_points_path: str | Path) -> GroundControlPointCollection
         yaml.YAMLError: If YAML is invalid
         KeyError: If required keys are missing
     """
-    return GroundControlPointCollection.load(map_points_path)
+    import yaml
+
+    file_path = Path(map_points_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"Map points file not found: {file_path}")
+
+    with open(file_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    if not data:
+        return {}
+
+    map_id = data.get("map_id", file_path.stem)
+    points_data = data.get("points", [])
+
+    gcps: dict[str, GroundControlPoint] = {}
+    for point_data in points_data:
+        name = str(point_data["id"])
+        pixel_x = float(point_data["pixel_x"])
+        pixel_y = float(point_data["pixel_y"])
+
+        pixel_point = PixelPoint(_x=pixel_x, _y=pixel_y)
+        map_point = MapPoint(map_id=map_id, pixel_point=pixel_point)
+        gcp = GroundControlPoint(id=name, name=name, map_point=map_point)
+        gcps[name] = gcp
+
+    return gcps
 
 
-def convert_map_points_to_list(registry: GroundControlPointCollection) -> list[dict[str, Any]]:
+def convert_map_points_to_list(registry: dict[str, GroundControlPoint]) -> list[dict[str, Any]]:
     """
-    Convert GroundControlPointCollection to list format for web interface.
+    Convert GCP dictionary to list format for web interface.
 
     Args:
-        registry: GroundControlPointCollection to convert
+        registry: Dictionary of GroundControlPoint entities.
 
     Returns:
         List of dictionaries with pixel_x, pixel_y, map_id keys
     """
     return [
         {
-            "pixel_x": float(point.pixel_point.x),
-            "pixel_y": float(point.pixel_point.y),
-            "map_id": point.map_id,
+            "pixel_x": float(gcp.map_point.pixel_point.x),
+            "pixel_y": float(gcp.map_point.pixel_point.y),
+            "map_id": gcp.map_id,
         }
-        for point in registry.points.values()
+        for gcp in registry.values()
     ]
 
 
@@ -985,7 +1011,8 @@ def run_data_generator(
         try:
             registry = load_map_points(map_points_path)
             map_points = convert_map_points_to_list(registry)
-            print(f"   Loaded {len(map_points)} points from map '{registry.map_id}'")
+            map_id = next(iter(registry.values())).map_id if registry else "unknown"
+            print(f"   Loaded {len(map_points)} points from map '{map_id}'")
         except FileNotFoundError:
             print(f"   Warning: Map points file not found: {map_points_path}")
             print("   Continuing without map points (manual coordinate entry required)")

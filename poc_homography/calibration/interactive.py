@@ -24,7 +24,7 @@ import numpy.typing as npt
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters
-from poc_homography.map_points import GroundControlPointCollection
+from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 # OpenCV is optional - not all environments have GUI support
@@ -97,7 +97,7 @@ class CalibrationSession:
         self,
         camera_name: str,
         frame: npt.NDArray[np.uint8],
-        registry: GroundControlPointCollection,
+        registry: dict[str, GroundControlPoint],
         height_m: Meters,
         pan_offset_deg: Degrees,
         pan_raw: Degrees,
@@ -155,7 +155,7 @@ class CalibrationSession:
         Returns:
             True if point was added successfully, False if map_point_id not found
         """
-        if map_point_id not in self.registry.points:
+        if map_point_id not in self.registry:
             print(f"Error: Map Point ID '{map_point_id}' not found in registry")
             return False
 
@@ -216,7 +216,7 @@ class CalibrationSession:
                 H = result.homography_matrix
 
                 for pt in self.reference_points:
-                    map_point = self.registry.points[pt.map_point_id]
+                    map_point = self.registry[pt.map_point_id].map_point
                     x_m, y_m = float(map_point.pixel_point.x), float(map_point.pixel_point.y)
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = H @ world_pt
@@ -330,7 +330,7 @@ class CalibrationSession:
                 valid_points = 0
 
                 for pt in self.reference_points:
-                    map_point = self.registry.points[pt.map_point_id]
+                    map_point = self.registry[pt.map_point_id].map_point
                     x_m, y_m = float(map_point.pixel_point.x), float(map_point.pixel_point.y)
                     world_pt = np.array([[x_m], [y_m], [1.0]])
                     img_pt = H @ world_pt
@@ -490,11 +490,11 @@ def run_interactive_session(session: CalibrationSession) -> None:
                     line = sys.stdin.readline().strip()
                     if line:
                         map_point_id = line.upper()
-                        if map_point_id in session.registry.points:
+                        if map_point_id in session.registry:
                             session.add_reference_point(
                                 session.pending_click[0], session.pending_click[1], map_point_id
                             )
-                            map_point = session.registry.points[map_point_id]
+                            map_point = session.registry[map_point_id].map_point
                             print(
                                 f"Added reference point at ({session.pending_click[0]}, "
                                 f"{session.pending_click[1]}) -> {map_point_id} "

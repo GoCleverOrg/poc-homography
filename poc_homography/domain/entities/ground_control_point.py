@@ -12,14 +12,15 @@ class GroundControlPoint:
 
     name: str
     map_point: MapPoint
+    id: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = f"{self.map_point.map_id}/{self.name}"
 
     @property
     def map_id(self) -> str:
         return self.map_point.map_id
-
-    @property
-    def id(self) -> str:
-        return f"{self.map_id}/{self.name}"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -33,6 +34,7 @@ class GroundControlPoint:
     def from_dict(cls, data: dict[str, Any]) -> GroundControlPoint:
         """Create GroundControlPoint from dictionary."""
         return cls(
+            id=data.get("id", ""),
             name=data["name"],
             map_point=MapPoint.from_dict(data["map_point"]),
         )

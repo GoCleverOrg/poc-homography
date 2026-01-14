@@ -47,9 +47,12 @@ def interactive_command(
     # Import here to avoid issues when CV2 is not available
     import cv2 as cv2_lib
     import numpy as np
+    import yaml
 
     from poc_homography.calibration.interactive import CalibrationSession, run_interactive_session
-    from poc_homography.map_points import GroundControlPointCollection
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
     from poc_homography.types import Degrees, Meters, Millimeters, Unitless
 
     # Load frame image
@@ -67,7 +70,23 @@ def interactive_command(
 
     # Load map point registry
     try:
-        map_registry = GroundControlPointCollection.load(registry)
+        if not registry.exists():
+            raise FileNotFoundError(f"Registry file not found: {registry}")
+        with open(registry, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not data:
+            data = {}
+        map_id = data.get("map_id", registry.stem)
+        points_data = data.get("points", [])
+        map_registry: dict[str, GroundControlPoint] = {}
+        for point_data in points_data:
+            name = str(point_data["id"])
+            pixel_x = float(point_data["pixel_x"])
+            pixel_y = float(point_data["pixel_y"])
+            pixel_point = PixelPoint(_x=pixel_x, _y=pixel_y)
+            map_point = MapPoint(map_id=map_id, pixel_point=pixel_point)
+            gcp = GroundControlPoint(id=name, name=name, map_point=map_point)
+            map_registry[name] = gcp
     except FileNotFoundError:
         typer.echo(f"Error: Registry file not found: {registry}", err=True)
         raise typer.Exit(1)

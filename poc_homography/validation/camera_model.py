@@ -5,7 +5,7 @@ Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
 
 GCPs are defined in YAML format with Map Point IDs referencing coordinates
-from a GroundControlPointCollection:
+from a dict[str, GroundControlPoint]:
 
     gcps:
       - map_point_id: Z1
@@ -31,7 +31,7 @@ from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from poc_homography.map_points import GroundControlPointCollection
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 
 
 class GCPData(NamedTuple):
@@ -77,7 +77,7 @@ def load_gcps_from_yaml(yaml_path: Path) -> list[GCPData]:
             zoom: 1.0
 
     Each GCP references a Map Point by ID. The map point's world/map coordinates
-    (pixel_x, pixel_y) are looked up from the GroundControlPointCollection at projection time.
+    (pixel_x, pixel_y) are looked up from the dict[str, GroundControlPoint] at projection time.
     The pixel_u/pixel_v values are the image pixel coordinates where the point appears.
 
     Args:
@@ -221,7 +221,7 @@ def project_map_point_to_pixel(
 def validate_model(
     camera_config: dict[str, float | str],
     gcps: list[GCPData],
-    registry: GroundControlPointCollection,
+    registry: dict[str, GroundControlPoint],
     verbose: bool = True,
 ) -> tuple[float | None, list[ValidationResult]]:
     """
@@ -230,7 +230,7 @@ def validate_model(
     Args:
         camera_config: Camera configuration dictionary with height_m, pan_offset_deg, etc.
         gcps: List of GCPData objects
-        registry: GroundControlPointCollection containing the map point coordinates
+        registry: dict[str, GroundControlPoint] containing the map point coordinates
         verbose: Whether to print detailed output
 
     Returns:
@@ -264,7 +264,7 @@ def validate_model(
 
     for i, gcp in enumerate(gcps):
         # Look up map point coordinates from registry
-        if gcp.map_point_id not in registry.points:
+        if gcp.map_point_id not in registry:
             if verbose:
                 print(
                     f"GCP {i + 1}: {gcp.name[:20]:20s} | FAILED: "
@@ -274,7 +274,7 @@ def validate_model(
             results.append(ValidationResult(gcp, None, None, 1000.0))
             continue
 
-        point = registry.points[gcp.map_point_id]
+        point = registry[gcp.map_point_id].map_point
 
         proj_result = project_map_point_to_pixel(
             Meters(float(point.pixel_point.x)),

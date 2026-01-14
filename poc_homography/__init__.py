@@ -37,7 +37,6 @@ from poc_homography.homography import (
     MapPointHomography,
     get_default_config,
 )
-from poc_homography.map_points import GroundControlPointCollection
 
 __all__ = [
     # Core camera geometry (immutable API)
@@ -61,7 +60,6 @@ __all__ = [
     "IntrinsicExtrinsicResult",
     # Map points
     "MapPoint",
-    "GroundControlPointCollection",
     "MapPointHomography",
     "MapPointComputationResult",
     # Other

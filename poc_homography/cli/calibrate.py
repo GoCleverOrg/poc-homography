@@ -15,8 +15,49 @@ from poc_homography.calibration import (
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
 from poc_homography.coordinates import dms_to_dd
-from poc_homography.map_points import GroundControlPointCollection
+from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+from poc_homography.domain.vo.map_point import MapPoint
+from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
+
+
+def _load_gcps_from_registry_file(file_path: Path) -> dict[str, GroundControlPoint]:
+    """Load GCPs from a registry YAML file.
+
+    Args:
+        file_path: Path to the YAML file.
+
+    Returns:
+        Dictionary mapping GCP name to GroundControlPoint entity.
+
+    Raises:
+        FileNotFoundError: If file doesn't exist.
+        ValueError: If file format is invalid.
+    """
+    if not file_path.exists():
+        raise FileNotFoundError(f"Registry file not found: {file_path}")
+
+    with open(file_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    if not data:
+        return {}
+
+    map_id = data.get("map_id", file_path.stem)
+    points_data = data.get("points", [])
+
+    gcps: dict[str, GroundControlPoint] = {}
+    for point_data in points_data:
+        name = str(point_data["id"])
+        pixel_x = float(point_data["pixel_x"])
+        pixel_y = float(point_data["pixel_y"])
+
+        pixel_point = PixelPoint(_x=pixel_x, _y=pixel_y)
+        map_point = MapPoint(map_id=map_id, pixel_point=pixel_point)
+        gcp = GroundControlPoint(id=name, name=name, map_point=map_point)
+        gcps[name] = gcp
+
+    return gcps
 
 
 @dataclass
@@ -192,7 +233,7 @@ def comprehensive_command(
 
     # Load map point registry
     try:
-        registry = GroundControlPointCollection.load(registry_file)
+        registry = _load_gcps_from_registry_file(registry_file)
     except FileNotFoundError:
         typer.echo(f"Error: Registry file not found: {registry_file}", err=True)
         raise typer.Exit(1)
