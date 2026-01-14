@@ -94,7 +94,7 @@ class IntrinsicExtrinsicStrategy:
         map_height = Pixels(map_entity.photo.height)
 
         # Calculate pixels per meter from GeoTiff (assuming square pixels)
-        pixel_size_m = abs(geotiff.pixel_width)  # meters per pixel
+        pixel_size_m = abs(float(geotiff.geotransform.pixel_width))  # meters per pixel
         pixels_per_meter = Unitless(1.0 / pixel_size_m) if pixel_size_m > 0 else Unitless(1.0)
 
         # Build CameraParameters for legacy CameraGeometry

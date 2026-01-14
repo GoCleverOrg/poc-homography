@@ -1,15 +1,14 @@
-# Map configuration for Valte site
 id: valte
 photo:
-  path: Cartografia_valencia.tif
+  path: valte.png
+  width: 1681
+  height: 916
 geotiff:
-  # GDAL 6-parameter GeoTransform format
-  # [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
   geotransform:
-    - 737575.05    # origin_easting (UTM X of top-left corner)
-    - 0.15         # pixel_width (meters per pixel, positive = east)
-    - 0.0          # row_rotation (0 for north-up)
-    - 4391595.45   # origin_northing (UTM Y of top-left corner)
-    - 0.0          # col_rotation (0 for north-up)
-    - -0.15        # pixel_height (meters per pixel, negative for north-up)
-  crs: "EPSG:25830"  # UTM zone 30N
+    origin_easting: 737575.05
+    pixel_width: 0.15
+    row_rotation: 0.0
+    origin_northing: 4391595.45
+    col_rotation: 0.0
+    pixel_height: -0.15
+  crs: EPSG:25830

@@ -1,5 +1,7 @@
 """YAML-based CameraCalibration repository implementation."""
 
+from pathlib import Path
+
 from poc_homography.domain.entities.camera_calibration import CameraCalibration
 from poc_homography.infrastructure.repositories.base import YamlRepositoryBase
 
@@ -27,14 +29,10 @@ class YamlCameraCalibrationRepository(YamlRepositoryBase[CameraCalibration]):
     the camera_id "valte/Valte" has "/" replaced with "__".
     """
 
-    def _get_entity_id(self, entity: CameraCalibration) -> str:
-        """Extract camera ID from calibration entity."""
-        return entity.camera_id
+    def __init__(self, data_dir: Path) -> None:
+        """Initialize the repository.
 
-    def _entity_to_dict(self, entity: CameraCalibration) -> dict:
-        """Convert CameraCalibration to YAML-serializable dictionary."""
-        return entity.to_dict()
-
-    def _dict_to_entity(self, data: dict) -> CameraCalibration | None:
-        """Reconstruct CameraCalibration from YAML dictionary."""
-        return CameraCalibration.from_dict(data)
+        Args:
+            data_dir: Directory containing camera calibration YAML files.
+        """
+        super().__init__(data_dir, CameraCalibration)

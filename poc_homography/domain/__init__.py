@@ -4,16 +4,12 @@ from poc_homography.domain.entities import (
     Annotation,
     CameraCalibration,
     CameraConfig,
+    Entity,
     GroundControlPoint,
     Map,
 )
 from poc_homography.domain.enums import CameraSpec, TiltConvention
-from poc_homography.domain.repositories import (
-    CameraCalibrationRepository,
-    CameraConfigRepository,
-    GroundControlPointRepository,
-    MapRepository,
-)
+from poc_homography.domain.repositories import Repository
 from poc_homography.domain.vo import (
     CameraIntrinsics,
     CameraSnapshot,
@@ -32,16 +28,14 @@ __all__ = [
     "Annotation",
     "CameraCalibration",
     "CameraConfig",
+    "Entity",
     "GroundControlPoint",
     "Map",
     # Enums
     "CameraSpec",
     "TiltConvention",
     # Repositories
-    "CameraCalibrationRepository",
-    "CameraConfigRepository",
-    "GroundControlPointRepository",
-    "MapRepository",
+    "Repository",
     # Value Objects
     "CameraIntrinsics",
     "CameraSnapshot",

@@ -5,7 +5,7 @@
 # The camera's GPS location is 39°38'25.72"N, 0°13'48.63"W which needs
 # to be converted to map pixel coordinates using the GeoTiff transform.
 
-camera_id: valte/Valte
+id: valte/Valte
 
 # Camera position on map in pixel coordinates
 # TODO: These are placeholder values that need calibration

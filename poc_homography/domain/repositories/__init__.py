@@ -3,24 +3,13 @@
 Repositories provide abstractions for data access, keeping the domain
 layer independent of infrastructure concerns (file I/O, databases, etc.).
 
-Naming convention: All repository interfaces use the suffix "Repository"
-(e.g., MapRepository, CameraConfigRepository).
+The generic Repository[T] protocol defines the standard CRUD interface.
+Concrete implementations in the infrastructure layer (e.g., YamlMapRepository)
+may provide additional entity-specific methods like get_by_map() or get_all().
 """
 
-from poc_homography.domain.repositories.camera_calibration_repository import (
-    CameraCalibrationRepository,
-)
-from poc_homography.domain.repositories.camera_config_repository import (
-    CameraConfigRepository,
-)
-from poc_homography.domain.repositories.ground_control_point_repository import (
-    GroundControlPointRepository,
-)
-from poc_homography.domain.repositories.map_repository import MapRepository
+from poc_homography.domain.repositories.repository import Repository
 
 __all__ = [
-    "CameraCalibrationRepository",
-    "CameraConfigRepository",
-    "GroundControlPointRepository",
-    "MapRepository",
+    "Repository",
 ]

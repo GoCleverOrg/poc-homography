@@ -1,5 +1,7 @@
 """YAML-based CameraConfig repository implementation."""
 
+from pathlib import Path
+
 from poc_homography.domain.entities.camera_config import CameraConfig
 from poc_homography.infrastructure.repositories.base import YamlRepositoryBase
 
@@ -20,17 +22,13 @@ class YamlCameraConfigRepository(YamlRepositoryBase[CameraConfig]):
     the camera_id "valte/Valte" has "/" replaced with "__".
     """
 
-    def _get_entity_id(self, entity: CameraConfig) -> str:
-        """Extract camera ID from config entity."""
-        return entity.id
+    def __init__(self, data_dir: Path) -> None:
+        """Initialize the repository.
 
-    def _entity_to_dict(self, entity: CameraConfig) -> dict:
-        """Convert CameraConfig to YAML-serializable dictionary."""
-        return entity.to_dict()
-
-    def _dict_to_entity(self, data: dict) -> CameraConfig | None:
-        """Reconstruct CameraConfig from YAML dictionary."""
-        return CameraConfig.from_dict(data)
+        Args:
+            data_dir: Directory containing camera config YAML files.
+        """
+        super().__init__(data_dir, CameraConfig)
 
     def get_by_map(self, map_id: str) -> dict[str, CameraConfig]:
         """Retrieve all camera configurations for a specific map.
@@ -42,5 +40,4 @@ class YamlCameraConfigRepository(YamlRepositoryBase[CameraConfig]):
             Dictionary mapping camera_id to CameraConfig for all cameras on the map.
         """
         configs = self.get_by_prefix(f"{map_id}/")
-        # Filter to ensure map_id matches (extra safety check)
         return {k: v for k, v in configs.items() if v.map_id == map_id}

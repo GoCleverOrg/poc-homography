@@ -9,66 +9,99 @@ from poc_homography.types import Meters
 
 
 @dataclass(frozen=True)
-class GeoTiff:
-    """GeoTIFF metadata for pixel to geographic coordinate transforms.
+class GeoTransform:
+    """Affine transformation parameters for pixel to geographic coordinate conversion.
 
-    The geotransform is a 6-parameter affine transformation that maps
-    pixel coordinates to geographic coordinates (typically UTM).
-
-    The geotransform parameters are:
-        GT[0]: x-coordinate of the upper-left corner
-        GT[1]: pixel width (x-resolution)
-        GT[2]: row rotation (typically 0 for north-up images)
-        GT[3]: y-coordinate of the upper-left corner
-        GT[4]: column rotation (typically 0 for north-up images)
-        GT[5]: pixel height (y-resolution, typically negative for north-up)
+    The 6-parameter affine transformation that maps pixel coordinates to
+    geographic coordinates (typically UTM).
 
     Coordinate transformation:
-        X_geo = GT[0] + pixel_x * GT[1] + pixel_y * GT[2]
-        Y_geo = GT[3] + pixel_x * GT[4] + pixel_y * GT[5]
+        X_geo = origin_easting + pixel_x * pixel_width + pixel_y * row_rotation
+        Y_geo = origin_northing + pixel_x * col_rotation + pixel_y * pixel_height
 
     Attributes:
-        geotransform: 6-parameter affine transformation tuple.
-        crs: Coordinate reference system (e.g., "EPSG:25830").
+        origin_easting: X-coordinate of the upper-left corner (GT[0]).
+        pixel_width: Pixel width in ground units, typically meters (GT[1]).
+        row_rotation: Row rotation angle (GT[2]), typically 0 for north-up.
+        origin_northing: Y-coordinate of the upper-left corner (GT[3]).
+        col_rotation: Column rotation angle (GT[4]), typically 0 for north-up.
+        pixel_height: Pixel height in ground units, negative for north-up (GT[5]).
     """
 
-    geotransform: tuple[float, float, float, float, float, float]
-    crs: str
-
-    @property
-    def origin_easting(self) -> float:
-        """X-coordinate of the upper-left corner (GT[0])."""
-        return self.geotransform[0]
-
-    @property
-    def origin_northing(self) -> float:
-        """Y-coordinate of the upper-left corner (GT[3])."""
-        return self.geotransform[3]
-
-    @property
-    def pixel_width(self) -> Meters:
-        """Pixel width in ground units, typically meters (GT[1])."""
-        return Meters(self.geotransform[1])
-
-    @property
-    def pixel_height(self) -> Meters:
-        """Pixel height in ground units, typically negative for north-up (GT[5])."""
-        return Meters(self.geotransform[5])
-
-    @property
-    def row_rotation(self) -> float:
-        """Row rotation angle (GT[2]), typically 0 for north-up."""
-        return self.geotransform[2]
-
-    @property
-    def col_rotation(self) -> float:
-        """Column rotation angle (GT[4]), typically 0 for north-up."""
-        return self.geotransform[4]
+    origin_easting: float
+    pixel_width: Meters
+    row_rotation: float
+    origin_northing: float
+    col_rotation: float
+    pixel_height: Meters
 
     @property
     def is_north_up(self) -> bool:
         """True if the image is north-up (no rotation)."""
         return self.row_rotation == 0.0 and self.col_rotation == 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "origin_easting": self.origin_easting,
+            "pixel_width": float(self.pixel_width),
+            "row_rotation": self.row_rotation,
+            "origin_northing": self.origin_northing,
+            "col_rotation": self.col_rotation,
+            "pixel_height": float(self.pixel_height),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GeoTransform:
+        """Create GeoTransform from dictionary."""
+        return cls(
+            origin_easting=data["origin_easting"],
+            pixel_width=Meters(data["pixel_width"]),
+            row_rotation=data["row_rotation"],
+            origin_northing=data["origin_northing"],
+            col_rotation=data["col_rotation"],
+            pixel_height=Meters(data["pixel_height"]),
+        )
+
+    @classmethod
+    def from_gdal_tuple(cls, gt: tuple[float, float, float, float, float, float]) -> GeoTransform:
+        """Create from GDAL 6-parameter geotransform tuple.
+
+        Args:
+            gt: GDAL geotransform (origin_x, pixel_width, row_rot, origin_y, col_rot, pixel_height)
+        """
+        return cls(
+            origin_easting=gt[0],
+            pixel_width=Meters(gt[1]),
+            row_rotation=gt[2],
+            origin_northing=gt[3],
+            col_rotation=gt[4],
+            pixel_height=Meters(gt[5]),
+        )
+
+    def to_gdal_tuple(self) -> tuple[float, float, float, float, float, float]:
+        """Convert to GDAL 6-parameter geotransform tuple."""
+        return (
+            self.origin_easting,
+            float(self.pixel_width),
+            self.row_rotation,
+            self.origin_northing,
+            self.col_rotation,
+            float(self.pixel_height),
+        )
+
+
+@dataclass(frozen=True)
+class GeoTiff:
+    """GeoTIFF metadata for pixel to geographic coordinate transforms.
+
+    Attributes:
+        geotransform: Affine transformation parameters.
+        crs: Coordinate reference system (e.g., "EPSG:25830").
+    """
+
+    geotransform: GeoTransform
+    crs: str
 
     def pixel_to_geo(self, pixel_x: float, pixel_y: float) -> tuple[float, float]:
         """Convert pixel coordinates to geographic coordinates.
@@ -81,8 +114,8 @@ class GeoTiff:
             Tuple of (easting, northing) in the CRS units.
         """
         gt = self.geotransform
-        easting = gt[0] + pixel_x * gt[1] + pixel_y * gt[2]
-        northing = gt[3] + pixel_x * gt[4] + pixel_y * gt[5]
+        easting = gt.origin_easting + pixel_x * float(gt.pixel_width) + pixel_y * gt.row_rotation
+        northing = gt.origin_northing + pixel_x * gt.col_rotation + pixel_y * float(gt.pixel_height)
         return (easting, northing)
 
     def geo_to_pixel(self, easting: float, northing: float) -> tuple[float, float]:
@@ -99,20 +132,22 @@ class GeoTiff:
             ValueError: If the geotransform is singular (cannot be inverted).
         """
         gt = self.geotransform
-        det = gt[1] * gt[5] - gt[2] * gt[4]
+        pw = float(gt.pixel_width)
+        ph = float(gt.pixel_height)
+        det = pw * ph - gt.row_rotation * gt.col_rotation
         if det == 0:
             raise ValueError("Geotransform is singular and cannot be inverted")
 
-        dx = easting - gt[0]
-        dy = northing - gt[3]
-        pixel_x = (gt[5] * dx - gt[2] * dy) / det
-        pixel_y = (gt[1] * dy - gt[4] * dx) / det
+        dx = easting - gt.origin_easting
+        dy = northing - gt.origin_northing
+        pixel_x = (ph * dx - gt.row_rotation * dy) / det
+        pixel_y = (pw * dy - gt.col_rotation * dx) / det
         return (pixel_x, pixel_y)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            "geotransform": list(self.geotransform),
+            "geotransform": self.geotransform.to_dict(),
             "crs": self.crs,
         }
 
@@ -120,6 +155,6 @@ class GeoTiff:
     def from_dict(cls, data: dict[str, Any]) -> GeoTiff:
         """Create GeoTiff from dictionary."""
         return cls(
-            geotransform=tuple(data["geotransform"]),  # type: ignore[arg-type]
+            geotransform=GeoTransform.from_dict(data["geotransform"]),
             crs=data["crs"],
         )

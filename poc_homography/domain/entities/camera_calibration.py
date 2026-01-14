@@ -20,18 +20,18 @@ class CameraCalibration:
     It is separate from CameraConfig (which rarely changes) and PTZState
     (which changes constantly and is never persisted).
 
-    The camera_id field references the CameraConfig.id of the camera
+    The id field references the CameraConfig.id of the camera
     this calibration belongs to.
 
     Attributes:
-        camera_id: References CameraConfig.id (format: "map_id/name").
+        id: References CameraConfig.id (format: "map_id/name").
         position: Position of the camera on the map (pixel coordinates).
         height: Height of the camera above the ground plane in meters.
         base_orientation: Camera orientation at PTZ home position (when PTZ is at 0,0).
         distortion: Lens distortion coefficients (calibrated per-camera).
     """
 
-    camera_id: str
+    id: str
     position: PixelPoint
     height: Meters
     base_orientation: Orientation
@@ -40,7 +40,7 @@ class CameraCalibration:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            "camera_id": self.camera_id,
+            "id": self.id,
             "position": self.position.to_dict(),
             "height": float(self.height),
             "base_orientation": self.base_orientation.to_dict(),
@@ -56,7 +56,7 @@ class CameraCalibration:
         from poc_homography.types import Meters
 
         return cls(
-            camera_id=data["camera_id"],
+            id=data["id"],
             position=PixelPoint.from_dict(data["position"]),
             height=Meters(data["height"]),
             base_orientation=Orientation.from_dict(data["base_orientation"]),

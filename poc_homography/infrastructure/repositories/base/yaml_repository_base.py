@@ -4,13 +4,15 @@ This module provides a reusable foundation for repositories that store
 domain entities in YAML files with in-memory caching.
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from pathlib import Path
 from typing import Generic, TypeVar
 
 import yaml
 
-TEntity = TypeVar("TEntity")
+from poc_homography.domain.entities.entity import Entity
+
+TEntity = TypeVar("TEntity", bound=Entity)
 
 
 class YamlRepositoryBase(ABC, Generic[TEntity]):
@@ -23,26 +25,19 @@ class YamlRepositoryBase(ABC, Generic[TEntity]):
     - YAML read/write with consistent formatting
     - Standard CRUD operations (get, save, delete, exists)
 
-    Subclasses must implement:
-    - _entity_to_dict: Convert entity to YAML-serializable dict
-    - _dict_to_entity: Reconstruct entity from dict
-    - _get_entity_id: Extract ID from entity
+    Subclasses only need to provide the entity class at construction time.
+    The entity class must implement the Entity protocol (id, to_dict, from_dict).
 
     Example usage:
         class YamlUserRepository(YamlRepositoryBase[User]):
-            def _get_entity_id(self, entity: User) -> str:
-                return entity.id
-
-            def _entity_to_dict(self, entity: User) -> dict:
-                return {"id": entity.id, "name": entity.name}
-
-            def _dict_to_entity(self, data: dict) -> User | None:
-                return User(id=data["id"], name=data["name"])
+            def __init__(self, data_dir: Path) -> None:
+                super().__init__(data_dir, User)
     """
 
     def __init__(
         self,
         data_dir: Path,
+        entity_cls: type[TEntity],
         *,
         create_dir: bool = True,
         id_separator: str = "/",
@@ -52,11 +47,13 @@ class YamlRepositoryBase(ABC, Generic[TEntity]):
 
         Args:
             data_dir: Directory for storing YAML files.
+            entity_cls: The entity class (must have from_dict class method).
             create_dir: If True, create data_dir if it doesn't exist.
             id_separator: Character used in entity IDs (e.g., "/" in "map_id/name").
             filename_separator: Replacement for id_separator in filenames.
         """
         self._data_dir = Path(data_dir)
+        self._entity_cls = entity_cls
         if create_dir:
             self._data_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, TEntity] = {}
@@ -115,35 +112,12 @@ class YamlRepositoryBase(ABC, Generic[TEntity]):
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-    # ─── Abstract Methods ──────────────────────────────────────────────
+    # ─── Entity Conversion (Default Implementations) ───────────────────
 
-    @abstractmethod
-    def _entity_to_dict(self, entity: TEntity) -> dict:
-        """Convert domain entity to dictionary for YAML storage.
-
-        Args:
-            entity: The domain entity to serialize.
-
-        Returns:
-            Dictionary representation suitable for YAML.
-        """
-        ...
-
-    @abstractmethod
-    def _dict_to_entity(self, data: dict) -> TEntity | None:
-        """Reconstruct domain entity from YAML dictionary.
-
-        Args:
-            data: Dictionary loaded from YAML.
-
-        Returns:
-            The reconstructed entity, or None if data is invalid.
-        """
-        ...
-
-    @abstractmethod
     def _get_entity_id(self, entity: TEntity) -> str:
         """Extract the unique ID from an entity.
+
+        Default implementation uses entity.id property.
 
         Args:
             entity: The domain entity.
@@ -151,7 +125,33 @@ class YamlRepositoryBase(ABC, Generic[TEntity]):
         Returns:
             The entity's unique identifier.
         """
-        ...
+        return entity.id
+
+    def _entity_to_dict(self, entity: TEntity) -> dict:
+        """Convert domain entity to dictionary for YAML storage.
+
+        Default implementation uses entity.to_dict() method.
+
+        Args:
+            entity: The domain entity to serialize.
+
+        Returns:
+            Dictionary representation suitable for YAML.
+        """
+        return entity.to_dict()
+
+    def _dict_to_entity(self, data: dict) -> TEntity | None:
+        """Reconstruct domain entity from YAML dictionary.
+
+        Default implementation uses entity_cls.from_dict() class method.
+
+        Args:
+            data: Dictionary loaded from YAML.
+
+        Returns:
+            The reconstructed entity, or None if data is invalid.
+        """
+        return self._entity_cls.from_dict(data)
 
     # ─── CRUD Operations ───────────────────────────────────────────────
 

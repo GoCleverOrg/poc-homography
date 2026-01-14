@@ -1,5 +1,7 @@
 """YAML-based GroundControlPoint repository implementation."""
 
+from pathlib import Path
+
 from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 from poc_homography.infrastructure.repositories.base import YamlRepositoryBase
 
@@ -19,17 +21,13 @@ class YamlGroundControlPointRepository(YamlRepositoryBase[GroundControlPoint]):
     the GCP ID "valte/Z1" has "/" replaced with "__".
     """
 
-    def _get_entity_id(self, entity: GroundControlPoint) -> str:
-        """Extract GCP ID from entity."""
-        return entity.id
+    def __init__(self, data_dir: Path) -> None:
+        """Initialize the repository.
 
-    def _entity_to_dict(self, entity: GroundControlPoint) -> dict:
-        """Convert GroundControlPoint to YAML-serializable dictionary."""
-        return entity.to_dict()
-
-    def _dict_to_entity(self, data: dict) -> GroundControlPoint | None:
-        """Reconstruct GroundControlPoint from YAML dictionary."""
-        return GroundControlPoint.from_dict(data)
+        Args:
+            data_dir: Directory containing GCP YAML files.
+        """
+        super().__init__(data_dir, GroundControlPoint)
 
     def get_by_map(self, map_id: str) -> dict[str, GroundControlPoint]:
         """Retrieve all GCPs for a specific map.

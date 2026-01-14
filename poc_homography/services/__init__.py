@@ -25,9 +25,15 @@ from poc_homography.services.orientation import (
     OrientationStrategy,
     RotationMatrixStrategy,
 )
+from poc_homography.services.service_geotiff_import import (
+    GeoTiffImportResult,
+    ServiceGeoTiffImport,
+)
 
 __all__ = [
     "AdditiveOrientationStrategy",
+    "GeoTiffImportResult",
+    "ServiceGeoTiffImport",
     "HomographyStrategy",
     "IntrinsicExtrinsicStrategy",
     "OrientationStrategy",
