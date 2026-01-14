@@ -845,12 +845,25 @@
         }
 
         // Zoom viewer to a specific point
-        function zoomToPoint(viewer, x, y, zoomLevel = 4) {
+        function zoomToPoint(viewer, x, y, zoomLevel = 5) {
             if (!viewer) return;
 
             const viewportPoint = viewer.viewport.imageToViewportCoordinates(x, y);
-            viewer.viewport.panTo(viewportPoint, false);
-            viewer.viewport.zoomTo(zoomLevel, viewportPoint, false);
+
+            // Use fitBounds with a small rect centered on the point
+            // This ensures proper centering before zoom
+            const imageWidth = viewer.world.getItemAt(0).getContentSize().x;
+            const viewWidth = imageWidth / zoomLevel;  // Approximate visible width at zoom level
+            const halfWidth = viewWidth / 2 / imageWidth;  // Convert to viewport coordinates
+
+            const bounds = new OpenSeadragon.Rect(
+                viewportPoint.x - halfWidth,
+                viewportPoint.y - halfWidth,
+                halfWidth * 2,
+                halfWidth * 2
+            );
+
+            viewer.viewport.fitBounds(bounds, false);
         }
 
         // Handle click on error table row - zoom to point
