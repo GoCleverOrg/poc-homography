@@ -845,7 +845,7 @@
         }
 
         // Zoom viewer to a specific point
-        function zoomToPoint(viewer, x, y, zoomLevel = 5) {
+        function zoomToPoint(viewer, x, y, zoomLevel = 20) {
             if (!viewer) return;
 
             const viewportPoint = viewer.viewport.imageToViewportCoordinates(x, y);
