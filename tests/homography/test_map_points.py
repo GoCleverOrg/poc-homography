@@ -49,7 +49,7 @@ from poc_homography.pixel_point import PixelPoint
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
 MAP_POINTS_PATH = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
 ANNOTATIONS_PATH = TEST_DATA_DIR / "valte_annotations.yaml"
-VALTE_IMAGE_PATH = TEST_DATA_DIR / "valte_30.8_13.1_1_12-01-2026.png"
+VALTE_IMAGE_PATH = TEST_DATA_DIR / "valte_30.8_13.1_1_20260112.png"
 
 
 @pytest.fixture
