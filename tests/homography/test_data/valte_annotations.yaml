@@ -137,3 +137,50 @@ test_cases:
       - pixel_x: 1224.1
         pixel_y: 266.3
         gcp_id: PS6
+
+  - name: valte_56.7_20.7_1_20260114
+    image: valte_56.7_20.7_1_20260114_182208.jpg
+    camera_status:
+      pan: 56.7
+      tilt: 20.7
+      zoom: 1
+    annotations:
+      - pixel_x: 229.8
+        pixel_y: 172.3
+        gcp_id: AR2
+
+      - pixel_x: 229.8
+        pixel_y: 114.4
+        gcp_id: PS7
+
+      - pixel_x: 621.4
+        pixel_y: 127.4
+        gcp_id: PS9
+
+      - pixel_x: 1078.9
+        pixel_y: 151.3
+        gcp_id: PS11
+
+      - pixel_x: 1581.4
+        pixel_y: 188.3
+        gcp_id: PS13
+
+      - pixel_x: 1200.2
+        pixel_y: 51.5
+        gcp_id: PS12
+
+      - pixel_x: 902.1
+        pixel_y: 36.6
+        gcp_id: PS10
+
+      - pixel_x: 372.6
+        pixel_y: 21.6
+        gcp_id: PS6
+
+      - pixel_x: 570.4
+        pixel_y: 889.5
+        gcp_id: EX4
+
+      - pixel_x: 1510.4
+        pixel_y: 72
+        gcp_id: PS14
