@@ -285,6 +285,19 @@
         .error-medium { color: #f57c00; }
         .error-high { color: #c62828; font-weight: 600; }
 
+        .axis-summary {
+            font-size: 11px;
+            font-weight: normal;
+            color: #666;
+            margin-left: 8px;
+        }
+
+        .axis-summary.x-biased { color: #e65100; }
+        .axis-summary.y-biased { color: #1565c0; }
+
+        .error-table td.positive { color: #c62828; }
+        .error-table td.negative { color: #1565c0; }
+
         /* Legend */
         .legend {
             display: flex;
@@ -504,18 +517,20 @@
                 <div class="loading">Select a test case to begin</div>
             </div>
             <div class="stats-section">
-                <h2>Per-Point Errors (pixels)</h2>
+                <h2>Per-Point Errors (pixels) <span id="camera-axis-summary" class="axis-summary"></span></h2>
                 <div class="error-table-container">
                     <table class="error-table" id="camera-error-table">
                         <thead>
                             <tr>
-                                <th data-sort="id">GCP ID</th>
-                                <th data-sort="error">Error (px)</th>
+                                <th data-sort="id">GCP</th>
+                                <th data-sort="error">Total</th>
+                                <th data-sort="dx">dX</th>
+                                <th data-sort="dy">dY</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td colspan="2" style="text-align: center; color: #999;">No data</td>
+                                <td colspan="4" style="text-align: center; color: #999;">No data</td>
                             </tr>
                         </tbody>
                     </table>
@@ -537,18 +552,20 @@
                 <div class="loading">Select a test case to begin</div>
             </div>
             <div class="stats-section">
-                <h2>Per-Point Errors (meters)</h2>
+                <h2>Per-Point Errors (meters) <span id="map-axis-summary" class="axis-summary"></span></h2>
                 <div class="error-table-container">
                     <table class="error-table" id="map-error-table">
                         <thead>
                             <tr>
-                                <th data-sort="id">GCP ID</th>
-                                <th data-sort="error">Error (m)</th>
+                                <th data-sort="id">GCP</th>
+                                <th data-sort="error">Total</th>
+                                <th data-sort="dx">dX</th>
+                                <th data-sort="dy">dY</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td colspan="2" style="text-align: center; color: #999;">No data</td>
+                                <td colspan="4" style="text-align: center; color: #999;">No data</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1088,25 +1105,25 @@
             // Update per-point error tables
             const perPointErrors = overlayData.per_point_errors || [];
 
-            // Camera errors (in pixels) - distance between annotation and reprojected GCP
+            // Camera errors (in pixels) - with per-axis breakdown
             const cameraErrors = perPointErrors.map(e => ({
                 id: e.gcp_id,
-                error: e.error_px
+                error: e.error_px,
+                dx: e.camera_dx,
+                dy: e.camera_dy
             }));
-            updateErrorTable('camera-error-table', cameraErrors, 'px');
+            updateErrorTable('camera-error-table', cameraErrors, 'px', 'camera-axis-summary');
 
-            // Map errors (in meters) - distance between GCP and projected annotation
+            // Map errors (in meters) - with per-axis breakdown
             // GSD = 0.15 m/pixel (from geotransform)
             const GSD = mapInfo && mapInfo.geotransform ? Math.abs(mapInfo.geotransform[1]) : 0.15;
-            const mapErrors = perPointErrors.map(e => {
-                // Calculate distance in map pixel space
-                const dx = e.map_original[0] - e.map_projected[0];
-                const dy = e.map_original[1] - e.map_projected[1];
-                const distPx = Math.sqrt(dx * dx + dy * dy);
-                // Convert to meters
-                return { id: e.gcp_id, error: distPx * GSD };
-            });
-            updateErrorTable('map-error-table', mapErrors, 'm');
+            const mapErrors = perPointErrors.map(e => ({
+                id: e.gcp_id,
+                error: Math.sqrt(e.map_dx * e.map_dx + e.map_dy * e.map_dy) * GSD,
+                dx: e.map_dx * GSD,
+                dy: e.map_dy * GSD
+            }));
+            updateErrorTable('map-error-table', mapErrors, 'm', 'map-axis-summary');
         }
 
         // Reset stats panel to default state
@@ -1122,25 +1139,51 @@
 
             ['camera-error-table', 'map-error-table'].forEach(tableId => {
                 const tbody = document.querySelector(`#${tableId} tbody`);
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #999;">No data</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No data</td></tr>';
             });
+
+            document.getElementById('camera-axis-summary').textContent = '';
+            document.getElementById('camera-axis-summary').className = 'axis-summary';
+            document.getElementById('map-axis-summary').textContent = '';
+            document.getElementById('map-axis-summary').className = 'axis-summary';
         }
 
-        // Update an error table with data
-        function updateErrorTable(tableId, errors, unit = 'px') {
+        // Update an error table with data including per-axis breakdown
+        function updateErrorTable(tableId, errors, unit = 'px', summaryId = null) {
             const tbody = document.querySelector(`#${tableId} tbody`);
             tbody.innerHTML = '';
 
             if (!errors || errors.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #999;">No data</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No data</td></tr>';
+                if (summaryId) {
+                    document.getElementById(summaryId).textContent = '';
+                }
                 return;
             }
 
             // Determine which viewer this table controls
             const viewerType = tableId.includes('camera') ? 'camera' : 'map';
 
+            // Calculate axis bias
+            let totalAbsDx = 0, totalAbsDy = 0;
+            errors.forEach(e => {
+                totalAbsDx += Math.abs(e.dx);
+                totalAbsDy += Math.abs(e.dy);
+            });
+            const totalAxisError = totalAbsDx + totalAbsDy;
+            const xBiasPct = totalAxisError > 0 ? (totalAbsDx / totalAxisError * 100) : 50;
+
+            // Update axis summary
+            if (summaryId) {
+                const summaryEl = document.getElementById(summaryId);
+                const biasClass = xBiasPct > 60 ? 'x-biased' : (xBiasPct < 40 ? 'y-biased' : '');
+                summaryEl.textContent = `(X: ${xBiasPct.toFixed(0)}%, Y: ${(100-xBiasPct).toFixed(0)}%)`;
+                summaryEl.className = 'axis-summary ' + biasClass;
+            }
+
             // Sort by error descending by default
             const sortedErrors = [...errors].sort((a, b) => b.error - a.error);
+            const decimals = unit === 'm' ? 3 : 1;
 
             sortedErrors.forEach(item => {
                 const row = document.createElement('tr');
@@ -1151,22 +1194,31 @@
                     handlePointClick(item.id, viewerType);
                 });
 
+                // GCP ID cell
                 const idCell = document.createElement('td');
                 idCell.textContent = item.id;
                 row.appendChild(idCell);
 
+                // Total error cell
                 const errorCell = document.createElement('td');
-                // Format based on unit - meters need more decimal places
-                const decimals = unit === 'm' ? 3 : 2;
                 errorCell.textContent = item.error.toFixed(decimals);
-                // Different thresholds for pixels vs meters
-                // Pixels: <5 good, <10 medium, >10 bad
-                // Meters: <1 good, <2 medium, >2 bad
                 const errorClass = unit === 'm'
                     ? getMetricClass(item.error, { good: 1, medium: 2 })
                     : getErrorClass(item.error);
                 errorCell.className = errorClass;
                 row.appendChild(errorCell);
+
+                // dX cell
+                const dxCell = document.createElement('td');
+                dxCell.textContent = (item.dx >= 0 ? '+' : '') + item.dx.toFixed(decimals);
+                dxCell.className = item.dx >= 0 ? 'positive' : 'negative';
+                row.appendChild(dxCell);
+
+                // dY cell
+                const dyCell = document.createElement('td');
+                dyCell.textContent = (item.dy >= 0 ? '+' : '') + item.dy.toFixed(decimals);
+                dyCell.className = item.dy >= 0 ? 'positive' : 'negative';
+                row.appendChild(dyCell);
 
                 tbody.appendChild(row);
             });

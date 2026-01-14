@@ -468,9 +468,21 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         reprojected = np.array([reprojected_camera.x, reprojected_camera.y])
         error_px = float(np.linalg.norm(reprojected - original))
 
+        # Calculate per-axis errors for camera frame
+        camera_dx = reprojected_camera.x - camera_x
+        camera_dy = reprojected_camera.y - camera_y
+
+        # Calculate per-axis errors for map frame
+        map_dx = projected_map.pixel_x - map_x
+        map_dy = projected_map.pixel_y - map_y
+
         per_point_errors.append({
             "gcp_id": gcp_id,
             "error_px": round(error_px, 2),
+            "camera_dx": round(camera_dx, 2),
+            "camera_dy": round(camera_dy, 2),
+            "map_dx": round(map_dx, 2),
+            "map_dy": round(map_dy, 2),
             "camera_original": [round(camera_x, 2), round(camera_y, 2)],
             "camera_reprojected": [round(reprojected_camera.x, 2), round(reprojected_camera.y, 2)],
             "map_original": [round(map_x, 2), round(map_y, 2)],
