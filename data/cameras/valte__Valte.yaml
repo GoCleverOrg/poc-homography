@@ -4,6 +4,7 @@
 # NOTE: Credentials should be configured in production deployments.
 # These placeholder values are for development/testing only.
 
+id: valte/Valte
 map_id: valte
 name: Valte
 spec: HIKVISION_DS_2DF8425IX

@@ -24,6 +24,7 @@ class GroundControlPoint:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
+            "id": self.id,
             "name": self.name,
             "map_point": self.map_point.to_dict(),
         }

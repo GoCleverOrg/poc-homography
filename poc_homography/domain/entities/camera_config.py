@@ -43,6 +43,7 @@ class CameraConfig:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         data: dict[str, Any] = {
+            "id": self.id,
             "map_id": self.map_id,
             "name": self.name,
             "spec": self.spec.name,
