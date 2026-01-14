@@ -5,47 +5,16 @@ from pathlib import Path
 
 import typer
 
-from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import gcp_app
-from poc_homography.coordinates import dms_to_dd
 from poc_homography.gcp.verify import (
     generate_verification_map,
     load_gcps_from_yaml,
 )
-from poc_homography.types import Degrees, Meters
-
-
-def _get_camera_config_decimal(camera_name: str) -> dict[str, float]:
-    """
-    Get camera configuration and convert DMS to decimal degrees.
-
-    Args:
-        camera_name: Name of the camera
-
-    Returns:
-        Dictionary with lat, lon, height_m, pan_offset_deg in decimal degrees
-    """
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
-    if camera_name not in configs:
-        available = ", ".join(configs.keys())
-        raise ValueError(f"Unknown camera: {camera_name}. Available: {available}")
-
-    cam = configs[camera_name]
-
-    return {
-        "lat": dms_to_dd(cam["lat"]),
-        "lon": dms_to_dd(cam["lon"]),
-        "height_m": cam["height_m"],
-        "pan_offset_deg": cam["pan_offset_deg"],
-    }
 
 
 @gcp_app.command("verify")
 def verify_command(
     gcps_file: Path = typer.Option(..., help="Path to GCPs YAML file"),
-    camera: str | None = typer.Option(
-        None, help="Camera name (e.g., 'Valte') for distance/bearing calculations"
-    ),
     output: Path | None = typer.Option(
         None, help="Output HTML file path (default: gcps_file.html)"
     ),
@@ -56,8 +25,7 @@ def verify_command(
     Generate verification map for GCP GPS coordinates.
 
     Creates an interactive HTML map with GCPs plotted on satellite imagery
-    for visual inspection. Optionally includes camera location and FOV cone
-    if camera parameter is provided.
+    for visual inspection.
 
     The GCPs YAML file should contain either:
 
@@ -90,8 +58,8 @@ def verify_command(
 
     Example:
         hom gcp verify --gcps-file gcps.yaml
-        hom gcp verify --gcps-file gcps.yaml --camera Valte --output verification.html
-        hom gcp verify --gcps-file gcps.yaml --camera Valte --no-open-browser
+        hom gcp verify --gcps-file gcps.yaml --output verification.html
+        hom gcp verify --gcps-file gcps.yaml --no-open-browser
     """
     # Load GCPs from YAML file
     try:
@@ -107,30 +75,15 @@ def verify_command(
         typer.echo("Error: No GCPs found in YAML file", err=True)
         raise typer.Exit(1)
 
-    # Get camera configuration if specified
-    camera_config: dict | None = None
-    if camera:
-        try:
-            config = _get_camera_config_decimal(camera)
-            camera_config = {
-                "lat": Degrees(config["lat"]),
-                "lon": Degrees(config["lon"]),
-                "height_m": Meters(config["height_m"]),
-                "pan_offset_deg": Degrees(config["pan_offset_deg"]),
-            }
-        except ValueError as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(1)
-
     # Determine output file
     if output is None:
         output = gcps_file.with_suffix(".html")
 
-    # Generate HTML map
+    # Generate HTML map (without camera location - lat/lon not available in new model)
     typer.echo(f"Generating verification map with {len(gcps)} GCPs...")
     html = generate_verification_map(
         gcps=gcps,
-        camera_config=camera_config,
+        camera_config=None,
         ptz_info=ptz_info,
         metadata=metadata,
         title=f"GCP Verification - {gcps_file.name}",

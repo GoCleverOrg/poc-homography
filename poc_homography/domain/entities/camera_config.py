@@ -19,24 +19,20 @@ class CameraConfig:
     (position, orientation, distortion) which has a different lifecycle.
 
     Attributes:
+        id: Unique identifier for this camera configuration.
         map_id: ID of the map this camera is associated with.
         name: Human-readable name for the camera.
         spec: Camera hardware specification (enum).
         credential: Authentication credentials for camera access.
         ip_address: IP address for camera control (optional).
-        id: Unique identifier. Defaults to "map_id/name" if not provided.
     """
 
+    id: str
     map_id: str
     name: str
     spec: CameraSpec
     credential: Credential
     ip_address: str | None = None
-    id: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.id:
-            object.__setattr__(self, "id", f"{self.map_id}/{self.name}")
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -51,6 +47,22 @@ class CameraConfig:
             data["ip_address"] = self.ip_address
         return data
 
+    def rtsp_url(self, stream_type: str = "main") -> str:
+        """Build RTSP URL for this camera.
+
+        Args:
+            stream_type: "main" for high quality or "sub" for low quality
+
+        Returns:
+            Full RTSP URL for the camera stream
+
+        Raises:
+            ValueError: If camera has no IP address configured
+        """
+        if not self.ip_address:
+            raise ValueError(f"Camera '{self.name}' has no IP address configured")
+        return self.spec.rtsp_url(self.ip_address, self.credential, stream_type)
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CameraConfig:
         """Create CameraConfig from dictionary."""
@@ -58,7 +70,7 @@ class CameraConfig:
         from poc_homography.domain.vo.credential import Credential
 
         return cls(
-            id=data.get("id", ""),
+            id=data["id"],
             map_id=data["map_id"],
             name=data["name"],
             spec=CameraSpec[data["spec"]],

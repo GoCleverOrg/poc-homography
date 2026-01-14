@@ -2,23 +2,49 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import typer
 import yaml
 
+from poc_homography.application import ApplicationContext
 from poc_homography.calibration import (
     TARGET_ERROR_THRESHOLD_PX,
-    analyze_projection_error,
     print_results,
     run_calibration,
 )
-from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
-from poc_homography.coordinates import dms_to_dd
+from poc_homography.domain import CameraCalibration, CameraConfig
 from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 from poc_homography.domain.vo.map_point import MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
-from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
+from poc_homography.types import Degrees, Pixels, PixelsFloat, Unitless
+
+
+def _build_legacy_camera_dict(
+    config: CameraConfig,
+    calibration: CameraCalibration | None,
+) -> dict[str, Any]:
+    """Build a legacy camera config dict from domain entities.
+
+    This adapter function creates the dict format expected by legacy calibration code.
+    """
+    result: dict[str, Any] = {
+        "name": config.name,
+        "ip": config.ip_address,
+    }
+
+    if calibration:
+        result["height_m"] = float(calibration.height)
+        result["pan_offset_deg"] = calibration.base_orientation.yaw
+        result["tilt_offset_deg"] = calibration.base_orientation.pitch
+        result["k1"] = calibration.distortion.k1
+        result["k2"] = calibration.distortion.k2
+        # camera_x and camera_y from position (for comprehensive calibration)
+        result["camera_x"] = float(calibration.position.x)
+        result["camera_y"] = float(calibration.position.y)
+
+    return result
 
 
 def _load_gcps_from_registry_file(file_path: Path) -> dict[str, GroundControlPoint]:
@@ -76,85 +102,6 @@ class GCPObservationData:
     zoom: Unitless
 
 
-def _get_camera_config(camera_name: str) -> dict[str, float]:
-    """
-    Get camera configuration and convert DMS to decimal degrees.
-
-    Args:
-        camera_name: Name of the camera
-
-    Returns:
-        Dictionary with lat, lon, height_m, pan_offset_deg in decimal degrees
-    """
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
-    if camera_name not in configs:
-        available = ", ".join(configs.keys())
-        raise ValueError(f"Unknown camera: {camera_name}. Available: {available}")
-
-    cam = configs[camera_name]
-
-    return {
-        "lat": dms_to_dd(cam["lat"]),
-        "lon": dms_to_dd(cam["lon"]),
-        "height_m": cam["height_m"],
-        "pan_offset_deg": cam["pan_offset_deg"],
-    }
-
-
-@calibrate_app.command("projection")
-def projection_command(
-    camera: str = typer.Option(..., help="Camera name (e.g., 'camera1')"),
-    map_x: float = typer.Option(..., help="Map point X coordinate (meters, East)"),
-    map_y: float = typer.Option(..., help="Map point Y coordinate (meters, North)"),
-    pixel_u: float = typer.Option(..., help="Actual pixel U coordinate (clicked by user)"),
-    pixel_v: float = typer.Option(..., help="Actual pixel V coordinate (clicked by user)"),
-    pan_raw: float = typer.Option(..., help="Raw pan value from camera PTZ (degrees)"),
-    tilt: float = typer.Option(..., help="Tilt angle in degrees"),
-    zoom: float = typer.Option(..., help="Zoom factor"),
-    width: int = typer.Option(1920, help="Image width in pixels"),
-    height: int = typer.Option(1080, help="Image height in pixels"),
-) -> None:
-    """
-    Analyze projection error to identify calibration issues.
-
-    This command helps identify which parameter is causing projection misalignment:
-    - Pan offset
-    - Camera height
-    - Focal length / intrinsics
-
-    Example:
-        hom calibrate projection --camera camera1 --map-x 10.5 --map-y 20.3
-            --pixel-u 960 --pixel-v 540 --pan-raw 45.0 --tilt 30.0 --zoom 5.0
-    """
-    # Get camera configuration
-    try:
-        config = _get_camera_config(camera)
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-
-    # Convert CLI inputs to typed units at the boundary
-    result = analyze_projection_error(
-        camera_lat=Degrees(config["lat"]),
-        camera_lon=Degrees(config["lon"]),
-        height_m=Meters(config["height_m"]),
-        pan_offset_deg=Degrees(config["pan_offset_deg"]),
-        map_point_x=Meters(map_x),
-        map_point_y=Meters(map_y),
-        actual_u=PixelsFloat(pixel_u),
-        actual_v=PixelsFloat(pixel_v),
-        pan_raw=Degrees(pan_raw),
-        tilt_deg=Degrees(tilt),
-        zoom=Unitless(zoom),
-        image_width=Pixels(width),
-        image_height=Pixels(height),
-    )
-
-    # Exit with code 1 if adjustments are needed (for scripting)
-    if result.needs_pan_adjustment or result.needs_height_adjustment:
-        raise typer.Exit(1)
-
-
 @calibrate_app.command("comprehensive")
 def comprehensive_command(
     camera: str = typer.Option(..., help="Camera name (e.g., 'Valte')"),
@@ -194,14 +141,22 @@ def comprehensive_command(
         hom calibrate comprehensive --camera Valte --gcps-file valte_gcps.yaml
             --registry-file valte_map_points.yaml
     """
-    # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
-    if camera not in configs:
-        available = ", ".join(configs.keys())
+    # Get camera configuration and calibration from repositories
+    ctx = ApplicationContext.default()
+
+    all_configs = ctx.camera_config_repo.get_all()
+    cam_config = next((c for c in all_configs if c.name == camera), None)
+
+    if not cam_config:
+        available = ", ".join(c.name for c in all_configs)
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    camera_config = configs[camera]
+    # Get calibration data
+    cam_calibration = ctx.camera_calibration_repo.get(cam_config.id)
+
+    # Build legacy dict for run_calibration compatibility
+    camera_config = _build_legacy_camera_dict(cam_config, cam_calibration)
 
     # Load GCPs from YAML file
     try:

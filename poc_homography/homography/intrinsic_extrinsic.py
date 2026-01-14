@@ -44,6 +44,7 @@ import math
 
 import numpy as np
 
+from poc_homography.domain import MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.interface import (
     HomographyProvider,
@@ -53,7 +54,6 @@ from poc_homography.homography.parameters import (
     IntrinsicExtrinsicConfig,
     IntrinsicExtrinsicResult,
 )
-from poc_homography.map_points import MapPoint
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)

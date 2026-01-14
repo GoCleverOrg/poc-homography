@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from poc_homography.camera_config import CAMERAS
+from poc_homography.application import ApplicationContext
 from poc_homography.cli.main import test_app
 from poc_homography.testing.data_generator import run_data_generator
 from poc_homography.testing.sam3 import PROMPTS_TO_TEST, PromptTestResult, test_prompts
@@ -199,11 +199,16 @@ def data_generator_command(
         hom test data-generator Setram --output my_test.json --map-points valte_map_points.yaml
         hom test data-generator --list-cameras
     """
+    # Get camera configurations from repository
+    ctx = ApplicationContext.default()
+    all_configs = ctx.camera_config_repo.get_all()
+
     # Handle --list-cameras
     if list_cameras:
         typer.echo("Available cameras:")
-        for cam in CAMERAS:
-            typer.echo(f"  - {cam['name']} ({cam['ip']})")
+        for cam in all_configs:
+            ip = cam.ip_address or "no IP"
+            typer.echo(f"  - {cam.name} ({ip})")
         raise typer.Exit(0)
 
     # Validate camera_name is provided
@@ -215,7 +220,7 @@ def data_generator_command(
         raise typer.Exit(1)
 
     # Validate camera exists
-    available_names = [cam["name"] for cam in CAMERAS]
+    available_names = [cam.name for cam in all_configs]
     if camera_name not in available_names:
         typer.echo(
             f"Error: Camera '{camera_name}' not found. Available: {', '.join(available_names)}",

@@ -22,6 +22,7 @@ from typing import Any
 import cv2
 import numpy as np
 
+from poc_homography.domain import MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.interface import (
     HomographyApproach,
@@ -29,7 +30,6 @@ from poc_homography.homography.interface import (
     HomographyResult,
     validate_homography_matrix,
 )
-from poc_homography.map_points import MapPoint
 
 logger = logging.getLogger(__name__)
 

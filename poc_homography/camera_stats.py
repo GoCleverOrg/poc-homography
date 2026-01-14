@@ -16,31 +16,28 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from typing import Any
 
+from poc_homography.application import ApplicationContext
 from poc_homography.camera.intrinsics import PTZStatus, get_ptz_status
-from poc_homography.camera_config import get_camera_by_name, get_camera_configs
 
 
-def fetch_live_ptz_status(ip: str, timeout: float = 5.0) -> PTZStatus | None:
+def fetch_live_ptz_status(
+    ip: str, username: str, password: str, timeout: float = 5.0
+) -> PTZStatus | None:
     """
     Fetch live PTZ status from camera.
 
     Args:
         ip: Camera IP address
+        username: Camera username
+        password: Camera password
         timeout: Request timeout in seconds
 
     Returns:
-        PTZStatus or None if credentials not set or connection failed
+        PTZStatus or None if connection failed
     """
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
-
-    if not username or not password:
-        return None
-
     try:
         return get_ptz_status(ip, username, password, timeout)
     except RuntimeError:
@@ -58,48 +55,67 @@ def get_camera_stats(camera_name: str, include_live: bool = False) -> dict[str, 
     Returns:
         Dictionary with camera stats or None if not found
     """
-    camera = get_camera_by_name(camera_name)
+    ctx = ApplicationContext.default()
+
+    all_configs = ctx.camera_config_repo.get_all()
+    camera = next((c for c in all_configs if c.name == camera_name), None)
     if camera is None:
         return None
 
-    # Organize stats into categories
-    stats = {
-        "name": camera.get("name"),
-        "model": camera.get("model"),
-        "ip": camera.get("ip"),
-        "description": camera.get("description"),
-        "location": {
-            "latitude": camera.get("lat"),
-            "longitude": camera.get("lon"),
-            "height_m": camera.get("height_m"),
-        },
-        "calibration": {
-            "pan_offset_deg": camera.get("pan_offset_deg"),
-            "tilt_offset_deg": camera.get("tilt_offset_deg"),
-        },
-        "distortion": {
-            "k1": camera.get("k1"),
-            "k2": camera.get("k2"),
-            "p1": camera.get("p1"),
-            "p2": camera.get("p2"),
-        },
+    # Get calibration data
+    calibration = ctx.camera_calibration_repo.get(camera.id)
+
+    # Build stats from domain entities
+    stats: dict[str, Any] = {
+        "name": camera.name,
+        "model": camera.spec.model_name,
+        "ip": camera.ip_address,
+        "map_id": camera.map_id,
         "sensor": {
-            "sensor_width_mm": camera.get("sensor_width_mm"),
-            "base_focal_length_mm": camera.get("base_focal_length_mm"),
+            "sensor_width_mm": float(camera.spec.sensor_width),
+            "base_focal_length_mm": float(camera.spec.base_focal_length),
+            "image_width": int(camera.spec.image_width),
+            "image_height": int(camera.spec.image_height),
+            "max_zoom": camera.spec.max_zoom,
         },
-        "geotiff_params": camera.get("geotiff_params"),
-        "calibration_table": camera.get("calibration_table"),
         "live_status": None,
     }
 
+    # Add calibration data if available
+    if calibration:
+        stats["position"] = {
+            "x": float(calibration.position.x),
+            "y": float(calibration.position.y),
+        }
+        stats["height_m"] = float(calibration.height)
+        stats["calibration"] = {
+            "pan_offset_deg": calibration.base_orientation.yaw,
+            "tilt_offset_deg": calibration.base_orientation.pitch,
+        }
+        stats["distortion"] = {
+            "k1": calibration.distortion.k1,
+            "k2": calibration.distortion.k2,
+            "p1": calibration.distortion.p1,
+            "p2": calibration.distortion.p2,
+        }
+    else:
+        stats["position"] = None
+        stats["height_m"] = None
+        stats["calibration"] = None
+        stats["distortion"] = None
+
     # Fetch live PTZ status if requested
-    if include_live:
-        ptz = fetch_live_ptz_status(camera["ip"])
+    if include_live and camera.ip_address:
+        ptz = fetch_live_ptz_status(
+            camera.ip_address,
+            camera.credential.username,
+            camera.credential.password,
+        )
         if ptz:
             stats["live_status"] = {
-                "pan_deg": ptz.pan,
-                "tilt_deg": ptz.tilt,
-                "zoom": ptz.zoom,
+                "pan_deg": float(ptz.pan),
+                "tilt_deg": float(ptz.tilt),
+                "zoom": float(ptz.zoom),
             }
 
     return stats
@@ -113,49 +129,44 @@ def format_stats_human(stats: dict[str, Any]) -> str:
 
     lines.append(f"\nModel: {stats['model']}")
     lines.append(f"IP: {stats['ip']}")
-    lines.append(f"Description: {stats['description']}")
+    lines.append(f"Map ID: {stats['map_id']}")
 
-    lines.append("\nLocation:")
-    loc = stats["location"]
-    lines.append(f"  Latitude:  {loc['latitude']}")
-    lines.append(f"  Longitude: {loc['longitude']}")
-    lines.append(f"  Height:    {loc['height_m']} m")
+    if stats.get("position"):
+        lines.append("\nPosition on Map:")
+        pos = stats["position"]
+        lines.append(f"  X: {pos['x']}")
+        lines.append(f"  Y: {pos['y']}")
 
-    lines.append("\nCalibration Offsets:")
-    cal = stats["calibration"]
-    lines.append(f"  Pan offset:  {cal['pan_offset_deg']}°")
-    lines.append(f"  Tilt offset: {cal['tilt_offset_deg']}°")
+    if stats.get("height_m"):
+        lines.append(f"\nHeight: {stats['height_m']} m")
 
-    lines.append("\nLens Distortion (OpenCV model):")
-    dist = stats["distortion"]
-    lines.append(f"  k1: {dist['k1']}")
-    lines.append(f"  k2: {dist['k2']}")
-    lines.append(f"  p1: {dist['p1']}")
-    lines.append(f"  p2: {dist['p2']}")
+    if stats.get("calibration"):
+        lines.append("\nCalibration Offsets:")
+        cal = stats["calibration"]
+        lines.append(f"  Pan offset:  {cal['pan_offset_deg']}deg")
+        lines.append(f"  Tilt offset: {cal['tilt_offset_deg']}deg")
+
+    if stats.get("distortion"):
+        lines.append("\nLens Distortion (OpenCV model):")
+        dist = stats["distortion"]
+        lines.append(f"  k1: {dist['k1']}")
+        lines.append(f"  k2: {dist['k2']}")
+        lines.append(f"  p1: {dist['p1']}")
+        lines.append(f"  p2: {dist['p2']}")
 
     lines.append("\nSensor Parameters:")
     sensor = stats["sensor"]
     lines.append(f"  Sensor width:      {sensor['sensor_width_mm']} mm")
     lines.append(f"  Base focal length: {sensor['base_focal_length_mm']} mm")
-
-    if stats["geotiff_params"]:
-        lines.append("\nGeoTIFF Parameters:")
-        geo = stats["geotiff_params"]
-        lines.append(f"  GeoTransform: {geo.get('geotransform')}")
-        lines.append(f"  UTM CRS:      {geo.get('utm_crs')}")
-
-    if stats["calibration_table"]:
-        lines.append("\nCalibration Table:")
-        lines.append(f"  Zoom levels: {list(stats['calibration_table'].keys())}")
-    else:
-        lines.append("\nCalibration Table: Not configured (using linear approximation)")
+    lines.append(f"  Image size:        {sensor['image_width']}x{sensor['image_height']}")
+    lines.append(f"  Max zoom:          {sensor['max_zoom']}x")
 
     # Live PTZ status
     if stats.get("live_status"):
         live = stats["live_status"]
         lines.append("\nLive PTZ Status:")
-        lines.append(f"  Pan:  {live['pan_deg']:.2f}°")
-        lines.append(f"  Tilt: {live['tilt_deg']:.2f}°")
+        lines.append(f"  Pan:  {live['pan_deg']:.2f}deg")
+        lines.append(f"  Tilt: {live['tilt_deg']:.2f}deg")
         lines.append(f"  Zoom: {live['zoom']:.1f}x")
 
     return "\n".join(lines)
@@ -163,7 +174,8 @@ def format_stats_human(stats: dict[str, Any]) -> str:
 
 def list_cameras() -> list[str]:
     """Get list of all available camera names."""
-    return [cam["name"] for cam in get_camera_configs()]
+    ctx = ApplicationContext.default()
+    return [cam.name for cam in ctx.camera_config_repo.get_all()]
 
 
 def main() -> int:
@@ -199,7 +211,7 @@ Examples:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="Fetch live PTZ status from camera (requires CAMERA_USERNAME and CAMERA_PASSWORD env vars)",
+        help="Fetch live PTZ status from camera (uses credentials from camera config)",
     )
 
     args = parser.parse_args()
@@ -231,7 +243,7 @@ Examples:
         if args.live and stats.get("live_status") is None:
             print(
                 "\nWarning: Could not fetch live PTZ status. "
-                "Check CAMERA_USERNAME/CAMERA_PASSWORD env vars and network connectivity.",
+                "Check credentials in camera config and network connectivity.",
                 file=sys.stderr,
             )
 

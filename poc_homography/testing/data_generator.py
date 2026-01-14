@@ -22,109 +22,31 @@ from urllib.parse import urlparse
 
 import cv2
 
+from poc_homography.application import ApplicationContext
 from poc_homography.camera.intrinsics import get_ptz_status
-from poc_homography.camera_config import (
-    PASSWORD,
-    USERNAME,
-    get_camera_by_name,
-    get_rtsp_url,
-)
-from poc_homography.coordinates import dms_to_dd
 from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 from poc_homography.domain.vo.map_point import MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.server_utils import find_available_port
 
 
-def validate_gps_ranges(latitude: float, longitude: float) -> None:
-    """
-    Validate that GPS coordinates are within valid ranges.
-
-    Args:
-        latitude: Latitude in decimal degrees
-        longitude: Longitude in decimal degrees
-
-    Raises:
-        ValueError: If coordinates are outside valid ranges
-    """
-    if not -90.0 <= latitude <= 90.0:
-        raise ValueError(f"Latitude must be between -90 and 90 degrees, got {latitude}")
-
-    if not -180.0 <= longitude <= 180.0:
-        raise ValueError(f"Longitude must be between -180 and 180 degrees, got {longitude}")
-
-
-def convert_gps_coordinates(lat_dms: str, lon_dms: str) -> tuple[float, float]:
-    """
-    Convert GPS coordinates from DMS format to decimal degrees with validation.
-
-    Args:
-        lat_dms: Latitude in DMS format (e.g., "39°38'25.72\"N")
-        lon_dms: Longitude in DMS format (e.g., "0°13'48.63\"W")
-
-    Returns:
-        Tuple of (latitude, longitude) in decimal degrees
-
-    Raises:
-        ValueError: If converted coordinates are outside valid ranges
-    """
-    # Convert using dms_to_dd function
-    latitude = dms_to_dd(lat_dms)
-    longitude = dms_to_dd(lon_dms)
-
-    # Validate ranges
-    validate_gps_ranges(latitude, longitude)
-
-    return (latitude, longitude)
-
-
-def extract_camera_parameters(camera_config: dict[str, Any]) -> dict[str, float]:
-    """
-    Extract camera GPS position and height from camera config.
-
-    Args:
-        camera_config: Camera configuration dict with lat, lon, height_m fields
-
-    Returns:
-        Dictionary with latitude, longitude, height_meters (all in decimal degrees/meters)
-
-    Raises:
-        ValueError: If GPS conversion fails
-    """
-    lat_dms = camera_config["lat"]
-    lon_dms = camera_config["lon"]
-    height_m = camera_config["height_m"]
-
-    # Convert DMS to decimal degrees
-    latitude, longitude = convert_gps_coordinates(lat_dms, lon_dms)
-
-    return {"latitude": latitude, "longitude": longitude, "height_meters": height_m}
-
-
-def fetch_ptz_status(camera_config: dict[str, Any]) -> dict[str, float]:
+def fetch_ptz_status(ip_address: str, username: str, password: str) -> dict[str, float]:
     """
     Fetch current PTZ status from camera.
 
     Args:
-        camera_config: Camera configuration with IP address
+        ip_address: Camera IP address
+        username: Camera username
+        password: Camera password
 
     Returns:
         Dictionary with pan_deg, tilt_deg, zoom_level
 
     Raises:
         RuntimeError: If PTZ status cannot be fetched
-        ValueError: If credentials are not configured
     """
-    if not USERNAME or not PASSWORD:
-        raise ValueError(
-            "Camera credentials not configured. "
-            "Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables."
-        )
-
-    ip = camera_config["ip"]
-
     try:
-        ptz_data = get_ptz_status(ip, USERNAME, PASSWORD, timeout=10.0)
+        ptz_data = get_ptz_status(ip_address, username, password, timeout=10.0)
 
         return {
             "pan_deg": float(ptz_data.pan),
@@ -135,12 +57,12 @@ def fetch_ptz_status(camera_config: dict[str, Any]) -> dict[str, float]:
         raise RuntimeError(f"Failed to fetch PTZ status: {e}") from e
 
 
-def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
+def capture_frame_from_rtsp(rtsp_url: str, timeout_sec: float = 10.0) -> str:
     """
     Capture a single frame from RTSP camera stream.
 
     Args:
-        camera_name: Name of the camera
+        rtsp_url: Full RTSP URL for the camera stream
         timeout_sec: Timeout for capture operation in seconds
 
     Returns:
@@ -149,13 +71,7 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
     Raises:
         RuntimeError: If frame capture fails
     """
-    # Get RTSP URL
-    rtsp_url = get_rtsp_url(camera_name, stream_type="main")
-
-    if not rtsp_url:
-        raise RuntimeError(f"Could not get RTSP URL for camera {camera_name}")
-
-    print(f"Connecting to RTSP stream: {rtsp_url}")
+    print("Connecting to RTSP stream...")
 
     # Open video capture
     cap = cv2.VideoCapture(rtsp_url)
@@ -177,7 +93,7 @@ def capture_frame_from_rtsp(camera_name: str, timeout_sec: float = 10.0) -> str:
 
     if frame is None:
         raise RuntimeError(
-            f"Failed to capture frame from camera {camera_name} within {timeout_sec}s timeout. "
+            f"Failed to capture frame within {timeout_sec}s timeout. "
             f"Please check camera connectivity and RTSP stream availability."
         )
 
@@ -964,29 +880,53 @@ def run_data_generator(
         RuntimeError: If camera operations fail
         ValueError: If camera not found
     """
-    # Get camera config
-    camera_config = get_camera_by_name(camera_name)
+    # Get camera config from repository
+    ctx = ApplicationContext.default()
+
+    all_configs = ctx.camera_config_repo.get_all()
+    camera_config = next((c for c in all_configs if c.name == camera_name), None)
+
     if not camera_config:
-        raise ValueError(f"Camera '{camera_name}' not found in configuration")
+        available = [c.name for c in all_configs]
+        raise ValueError(
+            f"Camera '{camera_name}' not found in configuration. Available: {', '.join(available)}"
+        )
+
+    if not camera_config.ip_address:
+        raise ValueError(f"Camera '{camera_name}' has no IP address configured")
+
+    # Get calibration data
+    calibration = ctx.camera_calibration_repo.get(camera_config.id)
 
     print(f"=== Test Data Generator for {camera_name} ===\n")
 
     # Step 1: Extract camera parameters
     print("1. Extracting camera parameters...")
-    try:
-        camera_params = extract_camera_parameters(camera_config)
-        print(f"   GPS: {camera_params['latitude']:.6f}, {camera_params['longitude']:.6f}")
-        print(f"   Height: {camera_params['height_meters']} m")
-    except Exception as e:
-        print(f"   Error: {e}")
-        raise RuntimeError(f"Failed to extract camera parameters: {e}") from e
+    height_m = float(calibration.height) if calibration else 5.0
+    position_x = float(calibration.position.x) if calibration else None
+    position_y = float(calibration.position.y) if calibration else None
+
+    camera_params: dict[str, float | None] = {
+        "height_meters": height_m,
+        "position_x": position_x,
+        "position_y": position_y,
+        "latitude": None,
+        "longitude": None,
+    }
+    print(f"   Height: {height_m} m")
+    if position_x is not None and position_y is not None:
+        print(f"   Position: ({position_x:.1f}, {position_y:.1f})")
+
+    # Get credentials from camera config
+    username = camera_config.credential.username
+    password = camera_config.credential.password
 
     # Step 2: Fetch PTZ status
     print("2. Fetching PTZ status...")
     try:
-        ptz_status = fetch_ptz_status(camera_config)
-        print(f"   Pan: {ptz_status['pan_deg']:.1f}°")
-        print(f"   Tilt: {ptz_status['tilt_deg']:.1f}°")
+        ptz_status = fetch_ptz_status(camera_config.ip_address, username, password)
+        print(f"   Pan: {ptz_status['pan_deg']:.1f}deg")
+        print(f"   Tilt: {ptz_status['tilt_deg']:.1f}deg")
         print(f"   Zoom: {ptz_status['zoom_level']:.1f}x")
     except RuntimeError as e:
         print(f"   Warning: {e}")
@@ -999,7 +939,8 @@ def run_data_generator(
     # Step 3: Capture frame
     print("3. Capturing frame from camera...")
     try:
-        frame_path = capture_frame_from_rtsp(camera_name, timeout_sec=10.0)
+        rtsp_url = camera_config.rtsp_url(stream_type="main")
+        frame_path = capture_frame_from_rtsp(rtsp_url, timeout_sec=10.0)
     except RuntimeError as e:
         print(f"   Error: {e}")
         raise

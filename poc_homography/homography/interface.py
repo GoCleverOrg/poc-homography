@@ -27,7 +27,7 @@ import numpy.typing as npt
 from poc_homography.domain.vo.pixel_point import PixelPoint
 
 if TYPE_CHECKING:
-    from poc_homography.map_points import MapPoint
+    from poc_homography.domain import MapPoint
 
 
 class HomographyApproach(Enum):

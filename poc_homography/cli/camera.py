@@ -3,27 +3,45 @@
 import json
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import typer
 import yaml
 
+from poc_homography.application import ApplicationContext
 from poc_homography.calibration import TARGET_ERROR_THRESHOLD_PX
 from poc_homography.camera import PTZStatus, get_camera_intrinsics
-from poc_homography.camera_config import (
-    DEFAULT_BASE_FOCAL_LENGTH_MM,
-    DEFAULT_SENSOR_WIDTH_MM,
-    PASSWORD,
-    USERNAME,
-    get_camera_by_name,
-    get_camera_configs,
-)
 from poc_homography.cli.main import camera_app
+from poc_homography.domain import CameraCalibration, CameraConfig, CameraSpec
 from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
 from poc_homography.domain.vo.map_point import MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.types import Millimeters, Pixels
 from poc_homography.validation import load_gcps_from_yaml, validate_model
+
+
+def _build_legacy_camera_dict(
+    config: CameraConfig,
+    calibration: CameraCalibration | None,
+) -> dict[str, Any]:
+    """Build a legacy camera config dict from domain entities.
+
+    This adapter function creates the dict format expected by legacy validation code.
+    """
+    result: dict[str, Any] = {
+        "name": config.name,
+        "ip": config.ip_address,
+    }
+
+    if calibration:
+        result["height_m"] = float(calibration.height)
+        result["pan_offset_deg"] = calibration.base_orientation.yaw
+        result["tilt_offset_deg"] = calibration.base_orientation.pitch
+        result["k1"] = calibration.distortion.k1
+        result["k2"] = calibration.distortion.k2
+
+    return result
 
 
 def _load_gcps_from_registry_file(file_path: Path) -> dict[str, GroundControlPoint]:
@@ -68,11 +86,11 @@ def intrinsics_command(
     image_width: int = typer.Option(1920, help="Image width in pixels"),
     image_height: int = typer.Option(1080, help="Image height in pixels"),
     sensor_width_mm: float = typer.Option(
-        DEFAULT_SENSOR_WIDTH_MM,
+        float(CameraSpec.HIKVISION_DS_2DF8425IX.sensor_width),
         help="Sensor width in millimeters",
     ),
     base_focal_length_mm: float = typer.Option(
-        DEFAULT_BASE_FOCAL_LENGTH_MM,
+        float(CameraSpec.HIKVISION_DS_2DF8425IX.base_focal_length),
         help="Base focal length in millimeters (at 1x zoom)",
     ),
     output_format: OutputFormat = typer.Option(
@@ -93,31 +111,29 @@ def intrinsics_command(
         hom camera intrinsics --camera Valte --format json
         hom camera intrinsics --camera Valte --format yaml
     """
-    # Validate credentials
-    if not USERNAME or not PASSWORD:
-        typer.echo(
-            "Error: Camera credentials not set. "
-            "Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
-            err=True,
-        )
-        raise typer.Exit(1)
+    # Get camera configuration from repository
+    ctx = ApplicationContext.default()
+    all_configs = ctx.camera_config_repo.get_all()
+    cam_config = next((c for c in all_configs if c.name == camera), None)
 
-    # Get camera configuration
-    cam_info = get_camera_by_name(camera)
-    if not cam_info:
-        available = [c["name"] for c in get_camera_configs()]
+    if not cam_config:
+        available = [c.name for c in all_configs]
         typer.echo(
             f"Error: Camera '{camera}' not found. Available cameras: {', '.join(available)}",
             err=True,
         )
         raise typer.Exit(1)
 
-    # Get PTZ status and intrinsics
+    if not cam_config.ip_address:
+        typer.echo(f"Error: Camera '{camera}' has no IP address configured", err=True)
+        raise typer.Exit(1)
+
+    # Get PTZ status and intrinsics using credentials from camera config
     try:
         ptz_status, intrinsics = get_camera_intrinsics(
-            camera_ip=cam_info["ip"],
-            username=USERNAME,
-            password=PASSWORD,
+            camera_ip=cam_config.ip_address,
+            username=cam_config.credential.username,
+            password=cam_config.credential.password,
             image_width=Pixels(image_width),
             image_height=Pixels(image_height),
             sensor_width_mm=Millimeters(sensor_width_mm),
@@ -129,9 +145,9 @@ def intrinsics_command(
 
     # Format output
     if output_format == OutputFormat.HUMAN:
-        output = _format_human_readable(camera, cam_info["ip"], ptz_status, intrinsics)
+        output = _format_human_readable(camera, cam_config.ip_address, ptz_status, intrinsics)
     elif output_format == OutputFormat.JSON:
-        output = _format_json(camera, cam_info["ip"], ptz_status, intrinsics)
+        output = _format_json(camera, cam_config.ip_address, ptz_status, intrinsics)
     else:  # YAML
         output = _format_yaml(camera, ptz_status, intrinsics)
 
@@ -266,14 +282,22 @@ def validate_command(
         hom camera validate --camera Valte --gcps-file valte_gcps.yaml
             --registry-file valte_map_points.yaml
     """
-    # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
-    if camera not in configs:
-        available = ", ".join(configs.keys())
+    # Get camera configuration and calibration from repositories
+    ctx = ApplicationContext.default()
+
+    all_configs = ctx.camera_config_repo.get_all()
+    cam_config = next((c for c in all_configs if c.name == camera), None)
+
+    if not cam_config:
+        available = ", ".join(c.name for c in all_configs)
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    camera_config = configs[camera]
+    # Get calibration data
+    cam_calibration = ctx.camera_calibration_repo.get(cam_config.id)
+
+    # Build legacy dict for validate_model compatibility
+    camera_config = _build_legacy_camera_dict(cam_config, cam_calibration)
 
     # Load GCPs from YAML file
     try:
