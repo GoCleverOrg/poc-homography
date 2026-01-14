@@ -10,74 +10,138 @@
         body {
             font-family: system-ui, -apple-system, sans-serif;
             display: flex;
+            flex-direction: column;
             height: 100vh;
             background: #1a1a1a;
         }
 
-        /* Left Sidebar - Test Case Selector */
-        #left-sidebar {
-            width: 280px;
+        /* Top Bar - Controls and Summary */
+        #top-bar {
             background: #f5f5f5;
-            padding: 16px;
+            padding: 12px 16px;
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            border-bottom: 1px solid #ddd;
+            flex-wrap: wrap;
+        }
+
+        #top-bar h1 {
+            font-size: 16px;
+            white-space: nowrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            min-width: 200px;
+        }
+
+        .summary-metrics {
+            display: flex;
             gap: 16px;
-            border-right: 1px solid #ddd;
-            overflow-y: auto;
+            margin-left: auto;
         }
 
-        /* Center Area - Dual Viewers */
-        #center-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
+        .summary-metric {
+            text-align: center;
         }
 
-        #viewer-container {
+        .summary-metric .label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .summary-metric .value {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .summary-metric .value.good { color: #2e7d32; }
+        .summary-metric .value.medium { color: #f57c00; }
+        .summary-metric .value.bad { color: #c62828; }
+
+        /* Main Content - Two Columns */
+        #main-content {
             flex: 1;
             display: flex;
             gap: 4px;
             padding: 4px;
             background: #222;
+            min-height: 0;
         }
 
-        .viewer-wrapper {
+        .panel {
             flex: 1;
             display: flex;
             flex-direction: column;
             min-width: 0;
+            background: #f5f5f5;
+            border-radius: 4px;
+            overflow: hidden;
         }
 
-        .viewer-title {
+        .panel-title {
             background: #333;
             color: #fff;
             padding: 8px 12px;
             font-size: 14px;
             font-weight: 600;
             text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
+
+        .panel-title .legend {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            font-weight: normal;
+        }
+
+        .panel-title .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .panel-title .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .panel-title .legend-dot.blue { background: #2196f3; }
+        .panel-title .legend-dot.green { background: #4caf50; }
+        .panel-title .legend-dot.red { background: #f44336; }
+        .panel-title .legend-dot.yellow { background: #ffeb3b; }
 
         .viewer {
             flex: 1;
             background: #111;
+            min-height: 300px;
         }
 
-        /* Right Sidebar - Stats Panel */
-        #right-sidebar {
-            width: 300px;
+        .stats-section {
+            padding: 12px;
             background: #f5f5f5;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            border-left: 1px solid #ddd;
+            max-height: 250px;
             overflow-y: auto;
         }
 
         /* Common UI Elements */
         h1 { font-size: 18px; color: #333; }
-        h2 { font-size: 16px; color: #333; margin-bottom: 8px; }
+        h2 { font-size: 14px; color: #333; margin-bottom: 8px; }
 
         .section {
             background: white;
@@ -358,144 +422,110 @@
     </style>
 </head>
 <body>
-    <!-- Left Sidebar: Test Case Selector -->
-    <div id="left-sidebar">
+    <!-- Top Bar: Controls and Summary Metrics -->
+    <div id="top-bar">
         <h1>Homography Precision</h1>
 
-        <div class="section">
-            <div class="section-title">Test Case</div>
+        <div class="control-group">
             <select id="test-case-select">
                 <option value="">-- Select a test case --</option>
             </select>
-            <button class="btn btn-primary" id="load-btn" disabled>Load Test Case</button>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Current Selection</div>
-            <div id="current-case">No test case loaded</div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Camera Viewer Legend</div>
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-marker blue"></div>
-                    <span>Annotations (camera px)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-marker red"></div>
-                    <span>Reprojected GCPs</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-marker yellow"></div>
-                    <span>Error vectors</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Map Viewer Legend</div>
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-marker green"></div>
-                    <span>GCPs (map px)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-marker red"></div>
-                    <span>Projected annotations</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-marker yellow"></div>
-                    <span>Error vectors</span>
-                </div>
-            </div>
+            <button class="btn btn-primary" id="load-btn" disabled>Load</button>
         </div>
 
         <div id="status-message"></div>
-    </div>
 
-    <!-- Center Area: Dual OpenSeadragon Viewers -->
-    <div id="center-area">
-        <div id="viewer-container">
-            <div class="viewer-wrapper">
-                <div class="viewer-title">Camera Frame</div>
-                <div id="camera-viewer" class="viewer">
-                    <div class="loading">Select a test case to begin</div>
-                </div>
+        <div class="summary-metrics">
+            <div class="summary-metric">
+                <div class="label">RMSE</div>
+                <div class="value" id="metric-rmse">--</div>
             </div>
-            <div class="viewer-wrapper">
-                <div class="viewer-title">GeoTIFF Map</div>
-                <div id="map-viewer" class="viewer">
-                    <div class="loading">Select a test case to begin</div>
-                </div>
+            <div class="summary-metric">
+                <div class="label">Mean</div>
+                <div class="value" id="metric-mean">--</div>
             </div>
-        </div>
-    </div>
-
-    <!-- Right Sidebar: Stats Panel -->
-    <div id="right-sidebar">
-        <h2>Homography Metrics</h2>
-
-        <div class="section">
-            <div class="section-title">Summary Statistics</div>
-            <div class="metric-grid">
-                <div class="metric-item">
-                    <div class="metric-label">RMSE</div>
-                    <div class="metric-value" id="metric-rmse">--</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-label">Mean Error</div>
-                    <div class="metric-value" id="metric-mean">--</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-label">Max Error</div>
-                    <div class="metric-value" id="metric-max">--</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-label">Inliers</div>
-                    <div class="metric-value" id="metric-inliers">--</div>
-                </div>
+            <div class="summary-metric">
+                <div class="label">Max</div>
+                <div class="value" id="metric-max">--</div>
             </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Per-Point Errors (Camera Space)</div>
-            <div class="error-table-container">
-                <table class="error-table" id="camera-error-table">
-                    <thead>
-                        <tr>
-                            <th data-sort="id">GCP ID</th>
-                            <th data-sort="error">Error (px)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td colspan="2" style="text-align: center; color: #999;">No data</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Per-Point Errors (Map Space)</div>
-            <div class="error-table-container">
-                <table class="error-table" id="map-error-table">
-                    <thead>
-                        <tr>
-                            <th data-sort="id">GCP ID</th>
-                            <th data-sort="error">Error (px)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td colspan="2" style="text-align: center; color: #999;">No data</td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="summary-metric">
+                <div class="label">Inliers</div>
+                <div class="value" id="metric-inliers">--</div>
             </div>
         </div>
     </div>
+
+    <!-- Main Content: Two Panels Side by Side -->
+    <div id="main-content">
+        <!-- Camera Panel -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>Camera Frame</span>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-dot blue"></div>Annotations</div>
+                    <div class="legend-item"><div class="legend-dot red"></div>Reprojected</div>
+                    <div class="legend-item"><div class="legend-dot yellow"></div>Error</div>
+                </div>
+            </div>
+            <div id="camera-viewer" class="viewer">
+                <div class="loading">Select a test case to begin</div>
+            </div>
+            <div class="stats-section">
+                <h2>Per-Point Errors (pixels)</h2>
+                <div class="error-table-container">
+                    <table class="error-table" id="camera-error-table">
+                        <thead>
+                            <tr>
+                                <th data-sort="id">GCP ID</th>
+                                <th data-sort="error">Error (px)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="2" style="text-align: center; color: #999;">No data</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Panel -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>GeoTIFF Map</span>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-dot green"></div>GCPs</div>
+                    <div class="legend-item"><div class="legend-dot red"></div>Projected</div>
+                    <div class="legend-item"><div class="legend-dot yellow"></div>Error</div>
+                </div>
+            </div>
+            <div id="map-viewer" class="viewer">
+                <div class="loading">Select a test case to begin</div>
+            </div>
+            <div class="stats-section">
+                <h2>Per-Point Errors (meters)</h2>
+                <div class="error-table-container">
+                    <table class="error-table" id="map-error-table">
+                        <thead>
+                            <tr>
+                                <th data-sort="id">GCP ID</th>
+                                <th data-sort="error">Error (m)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="2" style="text-align: center; color: #999;">No data</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden element to track current case -->
+    <div id="current-case" style="display:none;">No test case loaded</div>
 
     <script>
         // Application State
@@ -564,8 +594,8 @@
                 // Add test case options
                 data.test_cases.forEach(tc => {
                     const option = document.createElement('option');
-                    option.value = tc.id;
-                    option.textContent = tc.name || tc.id;
+                    option.value = tc.name;
+                    option.textContent = `${tc.name} (${tc.annotation_count} annotations)`;
                     select.appendChild(option);
                 });
 
@@ -708,7 +738,11 @@
         // Compute homography and render overlays
         async function computeHomography(caseId) {
             try {
-                const resp = await fetch(`${API_BASE}/api/compute-homography/?case=${encodeURIComponent(caseId)}`);
+                const resp = await fetch(`${API_BASE}/api/compute-homography/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ test_case_name: caseId })
+                });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
                 overlayData = await resp.json();
@@ -797,13 +831,13 @@
         function renderCameraOverlays() {
             clearOverlays(cameraViewer, cameraOverlays);
 
-            if (!overlayData || !overlayData.camera_overlays) return;
+            if (!overlayData || !overlayData.overlays || !overlayData.overlays.camera) return;
 
-            const data = overlayData.camera_overlays;
+            const data = overlayData.overlays.camera;
 
             // Add annotation markers (blue circles)
             data.annotations.forEach(point => {
-                const el = createCircleMarker('blue', point.id);
+                const el = createCircleMarker('blue', point.gcp_id);
                 const location = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
                 cameraViewer.addOverlay({
                     element: el,
@@ -815,7 +849,7 @@
 
             // Add reprojected GCP markers (red diamonds)
             data.reprojected_gcps.forEach(point => {
-                const el = createDiamondMarker(point.id);
+                const el = createDiamondMarker(point.gcp_id);
                 const location = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
                 cameraViewer.addOverlay({
                     element: el,
@@ -825,21 +859,27 @@
                 cameraOverlays.push(el);
             });
 
-            // Add error lines using SVG overlay
-            addErrorLines(cameraViewer, data.error_vectors, cameraOverlays);
+            // Add error lines - pair annotations with reprojected GCPs
+            const errorVectors = data.annotations.map((ann, i) => ({
+                start_x: ann.x,
+                start_y: ann.y,
+                end_x: data.reprojected_gcps[i].x,
+                end_y: data.reprojected_gcps[i].y
+            }));
+            addErrorLines(cameraViewer, errorVectors, cameraOverlays);
         }
 
         // Render map viewer overlays
         function renderMapOverlays() {
             clearOverlays(mapViewer, mapOverlays);
 
-            if (!overlayData || !overlayData.map_overlays) return;
+            if (!overlayData || !overlayData.overlays || !overlayData.overlays.map) return;
 
-            const data = overlayData.map_overlays;
+            const data = overlayData.overlays.map;
 
             // Add GCP markers (green circles)
             data.gcps.forEach(point => {
-                const el = createCircleMarker('green', point.id);
+                const el = createCircleMarker('green', point.gcp_id);
                 const location = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
                 mapViewer.addOverlay({
                     element: el,
@@ -851,7 +891,7 @@
 
             // Add projected annotation markers (red diamonds)
             data.projected_annotations.forEach(point => {
-                const el = createDiamondMarker(point.id);
+                const el = createDiamondMarker(point.gcp_id);
                 const location = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
                 mapViewer.addOverlay({
                     element: el,
@@ -861,8 +901,14 @@
                 mapOverlays.push(el);
             });
 
-            // Add error lines using SVG overlay
-            addErrorLines(mapViewer, data.error_vectors, mapOverlays);
+            // Add error lines - pair GCPs with projected annotations
+            const errorVectors = data.gcps.map((gcp, i) => ({
+                start_x: gcp.x,
+                start_y: gcp.y,
+                end_x: data.projected_annotations[i].x,
+                end_y: data.projected_annotations[i].y
+            }));
+            addErrorLines(mapViewer, errorVectors, mapOverlays);
         }
 
         // Add error lines as SVG overlay
@@ -925,36 +971,55 @@
             // Update summary metrics
             const rmseEl = document.getElementById('metric-rmse');
             rmseEl.textContent = metrics.rmse.toFixed(2) + ' px';
-            rmseEl.className = 'metric-value ' + getMetricClass(metrics.rmse, { good: 5, medium: 10 });
+            rmseEl.className = 'value ' + getMetricClass(metrics.rmse, { good: 5, medium: 10 });
 
             const meanEl = document.getElementById('metric-mean');
-            meanEl.textContent = metrics.mean_error.toFixed(2) + ' px';
-            meanEl.className = 'metric-value ' + getMetricClass(metrics.mean_error, { good: 5, medium: 10 });
+            meanEl.textContent = metrics.mean_reproj_error.toFixed(2) + ' px';
+            meanEl.className = 'value ' + getMetricClass(metrics.mean_reproj_error, { good: 5, medium: 10 });
 
             const maxEl = document.getElementById('metric-max');
-            maxEl.textContent = metrics.max_error.toFixed(2) + ' px';
-            maxEl.className = 'metric-value ' + getMetricClass(metrics.max_error, { good: 10, medium: 20 });
+            maxEl.textContent = metrics.max_reproj_error.toFixed(2) + ' px';
+            maxEl.className = 'value ' + getMetricClass(metrics.max_reproj_error, { good: 10, medium: 20 });
 
             const inliersEl = document.getElementById('metric-inliers');
-            inliersEl.textContent = `${metrics.inliers}/${metrics.total}`;
-            const inlierRatio = metrics.inliers / metrics.total;
-            inliersEl.className = 'metric-value ' + (inlierRatio >= 0.9 ? 'good' : inlierRatio >= 0.7 ? 'medium' : 'bad');
+            inliersEl.textContent = `${metrics.num_inliers}/${metrics.num_gcps}`;
+            const inlierRatio = metrics.num_inliers / metrics.num_gcps;
+            inliersEl.className = 'value ' + (inlierRatio >= 0.9 ? 'good' : inlierRatio >= 0.7 ? 'medium' : 'bad');
 
             // Update per-point error tables
-            updateErrorTable('camera-error-table', metrics.camera_errors);
-            updateErrorTable('map-error-table', metrics.map_errors);
+            const perPointErrors = overlayData.per_point_errors || [];
+
+            // Camera errors (in pixels) - distance between annotation and reprojected GCP
+            const cameraErrors = perPointErrors.map(e => ({
+                id: e.gcp_id,
+                error: e.error_px
+            }));
+            updateErrorTable('camera-error-table', cameraErrors, 'px');
+
+            // Map errors (in meters) - distance between GCP and projected annotation
+            // GSD = 0.15 m/pixel (from geotransform)
+            const GSD = mapInfo && mapInfo.geotransform ? Math.abs(mapInfo.geotransform[1]) : 0.15;
+            const mapErrors = perPointErrors.map(e => {
+                // Calculate distance in map pixel space
+                const dx = e.map_original[0] - e.map_projected[0];
+                const dy = e.map_original[1] - e.map_projected[1];
+                const distPx = Math.sqrt(dx * dx + dy * dy);
+                // Convert to meters
+                return { id: e.gcp_id, error: distPx * GSD };
+            });
+            updateErrorTable('map-error-table', mapErrors, 'm');
         }
 
         // Reset stats panel to default state
         function resetStatsPanel() {
             document.getElementById('metric-rmse').textContent = '--';
-            document.getElementById('metric-rmse').className = 'metric-value';
+            document.getElementById('metric-rmse').className = 'value';
             document.getElementById('metric-mean').textContent = '--';
-            document.getElementById('metric-mean').className = 'metric-value';
+            document.getElementById('metric-mean').className = 'value';
             document.getElementById('metric-max').textContent = '--';
-            document.getElementById('metric-max').className = 'metric-value';
+            document.getElementById('metric-max').className = 'value';
             document.getElementById('metric-inliers').textContent = '--';
-            document.getElementById('metric-inliers').className = 'metric-value';
+            document.getElementById('metric-inliers').className = 'value';
 
             ['camera-error-table', 'map-error-table'].forEach(tableId => {
                 const tbody = document.querySelector(`#${tableId} tbody`);
@@ -963,7 +1028,7 @@
         }
 
         // Update an error table with data
-        function updateErrorTable(tableId, errors) {
+        function updateErrorTable(tableId, errors, unit = 'px') {
             const tbody = document.querySelector(`#${tableId} tbody`);
             tbody.innerHTML = '';
 
@@ -983,8 +1048,16 @@
                 row.appendChild(idCell);
 
                 const errorCell = document.createElement('td');
-                errorCell.textContent = item.error.toFixed(2);
-                errorCell.className = getErrorClass(item.error);
+                // Format based on unit - meters need more decimal places
+                const decimals = unit === 'm' ? 3 : 2;
+                errorCell.textContent = item.error.toFixed(decimals);
+                // Different thresholds for pixels vs meters
+                // Pixels: <5 good, <10 medium, >10 bad
+                // Meters: <1 good, <2 medium, >2 bad
+                const errorClass = unit === 'm'
+                    ? getMetricClass(item.error, { good: 1, medium: 2 })
+                    : getErrorClass(item.error);
+                errorCell.className = errorClass;
                 row.appendChild(errorCell);
 
                 tbody.appendChild(row);
