@@ -1,0 +1,71 @@
+# Annotations and GCP Correspondences Test Data
+# Format for homography precision testing with pytest
+#
+# Terminology:
+#   - Annotation: A point marked on the camera image (camera pixels)
+#   - GCP (Ground Control Point): A reference point on the map (map pixels)
+#
+# Each test case contains:
+#   - image: path to the camera image (relative to project root)
+#   - annotations: list of at least 5 annotation-to-GCP correspondences (for holdout validation)
+#     - pixel_x: x coordinate in camera image (pixels)
+#     - pixel_y: y coordinate in camera image (pixels)
+#     - gcp_id: ID of corresponding GCP (MapPoint) in registry
+#
+# NOTE: 5+ annotations required - 4 are used to compute homography, rest for validation
+
+test_cases:
+  - name: valte_30.8_13.1_1
+    image: valte_30.8_13.1_1_12-01-2026.png
+    annotations:
+      - pixel_x: 386.8
+        pixel_y: 263.2
+        gcp_id: PS1
+
+      - pixel_x: 159.1
+        pixel_y: 674.6
+        gcp_id: EX1
+
+      - pixel_x: 401.9
+        pixel_y: 782.1
+        gcp_id: EX2
+
+      - pixel_x: 568.1
+        pixel_y: 280.9
+        gcp_id: PS3
+
+      - pixel_x: 793.1
+        pixel_y: 306.9
+        gcp_id: PS5
+
+      - pixel_x: 1085.9
+        pixel_y: 342.3
+        gcp_id: PS7
+
+      - pixel_x: 1461.1
+        pixel_y: 389.3
+        gcp_id: PS9
+
+      - pixel_x: 1094.5
+        pixel_y: 396.7
+        gcp_id: AR2
+
+      - pixel_x: 803.0
+        pixel_y: 582.7
+        gcp_id: AR1
+
+      - pixel_x: 758.4
+        pixel_y: 930.8
+        gcp_id: EX3
+
+      - pixel_x: 1482.3
+        pixel_y: 289.2
+        gcp_id: PS8
+
+      - pixel_x: 1764.0
+        pixel_y: 318.8
+        gcp_id: PS10
+
+      - pixel_x: 1224.1
+        pixel_y: 266.3
+        gcp_id: PS6

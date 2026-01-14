@@ -104,11 +104,11 @@ class MapPointHomography:
         handle outliers.
 
         Args:
-            gcps: List of GCP dictionaries with keys:
-                - "pixel_x": Camera pixel x coordinate
-                - "pixel_y": Camera pixel y coordinate
-                - "map_point_id": ID of map point in registry
-            map_registry: Registry containing map points with pixel coordinates
+            gcps: List of annotation-GCP correspondence dictionaries with keys:
+                - "pixel_x": Camera pixel x coordinate (annotation)
+                - "pixel_y": Camera pixel y coordinate (annotation)
+                - "gcp_id": ID of GCP (MapPoint) in registry
+            map_registry: Registry containing GCPs (MapPoints) with pixel coordinates
             ransac_threshold: RANSAC reprojection error threshold in pixels (default: 50.0)
             min_inlier_ratio: Minimum ratio of inliers to consider valid (default: 0.5)
 
@@ -130,12 +130,12 @@ class MapPointHomography:
             # Extract camera pixel
             camera_pixels.append([gcp["pixel_x"], gcp["pixel_y"]])
 
-            # Extract map coordinate from registry
-            map_point_id = gcp["map_point_id"]
-            if map_point_id not in map_registry.points:
-                raise ValueError(f"Map point not found in registry: {map_point_id}")
+            # Extract GCP coordinate from registry
+            gcp_id = gcp["gcp_id"]
+            if gcp_id not in map_registry.points:
+                raise ValueError(f"GCP not found in registry: {gcp_id}")
 
-            map_point = map_registry.points[map_point_id]
+            map_point = map_registry.points[gcp_id]
             map_coords.append([map_point.pixel_x, map_point.pixel_y])
 
         # Convert to numpy arrays
@@ -178,8 +178,8 @@ class MapPointHomography:
             camera_pt = np.array([[[gcp["pixel_x"], gcp["pixel_y"]]]], dtype=np.float32)
             projected = cv2.perspectiveTransform(camera_pt, H)[0, 0]
 
-            # Expected map coordinate
-            map_point = map_registry.points[gcp["map_point_id"]]
+            # Expected GCP coordinate
+            map_point = map_registry.points[gcp["gcp_id"]]
             expected = np.array([map_point.pixel_x, map_point.pixel_y])
 
             # Calculate error in pixels

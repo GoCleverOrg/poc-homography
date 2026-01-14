@@ -28,7 +28,7 @@ SECRET_KEY = "django-insecure-33xd23v-g5kb1@!t-y3%10m8rx#_7&7jkoqey%=*vo&99l6gv)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
 
 # Application definition
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "gcp",
+    "point_picker",
 ]
 
 MIDDLEWARE = [
