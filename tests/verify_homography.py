@@ -90,7 +90,7 @@ class HomographyVerifier:
         )
         print(f"  Height: {height}m\n")
 
-    def mouse_callback(self, event, x, y, flags, param):
+    def mouse_callback(self, event, x, y, flags, _param):
         """Handle mouse clicks to project points."""
         if event == cv2.EVENT_LBUTTONDOWN:
             # Project image point to world
