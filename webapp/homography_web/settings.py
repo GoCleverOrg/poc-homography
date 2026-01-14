@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "gcp",
     "point_picker",
+    "homography_precision",
 ]
 
 MIDDLEWARE = [

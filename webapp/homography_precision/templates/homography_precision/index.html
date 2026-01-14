@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homography Precision Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            height: 100vh;
+            background: #1a1a1a;
+        }
+
+        /* Left Sidebar - Test Case Selector */
+        #left-sidebar {
+            width: 280px;
+            background: #f5f5f5;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+
+        /* Center Area - Dual Viewers */
+        #center-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        #viewer-container {
+            flex: 1;
+            display: flex;
+            gap: 4px;
+            padding: 4px;
+            background: #222;
+        }
+
+        .viewer-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .viewer-title {
+            background: #333;
+            color: #fff;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .viewer {
+            flex: 1;
+            background: #111;
+        }
+
+        /* Right Sidebar - Stats Panel */
+        #right-sidebar {
+            width: 300px;
+            background: #f5f5f5;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            border-left: 1px solid #ddd;
+            overflow-y: auto;
+        }
+
+        /* Common UI Elements */
+        h1 { font-size: 18px; color: #333; }
+        h2 { font-size: 16px; color: #333; margin-bottom: 8px; }
+
+        .section {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #666;
+        }
+
+        /* Form Controls */
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #0066cc;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0052a3;
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* Current Selection Display */
+        #current-case {
+            font-size: 12px;
+            color: #666;
+            padding: 8px;
+            background: #e6f0ff;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+
+        /* Stats Display */
+        .metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .metric-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .metric-value.good { color: #2e7d32; }
+        .metric-value.medium { color: #f57c00; }
+        .metric-value.bad { color: #c62828; }
+
+        /* Per-Point Error Table */
+        .error-table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .error-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .error-table th {
+            background: #e0e0e0;
+            padding: 8px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+        }
+
+        .error-table th:hover {
+            background: #d0d0d0;
+        }
+
+        .error-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .error-table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .error-low { color: #2e7d32; }
+        .error-medium { color: #f57c00; }
+        .error-high { color: #c62828; font-weight: 600; }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .legend-marker {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-marker.blue { background: #2196f3; }
+        .legend-marker.green { background: #4caf50; }
+        .legend-marker.red {
+            background: #f44336;
+            transform: rotate(45deg);
+            border-radius: 0;
+        }
+        .legend-marker.yellow {
+            background: #ffeb3b;
+            height: 2px;
+            width: 16px;
+            border-radius: 0;
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .loading::after {
+            content: '';
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ddd;
+            border-top-color: #0066cc;
+            border-radius: 50%;
+            margin-left: 8px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Overlay Markers */
+        .overlay-marker {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .marker-circle {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid;
+            background: transparent;
+        }
+
+        .marker-circle.blue { border-color: #2196f3; }
+        .marker-circle.green { border-color: #4caf50; }
+
+        .marker-diamond {
+            width: 12px;
+            height: 12px;
+            background: #f44336;
+            transform: rotate(45deg);
+            border: 2px solid #b71c1c;
+        }
+
+        .marker-label {
+            position: absolute;
+            top: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 4px;
+            border-radius: 2px;
+            white-space: nowrap;
+        }
+
+        /* SVG Overlay for Error Lines */
+        .error-line-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .error-line {
+            stroke: #ffeb3b;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        /* Status Messages */
+        #status-message {
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: none;
+        }
+
+        #status-message.error {
+            display: block;
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+        }
+
+        #status-message.success {
+            display: block;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        #status-message.info {
+            display: block;
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+    </style>
+</head>
+<body>
+    <!-- Left Sidebar: Test Case Selector -->
+    <div id="left-sidebar">
+        <h1>Homography Precision</h1>
+
+        <div class="section">
+            <div class="section-title">Test Case</div>
+            <select id="test-case-select">
+                <option value="">-- Select a test case --</option>
+            </select>
+            <button class="btn btn-primary" id="load-btn" disabled>Load Test Case</button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Current Selection</div>
+            <div id="current-case">No test case loaded</div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Camera Viewer Legend</div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-marker blue"></div>
+                    <span>Annotations (camera px)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-marker red"></div>
+                    <span>Reprojected GCPs</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-marker yellow"></div>
+                    <span>Error vectors</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Map Viewer Legend</div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-marker green"></div>
+                    <span>GCPs (map px)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-marker red"></div>
+                    <span>Projected annotations</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-marker yellow"></div>
+                    <span>Error vectors</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="status-message"></div>
+    </div>
+
+    <!-- Center Area: Dual OpenSeadragon Viewers -->
+    <div id="center-area">
+        <div id="viewer-container">
+            <div class="viewer-wrapper">
+                <div class="viewer-title">Camera Frame</div>
+                <div id="camera-viewer" class="viewer">
+                    <div class="loading">Select a test case to begin</div>
+                </div>
+            </div>
+            <div class="viewer-wrapper">
+                <div class="viewer-title">GeoTIFF Map</div>
+                <div id="map-viewer" class="viewer">
+                    <div class="loading">Select a test case to begin</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar: Stats Panel -->
+    <div id="right-sidebar">
+        <h2>Homography Metrics</h2>
+
+        <div class="section">
+            <div class="section-title">Summary Statistics</div>
+            <div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">RMSE</div>
+                    <div class="metric-value" id="metric-rmse">--</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Mean Error</div>
+                    <div class="metric-value" id="metric-mean">--</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Max Error</div>
+                    <div class="metric-value" id="metric-max">--</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Inliers</div>
+                    <div class="metric-value" id="metric-inliers">--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Per-Point Errors (Camera Space)</div>
+            <div class="error-table-container">
+                <table class="error-table" id="camera-error-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="id">GCP ID</th>
+                            <th data-sort="error">Error (px)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="2" style="text-align: center; color: #999;">No data</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Per-Point Errors (Map Space)</div>
+            <div class="error-table-container">
+                <table class="error-table" id="map-error-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="id">GCP ID</th>
+                            <th data-sort="error">Error (px)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="2" style="text-align: center; color: #999;">No data</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Application State
+        let cameraViewer = null;
+        let mapViewer = null;
+        let cameraInfo = null;
+        let mapInfo = null;
+        let currentTestCase = null;
+        let overlayData = null;
+
+        // Overlay tracking
+        let cameraOverlays = [];
+        let mapOverlays = [];
+
+        // API base URL
+        const API_BASE = '/homography-precision';
+
+        // Utility functions
+        function showStatus(message, type = 'info') {
+            const el = document.getElementById('status-message');
+            el.textContent = message;
+            el.className = type;
+        }
+
+        function hideStatus() {
+            document.getElementById('status-message').className = '';
+        }
+
+        function getErrorClass(error) {
+            if (error < 5) return 'error-low';
+            if (error < 10) return 'error-medium';
+            return 'error-high';
+        }
+
+        function getMetricClass(value, thresholds) {
+            if (value < thresholds.good) return 'good';
+            if (value < thresholds.medium) return 'medium';
+            return 'bad';
+        }
+
+        // Initialize application
+        async function init() {
+            try {
+                await loadTestCases();
+                setupEventListeners();
+            } catch (e) {
+                console.error('Initialization failed:', e);
+                showStatus('Failed to initialize: ' + e.message, 'error');
+            }
+        }
+
+        // Load available test cases
+        async function loadTestCases() {
+            const select = document.getElementById('test-case-select');
+            const loadBtn = document.getElementById('load-btn');
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/test-cases/`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                const data = await resp.json();
+
+                // Clear existing options except placeholder
+                select.innerHTML = '<option value="">-- Select a test case --</option>';
+
+                // Add test case options
+                data.test_cases.forEach(tc => {
+                    const option = document.createElement('option');
+                    option.value = tc.id;
+                    option.textContent = tc.name || tc.id;
+                    select.appendChild(option);
+                });
+
+                loadBtn.disabled = true;
+            } catch (e) {
+                showStatus('Failed to load test cases: ' + e.message, 'error');
+                throw e;
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            const select = document.getElementById('test-case-select');
+            const loadBtn = document.getElementById('load-btn');
+
+            select.addEventListener('change', () => {
+                loadBtn.disabled = !select.value;
+            });
+
+            loadBtn.addEventListener('click', () => {
+                const caseId = select.value;
+                if (caseId) {
+                    loadTestCase(caseId);
+                }
+            });
+
+            // Table sorting
+            document.querySelectorAll('.error-table th').forEach(th => {
+                th.addEventListener('click', () => {
+                    const table = th.closest('table');
+                    const sortKey = th.dataset.sort;
+                    sortTable(table, sortKey);
+                });
+            });
+        }
+
+        // Load a test case
+        async function loadTestCase(caseId) {
+            showStatus('Loading test case...', 'info');
+            currentTestCase = caseId;
+
+            try {
+                // Fetch camera and map info in parallel
+                const [cameraResp, mapResp] = await Promise.all([
+                    fetch(`${API_BASE}/api/camera-info/?case=${encodeURIComponent(caseId)}`),
+                    fetch(`${API_BASE}/api/map-info/`)
+                ]);
+
+                if (!cameraResp.ok) throw new Error(`Camera info failed: ${cameraResp.status}`);
+                if (!mapResp.ok) throw new Error(`Map info failed: ${mapResp.status}`);
+
+                cameraInfo = await cameraResp.json();
+                mapInfo = await mapResp.json();
+
+                // Update current case display
+                document.getElementById('current-case').textContent = caseId;
+
+                // Initialize viewers
+                initCameraViewer();
+                initMapViewer();
+
+                // Compute homography and get overlay data
+                await computeHomography(caseId);
+
+                hideStatus();
+            } catch (e) {
+                console.error('Failed to load test case:', e);
+                showStatus('Failed to load test case: ' + e.message, 'error');
+            }
+        }
+
+        // Initialize camera viewer
+        function initCameraViewer() {
+            // Destroy existing viewer
+            if (cameraViewer) {
+                clearOverlays(cameraViewer, cameraOverlays);
+                cameraViewer.destroy();
+                cameraViewer = null;
+            }
+
+            // Clear loading message
+            document.getElementById('camera-viewer').innerHTML = '';
+
+            cameraViewer = OpenSeadragon({
+                id: 'camera-viewer',
+                prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
+                tileSources: {
+                    height: cameraInfo.height,
+                    width: cameraInfo.width,
+                    tileSize: 256,
+                    getTileUrl: (level, x, y) => {
+                        return `${API_BASE}/api/camera-tile/?case=${encodeURIComponent(currentTestCase)}&x=${x}&y=${y}&z=${level}`;
+                    }
+                },
+                showNavigator: true,
+                navigatorPosition: 'BOTTOM_RIGHT',
+                minZoomLevel: 0.5,
+                maxZoomLevel: 20,
+                visibilityRatio: 0.5,
+                constrainDuringPan: true
+            });
+
+            cameraOverlays = [];
+        }
+
+        // Initialize map viewer
+        function initMapViewer() {
+            // Destroy existing viewer
+            if (mapViewer) {
+                clearOverlays(mapViewer, mapOverlays);
+                mapViewer.destroy();
+                mapViewer = null;
+            }
+
+            // Clear loading message
+            document.getElementById('map-viewer').innerHTML = '';
+
+            mapViewer = OpenSeadragon({
+                id: 'map-viewer',
+                prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
+                tileSources: {
+                    height: mapInfo.height,
+                    width: mapInfo.width,
+                    tileSize: 256,
+                    getTileUrl: (level, x, y) => {
+                        return `${API_BASE}/api/map-tile/?x=${x}&y=${y}&z=${level}`;
+                    }
+                },
+                showNavigator: true,
+                navigatorPosition: 'BOTTOM_RIGHT',
+                minZoomLevel: 0.5,
+                maxZoomLevel: 20,
+                visibilityRatio: 0.5,
+                constrainDuringPan: true
+            });
+
+            mapOverlays = [];
+        }
+
+        // Compute homography and render overlays
+        async function computeHomography(caseId) {
+            try {
+                const resp = await fetch(`${API_BASE}/api/compute-homography/?case=${encodeURIComponent(caseId)}`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                overlayData = await resp.json();
+
+                // Wait for viewers to be ready before adding overlays
+                await Promise.all([
+                    waitForViewer(cameraViewer),
+                    waitForViewer(mapViewer)
+                ]);
+
+                // Render overlays
+                renderCameraOverlays();
+                renderMapOverlays();
+
+                // Update stats panel
+                updateStatsPanel();
+            } catch (e) {
+                console.error('Failed to compute homography:', e);
+                showStatus('Failed to compute homography: ' + e.message, 'error');
+                throw e;
+            }
+        }
+
+        // Wait for viewer to be ready
+        function waitForViewer(viewer) {
+            return new Promise((resolve) => {
+                if (viewer.world.getItemCount() > 0) {
+                    resolve();
+                } else {
+                    viewer.addOnceHandler('open', resolve);
+                }
+            });
+        }
+
+        // Clear overlays from a viewer
+        function clearOverlays(viewer, overlayList) {
+            overlayList.forEach(el => {
+                try {
+                    viewer.removeOverlay(el);
+                } catch (e) {
+                    // Ignore errors when removing overlays
+                }
+            });
+            overlayList.length = 0;
+        }
+
+        // Create a circle marker element
+        function createCircleMarker(colorClass, label) {
+            const container = document.createElement('div');
+            container.className = 'overlay-marker';
+
+            const circle = document.createElement('div');
+            circle.className = `marker-circle ${colorClass}`;
+            container.appendChild(circle);
+
+            if (label) {
+                const labelEl = document.createElement('div');
+                labelEl.className = 'marker-label';
+                labelEl.textContent = label;
+                container.appendChild(labelEl);
+            }
+
+            return container;
+        }
+
+        // Create a diamond marker element
+        function createDiamondMarker(label) {
+            const container = document.createElement('div');
+            container.className = 'overlay-marker';
+
+            const diamond = document.createElement('div');
+            diamond.className = 'marker-diamond';
+            container.appendChild(diamond);
+
+            if (label) {
+                const labelEl = document.createElement('div');
+                labelEl.className = 'marker-label';
+                labelEl.textContent = label;
+                container.appendChild(labelEl);
+            }
+
+            return container;
+        }
+
+        // Render camera viewer overlays
+        function renderCameraOverlays() {
+            clearOverlays(cameraViewer, cameraOverlays);
+
+            if (!overlayData || !overlayData.camera_overlays) return;
+
+            const data = overlayData.camera_overlays;
+
+            // Add annotation markers (blue circles)
+            data.annotations.forEach(point => {
+                const el = createCircleMarker('blue', point.id);
+                const location = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
+                cameraViewer.addOverlay({
+                    element: el,
+                    location: location,
+                    placement: OpenSeadragon.Placement.CENTER
+                });
+                cameraOverlays.push(el);
+            });
+
+            // Add reprojected GCP markers (red diamonds)
+            data.reprojected_gcps.forEach(point => {
+                const el = createDiamondMarker(point.id);
+                const location = cameraViewer.viewport.imageToViewportCoordinates(point.x, point.y);
+                cameraViewer.addOverlay({
+                    element: el,
+                    location: location,
+                    placement: OpenSeadragon.Placement.CENTER
+                });
+                cameraOverlays.push(el);
+            });
+
+            // Add error lines using SVG overlay
+            addErrorLines(cameraViewer, data.error_vectors, cameraOverlays);
+        }
+
+        // Render map viewer overlays
+        function renderMapOverlays() {
+            clearOverlays(mapViewer, mapOverlays);
+
+            if (!overlayData || !overlayData.map_overlays) return;
+
+            const data = overlayData.map_overlays;
+
+            // Add GCP markers (green circles)
+            data.gcps.forEach(point => {
+                const el = createCircleMarker('green', point.id);
+                const location = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
+                mapViewer.addOverlay({
+                    element: el,
+                    location: location,
+                    placement: OpenSeadragon.Placement.CENTER
+                });
+                mapOverlays.push(el);
+            });
+
+            // Add projected annotation markers (red diamonds)
+            data.projected_annotations.forEach(point => {
+                const el = createDiamondMarker(point.id);
+                const location = mapViewer.viewport.imageToViewportCoordinates(point.x, point.y);
+                mapViewer.addOverlay({
+                    element: el,
+                    location: location,
+                    placement: OpenSeadragon.Placement.CENTER
+                });
+                mapOverlays.push(el);
+            });
+
+            // Add error lines using SVG overlay
+            addErrorLines(mapViewer, data.error_vectors, mapOverlays);
+        }
+
+        // Add error lines as SVG overlay
+        function addErrorLines(viewer, errorVectors, overlayList) {
+            if (!errorVectors || errorVectors.length === 0) return;
+
+            // Create SVG element
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'error-line-overlay');
+            svg.style.position = 'absolute';
+            svg.style.pointerEvents = 'none';
+
+            // We'll update line positions on viewport change
+            const updateLines = () => {
+                const containerSize = viewer.viewport.getContainerSize();
+                svg.setAttribute('width', containerSize.x);
+                svg.setAttribute('height', containerSize.y);
+
+                // Clear existing lines
+                svg.innerHTML = '';
+
+                errorVectors.forEach(vector => {
+                    const start = viewer.viewport.imageToViewportCoordinates(vector.start_x, vector.start_y);
+                    const end = viewer.viewport.imageToViewportCoordinates(vector.end_x, vector.end_y);
+
+                    const startPixel = viewer.viewport.viewportToViewerElementCoordinates(start);
+                    const endPixel = viewer.viewport.viewportToViewerElementCoordinates(end);
+
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', startPixel.x);
+                    line.setAttribute('y1', startPixel.y);
+                    line.setAttribute('x2', endPixel.x);
+                    line.setAttribute('y2', endPixel.y);
+                    line.setAttribute('class', 'error-line');
+                    svg.appendChild(line);
+                });
+            };
+
+            // Add SVG to viewer container
+            viewer.canvas.appendChild(svg);
+            overlayList.push(svg);
+
+            // Update on viewport changes
+            viewer.addHandler('viewport-change', updateLines);
+            viewer.addHandler('resize', updateLines);
+
+            // Initial update
+            updateLines();
+        }
+
+        // Update stats panel with metrics
+        function updateStatsPanel() {
+            if (!overlayData || !overlayData.metrics) {
+                resetStatsPanel();
+                return;
+            }
+
+            const metrics = overlayData.metrics;
+
+            // Update summary metrics
+            const rmseEl = document.getElementById('metric-rmse');
+            rmseEl.textContent = metrics.rmse.toFixed(2) + ' px';
+            rmseEl.className = 'metric-value ' + getMetricClass(metrics.rmse, { good: 5, medium: 10 });
+
+            const meanEl = document.getElementById('metric-mean');
+            meanEl.textContent = metrics.mean_error.toFixed(2) + ' px';
+            meanEl.className = 'metric-value ' + getMetricClass(metrics.mean_error, { good: 5, medium: 10 });
+
+            const maxEl = document.getElementById('metric-max');
+            maxEl.textContent = metrics.max_error.toFixed(2) + ' px';
+            maxEl.className = 'metric-value ' + getMetricClass(metrics.max_error, { good: 10, medium: 20 });
+
+            const inliersEl = document.getElementById('metric-inliers');
+            inliersEl.textContent = `${metrics.inliers}/${metrics.total}`;
+            const inlierRatio = metrics.inliers / metrics.total;
+            inliersEl.className = 'metric-value ' + (inlierRatio >= 0.9 ? 'good' : inlierRatio >= 0.7 ? 'medium' : 'bad');
+
+            // Update per-point error tables
+            updateErrorTable('camera-error-table', metrics.camera_errors);
+            updateErrorTable('map-error-table', metrics.map_errors);
+        }
+
+        // Reset stats panel to default state
+        function resetStatsPanel() {
+            document.getElementById('metric-rmse').textContent = '--';
+            document.getElementById('metric-rmse').className = 'metric-value';
+            document.getElementById('metric-mean').textContent = '--';
+            document.getElementById('metric-mean').className = 'metric-value';
+            document.getElementById('metric-max').textContent = '--';
+            document.getElementById('metric-max').className = 'metric-value';
+            document.getElementById('metric-inliers').textContent = '--';
+            document.getElementById('metric-inliers').className = 'metric-value';
+
+            ['camera-error-table', 'map-error-table'].forEach(tableId => {
+                const tbody = document.querySelector(`#${tableId} tbody`);
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #999;">No data</td></tr>';
+            });
+        }
+
+        // Update an error table with data
+        function updateErrorTable(tableId, errors) {
+            const tbody = document.querySelector(`#${tableId} tbody`);
+            tbody.innerHTML = '';
+
+            if (!errors || errors.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #999;">No data</td></tr>';
+                return;
+            }
+
+            // Sort by error descending by default
+            const sortedErrors = [...errors].sort((a, b) => b.error - a.error);
+
+            sortedErrors.forEach(item => {
+                const row = document.createElement('tr');
+
+                const idCell = document.createElement('td');
+                idCell.textContent = item.id;
+                row.appendChild(idCell);
+
+                const errorCell = document.createElement('td');
+                errorCell.textContent = item.error.toFixed(2);
+                errorCell.className = getErrorClass(item.error);
+                row.appendChild(errorCell);
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // Sort table by column
+        function sortTable(table, sortKey) {
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            // Check if we have data rows
+            if (rows.length === 0 || rows[0].cells.length < 2) return;
+
+            // Toggle sort direction
+            const currentSort = table.dataset.sortKey;
+            const currentDir = table.dataset.sortDir || 'desc';
+            const newDir = (currentSort === sortKey && currentDir === 'desc') ? 'asc' : 'desc';
+
+            table.dataset.sortKey = sortKey;
+            table.dataset.sortDir = newDir;
+
+            rows.sort((a, b) => {
+                let aVal, bVal;
+                if (sortKey === 'id') {
+                    aVal = a.cells[0].textContent;
+                    bVal = b.cells[0].textContent;
+                    return newDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                } else {
+                    aVal = parseFloat(a.cells[1].textContent) || 0;
+                    bVal = parseFloat(b.cells[1].textContent) || 0;
+                    return newDir === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        // Initialize on page load
+        init().catch(e => {
+            console.error('Application initialization failed:', e);
+        });
+    </script>
+</body>
+</html>
