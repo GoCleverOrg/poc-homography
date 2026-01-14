@@ -31,7 +31,7 @@ from poc_homography.map_points import GroundControlPointCollection
 # Test Data Paths - Update these to point to your test data
 # =============================================================================
 TEST_DATA_DIR = Path(__file__).parent.parent.parent
-MAP_POINTS_FILE = TEST_DATA_DIR / "valte_map_points.yaml"
+MAP_POINTS_FILE = TEST_DATA_DIR / "data" / "gcps" / "valte.yaml"
 GCPS_FILE = Path(__file__).parent / "test_data" / "valte_gcps.yaml"
 
 
@@ -321,7 +321,9 @@ class TestRoundTrip:
             map_point = homography_provider.camera_to_map(original_pixel)
 
             # Map -> Camera
-            map_as_pixel = PixelPoint(float(map_point.pixel_point.x), float(map_point.pixel_point.y))
+            map_as_pixel = PixelPoint(
+                float(map_point.pixel_point.x), float(map_point.pixel_point.y)
+            )
             recovered_pixel = homography_provider.map_to_camera(map_as_pixel)
 
             # Compare
@@ -489,7 +491,9 @@ class TestAllTestCases:
         for gcp in gcps[:4]:
             original_pixel = PixelPoint(gcp["pixel_x"], gcp["pixel_y"])
             map_point = homography.camera_to_map(original_pixel)
-            map_as_pixel = PixelPoint(float(map_point.pixel_point.x), float(map_point.pixel_point.y))
+            map_as_pixel = PixelPoint(
+                float(map_point.pixel_point.x), float(map_point.pixel_point.y)
+            )
             recovered_pixel = homography.map_to_camera(map_as_pixel)
 
             error = np.linalg.norm(
