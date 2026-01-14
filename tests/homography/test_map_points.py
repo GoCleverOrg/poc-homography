@@ -34,21 +34,22 @@ Test Coverage:
     - Error metrics and reprojection accuracy
 """
 
-import json
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
+import yaml
 
 from poc_homography.calibration.annotation import Annotation
 from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
-TEST_DATA_DIR = Path(__file__).parent.parent.parent
-MAP_POINTS_PATH = TEST_DATA_DIR / "valte_map_points.yaml"
-VALTE_GCP_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.json"
-VALTE_IMAGE_PATH = TEST_DATA_DIR / "test_data_Valte_20260109_195052.jpg"
+TEST_DATA_DIR = Path(__file__).parent / "test_data"
+MAP_POINTS_PATH = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+ANNOTATIONS_PATH = TEST_DATA_DIR / "valte_annotations.yaml"
+VALTE_IMAGE_PATH = TEST_DATA_DIR / "valte_30.8_13.1_1_12-01-2026.png"
 
 
 @pytest.fixture
@@ -59,16 +60,20 @@ def map_point_registry():
 
 @pytest.fixture
 def valte_annotations():
-    """Load Valte annotations (camera pixel points) from JSON file.
+    """Load Valte annotations (camera pixel points) from YAML file.
 
-    Returns a list of Annotation objects parsed from the capture.annotations array.
+    Returns a list of Annotation objects parsed from the annotations array.
     Each annotation links a camera pixel location to a GCP ID.
     """
-    with open(VALTE_GCP_PATH) as f:
-        data = json.load(f)
+    with open(ANNOTATIONS_PATH) as f:
+        data = yaml.safe_load(f)
 
-    # Parse annotations from the capture data
-    annotations = [Annotation.from_dict(ann_data) for ann_data in data["capture"]["annotations"]]
+    # Parse annotations from the first test case
+    test_case = data["test_cases"][0]
+    annotations = [
+        Annotation(gcp_id=ann["gcp_id"], pixel=PixelPoint(ann["pixel_x"], ann["pixel_y"]))
+        for ann in test_case["annotations"]
+    ]
     return annotations
 
 
@@ -90,13 +95,13 @@ class TestMapPointRegistryLoading:
     def test_load_map_point_registry(self, map_point_registry):
         """Test loading map point registry."""
         assert map_point_registry is not None
-        assert map_point_registry.map_id == "map_valte"
-        assert len(map_point_registry.points) > 0
+        assert map_point_registry.map_id == "Cartografia_valencia"
+        assert len(map_point_registry.points) == 27  # PS1-17, AR1-6, EX1-4
 
     def test_map_point_structure(self, map_point_registry):
         """Test that map points have expected structure."""
         # Get a sample point
-        point_id = "A7"  # One of the points used in test data
+        point_id = "PS1"  # One of the points used in test data
         assert point_id in map_point_registry.points
 
         point = map_point_registry.points[point_id]
@@ -105,10 +110,9 @@ class TestMapPointRegistryLoading:
         assert isinstance(point.pixel_x, (int, float))
         assert isinstance(point.pixel_y, (int, float))
 
-        # These are actually UTM coordinates (meters), not pixels
-        # Valencia is in UTM zone 30N, so expect large values
-        assert 250000 < point.pixel_x < 253000, "pixel_x should be UTM easting"
-        assert -362000 < point.pixel_y < -359000, "pixel_y should be UTM northing"
+        # These are map pixel coordinates
+        assert 700 < point.pixel_x < 1300, "pixel_x should be in map pixel range"
+        assert 200 < point.pixel_y < 800, "pixel_y should be in map pixel range"
 
     def test_all_annotations_reference_valid_gcps(self, map_point_registry, valte_annotations):
         """Test that all annotations reference valid GCPs in the registry."""
@@ -149,10 +153,10 @@ class TestAnnotationGCPCorrespondenceExtraction:
         assert gcp_coords.shape[0] == len(valte_annotations)
         assert gcp_coords.shape[1] == 2
 
-        # GCP coords should be in reasonable UTM range (not NaN/inf)
+        # GCP coords should be in reasonable map pixel range (not NaN/inf)
         assert np.all(np.isfinite(gcp_coords))
-        assert np.all(gcp_coords[:, 0] > 250000)  # UTM easting
-        assert np.all(gcp_coords[:, 1] < -359000)  # UTM northing (negative in this dataset)
+        assert np.all(gcp_coords[:, 0] > 700)  # Map pixel x
+        assert np.all(gcp_coords[:, 1] > 200)  # Map pixel y
 
     def test_create_correspondence_pairs(self, map_point_registry, valte_annotations):
         """Test creating matched pairs of annotation (camera) and GCP (map) coordinates."""
@@ -265,10 +269,10 @@ class TestForwardProjection:
         assert map_coord.shape == (1, 1, 2)
         map_x, map_y = map_coord[0, 0]
 
-        # Map coordinates should be finite and in UTM range
+        # Map coordinates should be finite and in map pixel range
         assert np.isfinite(map_x) and np.isfinite(map_y)
-        assert 250000 < map_x < 253000, f"Map X (easting) out of expected range: {map_x}"
-        assert -362000 < map_y < -359000, f"Map Y (northing) out of expected range: {map_y}"
+        assert 700 < map_x < 1300, f"Map X out of expected range: {map_x}"
+        assert 200 < map_y < 800, f"Map Y out of expected range: {map_y}"
 
     def test_project_annotations_to_gcps(
         self, homography_matrix, map_point_registry, valte_annotations
@@ -286,7 +290,7 @@ class TestForwardProjection:
             expected_gcp = map_point_registry.points[annotation.gcp_id]
             expected = np.array([expected_gcp.pixel_x, expected_gcp.pixel_y])
 
-            # Calculate reprojection error (in meters for UTM coords)
+            # Calculate reprojection error (in map pixels)
             error = np.linalg.norm(projected_gcp_coord - expected)
             errors.append(error)
 
@@ -296,9 +300,9 @@ class TestForwardProjection:
         median_error = np.median(errors)
 
         # For real-world data with scale differences, accept larger errors
-        # These are in meters in UTM space
-        assert mean_error < 50.0, f"Mean reprojection error too high: {mean_error:.2f} meters"
-        assert median_error < 30.0, f"Median reprojection error too high: {median_error:.2f} meters"
+        # These are in map pixels
+        assert mean_error < 20.0, f"Mean reprojection error too high: {mean_error:.2f} pixels"
+        assert median_error < 15.0, f"Median reprojection error too high: {median_error:.2f} pixels"
 
     def test_forward_projection_batch(self, homography_matrix, valte_annotations):
         """Test batch projection of multiple camera pixels."""
@@ -344,7 +348,7 @@ class TestInverseProjection:
     def test_project_gcp_to_annotation(self, inverse_homography_matrix, map_point_registry):
         """Test projecting a GCP coordinate to annotation (camera) pixels."""
         # Get a GCP
-        gcp = map_point_registry.points["A7"]
+        gcp = map_point_registry.points["PS1"]
         gcp_coord = np.array([[[gcp.pixel_x, gcp.pixel_y]]], dtype=np.float32)
 
         # Project to annotation (camera) space
@@ -451,7 +455,7 @@ class TestRoundTripProjection:
 
         errors = []
         for annotation in valte_annotations:
-            # Original GCP coord (UTM meters)
+            # Original GCP coord (map pixels)
             gcp = map_point_registry.points[annotation.gcp_id]
             original = np.array([[[gcp.pixel_x, gcp.pixel_y]]], dtype=np.float32)
 
@@ -461,16 +465,16 @@ class TestRoundTripProjection:
             # Project back to GCP space
             recovered = cv2.perspectiveTransform(annotation_pt, H)
 
-            # Calculate round-trip error (in meters)
+            # Calculate round-trip error (in map pixels)
             error = np.linalg.norm(recovered[0, 0] - original[0, 0])
             errors.append(error)
 
         mean_error = np.mean(errors)
         max_error = np.max(errors)
 
-        # Round-trip error in meters should be acceptable
-        assert mean_error < 30.0, f"High mean round-trip error: {mean_error:.2f} meters"
-        assert max_error < 80.0, f"High max round-trip error: {max_error:.2f} meters"
+        # Round-trip error in map pixels should be acceptable
+        assert mean_error < 5.0, f"High mean round-trip error: {mean_error:.2f} pixels"
+        assert max_error < 15.0, f"High max round-trip error: {max_error:.2f} pixels"
 
 
 class TestReprojectionErrorMetrics:
@@ -510,7 +514,7 @@ class TestReprojectionErrorMetrics:
             expected_gcp = map_point_registry.points[annotation.gcp_id]
             expected = np.array([expected_gcp.pixel_x, expected_gcp.pixel_y])
 
-            # Calculate error (in meters)
+            # Calculate error (in map pixels)
             error = np.linalg.norm(projected_gcp_coord - expected)
             errors.append(error)
 
@@ -519,14 +523,14 @@ class TestReprojectionErrorMetrics:
         std_error = np.std(errors)
 
         # Log statistics for debugging
-        print("\nReprojection error statistics (meters):")
+        print("\nReprojection error statistics (map pixels):")
         print(f"  Mean: {mean_error:.2f}")
         print(f"  Max: {max_error:.2f}")
         print(f"  Std: {std_error:.2f}")
 
-        # Relaxed thresholds for real-world data
-        assert mean_error < 50.0, f"Mean reprojection error too high: {mean_error:.2f} meters"
-        assert max_error < 100.0, f"Max reprojection error too high: {max_error:.2f} meters"
+        # Thresholds for map pixel coordinates
+        assert mean_error < 20.0, f"Mean reprojection error too high: {mean_error:.2f} pixels"
+        assert max_error < 50.0, f"Max reprojection error too high: {max_error:.2f} pixels"
 
     def test_rmse_reprojection_error(self, homography_matrix, map_point_registry, valte_annotations):
         """Test computing RMSE (Root Mean Square Error) of reprojection."""
@@ -544,5 +548,5 @@ class TestReprojectionErrorMetrics:
 
         rmse = np.sqrt(np.mean(squared_errors))
 
-        # RMSE in meters for real-world UTM coordinates
-        assert rmse < 60.0, f"RMSE too high: {rmse:.2f} meters"
+        # RMSE in map pixels
+        assert rmse < 25.0, f"RMSE too high: {rmse:.2f} pixels"

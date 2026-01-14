@@ -31,14 +31,20 @@ import yaml
 from poc_homography.homography.map_points import MapPointHomography, MapPointComputationResult
 from poc_homography.map_points import MapPoint, MapPointRegistry
 from poc_homography.pixel_point import PixelPoint
+from poc_homography.camera_config import get_camera_by_name
 
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
 # =============================================================================
-TEST_DATA_DIR = Path(__file__).parent.parent.parent
-MAP_POINTS_FILE = TEST_DATA_DIR / "valte_map_points.yaml"
-GCPS_FILE = Path(__file__).parent / "test_data" / "valte_gcps.yaml"
+TEST_DATA_DIR = Path(__file__).parent / "test_data"
+MAP_POINTS_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
+
+# Valte camera geotransform: 0.15 m/pixel in map space
+# GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
+VALTE_CONFIG = get_camera_by_name("Valte")
+MAP_METERS_PER_PIXEL = abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
 
 
 # =============================================================================
@@ -62,11 +68,11 @@ def map_registry() -> MapPointRegistry:
 
 def load_all_test_cases() -> list[dict[str, Any]]:
     """Load all test cases from YAML file."""
-    if not GCPS_FILE.exists():
+    if not ANNOTATIONS_FILE.exists():
         return []
 
     try:
-        with open(GCPS_FILE, encoding="utf-8") as f:
+        with open(ANNOTATIONS_FILE, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data.get("test_cases", []) if data else []
     except (yaml.YAMLError, OSError):
@@ -88,10 +94,10 @@ def load_annotations_from_yaml(test_case_name: str | None = None) -> dict[str, A
     Returns:
         Dictionary with 'image' and 'annotations' keys.
     """
-    if not GCPS_FILE.exists():
-        pytest.skip(f"Annotations file not found: {GCPS_FILE}")
+    if not ANNOTATIONS_FILE.exists():
+        pytest.skip(f"Annotations file not found: {ANNOTATIONS_FILE}")
 
-    with open(GCPS_FILE, encoding="utf-8") as f:
+    with open(ANNOTATIONS_FILE, encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     test_cases = data.get("test_cases", []) if data else []
@@ -129,7 +135,7 @@ def annotations_4_points(annotations_test_case: dict[str, Any]) -> list[dict[str
 @pytest.fixture
 def test_image_path(annotations_test_case: dict[str, Any]) -> Path:
     """Path to the test image from the annotations YAML file (relative to YAML location)."""
-    return GCPS_FILE.parent / annotations_test_case["image"]
+    return ANNOTATIONS_FILE.parent / annotations_test_case["image"]
 
 
 @pytest.fixture
@@ -188,6 +194,78 @@ def compute_pixel_precision(
         "max_error": float(np.max(errors_array)),
         "rmse": float(np.sqrt(np.mean(errors_array ** 2))),
         "per_point_errors": errors,
+    }
+
+
+def compute_metric_precision(
+    annotations: list[dict[str, Any]],
+    homography: MapPointHomography,
+    map_registry: MapPointRegistry,
+    meters_per_pixel: float = MAP_METERS_PER_PIXEL,
+) -> dict[str, float]:
+    """
+    Measure precision in METERS by calculating error in map space.
+
+    This is the CORRECT way to compute reprojection error for metric accuracy.
+    Camera pixels have variable metric size due to perspective distortion,
+    but map pixels have constant GSD (ground sample distance).
+
+    Process:
+        1. Project camera pixel coordinates to map space using homography
+        2. Compare with known map coordinates from registry
+        3. Calculate Euclidean distance in map pixels
+        4. Convert to meters using geotransform GSD
+
+    Args:
+        annotations: List of annotations with pixel_x, pixel_y, gcp_id
+        homography: Computed MapPointHomography
+        map_registry: Registry containing MapPoints
+        meters_per_pixel: Ground sample distance (m/pixel) from geotransform
+
+    Returns:
+        Dictionary with mean_error, max_error, rmse (all in meters),
+        and per_point details including map pixel errors
+    """
+    errors_meters = []
+    errors_map_pixels = []
+    per_point_details = []
+
+    for annotation in annotations:
+        # Get camera pixel coordinates
+        camera_pixel = PixelPoint(annotation["pixel_x"], annotation["pixel_y"])
+
+        # Project camera pixel to map space using homography
+        projected_map = homography.camera_to_map(camera_pixel)
+
+        # Get the known map coordinate from registry
+        known_map = map_registry.points[annotation["gcp_id"]]
+
+        # Calculate error in MAP pixels (constant m/pixel)
+        projected = np.array([projected_map.pixel_x, projected_map.pixel_y])
+        actual = np.array([known_map.pixel_x, known_map.pixel_y])
+        error_map_px = float(np.linalg.norm(projected - actual))
+
+        # Convert to meters using GSD
+        error_meters = error_map_px * meters_per_pixel
+
+        errors_map_pixels.append(error_map_px)
+        errors_meters.append(error_meters)
+        per_point_details.append({
+            "gcp_id": annotation["gcp_id"],
+            "error_map_px": error_map_px,
+            "error_meters": error_meters,
+            "projected_map": (projected_map.pixel_x, projected_map.pixel_y),
+            "actual_map": (known_map.pixel_x, known_map.pixel_y),
+        })
+
+    errors_array = np.array(errors_meters)
+
+    return {
+        "mean_error_m": float(np.mean(errors_array)),
+        "max_error_m": float(np.max(errors_array)),
+        "rmse_m": float(np.sqrt(np.mean(errors_array ** 2))),
+        "mean_error_map_px": float(np.mean(errors_map_pixels)),
+        "per_point_details": per_point_details,
     }
 
 
@@ -304,6 +382,124 @@ class TestPixelPrecision:
             assert error < 1.0, (
                 f"Annotation {i} does not have sub-pixel precision: {error:.4f} pixels"
             )
+
+
+class TestMetricPrecision:
+    """
+    Test precision in METERS using correct map-space error calculation.
+
+    Camera pixels have variable metric size due to perspective distortion.
+    Error must be calculated in map space where GSD is constant.
+    """
+
+    def test_metric_precision_with_all_annotations(
+        self,
+        annotations_4_points: list[dict[str, Any]],
+        map_registry: MapPointRegistry,
+        homography_provider: MapPointHomography,
+    ):
+        """Test metric precision when reprojecting all annotations."""
+        # Compute homography using ALL annotations (overdetermined system)
+        result = homography_provider.compute_from_gcps(
+            gcps=annotations_4_points,  # annotations passed as gcps to the API
+            map_registry=map_registry,
+            ransac_threshold=50.0,
+        )
+
+        # Measure precision in METERS
+        precision = compute_metric_precision(
+            annotations=annotations_4_points,
+            homography=homography_provider,
+            map_registry=map_registry,
+        )
+
+        print(f"\nMetric Precision (in meters):")
+        print(f"  Mean error: {precision['mean_error_m']:.2f} m")
+        print(f"  Max error:  {precision['max_error_m']:.2f} m")
+        print(f"  RMSE:       {precision['rmse_m']:.2f} m")
+        print(f"\nPer-point errors:")
+        for detail in sorted(precision["per_point_details"], key=lambda x: -x["error_meters"]):
+            print(f"  {detail['gcp_id']}: {detail['error_meters']:.2f} m ({detail['error_map_px']:.1f} map px)")
+
+        # Assert metric thresholds (sub-meter accuracy is good for surveying)
+        assert precision["mean_error_m"] < 2.0, (
+            f"Mean error too high: {precision['mean_error_m']:.2f} m"
+        )
+        assert precision["max_error_m"] < 5.0, (
+            f"Max error too high: {precision['max_error_m']:.2f} m"
+        )
+
+    def test_holdout_metric_precision(
+        self,
+        map_registry: MapPointRegistry,
+    ):
+        """
+        Test metric precision using N-1 (leave-one-out) validation.
+
+        Collects ALL unique GCPs from ALL test cases, then for each GCP,
+        computes homography from ALL OTHER GCPs and measures error on
+        the held-out GCP.
+
+        This provides much better coverage than single test case validation.
+        """
+        # Collect ALL unique annotations from ALL test cases
+        all_test_cases = load_all_test_cases()
+        unique_annotations = {}  # gcp_id -> annotation dict
+        for test_case in all_test_cases:
+            for annotation in test_case["annotations"]:
+                # Keep the annotation if not seen, or if coordinates match
+                gcp_id = annotation["gcp_id"]
+                if gcp_id not in unique_annotations:
+                    unique_annotations[gcp_id] = annotation
+
+        annotations = list(unique_annotations.values())
+
+        if len(annotations) < 5:
+            pytest.skip("Need at least 5 unique annotations for holdout validation")
+
+        print(f"\nUsing {len(annotations)} unique annotations from {len(all_test_cases)} test cases")
+
+        holdout_errors = []
+
+        for i, holdout_annotation in enumerate(annotations):
+            # Train on all annotations except holdout
+            train_annotations = annotations[:i] + annotations[i+1:]
+
+            homography = MapPointHomography(map_id=map_registry.map_id)
+            homography.compute_from_gcps(
+                gcps=train_annotations,  # annotations passed as gcps to the API
+                map_registry=map_registry,
+                ransac_threshold=50.0,
+            )
+
+            # Measure error on HOLDOUT annotation only
+            precision = compute_metric_precision(
+                annotations=[holdout_annotation],
+                homography=homography,
+                map_registry=map_registry,
+            )
+
+            holdout_errors.append({
+                "gcp_id": holdout_annotation["gcp_id"],
+                "error_m": precision["mean_error_m"],
+            })
+
+        # Sort by error for display
+        holdout_errors.sort(key=lambda x: -x["error_m"])
+
+        mean_error = np.mean([e["error_m"] for e in holdout_errors])
+        max_error = max(e["error_m"] for e in holdout_errors)
+
+        print(f"\nN-1 Holdout Validation (Metric):")
+        print(f"  Mean holdout error: {mean_error:.2f} m")
+        print(f"  Max holdout error:  {max_error:.2f} m")
+        print(f"\nPer-point holdout errors:")
+        for e in holdout_errors:
+            print(f"  {e['gcp_id']}: {e['error_m']:.2f} m")
+
+        # N-1 validation should achieve reasonable accuracy
+        assert mean_error < 2.0, f"Mean holdout error too high: {mean_error:.2f} m"
+        assert max_error < 5.0, f"Max holdout error too high: {max_error:.2f} m"
 
 
 class TestRoundTrip:
