@@ -6,22 +6,57 @@ Tests cover:
 - Format detection by file extension
 - Error handling for invalid content
 - Edge cases (empty registry, unicode, special characters)
+
+Architecture note:
+- Tests use FakeFileSystem to avoid real filesystem side-effects
+- This follows seams-based testing pattern for DDD
 """
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.map_points import GroundControlPointCollection, MapPoint
 
 # =============================================================================
+# Fake FileSystem for Testing (No Side Effects)
+# =============================================================================
+
+
+class FakeFileSystem:
+    """In-memory filesystem for testing without side effects."""
+
+    def __init__(self) -> None:
+        self.files: dict[str, str] = {}
+
+    def read_text(self, path: str | Path) -> str:
+        """Read text from in-memory storage."""
+        key = str(path)
+        if key not in self.files:
+            raise FileNotFoundError(f"File not found: {path}")
+        return self.files[key]
+
+    def write_text(self, path: str | Path, content: str) -> None:
+        """Write text to in-memory storage."""
+        self.files[str(path)] = content
+
+
+# =============================================================================
 # Test Fixtures
 # =============================================================================
+
+
+@pytest.fixture
+def fake_fs() -> FakeFileSystem:
+    """Create a fresh in-memory filesystem for each test."""
+    return FakeFileSystem()
 
 
 @pytest.fixture
@@ -134,156 +169,125 @@ class TestYAMLSerialization:
 
 
 # =============================================================================
-# File I/O and Format Detection Tests
+# File I/O and Format Detection Tests (Using FakeFileSystem - No Side Effects)
 # =============================================================================
 
 
 class TestFileIOFormatDetection:
-    """Test file save/load with format detection by extension."""
+    """Test file save/load with format detection by extension.
 
-    def test_save_yaml_extension(self, sample_registry: GroundControlPointCollection):
+    All tests use FakeFileSystem to avoid real filesystem side effects.
+    """
+
+    def test_save_yaml_extension(
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
+    ):
         """Test that .yaml extension saves as YAML format."""
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
-            temp_path = Path(f.name)
+        sample_registry.save("/fake/path/test.yaml", fs=fake_fs)
+        content = fake_fs.files["/fake/path/test.yaml"]
 
-        try:
-            sample_registry.save(temp_path)
-            content = temp_path.read_text(encoding="utf-8")
+        # Should be valid YAML (not JSON)
+        data = yaml.safe_load(content)
+        assert data["map_id"] == sample_registry.map_id
 
-            # Should be valid YAML (not JSON)
-            data = yaml.safe_load(content)
-            assert data["map_id"] == sample_registry.map_id
+        # YAML format check: should NOT start with JSON brace
+        assert not content.strip().startswith("{")
 
-            # YAML format check: should NOT start with JSON brace
-            assert not content.strip().startswith("{")
-        finally:
-            temp_path.unlink()
-
-    def test_save_yml_extension(self, sample_registry: GroundControlPointCollection):
+    def test_save_yml_extension(
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
+    ):
         """Test that .yml extension saves as YAML format."""
-        with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
-            temp_path = Path(f.name)
+        sample_registry.save("/fake/path/test.yml", fs=fake_fs)
+        content = fake_fs.files["/fake/path/test.yml"]
 
-        try:
-            sample_registry.save(temp_path)
-            content = temp_path.read_text(encoding="utf-8")
-
-            # Should be valid YAML
-            data = yaml.safe_load(content)
-            assert data["map_id"] == sample_registry.map_id
-            assert not content.strip().startswith("{")
-        finally:
-            temp_path.unlink()
+        # Should be valid YAML
+        data = yaml.safe_load(content)
+        assert data["map_id"] == sample_registry.map_id
+        assert not content.strip().startswith("{")
 
     def test_save_unsupported_extension_raises_error(
-        self, sample_registry: GroundControlPointCollection
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
     ):
         """Test that unsupported extension raises ValueError."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            temp_path = Path(f.name)
+        with pytest.raises(ValueError, match="Unsupported file extension"):
+            sample_registry.save("/fake/path/test.json", fs=fake_fs)
 
-        try:
-            with pytest.raises(ValueError, match="Unsupported file extension"):
-                sample_registry.save(temp_path)
-        finally:
-            temp_path.unlink()
-
-    def test_load_yaml_extension(self, sample_registry: GroundControlPointCollection):
+    def test_load_yaml_extension(
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
+    ):
         """Test that .yaml extension loads using YAML parser."""
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
-            temp_path = Path(f.name)
+        sample_registry.save("/fake/path/test.yaml", fs=fake_fs)
+        restored = GroundControlPointCollection.load("/fake/path/test.yaml", fs=fake_fs)
 
-        try:
-            sample_registry.save(temp_path)
-            restored = GroundControlPointCollection.load(temp_path)
-
-            assert restored.map_id == sample_registry.map_id
-            assert len(restored.points) == len(sample_registry.points)
-        finally:
-            temp_path.unlink()
+        assert restored.map_id == sample_registry.map_id
+        assert len(restored.points) == len(sample_registry.points)
 
     def test_load_unsupported_extension_raises_error(
-        self, sample_registry: GroundControlPointCollection
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
     ):
         """Test that loading unsupported extension raises ValueError."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            temp_path = Path(f.name)
-
-        try:
-            with pytest.raises(ValueError, match="Unsupported file extension"):
-                GroundControlPointCollection.load(temp_path)
-        finally:
-            temp_path.unlink()
+        with pytest.raises(ValueError, match="Unsupported file extension"):
+            GroundControlPointCollection.load("/fake/path/test.json", fs=fake_fs)
 
 
 # =============================================================================
-# YAML File Round-Trip Tests
+# YAML File Round-Trip Tests (Using FakeFileSystem - No Side Effects)
 # =============================================================================
 
 
 class TestYAMLFileRoundTrip:
-    """Test YAML file save/load round-trips."""
+    """Test YAML file save/load round-trips.
+
+    All tests use FakeFileSystem to avoid real filesystem side effects.
+    """
 
     def test_yaml_file_round_trip_preserves_data(
-        self, sample_registry: GroundControlPointCollection
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
     ):
         """Test saving and loading YAML file preserves data."""
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
-            temp_path = Path(f.name)
+        sample_registry.save("/fake/path/test.yaml", fs=fake_fs)
+        restored = GroundControlPointCollection.load("/fake/path/test.yaml", fs=fake_fs)
 
-        try:
-            sample_registry.save(temp_path)
-            restored = GroundControlPointCollection.load(temp_path)
+        assert restored.map_id == sample_registry.map_id
+        assert len(restored.points) == len(sample_registry.points)
 
-            assert restored.map_id == sample_registry.map_id
-            assert len(restored.points) == len(sample_registry.points)
-
-            for point_id, original in sample_registry.points.items():
-                loaded = restored.points[point_id]
-                assert float(loaded.pixel_point.x) == float(original.pixel_point.x)
-                assert float(loaded.pixel_point.y) == float(original.pixel_point.y)
-        finally:
-            temp_path.unlink()
+        for point_id, original in sample_registry.points.items():
+            loaded = restored.points[point_id]
+            assert float(loaded.pixel_point.x) == float(original.pixel_point.x)
+            assert float(loaded.pixel_point.y) == float(original.pixel_point.y)
 
     def test_yml_file_round_trip_preserves_data(
-        self, sample_registry: GroundControlPointCollection
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
     ):
         """Test saving and loading .yml file preserves data."""
-        with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as f:
-            temp_path = Path(f.name)
+        sample_registry.save("/fake/path/test.yml", fs=fake_fs)
+        restored = GroundControlPointCollection.load("/fake/path/test.yml", fs=fake_fs)
 
-        try:
-            sample_registry.save(temp_path)
-            restored = GroundControlPointCollection.load(temp_path)
+        assert restored.map_id == sample_registry.map_id
+        assert len(restored.points) == len(sample_registry.points)
 
-            assert restored.map_id == sample_registry.map_id
-            assert len(restored.points) == len(sample_registry.points)
-        finally:
-            temp_path.unlink()
-
-    def test_multiple_yaml_round_trips(self, sample_registry: GroundControlPointCollection):
+    def test_multiple_yaml_round_trips(
+        self, sample_registry: GroundControlPointCollection, fake_fs: FakeFileSystem
+    ):
         """Test multiple YAML round-trips preserve data."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        # YAML -> YAML -> YAML
+        sample_registry.save("/fake/step1.yaml", fs=fake_fs)
+        GroundControlPointCollection.load("/fake/step1.yaml", fs=fake_fs).save(
+            "/fake/step2.yml", fs=fake_fs
+        )
+        GroundControlPointCollection.load("/fake/step2.yml", fs=fake_fs).save(
+            "/fake/step3.yaml", fs=fake_fs
+        )
 
-            # YAML -> YAML -> YAML
-            path1 = tmp_path / "step1.yaml"
-            path2 = tmp_path / "step2.yml"
-            path3 = tmp_path / "step3.yaml"
+        final = GroundControlPointCollection.load("/fake/step3.yaml", fs=fake_fs)
 
-            sample_registry.save(path1)
-            GroundControlPointCollection.load(path1).save(path2)
-            GroundControlPointCollection.load(path2).save(path3)
+        assert final.map_id == sample_registry.map_id
+        assert len(final.points) == len(sample_registry.points)
 
-            final = GroundControlPointCollection.load(path3)
-
-            assert final.map_id == sample_registry.map_id
-            assert len(final.points) == len(sample_registry.points)
-
-            for point_id, original in sample_registry.points.items():
-                restored = final.points[point_id]
-                assert float(restored.pixel_point.x) == float(original.pixel_point.x)
-                assert float(restored.pixel_point.y) == float(original.pixel_point.y)
+        for point_id, original in sample_registry.points.items():
+            restored = final.points[point_id]
+            assert float(restored.pixel_point.x) == float(original.pixel_point.x)
+            assert float(restored.pixel_point.y) == float(original.pixel_point.y)
 
 
 # =============================================================================
