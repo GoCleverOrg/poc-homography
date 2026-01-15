@@ -10,12 +10,12 @@ app = typer.Typer(
 # Subcommand groups - will be populated as tools are migrated
 calibrate_app = typer.Typer(help="Calibration commands")
 camera_app = typer.Typer(help="Camera intrinsics and validation commands")
-gcp_app = typer.Typer(help="Ground Control Point commands")
-test_app = typer.Typer(help="Testing and data generation commands")
+frame_app = typer.Typer(help="Frame capture and management commands")
+test_app = typer.Typer(help="Testing commands")
 
 app.add_typer(calibrate_app, name="calibrate")
 app.add_typer(camera_app, name="camera")
-app.add_typer(gcp_app, name="gcp")
+app.add_typer(frame_app, name="frame")
 app.add_typer(test_app, name="test")
 
 
@@ -27,15 +27,16 @@ def _register_commands() -> None:
     Commands use decorators like @calibrate_app.command() which register
     themselves when the module is imported.
     """
-    from poc_homography.cli import calibrate, camera, gcp, interactive, sam3, test_cmds
+    # Import command modules to register them with their respective Typer apps
+    # sam3 module contains test commands (registered under test_app)
+    from poc_homography.cli import calibrate, camera, frame, interactive, sam3
 
     # Avoid "imported but unused" warnings by explicitly using the module
     _ = calibrate
     _ = camera
-    _ = gcp
+    _ = frame
     _ = interactive
     _ = sam3
-    _ = test_cmds
 
 
 _register_commands()

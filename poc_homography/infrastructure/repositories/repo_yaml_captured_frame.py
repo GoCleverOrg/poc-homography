@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.entities.captured_frame import CapturedFrame
 
 
@@ -84,7 +85,7 @@ class RepoYamlCapturedFrame:
         self._cache[entity.id] = entity
 
     def delete(self, entity_id: str) -> bool:
-        """Delete a captured frame and its associated image."""
+        """Delete a captured frame, its associated image, and annotations."""
         path = self._id_to_path(entity_id)
         if not path.exists():
             return False
@@ -100,6 +101,9 @@ class RepoYamlCapturedFrame:
             image_full_path = path.parent / entity.image_path
             if image_full_path.exists():
                 image_full_path.unlink()
+
+        # Delete associated annotations
+        self.delete_annotations(entity_id)
 
         return True
 
@@ -184,3 +188,81 @@ class RepoYamlCapturedFrame:
         """
         yaml_path = self._id_to_path(entity.id)
         return yaml_path.parent / entity.image_path
+
+    def _id_to_annotations_path(self, entity_id: str) -> Path:
+        """Convert entity ID to annotations YAML file path.
+
+        ID format: map_id/camera_name/timestamp
+        Path: data_dir/map_id/camera_name/timestamp_annotations.yaml
+        """
+        parts = entity_id.split("/")
+        if len(parts) != 3:
+            raise ValueError(f"Invalid CapturedFrame ID: {entity_id}")
+
+        map_id, camera_name, timestamp = parts
+        return self._data_dir / map_id / camera_name / f"{timestamp}_annotations.yaml"
+
+    def get_annotations(self, frame_id: str) -> list[Annotation]:
+        """Get all annotations for a captured frame.
+
+        Args:
+            frame_id: ID of the captured frame.
+
+        Returns:
+            List of Annotation entities for the frame.
+            Empty list if frame doesn't exist or has no annotations.
+        """
+        annotations_path = self._id_to_annotations_path(frame_id)
+        if not annotations_path.exists():
+            return []
+
+        with open(annotations_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        if not data or "annotations" not in data:
+            return []
+
+        return [Annotation.from_dict(ann) for ann in data["annotations"]]
+
+    def save_annotations(self, frame_id: str, annotations: list[Annotation]) -> None:
+        """Save annotations for a captured frame.
+
+        Args:
+            frame_id: ID of the captured frame.
+            annotations: List of Annotation entities to save.
+
+        Raises:
+            ValueError: If the frame doesn't exist.
+        """
+        # Verify frame exists
+        if not self.exists(frame_id):
+            raise ValueError(f"Cannot save annotations: frame '{frame_id}' not found")
+
+        annotations_path = self._id_to_annotations_path(frame_id)
+
+        # Create parent directories if needed
+        annotations_path.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "frame_id": frame_id,
+            "annotations": [ann.to_dict() for ann in annotations],
+        }
+
+        with open(annotations_path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    def delete_annotations(self, frame_id: str) -> bool:
+        """Delete annotations for a captured frame.
+
+        Args:
+            frame_id: ID of the captured frame.
+
+        Returns:
+            True if annotations were deleted, False if they didn't exist.
+        """
+        annotations_path = self._id_to_annotations_path(frame_id)
+        if not annotations_path.exists():
+            return False
+
+        annotations_path.unlink()
+        return True

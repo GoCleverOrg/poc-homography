@@ -1,24 +1,24 @@
 """Camera intrinsics and validation CLI commands."""
 
+from __future__ import annotations
+
 import json
 from enum import Enum
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
-import yaml
 
 from poc_homography.application import ApplicationContext
 from poc_homography.calibration import TARGET_ERROR_THRESHOLD_PX
 from poc_homography.camera import PTZStatus, get_camera_intrinsics
 from poc_homography.cli.main import camera_app
 from poc_homography.domain import CameraCalibration, CameraConfig, CameraSpec
-from poc_homography.domain.entities.ground_control_point import GroundControlPoint
-from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
-from poc_homography.domain.vo.map_point import MapPoint
-from poc_homography.domain.vo.pixel_point import PixelPoint
-from poc_homography.types import Millimeters, Pixels
-from poc_homography.validation import load_gcps_from_yaml, validate_model
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
+from poc_homography.validation import GCPData, validate_model
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
 
 
 def _build_legacy_camera_dict(
@@ -42,34 +42,6 @@ def _build_legacy_camera_dict(
         result["k2"] = calibration.distortion.k2
 
     return result
-
-
-def _load_gcps_from_registry_file(file_path: Path) -> dict[str, GroundControlPoint]:
-    """Load GCPs from a registry YAML file."""
-    if not file_path.exists():
-        raise FileNotFoundError(f"Registry file not found: {file_path}")
-
-    with open(file_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    if not data:
-        return {}
-
-    map_id = data.get("map_id", file_path.stem)
-    points_data = data.get("points", [])
-
-    gcps: dict[str, GroundControlPoint] = {}
-    for point_data in points_data:
-        name = str(point_data["id"])
-        pixel_x = float(point_data["pixel_x"])
-        pixel_y = float(point_data["pixel_y"])
-
-        pixel_point = PixelPoint(_x=pixel_x, _y=pixel_y)
-        map_point = MapPoint(map_id=map_id, pixel_point=pixel_point)
-        gcp = GroundControlPoint(id=name, name=name, map_point=map_point)
-        gcps[name] = gcp
-
-    return gcps
 
 
 class OutputFormat(str, Enum):
@@ -257,9 +229,9 @@ def _format_yaml(
 
 @camera_app.command("validate")
 def validate_command(
-    camera: str = typer.Option(..., help="Camera name (e.g., 'Valte')"),
-    gcps_file: Path = typer.Option(..., help="Path to GCPs YAML file"),
-    registry_file: Path = typer.Option(..., help="Path to map point registry JSON file"),
+    frame_id: str = typer.Option(
+        ..., help="Frame ID with annotations (e.g., 'valte/Valte/2024-01-15T10-30-45')"
+    ),
 ) -> None:
     """
     Validate camera model with Ground Control Points.
@@ -267,30 +239,38 @@ def validate_command(
     Tests projection accuracy with known GCPs to verify that the camera
     geometry model works correctly before running full calibration.
 
-    The GCPs YAML file should contain:
-        gcps:
-          - map_point_id: Z1
-            pixel_u: 960.0
-            pixel_v: 540.0
-            pan_raw: 0.0
-            tilt_deg: 30.0
-            zoom: 1.0
-          - map_point_id: Z2
-            ...
+    GCP observations (annotations) are loaded from the captured frame repository.
+    Use `hom frame annotate <frame_id>` to create annotations interactively first.
 
     Example:
-        hom camera validate --camera Valte --gcps-file valte_gcps.yaml
-            --registry-file valte_map_points.yaml
+        hom frame annotate valte/Valte/2024-01-15T10-30-45
+        hom camera validate --frame-id valte/Valte/2024-01-15T10-30-45
     """
-    # Get camera configuration and calibration from repositories
     ctx = ApplicationContext.default()
 
+    # Load captured frame
+    captured_frame = ctx.repo_captured_frame.get(frame_id)
+    if not captured_frame:
+        typer.echo(f"Error: Frame '{frame_id}' not found", err=True)
+        raise typer.Exit(1)
+
+    # Load annotations for the frame
+    annotations = ctx.repo_captured_frame.get_annotations(frame_id)
+    if not annotations:
+        typer.echo(f"Error: No annotations found for frame '{frame_id}'", err=True)
+        typer.echo("Use 'hom frame annotate <frame_id>' to create annotations first", err=True)
+        raise typer.Exit(1)
+
+    # Get camera configuration and calibration from repositories
+    camera_name = captured_frame.camera_name
+    map_id = captured_frame.map_id
+
     all_configs = ctx.repo_camera_config.get_all()
-    cam_config = next((c for c in all_configs if c.name == camera), None)
+    cam_config = next((c for c in all_configs if c.name == camera_name), None)
 
     if not cam_config:
         available = ", ".join(c.name for c in all_configs)
-        typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
+        typer.echo(f"Error: Unknown camera: {camera_name}. Available: {available}", err=True)
         raise typer.Exit(1)
 
     # Get calibration data
@@ -299,28 +279,31 @@ def validate_command(
     # Build legacy dict for validate_model compatibility
     camera_config = _build_legacy_camera_dict(cam_config, cam_calibration)
 
-    # Load GCPs from YAML file
-    try:
-        gcps = load_gcps_from_yaml(gcps_file)
-    except FileNotFoundError:
-        typer.echo(f"Error: GCPs file not found: {gcps_file}", err=True)
-        raise typer.Exit(1)
-    except ValueError as e:
-        typer.echo(f"Error: Invalid GCPs file: {e}", err=True)
-        raise typer.Exit(1)
+    # Convert annotations to GCPData
+    gcps: list[GCPData] = []
+    for ann in annotations:
+        gcps.append(
+            GCPData(
+                map_point_id=ann.gcp_id,
+                pixel_u=ann.pixel.x,
+                pixel_v=ann.pixel.y,
+                pan=Degrees(ann.camera_pose.pan_raw),
+                tilt=Degrees(ann.camera_pose.tilt_deg),
+                zoom=Unitless(ann.camera_pose.zoom),
+                name=ann.gcp_id,
+            )
+        )
 
-    if not gcps:
-        typer.echo("Error: No GCPs found in YAML file", err=True)
-        raise typer.Exit(1)
+    typer.echo(f"Loaded {len(gcps)} annotations from frame '{frame_id}'")
 
-    # Load map point registry
-    try:
-        registry = _load_gcps_from_registry_file(registry_file)
-    except FileNotFoundError:
-        typer.echo(f"Error: Registry file not found: {registry_file}", err=True)
-        raise typer.Exit(1)
-    except Exception as e:
-        typer.echo(f"Error: Failed to load registry: {e}", err=True)
+    # Load GCPs from repository based on frame's map_id
+    registry: dict[str, GroundControlPoint] = ctx.repo_gcp.get_by_map(map_id)  # type: ignore[assignment]
+
+    if not registry:
+        typer.echo(
+            f"Error: No GCPs found in repository for map '{map_id}'",
+            err=True,
+        )
         raise typer.Exit(1)
 
     # Run validation

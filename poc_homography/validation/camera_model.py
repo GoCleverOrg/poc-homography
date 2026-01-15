@@ -4,16 +4,8 @@ Simple camera model validation.
 Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
 
-GCPs are defined in YAML format with Map Point IDs referencing coordinates
-from a dict[str, GroundControlPoint]:
-
-    gcps:
-      - map_point_id: Z1
-        pixel_u: 960
-        pixel_v: 540
-        pan_raw: 0.0
-        tilt_deg: 30.0
-        zoom: 1.0
+GCP observations are provided as GCPData objects, typically converted from
+Annotation entities in the captured frame repository.
 """
 
 from __future__ import annotations
@@ -22,15 +14,12 @@ import math
 from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
-import yaml
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 
 
@@ -62,57 +51,6 @@ class ValidationResult(NamedTuple):
     projected_u: PixelsFloat | None
     projected_v: PixelsFloat | None
     error_px: float
-
-
-def load_gcps_from_yaml(yaml_path: Path) -> list[GCPData]:
-    """Load GCPs from YAML file.
-
-    Expected YAML format:
-        gcps:
-          - map_point_id: Z1
-            pixel_u: 960
-            pixel_v: 540
-            pan_raw: 0.0
-            tilt_deg: 30.0
-            zoom: 1.0
-
-    Each GCP references a Map Point by ID. The map point's world/map coordinates
-    (pixel_x, pixel_y) are looked up from the dict[str, GroundControlPoint] at projection time.
-    The pixel_u/pixel_v values are the image pixel coordinates where the point appears.
-
-    Args:
-        yaml_path: Path to YAML file containing GCP data
-
-    Returns:
-        List of GCPData objects
-
-    Raises:
-        ValueError: If YAML file is missing required fields
-    """
-    with yaml_path.open() as f:
-        data = yaml.safe_load(f)
-
-    if "gcps" not in data:
-        raise ValueError("YAML file must contain 'gcps' key with list of GCP entries")
-
-    gcps: list[GCPData] = []
-    for gcp in data["gcps"]:
-        if "map_point_id" not in gcp:
-            raise ValueError(f"GCP entry missing required 'map_point_id' field: {gcp}")
-
-        gcps.append(
-            GCPData(
-                map_point_id=gcp["map_point_id"],
-                pixel_u=PixelsFloat(gcp["pixel_u"]),
-                pixel_v=PixelsFloat(gcp["pixel_v"]),
-                pan=Degrees(gcp.get("pan_raw", 0.0)),
-                tilt=Degrees(gcp.get("tilt_deg", 30.0)),
-                zoom=Unitless(gcp.get("zoom", 1.0)),
-                name=gcp.get("name", gcp["map_point_id"]),
-            )
-        )
-
-    return gcps
 
 
 def project_map_point_to_pixel(
