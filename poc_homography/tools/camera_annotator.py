@@ -27,9 +27,12 @@ import yaml
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 DEFAULT_GCP_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+DEFAULT_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 
-# Global state for the current GCP file
+# Global state
 _gcps_file: Path = DEFAULT_GCP_FILE
+_annotations_file: Path = DEFAULT_ANNOTATIONS_FILE
+_image_filename: str = ""
 
 
 def load_gcps() -> list[dict]:
@@ -45,6 +48,25 @@ def load_gcps() -> list[dict]:
     gcps = [{"id": p["id"], "pixel_x": p["pixel_x"], "pixel_y": p["pixel_y"]} for p in points]
     print(f"Loaded {len(gcps)} GCPs from {_gcps_file}")
     return gcps
+
+
+def load_existing_annotations() -> list[dict]:
+    """Load existing annotations for the current image from the annotations file."""
+    if not _annotations_file.exists():
+        return []
+
+    with open(_annotations_file) as f:
+        data = yaml.safe_load(f)
+
+    test_cases = data.get("test_cases", [])
+    for tc in test_cases:
+        # Match by image filename
+        if tc.get("image") == _image_filename:
+            annotations = tc.get("annotations", [])
+            print(f"Loaded {len(annotations)} existing annotations for {_image_filename}")
+            return annotations
+
+    return []
 
 
 def create_html(image_filename: str) -> str:
@@ -75,9 +97,13 @@ def create_html(image_filename: str) -> str:
 
         #image-container {{
             flex: 1;
-            position: relative;
             overflow: auto;
             cursor: crosshair;
+        }}
+
+        #image-wrapper {{
+            position: relative;
+            display: inline-block;
         }}
 
         #frame-image {{
@@ -345,7 +371,9 @@ def create_html(image_filename: str) -> str:
 <body>
     <div id="image-panel">
         <div id="image-container">
-            <img id="frame-image" src="/image" alt="Camera Frame">
+            <div id="image-wrapper">
+                <img id="frame-image" src="/image" alt="Camera Frame">
+            </div>
         </div>
     </div>
 
@@ -386,7 +414,7 @@ def create_html(image_filename: str) -> str:
 
         // Elements
         const img = document.getElementById('frame-image');
-        const container = document.getElementById('image-container');
+        const wrapper = document.getElementById('image-wrapper');
         const gcpSection = document.getElementById('gcp-input-section');
         const gcpSearch = document.getElementById('gcp-search');
         const gcpDropdown = document.getElementById('gcp-dropdown');
@@ -406,7 +434,7 @@ def create_html(image_filename: str) -> str:
         // Render markers
         function renderMarkers() {{
             // Remove existing markers
-            container.querySelectorAll('.marker').forEach(m => m.remove());
+            wrapper.querySelectorAll('.marker').forEach(m => m.remove());
 
             // Add annotation markers
             annotations.forEach((ann, i) => {{
@@ -417,7 +445,7 @@ def create_html(image_filename: str) -> str:
                 const label = document.createElement('span');
                 label.textContent = ann.gcp_id;
                 marker.appendChild(label);
-                container.appendChild(marker);
+                wrapper.appendChild(marker);
             }});
 
             // Add pending marker
@@ -429,7 +457,7 @@ def create_html(image_filename: str) -> str:
                 const label = document.createElement('span');
                 label.textContent = '?';
                 marker.appendChild(label);
-                container.appendChild(marker);
+                wrapper.appendChild(marker);
             }}
         }}
 
@@ -536,8 +564,8 @@ def create_html(image_filename: str) -> str:
         // Event: Click on image
         img.addEventListener('click', (e) => {{
             const rect = img.getBoundingClientRect();
-            const x = e.clientX - rect.left + container.scrollLeft;
-            const y = e.clientY - rect.top + container.scrollTop;
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
 
             pendingPoint = {{ x, y }};
             gcpSection.classList.add('active');
@@ -551,8 +579,8 @@ def create_html(image_filename: str) -> str:
         // Event: Mouse move for coordinates
         img.addEventListener('mousemove', (e) => {{
             const rect = img.getBoundingClientRect();
-            const x = e.clientX - rect.left + container.scrollLeft;
-            const y = e.clientY - rect.top + container.scrollTop;
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
             coordsDisplay.textContent = `Pixel: (${{x.toFixed(1)}}, ${{y.toFixed(1)}})`;
         }});
 
@@ -599,9 +627,28 @@ def create_html(image_filename: str) -> str:
             }}, 2000);
         }});
 
+        // Load existing annotations
+        async function loadExistingAnnotations() {{
+            try {{
+                const resp = await fetch('/api/annotations');
+                const existing = await resp.json();
+                if (existing && existing.length > 0) {{
+                    annotations = existing;
+                    renderMarkers();
+                    renderAnnotationsList();
+                    updateYamlPreview();
+                    console.log(`Loaded ${{existing.length}} existing annotations`);
+                }}
+            }} catch (e) {{
+                console.error('Failed to load existing annotations:', e);
+            }}
+        }}
+
         // Initialize
         loadGcps().then(() => {{
-            updateYamlPreview();
+            loadExistingAnnotations().then(() => {{
+                updateYamlPreview();
+            }});
         }});
     </script>
 </body>
@@ -650,13 +697,21 @@ class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(gcps).encode())
 
+        elif path == "/api/annotations":
+            # Serve existing annotations for this image
+            annotations = load_existing_annotations()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(annotations).encode())
+
         else:
             self.send_error(404)
 
 
 def run_annotator(image_path: Path, gcps_file: Path | None = None, port: int = 8888) -> None:
     """Run the annotation server."""
-    global _gcps_file
+    global _gcps_file, _image_filename
 
     if not image_path.exists():
         print(f"Error: Image not found: {image_path}")
@@ -668,15 +723,20 @@ def run_annotator(image_path: Path, gcps_file: Path | None = None, port: int = 8
     else:
         _gcps_file = DEFAULT_GCP_FILE
 
-    # Set the image path on the handler class
+    # Set the image path and filename
     AnnotatorHandler.image_path = image_path.resolve()
+    _image_filename = image_path.name
 
     server = http.server.HTTPServer(("localhost", port), AnnotatorHandler)
+
+    # Load existing annotations count
+    existing = load_existing_annotations()
 
     print(f"Camera Frame Annotator")
     print(f"=" * 50)
     print(f"Image: {image_path}")
     print(f"GCPs:  {_gcps_file}")
+    print(f"Existing annotations: {len(existing)}")
     print(f"")
     print(f"Server running at http://localhost:{port}")
     print(f"Press Ctrl+C to stop")

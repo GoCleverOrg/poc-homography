@@ -192,74 +192,130 @@ test_cases:
       tilt: 20.7
       zoom: 1
     annotations:
-      - pixel_x: 2892.0
-        pixel_y: 1169.0
+      - pixel_x: 1418.0
+        pixel_y: 693.5
         gcp_id: EX7
 
-      - pixel_x: 1310.0
-        pixel_y: 1304.0
+      - pixel_x: 979.0
+        pixel_y: 830.5
         gcp_id: EX6
 
       - pixel_x: 367.0
-        pixel_y: 1486.0
+        pixel_y: 1009.5
         gcp_id: EX5
 
-      - pixel_x: 2919.0
-        pixel_y: 489.0
+      - pixel_x: 1772.0
+        pixel_y: 305.0
         gcp_id: AR7
 
-      - pixel_x: 2866.0
-        pixel_y: 794.0
-        gcp_id: CW1
-
-      - pixel_x: 2964.0
-        pixel_y: 727.0
-        gcp_id: CW2
-
-      - pixel_x: 2526.0
-        pixel_y: 713.0
-        gcp_id: CW3
-
-      - pixel_x: 2641.0
-        pixel_y: 657.0
-        gcp_id: CW4
-
-      - pixel_x: 2143.0
-        pixel_y: 647.0
-        gcp_id: CW5
-
-      - pixel_x: 2262.0
-        pixel_y: 603.0
-        gcp_id: CW6
-
-      - pixel_x: 1788.0
-        pixel_y: 591.0
-        gcp_id: CW7
-
-      - pixel_x: 1910.0
-        pixel_y: 555.0
-        gcp_id: CW8
-
-      - pixel_x: 1435.0
-        pixel_y: 82.0
+      - pixel_x: 1124.0
+        pixel_y: 83.0
         gcp_id: AR8
 
-      - pixel_x: 1218.0
-        pixel_y: 47.0
+      - pixel_x: 902.5
+        pixel_y: 46.0
         gcp_id: AR9
 
-      - pixel_x: 879.0
-        pixel_y: 44.0
+      - pixel_x: 576.5
+        pixel_y: 46.0
         gcp_id: PS17
 
-      - pixel_x: 1256.0
-        pixel_y: 125.0
+      - pixel_x: 958.5
+        pixel_y: 122.0
         gcp_id: PS16
 
-      - pixel_x: 859.0
-        pixel_y: 153.0
+      - pixel_x: 558.0
+        pixel_y: 151.0
         gcp_id: PS15
 
       - pixel_x: 66.0
-        pixel_y: 197.0
+        pixel_y: 196.0
         gcp_id: PS13
+
+      - pixel_x: 617.0
+        pixel_y: 176.0
+        gcp_id: CW21
+
+      - pixel_x: 717.5
+        pixel_y: 159.5
+        gcp_id: CW22
+
+      - pixel_x: 666.5
+        pixel_y: 192.5
+        gcp_id: CW19
+
+      - pixel_x: 770.5
+        pixel_y: 176.5
+        gcp_id: CW20
+
+      - pixel_x: 727.5
+        pixel_y: 212.5
+        gcp_id: CW17
+
+      - pixel_x: 833.5
+        pixel_y: 194.5
+        gcp_id: CW18
+
+      - pixel_x: 792.5
+        pixel_y: 235.5
+        gcp_id: CW15
+
+      - pixel_x: 907.5
+        pixel_y: 216.5
+        gcp_id: CW16
+
+      - pixel_x: 870.5
+        pixel_y: 264.0
+        gcp_id: CW13
+
+      - pixel_x: 984.5
+        pixel_y: 240.0
+        gcp_id: CW14
+
+      - pixel_x: 962.5
+        pixel_y: 296.0
+        gcp_id: CW11
+
+      - pixel_x: 1079.0
+        pixel_y: 270.0
+        gcp_id: CW12
+
+      - pixel_x: 1066.0
+        pixel_y: 335.0
+        gcp_id: CW9
+
+      - pixel_x: 1187.0
+        pixel_y: 304.0
+        gcp_id: CW10
+
+      - pixel_x: 1190.0
+        pixel_y: 379.0
+        gcp_id: CW7
+
+      - pixel_x: 1311.0
+        pixel_y: 342.0
+        gcp_id: CW8
+
+      - pixel_x: 1335.5
+        pixel_y: 434.0
+        gcp_id: CW5
+
+      - pixel_x: 1455.5
+        pixel_y: 390.0
+        gcp_id: CW6
+
+      - pixel_x: 1511.0
+        pixel_y: 499.0
+        gcp_id: CW3
+
+      - pixel_x: 1624.0
+        pixel_y: 447.0
+        gcp_id: CW4
+
+      - pixel_x: 1724.0
+        pixel_y: 581.5
+        gcp_id: CW1
+
+      - pixel_x: 1821.5
+        pixel_y: 514.5
+        gcp_id: CW2
