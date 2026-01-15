@@ -71,11 +71,7 @@ def serve(
             # Also check test data directory
             project_root = Path(__file__).parent.parent.parent
             test_data_path = (
-                project_root
-                / "tests"
-                / "homography"
-                / "test_data"
-                / f"{image_path.stem}_gcps.yaml"
+                project_root / "tests" / "homography" / "test_data" / f"{image_path.stem}_gcps.yaml"
             )
             if test_data_path.exists():
                 gcp_registry = test_data_path
@@ -169,8 +165,6 @@ def serve(
     os.chdir(webapp_dir)
 
     try:
-        execute_from_command_line(
-            ["manage.py", "runserver", f"{host}:{port}", "--noreload"]
-        )
+        execute_from_command_line(["manage.py", "runserver", f"{host}:{port}", "--noreload"])
     finally:
         os.chdir(original_cwd)
