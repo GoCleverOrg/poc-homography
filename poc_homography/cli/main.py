@@ -27,9 +27,18 @@ def _register_commands() -> None:
     Commands use decorators like @calibrate_app.command() which register
     themselves when the module is imported.
     """
-    from poc_homography.cli import calibrate, camera, gcp, interactive, point_picker, test_cmds
+    from poc_homography.cli import (
+        annotate,
+        calibrate,
+        camera,
+        gcp,
+        interactive,
+        point_picker,
+        test_cmds,
+    )
 
     # Avoid "imported but unused" warnings by explicitly using the module
+    _ = annotate
     _ = calibrate
     _ = camera
     _ = gcp
