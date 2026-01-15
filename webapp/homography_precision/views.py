@@ -30,6 +30,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 GCP_REGISTRY_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+LINE_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_line_annotations.yaml"
+LINE_REGISTRY_FILE = TEST_DATA_DIR / "Cartografia_valencia_lines.yaml"
 MAP_GEOTIFF_FILE = PROJECT_ROOT / "Cartografia_valencia.tif"
 
 
@@ -146,6 +148,36 @@ def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, s
             pass
 
     return geotransform, crs
+
+
+def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
+    """Calculate perpendicular distance from point p to line defined by points a and b.
+
+    Args:
+        p: Point as numpy array [x, y].
+        a: Line start point as numpy array [x, y].
+        b: Line end point as numpy array [x, y].
+
+    Returns:
+        Perpendicular distance in pixels.
+    """
+    # Line vector
+    v = b - a
+    # Point vector from a to p
+    w = p - a
+
+    # Project w onto v
+    c1 = np.dot(w, v)
+    c2 = np.dot(v, v)
+
+    if c2 == 0:
+        # Line has zero length (a and b are the same point)
+        return float(np.linalg.norm(w))
+
+    # Perpendicular distance = |w - proj_v(w)|
+    b_param = c1 / c2
+    proj = a + b_param * v
+    return float(np.linalg.norm(p - proj))
 
 
 def _get_camera_image_path(test_case_name: str) -> Path | None:
@@ -345,6 +377,34 @@ def _load_test_case_by_name(name: str) -> dict | None:
 
     try:
         with open(ANNOTATIONS_FILE, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError:
+        return None
+
+    if not data or "test_cases" not in data:
+        return None
+
+    for tc in data["test_cases"]:
+        if tc.get("name") == name:
+            return tc
+
+    return None
+
+
+def _load_line_test_case_by_name(name: str) -> dict | None:
+    """Load a line test case by name from the line annotations file.
+
+    Args:
+        name: Name of the line test case to load.
+
+    Returns:
+        The line test case dictionary if found, None otherwise.
+    """
+    if not LINE_ANNOTATIONS_FILE.exists():
+        return None
+
+    try:
+        with open(LINE_ANNOTATIONS_FILE, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError:
         return None
@@ -572,6 +632,336 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
             "points": points_dict,
         }
     )
+
+
+@require_GET
+def api_line_test_cases(request: HttpRequest) -> JsonResponse:
+    """
+    List all available line test cases.
+
+    GET /api/line-test-cases/
+
+    Returns:
+        JSON with list of line test cases:
+        {"test_cases": [{"name": "...", "image": "...", "line_annotation_count": N}, ...]}
+    """
+    if not LINE_ANNOTATIONS_FILE.exists():
+        return JsonResponse(
+            {"error": f"Line annotations file not found: {LINE_ANNOTATIONS_FILE}"},
+            status=404,
+        )
+
+    try:
+        with open(LINE_ANNOTATIONS_FILE, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return JsonResponse(
+            {"error": f"Failed to parse line annotations YAML: {e}"},
+            status=500,
+        )
+
+    if not data or "test_cases" not in data:
+        return JsonResponse(
+            {"error": "No test_cases found in line annotations file"},
+            status=404,
+        )
+
+    test_cases = [
+        {
+            "name": tc.get("name", ""),
+            "image": tc.get("image", ""),
+            "line_annotation_count": len(tc.get("line_annotations", [])),
+        }
+        for tc in data["test_cases"]
+    ]
+
+    return JsonResponse({"test_cases": test_cases})
+
+
+@require_GET
+def api_line_registry(request: HttpRequest) -> JsonResponse:
+    """
+    Get the line registry.
+
+    GET /api/line-registry/
+
+    Returns:
+        JSON with line registry data:
+        {"map_id": "...", "lines": [{"line_id": "L1", "start_gcp": "PS1", "end_gcp": "PS2"}, ...]}
+    """
+    if not LINE_REGISTRY_FILE.exists():
+        return JsonResponse(
+            {"error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
+            status=404,
+        )
+
+    try:
+        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return JsonResponse(
+            {"error": f"Failed to parse line registry YAML: {e}"},
+            status=500,
+        )
+
+    if not data or "lines" not in data:
+        return JsonResponse(
+            {"error": "No lines found in line registry file"},
+            status=404,
+        )
+
+    return JsonResponse({
+        "map_id": data.get("map_id", ""),
+        "lines": data["lines"],
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
+    """
+    Compute line errors from a line test case.
+
+    POST /api/compute-line-errors/
+
+    Request body:
+        {"test_case_name": "valte_30.8_13.1_1_20260112_lines"}
+
+    Returns:
+        JSON with line error computation results including per-line errors and overlay data.
+    """
+    # Parse request body
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse(
+            {"success": False, "error": f"Invalid JSON: {e}"},
+            status=400,
+        )
+
+    test_case_name = body.get("test_case_name")
+    if not test_case_name:
+        return JsonResponse(
+            {"success": False, "error": "Missing required field: test_case_name"},
+            status=400,
+        )
+
+    # Load line test case
+    line_test_case = _load_line_test_case_by_name(test_case_name)
+    if line_test_case is None:
+        return JsonResponse(
+            {"success": False, "error": f"Line test case not found: {test_case_name}"},
+            status=404,
+        )
+
+    line_annotations = line_test_case.get("line_annotations", [])
+    if not line_annotations:
+        return JsonResponse(
+            {"success": False, "error": "No line annotations found in test case"},
+            status=400,
+        )
+
+    # Get point annotations reference to compute homography
+    point_annotations_ref = line_test_case.get("point_annotations_ref")
+    if not point_annotations_ref:
+        return JsonResponse(
+            {"success": False, "error": "No point_annotations_ref found in line test case"},
+            status=400,
+        )
+
+    # Load the referenced point test case
+    point_test_case = _load_test_case_by_name(point_annotations_ref)
+    if point_test_case is None:
+        return JsonResponse(
+            {"success": False, "error": f"Referenced point test case not found: {point_annotations_ref}"},
+            status=404,
+        )
+
+    annotations = point_test_case.get("annotations", [])
+    if len(annotations) < 4:
+        return JsonResponse(
+            {"success": False, "error": f"Need at least 4 point annotations, got {len(annotations)}"},
+            status=400,
+        )
+
+    # Load GCP registry
+    if not GCP_REGISTRY_FILE.exists():
+        return JsonResponse(
+            {"success": False, "error": f"GCP registry file not found: {GCP_REGISTRY_FILE}"},
+            status=500,
+        )
+
+    try:
+        gcp_registry = MapPointRegistry.load(GCP_REGISTRY_FILE)
+    except (yaml.YAMLError, KeyError, ValueError) as e:
+        return JsonResponse(
+            {"success": False, "error": f"Failed to load GCP registry: {e}"},
+            status=500,
+        )
+
+    # Compute homography from point annotations
+    try:
+        homography = MapPointHomography(map_id=gcp_registry.map_id)
+        homography.compute_from_gcps(
+            gcps=annotations,
+            map_registry=gcp_registry,
+            ransac_threshold=50.0,
+            min_inlier_ratio=0.5,
+        )
+    except (ValueError, RuntimeError) as e:
+        return JsonResponse(
+            {"success": False, "error": f"Homography computation failed: {e}"},
+            status=500,
+        )
+
+    # Load line registry
+    if not LINE_REGISTRY_FILE.exists():
+        return JsonResponse(
+            {"success": False, "error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
+            status=500,
+        )
+
+    try:
+        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
+            line_registry_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return JsonResponse(
+            {"success": False, "error": f"Failed to parse line registry YAML: {e}"},
+            status=500,
+        )
+
+    if not line_registry_data or "lines" not in line_registry_data:
+        return JsonResponse(
+            {"success": False, "error": "No lines found in line registry"},
+            status=500,
+        )
+
+    # Create line registry lookup
+    line_registry = {line["line_id"]: line for line in line_registry_data["lines"]}
+
+    # Compute per-line errors
+    per_line_errors = []
+    camera_annotations = []
+    camera_reprojected_lines = []
+    map_gcp_lines = []
+    map_projected_lines = []
+
+    total_error = 0.0
+    max_error = 0.0
+
+    for line_annotation in line_annotations:
+        line_id = line_annotation["line_id"]
+
+        # Get line definition from registry
+        if line_id not in line_registry:
+            return JsonResponse(
+                {"success": False, "error": f"Line {line_id} not found in line registry"},
+                status=400,
+            )
+
+        line_def = line_registry[line_id]
+        start_gcp_id = line_def["start_gcp"]
+        end_gcp_id = line_def["end_gcp"]
+
+        # Get GCP coordinates from registry
+        if start_gcp_id not in gcp_registry.points or end_gcp_id not in gcp_registry.points:
+            return JsonResponse(
+                {"success": False, "error": f"GCP not found in registry for line {line_id}"},
+                status=400,
+            )
+
+        start_gcp = gcp_registry.points[start_gcp_id]
+        end_gcp = gcp_registry.points[end_gcp_id]
+
+        # Ground truth line in map coordinates
+        map_start = np.array([start_gcp.pixel_x, start_gcp.pixel_y])
+        map_end = np.array([end_gcp.pixel_x, end_gcp.pixel_y])
+
+        # Annotated line in camera coordinates
+        camera_start = np.array([line_annotation["start_pixel_x"], line_annotation["start_pixel_y"]])
+        camera_end = np.array([line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]])
+
+        # Project camera line endpoints to map
+        projected_start = homography.camera_to_map(PixelPoint(camera_start[0], camera_start[1]))
+        projected_end = homography.camera_to_map(PixelPoint(camera_end[0], camera_end[1]))
+        projected_start_map = np.array([projected_start.pixel_x, projected_start.pixel_y])
+        projected_end_map = np.array([projected_end.pixel_x, projected_end.pixel_y])
+
+        # Compute errors: perpendicular distance from projected points to ground truth line
+        start_error = _perpendicular_distance(projected_start_map, map_start, map_end)
+        end_error = _perpendicular_distance(projected_end_map, map_start, map_end)
+
+        # Also compute reverse: project GCP line to camera and compare
+        reprojected_start = homography.map_to_camera(PixelPoint(map_start[0], map_start[1]))
+        reprojected_end = homography.map_to_camera(PixelPoint(map_end[0], map_end[1]))
+        reprojected_start_camera = np.array([reprojected_start.x, reprojected_start.y])
+        reprojected_end_camera = np.array([reprojected_end.x, reprojected_end.y])
+
+        # Compute errors in camera space
+        camera_start_error = _perpendicular_distance(camera_start, reprojected_start_camera, reprojected_end_camera)
+        camera_end_error = _perpendicular_distance(camera_end, reprojected_start_camera, reprojected_end_camera)
+
+        # Average error for this line (using camera space errors as primary metric)
+        line_error = (camera_start_error + camera_end_error) / 2.0
+
+        total_error += line_error
+        max_error = max(max_error, line_error)
+
+        per_line_errors.append({
+            "line_id": line_id,
+            "error_px": round(line_error, 2),
+            "start_error": round(camera_start_error, 2),
+            "end_error": round(camera_end_error, 2),
+            "map_start_error": round(start_error, 2),
+            "map_end_error": round(end_error, 2),
+        })
+
+        # Collect overlay data for camera frame
+        camera_annotations.append({
+            "line_id": line_id,
+            "start": [round(camera_start[0], 2), round(camera_start[1], 2)],
+            "end": [round(camera_end[0], 2), round(camera_end[1], 2)],
+        })
+        camera_reprojected_lines.append({
+            "line_id": line_id,
+            "start": [round(reprojected_start_camera[0], 2), round(reprojected_start_camera[1], 2)],
+            "end": [round(reprojected_end_camera[0], 2), round(reprojected_end_camera[1], 2)],
+        })
+
+        # Collect overlay data for map frame
+        map_gcp_lines.append({
+            "line_id": line_id,
+            "start": [round(map_start[0], 2), round(map_start[1], 2)],
+            "end": [round(map_end[0], 2), round(map_end[1], 2)],
+        })
+        map_projected_lines.append({
+            "line_id": line_id,
+            "start": [round(projected_start_map[0], 2), round(projected_start_map[1], 2)],
+            "end": [round(projected_end_map[0], 2), round(projected_end_map[1], 2)],
+        })
+
+    num_lines = len(line_annotations)
+    mean_line_error = total_error / num_lines if num_lines > 0 else 0.0
+
+    return JsonResponse({
+        "success": True,
+        "metrics": {
+            "num_lines": num_lines,
+            "mean_line_error": round(mean_line_error, 2),
+            "max_line_error": round(max_error, 2),
+        },
+        "per_line_errors": per_line_errors,
+        "line_overlays": {
+            "camera": {
+                "annotations": camera_annotations,
+                "reprojected_lines": camera_reprojected_lines,
+            },
+            "map": {
+                "gcp_lines": map_gcp_lines,
+                "projected_lines": map_projected_lines,
+            },
+        },
+    })
 
 
 @require_GET

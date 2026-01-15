@@ -1,0 +1,61 @@
+map_id: Cartografia_valencia
+lines:
+  # Parking spot boundaries - horizontal lines connecting adjacent parking spot corners
+  - line_id: L1
+    start_gcp: PS1
+    end_gcp: PS2
+  - line_id: L2
+    start_gcp: PS3
+    end_gcp: PS4
+  - line_id: L3
+    start_gcp: PS5
+    end_gcp: PS6
+  - line_id: L4
+    start_gcp: PS7
+    end_gcp: PS8
+  - line_id: L5
+    start_gcp: PS9
+    end_gcp: PS10
+  - line_id: L6
+    start_gcp: PS11
+    end_gcp: PS12
+  - line_id: L7
+    start_gcp: PS13
+    end_gcp: PS14
+  - line_id: L8
+    start_gcp: PS15
+    end_gcp: PS16
+  # Parking spot boundaries - vertical lines (same column)
+  - line_id: L9
+    start_gcp: PS1
+    end_gcp: PS3
+  - line_id: L10
+    start_gcp: PS3
+    end_gcp: PS5
+  # Crosswalk stripe lines (parallel stripes across crosswalk)
+  - line_id: L11
+    start_gcp: CW1
+    end_gcp: CW2
+  - line_id: L12
+    start_gcp: CW3
+    end_gcp: CW4
+  - line_id: L13
+    start_gcp: CW5
+    end_gcp: CW6
+  - line_id: L14
+    start_gcp: CW7
+    end_gcp: CW8
+  - line_id: L15
+    start_gcp: CW9
+    end_gcp: CW10
+  # Arrow lines (connecting arrow reference points)
+  - line_id: L16
+    start_gcp: AR1
+    end_gcp: AR2
+  - line_id: L17
+    start_gcp: AR5
+    end_gcp: AR6
+  # Extra boundary line (curb edge)
+  - line_id: L18
+    start_gcp: EX1
+    end_gcp: EX7

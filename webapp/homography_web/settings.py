@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "gcp",
     "point_picker",
     "homography_precision",
+    "line_picker",
 ]
 
 MIDDLEWARE = [
