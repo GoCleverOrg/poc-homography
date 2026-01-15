@@ -7,6 +7,9 @@ from poc_homography.infrastructure.repositories.repo_yaml_camera_calibration imp
 from poc_homography.infrastructure.repositories.repo_yaml_camera_config import (
     RepoYamlCameraConfig,
 )
+from poc_homography.infrastructure.repositories.repo_yaml_captured_frame import (
+    RepoYamlCapturedFrame,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_ground_control_point import (
     RepoYamlGroundControlPoint,
 )
@@ -18,6 +21,7 @@ __all__ = [
     # Concrete repositories
     "RepoYamlCameraCalibration",
     "RepoYamlCameraConfig",
+    "RepoYamlCapturedFrame",
     "RepoYamlGroundControlPoint",
     "RepoYamlMap",
 ]

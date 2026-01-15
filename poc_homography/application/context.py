@@ -22,12 +22,23 @@ import os
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from poc_homography.application.services import Sam3PromptTestingService
-from poc_homography.infrastructure.clients import Sam3ApiClient
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.camera_config import CameraConfig
+
+from poc_homography.application.services import (
+    FrameCaptureService,
+    Sam3PromptTestingService,
+)
+from poc_homography.infrastructure.clients import (
+    HikvisionCameraController,
+    Sam3ApiClient,
+)
 from poc_homography.infrastructure.repositories import (
     RepoYamlCameraCalibration,
     RepoYamlCameraConfig,
+    RepoYamlCapturedFrame,
     RepoYamlGroundControlPoint,
     RepoYamlMap,
 )
@@ -73,6 +84,11 @@ class ApplicationContext:
         return RepoYamlGroundControlPoint(self.data_dir / "ground_control_points")
 
     @cached_property
+    def repo_captured_frame(self) -> RepoYamlCapturedFrame:
+        """Repository for captured frame entities."""
+        return RepoYamlCapturedFrame(self.data_dir / "frames")
+
+    @cached_property
     def sam3_api_key(self) -> str | None:
         """SAM3 API key from ROBOFLOW_API_KEY environment variable.
 
@@ -102,6 +118,30 @@ class ApplicationContext:
         if self.sam3_client is None:
             return None
         return Sam3PromptTestingService(self.sam3_client)
+
+    def camera_controller(
+        self,
+        camera_config: CameraConfig,
+        timeout: float = 5.0,
+    ) -> HikvisionCameraController:
+        """Create a camera controller for a specific camera.
+
+        Args:
+            camera_config: Camera configuration entity.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            HikvisionCameraController instance.
+
+        Raises:
+            ValueError: If camera has no IP address.
+        """
+        return HikvisionCameraController(camera_config, timeout)
+
+    @cached_property
+    def frame_capture_service(self) -> FrameCaptureService:
+        """Service for capturing frames from cameras."""
+        return FrameCaptureService(self.repo_captured_frame)
 
     @classmethod
     def default(cls) -> ApplicationContext:
