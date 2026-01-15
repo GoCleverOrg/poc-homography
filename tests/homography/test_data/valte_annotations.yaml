@@ -184,3 +184,82 @@ test_cases:
       - pixel_x: 1510.4
         pixel_y: 72
         gcp_id: PS14
+
+  - name: valte_102.5_20.7_1_20260115
+    image: valte_102.5_20.7_1_20260115_112639.jpg
+    camera_status:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1
+    annotations:
+      - pixel_x: 2892.0
+        pixel_y: 1169.0
+        gcp_id: EX7
+
+      - pixel_x: 1310.0
+        pixel_y: 1304.0
+        gcp_id: EX6
+
+      - pixel_x: 367.0
+        pixel_y: 1486.0
+        gcp_id: EX5
+
+      - pixel_x: 2919.0
+        pixel_y: 489.0
+        gcp_id: AR7
+
+      - pixel_x: 2866.0
+        pixel_y: 794.0
+        gcp_id: CW1
+
+      - pixel_x: 2964.0
+        pixel_y: 727.0
+        gcp_id: CW2
+
+      - pixel_x: 2526.0
+        pixel_y: 713.0
+        gcp_id: CW3
+
+      - pixel_x: 2641.0
+        pixel_y: 657.0
+        gcp_id: CW4
+
+      - pixel_x: 2143.0
+        pixel_y: 647.0
+        gcp_id: CW5
+
+      - pixel_x: 2262.0
+        pixel_y: 603.0
+        gcp_id: CW6
+
+      - pixel_x: 1788.0
+        pixel_y: 591.0
+        gcp_id: CW7
+
+      - pixel_x: 1910.0
+        pixel_y: 555.0
+        gcp_id: CW8
+
+      - pixel_x: 1435.0
+        pixel_y: 82.0
+        gcp_id: AR8
+
+      - pixel_x: 1218.0
+        pixel_y: 47.0
+        gcp_id: AR9
+
+      - pixel_x: 879.0
+        pixel_y: 44.0
+        gcp_id: PS17
+
+      - pixel_x: 1256.0
+        pixel_y: 125.0
+        gcp_id: PS16
+
+      - pixel_x: 859.0
+        pixel_y: 153.0
+        gcp_id: PS15
+
+      - pixel_x: 66.0
+        pixel_y: 197.0
+        gcp_id: PS13
