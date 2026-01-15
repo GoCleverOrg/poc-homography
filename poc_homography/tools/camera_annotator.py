@@ -721,7 +721,7 @@ class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
     Uses module-level state via get_state() following Django patterns.
     """
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, _format: str, *_args) -> None:
         """Suppress logging."""
         pass
 
