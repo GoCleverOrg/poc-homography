@@ -12,14 +12,16 @@ Usage:
 
 from __future__ import annotations
 
+import html
 import http.server
 import json
 import mimetypes
 import sys
 import threading
 import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import yaml
 
@@ -29,48 +31,106 @@ TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 DEFAULT_GCP_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
 DEFAULT_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 
-# Global state
-_gcps_file: Path = DEFAULT_GCP_FILE
-_annotations_file: Path = DEFAULT_ANNOTATIONS_FILE
-_image_filename: str = ""
 
+@dataclass
+class CameraAnnotatorState:
+    """State container for the camera annotator application.
 
-def load_gcps() -> list[dict]:
-    """Load GCP IDs from the registry file."""
-    if not _gcps_file.exists():
-        print(f"Warning: GCP file not found: {_gcps_file}")
+    Follows Django-style state management pattern from webapp/point_picker/state.py.
+    """
+
+    image_path: Path
+    gcps_file: Path
+    annotations_file: Path
+    image_filename: str
+
+    def load_gcps(self) -> list[dict]:
+        """Load GCP IDs from the registry file."""
+        if not self.gcps_file.exists():
+            print(f"Warning: GCP file not found: {self.gcps_file}")
+            return []
+
+        with open(self.gcps_file) as f:
+            data = yaml.safe_load(f)
+
+        # Handle empty or malformed YAML files
+        if not data or not isinstance(data, dict):
+            print(f"Warning: GCP file is empty or invalid: {self.gcps_file}")
+            return []
+
+        points = data.get("points", [])
+        gcps = []
+        for p in points:
+            # Validate required keys exist
+            if not all(k in p for k in ("id", "pixel_x", "pixel_y")):
+                print(f"Warning: Skipping malformed GCP entry: {p}")
+                continue
+            gcps.append({"id": p["id"], "pixel_x": p["pixel_x"], "pixel_y": p["pixel_y"]})
+
+        print(f"Loaded {len(gcps)} GCPs from {self.gcps_file}")
+        return gcps
+
+    def load_existing_annotations(self) -> list[dict]:
+        """Load existing annotations for the current image from the annotations file."""
+        if not self.annotations_file.exists():
+            return []
+
+        with open(self.annotations_file) as f:
+            data = yaml.safe_load(f)
+
+        # Handle empty or malformed YAML files
+        if not data or not isinstance(data, dict):
+            return []
+
+        test_cases = data.get("test_cases", [])
+        for tc in test_cases:
+            # Match by image filename
+            if tc.get("image") == self.image_filename:
+                annotations = tc.get("annotations", [])
+                print(f"Loaded {len(annotations)} existing annotations for {self.image_filename}")
+                return annotations
+
         return []
 
-    with open(_gcps_file) as f:
-        data = yaml.safe_load(f)
 
-    points = data.get("points", [])
-    gcps = [{"id": p["id"], "pixel_x": p["pixel_x"], "pixel_y": p["pixel_y"]} for p in points]
-    print(f"Loaded {len(gcps)} GCPs from {_gcps_file}")
-    return gcps
+# Module-level state (Django pattern from webapp/point_picker/state.py)
+_state: CameraAnnotatorState | None = None
 
 
-def load_existing_annotations() -> list[dict]:
-    """Load existing annotations for the current image from the annotations file."""
-    if not _annotations_file.exists():
-        return []
+def initialize_state(
+    image_path: Path,
+    gcps_file: Path | None = None,
+    annotations_file: Path | None = None,
+) -> None:
+    """Initialize the module-level state.
 
-    with open(_annotations_file) as f:
-        data = yaml.safe_load(f)
+    Args:
+        image_path: Path to the camera frame image.
+        gcps_file: Path to GCPs YAML file (default: Cartografia_valencia_gcps.yaml).
+        annotations_file: Path to annotations YAML file (default: valte_annotations.yaml).
+    """
+    global _state
+    _state = CameraAnnotatorState(
+        image_path=image_path.resolve(),
+        gcps_file=(gcps_file or DEFAULT_GCP_FILE).resolve() if gcps_file else DEFAULT_GCP_FILE,
+        annotations_file=(annotations_file or DEFAULT_ANNOTATIONS_FILE).resolve()
+        if annotations_file
+        else DEFAULT_ANNOTATIONS_FILE,
+        image_filename=image_path.name,
+    )
 
-    test_cases = data.get("test_cases", [])
-    for tc in test_cases:
-        # Match by image filename
-        if tc.get("image") == _image_filename:
-            annotations = tc.get("annotations", [])
-            print(f"Loaded {len(annotations)} existing annotations for {_image_filename}")
-            return annotations
 
-    return []
+def get_state() -> CameraAnnotatorState:
+    """Get the current application state."""
+    if _state is None:
+        raise RuntimeError("Application not initialized. Call initialize_state() first.")
+    return _state
 
 
 def create_html(image_filename: str) -> str:
     """Create the HTML interface."""
+    # Escape filename to prevent XSS via malicious filenames
+    safe_filename = html.escape(image_filename)
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -380,7 +440,7 @@ def create_html(image_filename: str) -> str:
     <div id="control-panel">
         <div class="panel-section">
             <h2>Camera Frame</h2>
-            <div id="filename">{image_filename}</div>
+            <div id="filename">{safe_filename}</div>
             <div id="instructions">Click on the image to add annotation points. Type to filter GCPs.</div>
         </div>
 
@@ -656,54 +716,82 @@ def create_html(image_filename: str) -> str:
 
 
 class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
-    """HTTP request handler for the annotator."""
+    """HTTP request handler for the annotator.
 
-    image_path: Path = None
+    Uses module-level state via get_state() following Django patterns.
+    """
 
     def log_message(self, format: str, *args) -> None:
         """Suppress logging."""
         pass
+
+    def _send_cors_headers(self) -> None:
+        """Add CORS headers to restrict cross-origin access to localhost only."""
+        origin = self.headers.get("Origin", "")
+        # Only allow localhost origins to prevent cross-site data exfiltration
+        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        # If no origin header (same-origin request), don't add CORS headers
+
+    def _send_json_response(self, data: list | dict, status: int = 200) -> None:
+        """Send a JSON response with proper headers."""
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self._send_cors_headers()
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def _send_json_error(self, message: str, status: int = 500) -> None:
+        """Send a JSON error response."""
+        self._send_json_response({"error": message}, status)
 
     def do_GET(self) -> None:
         """Handle GET requests."""
         parsed = urlparse(self.path)
         path = parsed.path
 
+        # Get state via Django-style accessor
+        try:
+            state = get_state()
+        except RuntimeError as e:
+            self.send_error(500, str(e))
+            return
+
         if path == "/":
             # Serve HTML
-            html = create_html(self.image_path.name)
+            html_content = create_html(state.image_filename)
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(html.encode())
+            self.wfile.write(html_content.encode())
 
         elif path == "/image":
             # Serve the image
-            if self.image_path.exists():
-                mime_type, _ = mimetypes.guess_type(str(self.image_path))
+            if state.image_path.exists():
+                mime_type, _ = mimetypes.guess_type(str(state.image_path))
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type or "image/jpeg")
                 self.end_headers()
-                with open(self.image_path, "rb") as f:
+                with open(state.image_path, "rb") as f:
                     self.wfile.write(f.read())
             else:
                 self.send_error(404, "Image not found")
 
         elif path == "/api/gcps":
-            # Serve GCP list
-            gcps = load_gcps()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(gcps).encode())
+            # Serve GCP list with error handling
+            try:
+                gcps = state.load_gcps()
+                self._send_json_response(gcps)
+            except Exception as e:
+                self._send_json_error(f"Failed to load GCPs: {e}")
 
         elif path == "/api/annotations":
-            # Serve existing annotations for this image
-            annotations = load_existing_annotations()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(annotations).encode())
+            # Serve existing annotations with error handling
+            try:
+                annotations = state.load_existing_annotations()
+                self._send_json_response(annotations)
+            except Exception as e:
+                self._send_json_error(f"Failed to load annotations: {e}")
 
         else:
             self.send_error(404)
@@ -711,35 +799,34 @@ class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
 
 def run_annotator(image_path: Path, gcps_file: Path | None = None, port: int = 8888) -> None:
     """Run the annotation server."""
-    global _gcps_file, _image_filename
-
     if not image_path.exists():
         print(f"Error: Image not found: {image_path}")
         sys.exit(1)
 
-    # Set the GCPs file
-    if gcps_file:
-        _gcps_file = gcps_file.resolve()
-    else:
-        _gcps_file = DEFAULT_GCP_FILE
+    # Initialize state using Django-style pattern
+    initialize_state(image_path, gcps_file=gcps_file)
+    state = get_state()
 
-    # Set the image path and filename
-    AnnotatorHandler.image_path = image_path.resolve()
-    _image_filename = image_path.name
-
-    server = http.server.HTTPServer(("localhost", port), AnnotatorHandler)
+    try:
+        server = http.server.HTTPServer(("localhost", port), AnnotatorHandler)
+    except OSError as e:
+        if "Address already in use" in str(e) or e.errno == 48:
+            print(f"Error: Port {port} is already in use.")
+            print(f"Try a different port with: hom annotate frame {image_path} --port <port>")
+            sys.exit(1)
+        raise
 
     # Load existing annotations count
-    existing = load_existing_annotations()
+    existing = state.load_existing_annotations()
 
-    print(f"Camera Frame Annotator")
-    print(f"=" * 50)
-    print(f"Image: {image_path}")
-    print(f"GCPs:  {_gcps_file}")
+    print("Camera Frame Annotator")
+    print("=" * 50)
+    print(f"Image: {state.image_path}")
+    print(f"GCPs:  {state.gcps_file}")
     print(f"Existing annotations: {len(existing)}")
-    print(f"")
+    print("")
     print(f"Server running at http://localhost:{port}")
-    print(f"Press Ctrl+C to stop")
+    print("Press Ctrl+C to stop")
     print()
 
     # Open browser
