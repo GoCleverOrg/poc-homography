@@ -271,13 +271,20 @@
                     maxZoomLevel: 20,
                     visibilityRatio: 0.5,
                     constrainDuringPan: true,
-                    // Disable click-to-zoom so GCP markers can be clicked
+                    // Disable all click-to-zoom behaviors so GCP markers can be clicked
                     gestureSettingsMouse: {
                         clickToZoom: false,
+                        dblClickToZoom: false,
                     },
                     gestureSettingsTouch: {
                         clickToZoom: false,
+                        dblClickToZoom: false,
                     },
+                });
+
+                // Prevent any remaining click behavior on canvas from interfering
+                viewer.addHandler('canvas-click', (e) => {
+                    e.preventDefaultAction = true;
                 });
 
                 // Update line overlay when viewport changes
@@ -354,10 +361,12 @@
                 placement: OpenSeadragon.Placement.CENTER
             });
 
-            // Click handler for GCP selection
-            element.addEventListener('click', (e) => {
-                e.stopPropagation();
-                selectGcp(point.id);
+            // Use OpenSeadragon's MouseTracker for proper click handling
+            new OpenSeadragon.MouseTracker({
+                element: element,
+                clickHandler: (e) => {
+                    selectGcp(point.id);
+                }
             });
 
             gcpMarkers[point.id] = { element, point };
