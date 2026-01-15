@@ -271,6 +271,13 @@
                     maxZoomLevel: 20,
                     visibilityRatio: 0.5,
                     constrainDuringPan: true,
+                    // Disable click-to-zoom so GCP markers can be clicked
+                    gestureSettingsMouse: {
+                        clickToZoom: false,
+                    },
+                    gestureSettingsTouch: {
+                        clickToZoom: false,
+                    },
                 });
 
                 // Update line overlay when viewport changes
