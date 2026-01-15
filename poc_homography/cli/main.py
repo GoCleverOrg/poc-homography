@@ -33,6 +33,7 @@ def _register_commands() -> None:
         camera,
         gcp,
         interactive,
+        line_picker,
         point_picker,
         test_cmds,
     )
@@ -43,6 +44,7 @@ def _register_commands() -> None:
     _ = camera
     _ = gcp
     _ = interactive
+    _ = line_picker
     _ = point_picker
     _ = test_cmds
 
