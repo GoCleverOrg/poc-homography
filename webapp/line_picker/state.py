@@ -4,16 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path  # noqa: TC003 - used at runtime
-from typing import TYPE_CHECKING
 
 import tifffile
 import yaml
 from PIL import Image
 
 from poc_homography.map_points.map_point_registry import MapPointRegistry
-
-if TYPE_CHECKING:
-    pass
 
 
 def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, str | None]:
@@ -126,6 +122,7 @@ class LinePickerState:
         self,
         image_path: Path,
         gcp_registry: MapPointRegistry,
+        gcp_registry_path: Path | None = None,
         geotransform: list[float] | None = None,
         crs: str | None = None,
     ) -> None:
@@ -134,10 +131,12 @@ class LinePickerState:
         Args:
             image_path: Path to the map image file (PNG, TIFF, etc.).
             gcp_registry: Registry of GCPs that can be used as line endpoints.
+            gcp_registry_path: Path to the GCP registry YAML file (for path validation).
             geotransform: Optional 6-parameter geotransform [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height].
             crs: Optional CRS string (e.g., "EPSG:25830").
         """
         self.geotiff_path = image_path  # Keep name for compatibility
+        self.gcp_registry_path = gcp_registry_path
         self.map_id = gcp_registry.map_id
         self.gcp_registry = gcp_registry
         self.lines: list[Line] = []
@@ -259,7 +258,9 @@ class LinePickerState:
             "map_id": self.map_id,
             "lines": [line.to_dict() for line in self.lines],
         }
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
+        path.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8"
+        )
 
     def load_lines(self, path: Path) -> None:
         """Load lines from YAML file.
@@ -323,7 +324,11 @@ def initialize_state(
     gcp_registry = MapPointRegistry.load(gcp_registry_path)
 
     _state = LinePickerState(
-        image_path, gcp_registry, geotransform=geotransform, crs=crs
+        image_path,
+        gcp_registry,
+        gcp_registry_path=gcp_registry_path,
+        geotransform=geotransform,
+        crs=crs,
     )
 
 

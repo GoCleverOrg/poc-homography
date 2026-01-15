@@ -73,13 +73,15 @@ def index(request: HttpRequest) -> HttpResponse:
 def api_image_info(request: HttpRequest) -> JsonResponse:
     """Get image metadata."""
     state = get_state()
-    return JsonResponse({
-        "width": state.width,
-        "height": state.height,
-        "geotransform": state.geotransform,
-        "crs": state.crs,
-        "filename": state.geotiff_path.name,
-    })
+    return JsonResponse(
+        {
+            "width": state.width,
+            "height": state.height,
+            "geotransform": state.geotransform,
+            "crs": state.crs,
+            "filename": state.geotiff_path.name,
+        }
+    )
 
 
 @require_GET
@@ -241,18 +243,20 @@ def api_gcps(request: HttpRequest) -> JsonResponse:
     """
     state = get_state()
 
-    return JsonResponse({
-        "map_id": state.gcp_registry.map_id,
-        "points": [
-            {
-                "id": pid,
-                "pixel_x": p.pixel_x,
-                "pixel_y": p.pixel_y,
-                "tag": get_tag_from_id(pid),
-            }
-            for pid, p in state.gcp_registry.points.items()
-        ],
-    })
+    return JsonResponse(
+        {
+            "map_id": state.gcp_registry.map_id,
+            "points": [
+                {
+                    "id": pid,
+                    "pixel_x": p.pixel_x,
+                    "pixel_y": p.pixel_y,
+                    "tag": get_tag_from_id(pid),
+                }
+                for pid, p in state.gcp_registry.points.items()
+            ],
+        }
+    )
 
 
 @csrf_exempt
@@ -275,18 +279,22 @@ def api_lines(request: HttpRequest) -> JsonResponse:
             if start_point is None or end_point is None:
                 continue
 
-            lines_data.append({
-                "line_id": line.line_id,
-                "start_gcp": line.start_gcp,
-                "end_gcp": line.end_gcp,
-                "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
-                "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
-            })
+            lines_data.append(
+                {
+                    "line_id": line.line_id,
+                    "start_gcp": line.start_gcp,
+                    "end_gcp": line.end_gcp,
+                    "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
+                    "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
+                }
+            )
 
-        return JsonResponse({
-            "map_id": state.map_id,
-            "lines": lines_data,
-        })
+        return JsonResponse(
+            {
+                "map_id": state.map_id,
+                "lines": lines_data,
+            }
+        )
 
     # POST - add a new line
     try:
@@ -309,13 +317,15 @@ def api_lines(request: HttpRequest) -> JsonResponse:
         start_point = state.gcp_registry.points[start_gcp]
         end_point = state.gcp_registry.points[end_gcp]
 
-        return JsonResponse({
-            "line_id": line_id,
-            "start_gcp": start_gcp,
-            "end_gcp": end_gcp,
-            "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
-            "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
-        })
+        return JsonResponse(
+            {
+                "line_id": line_id,
+                "start_gcp": start_gcp,
+                "end_gcp": end_gcp,
+                "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
+                "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
+            }
+        )
     except KeyError as e:
         return JsonResponse({"error": str(e)}, status=404)
     except ValueError as e:
@@ -382,13 +392,15 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     start_point = state.gcp_registry.points[new_start_gcp]
     end_point = state.gcp_registry.points[new_end_gcp]
 
-    return JsonResponse({
-        "line_id": line_id,
-        "start_gcp": new_start_gcp,
-        "end_gcp": new_end_gcp,
-        "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
-        "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
-    })
+    return JsonResponse(
+        {
+            "line_id": line_id,
+            "start_gcp": new_start_gcp,
+            "end_gcp": new_end_gcp,
+            "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
+            "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
+        }
+    )
 
 
 @require_GET
@@ -419,23 +431,51 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Invalid coordinate parameters"}, status=400)
 
     if state.geotransform is None:
-        return JsonResponse({
-            "easting": None,
-            "northing": None,
-            "crs": None,
-            "message": "No geotransform available",
-        })
+        return JsonResponse(
+            {
+                "easting": None,
+                "northing": None,
+                "crs": None,
+                "message": "No geotransform available",
+            }
+        )
 
     # Apply geotransform: [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height]
     gt = state.geotransform
     easting = gt[0] + pixel_x * gt[1] + pixel_y * gt[2]
     northing = gt[3] + pixel_x * gt[4] + pixel_y * gt[5]
 
-    return JsonResponse({
-        "easting": easting,
-        "northing": northing,
-        "crs": state.crs,
-    })
+    return JsonResponse(
+        {
+            "easting": easting,
+            "northing": northing,
+            "crs": state.crs,
+        }
+    )
+
+
+def _validate_safe_path(path: Path, allowed_base: Path) -> Path | None:
+    """Validate that a path is within the allowed base directory.
+
+    Args:
+        path: The path to validate (can be relative or absolute).
+        allowed_base: The base directory that the path must be within.
+
+    Returns:
+        The resolved absolute path if safe, None if path traversal detected.
+    """
+    # Resolve to absolute path
+    if not path.is_absolute():
+        resolved = (allowed_base / path).resolve()
+    else:
+        resolved = path.resolve()
+
+    # Check that the resolved path is within the allowed base
+    try:
+        resolved.relative_to(allowed_base.resolve())
+        return resolved
+    except ValueError:
+        return None
 
 
 @csrf_exempt
@@ -453,8 +493,20 @@ def api_export(request: HttpRequest) -> JsonResponse:
 
     state = get_state()
     path = Path(data.get("path", "")) if data.get("path") else Path(f"{state.map_id}_lines.yaml")
-    state.save_lines(path)
-    return JsonResponse({"exported": str(path), "count": len(state.lines)})
+
+    # Validate path is within allowed directory (same directory as GCP registry or image)
+    allowed_base = (
+        state.gcp_registry_path.parent if state.gcp_registry_path else state.geotiff_path.parent
+    )
+    safe_path = _validate_safe_path(path, allowed_base)
+    if safe_path is None:
+        return JsonResponse(
+            {"error": "Invalid path: path traversal not allowed"},
+            status=400,
+        )
+
+    state.save_lines(safe_path)
+    return JsonResponse({"exported": str(safe_path), "count": len(state.lines)})
 
 
 @csrf_exempt
@@ -472,16 +524,30 @@ def api_import(request: HttpRequest) -> JsonResponse:
 
     state = get_state()
     path = Path(data["path"])
-    if not path.exists():
-        return JsonResponse({"error": f"File not found: {path}"}, status=404)
+
+    # Validate path is within allowed directory (same directory as GCP registry or image)
+    allowed_base = (
+        state.gcp_registry_path.parent if state.gcp_registry_path else state.geotiff_path.parent
+    )
+    safe_path = _validate_safe_path(path, allowed_base)
+    if safe_path is None:
+        return JsonResponse(
+            {"error": "Invalid path: path traversal not allowed"},
+            status=400,
+        )
+
+    if not safe_path.exists():
+        return JsonResponse({"error": f"File not found: {safe_path}"}, status=404)
 
     try:
-        state.load_lines(path)
-        return JsonResponse({
-            "imported": str(path),
-            "count": len(state.lines),
-            "map_id": state.map_id,
-        })
+        state.load_lines(safe_path)
+        return JsonResponse(
+            {
+                "imported": str(safe_path),
+                "count": len(state.lines),
+                "map_id": state.map_id,
+            }
+        )
     except ValueError as e:
         return JsonResponse({"error": str(e)}, status=422)
     except KeyError as e:
