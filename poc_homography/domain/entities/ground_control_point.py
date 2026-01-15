@@ -8,7 +8,11 @@ from poc_homography.domain.vo.map_point import MapPoint
 
 @dataclass
 class GroundControlPoint:
-    """Ground Control Point (GCP) with map point ID and pixel coordinates."""
+    """Ground Control Point (GCP) - a reference point on a georeferenced map.
+
+    Coordinates are stored as pixels on the map image. Since maps are GeoTIFFs,
+    pixel coordinates can be converted to lat/lng via the embedded georeferencing.
+    """
 
     name: str
     map_point: MapPoint

@@ -37,6 +37,8 @@ This project follows Domain-Driven Design (DDD) with a layered architecture:
 
 Contains the core business logic, independent of infrastructure concerns.
 
+**Note on GCP coordinates**: Ground Control Points store pixel coordinates on the map image. Since maps are GeoTIFFs, these can be converted to lat/lng via the embedded georeferencing. We use pixel coordinates as the primary representation because homography calculations operate in pixel space.
+
 | Component | Location | Example |
 |-----------|----------|---------|
 | Entity | `entities/<name>.py` | `CameraConfig`, `Map` |
