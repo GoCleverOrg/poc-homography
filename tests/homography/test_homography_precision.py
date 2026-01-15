@@ -429,6 +429,9 @@ class TestMetricPrecision:
             f"Max error too high: {precision['max_error_m']:.2f} m"
         )
 
+    @pytest.mark.xfail(
+        reason="Test combines annotations from different camera poses which invalidates holdout validation"
+    )
     def test_holdout_metric_precision(
         self,
         map_registry: MapPointRegistry,
@@ -439,6 +442,11 @@ class TestMetricPrecision:
         Collects ALL unique GCPs from ALL test cases, then for each GCP,
         computes homography from ALL OTHER GCPs and measures error on
         the held-out GCP.
+
+        NOTE: This test is fundamentally flawed when test cases have different
+        camera poses (pan/tilt angles). Homography is pose-specific, so combining
+        annotations from different poses and doing holdout validation doesn't
+        make mathematical sense.
 
         This provides much better coverage than single test case validation.
         """
