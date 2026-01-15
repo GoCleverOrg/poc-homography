@@ -131,7 +131,7 @@ def create_html(image_filename: str) -> str:
     """Create the HTML interface."""
     # Escape filename to prevent XSS via malicious filenames
     safe_filename = html.escape(image_filename)
-    return f'''<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -712,7 +712,7 @@ def create_html(image_filename: str) -> str:
         }});
     </script>
 </body>
-</html>'''
+</html>"""
 
 
 class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
@@ -832,6 +832,7 @@ def run_annotator(image_path: Path, gcps_file: Path | None = None, port: int = 8
     # Open browser
     def open_browser():
         import time
+
         time.sleep(0.5)
         webbrowser.open(f"http://localhost:{port}")
 
@@ -850,7 +851,9 @@ def main():
         print("Usage: python -m poc_homography.tools.camera_annotator <image_path>")
         print()
         print("Example:")
-        print("  python -m poc_homography.tools.camera_annotator tests/homography/test_data/valte_102.5_20.7_1_20260115_112639.jpg")
+        print(
+            "  python -m poc_homography.tools.camera_annotator tests/homography/test_data/valte_102.5_20.7_1_20260115_112639.jpg"
+        )
         sys.exit(1)
 
     image_path = Path(sys.argv[1])
