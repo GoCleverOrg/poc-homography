@@ -18,10 +18,13 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
+from poc_homography.application.services import Sam3PromptTestingService
+from poc_homography.infrastructure.clients import Sam3ApiClient
 from poc_homography.infrastructure.repositories import (
     RepoYamlCameraCalibration,
     RepoYamlCameraConfig,
@@ -68,6 +71,37 @@ class ApplicationContext:
     def repo_gcp(self) -> RepoYamlGroundControlPoint:
         """Repository for ground control point entities."""
         return RepoYamlGroundControlPoint(self.data_dir / "ground_control_points")
+
+    @cached_property
+    def sam3_api_key(self) -> str | None:
+        """SAM3 API key from ROBOFLOW_API_KEY environment variable.
+
+        Returns:
+            API key string if set, None otherwise.
+        """
+        return os.environ.get("ROBOFLOW_API_KEY")
+
+    @cached_property
+    def sam3_client(self) -> Sam3ApiClient | None:
+        """SAM3 API client for image segmentation.
+
+        Returns:
+            Sam3ApiClient if API key is available, None otherwise.
+        """
+        if self.sam3_api_key is None:
+            return None
+        return Sam3ApiClient(self.sam3_api_key)
+
+    @cached_property
+    def sam3_testing_service(self) -> Sam3PromptTestingService | None:
+        """Service for testing SAM3 prompts.
+
+        Returns:
+            Sam3PromptTestingService if SAM3 client is available, None otherwise.
+        """
+        if self.sam3_client is None:
+            return None
+        return Sam3PromptTestingService(self.sam3_client)
 
     @classmethod
     def default(cls) -> ApplicationContext:
