@@ -11,7 +11,7 @@
 This assessment identifies duplication, missing abstractions, and architectural issues in the current domain model. The primary findings are:
 
 1. **DRY violations** between legacy `camera_parameters.py` and new domain VOs
-2. **Missing VOs** for core concepts (Homography, WorldPoint, ImageDimensions)
+2. **Missing VOs** for core concepts (Homography, ImageDimensions)
 3. **God Object** pattern in `CameraParameters` that should be decomposed
 4. **Incomplete VOs** missing fields or factory methods
 
@@ -138,68 +138,23 @@ CameraGeometry.get_intrinsics()  # Static factory method
 
 ### Missing Value Objects
 
-#### 1. Homography VO (HIGH PRIORITY)
+#### 1. ~~Homography VO~~ ✅ RESOLVED
 
-**Problem:** Homography matrix and projection logic are separated.
+**Status:** Created `domain/vo/homography.py` with `Matrix3x3` foundation.
 
-Currently:
-- `CameraGeometryResult` holds matrices + validation metadata
-- `CameraGeometry` has static projection methods
+#### 2. ~~WorldPoint VO~~ ❌ NOT APPLICABLE
 
-**Should be:**
-```python
-@dataclass(frozen=True)
-class Homography:
-    """3x3 homography matrix mapping world ground plane to image pixels."""
-    _matrix_data: bytes
-    _inverse_data: bytes
+**Status:** After analysis, this VO is not needed. The "world coordinate" concept (`np.ndarray([easting, northing, height])`) is:
+- **Internal to legacy code** (`CameraParameters`, `CameraGeometry`)
+- **Not a domain concept** users interact with
+- **Superseded by** `MapPoint` + `GeoTiff.pixel_to_geo()` for coordinate transformation
 
-    @property
-    def matrix(self) -> np.ndarray: ...
+The domain model uses:
+- `CameraCalibration.position` → `PixelPoint` (position on map)
+- `CameraCalibration.height` → `Meters` (height above ground)
+- `GeoTiff` → handles pixel ↔ UTM transformation
 
-    @property
-    def inverse(self) -> np.ndarray: ...
-
-    def project_to_world(self, pixel: PixelPoint) -> WorldPoint:
-        """Project image pixel to world ground plane."""
-        ...
-
-    def project_to_image(self, world: WorldPoint) -> PixelPoint:
-        """Project world point to image pixel."""
-        ...
-
-    def is_point_in_front(self, world: WorldPoint) -> bool:
-        """Check if world point is in front of camera."""
-        ...
-```
-
-#### 2. WorldPoint VO (HIGH PRIORITY)
-
-**Problem:** 3D world coordinates represented as raw `np.ndarray`.
-
-Used in:
-- `CameraParameters.camera_position`
-- `CameraGeometry` projection methods
-- Various calibration code
-
-**Should be:**
-```python
-@dataclass(frozen=True)
-class WorldPoint:
-    """Point in world coordinate system (ENU: East-North-Up)."""
-    x: Meters  # East
-    y: Meters  # North
-    z: Meters  # Up (height above ground)
-
-    @classmethod
-    def on_ground(cls, x: Meters, y: Meters) -> WorldPoint:
-        """Create point on ground plane (z=0)."""
-        return cls(x, y, Meters(0.0))
-
-    def distance_to(self, other: WorldPoint) -> Meters:
-        """Euclidean distance to another point."""
-        ...
-```
+The raw `np.ndarray` in `CameraParameters.camera_position` is an implementation detail of the homography computation, not a domain concept.
 
 #### 3. ImageDimensions VO
 
@@ -228,37 +183,11 @@ class ImageDimensions:
     def contains(self, point: PixelPoint) -> bool: ...
 ```
 
-#### 4. CameraPosition VO
+#### 4. ~~CameraPosition VO~~ ❌ NOT APPLICABLE
 
-**Problem:** Camera position split across fields in `CameraCalibration`.
+**Status:** Not needed. This was proposed to wrap `MapPoint` + `height` with a `to_world()` method returning `WorldPoint`. Since `WorldPoint` is not applicable, neither is this VO.
 
-Currently:
-```python
-CameraCalibration:
-    position: PixelPoint  # On map
-    height: Meters        # Above ground
-```
-
-**Should be:**
-```python
-@dataclass(frozen=True)
-class CameraPosition:
-    """Camera location on map with height above ground."""
-    map_point: MapPoint
-    height: Meters
-
-    def to_world(self, geotiff: GeoTiff) -> WorldPoint:
-        """Convert to world coordinates using map georeferencing."""
-        easting, northing = geotiff.pixel_to_geo(
-            self.map_point.pixel_point.x,
-            self.map_point.pixel_point.y
-        )
-        return WorldPoint(
-            x=Meters(float(easting)),
-            y=Meters(float(northing)),
-            z=self.height
-        )
-```
+The current design with separate `position: PixelPoint` and `height: Meters` in `CameraCalibration` is sufficient. The coordinate transformation to UTM is handled by `GeoTiff.pixel_to_geo()` at computation time.
 
 #### 5. ~~HeightUncertainty (Move to domain)~~ ✅ RESOLVED
 
@@ -307,7 +236,6 @@ CameraParameters:
 
 **Resolution:** Replace with composition of domain VOs:
 - `CameraIntrinsics` for intrinsics
-- `WorldPoint` for position
 - `Orientation` for angles
 - `LensDistortion` for distortion
 - `GeoTiff` for affine/georeferencing
@@ -323,22 +251,22 @@ Contains:
 - `Homography` VO (matrices + projection methods)
 - `HomographyValidation` or return tuple with metadata
 
-#### 3. Coordinate Systems Not Explicit
+#### 3. Coordinate Systems
 
-The codebase handles 4 coordinate systems without consistent VO representation:
+The codebase handles coordinate systems with clear VO representation:
 
-| Coordinate System | Current Representation | Recommended |
-|-------------------|----------------------|-------------|
-| Image pixels | `PixelPoint` | OK |
-| Map pixels | `MapPoint` | OK |
-| World meters (X,Y,Z) | `np.ndarray` | `WorldPoint` VO |
-| Geographic (UTM) | `Easting`/`Northing` types | Consider `GeoPoint` VO |
+| Coordinate System | Current Representation | Status |
+|-------------------|----------------------|--------|
+| Image pixels | `PixelPoint` | ✅ OK |
+| Map pixels | `MapPoint` | ✅ OK |
+| Geographic (UTM) | `Easting`/`Northing` types + `GeoTiff` | ✅ OK |
+| Internal computation | `np.ndarray` in legacy code | Internal detail |
 
 ---
 
 ## Recommended Actions
 
-### Phase 1: Eliminate Duplications
+### Phase 1: Eliminate Duplications ✅ COMPLETED
 
 1. ~~**Unify distortion coefficients**~~ ✅ COMPLETED
    - ~~Add `k3` to `LensDistortion`~~ ✅
@@ -351,44 +279,36 @@ The codebase handles 4 coordinate systems without consistent VO representation:
 
 ### Phase 2: Add Missing Core VOs
 
-3. **Create WorldPoint VO**
-   - `domain/vo/world_point.py`
-   - Replace `np.ndarray` usages
-
-4. ~~**Create Homography VO**~~ ✅ COMPLETED
+3. ~~**Create Homography VO**~~ ✅ COMPLETED
    - ~~`domain/vo/homography.py`~~ ✅
    - ~~Move projection methods from `CameraGeometry`~~ ✅
    - ~~Include matrix validation~~ ✅
 
-5. **Create ImageDimensions VO**
+4. **Create ImageDimensions VO**
    - `domain/vo/image_dimensions.py`
    - Update `Photo`, `CameraIntrinsics` to use it
 
 ### Phase 3: Refactor Legacy
 
-6. **Add CameraIntrinsics factory**
+5. **Add CameraIntrinsics factory**
    - `CameraIntrinsics.from_spec_and_zoom(spec, zoom)`
    - Deprecate `CameraGeometry.get_intrinsics()`
 
-7. **Create CameraPosition VO**
-   - `domain/vo/camera_position.py`
-   - Update `CameraCalibration` to use it
-
-8. **Deprecate CameraParameters**
+6. **Deprecate CameraParameters**
    - Create adapter that builds from domain VOs
    - Gradually migrate callers
 
-9. **Split CameraGeometryResult**
+7. **Split CameraGeometryResult**
     - Extract `Homography` VO
     - Keep validation/metrics separate
 
 ### Phase 4: Type Safety
 
-10. **Fix PTZState typing**
+8. **Fix PTZState typing**
     - Document `pan_raw` semantics
     - Use typed fields (`Degrees`, `Unitless`)
 
-11. **Add PTZState validation**
+9. **Add PTZState validation**
     - Validate zoom bounds (1.0 to max_zoom)
     - Validate angle ranges
 
@@ -422,8 +342,6 @@ CameraSpec ──► TiltConvention
 CameraConfig ──────────────┐
                            │
 CameraCalibration ─────────┼──► CameraSnapshot
-  └──► CameraPosition      │
-        └──► WorldPoint    │
                            │
 PTZState ──────────────────┘
 
@@ -432,8 +350,7 @@ Map ──► Photo ──► ImageDimensions
 
 CameraIntrinsics ──► ImageDimensions
 
-Homography ──► WorldPoint
-           └──► PixelPoint
+Homography ──► PixelPoint
 
 GroundControlPoint ──► MapPoint ──► PixelPoint
 
