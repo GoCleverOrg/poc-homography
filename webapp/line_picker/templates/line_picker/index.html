@@ -1,0 +1,947 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoTIFF Line Picker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+    <script src="{% static 'js/openseadragon-drag-utils.js' %}"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; display: flex; height: 100vh; }
+        #sidebar {
+            width: 300px; background: #f5f5f5; padding: 16px;
+            display: flex; flex-direction: column; gap: 16px;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+        #viewer { flex: 1; background: #222; position: relative; }
+        h1 { font-size: 18px; color: #333; }
+        .section { background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .section-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #666; }
+
+        /* Line creation mode indicator */
+        #mode-indicator {
+            padding: 10px; border-radius: 6px; text-align: center;
+            font-weight: 500; font-size: 13px;
+        }
+        #mode-indicator.idle { background: #e0e0e0; color: #666; }
+        #mode-indicator.selecting { background: #fff3e0; color: #f57c00; }
+        #mode-indicator.ready { background: #e8f5e9; color: #2e7d32; }
+
+        .selected-point {
+            padding: 8px; background: #f5f5f5; border-radius: 4px;
+            margin-top: 8px; font-family: monospace; font-size: 12px;
+        }
+        .selected-point .label { color: #666; }
+        .selected-point .value { color: #333; font-weight: bold; }
+
+        #next-id { font-size: 16px; font-weight: bold; color: #333; text-align: center; padding: 8px; }
+
+        .btn-group { display: flex; gap: 8px; }
+        .btn {
+            flex: 1; padding: 10px; border: none; border-radius: 6px;
+            cursor: pointer; font-size: 13px; font-weight: 500;
+        }
+        .btn-primary { background: #0066cc; color: white; }
+        .btn-primary:hover { background: #0052a3; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+        .btn-secondary:hover { background: #d0d0d0; }
+        .btn-danger { background: #d32f2f; color: white; }
+        .btn-danger:hover { background: #b71c1c; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #coords {
+            font-family: monospace; font-size: 12px; color: #666;
+            background: #fff; padding: 8px; border-radius: 4px;
+            white-space: pre-line;
+        }
+
+        #line-list { max-height: 200px; overflow-y: auto; font-size: 12px; }
+        .line-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 8px; border-bottom: 1px solid #eee; cursor: pointer;
+        }
+        .line-item:hover { background: #f0f0f0; }
+        .line-item.selected { background: #e6f0ff; }
+        .line-item .line-info {
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .line-item .line-id { font-weight: bold; }
+        .line-item .line-coords { font-size: 10px; color: #888; }
+        .line-item .delete-btn {
+            background: #ff4444; color: white; border: none;
+            padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;
+        }
+
+        #gcp-list { max-height: 150px; overflow-y: auto; font-size: 12px; }
+        .gcp-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 4px 8px; border-bottom: 1px solid #eee;
+        }
+        .gcp-item .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; color: white; }
+        .gcp-item .tag.PS { background: #e63946; }
+        .gcp-item .tag.AR { background: #2a9d8f; }
+        .gcp-item .tag.CW { background: #f4a261; }
+        .gcp-item .tag.EX { background: #9c27b0; }
+
+        /* GCP Markers - reference points displayed on map (read-only) */
+        .gcp-marker {
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 8px; font-weight: bold; color: white;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .gcp-marker.PS { background: #e63946; }
+        .gcp-marker.AR { background: #2a9d8f; }
+        .gcp-marker.CW { background: #f4a261; }
+        .gcp-marker.EX { background: #9c27b0; }
+
+        /* Line endpoint markers - draggable */
+        .endpoint-marker {
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            cursor: grab;
+            background: #2196f3;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            transition: transform 0.1s;
+        }
+        .endpoint-marker:hover {
+            transform: scale(1.3);
+        }
+        .endpoint-marker.start { background: #4caf50; }
+        .endpoint-marker.end { background: #f44336; }
+        .endpoint-marker.selected-line { box-shadow: 0 0 8px #ff9800; }
+        .endpoint-marker.pending { background: #9c27b0; }
+        .endpoint-marker.adjusting {
+            background: #ff9800;
+            transform: scale(1.5);
+            box-shadow: 0 0 12px #ff9800;
+            animation: pulse 0.5s infinite alternate;
+        }
+        @keyframes pulse {
+            from { transform: scale(1.3); }
+            to { transform: scale(1.6); }
+        }
+
+        #filename { font-size: 12px; color: #888; word-break: break-all; }
+
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white; padding: 24px; border-radius: 12px;
+            min-width: 300px; max-width: 400px;
+        }
+        .modal-title { font-size: 18px; margin-bottom: 16px; }
+        .modal input {
+            width: 100%; padding: 10px; border: 1px solid #ddd;
+            border-radius: 6px; margin-bottom: 16px; font-size: 14px;
+        }
+        .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+
+        /* SVG overlay for lines */
+        #line-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #line-overlay line {
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+        #line-overlay line.default { stroke: #2196f3; }
+        #line-overlay line.selected { stroke: #ff9800; stroke-width: 4; }
+        #line-overlay line.pending { stroke: #9c27b0; stroke-dasharray: 8,4; }
+
+        /* GCP visibility toggle */
+        .toggle-container {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 12px; color: #666;
+        }
+        .toggle-container input {
+            width: 16px; height: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h1>Line Picker</h1>
+        <div id="filename"></div>
+
+        <div class="section">
+            <div class="section-title">Line Creation Mode</div>
+            <div id="mode-indicator" class="idle">Click on map to set start point</div>
+            <div class="selected-point" id="start-point-display" style="display:none;">
+                <span class="label">Start:</span> <span class="value" id="start-point-value"></span>
+            </div>
+            <div class="selected-point" id="end-point-display" style="display:none;">
+                <span class="label">End:</span> <span class="value" id="end-point-value"></span>
+            </div>
+            <div id="next-id">Next: L1</div>
+            <div class="btn-group" style="margin-top: 8px;">
+                <button class="btn btn-secondary" id="cancel-btn" disabled>Cancel</button>
+                <button class="btn btn-primary" id="create-btn" disabled>Create Line</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Coordinates</div>
+            <div id="coords">Click on image...</div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Lines (<span id="line-count">0</span>)</div>
+            <div id="line-list"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Reference GCPs (<span id="gcp-count">0</span>)</div>
+            <div class="toggle-container">
+                <input type="checkbox" id="show-gcps" checked>
+                <label for="show-gcps">Show GCP markers</label>
+            </div>
+            <div id="gcp-list"></div>
+        </div>
+
+        <div class="section">
+            <div class="btn-group">
+                <button class="btn btn-primary" id="export-btn">Export YAML</button>
+                <button class="btn btn-secondary" id="import-btn">Import</button>
+            </div>
+        </div>
+    </div>
+    <div id="viewer">
+        <svg id="line-overlay"></svg>
+    </div>
+
+    <div id="export-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">Export Lines</div>
+            <input type="text" id="export-path" placeholder="filename.yaml">
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('export-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="doExport()">Export</button>
+            </div>
+        </div>
+    </div>
+    <div id="import-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">Import Lines</div>
+            <input type="text" id="import-path" placeholder="path/to/file.yaml">
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="doImport()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let viewer;
+        let imageInfo;
+        let gcps = {};  // GCP data by ID (for reference display)
+        let gcpMarkers = {};  // GCP DOM elements by ID
+        let lines = [];  // Line data array
+        let lineEndpointMarkers = {};  // Line endpoint DOM elements by line ID
+        let selectedLineId = null;
+
+        // Line creation state - now stores pixel coordinates
+        let startPoint = null;  // {x, y} in image pixels
+        let endPoint = null;    // {x, y} in image pixels
+        let pendingStartMarker = null;  // DOM element for pending start point
+        let pendingEndMarker = null;    // DOM element for pending end point
+
+        // Dragging state
+        let draggingEndpoint = null;  // {lineId, which: 'start'|'end', marker}
+
+        // API base URL for Django app
+        const API_BASE = '/line-picker';
+
+        // Utility: debounce function for rate-limiting
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // Utility: show error message to user
+        function showError(message) {
+            console.error(message);
+            alert(message);
+        }
+
+        async function init() {
+            try {
+                // Get image info
+                const resp = await fetch(`${API_BASE}/api/image/info/`);
+                if (!resp.ok) {
+                    throw new Error(`Failed to load image info: ${resp.status}`);
+                }
+                imageInfo = await resp.json();
+                document.getElementById('filename').textContent = imageInfo.filename;
+
+                // Initialize OpenSeadragon
+                viewer = OpenSeadragon({
+                    id: 'viewer',
+                    prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
+                    tileSources: {
+                        height: imageInfo.height,
+                        width: imageInfo.width,
+                        tileSize: 256,
+                        getTileUrl: (level, x, y) => {
+                            const z = level;
+                            return `${API_BASE}/api/image/tile/?x=${x}&y=${y}&z=${z}`;
+                        }
+                    },
+                    showNavigator: true,
+                    navigatorPosition: 'BOTTOM_RIGHT',
+                    minZoomLevel: 0.5,
+                    maxZoomLevel: 20,
+                    visibilityRatio: 0.5,
+                    constrainDuringPan: true,
+                    // Disable click-to-zoom so clicks place line points
+                    gestureSettingsMouse: {
+                        clickToZoom: false,
+                        dblClickToZoom: false,
+                    },
+                    gestureSettingsTouch: {
+                        clickToZoom: false,
+                        dblClickToZoom: false,
+                    },
+                });
+
+                // Handle canvas clicks for placing line points
+                viewer.addHandler('canvas-click', handleCanvasClick);
+
+                // Update line overlay when viewport changes
+                viewer.addHandler('animation', updateLineOverlay);
+                viewer.addHandler('resize', updateLineOverlay);
+
+                // Debounced coordinate update
+                const debouncedUpdateCoords = debounce(updateCoords, 50);
+
+                // Mouse tracker for coordinate display
+                new OpenSeadragon.MouseTracker({
+                    element: viewer.canvas,
+                    moveHandler: (e) => {
+                        const viewportPoint = viewer.viewport.pointFromPixel(e.position);
+                        const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+                        debouncedUpdateCoords(imagePoint.x, imagePoint.y);
+                    }
+                });
+
+                // Setup buttons
+                document.getElementById('cancel-btn').addEventListener('click', cancelLineCreation);
+                document.getElementById('create-btn').addEventListener('click', createLine);
+                document.getElementById('export-btn').addEventListener('click', () => {
+                    document.getElementById('export-path').value = imageInfo.filename.replace(/\.[^.]+$/, '_lines.yaml');
+                    openModal('export-modal');
+                });
+                document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
+
+                // GCP visibility toggle
+                document.getElementById('show-gcps').addEventListener('change', (e) => {
+                    toggleGcpVisibility(e.target.checked);
+                });
+
+                // ESC key to cancel line creation
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        if (startPoint !== null) {
+                            cancelLineCreation();
+                        }
+                    }
+                });
+
+                // Load GCPs and lines
+                await loadGcps();
+                await loadLines();
+                await updateNextId();
+            } catch (e) {
+                showError(`Initialization failed: ${e.message}`);
+            }
+        }
+
+        async function handleCanvasClick(event) {
+            // Don't handle clicks during endpoint dragging
+            if (draggingEndpoint) return;
+
+            // Don't interfere with default zoom behavior during shift-click
+            if (event.originalEvent.shiftKey) return;
+
+            event.preventDefaultAction = true;
+
+            const viewportPoint = viewer.viewport.pointFromPixel(event.position);
+            const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+
+            // Check if click is within image bounds
+            if (imagePoint.x < 0 || imagePoint.x >= imageInfo.width ||
+                imagePoint.y < 0 || imagePoint.y >= imageInfo.height) {
+                return;
+            }
+
+            // MODE: Creating a new line
+            if (startPoint === null) {
+                // Set start point
+                startPoint = { x: imagePoint.x, y: imagePoint.y };
+                addPendingMarker('start', startPoint);
+                document.getElementById('start-point-value').textContent =
+                    `(${startPoint.x.toFixed(1)}, ${startPoint.y.toFixed(1)})`;
+                document.getElementById('start-point-display').style.display = 'block';
+                document.getElementById('mode-indicator').className = 'selecting';
+                document.getElementById('mode-indicator').textContent = 'Click to set end point (ESC to cancel)';
+                document.getElementById('cancel-btn').disabled = false;
+            } else if (endPoint === null) {
+                // Set end point and auto-create line
+                const dist = Math.hypot(imagePoint.x - startPoint.x, imagePoint.y - startPoint.y);
+                if (dist < 5) {
+                    showError('End point must be different from start point');
+                    return;
+                }
+                endPoint = { x: imagePoint.x, y: imagePoint.y };
+
+                // Auto-create the line immediately
+                await createLine();
+            }
+        }
+
+        function addPendingMarker(which, point) {
+            const element = document.createElement('div');
+            element.className = `endpoint-marker pending ${which}`;
+
+            const overlay = viewer.addOverlay({
+                element: element,
+                location: viewer.viewport.imageToViewportCoordinates(point.x, point.y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            if (which === 'start') {
+                pendingStartMarker = element;
+            } else {
+                pendingEndMarker = element;
+            }
+        }
+
+        function removePendingMarkers() {
+            if (pendingStartMarker) {
+                viewer.removeOverlay(pendingStartMarker);
+                pendingStartMarker = null;
+            }
+            if (pendingEndMarker) {
+                viewer.removeOverlay(pendingEndMarker);
+                pendingEndMarker = null;
+            }
+        }
+
+        async function loadGcps() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/gcps/`);
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+                const data = await resp.json();
+                gcps = {};
+
+                // Clear existing markers
+                Object.keys(gcpMarkers).forEach(id => removeGcpMarker(id));
+
+                // Add markers for all GCPs (as reference)
+                data.points.forEach(point => {
+                    gcps[point.id] = point;
+                    addGcpMarker(point);
+                });
+
+                updateGcpList();
+                document.getElementById('gcp-count').textContent = data.points.length;
+            } catch (e) {
+                showError(`Failed to load GCPs: ${e.message}`);
+            }
+        }
+
+        function addGcpMarker(point) {
+            const element = document.createElement('div');
+            const tag = getTagFromId(point.id);
+            element.className = `gcp-marker ${tag}`;
+            element.dataset.gcpId = point.id;
+            element.textContent = point.id.replace(/[A-Z]+/, '');
+            element.title = point.id;
+
+            viewer.addOverlay({
+                element: element,
+                location: viewer.viewport.imageToViewportCoordinates(point.pixel_x, point.pixel_y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            gcpMarkers[point.id] = { element, point };
+        }
+
+        function removeGcpMarker(gcpId) {
+            if (gcpMarkers[gcpId]) {
+                viewer.removeOverlay(gcpMarkers[gcpId].element);
+                delete gcpMarkers[gcpId];
+            }
+        }
+
+        function toggleGcpVisibility(show) {
+            Object.values(gcpMarkers).forEach(({ element }) => {
+                element.style.display = show ? '' : 'none';
+            });
+        }
+
+        function getTagFromId(id) {
+            const match = id.match(/^([A-Z]+)/);
+            return match ? match[1] : 'EX';
+        }
+
+        function cancelLineCreation() {
+            // Clear pending state
+            startPoint = null;
+            endPoint = null;
+            removePendingMarkers();
+
+            // Reset UI
+            document.getElementById('start-point-display').style.display = 'none';
+            document.getElementById('end-point-display').style.display = 'none';
+            document.getElementById('mode-indicator').className = 'idle';
+            document.getElementById('mode-indicator').textContent = 'Click on map to set start point';
+            document.getElementById('cancel-btn').disabled = true;
+            document.getElementById('create-btn').disabled = true;
+            updateLineOverlay();
+        }
+
+        async function createLine() {
+            if (!startPoint || !endPoint) return;
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/lines/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_x: startPoint.x,
+                        start_y: startPoint.y,
+                        end_x: endPoint.x,
+                        end_y: endPoint.y
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    showError(`Failed to create line: ${err.error || 'Unknown error'}`);
+                    return;
+                }
+
+                // Success - reset and reload
+                cancelLineCreation();
+                await loadLines();
+                await updateNextId();
+            } catch (e) {
+                showError(`Failed to create line: ${e.message}`);
+            }
+        }
+
+        async function loadLines() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/lines/`);
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+                const data = await resp.json();
+                lines = data.lines || [];
+
+                // Clear existing endpoint markers
+                Object.keys(lineEndpointMarkers).forEach(id => removeLineEndpointMarkers(id));
+
+                // Add endpoint markers for all lines
+                lines.forEach(line => addLineEndpointMarkers(line));
+
+                updateLineList();
+                updateLineOverlay();
+                document.getElementById('line-count').textContent = lines.length;
+            } catch (e) {
+                showError(`Failed to load lines: ${e.message}`);
+            }
+        }
+
+        function addLineEndpointMarkers(line) {
+            const startEl = document.createElement('div');
+            startEl.className = 'endpoint-marker start';
+            startEl.title = `${line.line_id} start`;
+
+            const endEl = document.createElement('div');
+            endEl.className = 'endpoint-marker end';
+            endEl.title = `${line.line_id} end`;
+
+            viewer.addOverlay({
+                element: startEl,
+                location: viewer.viewport.imageToViewportCoordinates(line.start_x, line.start_y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            viewer.addOverlay({
+                element: endEl,
+                location: viewer.viewport.imageToViewportCoordinates(line.end_x, line.end_y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            // Add drag handlers for endpoint adjustment
+            setupEndpointDragging(startEl, line.line_id, 'start');
+            setupEndpointDragging(endEl, line.line_id, 'end');
+
+            lineEndpointMarkers[line.line_id] = { start: startEl, end: endEl };
+        }
+
+        function removeLineEndpointMarkers(lineId) {
+            if (lineEndpointMarkers[lineId]) {
+                viewer.removeOverlay(lineEndpointMarkers[lineId].start);
+                viewer.removeOverlay(lineEndpointMarkers[lineId].end);
+                delete lineEndpointMarkers[lineId];
+            }
+        }
+
+        function setupEndpointDragging(element, lineId, which) {
+            // Use the reusable drag utility - see static/js/openseadragon-drag-utils.js
+            setupDraggableOverlay(viewer, element, imageInfo, {
+                onDragStart: (el) => {
+                    // Cancel any line creation in progress
+                    if (startPoint !== null) {
+                        cancelLineCreation();
+                    }
+                    draggingEndpoint = { lineId, which, marker: el };
+                    el.classList.add('adjusting');
+                },
+                onDrag: (x, y, el) => {
+                    viewer.updateOverlay(el, viewer.viewport.imageToViewportCoordinates(x, y));
+                    updateLineOverlay();
+                },
+                onDragEnd: async (x, y, el) => {
+                    el.classList.remove('adjusting');
+                    draggingEndpoint = null;
+                    await updateLineEndpoint(lineId, which, x, y);
+                }
+            });
+        }
+
+        async function updateLineEndpoint(lineId, which, x, y) {
+            try {
+                const payload = {};
+                if (which === 'start') {
+                    payload.start_x = x;
+                    payload.start_y = y;
+                } else {
+                    payload.end_x = x;
+                    payload.end_y = y;
+                }
+
+                const resp = await fetch(`${API_BASE}/api/lines/${lineId}/`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    showError(`Failed to update line: ${err.error || 'Unknown error'}`);
+                    await loadLines();  // Reload to reset positions
+                    return;
+                }
+
+                // Update local data
+                const updatedLine = await resp.json();
+                const lineIndex = lines.findIndex(l => l.line_id === lineId);
+                if (lineIndex >= 0) {
+                    lines[lineIndex] = updatedLine;
+                }
+
+                updateLineList();
+                updateLineOverlay();
+            } catch (e) {
+                showError(`Failed to update line: ${e.message}`);
+                await loadLines();
+            }
+        }
+
+        async function deleteLine(lineId) {
+            try {
+                const resp = await fetch(`${API_BASE}/api/lines/${lineId}/`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    showError(`Failed to delete line: ${err.error || 'Unknown error'}`);
+                    return;
+                }
+                if (selectedLineId === lineId) selectedLineId = null;
+                removeLineEndpointMarkers(lineId);
+                await loadLines();
+                await updateNextId();
+            } catch (e) {
+                showError(`Failed to delete line: ${e.message}`);
+            }
+        }
+
+        function selectLine(lineId) {
+            // Remove selection from previous line markers
+            if (selectedLineId && lineEndpointMarkers[selectedLineId]) {
+                lineEndpointMarkers[selectedLineId].start.classList.remove('selected-line');
+                lineEndpointMarkers[selectedLineId].end.classList.remove('selected-line');
+            }
+
+            selectedLineId = lineId;
+
+            // Add selection to new line markers
+            if (lineId && lineEndpointMarkers[lineId]) {
+                lineEndpointMarkers[lineId].start.classList.add('selected-line');
+                lineEndpointMarkers[lineId].end.classList.add('selected-line');
+            }
+
+            updateLineList();
+            updateLineOverlay();
+
+            // Pan to line center
+            const line = lines.find(l => l.line_id === lineId);
+            if (line) {
+                const centerX = (line.start_x + line.end_x) / 2;
+                const centerY = (line.start_y + line.end_y) / 2;
+                const location = viewer.viewport.imageToViewportCoordinates(centerX, centerY);
+                viewer.viewport.panTo(location, false);
+            }
+        }
+
+        function updateLineList() {
+            const list = document.getElementById('line-list');
+            list.innerHTML = '';
+
+            lines.forEach(line => {
+                const item = document.createElement('div');
+                item.className = `line-item ${line.line_id === selectedLineId ? 'selected' : ''}`;
+
+                const info = document.createElement('div');
+                info.className = 'line-info';
+
+                const idSpan = document.createElement('span');
+                idSpan.className = 'line-id';
+                idSpan.textContent = line.line_id;
+
+                const coordsSpan = document.createElement('span');
+                coordsSpan.className = 'line-coords';
+                coordsSpan.textContent = `(${line.start_x.toFixed(0)}, ${line.start_y.toFixed(0)}) -> (${line.end_x.toFixed(0)}, ${line.end_y.toFixed(0)})`;
+
+                info.appendChild(idSpan);
+                info.appendChild(coordsSpan);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.textContent = 'X';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteLine(line.line_id);
+                });
+
+                item.appendChild(info);
+                item.appendChild(deleteBtn);
+                item.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('delete-btn')) {
+                        selectLine(line.line_id);
+                    }
+                });
+                list.appendChild(item);
+            });
+        }
+
+        function updateGcpList() {
+            const list = document.getElementById('gcp-list');
+            list.innerHTML = '';
+
+            Object.values(gcps).forEach(point => {
+                const item = document.createElement('div');
+                item.className = 'gcp-item';
+
+                const span = document.createElement('span');
+                span.textContent = point.id;
+
+                const tag = document.createElement('span');
+                tag.className = `tag ${getTagFromId(point.id)}`;
+                tag.textContent = getTagFromId(point.id);
+
+                item.appendChild(span);
+                item.appendChild(tag);
+                list.appendChild(item);
+            });
+        }
+
+        function updateLineOverlay() {
+            if (!viewer || !viewer.viewport) return;
+
+            const svg = document.getElementById('line-overlay');
+            svg.innerHTML = '';
+
+            // Draw existing lines
+            lines.forEach(line => {
+                // During drag, use the overlay position directly
+                let startX = line.start_x;
+                let startY = line.start_y;
+                let endX = line.end_x;
+                let endY = line.end_y;
+
+                if (draggingEndpoint && draggingEndpoint.lineId === line.line_id) {
+                    const marker = draggingEndpoint.marker;
+                    const overlay = viewer.getOverlayById(marker);
+                    if (overlay) {
+                        const imgCoords = viewer.viewport.viewportToImageCoordinates(overlay.location);
+                        if (draggingEndpoint.which === 'start') {
+                            startX = imgCoords.x;
+                            startY = imgCoords.y;
+                        } else {
+                            endX = imgCoords.x;
+                            endY = imgCoords.y;
+                        }
+                    }
+                }
+
+                const start = viewer.viewport.imageToViewportCoordinates(startX, startY);
+                const end = viewer.viewport.imageToViewportCoordinates(endX, endY);
+
+                const startPx = viewer.viewport.pixelFromPoint(start);
+                const endPx = viewer.viewport.pixelFromPoint(end);
+
+                const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                lineEl.setAttribute('x1', startPx.x);
+                lineEl.setAttribute('y1', startPx.y);
+                lineEl.setAttribute('x2', endPx.x);
+                lineEl.setAttribute('y2', endPx.y);
+                lineEl.setAttribute('class', line.line_id === selectedLineId ? 'selected' : 'default');
+                svg.appendChild(lineEl);
+            });
+
+            // Draw pending line (during creation)
+            if (startPoint && endPoint) {
+                const start = viewer.viewport.imageToViewportCoordinates(startPoint.x, startPoint.y);
+                const end = viewer.viewport.imageToViewportCoordinates(endPoint.x, endPoint.y);
+
+                const startPx = viewer.viewport.pixelFromPoint(start);
+                const endPx = viewer.viewport.pixelFromPoint(end);
+
+                const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                lineEl.setAttribute('x1', startPx.x);
+                lineEl.setAttribute('y1', startPx.y);
+                lineEl.setAttribute('x2', endPx.x);
+                lineEl.setAttribute('y2', endPx.y);
+                lineEl.setAttribute('class', 'pending');
+                svg.appendChild(lineEl);
+            }
+        }
+
+        async function updateNextId() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/lines/next-id/`);
+                if (!resp.ok) {
+                    console.error(`Failed to get next ID: ${resp.status}`);
+                    return;
+                }
+                const data = await resp.json();
+                document.getElementById('next-id').textContent = `Next: ${data.next_id}`;
+            } catch (e) {
+                console.error('Failed to update next ID:', e);
+            }
+        }
+
+        async function updateCoords(x, y) {
+            if (x < 0 || x >= imageInfo.width || y < 0 || y >= imageInfo.height) {
+                document.getElementById('coords').textContent = 'Outside image';
+                return;
+            }
+
+            let text = `Pixel: ${x.toFixed(1)}, ${y.toFixed(1)}`;
+
+            if (imageInfo.geotransform) {
+                try {
+                    const resp = await fetch(`${API_BASE}/api/geo-coords/?pixel_x=${x}&pixel_y=${y}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.easting !== null) {
+                            text += `\nGeo: ${data.easting.toFixed(2)}, ${data.northing.toFixed(2)}`;
+                            if (data.crs) text += `\nCRS: ${data.crs}`;
+                        }
+                    }
+                } catch (e) {
+                    // Silently ignore geo-coord errors
+                }
+            }
+            document.getElementById('coords').textContent = text;
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        async function doExport() {
+            const path = document.getElementById('export-path').value;
+            if (!path) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/export/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    showError(`Export failed: ${err.error || 'Unknown error'}`);
+                    return;
+                }
+                const result = await resp.json();
+                alert(`Exported ${result.count} lines to ${result.exported}`);
+                closeModal('export-modal');
+            } catch (e) {
+                showError(`Export failed: ${e.message}`);
+            }
+        }
+
+        async function doImport() {
+            const path = document.getElementById('import-path').value;
+            if (!path) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/import/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    showError(`Import failed: ${err.error || 'Unknown error'}`);
+                    return;
+                }
+                const result = await resp.json();
+                alert(`Imported ${result.count} lines from ${result.imported}`);
+                closeModal('import-modal');
+                await loadLines();
+            } catch (e) {
+                showError(`Import failed: ${e.message}`);
+            }
+        }
+
+        // Initialize on page load
+        init().catch(e => {
+            console.error('Application initialization failed:', e);
+            document.getElementById('coords').textContent = 'Error: Failed to initialize. Check console.';
+        });
+    </script>
+</body>
+</html>

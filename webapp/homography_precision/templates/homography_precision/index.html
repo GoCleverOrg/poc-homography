@@ -70,6 +70,15 @@
         .summary-metric .value.medium { color: #f57c00; }
         .summary-metric .value.bad { color: #c62828; }
 
+        /* Line metrics - only show when loaded */
+        .line-metrics {
+            display: none;
+        }
+        .line-metrics.visible {
+            display: flex;
+            gap: 16px;
+        }
+
         /* Main Content - Two Columns */
         #main-content {
             flex: 1;
@@ -125,6 +134,18 @@
         .panel-title .legend-dot.green { background: #4caf50; }
         .panel-title .legend-dot.red { background: #f44336; }
         .panel-title .legend-dot.yellow { background: #ffeb3b; }
+
+        .panel-title .legend-line {
+            width: 16px;
+            height: 3px;
+        }
+
+        .panel-title .legend-line.blue { background: #2196f3; }
+        .panel-title .legend-line.green { background: #4caf50; }
+        .panel-title .legend-line.red {
+            background: linear-gradient(90deg, #f44336 50%, transparent 50%);
+            background-size: 8px 3px;
+        }
 
         .viewer {
             flex: 1;
@@ -437,6 +458,23 @@
             fill: none;
         }
 
+        /* SVG Line Segments */
+        .line-segment {
+            stroke-width: 3;
+            stroke-linecap: round;
+            fill: none;
+        }
+
+        .line-segment.annotation { stroke: #2196f3; }
+        .line-segment.gcp-line { stroke: #4caf50; }
+        .line-segment.reprojected { stroke: #f44336; stroke-dasharray: 8,4; }
+        .line-segment.projected { stroke: #f44336; stroke-dasharray: 8,4; }
+
+        .line-segment.highlighted {
+            stroke-width: 5;
+            filter: drop-shadow(0 0 8px #ffeb3b);
+        }
+
         /* Status Messages */
         #status-message {
             padding: 8px;
@@ -465,6 +503,14 @@
             color: #1565c0;
             border: 1px solid #90caf9;
         }
+
+        /* Table section visibility */
+        .table-section {
+            margin-bottom: 16px;
+        }
+        .table-section.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -474,9 +520,16 @@
 
         <div class="control-group">
             <select id="test-case-select">
-                <option value="">-- Select a test case --</option>
+                <option value="">-- Select point test case --</option>
             </select>
-            <button class="btn btn-primary" id="load-btn" disabled>Load</button>
+            <button class="btn btn-primary" id="load-btn" disabled>Load Points</button>
+        </div>
+
+        <div class="control-group">
+            <select id="line-test-case-select">
+                <option value="">-- Select line test case --</option>
+            </select>
+            <button class="btn btn-primary" id="load-line-btn" disabled>Load Lines</button>
         </div>
 
         <div id="status-message"></div>
@@ -499,6 +552,17 @@
                 <div class="value" id="metric-inliers">--</div>
             </div>
         </div>
+
+        <div class="line-metrics" id="line-metrics">
+            <div class="summary-metric">
+                <div class="label">Mean Line Error</div>
+                <div class="value" id="metric-line-mean">--</div>
+            </div>
+            <div class="summary-metric">
+                <div class="label">Max Line Error</div>
+                <div class="value" id="metric-line-max">--</div>
+            </div>
+        </div>
     </div>
 
     <!-- Main Content: Two Panels Side by Side -->
@@ -517,23 +581,45 @@
                 <div class="loading">Select a test case to begin</div>
             </div>
             <div class="stats-section">
-                <h2>Per-Point Errors (pixels) <span id="camera-axis-summary" class="axis-summary"></span></h2>
-                <div class="error-table-container">
-                    <table class="error-table" id="camera-error-table">
-                        <thead>
-                            <tr>
-                                <th data-sort="id">GCP</th>
-                                <th data-sort="error">Total</th>
-                                <th data-sort="dx">dX</th>
-                                <th data-sort="dy">dY</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td colspan="4" style="text-align: center; color: #999;">No data</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="table-section" id="camera-point-section">
+                    <h2>Per-Point Errors (pixels) <span id="camera-axis-summary" class="axis-summary"></span></h2>
+                    <div class="error-table-container">
+                        <table class="error-table" id="camera-error-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="id">GCP</th>
+                                    <th data-sort="error">Total</th>
+                                    <th data-sort="dx">dX</th>
+                                    <th data-sort="dy">dY</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="4" style="text-align: center; color: #999;">No data</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="table-section hidden" id="camera-line-section">
+                    <h2>Per-Line Errors (pixels)</h2>
+                    <div class="error-table-container">
+                        <table class="error-table" id="camera-line-error-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="id">Line ID</th>
+                                    <th data-sort="error">Total</th>
+                                    <th data-sort="start">Start</th>
+                                    <th data-sort="end">End</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="4" style="text-align: center; color: #999;">No data</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -552,23 +638,45 @@
                 <div class="loading">Select a test case to begin</div>
             </div>
             <div class="stats-section">
-                <h2>Per-Point Errors (meters) <span id="map-axis-summary" class="axis-summary"></span></h2>
-                <div class="error-table-container">
-                    <table class="error-table" id="map-error-table">
-                        <thead>
-                            <tr>
-                                <th data-sort="id">GCP</th>
-                                <th data-sort="error">Total</th>
-                                <th data-sort="dx">dX</th>
-                                <th data-sort="dy">dY</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td colspan="4" style="text-align: center; color: #999;">No data</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="table-section" id="map-point-section">
+                    <h2>Per-Point Errors (meters) <span id="map-axis-summary" class="axis-summary"></span></h2>
+                    <div class="error-table-container">
+                        <table class="error-table" id="map-error-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="id">GCP</th>
+                                    <th data-sort="error">Total</th>
+                                    <th data-sort="dx">dX</th>
+                                    <th data-sort="dy">dY</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="4" style="text-align: center; color: #999;">No data</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="table-section hidden" id="map-line-section">
+                    <h2>Per-Line Errors (meters)</h2>
+                    <div class="error-table-container">
+                        <table class="error-table" id="map-line-error-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="id">Line ID</th>
+                                    <th data-sort="error">Total</th>
+                                    <th data-sort="start">Start</th>
+                                    <th data-sort="end">End</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="4" style="text-align: center; color: #999;">No data</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -584,11 +692,19 @@
         let cameraInfo = null;
         let mapInfo = null;
         let currentTestCase = null;
+        let currentLineTestCase = null;
         let overlayData = null;
+        let lineOverlayData = null;
 
         // Overlay tracking
         let cameraOverlays = [];
         let mapOverlays = [];
+        let cameraLineOverlays = [];
+        let mapLineOverlays = [];
+
+        // Currently selected/highlighted point or line
+        let selectedPointId = null;
+        let selectedLineId = null;
 
         // API base URL
         const API_BASE = '/homography-precision';
@@ -619,7 +735,7 @@
         // Initialize application
         async function init() {
             try {
-                await loadTestCases();
+                await Promise.all([loadTestCases(), loadLineTestCases()]);
                 setupEventListeners();
             } catch (e) {
                 console.error('Initialization failed:', e);
@@ -639,7 +755,7 @@
                 const data = await resp.json();
 
                 // Clear existing options except placeholder
-                select.innerHTML = '<option value="">-- Select a test case --</option>';
+                select.innerHTML = '<option value="">-- Select point test case --</option>';
 
                 // Add test case options
                 data.test_cases.forEach(tc => {
@@ -656,10 +772,41 @@
             }
         }
 
+        // Load available line test cases
+        async function loadLineTestCases() {
+            const select = document.getElementById('line-test-case-select');
+            const loadBtn = document.getElementById('load-line-btn');
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/line-test-cases/`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                const data = await resp.json();
+
+                // Clear existing options except placeholder
+                select.innerHTML = '<option value="">-- Select line test case --</option>';
+
+                // Add line test case options
+                data.test_cases.forEach(tc => {
+                    const option = document.createElement('option');
+                    option.value = tc.name;
+                    option.textContent = `${tc.name} (${tc.line_annotation_count} lines)`;
+                    select.appendChild(option);
+                });
+
+                loadBtn.disabled = true;
+            } catch (e) {
+                console.error('Failed to load line test cases:', e);
+                // Don't show error - line test cases might not exist yet
+            }
+        }
+
         // Setup event listeners
         function setupEventListeners() {
             const select = document.getElementById('test-case-select');
             const loadBtn = document.getElementById('load-btn');
+            const lineSelect = document.getElementById('line-test-case-select');
+            const loadLineBtn = document.getElementById('load-line-btn');
 
             select.addEventListener('change', () => {
                 loadBtn.disabled = !select.value;
@@ -669,6 +816,17 @@
                 const caseId = select.value;
                 if (caseId) {
                     loadTestCase(caseId);
+                }
+            });
+
+            lineSelect.addEventListener('change', () => {
+                loadLineBtn.disabled = !lineSelect.value;
+            });
+
+            loadLineBtn.addEventListener('click', () => {
+                const caseId = lineSelect.value;
+                if (caseId) {
+                    loadLineTestCase(caseId);
                 }
             });
 
@@ -710,10 +868,38 @@
                 // Compute homography and get overlay data
                 await computeHomography(caseId);
 
+                // Show point tables, hide line tables
+                document.getElementById('camera-point-section').classList.remove('hidden');
+                document.getElementById('camera-line-section').classList.add('hidden');
+                document.getElementById('map-point-section').classList.remove('hidden');
+                document.getElementById('map-line-section').classList.add('hidden');
+
                 hideStatus();
             } catch (e) {
                 console.error('Failed to load test case:', e);
                 showStatus('Failed to load test case: ' + e.message, 'error');
+            }
+        }
+
+        // Load a line test case
+        async function loadLineTestCase(caseId) {
+            showStatus('Loading line test case...', 'info');
+            currentLineTestCase = caseId;
+
+            try {
+                // Compute line errors
+                await computeLineErrors(caseId);
+
+                // Show line tables, hide point tables
+                document.getElementById('camera-point-section').classList.add('hidden');
+                document.getElementById('camera-line-section').classList.remove('hidden');
+                document.getElementById('map-point-section').classList.add('hidden');
+                document.getElementById('map-line-section').classList.remove('hidden');
+
+                hideStatus();
+            } catch (e) {
+                console.error('Failed to load line test case:', e);
+                showStatus('Failed to load line test case: ' + e.message, 'error');
             }
         }
 
@@ -722,6 +908,7 @@
             // Destroy existing viewer
             if (cameraViewer) {
                 clearOverlays(cameraViewer, cameraOverlays);
+                clearLineOverlays(cameraViewer, cameraLineOverlays);
                 cameraViewer.destroy();
                 cameraViewer = null;
             }
@@ -749,6 +936,7 @@
             });
 
             cameraOverlays = [];
+            cameraLineOverlays = [];
         }
 
         // Initialize map viewer
@@ -756,6 +944,7 @@
             // Destroy existing viewer
             if (mapViewer) {
                 clearOverlays(mapViewer, mapOverlays);
+                clearLineOverlays(mapViewer, mapLineOverlays);
                 mapViewer.destroy();
                 mapViewer = null;
             }
@@ -783,6 +972,7 @@
             });
 
             mapOverlays = [];
+            mapLineOverlays = [];
         }
 
         // Compute homography and render overlays
@@ -816,6 +1006,48 @@
             }
         }
 
+        // Compute line errors and render line overlays
+        async function computeLineErrors(caseId) {
+            try {
+                const resp = await fetch(`${API_BASE}/api/compute-line-errors/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ test_case_name: caseId })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                lineOverlayData = await resp.json();
+
+                // If viewers aren't initialized yet, initialize them
+                if (!cameraViewer || !mapViewer) {
+                    // Need to initialize viewers - extract referenced point test case
+                    // For now, we'll need the viewers to already be initialized
+                    throw new Error('Please load a point test case first to initialize viewers');
+                }
+
+                // Wait for viewers to be ready before adding overlays
+                await Promise.all([
+                    waitForViewer(cameraViewer),
+                    waitForViewer(mapViewer)
+                ]);
+
+                // Clear existing point overlays
+                clearOverlays(cameraViewer, cameraOverlays);
+                clearOverlays(mapViewer, mapOverlays);
+
+                // Render line overlays
+                renderCameraLineOverlays();
+                renderMapLineOverlays();
+
+                // Update line metrics
+                updateLineMetrics();
+            } catch (e) {
+                console.error('Failed to compute line errors:', e);
+                showStatus('Failed to compute line errors: ' + e.message, 'error');
+                throw e;
+            }
+        }
+
         // Wait for viewer to be ready
         function waitForViewer(viewer) {
             return new Promise((resolve) => {
@@ -831,8 +1063,9 @@
         let cameraPointCoords = {};  // { gcp_id: { annotation: {x,y}, reprojected: {x,y} } }
         let mapPointCoords = {};     // { gcp_id: { gcp: {x,y}, projected: {x,y} } }
 
-        // Currently selected/highlighted point
-        let selectedPointId = null;
+        // Line coordinate lookup for zoom-to-line
+        let cameraLineCoords = {};  // { line_id: { annotation: {start, end}, reprojected: {start, end} } }
+        let mapLineCoords = {};     // { line_id: { gcp_line: {start, end}, projected: {start, end} } }
 
         // Clear overlays from a viewer
         function clearOverlays(viewer, overlayList) {
@@ -841,6 +1074,20 @@
                     viewer.removeOverlay(el);
                 } catch (e) {
                     // Ignore errors when removing overlays
+                }
+            });
+            overlayList.length = 0;
+        }
+
+        // Clear line overlays (SVG elements)
+        function clearLineOverlays(viewer, overlayList) {
+            overlayList.forEach(svg => {
+                try {
+                    if (svg.parentNode) {
+                        svg.parentNode.removeChild(svg);
+                    }
+                } catch (e) {
+                    // Ignore errors
                 }
             });
             overlayList.length = 0;
@@ -921,6 +1168,48 @@
                 // Zoom to the midpoint between GCP and projected
                 const midX = (coords.gcp.x + coords.projected.x) / 2;
                 const midY = (coords.gcp.y + coords.projected.y) / 2;
+                zoomToPoint(mapViewer, midX, midY, 5);
+            }
+        }
+
+        // Handle click on line error table row - zoom to line
+        function handleLineClick(lineId, viewerType) {
+            // Clear previous selection
+            document.querySelectorAll('.error-table tbody tr.selected').forEach(row => {
+                row.classList.remove('selected');
+            });
+
+            // Clear previous line highlights
+            document.querySelectorAll('.line-segment.highlighted').forEach(line => {
+                line.classList.remove('highlighted');
+            });
+
+            selectedLineId = lineId;
+
+            // Highlight the clicked row in both tables
+            document.querySelectorAll('.error-table tbody tr').forEach(row => {
+                if (row.cells[0] && row.cells[0].textContent === lineId) {
+                    row.classList.add('selected');
+                }
+            });
+
+            // Highlight line segments with this ID
+            document.querySelectorAll(`.line-segment[data-line-id="${lineId}"]`).forEach(line => {
+                line.classList.add('highlighted');
+            });
+
+            // Zoom to the line in the appropriate viewer
+            if (viewerType === 'camera' && cameraLineCoords[lineId]) {
+                const coords = cameraLineCoords[lineId];
+                // Zoom to midpoint of the annotation line
+                const midX = (coords.annotation.start[0] + coords.annotation.end[0]) / 2;
+                const midY = (coords.annotation.start[1] + coords.annotation.end[1]) / 2;
+                zoomToPoint(cameraViewer, midX, midY, 5);
+            } else if (viewerType === 'map' && mapLineCoords[lineId]) {
+                const coords = mapLineCoords[lineId];
+                // Zoom to midpoint of the GCP line
+                const midX = (coords.gcp_line.start[0] + coords.gcp_line.end[0]) / 2;
+                const midY = (coords.gcp_line.start[1] + coords.gcp_line.end[1]) / 2;
                 zoomToPoint(mapViewer, midX, midY, 5);
             }
         }
@@ -1027,6 +1316,109 @@
             addErrorLines(mapViewer, errorVectors, mapOverlays);
         }
 
+        // Render camera line overlays
+        function renderCameraLineOverlays() {
+            clearLineOverlays(cameraViewer, cameraLineOverlays);
+            cameraLineCoords = {};
+
+            if (!lineOverlayData || !lineOverlayData.line_overlays || !lineOverlayData.line_overlays.camera) return;
+
+            const data = lineOverlayData.line_overlays.camera;
+
+            // Build coordinate lookup
+            data.annotations.forEach((line, i) => {
+                const lineId = line.line_id;
+                const reprojected = data.reprojected_lines[i];
+
+                cameraLineCoords[lineId] = {
+                    annotation: { start: line.start, end: line.end },
+                    reprojected: { start: reprojected.start, end: reprojected.end }
+                };
+            });
+
+            // Draw annotation lines (blue solid)
+            addLineSegments(cameraViewer, data.annotations, 'annotation', cameraLineOverlays);
+
+            // Draw reprojected GCP lines (red dashed)
+            addLineSegments(cameraViewer, data.reprojected_lines, 'reprojected', cameraLineOverlays);
+        }
+
+        // Render map line overlays
+        function renderMapLineOverlays() {
+            clearLineOverlays(mapViewer, mapLineOverlays);
+            mapLineCoords = {};
+
+            if (!lineOverlayData || !lineOverlayData.line_overlays || !lineOverlayData.line_overlays.map) return;
+
+            const data = lineOverlayData.line_overlays.map;
+
+            // Build coordinate lookup
+            data.gcp_lines.forEach((line, i) => {
+                const lineId = line.line_id;
+                const projected = data.projected_lines[i];
+
+                mapLineCoords[lineId] = {
+                    gcp_line: { start: line.start, end: line.end },
+                    projected: { start: projected.start, end: projected.end }
+                };
+            });
+
+            // Draw GCP lines (green solid)
+            addLineSegments(mapViewer, data.gcp_lines, 'gcp-line', mapLineOverlays);
+
+            // Draw projected annotation lines (red dashed)
+            addLineSegments(mapViewer, data.projected_lines, 'projected', mapLineOverlays);
+        }
+
+        // Add line segments as SVG overlay
+        function addLineSegments(viewer, lines, styleClass, overlayList) {
+            if (!lines || lines.length === 0) return;
+
+            // Create SVG element
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'error-line-overlay');
+            svg.style.position = 'absolute';
+            svg.style.pointerEvents = 'none';
+
+            // We'll update line positions on viewport change
+            const updateLines = () => {
+                const containerSize = viewer.viewport.getContainerSize();
+                svg.setAttribute('width', containerSize.x);
+                svg.setAttribute('height', containerSize.y);
+
+                // Clear existing lines
+                svg.innerHTML = '';
+
+                lines.forEach(line => {
+                    const start = viewer.viewport.imageToViewportCoordinates(line.start[0], line.start[1]);
+                    const end = viewer.viewport.imageToViewportCoordinates(line.end[0], line.end[1]);
+
+                    const startPixel = viewer.viewport.viewportToViewerElementCoordinates(start);
+                    const endPixel = viewer.viewport.viewportToViewerElementCoordinates(end);
+
+                    const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    lineEl.setAttribute('x1', startPixel.x);
+                    lineEl.setAttribute('y1', startPixel.y);
+                    lineEl.setAttribute('x2', endPixel.x);
+                    lineEl.setAttribute('y2', endPixel.y);
+                    lineEl.setAttribute('class', `line-segment ${styleClass}`);
+                    lineEl.setAttribute('data-line-id', line.line_id);
+                    svg.appendChild(lineEl);
+                });
+            };
+
+            // Add SVG to viewer container
+            viewer.canvas.appendChild(svg);
+            overlayList.push(svg);
+
+            // Update on viewport changes
+            viewer.addHandler('viewport-change', updateLines);
+            viewer.addHandler('resize', updateLines);
+
+            // Initial update
+            updateLines();
+        }
+
         // Add error lines as SVG overlay
         function addErrorLines(viewer, errorVectors, overlayList) {
             if (!errorVectors || errorVectors.length === 0) return;
@@ -1102,6 +1494,9 @@
             const inlierRatio = metrics.num_inliers / metrics.num_gcps;
             inliersEl.className = 'value ' + (inlierRatio >= 0.9 ? 'good' : inlierRatio >= 0.7 ? 'medium' : 'bad');
 
+            // Hide line metrics
+            document.getElementById('line-metrics').classList.remove('visible');
+
             // Update per-point error tables
             const perPointErrors = overlayData.per_point_errors || [];
 
@@ -1126,6 +1521,54 @@
             updateErrorTable('map-error-table', mapErrors, 'm', 'map-axis-summary');
         }
 
+        // Update line metrics display
+        function updateLineMetrics() {
+            if (!lineOverlayData || !lineOverlayData.metrics) {
+                return;
+            }
+
+            const metrics = lineOverlayData.metrics;
+
+            // Show line metrics
+            const lineMetricsEl = document.getElementById('line-metrics');
+            lineMetricsEl.classList.add('visible');
+
+            // Update mean line error
+            const meanEl = document.getElementById('metric-line-mean');
+            meanEl.textContent = metrics.mean_line_error.toFixed(2) + ' px';
+            meanEl.className = 'value ' + getMetricClass(metrics.mean_line_error, { good: 5, medium: 10 });
+
+            // Update max line error
+            const maxEl = document.getElementById('metric-line-max');
+            maxEl.textContent = metrics.max_line_error.toFixed(2) + ' px';
+            maxEl.className = 'value ' + getMetricClass(metrics.max_line_error, { good: 10, medium: 20 });
+
+            // Hide point metrics (keep them but don't remove)
+            // Actually, let's keep point metrics visible since they show the homography quality
+
+            // Update per-line error tables
+            const perLineErrors = lineOverlayData.per_line_errors || [];
+
+            // Camera line errors (in pixels)
+            const cameraLineErrors = perLineErrors.map(e => ({
+                id: e.line_id,
+                error: e.error_px,
+                start: e.start_error,
+                end: e.end_error
+            }));
+            updateLineErrorTable('camera-line-error-table', cameraLineErrors, 'px');
+
+            // Map line errors (in meters)
+            const GSD = mapInfo && mapInfo.geotransform ? Math.abs(mapInfo.geotransform[1]) : 0.15;
+            const mapLineErrors = perLineErrors.map(e => ({
+                id: e.line_id,
+                error: (e.map_start_error + e.map_end_error) / 2 * GSD,
+                start: e.map_start_error * GSD,
+                end: e.map_end_error * GSD
+            }));
+            updateLineErrorTable('map-line-error-table', mapLineErrors, 'm');
+        }
+
         // Reset stats panel to default state
         function resetStatsPanel() {
             document.getElementById('metric-rmse').textContent = '--';
@@ -1136,6 +1579,8 @@
             document.getElementById('metric-max').className = 'value';
             document.getElementById('metric-inliers').textContent = '--';
             document.getElementById('metric-inliers').className = 'value';
+
+            document.getElementById('line-metrics').classList.remove('visible');
 
             ['camera-error-table', 'map-error-table'].forEach(tableId => {
                 const tbody = document.querySelector(`#${tableId} tbody`);
@@ -1219,6 +1664,62 @@
                 dyCell.textContent = (item.dy >= 0 ? '+' : '') + item.dy.toFixed(decimals);
                 dyCell.className = item.dy >= 0 ? 'positive' : 'negative';
                 row.appendChild(dyCell);
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update a line error table
+        function updateLineErrorTable(tableId, errors, unit = 'px') {
+            const tbody = document.querySelector(`#${tableId} tbody`);
+            tbody.innerHTML = '';
+
+            if (!errors || errors.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No data</td></tr>';
+                return;
+            }
+
+            // Determine which viewer this table controls
+            const viewerType = tableId.includes('camera') ? 'camera' : 'map';
+
+            // Sort by error descending by default
+            const sortedErrors = [...errors].sort((a, b) => b.error - a.error);
+            const decimals = unit === 'm' ? 3 : 1;
+
+            sortedErrors.forEach(item => {
+                const row = document.createElement('tr');
+                row.dataset.lineId = item.id;
+
+                // Add click handler for zoom-to-line
+                row.addEventListener('click', () => {
+                    handleLineClick(item.id, viewerType);
+                });
+
+                // Line ID cell
+                const idCell = document.createElement('td');
+                idCell.textContent = item.id;
+                row.appendChild(idCell);
+
+                // Total error cell
+                const errorCell = document.createElement('td');
+                errorCell.textContent = item.error.toFixed(decimals);
+                const errorClass = unit === 'm'
+                    ? getMetricClass(item.error, { good: 1, medium: 2 })
+                    : getErrorClass(item.error);
+                errorCell.className = errorClass;
+                row.appendChild(errorCell);
+
+                // Start error cell
+                const startCell = document.createElement('td');
+                startCell.textContent = item.start.toFixed(decimals);
+                startCell.className = getErrorClass(item.start);
+                row.appendChild(startCell);
+
+                // End error cell
+                const endCell = document.createElement('td');
+                endCell.textContent = item.end.toFixed(decimals);
+                endCell.className = getErrorClass(item.end);
+                row.appendChild(endCell);
 
                 tbody.appendChild(row);
             });

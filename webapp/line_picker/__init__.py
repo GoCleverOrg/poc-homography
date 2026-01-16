@@ -1,0 +1,1 @@
+"""Line Picker Django app."""

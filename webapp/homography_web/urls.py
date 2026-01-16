@@ -21,6 +21,7 @@ from django.urls import include, path
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("point-picker/", include("point_picker.urls")),
+    path("line-picker/", include("line_picker.urls")),
     path("homography-precision/", include("homography_precision.urls")),
     path("", include("gcp.urls")),
 ]

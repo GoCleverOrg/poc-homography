@@ -319,3 +319,19 @@ test_cases:
       - pixel_x: 1821.5
         pixel_y: 514.5
         gcp_id: CW2
+
+      - pixel_x: 1117.0
+        pixel_y: 113.0
+        gcp_id: PS34
+
+      - pixel_x: 440.0
+        pixel_y: 54.0
+        gcp_id: PS33
+
+      - pixel_x: 134.0
+        pixel_y: 74.0
+        gcp_id: PS32
+
+      - pixel_x: 317.0
+        pixel_y: 172.0
+        gcp_id: PS31
