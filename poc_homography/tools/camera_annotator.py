@@ -771,7 +771,6 @@ def create_html(image_filename: str) -> str:
                     renderMarkers();
                     renderAnnotationsList();
                     updateYamlPreview();
-                    console.log(`Loaded ${{existing.length}} existing annotations`);
                 }}
             }} catch (e) {{
                 console.error('Failed to load existing annotations:', e);
@@ -794,7 +793,6 @@ def create_html(image_filename: str) -> str:
                     }}
                     imageSelector.appendChild(option);
                 }});
-                console.log(`Loaded ${{images.length}} available images`);
             }} catch (e) {{
                 console.error('Failed to load available images:', e);
             }}
@@ -802,16 +800,13 @@ def create_html(image_filename: str) -> str:
 
         // Switch to a different image
         async function switchImage(filename) {{
-            console.log('switchImage called with:', filename);
             try {{
                 const resp = await fetch('/api/switch-image', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{ filename }})
                 }});
-                console.log('Response status:', resp.status);
                 const data = await resp.json();
-                console.log('Response data:', data);
 
                 if (data.success) {{
                     // Clear pending point first
@@ -825,29 +820,19 @@ def create_html(image_filename: str) -> str:
                     filenameDisplay.textContent = data.filename;
 
                     // Update image src with cache-busting query param
-                    // Use onload to re-render markers after image loads
-                    const newSrc = '/image?t=' + Date.now();
-                    console.log('Setting image src to:', newSrc);
+                    // Re-render markers after image loads
                     img.onload = function() {{
-                        console.log('Image loaded successfully');
                         renderMarkers();
                     }};
-                    img.onerror = function() {{
-                        console.error('Image failed to load');
-                    }};
-                    img.src = newSrc;
+                    img.src = '/image?t=' + Date.now();
 
                     // Update other UI elements
                     renderAnnotationsList();
                     updateYamlPreview();
-
-                    console.log(`Switched to image: ${{filename}}, ${{annotations.length}} annotations`);
                 }} else {{
-                    console.error('Failed to switch image:', data.error);
                     alert('Failed to switch image: ' + (data.error || 'Unknown error'));
                 }}
             }} catch (e) {{
-                console.error('Failed to switch image:', e);
                 alert('Failed to switch image: ' + e.message);
             }}
         }}
