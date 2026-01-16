@@ -11,7 +11,7 @@
 This assessment identifies duplication, missing abstractions, and architectural issues in the current domain model. The primary findings are:
 
 1. **DRY violations** between legacy `camera_parameters.py` and new domain VOs
-2. **Missing VOs** for core concepts (Homography, ImageDimensions)
+2. **Missing VOs** for core concepts (ImageDimensions)
 3. **God Object** pattern in `CameraParameters` that should be decomposed
 4. **Incomplete VOs** missing fields or factory methods
 
@@ -85,13 +85,7 @@ This assessment identifies duplication, missing abstractions, and architectural 
 
 ### DRY Violations (Duplications)
 
-#### 1. ~~DistortionCoefficients vs LensDistortion~~ ✅ RESOLVED
-
-**Status:** Unified into single `LensDistortion` VO with all 5 coefficients (k1, k2, p1, p2, k3).
-
-`DistortionCoefficients` has been removed. All code now uses `LensDistortion` from `domain/vo/lens_distortion.py`.
-
-#### 2. Orientation vs pan/tilt/roll
+#### 1. Orientation vs pan/tilt/roll
 
 **Problem:** Angular orientation represented in three different ways.
 
@@ -113,7 +107,7 @@ PTZState:         pan_raw: float, tilt_deg: float, zoom: float
 
 **Resolution:** Clarify relationship; PTZState is raw hardware values, Orientation is computed world-referenced angles.
 
-#### 3. CameraIntrinsics vs intrinsic_matrix
+#### 2. CameraIntrinsics vs intrinsic_matrix
 
 **Problem:** Intrinsic matrix concept exists in three places.
 
@@ -138,11 +132,7 @@ CameraGeometry.get_intrinsics()  # Static factory method
 
 ### Missing Value Objects
 
-#### 1. ~~Homography VO~~ ✅ RESOLVED
-
-**Status:** Created `domain/vo/homography.py` with `Matrix3x3` foundation.
-
-#### 2. ImageDimensions VO
+#### 1. ImageDimensions VO
 
 **Problem:** Width/height pairs scattered across many locations.
 
@@ -169,17 +159,12 @@ class ImageDimensions:
     def contains(self, point: PixelPoint) -> bool: ...
 ```
 
-#### 3. ~~HeightUncertainty (Move to domain)~~ ✅ RESOLVED
-
-**Status:** Moved to `domain/vo/height_uncertainty.py` with additional semantic methods (`range`, `midpoint`, `contains`) and factory method (`symmetric`).
-
 ---
 
 ### Incomplete VOs
 
 | VO | Issue | Resolution |
 |----|-------|------------|
-| ~~`LensDistortion`~~ | ~~Missing `k3` coefficient~~ | ✅ Added `k3: Unitless = Unitless(0.0)` |
 | `PTZState` | `pan_raw: float` has unclear semantics | Document or rename; add validation |
 | `PTZState` | No type safety on fields | Use `Degrees` for angles, `Unitless` for zoom |
 | `CameraIntrinsics` | No factory from CameraSpec + zoom | Add `from_spec_and_zoom(spec, zoom)` classmethod |
@@ -246,49 +231,33 @@ The codebase handles coordinate systems with clear VO representation:
 
 ## Recommended Actions
 
-### Phase 1: Eliminate Duplications ✅ COMPLETED
+### Phase 1: Add Missing Core VOs
 
-1. ~~**Unify distortion coefficients**~~ ✅ COMPLETED
-   - ~~Add `k3` to `LensDistortion`~~ ✅
-   - ~~Remove `DistortionCoefficients`~~ ✅
-   - ~~Update all usages~~ ✅
-
-2. ~~**Move HeightUncertainty to domain**~~ ✅ COMPLETED
-   - ~~Create `domain/vo/height_uncertainty.py`~~ ✅
-   - ~~Update imports~~ ✅
-
-### Phase 2: Add Missing Core VOs
-
-3. ~~**Create Homography VO**~~ ✅ COMPLETED
-   - ~~`domain/vo/homography.py`~~ ✅
-   - ~~Move projection methods from `CameraGeometry`~~ ✅
-   - ~~Include matrix validation~~ ✅
-
-4. **Create ImageDimensions VO**
+1. **Create ImageDimensions VO**
    - `domain/vo/image_dimensions.py`
    - Update `Photo`, `CameraIntrinsics` to use it
 
-### Phase 3: Refactor Legacy
+### Phase 2: Refactor Legacy
 
-5. **Add CameraIntrinsics factory**
+2. **Add CameraIntrinsics factory**
    - `CameraIntrinsics.from_spec_and_zoom(spec, zoom)`
    - Deprecate `CameraGeometry.get_intrinsics()`
 
-6. **Deprecate CameraParameters**
+3. **Deprecate CameraParameters**
    - Create adapter that builds from domain VOs
    - Gradually migrate callers
 
-7. **Split CameraGeometryResult**
+4. **Split CameraGeometryResult**
     - Extract `Homography` VO
     - Keep validation/metrics separate
 
-### Phase 4: Type Safety
+### Phase 3: Type Safety
 
-8. **Fix PTZState typing**
+5. **Fix PTZState typing**
     - Document `pan_raw` semantics
     - Use typed fields (`Degrees`, `Unitless`)
 
-9. **Add PTZState validation**
+6. **Add PTZState validation**
     - Validate zoom bounds (1.0 to max_zoom)
     - Validate angle ranges
 
