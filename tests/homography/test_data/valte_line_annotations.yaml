@@ -1,82 +1,9 @@
 # Line Annotations Test Data
 # Format for homography precision testing with line-based validation
-#
-# Terminology:
-#   - Line Annotation: A line segment observed in the camera image (camera pixels)
-#   - Line (from registry): A reference line defined by two GCPs (map pixels)
-#
-# Each test case contains:
-#   - name: unique identifier for the test case
-#   - image: path to the camera image (relative to test_data directory)
-#   - camera_status: PTZ values for the camera position
-#     - pan: horizontal rotation in degrees
-#     - tilt: vertical rotation in degrees
-#     - zoom: zoom level (1 = no zoom)
-#   - point_annotations_ref: reference to point annotations file for homography computation
-#   - line_annotations: list of line segments observed in the camera image
-#     - line_id: ID of corresponding line in the line registry
-#     - start_pixel_x: x coordinate of line start in camera image (pixels)
-#     - start_pixel_y: y coordinate of line start in camera image (pixels)
-#     - end_pixel_x: x coordinate of line end in camera image (pixels)
-#     - end_pixel_y: y coordinate of line end in camera image (pixels)
-#
-# NOTE: Line annotation endpoints represent where the line appears in the camera,
-# NOT the exact GCP locations. They allow measuring reprojection error.
-# The line_id references the ground truth line from the line registry.
 
 line_registry: Cartografia_valencia_lines.yaml
 
 test_cases:
-  - name: valte_30.8_13.1_1_20260112_lines
-    image: valte_30.8_13.1_1_20260112.png
-    camera_status:
-      pan: 30.8
-      tilt: 13.1
-      zoom: 1
-    point_annotations_ref: valte_30.8_13.1_1_20260112
-    line_annotations:
-      # Parking spot line L1 (PS1 -> PS2) - visible in camera as parking boundary
-      - line_id: L1
-        start_pixel_x: 386.8
-        start_pixel_y: 263.2
-        end_pixel_x: 568.1
-        end_pixel_y: 280.9
-
-      # Parking spot line L2 (PS3 -> PS4) - next parking boundary down
-      - line_id: L2
-        start_pixel_x: 568.1
-        start_pixel_y: 280.9
-        end_pixel_x: 793.1
-        end_pixel_y: 306.9
-
-      # Parking spot line L3 (PS5 -> PS6)
-      - line_id: L3
-        start_pixel_x: 793.1
-        start_pixel_y: 306.9
-        end_pixel_x: 1085.9
-        end_pixel_y: 342.3
-
-      # Parking spot line L4 (PS7 -> PS8)
-      - line_id: L4
-        start_pixel_x: 1085.9
-        start_pixel_y: 342.3
-        end_pixel_x: 1482.3
-        end_pixel_y: 289.2
-
-      # Parking spot line L5 (PS9 -> PS10)
-      - line_id: L5
-        start_pixel_x: 1461.1
-        start_pixel_y: 389.3
-        end_pixel_x: 1764.0
-        end_pixel_y: 318.8
-
-      # Arrow line L16 (AR1 -> AR2) - road arrow
-      - line_id: L16
-        start_pixel_x: 803.0
-        start_pixel_y: 582.7
-        end_pixel_x: 1094.5
-        end_pixel_y: 396.7
-
   - name: valte_102.5_20.7_1_20260115_lines
     image: valte_102.5_20.7_1_20260115_112639.jpg
     camera_status:
@@ -85,44 +12,16 @@ test_cases:
       zoom: 1
     point_annotations_ref: valte_102.5_20.7_1_20260115
     line_annotations:
-      # Crosswalk stripe line L11 (CW1 -> CW2) - crosswalk stripe
-      - line_id: L11
+      # L21: CW1 -> CW21 (crosswalk edge line)
+      - line_id: L21
         start_pixel_x: 1724.0
         start_pixel_y: 581.5
-        end_pixel_x: 1821.5
-        end_pixel_y: 514.5
+        end_pixel_x: 617.0
+        end_pixel_y: 176.0
 
-      # Crosswalk stripe line L12 (CW3 -> CW4)
-      - line_id: L12
-        start_pixel_x: 1511.0
-        start_pixel_y: 499.0
-        end_pixel_x: 1624.0
-        end_pixel_y: 447.0
-
-      # Crosswalk stripe line L13 (CW5 -> CW6)
-      - line_id: L13
-        start_pixel_x: 1335.5
-        start_pixel_y: 434.0
-        end_pixel_x: 1455.5
-        end_pixel_y: 390.0
-
-      # Crosswalk stripe line L14 (CW7 -> CW8)
-      - line_id: L14
-        start_pixel_x: 1190.0
-        start_pixel_y: 379.0
-        end_pixel_x: 1311.0
-        end_pixel_y: 342.0
-
-      # Crosswalk stripe line L15 (CW9 -> CW10)
-      - line_id: L15
-        start_pixel_x: 1066.0
-        start_pixel_y: 335.0
-        end_pixel_x: 1187.0
-        end_pixel_y: 304.0
-
-      # Extra line L18 (EX1 -> EX7) - curb edge
-      - line_id: L18
-        start_pixel_x: 367.0
-        start_pixel_y: 1009.5
-        end_pixel_x: 1418.0
-        end_pixel_y: 693.5
+      # L22: CW2 -> CW22 (crosswalk edge line)
+      - line_id: L22
+        start_pixel_x: 1821.5
+        start_pixel_y: 514.5
+        end_pixel_x: 717.5
+        end_pixel_y: 159.5
