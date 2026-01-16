@@ -31,7 +31,7 @@ This assessment identifies duplication, missing abstractions, and architectural 
 | `Annotation` | `domain/entities/annotation.py` | GCP to pixel observation link |
 | `CapturedFrame` | `domain/entities/captured_frame.py` | Photo with PTZ state |
 
-### Value Objects (12)
+### Value Objects (15)
 
 | VO | Location | Purpose |
 |----|----------|---------|
@@ -39,6 +39,9 @@ This assessment identifies duplication, missing abstractions, and architectural 
 | `Orientation` | `domain/vo/orientation.py` | Yaw/pitch/roll angles, computes rotation matrix |
 | `PTZState` | `domain/vo/ptz_state.py` | Pan/tilt/zoom values |
 | `LensDistortion` | `domain/vo/lens_distortion.py` | Distortion coefficients (k1, k2, p1, p2, k3) |
+| `HeightUncertainty` | `domain/vo/height_uncertainty.py` | Height confidence interval for error propagation |
+| `Matrix3x3` | `domain/vo/matrix3x3.py` | Immutable 3x3 matrix with math operations |
+| `Homography` | `domain/vo/homography.py` | Projective transformation using Matrix3x3 |
 | `PixelPoint` | `domain/vo/pixel_point.py` | Pixel coordinates (x, y) |
 | `MapPoint` | `domain/vo/map_point.py` | Point on map (map_id + pixel_point) |
 | `GeoTransform` | `domain/vo/geotiff.py` | Affine transformation (6 parameters) |
@@ -55,11 +58,10 @@ This assessment identifies duplication, missing abstractions, and architectural 
 | `CameraSpec` | `domain/enums/camera_spec.py` | Known camera models with hardware specs |
 | `TiltConvention` | `domain/enums/tilt_convention.py` | POSITIVE_UP / POSITIVE_DOWN |
 
-### Legacy Types (3)
+### Legacy Types (2)
 
 | Type | Location | Purpose |
 |------|----------|---------|
-| `HeightUncertainty` | `camera_parameters.py` | Height confidence interval |
 | `CameraParameters` | `camera_parameters.py` | All params for homography computation |
 | `CameraGeometryResult` | `camera_parameters.py` | Homography computation result |
 
@@ -258,11 +260,9 @@ class CameraPosition:
         )
 ```
 
-#### 5. HeightUncertainty (Move to domain)
+#### 5. ~~HeightUncertainty (Move to domain)~~ ✅ RESOLVED
 
-**Problem:** `HeightUncertainty` is in `camera_parameters.py` but should be a domain VO.
-
-**Resolution:** Move to `domain/vo/height_uncertainty.py`.
+**Status:** Moved to `domain/vo/height_uncertainty.py` with additional semantic methods (`range`, `midpoint`, `contains`) and factory method (`symmetric`).
 
 ---
 
@@ -274,7 +274,6 @@ class CameraPosition:
 | `PTZState` | `pan_raw: float` has unclear semantics | Document or rename; add validation |
 | `PTZState` | No type safety on fields | Use `Degrees` for angles, `Unitless` for zoom |
 | `CameraIntrinsics` | No factory from CameraSpec + zoom | Add `from_spec_and_zoom(spec, zoom)` classmethod |
-| `PixelPoint` | Private fields `_x, _y` with properties | Use public `x: PixelsFloat, y: PixelsFloat` |
 | `GeoTiff` | No EPSG code validation | Add validation in `__post_init__` |
 
 ---
@@ -346,54 +345,50 @@ The codebase handles 4 coordinate systems without consistent VO representation:
    - ~~Remove `DistortionCoefficients`~~ ✅
    - ~~Update all usages~~ ✅
 
-2. **Move HeightUncertainty to domain**
-   - Create `domain/vo/height_uncertainty.py`
-   - Update imports
-
-3. **Fix PixelPoint fields**
-   - Change `_x, _y` to public `x, y`
-   - Update usages
+2. ~~**Move HeightUncertainty to domain**~~ ✅ COMPLETED
+   - ~~Create `domain/vo/height_uncertainty.py`~~ ✅
+   - ~~Update imports~~ ✅
 
 ### Phase 2: Add Missing Core VOs
 
-4. **Create WorldPoint VO**
+3. **Create WorldPoint VO**
    - `domain/vo/world_point.py`
    - Replace `np.ndarray` usages
 
-5. **Create Homography VO**
-   - `domain/vo/homography.py`
-   - Move projection methods from `CameraGeometry`
-   - Include matrix validation
+4. ~~**Create Homography VO**~~ ✅ COMPLETED
+   - ~~`domain/vo/homography.py`~~ ✅
+   - ~~Move projection methods from `CameraGeometry`~~ ✅
+   - ~~Include matrix validation~~ ✅
 
-6. **Create ImageDimensions VO**
+5. **Create ImageDimensions VO**
    - `domain/vo/image_dimensions.py`
    - Update `Photo`, `CameraIntrinsics` to use it
 
 ### Phase 3: Refactor Legacy
 
-7. **Add CameraIntrinsics factory**
+6. **Add CameraIntrinsics factory**
    - `CameraIntrinsics.from_spec_and_zoom(spec, zoom)`
    - Deprecate `CameraGeometry.get_intrinsics()`
 
-8. **Create CameraPosition VO**
+7. **Create CameraPosition VO**
    - `domain/vo/camera_position.py`
    - Update `CameraCalibration` to use it
 
-9. **Deprecate CameraParameters**
+8. **Deprecate CameraParameters**
    - Create adapter that builds from domain VOs
    - Gradually migrate callers
 
-10. **Split CameraGeometryResult**
+9. **Split CameraGeometryResult**
     - Extract `Homography` VO
     - Keep validation/metrics separate
 
 ### Phase 4: Type Safety
 
-11. **Fix PTZState typing**
+10. **Fix PTZState typing**
     - Document `pan_raw` semantics
     - Use typed fields (`Degrees`, `Unitless`)
 
-12. **Add PTZState validation**
+11. **Add PTZState validation**
     - Validate zoom bounds (1.0 to max_zoom)
     - Validate angle ranges
 
@@ -474,9 +469,12 @@ poc_homography/
         ├── camera_snapshot.py
         ├── credential.py
         ├── geotiff.py
+        ├── height_uncertainty.py
+        ├── homography.py
         ├── lens_distortion.py
         ├── map_point.py
         ├── mask.py
+        ├── matrix3x3.py
         ├── orientation.py
         ├── photo.py
         ├── pixel_point.py

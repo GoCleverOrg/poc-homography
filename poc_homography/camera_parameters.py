@@ -15,33 +15,7 @@ import numpy as np
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
 
 if TYPE_CHECKING:
-    from poc_homography.domain.vo import LensDistortion
-
-
-@dataclass(frozen=True)
-class HeightUncertainty:
-    """Height uncertainty bounds for error propagation.
-
-    Represents a confidence interval for camera height, typically from
-    height calibration. Used for propagating uncertainty to world
-    coordinate projections.
-
-    Attributes:
-        lower: Lower bound of height confidence interval in meters.
-        upper: Upper bound of height confidence interval in meters.
-    """
-
-    lower: Meters
-    upper: Meters
-
-    def __post_init__(self) -> None:
-        """Validate height uncertainty bounds."""
-        if self.lower <= 0:
-            raise ValueError(f"Lower bound must be positive, got {self.lower}")
-        if self.upper <= 0:
-            raise ValueError(f"Upper bound must be positive, got {self.upper}")
-        if self.lower > self.upper:
-            raise ValueError(f"Lower bound ({self.lower}) cannot exceed upper bound ({self.upper})")
+    from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 
 
 def _validate_matrix_shape(matrix: np.ndarray, expected_shape: tuple[int, ...], name: str) -> None:

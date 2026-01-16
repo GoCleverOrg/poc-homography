@@ -12,9 +12,8 @@ from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
-    HeightUncertainty,
 )
-from poc_homography.domain.vo import LensDistortion, MapPoint
+from poc_homography.domain.vo import HeightUncertainty, LensDistortion, MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography import (
     CoordinateSystemMode,
