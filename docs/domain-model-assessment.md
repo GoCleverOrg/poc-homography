@@ -314,6 +314,177 @@ The codebase handles coordinate systems with clear VO representation:
 
 ---
 
+## Design Pattern Standards
+
+### Reference Pattern: Private Constructor with Sentinel
+
+The `Matrix3x3` and `Homography` VOs establish the standard pattern for complex value objects:
+
+```python
+_PRIVATE_SENTINEL = object()
+
+@dataclass(frozen=True)
+class ExampleVO:
+    """Immutable value object with controlled construction."""
+
+    _data: SomeType = field(repr=False)
+    _sentinel: object = field(default=None, repr=False, compare=False, hash=False)
+
+    def __post_init__(self) -> None:
+        if self._sentinel is not _PRIVATE_SENTINEL:
+            raise TypeError("Use ExampleVO.create() instead")
+
+    @classmethod
+    def create(cls, ...) -> ExampleVO:
+        # ALL validation here
+        return cls(_data=..., _sentinel=_PRIVATE_SENTINEL)
+```
+
+**Benefits:**
+- Validation centralized in single location (`create()`)
+- Constructor cannot be called directly (enforced at runtime)
+- Immutable (frozen dataclass)
+- Hashable (can be used in sets/dicts)
+
+### When to Apply This Pattern
+
+| Apply Pattern | Don't Apply |
+|---------------|-------------|
+| Stores numpy arrays | Simple scalar fields only |
+| Requires validation | No invariants to enforce |
+| Complex construction logic | Direct field assignment sufficient |
+| Used in computations | Pure data transfer |
+
+---
+
+## Pattern Alignment Analysis
+
+### Summary Table
+
+| Class | Type | Frozen | Factory | Sentinel | Numpy | Validation | Status |
+|-------|------|--------|---------|----------|-------|------------|--------|
+| `Matrix3x3` | VO | ✓ | ✓ | ✓ | ✓ bytes | ✓ | ✅ Reference |
+| `Homography` | VO | ✓ | ✓ | ✓ | via Matrix3x3 | ✓ | ✅ Reference |
+| `CameraIntrinsics` | VO | ✓ | ✗ | ✗ | ✓ property | ✗ | ⚠️ Refactor |
+| `Orientation` | VO | ✓ | ✗ | ✗ | ✓ property | ✗ | ⚠️ Refactor |
+| `HeightUncertainty` | VO | ✓ | helper | ✗ | ✗ | `__post_init__` | ⚠️ Refactor |
+| `LensDistortion` | VO | ✓ | helpers | ✗ | ✓ methods | partial | ⚠️ Refactor |
+| `GeoTransform` | VO | ✓ | ✗ | ✗ | ✗ | in method | ⚠️ Refactor |
+| `GroundControlPoint` | Entity | ✗ | ✗ | ✗ | ✗ | `__post_init__` | ⚠️ Refactor |
+| `CapturedFrame` | Entity | ✓ | ✓ | ✗ | ✗ | ✗ | ⚠️ Add sentinel |
+| `PixelPoint` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `MapPoint` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `GeoTiff` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `Credential` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `PTZState` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `Photo` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `Mask` | VO | ✗ | ✓ | ✗ | ✓ array | ✗ | ✅ Mutable OK |
+| `CameraSnapshot` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Composition OK |
+| `CameraConfig` | Entity | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `CameraCalibration` | Entity | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Composition OK |
+| `Annotation` | Entity | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `Map` | Entity | ✗ | ✗ | ✗ | ✗ | ✗ | ⚠️ Consider freezing |
+
+---
+
+## Refactoring Opportunities
+
+### Priority 1: Numpy Arrays Without Immutability
+
+These VOs return mutable numpy arrays from properties, breaking immutability guarantees.
+
+#### CameraIntrinsics
+
+**Current:** `K` property computes and returns new numpy array each call.
+
+```python
+@property
+def K(self) -> np.ndarray:
+    # Returns mutable 3x3 intrinsic matrix
+```
+
+**Recommendation:**
+- Store `K` as `Matrix3x3` internally
+- Add `create()` factory with sentinel pattern
+- Add `to_matrix() -> Matrix3x3` method
+- Validate focal length and principal point ranges
+
+#### Orientation
+
+**Current:** `rotation_matrix` property computes and returns new numpy array.
+
+```python
+@property
+def rotation_matrix(self) -> np.ndarray:
+    # Returns mutable 3x3 rotation matrix
+```
+
+**Recommendation:**
+- Store computed rotation matrix as `Matrix3x3` internally
+- Add `create()` factory with sentinel pattern
+- Add `to_rotation_matrix() -> Matrix3x3` method
+- Validate angle ranges
+
+### Priority 2: Hybrid Validation Patterns
+
+These classes have validation split between `__post_init__` and factory methods.
+
+#### HeightUncertainty
+
+**Current:** Validation in `__post_init__`, helper factory `symmetric()`.
+
+**Recommendation:**
+- Add sentinel pattern to block direct construction
+- Move validation from `__post_init__` to `create()`
+- Keep `symmetric()` as convenience factory calling `create()`
+
+#### GroundControlPoint
+
+**Current:** Unfrozen, ID generation in `__post_init__`.
+
+**Recommendation:**
+- Make frozen dataclass
+- Add `create()` factory with sentinel
+- Generate ID in factory, not `__post_init__`
+
+#### CapturedFrame
+
+**Current:** Has `create()` factory but no sentinel guard.
+
+**Recommendation:**
+- Add sentinel check to `__post_init__`
+- Ensures all construction goes through `create()`
+
+### Priority 3: Missing Validation
+
+#### LensDistortion
+
+**Current:** `from_numpy()` accepts any array without validation.
+
+**Recommendation:**
+- Validate coefficient array length (5 elements)
+- Consider adding range validation for coefficients
+
+#### GeoTransform
+
+**Current:** Singularity checked in `geo_to_pixel()` method at runtime.
+
+**Recommendation:**
+- Add `create()` factory that validates non-singularity
+- Fail fast at construction, not at use
+
+### Priority 4: Minor Improvements
+
+#### Map Entity
+
+**Current:** Unfrozen dataclass.
+
+**Recommendation:**
+- Consider making frozen for consistency
+- Or document why mutability is required
+
+---
+
 ## Dependency Graph (Current)
 
 ```
