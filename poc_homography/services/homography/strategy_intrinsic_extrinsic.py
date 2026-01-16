@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
+from poc_homography.camera_parameters import CameraParameters
 from poc_homography.domain.vo import CameraIntrinsics
 from poc_homography.types import Degrees, Pixels, Unitless
 
@@ -79,16 +79,6 @@ class StrategyIntrinsicExtrinsic:
         # Camera position in world frame: [X, Y, Z] where Z is height
         camera_position = np.array([float(easting), float(northing), float(calibration.height)])
 
-        # Build distortion coefficients
-        dist = calibration.distortion
-        distortion = DistortionCoefficients(
-            k1=Unitless(float(dist.k1)),
-            k2=Unitless(float(dist.k2)),
-            p1=Unitless(float(dist.p1)),
-            p2=Unitless(float(dist.p2)),
-            k3=Unitless(0.0),
-        )
-
         # Get map dimensions from photo
         map_width = Pixels(map_entity.photo.width)
         map_height = Pixels(map_entity.photo.height)
@@ -109,7 +99,7 @@ class StrategyIntrinsicExtrinsic:
             map_width=map_width,
             map_height=map_height,
             pixels_per_meter=pixels_per_meter,
-            distortion=distortion if dist.has_distortion else None,
+            distortion=calibration.distortion if calibration.distortion.has_distortion else None,
         )
 
         # Delegate to existing CameraGeometry for homography computation

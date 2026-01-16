@@ -8,68 +8,14 @@ easier testing/debugging of the camera geometry pipeline.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
 
-
-@dataclass(frozen=True)
-class DistortionCoefficients:
-    """Lens distortion coefficients using the OpenCV distortion model.
-
-    The distortion model corrects for radial and tangential lens distortion:
-    - Radial distortion (barrel/pincushion): controlled by k1, k2, k3
-    - Tangential distortion (decentering): controlled by p1, p2
-
-    For most PTZ cameras, only k1 (and sometimes k2) are significant.
-    Positive k1 = barrel distortion (edges curve outward)
-    Negative k1 = pincushion distortion (edges curve inward)
-
-    Attributes:
-        k1: First radial distortion coefficient (most significant).
-        k2: Second radial distortion coefficient.
-        p1: First tangential distortion coefficient.
-        p2: Second tangential distortion coefficient.
-        k3: Third radial distortion coefficient (usually 0).
-    """
-
-    k1: Unitless = 0.0  # type: ignore[assignment]
-    k2: Unitless = 0.0  # type: ignore[assignment]
-    p1: Unitless = 0.0  # type: ignore[assignment]
-    p2: Unitless = 0.0  # type: ignore[assignment]
-    k3: Unitless = 0.0  # type: ignore[assignment]
-
-    def to_array(self) -> np.ndarray:
-        """Convert to numpy array in OpenCV format [k1, k2, p1, p2, k3]."""
-        return np.array([self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64)
-
-    def is_zero(self) -> bool:
-        """Check if all coefficients are effectively zero."""
-        return np.allclose(self.to_array(), 0.0)
-
-    @classmethod
-    def from_array(cls, coeffs: np.ndarray) -> DistortionCoefficients:
-        """Create from numpy array [k1, k2, p1, p2, k3].
-
-        Args:
-            coeffs: Array of 5 distortion coefficients.
-
-        Returns:
-            New DistortionCoefficients instance.
-
-        Raises:
-            ValueError: If array does not have exactly 5 elements.
-        """
-        if len(coeffs) != 5:
-            raise ValueError(f"Expected 5 distortion coefficients, got {len(coeffs)}")
-        return cls(
-            k1=Unitless(float(coeffs[0])),
-            k2=Unitless(float(coeffs[1])),
-            p1=Unitless(float(coeffs[2])),
-            p2=Unitless(float(coeffs[3])),
-            k3=Unitless(float(coeffs[4])),
-        )
+if TYPE_CHECKING:
+    from poc_homography.domain.vo import LensDistortion
 
 
 @dataclass(frozen=True)
@@ -186,7 +132,7 @@ class CameraParameters:
     pixels_per_meter: Unitless
 
     # Optional parameters
-    distortion: DistortionCoefficients | None = None
+    distortion: LensDistortion | None = None
     height_uncertainty: HeightUncertainty | None = None
 
     # Optional GeoTIFF affine matrix (stored as bytes for hashability)
@@ -281,7 +227,7 @@ class CameraParameters:
         map_width: Pixels,
         map_height: Pixels,
         pixels_per_meter: Unitless,
-        distortion: DistortionCoefficients | None = None,
+        distortion: LensDistortion | None = None,
         height_uncertainty: HeightUncertainty | None = None,
         affine_matrix: np.ndarray | None = None,
     ) -> CameraParameters:
@@ -301,7 +247,7 @@ class CameraParameters:
             map_width: Map width in pixels.
             map_height: Map height in pixels.
             pixels_per_meter: Pixels per meter scaling.
-            distortion: Optional distortion coefficients.
+            distortion: Optional lens distortion coefficients.
             height_uncertainty: Optional height uncertainty bounds.
             affine_matrix: Optional 3x3 GeoTIFF affine matrix A.
 

@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
+from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import LensDistortion
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
@@ -111,7 +112,7 @@ def project_map_point_to_pixel(
         # Set up distortion if needed
         distortion = None
         if k1 != 0.0 or k2 != 0.0:
-            distortion = DistortionCoefficients(k1=Unitless(k1), k2=Unitless(k2))
+            distortion = LensDistortion.radial_only(k1=Unitless(k1), k2=Unitless(k2))
 
         params = CameraParameters.create(
             image_width=image_width,
