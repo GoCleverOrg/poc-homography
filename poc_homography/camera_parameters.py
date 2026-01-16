@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
 
 if TYPE_CHECKING:
@@ -70,8 +71,7 @@ class CameraParameters:
           - Z-axis: Forward (along optical axis, into the scene)
 
     Attributes:
-        image_width: Image width in pixels.
-        image_height: Image height in pixels.
+        dimensions: Image dimensions (width and height in pixels).
         intrinsic_matrix: 3x3 camera intrinsic matrix K (immutable copy).
         camera_position: Camera world position [X, Y, Z] in meters (immutable copy).
         pan_deg: Pan angle in degrees (positive = right/clockwise from above).
@@ -86,8 +86,7 @@ class CameraParameters:
     """
 
     # Image dimensions
-    image_width: Pixels
-    image_height: Pixels
+    dimensions: ImageDimensions
 
     # Intrinsic matrix (stored as bytes for hashability, accessed via property)
     _intrinsic_matrix_data: bytes = field(repr=False)
@@ -112,13 +111,19 @@ class CameraParameters:
     # Optional GeoTIFF affine matrix (stored as bytes for hashability)
     _affine_matrix_data: bytes | None = field(default=None, repr=False)
 
+    @property
+    def image_width(self) -> Pixels:
+        """Image width in pixels (backward-compatible property)."""
+        return self.dimensions.width
+
+    @property
+    def image_height(self) -> Pixels:
+        """Image height in pixels (backward-compatible property)."""
+        return self.dimensions.height
+
     def __post_init__(self) -> None:
         """Validate all camera parameters."""
-        # Validate image dimensions
-        if self.image_width <= 0:
-            raise ValueError(f"image_width must be positive, got {self.image_width}")
-        if self.image_height <= 0:
-            raise ValueError(f"image_height must be positive, got {self.image_height}")
+        # Validate image dimensions (already validated by ImageDimensions.create)
 
         # Validate intrinsic matrix
         K = self.intrinsic_matrix
@@ -231,6 +236,9 @@ class CameraParameters:
         Raises:
             ValueError: If any parameter fails validation.
         """
+        # Create ImageDimensions
+        dimensions = ImageDimensions.create(width=image_width, height=image_height)
+
         # Convert numpy arrays to bytes for hashability
         K_bytes = np.asarray(intrinsic_matrix, dtype=np.float64).tobytes()
         pos_bytes = np.asarray(camera_position, dtype=np.float64).tobytes()
@@ -241,8 +249,7 @@ class CameraParameters:
         )
 
         return cls(
-            image_width=image_width,
-            image_height=image_height,
+            dimensions=dimensions,
             _intrinsic_matrix_data=K_bytes,
             _camera_position_data=pos_bytes,
             pan_deg=pan_deg,
@@ -260,8 +267,7 @@ class CameraParameters:
         """Compute hash for use in sets and as dict keys."""
         return hash(
             (
-                self.image_width,
-                self.image_height,
+                self.dimensions,
                 self._intrinsic_matrix_data,
                 self._camera_position_data,
                 self.pan_deg,

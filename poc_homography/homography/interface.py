@@ -147,7 +147,7 @@ class HomographyMatrix:
         result = self.data @ pt
         if abs(result[2]) < 1e-10:
             raise ValueError("Point transforms to infinity (on horizon)")
-        return PixelPoint(float(result[0] / result[2]), float(result[1] / result[2]))
+        return PixelPoint.create(result[0] / result[2], result[1] / result[2])
 
 
 @dataclass(frozen=True)

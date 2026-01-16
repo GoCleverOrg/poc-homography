@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.domain.vo.matrix3x3 import Matrix3x3
 from poc_homography.types import Millimeters, Pixels, PixelsFloat
 
@@ -32,15 +33,13 @@ class CameraIntrinsics:
     Attributes:
         sensor_width: Sensor width in millimeters.
         base_focal_length: Base focal length in millimeters (at 1x zoom).
-        image_width: Image width in pixels.
-        image_height: Image height in pixels.
+        dimensions: Image dimensions (width and height in pixels).
         focal_length: Focal length in millimeters (zoom-adjusted).
     """
 
     sensor_width: Millimeters
     base_focal_length: Millimeters
-    image_width: Pixels
-    image_height: Pixels
+    dimensions: ImageDimensions
     focal_length: Millimeters
     _K: Matrix3x3 = field(repr=False)
     _sentinel: object = field(default=None, repr=False, compare=False, hash=False)
@@ -52,6 +51,16 @@ class CameraIntrinsics:
                 "CameraIntrinsics cannot be instantiated directly. "
                 "Use CameraIntrinsics.create() instead."
             )
+
+    @property
+    def image_width(self) -> Pixels:
+        """Image width in pixels (backward-compatible property)."""
+        return self.dimensions.width
+
+    @property
+    def image_height(self) -> Pixels:
+        """Image height in pixels (backward-compatible property)."""
+        return self.dimensions.height
 
     @classmethod
     def create(
@@ -88,10 +97,13 @@ class CameraIntrinsics:
         if focal_length <= 0:
             raise ValueError(f"focal_length must be positive, got {focal_length}")
 
+        # Create ImageDimensions
+        dimensions = ImageDimensions.create(width=image_width, height=image_height)
+
         # Compute derived values
-        focal_length_px = focal_length * (image_width / sensor_width)
-        cx = image_width / 2.0
-        cy = image_height / 2.0
+        focal_length_px = focal_length * (dimensions.width / sensor_width)
+        cx = dimensions.center_x
+        cy = dimensions.center_y
 
         # Build intrinsic matrix
         K_array = np.array(
@@ -107,8 +119,7 @@ class CameraIntrinsics:
         return cls(
             sensor_width=sensor_width,
             base_focal_length=base_focal_length,
-            image_width=image_width,
-            image_height=image_height,
+            dimensions=dimensions,
             focal_length=focal_length,
             _K=K,
             _sentinel=_PRIVATE_SENTINEL,
@@ -117,17 +128,17 @@ class CameraIntrinsics:
     @property
     def focal_length_px(self) -> PixelsFloat:
         """Focal length in pixels (computed from mm and sensor width)."""
-        return PixelsFloat(self.focal_length * (self.image_width / self.sensor_width))
+        return PixelsFloat(self.focal_length * (self.dimensions.width / self.sensor_width))
 
     @property
     def cx(self) -> PixelsFloat:
         """Principal point X coordinate (image center)."""
-        return PixelsFloat(self.image_width / 2.0)
+        return self.dimensions.center_x
 
     @property
     def cy(self) -> PixelsFloat:
         """Principal point Y coordinate (image center)."""
-        return PixelsFloat(self.image_height / 2.0)
+        return self.dimensions.center_y
 
     def to_K(self) -> Matrix3x3:
         """Get the 3x3 intrinsic matrix K.

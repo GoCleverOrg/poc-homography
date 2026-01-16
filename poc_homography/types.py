@@ -23,6 +23,7 @@ Usage Example:
     >>> fov: Degrees = get_fov(Unitless(5.0), Millimeters(6.78))
 """
 
+import math
 from typing import NewType
 
 # Angular units
@@ -57,3 +58,15 @@ Millimeters = NewType("Millimeters", float)
 # Dimensionless quantities
 Unitless = NewType("Unitless", float)
 """Dimensionless scalar (e.g., zoom factor, scale factor, confidence, ratios)"""
+
+
+def degrees_to_radians(degrees: Degrees) -> Radians:
+    """Convert degrees to radians with proper type annotation.
+
+    Args:
+        degrees: Angle in degrees.
+
+    Returns:
+        Angle in radians.
+    """
+    return Radians(math.radians(float(degrees)))

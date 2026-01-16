@@ -31,12 +31,13 @@ This assessment identifies duplication, missing abstractions, and architectural 
 | `Annotation` | `domain/entities/annotation.py` | GCP to pixel observation link |
 | `CapturedFrame` | `domain/entities/captured_frame.py` | Photo with PTZ state |
 
-### Value Objects (15)
+### Value Objects (16)
 
 | VO | Location | Purpose |
 |----|----------|---------|
 | `CameraIntrinsics` | `domain/vo/camera_intrinsics.py` | Sensor/lens parameters, computes K matrix |
-| `Orientation` | `domain/vo/orientation.py` | Yaw/pitch/roll angles, computes rotation matrix |
+| `Orientation` | `domain/vo/orientation.py` | Yaw/pitch/roll angles, uses Rotation |
+| `Rotation` | `domain/vo/rotation.py` | 3D rotation matrix (ZYX Euler convention) |
 | `PTZState` | `domain/vo/ptz_state.py` | Pan/tilt/zoom values |
 | `LensDistortion` | `domain/vo/lens_distortion.py` | Distortion coefficients (k1, k2, p1, p2, k3) |
 | `HeightUncertainty` | `domain/vo/height_uncertainty.py` | Height confidence interval for error propagation |
@@ -314,14 +315,15 @@ class ExampleVO:
 |-------|------|--------|---------|----------|-------|------------|--------|
 | `Matrix3x3` | VO | ✓ | ✓ | ✓ | ✓ bytes | ✓ | ✅ Reference |
 | `Homography` | VO | ✓ | ✓ | ✓ | via Matrix3x3 | ✓ | ✅ Reference |
-| `CameraIntrinsics` | VO | ✓ | ✗ | ✗ | ✓ property | ✗ | ⚠️ Refactor |
-| `Orientation` | VO | ✓ | ✗ | ✗ | ✓ property | ✗ | ⚠️ Refactor |
+| `CameraIntrinsics` | VO | ✓ | ✓ | ✓ | via Matrix3x3 | ✓ | ✅ Reference |
+| `Orientation` | VO | ✓ | ✓ | ✓ | via Rotation | ✓ | ✅ Reference |
+| `Rotation` | VO | ✓ | ✓ | ✓ | via Matrix3x3 | ✓ | ✅ Reference |
 | `HeightUncertainty` | VO | ✓ | helper | ✗ | ✗ | `__post_init__` | ⚠️ Refactor |
 | `LensDistortion` | VO | ✓ | helpers | ✗ | ✓ methods | partial | ⚠️ Refactor |
 | `GeoTransform` | VO | ✓ | ✗ | ✗ | ✗ | in method | ⚠️ Refactor |
 | `GroundControlPoint` | Entity | ✗ | ✗ | ✗ | ✗ | `__post_init__` | ⚠️ Refactor |
 | `CapturedFrame` | Entity | ✓ | ✓ | ✗ | ✗ | ✗ | ⚠️ Add sentinel |
-| `PixelPoint` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
+| `PixelPoint` | VO | ✓ | ✓ | ✗ | ✗ | ✗ | ✅ Simple OK |
 | `MapPoint` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
 | `GeoTiff` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
 | `Credential` | VO | ✓ | ✗ | ✗ | ✗ | ✗ | ✅ Simple OK |
@@ -338,43 +340,7 @@ class ExampleVO:
 
 ## Refactoring Opportunities
 
-### Priority 1: Numpy Arrays Without Immutability
-
-These VOs return mutable numpy arrays from properties, breaking immutability guarantees.
-
-#### CameraIntrinsics
-
-**Current:** `K` property computes and returns new numpy array each call.
-
-```python
-@property
-def K(self) -> np.ndarray:
-    # Returns mutable 3x3 intrinsic matrix
-```
-
-**Recommendation:**
-- Store `K` as `Matrix3x3` internally
-- Add `create()` factory with sentinel pattern
-- Add `to_matrix() -> Matrix3x3` method
-- Validate focal length and principal point ranges
-
-#### Orientation
-
-**Current:** `rotation_matrix` property computes and returns new numpy array.
-
-```python
-@property
-def rotation_matrix(self) -> np.ndarray:
-    # Returns mutable 3x3 rotation matrix
-```
-
-**Recommendation:**
-- Store computed rotation matrix as `Matrix3x3` internally
-- Add `create()` factory with sentinel pattern
-- Add `to_rotation_matrix() -> Matrix3x3` method
-- Validate angle ranges
-
-### Priority 2: Hybrid Validation Patterns
+### Priority 1: Hybrid Validation Patterns
 
 These classes have validation split between `__post_init__` and factory methods.
 
@@ -404,7 +370,7 @@ These classes have validation split between `__post_init__` and factory methods.
 - Add sentinel check to `__post_init__`
 - Ensures all construction goes through `create()`
 
-### Priority 3: Missing Validation
+### Priority 2: Missing Validation
 
 #### LensDistortion
 
@@ -422,7 +388,7 @@ These classes have validation split between `__post_init__` and factory methods.
 - Add `create()` factory that validates non-singularity
 - Fail fast at construction, not at use
 
-### Priority 4: Minor Improvements
+### Priority 3: Minor Improvements
 
 #### Map Entity
 
@@ -515,5 +481,6 @@ poc_homography/
         ├── orientation.py
         ├── photo.py
         ├── pixel_point.py
-        └── ptz_state.py
+        ├── ptz_state.py
+        └── rotation.py
 ```

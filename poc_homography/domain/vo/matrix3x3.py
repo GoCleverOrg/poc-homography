@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from poc_homography.domain.vo.vector3 import Vector3
+    from poc_homography.types import Radians
 
 _PRIVATE_SENTINEL = object()
 
@@ -17,6 +23,7 @@ class Matrix3x3:
     - Immutability (frozen dataclass with bytes storage)
     - Hashability (can be used as dict key or in sets)
     - Common matrix operations (determinant, condition number, inverse)
+    - Rotation matrix factories
 
     Use the `create()` factory method to construct instances.
     Direct constructor access is reserved for internal use.
@@ -54,6 +61,106 @@ class Matrix3x3:
             raise ValueError("Matrix contains NaN or Infinity values")
 
         return cls(_data=arr.tobytes(), _sentinel=_PRIVATE_SENTINEL)
+
+    @classmethod
+    def rotation_x(cls, angle_rad: Radians) -> Matrix3x3:
+        """Create rotation matrix around X axis.
+
+        Args:
+            angle_rad: Rotation angle in radians.
+
+        Returns:
+            Rotation matrix for rotation around X axis.
+        """
+        c, s = math.cos(angle_rad), math.sin(angle_rad)
+        return cls.create(
+            np.array(
+                [
+                    [1, 0, 0],
+                    [0, c, -s],
+                    [0, s, c],
+                ],
+                dtype=np.float64,
+            )
+        )
+
+    @classmethod
+    def rotation_y(cls, angle_rad: Radians) -> Matrix3x3:
+        """Create rotation matrix around Y axis.
+
+        Args:
+            angle_rad: Rotation angle in radians.
+
+        Returns:
+            Rotation matrix for rotation around Y axis.
+        """
+        c, s = math.cos(angle_rad), math.sin(angle_rad)
+        return cls.create(
+            np.array(
+                [
+                    [c, 0, s],
+                    [0, 1, 0],
+                    [-s, 0, c],
+                ],
+                dtype=np.float64,
+            )
+        )
+
+    @classmethod
+    def rotation_z(cls, angle_rad: Radians) -> Matrix3x3:
+        """Create rotation matrix around Z axis.
+
+        Args:
+            angle_rad: Rotation angle in radians.
+
+        Returns:
+            Rotation matrix for rotation around Z axis.
+        """
+        c, s = math.cos(angle_rad), math.sin(angle_rad)
+        return cls.create(
+            np.array(
+                [
+                    [c, -s, 0],
+                    [s, c, 0],
+                    [0, 0, 1],
+                ],
+                dtype=np.float64,
+            )
+        )
+
+    @classmethod
+    def from_euler_zyx(cls, yaw_rad: Radians, pitch_rad: Radians, roll_rad: Radians) -> Matrix3x3:
+        """Create rotation matrix from ZYX Euler angles.
+
+        Uses the ZYX (yaw-pitch-roll) convention:
+        R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+
+        This computes the combined rotation matrix directly, avoiding
+        intermediate Matrix3x3 allocations.
+
+        Args:
+            yaw_rad: Rotation around Z-axis in radians.
+            pitch_rad: Rotation around Y-axis in radians.
+            roll_rad: Rotation around X-axis in radians.
+
+        Returns:
+            Rotation matrix as Matrix3x3.
+        """
+        cy, sy = math.cos(yaw_rad), math.sin(yaw_rad)
+        cp, sp = math.cos(pitch_rad), math.sin(pitch_rad)
+        cr, sr = math.cos(roll_rad), math.sin(roll_rad)
+
+        # Direct computation of R = Rz @ Ry @ Rx
+        return cls.create(
+            np.array(
+                [
+                    [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+                    [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+                    [-sp, cp * sr, cp * cr],
+                ],
+                dtype=np.float64,
+            )
+        )
 
     def to_array(self) -> np.ndarray:
         """Get the matrix as an immutable numpy array.
@@ -97,16 +204,28 @@ class Matrix3x3:
         inv_arr = np.linalg.inv(arr)
         return Matrix3x3.create(inv_arr)
 
-    def __matmul__(self, other: np.ndarray) -> np.ndarray:
-        """Matrix multiplication with a numpy array.
+    @overload
+    def __matmul__(self, other: Matrix3x3) -> Matrix3x3: ...
+
+    @overload
+    def __matmul__(self, other: Vector3) -> Vector3: ...
+
+    def __matmul__(self, other: Matrix3x3 | Vector3) -> Matrix3x3 | Vector3:
+        """Matrix multiplication.
 
         Args:
-            other: Array to multiply (typically a vector or another matrix).
+            other: Matrix3x3 for matrix-matrix multiplication,
+                   or Vector3 for matrix-vector multiplication.
 
         Returns:
-            Result of matrix multiplication.
+            Matrix3x3 if other is Matrix3x3, Vector3 if other is Vector3.
         """
-        return self.to_array() @ other
+        from poc_homography.domain.vo.vector3 import Vector3
+
+        if isinstance(other, Vector3):
+            result = self.to_array() @ other.to_array()
+            return Vector3.from_array(result)
+        return Matrix3x3.create(self.to_array() @ other.to_array())
 
     def to_list(self) -> list[list[float]]:
         """Convert to nested list for serialization."""

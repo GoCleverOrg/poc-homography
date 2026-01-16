@@ -45,6 +45,7 @@ import math
 import numpy as np
 
 from poc_homography.domain import MapPoint
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.interface import (
     HomographyProvider,
@@ -54,7 +55,7 @@ from poc_homography.homography.parameters import (
     IntrinsicExtrinsicConfig,
     IntrinsicExtrinsicResult,
 )
-from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
+from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless, degrees_to_radians
 
 logger = logging.getLogger(__name__)
 
@@ -153,13 +154,22 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
                 f"Image dimensions must be positive, got width={width}, height={height}"
             )
 
-        self.width = width
-        self.height = height
+        self.dimensions = ImageDimensions.create(width=width, height=height)
         self.map_id = map_id
         self.pixels_per_meter = pixels_per_meter
         self.sensor_width_mm = sensor_width_mm
         self.base_focal_length_mm = base_focal_length_mm
         self.calibration_table = calibration_table
+
+    @property
+    def width(self) -> Pixels:
+        """Image width in pixels (backward-compatible property)."""
+        return self.dimensions.width
+
+    @property
+    def height(self) -> Pixels:
+        """Image height in pixels (backward-compatible property)."""
+        return self.dimensions.height
 
     def _interpolate_calibration_params(self, zoom_factor: float) -> dict[str, float] | None:
         """
@@ -348,9 +358,9 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         """
         Calculate rotation matrix from world to camera coordinates (static version).
         """
-        pan_rad = math.radians(pan_deg)
-        tilt_rad = math.radians(tilt_deg)
-        roll_rad = math.radians(roll_deg)
+        pan_rad = degrees_to_radians(pan_deg)
+        tilt_rad = degrees_to_radians(tilt_deg)
+        roll_rad = degrees_to_radians(roll_deg)
 
         R_base = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
 
@@ -750,10 +760,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
 
         return MapPoint(
             map_id=map_id,
-            pixel_point=PixelPoint(
-                _x=float(map_pixel_x),
-                _y=float(map_pixel_y),
-            ),
+            pixel_point=PixelPoint.create(map_pixel_x, map_pixel_y),
         )
 
     @staticmethod

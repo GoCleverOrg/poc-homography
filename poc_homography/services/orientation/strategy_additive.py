@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from poc_homography.domain.vo import Orientation
-from poc_homography.types import Degrees
-
 if TYPE_CHECKING:
     from poc_homography.domain.enums import TiltConvention
-    from poc_homography.domain.vo import PTZState
+    from poc_homography.domain.vo import Orientation, PTZState
 
 
 class StrategyOrientationAdditive:
@@ -18,11 +15,6 @@ class StrategyOrientationAdditive:
     This strategy computes final orientation by directly adding PTZ angles
     to base orientation angles. This is valid for small angles and when
     roll is negligible.
-
-    Formula:
-        final_yaw = base_yaw + ptz_pan
-        final_pitch = base_pitch + ptz_tilt * tilt_convention.sign
-        final_roll = base_roll (PTZ doesn't change roll)
     """
 
     def compute(
@@ -41,8 +33,4 @@ class StrategyOrientationAdditive:
         Returns:
             Final computed orientation with combined angles.
         """
-        final_yaw = Degrees(float(base.yaw) + ptz.pan_raw)
-        final_pitch = Degrees(float(base.pitch) + ptz.tilt_deg * tilt_convention.sign)
-        final_roll = base.roll  # PTZ doesn't change roll
-
-        return Orientation(yaw=final_yaw, pitch=final_pitch, roll=final_roll)
+        return base + ptz.to_orientation(tilt_convention)

@@ -236,10 +236,7 @@ class MapPointHomography:
 
         return MapPoint(
             map_id=self.map_id,
-            pixel_point=PixelPoint(
-                _x=float(transformed[0, 0, 0]),
-                _y=float(transformed[0, 0, 1]),
-            ),
+            pixel_point=PixelPoint.create(transformed[0, 0, 0], transformed[0, 0, 1]),
         )
 
     def map_to_camera(self, map_coord: PixelPoint) -> PixelPoint:
@@ -257,7 +254,7 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         point = np.array([[[map_coord.x, map_coord.y]]], dtype=np.float32)
         transformed = cv2.perspectiveTransform(point, H_inv)
-        return PixelPoint(float(transformed[0, 0, 0]), float(transformed[0, 0, 1]))
+        return PixelPoint.create(transformed[0, 0, 0], transformed[0, 0, 1])
 
     def camera_to_map_batch(
         self,
@@ -280,18 +277,13 @@ class MapPointHomography:
         points = np.array([[[p.x, p.y]] for p in camera_pixels], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H)
 
-        results = []
-        for t in transformed:
-            results.append(
-                MapPoint(
-                    map_id=self.map_id,
-                    pixel_point=PixelPoint(
-                        _x=float(t[0][0]),
-                        _y=float(t[0][1]),
-                    ),
-                )
+        return [
+            MapPoint(
+                map_id=self.map_id,
+                pixel_point=PixelPoint.create(t[0][0], t[0][1]),
             )
-        return results
+            for t in transformed
+        ]
 
     def map_to_camera_batch(self, map_coords: list[PixelPoint]) -> list[PixelPoint]:
         """Transform multiple map coordinates to camera pixels.
@@ -308,7 +300,7 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         points = np.array([[[c.x, c.y]] for c in map_coords], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H_inv)
-        return [PixelPoint(float(t[0][0]), float(t[0][1])) for t in transformed]
+        return [PixelPoint.create(t[0][0], t[0][1]) for t in transformed]
 
     def is_valid(self) -> bool:
         """Check if a valid homography has been computed."""

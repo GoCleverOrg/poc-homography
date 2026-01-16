@@ -213,7 +213,7 @@ class TestHomographyProjection:
         homography = Homography.create(make_simple_homography())
 
         # (0, 0) -> (960, 540)
-        result = homography.project(PixelPoint(_x=0.0, _y=0.0))
+        result = homography.project(PixelPoint.create(0.0, 0.0))
 
         assert float(result.x) == pytest.approx(960.0, abs=0.001)
         assert float(result.y) == pytest.approx(540.0, abs=0.001)
@@ -223,7 +223,7 @@ class TestHomographyProjection:
         homography = Homography.create(make_simple_homography())
 
         # (1, 1) -> (100*1 + 960, -100*1 + 540) = (1060, 440)
-        result = homography.project(PixelPoint(_x=1.0, _y=1.0))
+        result = homography.project(PixelPoint.create(1.0, 1.0))
 
         assert float(result.x) == pytest.approx(1060.0, abs=0.001)
         assert float(result.y) == pytest.approx(440.0, abs=0.001)
@@ -233,9 +233,9 @@ class TestHomographyProjection:
         homography = Homography.create(make_perspective_homography())
 
         test_points = [
-            PixelPoint(_x=100.0, _y=200.0),
-            PixelPoint(_x=500.0, _y=300.0),
-            PixelPoint(_x=960.0, _y=540.0),
+            PixelPoint.create(100.0, 200.0),
+            PixelPoint.create(500.0, 300.0),
+            PixelPoint.create(960.0, 540.0),
         ]
 
         for point in test_points:
@@ -250,9 +250,9 @@ class TestHomographyProjection:
         homography = Homography.create(make_perspective_homography())
 
         test_points = [
-            PixelPoint(_x=800.0, _y=400.0),
-            PixelPoint(_x=960.0, _y=540.0),
-            PixelPoint(_x=1200.0, _y=700.0),
+            PixelPoint.create(800.0, 400.0),
+            PixelPoint.create(960.0, 540.0),
+            PixelPoint.create(1200.0, 700.0),
         ]
 
         for point in test_points:
@@ -274,7 +274,7 @@ class TestHomographyProjection:
         homography = Homography.create(H)
 
         # w = 0.01*y + 1 = 0 when y = -100
-        point_at_infinity = PixelPoint(_x=0.0, _y=-100.0)
+        point_at_infinity = PixelPoint.create(0.0, -100.0)
 
         with pytest.raises(ValueError, match="infinity"):
             homography.project(point_at_infinity)

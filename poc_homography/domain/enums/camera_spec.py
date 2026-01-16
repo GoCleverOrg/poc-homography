@@ -7,6 +7,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from poc_homography.domain.enums.tilt_convention import TiltConvention
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.types import Millimeters, Pixels
 
 if TYPE_CHECKING:
@@ -60,8 +61,7 @@ class CameraSpec(Enum):
         "DS-2DF8425IX-AELW",  # model_name
         Millimeters(6.78),  # sensor_width (calculated from 59.8° FOV at 5.9mm)
         Millimeters(5.9),  # base_focal_length
-        Pixels(2560),  # image_width
-        Pixels(1440),  # image_height
+        ImageDimensions.create(width=2560, height=1440),  # dimensions
         TiltConvention.POSITIVE_DOWN,  # tilt_convention
         25.0,  # max_zoom
         hikvision_rtsp_url,  # rtsp_url_builder
@@ -72,8 +72,7 @@ class CameraSpec(Enum):
         model_name: str,
         sensor_width: Millimeters,
         base_focal_length: Millimeters,
-        image_width: Pixels,
-        image_height: Pixels,
+        dimensions: ImageDimensions,
         tilt_convention: TiltConvention,
         max_zoom: float,
         rtsp_url_builder: RtspUrlBuilder,
@@ -81,8 +80,7 @@ class CameraSpec(Enum):
         self._model_name = model_name
         self._sensor_width = sensor_width
         self._base_focal_length = base_focal_length
-        self._image_width = image_width
-        self._image_height = image_height
+        self._dimensions = dimensions
         self._tilt_convention = tilt_convention
         self._max_zoom = max_zoom
         self._rtsp_url_builder = rtsp_url_builder
@@ -103,14 +101,19 @@ class CameraSpec(Enum):
         return self._base_focal_length
 
     @property
+    def dimensions(self) -> ImageDimensions:
+        """Image dimensions (width and height in pixels)."""
+        return self._dimensions
+
+    @property
     def image_width(self) -> Pixels:
-        """Image width in pixels."""
-        return self._image_width
+        """Image width in pixels (backward-compatible property)."""
+        return self._dimensions.width
 
     @property
     def image_height(self) -> Pixels:
-        """Image height in pixels."""
-        return self._image_height
+        """Image height in pixels (backward-compatible property)."""
+        return self._dimensions.height
 
     @property
     def tilt_convention(self) -> TiltConvention:

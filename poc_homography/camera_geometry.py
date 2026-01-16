@@ -11,7 +11,8 @@ from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
 )
-from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
+from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless, degrees_to_radians
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,17 @@ class CameraGeometry:
             w: Image width (pixels).
             h: Image height (pixels).
         """
-        self.w = w
-        self.h = h
+        self.dimensions = ImageDimensions.create(width=w, height=h)
+
+    @property
+    def w(self) -> Pixels:
+        """Image width in pixels (backward-compatible property)."""
+        return self.dimensions.width
+
+    @property
+    def h(self) -> Pixels:
+        """Image height in pixels (backward-compatible property)."""
+        return self.dimensions.height
 
     @staticmethod
     def get_intrinsics(
@@ -425,9 +435,9 @@ class CameraGeometry:
         Returns:
             R: 3x3 rotation matrix transforming world coordinates to camera frame
         """
-        pan_rad = math.radians(pan_deg)
-        tilt_rad = math.radians(tilt_deg)
-        roll_rad = math.radians(roll_deg)
+        pan_rad = degrees_to_radians(pan_deg)
+        tilt_rad = degrees_to_radians(tilt_deg)
+        roll_rad = degrees_to_radians(roll_deg)
 
         # Base transformation from World to Camera when pan=0, tilt=0
         R_base = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])

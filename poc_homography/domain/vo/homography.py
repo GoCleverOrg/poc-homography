@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from poc_homography.domain.vo.matrix3x3 import Matrix3x3
 from poc_homography.domain.vo.pixel_point import PixelPoint
+
+if TYPE_CHECKING:
+    from poc_homography.domain.vo.vector3 import Vector3
 
 CONDITION_THRESHOLD = 1e10
 DETERMINANT_THRESHOLD = 1e-10
@@ -130,16 +133,8 @@ class Homography:
         Raises:
             ValueError: If point projects to infinity (homogeneous coordinate near zero).
         """
-        pt_homogeneous = np.array([float(point.x), float(point.y), 1.0])
-        result_homogeneous = self._matrix @ pt_homogeneous
-
-        if abs(result_homogeneous[2]) < 1e-10:
-            raise ValueError("Point projects to infinity (homogeneous coordinate near zero)")
-
-        x = result_homogeneous[0] / result_homogeneous[2]
-        y = result_homogeneous[1] / result_homogeneous[2]
-
-        return PixelPoint(_x=float(x), _y=float(y))
+        result: Vector3 = self._matrix @ point.to_homogeneous()
+        return PixelPoint.from_homogeneous(result)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization.

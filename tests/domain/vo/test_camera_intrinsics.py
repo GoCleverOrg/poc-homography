@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from poc_homography.domain.vo.camera_intrinsics import CameraIntrinsics
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.domain.vo.matrix3x3 import Matrix3x3
 from poc_homography.types import Millimeters, Pixels
 
@@ -110,13 +111,13 @@ class TestCameraIntrinsicsCreation:
     def test_direct_constructor_raises_error(self):
         """Test that direct constructor access is blocked."""
         K = Matrix3x3.create(np.eye(3))
+        dims = ImageDimensions.create(width=IMAGE_WIDTH, height=IMAGE_HEIGHT)
 
         with pytest.raises(TypeError, match="cannot be instantiated directly"):
             CameraIntrinsics(
                 sensor_width=SENSOR_WIDTH,
                 base_focal_length=BASE_FOCAL_LENGTH,
-                image_width=IMAGE_WIDTH,
-                image_height=IMAGE_HEIGHT,
+                dimensions=dims,
                 focal_length=FOCAL_LENGTH_1X,
                 _K=K,
             )

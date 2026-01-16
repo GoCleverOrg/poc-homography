@@ -237,6 +237,72 @@ class TestMatrix3x3Inverse:
             m.inverse()
 
 
+class TestMatrix3x3RotationFactories:
+    """Test rotation matrix factory methods."""
+
+    def test_rotation_x_zero(self):
+        """Test rotation_x(0) returns identity."""
+        m = Matrix3x3.rotation_x(0.0)
+
+        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+
+    def test_rotation_x_90_degrees(self):
+        """Test rotation_x(90 deg) rotates Y to Z."""
+        m = Matrix3x3.rotation_x(np.pi / 2)
+        v = np.array([0.0, 1.0, 0.0])
+
+        result = m @ v
+
+        np.testing.assert_array_almost_equal(result, [0.0, 0.0, 1.0])
+
+    def test_rotation_y_zero(self):
+        """Test rotation_y(0) returns identity."""
+        m = Matrix3x3.rotation_y(0.0)
+
+        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+
+    def test_rotation_y_90_degrees(self):
+        """Test rotation_y(90 deg) rotates Z to X."""
+        m = Matrix3x3.rotation_y(np.pi / 2)
+        v = np.array([0.0, 0.0, 1.0])
+
+        result = m @ v
+
+        np.testing.assert_array_almost_equal(result, [1.0, 0.0, 0.0])
+
+    def test_rotation_z_zero(self):
+        """Test rotation_z(0) returns identity."""
+        m = Matrix3x3.rotation_z(0.0)
+
+        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+
+    def test_rotation_z_90_degrees(self):
+        """Test rotation_z(90 deg) rotates X to Y."""
+        m = Matrix3x3.rotation_z(np.pi / 2)
+        v = np.array([1.0, 0.0, 0.0])
+
+        result = m @ v
+
+        np.testing.assert_array_almost_equal(result, [0.0, 1.0, 0.0])
+
+    def test_rotation_matrices_are_orthogonal(self):
+        """Test that rotation matrices have determinant 1."""
+        for angle in [0.0, np.pi / 6, np.pi / 4, np.pi / 2, np.pi]:
+            mx = Matrix3x3.rotation_x(angle)
+            my = Matrix3x3.rotation_y(angle)
+            mz = Matrix3x3.rotation_z(angle)
+
+            assert mx.determinant == pytest.approx(1.0)
+            assert my.determinant == pytest.approx(1.0)
+            assert mz.determinant == pytest.approx(1.0)
+
+    def test_rotation_matrices_condition_number(self):
+        """Test that rotation matrices have condition number 1."""
+        m = Matrix3x3.rotation_x(np.pi / 3)
+
+        assert m.condition_number == pytest.approx(1.0)
+
+
 class TestMatrix3x3Multiplication:
     """Test matrix multiplication."""
 
@@ -259,8 +325,8 @@ class TestMatrix3x3Multiplication:
 
         np.testing.assert_array_almost_equal(result, v)
 
-    def test_matmul_with_matrix(self):
-        """Test multiplication with another matrix."""
+    def test_matmul_with_ndarray(self):
+        """Test multiplication with numpy array."""
         m = Matrix3x3.create(make_simple_matrix())
         other = make_rotation_matrix(np.pi / 6)
 
@@ -268,6 +334,28 @@ class TestMatrix3x3Multiplication:
         expected = make_simple_matrix() @ other
 
         np.testing.assert_array_almost_equal(result, expected)
+
+    def test_matmul_with_matrix3x3(self):
+        """Test multiplication of Matrix3x3 @ Matrix3x3 returns Matrix3x3."""
+        m1 = Matrix3x3.create(make_simple_matrix())
+        m2 = Matrix3x3.create(make_rotation_matrix(np.pi / 6))
+
+        result = m1 @ m2
+
+        assert isinstance(result, Matrix3x3)
+        expected = make_simple_matrix() @ make_rotation_matrix(np.pi / 6)
+        np.testing.assert_array_almost_equal(result.to_array(), expected)
+
+    def test_matmul_rotation_composition(self):
+        """Test composing rotations via @."""
+        rx = Matrix3x3.rotation_x(np.pi / 4)
+        ry = Matrix3x3.rotation_y(np.pi / 6)
+
+        result = rx @ ry
+
+        assert isinstance(result, Matrix3x3)
+        expected = rx.to_array() @ ry.to_array()
+        np.testing.assert_array_almost_equal(result.to_array(), expected)
 
 
 class TestMatrix3x3Serialization:

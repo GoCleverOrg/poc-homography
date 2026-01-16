@@ -266,7 +266,7 @@ class TestCameraParametersValidation:
 
     def test_invalid_image_width_raises(self, sample_intrinsic_matrix, sample_camera_position):
         """Creating with non-positive image_width raises ValueError."""
-        with pytest.raises(ValueError, match="image_width must be positive"):
+        with pytest.raises(ValueError, match="width must be positive"):
             CameraParameters.create(
                 image_width=Pixels(0),
                 image_height=Pixels(1080),
@@ -282,7 +282,7 @@ class TestCameraParametersValidation:
 
     def test_invalid_image_height_raises(self, sample_intrinsic_matrix, sample_camera_position):
         """Creating with non-positive image_height raises ValueError."""
-        with pytest.raises(ValueError, match="image_height must be positive"):
+        with pytest.raises(ValueError, match="height must be positive"):
             CameraParameters.create(
                 image_width=Pixels(1920),
                 image_height=Pixels(-1),

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -25,13 +27,21 @@ class Mask:
 
     Attributes:
         data: Binary mask as numpy array (dtype=uint8, values 0 or 255).
-        height: Height of the mask in pixels.
-        width: Width of the mask in pixels.
+        dimensions: Dimensions of the mask (width and height in pixels).
     """
 
     data: NDArray[np.uint8]
-    height: int
-    width: int
+    dimensions: ImageDimensions
+
+    @property
+    def width(self) -> int:
+        """Width of the mask in pixels (backward-compatible property)."""
+        return self.dimensions.width
+
+    @property
+    def height(self) -> int:
+        """Height of the mask in pixels (backward-compatible property)."""
+        return self.dimensions.height
 
     @property
     def coverage(self) -> float:
@@ -40,7 +50,7 @@ class Mask:
         Returns:
             Coverage percentage (0.0-100.0).
         """
-        total_pixels = self.height * self.width
+        total_pixels = self.dimensions.area
         if total_pixels == 0:
             return 0.0
         white_pixels = cv2.countNonZero(self.data)
@@ -62,6 +72,7 @@ class Mask:
             Mask with the polygons filled in.
         """
         height, width = shape
+        dimensions = ImageDimensions.create(width=width, height=height)
         mask_data = np.zeros((height, width), dtype=np.uint8)
 
         for polygon in polygons:
@@ -69,7 +80,7 @@ class Mask:
                 pts = np.array(polygon, dtype=np.int32)
                 cv2.fillPoly(mask_data, [pts], (255,))
 
-        return cls(data=mask_data, height=height, width=width)
+        return cls(data=mask_data, dimensions=dimensions)
 
     @classmethod
     def empty(cls, shape: tuple[int, int]) -> Mask:
@@ -82,8 +93,8 @@ class Mask:
             Empty mask with no regions filled.
         """
         height, width = shape
+        dimensions = ImageDimensions.create(width=width, height=height)
         return cls(
             data=np.zeros((height, width), dtype=np.uint8),
-            height=height,
-            width=width,
+            dimensions=dimensions,
         )

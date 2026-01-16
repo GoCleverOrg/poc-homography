@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 from poc_homography.domain import MapPoint
+from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.interface import (
     HomographyApproach,
@@ -142,8 +143,7 @@ class FeatureMatchHomography(HomographyProvider):
         if fitting_method not in valid_methods:
             raise ValueError(f"fitting_method must be one of {valid_methods}, got {fitting_method}")
 
-        self.width = width
-        self.height = height
+        self.dimensions = ImageDimensions.create(width=width, height=height)
         self.map_id = map_id
         self.detector = detector
         self.min_matches = min_matches
@@ -156,6 +156,16 @@ class FeatureMatchHomography(HomographyProvider):
         self.H_inv = np.eye(3)  # Maps image to map pixels
         self._confidence: float = 0.0
         self._last_metadata: dict[str, Any] = {}
+
+    @property
+    def width(self) -> int:
+        """Image width in pixels (backward-compatible property)."""
+        return self.dimensions.width
+
+    @property
+    def height(self) -> int:
+        """Image height in pixels (backward-compatible property)."""
+        return self.dimensions.height
 
     def _calculate_spatial_distribution(self, image_points: np.ndarray) -> dict[str, Any]:
         """
@@ -447,7 +457,7 @@ class FeatureMatchHomography(HomographyProvider):
         pixel_x = map_homogeneous[0] / map_homogeneous[2]
         pixel_y = map_homogeneous[1] / map_homogeneous[2]
 
-        return PixelPoint(float(pixel_x), float(pixel_y))
+        return PixelPoint.create(pixel_x, pixel_y)
 
     def _compute_homography_with_method(
         self, local_points: np.ndarray, image_points: np.ndarray
@@ -809,10 +819,7 @@ class FeatureMatchHomography(HomographyProvider):
 
         return MapPoint(
             map_id=self.map_id,
-            pixel_point=PixelPoint(
-                _x=float(map_pixel.x),
-                _y=float(map_pixel.y),
-            ),
+            pixel_point=PixelPoint.create(map_pixel.x, map_pixel.y),
         )
 
     def project_points(
