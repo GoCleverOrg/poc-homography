@@ -92,6 +92,47 @@ class CameraAnnotatorState:
 
         return []
 
+    def switch_image(self, filename: str) -> bool:
+        """Switch to a different image file.
+
+        Args:
+            filename: Name of the image file in TEST_DATA_DIR.
+
+        Returns:
+            True if successful, False if file doesn't exist.
+        """
+        new_path = TEST_DATA_DIR / filename
+        if not new_path.exists():
+            return False
+
+        self.image_path = new_path.resolve()
+        self.image_filename = filename
+        print(f"Switched to image: {filename}")
+        return True
+
+
+# Supported image extensions
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
+
+def get_available_images() -> list[str]:
+    """Scan TEST_DATA_DIR for available image files.
+
+    Returns:
+        Sorted list of image filenames matching supported extensions.
+    """
+    if not TEST_DATA_DIR.exists():
+        return []
+
+    images = []
+    for ext in IMAGE_EXTENSIONS:
+        images.extend(f.name for f in TEST_DATA_DIR.glob(f"*{ext}"))
+        # Also check uppercase extensions
+        images.extend(f.name for f in TEST_DATA_DIR.glob(f"*{ext.upper()}"))
+
+    # Remove duplicates and sort
+    return sorted(set(images))
+
 
 # Module-level state (Django pattern from webapp/point_picker/state.py)
 _state: CameraAnnotatorState | None = None
@@ -258,6 +299,26 @@ def create_html(image_filename: str) -> str:
             margin-bottom: 12px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+        }}
+
+        #image-selector {{
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            outline: none;
+        }}
+
+        #image-selector:hover {{
+            border-color: #2196f3;
+        }}
+
+        #image-selector:focus {{
+            border-color: #2196f3;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
         }}
 
         #filename {{
@@ -439,6 +500,13 @@ def create_html(image_filename: str) -> str:
 
     <div id="control-panel">
         <div class="panel-section">
+            <h2>Select Image</h2>
+            <select id="image-selector">
+                <!-- Options populated via JavaScript -->
+            </select>
+        </div>
+
+        <div class="panel-section">
             <h2>Camera Frame</h2>
             <div id="filename">{safe_filename}</div>
             <div id="instructions">Click on the image to add annotation points. Type to filter GCPs.</div>
@@ -483,6 +551,8 @@ def create_html(image_filename: str) -> str:
         const yamlPreview = document.getElementById('yaml-preview');
         const copyBtn = document.getElementById('copy-btn');
         const coordsDisplay = document.getElementById('coords-display');
+        const imageSelector = document.getElementById('image-selector');
+        const filenameDisplay = document.getElementById('filename');
 
         // Load GCPs
         async function loadGcps() {{
@@ -704,10 +774,77 @@ def create_html(image_filename: str) -> str:
             }}
         }}
 
+        // Load available images and populate selector
+        async function loadAvailableImages() {{
+            try {{
+                const resp = await fetch('/api/images');
+                const images = await resp.json();
+                imageSelector.innerHTML = '';
+                images.forEach(filename => {{
+                    const option = document.createElement('option');
+                    option.value = filename;
+                    option.textContent = filename;
+                    // Select current image
+                    if (filename === filenameDisplay.textContent) {{
+                        option.selected = true;
+                    }}
+                    imageSelector.appendChild(option);
+                }});
+                console.log(`Loaded ${{images.length}} available images`);
+            }} catch (e) {{
+                console.error('Failed to load available images:', e);
+            }}
+        }}
+
+        // Switch to a different image
+        async function switchImage(filename) {{
+            try {{
+                const resp = await fetch('/api/switch-image', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ filename }})
+                }});
+                const data = await resp.json();
+
+                if (data.success) {{
+                    // Update image src with cache-busting query param
+                    img.src = '/image?t=' + Date.now();
+
+                    // Clear pending point
+                    pendingPoint = null;
+                    gcpSection.classList.remove('active');
+
+                    // Load new annotations from response
+                    annotations = data.annotations || [];
+
+                    // Update UI
+                    filenameDisplay.textContent = data.filename;
+                    renderMarkers();
+                    renderAnnotationsList();
+                    updateYamlPreview();
+
+                    console.log(`Switched to image: ${{filename}}`);
+                }} else {{
+                    console.error('Failed to switch image:', data.error);
+                    alert('Failed to switch image: ' + (data.error || 'Unknown error'));
+                }}
+            }} catch (e) {{
+                console.error('Failed to switch image:', e);
+                alert('Failed to switch image');
+            }}
+        }}
+
+        // Event: Image selector change
+        imageSelector.addEventListener('change', (e) => {{
+            switchImage(e.target.value);
+        }});
+
         // Initialize
         loadGcps().then(() => {{
-            loadExistingAnnotations().then(() => {{
-                updateYamlPreview();
+            loadAvailableImages().then(() => {{
+                loadExistingAnnotations().then(() => {{
+                    updateYamlPreview();
+                }});
             }});
         }});
     </script>
@@ -793,15 +930,93 @@ class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json_error(f"Failed to load annotations: {e}")
 
+        elif path == "/api/images":
+            # Serve list of available images
+            try:
+                images = get_available_images()
+                self._send_json_response(images)
+            except Exception as e:
+                self._send_json_error(f"Failed to get available images: {e}")
+
+        else:
+            self.send_error(404)
+
+    def do_POST(self) -> None:
+        """Handle POST requests."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        # Get state via Django-style accessor
+        try:
+            state = get_state()
+        except RuntimeError as e:
+            self._send_json_error(str(e), 500)
+            return
+
+        if path == "/api/switch-image":
+            # Switch to a different image
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                data = json.loads(body.decode())
+
+                filename = data.get("filename", "")
+
+                # Security: Validate filename to prevent path traversal
+                if "/" in filename or ".." in filename or not filename:
+                    self._send_json_error("Invalid filename", 400)
+                    return
+
+                # Attempt to switch image
+                if state.switch_image(filename):
+                    # Load annotations for the new image
+                    annotations = state.load_existing_annotations()
+                    self._send_json_response(
+                        {
+                            "success": True,
+                            "filename": filename,
+                            "annotations": annotations,
+                        }
+                    )
+                else:
+                    self._send_json_error(f"Image not found: {filename}", 404)
+
+            except json.JSONDecodeError:
+                self._send_json_error("Invalid JSON", 400)
+            except Exception as e:
+                self._send_json_error(f"Failed to switch image: {e}", 500)
+
         else:
             self.send_error(404)
 
 
-def run_annotator(image_path: Path, gcps_file: Path | None = None, port: int = 8888) -> None:
-    """Run the annotation server."""
-    if not image_path.exists():
-        print(f"Error: Image not found: {image_path}")
-        sys.exit(1)
+def run_annotator(
+    image_path: Path | None = None, gcps_file: Path | None = None, port: int = 8888
+) -> None:
+    """Run the annotation server.
+
+    Args:
+        image_path: Path to the image to annotate. If None, starts in selector mode
+                   using the first available image from TEST_DATA_DIR.
+        gcps_file: Path to GCPs YAML file.
+        port: Port to run the server on.
+    """
+    # Handle selector mode (image_path is None)
+    if image_path is None:
+        available_images = get_available_images()
+        if not available_images:
+            print("Error: No images found in test data directory.")
+            print(f"Directory: {TEST_DATA_DIR}")
+            print("Supported extensions: .jpg, .jpeg, .png")
+            sys.exit(1)
+
+        # Use first image alphabetically
+        image_path = TEST_DATA_DIR / available_images[0]
+        print(f"Starting in selector mode with {len(available_images)} images available")
+    else:
+        if not image_path.exists():
+            print(f"Error: Image not found: {image_path}")
+            sys.exit(1)
 
     # Initialize state using Django-style pattern
     initialize_state(image_path, gcps_file=gcps_file)

@@ -12,9 +12,9 @@ app.add_typer(annotate_app, name="annotate")
 
 @annotate_app.command("frame")
 def annotate_frame(
-    image_path: Path = typer.Argument(
-        ...,
-        help="Path to the camera frame image to annotate",
+    image_path: Path | None = typer.Argument(
+        None,
+        help="Path to the camera frame image to annotate (optional, uses selector mode if not provided)",
         exists=True,
         readable=True,
     ),
