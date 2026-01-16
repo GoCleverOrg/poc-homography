@@ -142,21 +142,7 @@ CameraGeometry.get_intrinsics()  # Static factory method
 
 **Status:** Created `domain/vo/homography.py` with `Matrix3x3` foundation.
 
-#### 2. ~~WorldPoint VO~~ ❌ NOT APPLICABLE
-
-**Status:** After analysis, this VO is not needed. The "world coordinate" concept (`np.ndarray([easting, northing, height])`) is:
-- **Internal to legacy code** (`CameraParameters`, `CameraGeometry`)
-- **Not a domain concept** users interact with
-- **Superseded by** `MapPoint` + `GeoTiff.pixel_to_geo()` for coordinate transformation
-
-The domain model uses:
-- `CameraCalibration.position` → `PixelPoint` (position on map)
-- `CameraCalibration.height` → `Meters` (height above ground)
-- `GeoTiff` → handles pixel ↔ UTM transformation
-
-The raw `np.ndarray` in `CameraParameters.camera_position` is an implementation detail of the homography computation, not a domain concept.
-
-#### 3. ImageDimensions VO
+#### 2. ImageDimensions VO
 
 **Problem:** Width/height pairs scattered across many locations.
 
@@ -183,13 +169,7 @@ class ImageDimensions:
     def contains(self, point: PixelPoint) -> bool: ...
 ```
 
-#### 4. ~~CameraPosition VO~~ ❌ NOT APPLICABLE
-
-**Status:** Not needed. This was proposed to wrap `MapPoint` + `height` with a `to_world()` method returning `WorldPoint`. Since `WorldPoint` is not applicable, neither is this VO.
-
-The current design with separate `position: PixelPoint` and `height: Meters` in `CameraCalibration` is sufficient. The coordinate transformation to UTM is handled by `GeoTiff.pixel_to_geo()` at computation time.
-
-#### 5. ~~HeightUncertainty (Move to domain)~~ ✅ RESOLVED
+#### 3. ~~HeightUncertainty (Move to domain)~~ ✅ RESOLVED
 
 **Status:** Moved to `domain/vo/height_uncertainty.py` with additional semantic methods (`range`, `midpoint`, `contains`) and factory method (`symmetric`).
 
