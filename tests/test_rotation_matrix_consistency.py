@@ -281,6 +281,7 @@ class TestRollValidation:
 
         assert "roll" in str(exc_info.value).lower(), "Error message should mention roll"
 
+    @pytest.mark.filterwarnings("ignore:Roll angle.*unusually large")
     def test_roll_within_limits_accepted(self):
         """Verify roll values within limits are accepted."""
         K = CameraGeometry.get_intrinsics(
@@ -289,6 +290,7 @@ class TestRollValidation:
         w_pos = np.array([0.0, 0.0, 5.0])
 
         # These should not raise - test various acceptable roll values
+        # Note: ±10° triggers a warning (>5°) but is still within valid range (±15°)
         for roll in [0.0, 5.0, -5.0, 10.0, -10.0]:
             params = CameraParameters.create(
                 image_width=Pixels(1920),

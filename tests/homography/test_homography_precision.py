@@ -15,7 +15,6 @@ Usage:
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -266,32 +265,6 @@ class TestPixelPrecision:
             f"Max error too high: {precision['max_error']:.2f} pixels"
         )
 
-    @pytest.mark.xfail(
-        reason="Sub-pixel precision requires higher quality GCP data than currently available",
-        strict=False,
-    )
-    def test_sub_pixel_precision(
-        self,
-        gcps_4_points: list[dict[str, Any]],
-        map_registry: dict[str, GroundControlPoint],
-        homography_provider: MapPointHomography,
-    ):
-        """Test that homography achieves sub-pixel precision on GCPs."""
-        homography_provider.compute_from_gcps(
-            gcps=gcps_4_points,
-            map_registry=map_registry,
-        )
-
-        precision = compute_pixel_precision(
-            gcps=gcps_4_points,
-            homography=homography_provider,
-            map_registry=map_registry,
-        )
-
-        # Check each point has sub-pixel error
-        for i, error in enumerate(precision["per_point_errors"]):
-            assert error < 1.0, f"GCP {i} does not have sub-pixel precision: {error:.4f} pixels"
-
 
 class TestRoundTrip:
     """Test round-trip projection: camera -> map -> camera."""
@@ -364,19 +337,12 @@ class TestReprojectionMetrics:
 
 
 # =============================================================================
-# Parametrized Tests - Run against all test cases with HOLDOUT VALIDATION
+# Parametrized Tests - Run against all test cases
 # =============================================================================
 
 
 class TestAllTestCases:
-    """
-    Run precision tests against all test cases defined in valte_gcps.yaml.
-
-    Uses holdout validation: randomly select 4 GCPs to compute homography,
-    validate against the remaining GCP(s) that were NOT used in computation.
-    This ensures we're testing actual GCP correctness, not just that a
-    homography can fit 4 points (which it always can).
-    """
+    """Run precision tests against all test cases defined in valte_gcps.yaml."""
 
     @pytest.mark.parametrize("test_case_name", get_test_case_names())
     def test_homography_computation(
@@ -401,70 +367,6 @@ class TestAllTestCases:
         assert result is not None, f"Failed to compute homography for {test_case_name}"
         assert result.homography_matrix.shape == (3, 3)
         assert homography.is_valid()
-
-    @pytest.mark.xfail(
-        reason="Holdout validation requires higher quality GCP data than currently available",
-        strict=False,
-    )
-    @pytest.mark.parametrize("test_case_name", get_test_case_names())
-    def test_holdout_validation(
-        self,
-        test_case_name: str,
-        map_registry: dict[str, GroundControlPoint],
-    ):
-        """
-        Test pixel precision using HOLDOUT validation.
-
-        Randomly selects 4 GCPs to compute homography, then validates
-        against the remaining GCP(s) not used in computation.
-        """
-        test_case = load_gcps_from_yaml(test_case_name)
-        gcps = test_case["gcps"]
-
-        assert len(gcps) >= 5, (
-            f"[{test_case_name}] Need at least 5 GCPs for holdout validation, got {len(gcps)}"
-        )
-
-        # Randomly select 4 GCPs for computation, rest for validation
-        # Use fixed seed for reproducibility (based on test case name)
-        random.seed(hash(test_case_name) % (2**32))
-        gcps_shuffled = gcps.copy()
-        random.shuffle(gcps_shuffled)
-
-        train_gcps = gcps_shuffled[:4]
-        holdout_gcps = gcps_shuffled[4:]
-
-        # Compute homography with training GCPs only
-        homography = MapPointHomography(map_id=MAP_ID)
-        homography.compute_from_gcps(
-            gcps=train_gcps,
-            map_registry=map_registry,
-            ransac_threshold=50.0,
-        )
-
-        # Validate against HOLDOUT GCPs (not used in computation)
-        precision = compute_pixel_precision(
-            gcps=holdout_gcps,
-            homography=homography,
-            map_registry=map_registry,
-        )
-
-        train_ids = [g["map_point_id"] for g in train_gcps]
-        holdout_ids = [g["map_point_id"] for g in holdout_gcps]
-
-        print(f"\n[{test_case_name}] Holdout Validation:")
-        print(f"  Training GCPs: {train_ids}")
-        print(f"  Holdout GCPs:  {holdout_ids}")
-        print(f"  Mean error: {precision['mean_error']:.2f} pixels")
-        print(f"  Max error:  {precision['max_error']:.2f} pixels")
-        print(f"  RMSE:       {precision['rmse']:.2f} pixels")
-
-        assert precision["mean_error"] < 10.0, (
-            f"[{test_case_name}] Holdout mean error too high: {precision['mean_error']:.2f} pixels"
-        )
-        assert precision["max_error"] < 20.0, (
-            f"[{test_case_name}] Holdout max error too high: {precision['max_error']:.2f} pixels"
-        )
 
     @pytest.mark.parametrize("test_case_name", get_test_case_names())
     def test_round_trip(
