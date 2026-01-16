@@ -36,6 +36,13 @@ Radians = NewType("Radians", float)
 Meters = NewType("Meters", float)
 """Distance or position in meters (e.g., X, Y, Z coordinates, camera height, GPS distances)"""
 
+# Geographic/projected coordinate units
+Easting = NewType("Easting", float)
+"""X-coordinate in projected CRS (e.g., UTM easting in meters)"""
+
+Northing = NewType("Northing", float)
+"""Y-coordinate in projected CRS (e.g., UTM northing in meters)"""
+
 # Image coordinate units
 Pixels = NewType("Pixels", int)
 """Image coordinates or dimensions in pixels (e.g., u, v, width, height)"""

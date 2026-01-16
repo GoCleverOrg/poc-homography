@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from poc_homography.types import Meters
+from poc_homography.types import Easting, Meters, Northing, PixelsFloat, Unitless
 
 
 @dataclass(frozen=True)
@@ -28,11 +28,11 @@ class GeoTransform:
         pixel_height: Pixel height in ground units, negative for north-up (GT[5]).
     """
 
-    origin_easting: float
+    origin_easting: Easting
     pixel_width: Meters
-    row_rotation: float
-    origin_northing: float
-    col_rotation: float
+    row_rotation: Unitless
+    origin_northing: Northing
+    col_rotation: Unitless
     pixel_height: Meters
 
     @property
@@ -43,11 +43,11 @@ class GeoTransform:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            "origin_easting": self.origin_easting,
+            "origin_easting": float(self.origin_easting),
             "pixel_width": float(self.pixel_width),
-            "row_rotation": self.row_rotation,
-            "origin_northing": self.origin_northing,
-            "col_rotation": self.col_rotation,
+            "row_rotation": float(self.row_rotation),
+            "origin_northing": float(self.origin_northing),
+            "col_rotation": float(self.col_rotation),
             "pixel_height": float(self.pixel_height),
         }
 
@@ -55,11 +55,11 @@ class GeoTransform:
     def from_dict(cls, data: dict[str, Any]) -> GeoTransform:
         """Create GeoTransform from dictionary."""
         return cls(
-            origin_easting=data["origin_easting"],
+            origin_easting=Easting(data["origin_easting"]),
             pixel_width=Meters(data["pixel_width"]),
-            row_rotation=data["row_rotation"],
-            origin_northing=data["origin_northing"],
-            col_rotation=data["col_rotation"],
+            row_rotation=Unitless(data["row_rotation"]),
+            origin_northing=Northing(data["origin_northing"]),
+            col_rotation=Unitless(data["col_rotation"]),
             pixel_height=Meters(data["pixel_height"]),
         )
 
@@ -71,11 +71,11 @@ class GeoTransform:
             gt: GDAL geotransform (origin_x, pixel_width, row_rot, origin_y, col_rot, pixel_height)
         """
         return cls(
-            origin_easting=gt[0],
+            origin_easting=Easting(gt[0]),
             pixel_width=Meters(gt[1]),
-            row_rotation=gt[2],
-            origin_northing=gt[3],
-            col_rotation=gt[4],
+            row_rotation=Unitless(gt[2]),
+            origin_northing=Northing(gt[3]),
+            col_rotation=Unitless(gt[4]),
             pixel_height=Meters(gt[5]),
         )
 
@@ -103,7 +103,7 @@ class GeoTiff:
     geotransform: GeoTransform
     crs: str
 
-    def pixel_to_geo(self, pixel_x: float, pixel_y: float) -> tuple[float, float]:
+    def pixel_to_geo(self, pixel_x: PixelsFloat, pixel_y: PixelsFloat) -> tuple[Easting, Northing]:
         """Convert pixel coordinates to geographic coordinates.
 
         Args:
@@ -114,11 +114,15 @@ class GeoTiff:
             Tuple of (easting, northing) in the CRS units.
         """
         gt = self.geotransform
-        easting = gt.origin_easting + pixel_x * float(gt.pixel_width) + pixel_y * gt.row_rotation
-        northing = gt.origin_northing + pixel_x * gt.col_rotation + pixel_y * float(gt.pixel_height)
+        easting = Easting(
+            gt.origin_easting + pixel_x * float(gt.pixel_width) + pixel_y * gt.row_rotation
+        )
+        northing = Northing(
+            gt.origin_northing + pixel_x * gt.col_rotation + pixel_y * float(gt.pixel_height)
+        )
         return (easting, northing)
 
-    def geo_to_pixel(self, easting: float, northing: float) -> tuple[float, float]:
+    def geo_to_pixel(self, easting: Easting, northing: Northing) -> tuple[PixelsFloat, PixelsFloat]:
         """Convert geographic coordinates to pixel coordinates.
 
         Args:
@@ -134,14 +138,14 @@ class GeoTiff:
         gt = self.geotransform
         pw = float(gt.pixel_width)
         ph = float(gt.pixel_height)
-        det = pw * ph - gt.row_rotation * gt.col_rotation
+        det = pw * ph - float(gt.row_rotation) * float(gt.col_rotation)
         if det == 0:
             raise ValueError("Geotransform is singular and cannot be inverted")
 
-        dx = easting - gt.origin_easting
-        dy = northing - gt.origin_northing
-        pixel_x = (ph * dx - gt.row_rotation * dy) / det
-        pixel_y = (pw * dy - gt.col_rotation * dx) / det
+        dx = float(easting) - float(gt.origin_easting)
+        dy = float(northing) - float(gt.origin_northing)
+        pixel_x = PixelsFloat((ph * dx - float(gt.row_rotation) * dy) / det)
+        pixel_y = PixelsFloat((pw * dy - float(gt.col_rotation) * dx) / det)
         return (pixel_x, pixel_y)
 
     def to_dict(self) -> dict[str, Any]:
