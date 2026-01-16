@@ -99,15 +99,19 @@ class CameraAnnotatorState:
             filename: Name of the image file in TEST_DATA_DIR.
 
         Returns:
-            True if successful, False if file doesn't exist.
+            True if successful, False if file doesn't exist or is outside TEST_DATA_DIR.
         """
         new_path = TEST_DATA_DIR / filename
         if not new_path.exists():
             return False
 
-        self.image_path = new_path.resolve()
+        # Security: Ensure resolved path is within TEST_DATA_DIR (defense-in-depth)
+        resolved_path = new_path.resolve()
+        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
+            return False
+
+        self.image_path = resolved_path
         self.image_filename = filename
-        print(f"Switched to image: {filename}")
         return True
 
 
