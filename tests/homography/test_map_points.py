@@ -96,7 +96,7 @@ class TestMapPointRegistryLoading:
         """Test loading map point registry."""
         assert map_point_registry is not None
         assert map_point_registry.map_id == "Cartografia_valencia"
-        assert len(map_point_registry.points) == 55  # PS1-17, AR1-9, EX1-7, CW1-22
+        assert len(map_point_registry.points) == 72  # PS1-34, AR1-9, EX1-7, CW1-22
 
     def test_map_point_structure(self, map_point_registry):
         """Test that map points have expected structure."""
