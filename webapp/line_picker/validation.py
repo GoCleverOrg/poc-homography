@@ -8,29 +8,24 @@ from typing import Any
 def validate_add_line_request(data: dict[str, Any]) -> str | None:
     """Validate add line request data.
 
+    Lines are defined by pixel coordinate endpoints (start_x, start_y, end_x, end_y).
+
     Args:
         data: Request data dictionary.
 
     Returns:
         Error message string if validation fails, None if valid.
     """
-    # Check required fields
-    if "start_gcp" not in data:
-        return "Missing required field: start_gcp"
-    if "end_gcp" not in data:
-        return "Missing required field: end_gcp"
+    # Check required coordinate fields
+    required = ["start_x", "start_y", "end_x", "end_y"]
+    for field in required:
+        if field not in data:
+            return f"Missing required field: {field}"
 
-    # Validate types
-    if not isinstance(data["start_gcp"], str):
-        return "start_gcp must be a string"
-    if not isinstance(data["end_gcp"], str):
-        return "end_gcp must be a string"
-
-    # Validate not empty
-    if not data["start_gcp"]:
-        return "start_gcp cannot be empty"
-    if not data["end_gcp"]:
-        return "end_gcp cannot be empty"
+    # Validate coordinate types (must be numeric)
+    for field in required:
+        if not isinstance(data[field], (int, float)):
+            return f"{field} must be a number"
 
     # Validate line_id if provided (optional string)
     if "line_id" in data and data["line_id"] is not None:

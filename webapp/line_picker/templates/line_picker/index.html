@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GeoTIFF Line Picker</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+    <script src="{% static 'js/openseadragon-drag-utils.js' %}"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: system-ui, -apple-system, sans-serif; display: flex; height: 100vh; }
@@ -28,12 +30,12 @@
         #mode-indicator.selecting { background: #fff3e0; color: #f57c00; }
         #mode-indicator.ready { background: #e8f5e9; color: #2e7d32; }
 
-        .selected-gcp {
+        .selected-point {
             padding: 8px; background: #f5f5f5; border-radius: 4px;
             margin-top: 8px; font-family: monospace; font-size: 12px;
         }
-        .selected-gcp .label { color: #666; }
-        .selected-gcp .value { color: #333; font-weight: bold; }
+        .selected-point .label { color: #666; }
+        .selected-point .value { color: #333; font-weight: bold; }
 
         #next-id { font-size: 16px; font-weight: bold; color: #333; text-align: center; padding: 8px; }
 
@@ -63,6 +65,11 @@
         }
         .line-item:hover { background: #f0f0f0; }
         .line-item.selected { background: #e6f0ff; }
+        .line-item .line-info {
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .line-item .line-id { font-weight: bold; }
+        .line-item .line-coords { font-size: 10px; color: #888; }
         .line-item .delete-btn {
             background: #ff4444; color: white; border: none;
             padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;
@@ -79,29 +86,48 @@
         .gcp-item .tag.CW { background: #f4a261; }
         .gcp-item .tag.EX { background: #9c27b0; }
 
-        /* GCP Markers - clickable points on map */
+        /* GCP Markers - reference points displayed on map (read-only) */
         .gcp-marker {
-            width: 20px; height: 20px;
+            width: 16px; height: 16px;
             border-radius: 50%;
-            cursor: pointer;
             display: flex; align-items: center; justify-content: center;
-            font-size: 9px; font-weight: bold; color: white;
+            font-size: 8px; font-weight: bold; color: white;
             border: 2px solid white;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-        .gcp-marker:hover {
-            transform: scale(1.2);
-            box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+            opacity: 0.7;
+            pointer-events: none;
         }
         .gcp-marker.PS { background: #e63946; }
         .gcp-marker.AR { background: #2a9d8f; }
         .gcp-marker.CW { background: #f4a261; }
         .gcp-marker.EX { background: #9c27b0; }
-        .gcp-marker.selected {
-            border-color: #ffeb3b;
-            box-shadow: 0 0 12px #ffeb3b;
+
+        /* Line endpoint markers - draggable */
+        .endpoint-marker {
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            cursor: grab;
+            background: #2196f3;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            transition: transform 0.1s;
+        }
+        .endpoint-marker:hover {
             transform: scale(1.3);
+        }
+        .endpoint-marker.start { background: #4caf50; }
+        .endpoint-marker.end { background: #f44336; }
+        .endpoint-marker.selected-line { box-shadow: 0 0 8px #ff9800; }
+        .endpoint-marker.pending { background: #9c27b0; }
+        .endpoint-marker.adjusting {
+            background: #ff9800;
+            transform: scale(1.5);
+            box-shadow: 0 0 12px #ff9800;
+            animation: pulse 0.5s infinite alternate;
+        }
+        @keyframes pulse {
+            from { transform: scale(1.3); }
+            to { transform: scale(1.6); }
         }
 
         #filename { font-size: 12px; color: #888; word-break: break-all; }
@@ -138,6 +164,15 @@
         #line-overlay line.default { stroke: #2196f3; }
         #line-overlay line.selected { stroke: #ff9800; stroke-width: 4; }
         #line-overlay line.pending { stroke: #9c27b0; stroke-dasharray: 8,4; }
+
+        /* GCP visibility toggle */
+        .toggle-container {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 12px; color: #666;
+        }
+        .toggle-container input {
+            width: 16px; height: 16px;
+        }
     </style>
 </head>
 <body>
@@ -147,12 +182,12 @@
 
         <div class="section">
             <div class="section-title">Line Creation Mode</div>
-            <div id="mode-indicator" class="idle">Click a GCP to start</div>
-            <div class="selected-gcp" id="start-gcp-display" style="display:none;">
-                <span class="label">Start GCP:</span> <span class="value" id="start-gcp-value"></span>
+            <div id="mode-indicator" class="idle">Click on map to set start point</div>
+            <div class="selected-point" id="start-point-display" style="display:none;">
+                <span class="label">Start:</span> <span class="value" id="start-point-value"></span>
             </div>
-            <div class="selected-gcp" id="end-gcp-display" style="display:none;">
-                <span class="label">End GCP:</span> <span class="value" id="end-gcp-value"></span>
+            <div class="selected-point" id="end-point-display" style="display:none;">
+                <span class="label">End:</span> <span class="value" id="end-point-value"></span>
             </div>
             <div id="next-id">Next: L1</div>
             <div class="btn-group" style="margin-top: 8px;">
@@ -163,7 +198,7 @@
 
         <div class="section">
             <div class="section-title">Coordinates</div>
-            <div id="coords">Hover over image...</div>
+            <div id="coords">Click on image...</div>
         </div>
 
         <div class="section">
@@ -172,7 +207,11 @@
         </div>
 
         <div class="section">
-            <div class="section-title">Available GCPs (<span id="gcp-count">0</span>)</div>
+            <div class="section-title">Reference GCPs (<span id="gcp-count">0</span>)</div>
+            <div class="toggle-container">
+                <input type="checkbox" id="show-gcps" checked>
+                <label for="show-gcps">Show GCP markers</label>
+            </div>
             <div id="gcp-list"></div>
         </div>
 
@@ -211,14 +250,20 @@
     <script>
         let viewer;
         let imageInfo;
-        let gcps = {};  // GCP data by ID
+        let gcps = {};  // GCP data by ID (for reference display)
         let gcpMarkers = {};  // GCP DOM elements by ID
         let lines = [];  // Line data array
+        let lineEndpointMarkers = {};  // Line endpoint DOM elements by line ID
         let selectedLineId = null;
 
-        // Line creation state
-        let startGcp = null;  // First selected GCP ID
-        let endGcp = null;    // Second selected GCP ID
+        // Line creation state - now stores pixel coordinates
+        let startPoint = null;  // {x, y} in image pixels
+        let endPoint = null;    // {x, y} in image pixels
+        let pendingStartMarker = null;  // DOM element for pending start point
+        let pendingEndMarker = null;    // DOM element for pending end point
+
+        // Dragging state
+        let draggingEndpoint = null;  // {lineId, which: 'start'|'end', marker}
 
         // API base URL for Django app
         const API_BASE = '/line-picker';
@@ -271,7 +316,7 @@
                     maxZoomLevel: 20,
                     visibilityRatio: 0.5,
                     constrainDuringPan: true,
-                    // Disable all click-to-zoom behaviors so GCP markers can be clicked
+                    // Disable click-to-zoom so clicks place line points
                     gestureSettingsMouse: {
                         clickToZoom: false,
                         dblClickToZoom: false,
@@ -282,10 +327,8 @@
                     },
                 });
 
-                // Prevent any remaining click behavior on canvas from interfering
-                viewer.addHandler('canvas-click', (e) => {
-                    e.preventDefaultAction = true;
-                });
+                // Handle canvas clicks for placing line points
+                viewer.addHandler('canvas-click', handleCanvasClick);
 
                 // Update line overlay when viewport changes
                 viewer.addHandler('animation', updateLineOverlay);
@@ -313,12 +356,97 @@
                 });
                 document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
 
+                // GCP visibility toggle
+                document.getElementById('show-gcps').addEventListener('change', (e) => {
+                    toggleGcpVisibility(e.target.checked);
+                });
+
+                // ESC key to cancel line creation
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        if (startPoint !== null) {
+                            cancelLineCreation();
+                        }
+                    }
+                });
+
                 // Load GCPs and lines
                 await loadGcps();
                 await loadLines();
                 await updateNextId();
             } catch (e) {
                 showError(`Initialization failed: ${e.message}`);
+            }
+        }
+
+        async function handleCanvasClick(event) {
+            // Don't handle clicks during endpoint dragging
+            if (draggingEndpoint) return;
+
+            // Don't interfere with default zoom behavior during shift-click
+            if (event.originalEvent.shiftKey) return;
+
+            event.preventDefaultAction = true;
+
+            const viewportPoint = viewer.viewport.pointFromPixel(event.position);
+            const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+
+            // Check if click is within image bounds
+            if (imagePoint.x < 0 || imagePoint.x >= imageInfo.width ||
+                imagePoint.y < 0 || imagePoint.y >= imageInfo.height) {
+                return;
+            }
+
+            // MODE: Creating a new line
+            if (startPoint === null) {
+                // Set start point
+                startPoint = { x: imagePoint.x, y: imagePoint.y };
+                addPendingMarker('start', startPoint);
+                document.getElementById('start-point-value').textContent =
+                    `(${startPoint.x.toFixed(1)}, ${startPoint.y.toFixed(1)})`;
+                document.getElementById('start-point-display').style.display = 'block';
+                document.getElementById('mode-indicator').className = 'selecting';
+                document.getElementById('mode-indicator').textContent = 'Click to set end point (ESC to cancel)';
+                document.getElementById('cancel-btn').disabled = false;
+            } else if (endPoint === null) {
+                // Set end point and auto-create line
+                const dist = Math.hypot(imagePoint.x - startPoint.x, imagePoint.y - startPoint.y);
+                if (dist < 5) {
+                    showError('End point must be different from start point');
+                    return;
+                }
+                endPoint = { x: imagePoint.x, y: imagePoint.y };
+
+                // Auto-create the line immediately
+                await createLine();
+            }
+        }
+
+        function addPendingMarker(which, point) {
+            const element = document.createElement('div');
+            element.className = `endpoint-marker pending ${which}`;
+
+            const overlay = viewer.addOverlay({
+                element: element,
+                location: viewer.viewport.imageToViewportCoordinates(point.x, point.y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            if (which === 'start') {
+                pendingStartMarker = element;
+            } else {
+                pendingEndMarker = element;
+            }
+        }
+
+        function removePendingMarkers() {
+            if (pendingStartMarker) {
+                viewer.removeOverlay(pendingStartMarker);
+                pendingStartMarker = null;
+            }
+            if (pendingEndMarker) {
+                viewer.removeOverlay(pendingEndMarker);
+                pendingEndMarker = null;
             }
         }
 
@@ -334,7 +462,7 @@
                 // Clear existing markers
                 Object.keys(gcpMarkers).forEach(id => removeGcpMarker(id));
 
-                // Add markers for all GCPs
+                // Add markers for all GCPs (as reference)
                 data.points.forEach(point => {
                     gcps[point.id] = point;
                     addGcpMarker(point);
@@ -361,14 +489,6 @@
                 placement: OpenSeadragon.Placement.CENTER
             });
 
-            // Use OpenSeadragon's MouseTracker for proper click handling
-            new OpenSeadragon.MouseTracker({
-                element: element,
-                clickHandler: (e) => {
-                    selectGcp(point.id);
-                }
-            });
-
             gcpMarkers[point.id] = { element, point };
         }
 
@@ -379,64 +499,46 @@
             }
         }
 
+        function toggleGcpVisibility(show) {
+            Object.values(gcpMarkers).forEach(({ element }) => {
+                element.style.display = show ? '' : 'none';
+            });
+        }
+
         function getTagFromId(id) {
             const match = id.match(/^([A-Z]+)/);
             return match ? match[1] : 'EX';
         }
 
-        function selectGcp(gcpId) {
-            if (startGcp === null) {
-                // First GCP selected
-                startGcp = gcpId;
-                gcpMarkers[gcpId].element.classList.add('selected');
-                document.getElementById('start-gcp-value').textContent = gcpId;
-                document.getElementById('start-gcp-display').style.display = 'block';
-                document.getElementById('mode-indicator').className = 'selecting';
-                document.getElementById('mode-indicator').textContent = 'Click second GCP';
-                document.getElementById('cancel-btn').disabled = false;
-                updateLineOverlay();  // Show pending line
-            } else if (endGcp === null && gcpId !== startGcp) {
-                // Second GCP selected (must be different from first)
-                endGcp = gcpId;
-                gcpMarkers[gcpId].element.classList.add('selected');
-                document.getElementById('end-gcp-value').textContent = gcpId;
-                document.getElementById('end-gcp-display').style.display = 'block';
-                document.getElementById('mode-indicator').className = 'ready';
-                document.getElementById('mode-indicator').textContent = 'Ready to create line';
-                document.getElementById('create-btn').disabled = false;
-                updateLineOverlay();  // Show pending line
-            }
-        }
-
         function cancelLineCreation() {
-            // Clear selection
-            if (startGcp && gcpMarkers[startGcp]) {
-                gcpMarkers[startGcp].element.classList.remove('selected');
-            }
-            if (endGcp && gcpMarkers[endGcp]) {
-                gcpMarkers[endGcp].element.classList.remove('selected');
-            }
-            startGcp = null;
-            endGcp = null;
+            // Clear pending state
+            startPoint = null;
+            endPoint = null;
+            removePendingMarkers();
 
             // Reset UI
-            document.getElementById('start-gcp-display').style.display = 'none';
-            document.getElementById('end-gcp-display').style.display = 'none';
+            document.getElementById('start-point-display').style.display = 'none';
+            document.getElementById('end-point-display').style.display = 'none';
             document.getElementById('mode-indicator').className = 'idle';
-            document.getElementById('mode-indicator').textContent = 'Click a GCP to start';
+            document.getElementById('mode-indicator').textContent = 'Click on map to set start point';
             document.getElementById('cancel-btn').disabled = true;
             document.getElementById('create-btn').disabled = true;
             updateLineOverlay();
         }
 
         async function createLine() {
-            if (!startGcp || !endGcp) return;
+            if (!startPoint || !endPoint) return;
 
             try {
                 const resp = await fetch(`${API_BASE}/api/lines/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ start_gcp: startGcp, end_gcp: endGcp })
+                    body: JSON.stringify({
+                        start_x: startPoint.x,
+                        start_y: startPoint.y,
+                        end_x: endPoint.x,
+                        end_y: endPoint.y
+                    })
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
@@ -461,11 +563,116 @@
                 }
                 const data = await resp.json();
                 lines = data.lines || [];
+
+                // Clear existing endpoint markers
+                Object.keys(lineEndpointMarkers).forEach(id => removeLineEndpointMarkers(id));
+
+                // Add endpoint markers for all lines
+                lines.forEach(line => addLineEndpointMarkers(line));
+
                 updateLineList();
                 updateLineOverlay();
                 document.getElementById('line-count').textContent = lines.length;
             } catch (e) {
                 showError(`Failed to load lines: ${e.message}`);
+            }
+        }
+
+        function addLineEndpointMarkers(line) {
+            const startEl = document.createElement('div');
+            startEl.className = 'endpoint-marker start';
+            startEl.title = `${line.line_id} start`;
+
+            const endEl = document.createElement('div');
+            endEl.className = 'endpoint-marker end';
+            endEl.title = `${line.line_id} end`;
+
+            viewer.addOverlay({
+                element: startEl,
+                location: viewer.viewport.imageToViewportCoordinates(line.start_x, line.start_y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            viewer.addOverlay({
+                element: endEl,
+                location: viewer.viewport.imageToViewportCoordinates(line.end_x, line.end_y),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            // Add drag handlers for endpoint adjustment
+            setupEndpointDragging(startEl, line.line_id, 'start');
+            setupEndpointDragging(endEl, line.line_id, 'end');
+
+            lineEndpointMarkers[line.line_id] = { start: startEl, end: endEl };
+        }
+
+        function removeLineEndpointMarkers(lineId) {
+            if (lineEndpointMarkers[lineId]) {
+                viewer.removeOverlay(lineEndpointMarkers[lineId].start);
+                viewer.removeOverlay(lineEndpointMarkers[lineId].end);
+                delete lineEndpointMarkers[lineId];
+            }
+        }
+
+        function setupEndpointDragging(element, lineId, which) {
+            // Use the reusable drag utility - see static/js/openseadragon-drag-utils.js
+            setupDraggableOverlay(viewer, element, imageInfo, {
+                onDragStart: (el) => {
+                    // Cancel any line creation in progress
+                    if (startPoint !== null) {
+                        cancelLineCreation();
+                    }
+                    draggingEndpoint = { lineId, which, marker: el };
+                    el.classList.add('adjusting');
+                },
+                onDrag: (x, y, el) => {
+                    viewer.updateOverlay(el, viewer.viewport.imageToViewportCoordinates(x, y));
+                    updateLineOverlay();
+                },
+                onDragEnd: async (x, y, el) => {
+                    el.classList.remove('adjusting');
+                    draggingEndpoint = null;
+                    await updateLineEndpoint(lineId, which, x, y);
+                }
+            });
+        }
+
+        async function updateLineEndpoint(lineId, which, x, y) {
+            try {
+                const payload = {};
+                if (which === 'start') {
+                    payload.start_x = x;
+                    payload.start_y = y;
+                } else {
+                    payload.end_x = x;
+                    payload.end_y = y;
+                }
+
+                const resp = await fetch(`${API_BASE}/api/lines/${lineId}/`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    showError(`Failed to update line: ${err.error || 'Unknown error'}`);
+                    await loadLines();  // Reload to reset positions
+                    return;
+                }
+
+                // Update local data
+                const updatedLine = await resp.json();
+                const lineIndex = lines.findIndex(l => l.line_id === lineId);
+                if (lineIndex >= 0) {
+                    lines[lineIndex] = updatedLine;
+                }
+
+                updateLineList();
+                updateLineOverlay();
+            } catch (e) {
+                showError(`Failed to update line: ${e.message}`);
+                await loadLines();
             }
         }
 
@@ -478,6 +685,7 @@
                     return;
                 }
                 if (selectedLineId === lineId) selectedLineId = null;
+                removeLineEndpointMarkers(lineId);
                 await loadLines();
                 await updateNextId();
             } catch (e) {
@@ -486,15 +694,28 @@
         }
 
         function selectLine(lineId) {
+            // Remove selection from previous line markers
+            if (selectedLineId && lineEndpointMarkers[selectedLineId]) {
+                lineEndpointMarkers[selectedLineId].start.classList.remove('selected-line');
+                lineEndpointMarkers[selectedLineId].end.classList.remove('selected-line');
+            }
+
             selectedLineId = lineId;
+
+            // Add selection to new line markers
+            if (lineId && lineEndpointMarkers[lineId]) {
+                lineEndpointMarkers[lineId].start.classList.add('selected-line');
+                lineEndpointMarkers[lineId].end.classList.add('selected-line');
+            }
+
             updateLineList();
             updateLineOverlay();
 
             // Pan to line center
             const line = lines.find(l => l.line_id === lineId);
             if (line) {
-                const centerX = (line.start_pixel.x + line.end_pixel.x) / 2;
-                const centerY = (line.start_pixel.y + line.end_pixel.y) / 2;
+                const centerX = (line.start_x + line.end_x) / 2;
+                const centerY = (line.start_y + line.end_y) / 2;
                 const location = viewer.viewport.imageToViewportCoordinates(centerX, centerY);
                 viewer.viewport.panTo(location, false);
             }
@@ -508,8 +729,19 @@
                 const item = document.createElement('div');
                 item.className = `line-item ${line.line_id === selectedLineId ? 'selected' : ''}`;
 
-                const span = document.createElement('span');
-                span.textContent = `${line.line_id}: ${line.start_gcp} -> ${line.end_gcp}`;
+                const info = document.createElement('div');
+                info.className = 'line-info';
+
+                const idSpan = document.createElement('span');
+                idSpan.className = 'line-id';
+                idSpan.textContent = line.line_id;
+
+                const coordsSpan = document.createElement('span');
+                coordsSpan.className = 'line-coords';
+                coordsSpan.textContent = `(${line.start_x.toFixed(0)}, ${line.start_y.toFixed(0)}) -> (${line.end_x.toFixed(0)}, ${line.end_y.toFixed(0)})`;
+
+                info.appendChild(idSpan);
+                info.appendChild(coordsSpan);
 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-btn';
@@ -519,7 +751,7 @@
                     deleteLine(line.line_id);
                 });
 
-                item.appendChild(span);
+                item.appendChild(info);
                 item.appendChild(deleteBtn);
                 item.addEventListener('click', (e) => {
                     if (!e.target.classList.contains('delete-btn')) {
@@ -559,8 +791,29 @@
 
             // Draw existing lines
             lines.forEach(line => {
-                const start = viewer.viewport.imageToViewportCoordinates(line.start_pixel.x, line.start_pixel.y);
-                const end = viewer.viewport.imageToViewportCoordinates(line.end_pixel.x, line.end_pixel.y);
+                // During drag, use the overlay position directly
+                let startX = line.start_x;
+                let startY = line.start_y;
+                let endX = line.end_x;
+                let endY = line.end_y;
+
+                if (draggingEndpoint && draggingEndpoint.lineId === line.line_id) {
+                    const marker = draggingEndpoint.marker;
+                    const overlay = viewer.getOverlayById(marker);
+                    if (overlay) {
+                        const imgCoords = viewer.viewport.viewportToImageCoordinates(overlay.location);
+                        if (draggingEndpoint.which === 'start') {
+                            startX = imgCoords.x;
+                            startY = imgCoords.y;
+                        } else {
+                            endX = imgCoords.x;
+                            endY = imgCoords.y;
+                        }
+                    }
+                }
+
+                const start = viewer.viewport.imageToViewportCoordinates(startX, startY);
+                const end = viewer.viewport.imageToViewportCoordinates(endX, endY);
 
                 const startPx = viewer.viewport.pixelFromPoint(start);
                 const endPx = viewer.viewport.pixelFromPoint(end);
@@ -575,30 +828,20 @@
             });
 
             // Draw pending line (during creation)
-            if (startGcp && gcps[startGcp]) {
-                const startPoint = gcps[startGcp];
-                const start = viewer.viewport.imageToViewportCoordinates(startPoint.pixel_x, startPoint.pixel_y);
+            if (startPoint && endPoint) {
+                const start = viewer.viewport.imageToViewportCoordinates(startPoint.x, startPoint.y);
+                const end = viewer.viewport.imageToViewportCoordinates(endPoint.x, endPoint.y);
+
                 const startPx = viewer.viewport.pixelFromPoint(start);
+                const endPx = viewer.viewport.pixelFromPoint(end);
 
-                let endPx;
-                if (endGcp && gcps[endGcp]) {
-                    const endPoint = gcps[endGcp];
-                    const end = viewer.viewport.imageToViewportCoordinates(endPoint.pixel_x, endPoint.pixel_y);
-                    endPx = viewer.viewport.pixelFromPoint(end);
-                } else {
-                    // No end yet - draw to cursor position or same as start
-                    endPx = startPx;
-                }
-
-                if (endGcp) {
-                    const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    lineEl.setAttribute('x1', startPx.x);
-                    lineEl.setAttribute('y1', startPx.y);
-                    lineEl.setAttribute('x2', endPx.x);
-                    lineEl.setAttribute('y2', endPx.y);
-                    lineEl.setAttribute('class', 'pending');
-                    svg.appendChild(lineEl);
-                }
+                const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                lineEl.setAttribute('x1', startPx.x);
+                lineEl.setAttribute('y1', startPx.y);
+                lineEl.setAttribute('x2', endPx.x);
+                lineEl.setAttribute('y2', endPx.y);
+                lineEl.setAttribute('class', 'pending');
+                svg.appendChild(lineEl);
             }
         }
 

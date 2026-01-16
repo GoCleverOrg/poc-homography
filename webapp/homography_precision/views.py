@@ -687,7 +687,7 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
 
     Returns:
         JSON with line registry data:
-        {"map_id": "...", "lines": [{"line_id": "L1", "start_gcp": "PS1", "end_gcp": "PS2"}, ...]}
+        {"map_id": "...", "lines": [{"line_id": "L1", "start_x": 100.0, "start_y": 200.0, "end_x": 300.0, "end_y": 400.0}, ...]}
     """
     if not LINE_REGISTRY_FILE.exists():
         return JsonResponse(
@@ -860,22 +860,10 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         line_def = line_registry[line_id]
-        start_gcp_id = line_def["start_gcp"]
-        end_gcp_id = line_def["end_gcp"]
 
-        # Get GCP coordinates from registry
-        if start_gcp_id not in gcp_registry.points or end_gcp_id not in gcp_registry.points:
-            return JsonResponse(
-                {"success": False, "error": f"GCP not found in registry for line {line_id}"},
-                status=400,
-            )
-
-        start_gcp = gcp_registry.points[start_gcp_id]
-        end_gcp = gcp_registry.points[end_gcp_id]
-
-        # Ground truth line in map coordinates
-        map_start = np.array([start_gcp.pixel_x, start_gcp.pixel_y])
-        map_end = np.array([end_gcp.pixel_x, end_gcp.pixel_y])
+        # Ground truth line in map coordinates (directly from line registry)
+        map_start = np.array([line_def["start_x"], line_def["start_y"]])
+        map_end = np.array([line_def["end_x"], line_def["end_y"]])
 
         # Annotated line in camera coordinates
         camera_start = np.array([line_annotation["start_pixel_x"], line_annotation["start_pixel_y"]])

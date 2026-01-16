@@ -17,7 +17,6 @@ from PIL import Image
 
 from .state import get_state
 from .validation import (
-    validate_add_line_request,
     validate_export_request,
     validate_import_request,
 )
@@ -264,7 +263,7 @@ def api_gcps(request: HttpRequest) -> JsonResponse:
 def api_lines(request: HttpRequest) -> JsonResponse:
     """Get all lines (GET) or add a new line (POST).
 
-    GET response includes pixel coordinates of the GCP endpoints for rendering.
+    Lines are defined by their own pixel coordinate endpoints, independent of GCPs.
     """
     state = get_state()
 
@@ -272,20 +271,13 @@ def api_lines(request: HttpRequest) -> JsonResponse:
         # Build line data with pixel coordinates
         lines_data = []
         for line in state.lines:
-            start_point = state.gcp_registry.points.get(line.start_gcp)
-            end_point = state.gcp_registry.points.get(line.end_gcp)
-
-            # Skip lines with missing GCPs (shouldn't happen but defensive)
-            if start_point is None or end_point is None:
-                continue
-
             lines_data.append(
                 {
                     "line_id": line.line_id,
-                    "start_gcp": line.start_gcp,
-                    "end_gcp": line.end_gcp,
-                    "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
-                    "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
+                    "start_x": line.start_x,
+                    "start_y": line.start_y,
+                    "end_x": line.end_x,
+                    "end_y": line.end_y,
                 }
             )
 
@@ -296,38 +288,41 @@ def api_lines(request: HttpRequest) -> JsonResponse:
             }
         )
 
-    # POST - add a new line
+    # POST - add a new line with coordinates
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    error = validate_add_line_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
+    # Validate required fields
+    required = ["start_x", "start_y", "end_x", "end_y"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return JsonResponse({"error": f"Missing required fields: {missing}"}, status=422)
 
-    start_gcp = data["start_gcp"]
-    end_gcp = data["end_gcp"]
+    # Validate coordinate types
+    try:
+        start_x = float(data["start_x"])
+        start_y = float(data["start_y"])
+        end_x = float(data["end_x"])
+        end_y = float(data["end_y"])
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Coordinates must be numeric"}, status=422)
+
     line_id = data.get("line_id")
 
     try:
-        line_id = state.add_line(start_gcp, end_gcp, line_id=line_id)
-
-        # Get the created line and include pixel coordinates
-        start_point = state.gcp_registry.points[start_gcp]
-        end_point = state.gcp_registry.points[end_gcp]
+        line_id = state.add_line(start_x, start_y, end_x, end_y, line_id=line_id)
 
         return JsonResponse(
             {
                 "line_id": line_id,
-                "start_gcp": start_gcp,
-                "end_gcp": end_gcp,
-                "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
-                "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
+                "start_x": start_x,
+                "start_y": start_y,
+                "end_x": end_x,
+                "end_y": end_y,
             }
         )
-    except KeyError as e:
-        return JsonResponse({"error": str(e)}, status=404)
     except ValueError as e:
         return JsonResponse({"error": str(e)}, status=422)
 
@@ -337,7 +332,7 @@ def api_lines(request: HttpRequest) -> JsonResponse:
 def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     """Update (PUT) or delete (DELETE) a specific line.
 
-    PUT updates the start_gcp and/or end_gcp of the line.
+    PUT updates the coordinate endpoints of the line.
     DELETE removes the line.
     """
     state = get_state()
@@ -355,50 +350,45 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # Validate at least one field is provided
-    if "start_gcp" not in data and "end_gcp" not in data:
-        return JsonResponse({"error": "Must provide start_gcp and/or end_gcp"}, status=422)
+    # Validate at least one coordinate field is provided
+    coord_fields = ["start_x", "start_y", "end_x", "end_y"]
+    if not any(f in data for f in coord_fields):
+        return JsonResponse(
+            {"error": "Must provide at least one coordinate field (start_x, start_y, end_x, end_y)"},
+            status=422,
+        )
 
     # Get the existing line
     line = state.get_line(line_id)
     if line is None:
         return JsonResponse({"error": f"Line not found: {line_id}"}, status=404)
 
-    # Prepare new endpoints (keep existing if not provided)
-    new_start_gcp = data.get("start_gcp", line.start_gcp)
-    new_end_gcp = data.get("end_gcp", line.end_gcp)
-
-    # Validate types
-    if not isinstance(new_start_gcp, str):
-        return JsonResponse({"error": "start_gcp must be a string"}, status=422)
-    if not isinstance(new_end_gcp, str):
-        return JsonResponse({"error": "end_gcp must be a string"}, status=422)
-
-    # Validate GCPs exist
-    if new_start_gcp not in state.gcp_registry.points:
-        return JsonResponse({"error": f"Start GCP not found: {new_start_gcp}"}, status=404)
-    if new_end_gcp not in state.gcp_registry.points:
-        return JsonResponse({"error": f"End GCP not found: {new_end_gcp}"}, status=404)
+    # Prepare new coordinates (keep existing if not provided)
+    try:
+        new_start_x = float(data["start_x"]) if "start_x" in data else line.start_x
+        new_start_y = float(data["start_y"]) if "start_y" in data else line.start_y
+        new_end_x = float(data["end_x"]) if "end_x" in data else line.end_x
+        new_end_y = float(data["end_y"]) if "end_y" in data else line.end_y
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Coordinates must be numeric"}, status=422)
 
     # Validate different endpoints
-    if new_start_gcp == new_end_gcp:
-        return JsonResponse({"error": "Start and end GCP must be different"}, status=422)
+    if new_start_x == new_end_x and new_start_y == new_end_y:
+        return JsonResponse({"error": "Start and end points must be different"}, status=422)
 
     # Update the line in place
-    line.start_gcp = new_start_gcp
-    line.end_gcp = new_end_gcp
-
-    # Return updated line with pixel coordinates
-    start_point = state.gcp_registry.points[new_start_gcp]
-    end_point = state.gcp_registry.points[new_end_gcp]
+    line.start_x = new_start_x
+    line.start_y = new_start_y
+    line.end_x = new_end_x
+    line.end_y = new_end_y
 
     return JsonResponse(
         {
             "line_id": line_id,
-            "start_gcp": new_start_gcp,
-            "end_gcp": new_end_gcp,
-            "start_pixel": {"x": start_point.pixel_x, "y": start_point.pixel_y},
-            "end_pixel": {"x": end_point.pixel_x, "y": end_point.pixel_y},
+            "start_x": new_start_x,
+            "start_y": new_start_y,
+            "end_x": new_end_x,
+            "end_y": new_end_y,
         }
     )
 

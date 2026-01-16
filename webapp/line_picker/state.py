@@ -90,28 +90,38 @@ def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, s
 
 @dataclass
 class Line:
-    """Represents a line defined by two GCP endpoints.
+    """Represents a line defined by two pixel coordinate endpoints.
+
+    Lines are independent entities with their own coordinates, not tied to GCPs.
+    This allows lines to be defined anywhere on the map, and camera annotations
+    can reference any portion of the line even when endpoints are not visible.
 
     Attributes:
         line_id: Unique identifier for the line (e.g., "L1", "L2").
-        start_gcp: ID of the starting GCP.
-        end_gcp: ID of the ending GCP.
+        start_x: X coordinate of the start point (map pixels).
+        start_y: Y coordinate of the start point (map pixels).
+        end_x: X coordinate of the end point (map pixels).
+        end_y: Y coordinate of the end point (map pixels).
     """
 
     line_id: str
-    start_gcp: str
-    end_gcp: str
+    start_x: float
+    start_y: float
+    end_x: float
+    end_y: float
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | float]:
         """Convert line to dictionary format.
 
         Returns:
-            Dictionary with line_id, start_gcp, and end_gcp.
+            Dictionary with line_id and coordinates.
         """
         return {
             "line_id": self.line_id,
-            "start_gcp": self.start_gcp,
-            "end_gcp": self.end_gcp,
+            "start_x": self.start_x,
+            "start_y": self.start_y,
+            "end_x": self.end_x,
+            "end_y": self.end_y,
         }
 
 
@@ -184,37 +194,45 @@ class LinePickerState:
                     pass
         return f"L{max_num + 1}"
 
-    def add_line(self, start_gcp: str, end_gcp: str, line_id: str | None = None) -> str:
-        """Add a new line connecting two GCPs.
+    def add_line(
+        self,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        line_id: str | None = None,
+    ) -> str:
+        """Add a new line defined by two pixel coordinate endpoints.
 
         Args:
-            start_gcp: ID of the starting GCP.
-            end_gcp: ID of the ending GCP.
+            start_x: X coordinate of the start point (map pixels).
+            start_y: Y coordinate of the start point (map pixels).
+            end_x: X coordinate of the end point (map pixels).
+            end_y: Y coordinate of the end point (map pixels).
             line_id: Optional custom line ID. If None, auto-generates (L1, L2, etc.).
 
         Returns:
             Line ID (generated or provided).
 
         Raises:
-            KeyError: If either GCP ID is not found in the registry.
-            ValueError: If start_gcp and end_gcp are the same.
+            ValueError: If start and end points are the same.
         """
-        # Validate GCP IDs exist in registry
-        if start_gcp not in self.gcp_registry.points:
-            raise KeyError(f"Start GCP not found: {start_gcp}")
-        if end_gcp not in self.gcp_registry.points:
-            raise KeyError(f"End GCP not found: {end_gcp}")
-
         # Validate different endpoints
-        if start_gcp == end_gcp:
-            raise ValueError("Start and end GCP must be different")
+        if start_x == end_x and start_y == end_y:
+            raise ValueError("Start and end points must be different")
 
         # Generate ID if not provided
         if line_id is None:
             line_id = self.get_next_id()
 
         # Create and add line
-        line = Line(line_id=line_id, start_gcp=start_gcp, end_gcp=end_gcp)
+        line = Line(
+            line_id=line_id,
+            start_x=start_x,
+            start_y=start_y,
+            end_x=end_x,
+            end_y=end_y,
+        )
         self.lines.append(line)
 
         return line_id
@@ -272,6 +290,7 @@ class LinePickerState:
             FileNotFoundError: If file doesn't exist.
             yaml.YAMLError: If YAML is invalid.
             KeyError: If required keys are missing.
+            ValueError: If YAML content is empty or map_id doesn't match.
         """
         content = path.read_text(encoding="utf-8")
         data = yaml.safe_load(content)
@@ -284,19 +303,16 @@ class LinePickerState:
         if file_map_id != self.map_id:
             raise ValueError(f"Map ID mismatch: expected {self.map_id}, got {file_map_id}")
 
-        # Load lines
+        # Load lines with pixel coordinates
         self.lines = []
         for line_data in data.get("lines", []):
             line = Line(
                 line_id=line_data["line_id"],
-                start_gcp=line_data["start_gcp"],
-                end_gcp=line_data["end_gcp"],
+                start_x=float(line_data["start_x"]),
+                start_y=float(line_data["start_y"]),
+                end_x=float(line_data["end_x"]),
+                end_y=float(line_data["end_y"]),
             )
-            # Validate GCP IDs exist
-            if line.start_gcp not in self.gcp_registry.points:
-                raise KeyError(f"Start GCP not found in registry: {line.start_gcp}")
-            if line.end_gcp not in self.gcp_registry.points:
-                raise KeyError(f"End GCP not found in registry: {line.end_gcp}")
             self.lines.append(line)
 
 
