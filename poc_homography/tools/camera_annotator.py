@@ -802,39 +802,53 @@ def create_html(image_filename: str) -> str:
 
         // Switch to a different image
         async function switchImage(filename) {{
+            console.log('switchImage called with:', filename);
             try {{
                 const resp = await fetch('/api/switch-image', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{ filename }})
                 }});
+                console.log('Response status:', resp.status);
                 const data = await resp.json();
+                console.log('Response data:', data);
 
                 if (data.success) {{
-                    // Update image src with cache-busting query param
-                    img.src = '/image?t=' + Date.now();
-
-                    // Clear pending point
+                    // Clear pending point first
                     pendingPoint = null;
                     gcpSection.classList.remove('active');
 
                     // Load new annotations from response
                     annotations = data.annotations || [];
 
-                    // Update UI
+                    // Update filename display
                     filenameDisplay.textContent = data.filename;
-                    renderMarkers();
+
+                    // Update image src with cache-busting query param
+                    // Use onload to re-render markers after image loads
+                    const newSrc = '/image?t=' + Date.now();
+                    console.log('Setting image src to:', newSrc);
+                    img.onload = function() {{
+                        console.log('Image loaded successfully');
+                        renderMarkers();
+                    }};
+                    img.onerror = function() {{
+                        console.error('Image failed to load');
+                    }};
+                    img.src = newSrc;
+
+                    // Update other UI elements
                     renderAnnotationsList();
                     updateYamlPreview();
 
-                    console.log(`Switched to image: ${{filename}}`);
+                    console.log(`Switched to image: ${{filename}}, ${{annotations.length}} annotations`);
                 }} else {{
                     console.error('Failed to switch image:', data.error);
                     alert('Failed to switch image: ' + (data.error || 'Unknown error'));
                 }}
             }} catch (e) {{
                 console.error('Failed to switch image:', e);
-                alert('Failed to switch image');
+                alert('Failed to switch image: ' + e.message);
             }}
         }}
 
@@ -907,11 +921,14 @@ class AnnotatorHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(html_content.encode())
 
         elif path == "/image":
-            # Serve the image
+            # Serve the image with no-cache headers to ensure fresh content after switch
             if state.image_path.exists():
                 mime_type, _ = mimetypes.guess_type(str(state.image_path))
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type or "image/jpeg")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
                 self.end_headers()
                 with open(state.image_path, "rb") as f:
                     self.wfile.write(f.read())
