@@ -10,6 +10,7 @@ from requests.auth import HTTPDigestAuth
 
 from poc_homography.domain.protocols import CameraControllerError
 from poc_homography.domain.vo.ptz_state import PTZState
+from poc_homography.types import Degrees, Unitless
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.camera_config import CameraConfig
@@ -148,9 +149,9 @@ class HikvisionCameraController:
             assert abs_zoom is not None and abs_zoom.text is not None
 
             return PTZState(
-                pan_raw=float(azimuth.text) / 10,
-                tilt_deg=float(elevation.text) / 10,
-                zoom=float(abs_zoom.text) / 10,
+                pan_raw=Degrees(float(azimuth.text) / 10),
+                tilt_deg=Degrees(float(elevation.text) / 10),
+                zoom=Unitless(float(abs_zoom.text) / 10),
             )
         except ET.ParseError as e:
             raise CameraControllerError(f"XML parse error: {e}") from e

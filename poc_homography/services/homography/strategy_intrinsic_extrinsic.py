@@ -60,7 +60,7 @@ class StrategyIntrinsicExtrinsic:
 
         # Build intrinsics from spec and current zoom
         focal_length = spec.focal_length_at_zoom(ptz_state.zoom)
-        intrinsics = CameraIntrinsics(
+        intrinsics = CameraIntrinsics.create(
             sensor_width=spec.sensor_width,
             base_focal_length=spec.base_focal_length,
             image_width=spec.image_width,
@@ -91,7 +91,7 @@ class StrategyIntrinsicExtrinsic:
         params = CameraParameters.create(
             image_width=intrinsics.image_width,
             image_height=intrinsics.image_height,
-            intrinsic_matrix=intrinsics.K,
+            intrinsic_matrix=intrinsics.to_K().to_array(),
             camera_position=camera_position,
             pan_deg=Degrees(float(final_orientation.yaw)),
             tilt_deg=Degrees(float(final_orientation.pitch)),

@@ -120,7 +120,7 @@ def compute_intrinsics(
     cy = PixelsFloat(image_height / 2.0)
 
     # CameraIntrinsics computes focal_length_px, cx, cy, and K automatically
-    return CameraIntrinsics(
+    return CameraIntrinsics.create(
         sensor_width=sensor_width_mm,
         base_focal_length=base_focal_length_mm,
         image_width=image_width,

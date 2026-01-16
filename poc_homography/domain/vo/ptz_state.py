@@ -1,20 +1,22 @@
 from dataclasses import dataclass
 from typing import Any
 
+from poc_homography.types import Degrees, Unitless
+
 
 @dataclass(frozen=True)
 class PTZState:
     """Camera state when a calibration frame was captured.
 
     Attributes:
-        pan_raw: Raw pan position from PTZ API.
+        pan_raw: Pan angle in degrees (from PTZ API, before offset).
         tilt_deg: Tilt angle in degrees.
         zoom: Zoom level (1.0 = no zoom).
     """
 
-    pan_raw: float
-    tilt_deg: float
-    zoom: float
+    pan_raw: Degrees
+    tilt_deg: Degrees
+    zoom: Unitless
 
     def to_dict(self) -> dict[str, Any]:
         """Convert CameraPose to a dictionary for JSON serialization.
@@ -43,7 +45,7 @@ class PTZState:
             ValueError: If data types are invalid.
         """
         return cls(
-            pan_raw=float(data["pan_raw"]),
-            tilt_deg=float(data["tilt_deg"]),
-            zoom=float(data["zoom"]),
+            pan_raw=Degrees(float(data["pan_raw"])),
+            tilt_deg=Degrees(float(data["tilt_deg"])),
+            zoom=Unitless(float(data["zoom"])),
         )

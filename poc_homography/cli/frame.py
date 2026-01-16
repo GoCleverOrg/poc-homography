@@ -12,7 +12,7 @@ from poc_homography.application import ApplicationContext
 from poc_homography.cli.main import frame_app
 from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.vo import PixelPoint, PTZState
-from poc_homography.types import PixelsFloat
+from poc_homography.types import Degrees, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
     from poc_homography.calibration.interactive import CalibrationSession
@@ -461,9 +461,9 @@ def _run_annotation_session(
                         gcp_id=pt.map_point_id,
                         frame_id=frame_id,
                         camera_pose=PTZState(
-                            pan_raw=float(session.pan_raw),
-                            tilt_deg=float(session.tilt_deg),
-                            zoom=float(session.zoom),
+                            pan_raw=Degrees(float(session.pan_raw)),
+                            tilt_deg=Degrees(float(session.tilt_deg)),
+                            zoom=Unitless(float(session.zoom)),
                         ),
                         pixel=PixelPoint(
                             _x=PixelsFloat(pt.pixel_u),

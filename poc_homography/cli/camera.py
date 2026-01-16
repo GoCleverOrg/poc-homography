@@ -133,7 +133,7 @@ def _format_human_readable(
     intr: CameraIntrinsics,
 ) -> str:
     """Format result for human-readable output."""
-    K = intr.K
+    K = intr.to_K().to_array()
 
     lines = [
         "=" * 60,
@@ -197,7 +197,7 @@ def _format_json(
             "image_width": intr.image_width,
             "image_height": intr.image_height,
         },
-        "K": intr.K.tolist(),
+        "K": intr.to_K().to_list(),
     }
     return json.dumps(output, indent=2)
 
