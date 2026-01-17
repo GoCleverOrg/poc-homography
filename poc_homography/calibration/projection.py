@@ -129,7 +129,7 @@ def analyze_projection_error(
         camera_position=camera_position,
         orientation=orientation,
     )
-    H = homography.to_matrix().to_array()
+    H = homography.to_matrix()._to_array()
 
     world_pt = np.array([[float(x_m)], [float(y_m)], [1.0]])
     img_pt = H @ world_pt
@@ -172,7 +172,7 @@ def analyze_projection_error(
             orientation=test_orientation,
         )
 
-        test_H = test_homography.to_matrix().to_array()
+        test_H = test_homography.to_matrix()._to_array()
         img_pt = test_H @ world_pt
 
         if img_pt[2, 0] > 0:
@@ -203,7 +203,7 @@ def analyze_projection_error(
             orientation=orientation,
         )
 
-        test_H = test_homography.to_matrix().to_array()
+        test_H = test_homography.to_matrix()._to_array()
         img_pt = test_H @ world_pt
 
         if img_pt[2, 0] > 0:
@@ -239,7 +239,7 @@ def analyze_projection_error(
                 )
             except ValueError:
                 continue
-            test_H = test_homography.to_matrix().to_array()
+            test_H = test_homography.to_matrix()._to_array()
             img_pt = test_H @ world_pt
             if img_pt[2, 0] > 0:
                 u = img_pt[0, 0] / img_pt[2, 0]

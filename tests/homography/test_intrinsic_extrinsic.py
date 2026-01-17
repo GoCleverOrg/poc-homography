@@ -524,7 +524,7 @@ class TestHomographyConsistencyProperties:
             camera_position=camera_position_vo,
             orientation=orientation,
         )
-        H_geo = homography._matrix.to_array()
+        H_geo = homography._matrix._to_array()
 
         # IntrinsicExtrinsicHomography approach via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -593,7 +593,7 @@ class TestHomographyConsistencyProperties:
             camera_position=camera_position_vo,
             orientation=orientation,
         )
-        H_geo = homography._matrix.to_array()
+        H_geo = homography._matrix._to_array()
 
         # Setup IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(

@@ -570,7 +570,7 @@ class CameraGeometry:
         from poc_homography.domain.vo import Homography
 
         # Extract numpy arrays from VOs
-        K = intrinsics.to_K().to_array()
+        K = intrinsics.to_K()._to_array()
         w_pos = camera_position.to_array()
         pan_deg = Degrees(float(orientation.yaw))
         tilt_deg = Degrees(float(orientation.pitch))

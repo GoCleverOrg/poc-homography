@@ -214,7 +214,7 @@ class CalibrationSession:
                     camera_position=camera_position,
                     orientation=orientation,
                 )
-                H = homography.to_matrix().to_array()
+                H = homography.to_matrix()._to_array()
 
                 for pt in self.reference_points:
                     map_point = self.registry[pt.map_point_id].map_point
@@ -329,7 +329,7 @@ class CalibrationSession:
                 except ValueError:
                     continue
 
-                H = homography.to_matrix().to_array()
+                H = homography.to_matrix()._to_array()
                 total_error = 0.0
                 valid_points = 0
 

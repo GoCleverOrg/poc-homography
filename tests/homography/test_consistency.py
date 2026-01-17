@@ -40,8 +40,8 @@ def test_forward_backward_consistency():
     )
 
     homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-    H = homography._matrix.to_array()
-    H_inv = homography.inverse._matrix.to_array()
+    H = homography._matrix._to_array()
+    H_inv = homography.inverse._matrix._to_array()
 
     # Test points at various distances
     world_points = [
@@ -102,7 +102,7 @@ def test_principal_point_projection():
         )
 
         homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-        H_inv = homography.inverse._matrix.to_array()
+        H_inv = homography.inverse._matrix._to_array()
 
         # Project center of image to ground
         cx, cy = 2560 / 2, 1440 / 2
@@ -147,7 +147,7 @@ def test_horizon_behavior():
     )
 
     homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-    H_inv = homography.inverse._matrix.to_array()
+    H_inv = homography.inverse._matrix._to_array()
 
     print("\nProjecting points from bottom to top of image:")
     # Test points at different vertical positions
@@ -193,7 +193,7 @@ def test_pan_rotation():
         )
 
         homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-        H_inv = homography.inverse._matrix.to_array()
+        H_inv = homography.inverse._matrix._to_array()
 
         pt_image = np.array([[u], [v], [1.0]])
         pt_world = H_inv @ pt_image
@@ -233,7 +233,7 @@ def test_zoom_effect():
         )
 
         homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-        H_inv = homography.inverse._matrix.to_array()
+        H_inv = homography.inverse._matrix._to_array()
 
         pt_image = np.array([[u], [v], [1.0]])
         pt_world = H_inv @ pt_image

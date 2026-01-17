@@ -51,14 +51,14 @@ class TestMatrix3x3Creation:
         arr = make_simple_matrix()
         m = Matrix3x3.create(arr)
 
-        np.testing.assert_array_almost_equal(m.to_array(), arr)
+        np.testing.assert_array_almost_equal(m._to_array(), arr)
 
     def test_create_from_list(self):
         """Test creating from nested list."""
         data = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         m = Matrix3x3.create(np.array(data))
 
-        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+        np.testing.assert_array_almost_equal(m._to_array(), np.eye(3))
 
     def test_create_rejects_wrong_shape_2x3(self):
         """Test that 2x3 matrices are rejected."""
@@ -113,14 +113,14 @@ class TestMatrix3x3ArrayAccess:
         arr = make_simple_matrix()
         m = Matrix3x3.create(arr)
 
-        result = m.to_array()
+        result = m._to_array()
 
         np.testing.assert_array_equal(result, arr)
 
     def test_to_array_is_immutable(self):
         """Test that returned array cannot be modified."""
         m = Matrix3x3.create(make_simple_matrix())
-        arr = m.to_array()
+        arr = m._to_array()
 
         with pytest.raises(ValueError):
             arr[0, 0] = 999.0
@@ -129,8 +129,8 @@ class TestMatrix3x3ArrayAccess:
         """Test that multiple calls return consistent data."""
         m = Matrix3x3.create(make_simple_matrix())
 
-        arr1 = m.to_array()
-        arr2 = m.to_array()
+        arr1 = m._to_array()
+        arr2 = m._to_array()
 
         np.testing.assert_array_equal(arr1, arr2)
 
@@ -187,7 +187,7 @@ class TestMatrix3x3Inverse:
         m = Matrix3x3.create(make_identity())
         m_inv = m.inverse()
 
-        np.testing.assert_array_almost_equal(m_inv.to_array(), np.eye(3))
+        np.testing.assert_array_almost_equal(m_inv._to_array(), np.eye(3))
 
     def test_inverse_simple_matrix(self):
         """Test inverse of simple matrix."""
@@ -196,7 +196,7 @@ class TestMatrix3x3Inverse:
         m_inv = m.inverse()
 
         expected_inv = np.linalg.inv(arr)
-        np.testing.assert_array_almost_equal(m_inv.to_array(), expected_inv)
+        np.testing.assert_array_almost_equal(m_inv._to_array(), expected_inv)
 
     def test_inverse_returns_matrix3x3(self):
         """Test that inverse returns a Matrix3x3 instance."""
@@ -210,7 +210,7 @@ class TestMatrix3x3Inverse:
         m = Matrix3x3.create(make_simple_matrix())
         m_inv = m.inverse()
 
-        product = m.to_array() @ m_inv.to_array()
+        product = m._to_array() @ m_inv._to_array()
 
         np.testing.assert_array_almost_equal(product, np.eye(3))
 
@@ -220,7 +220,7 @@ class TestMatrix3x3Inverse:
         m = Matrix3x3.create(arr)
         m_double_inv = m.inverse().inverse()
 
-        np.testing.assert_array_almost_equal(m_double_inv.to_array(), arr)
+        np.testing.assert_array_almost_equal(m_double_inv._to_array(), arr)
 
     def test_inverse_singular_matrix_raises(self):
         """Test that inverse of singular matrix raises error."""
@@ -244,7 +244,7 @@ class TestMatrix3x3RotationFactories:
         """Test rotation_x(0) returns identity."""
         m = Matrix3x3.rotation_x(0.0)
 
-        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+        np.testing.assert_array_almost_equal(m._to_array(), np.eye(3))
 
     def test_rotation_x_90_degrees(self):
         """Test rotation_x(90 deg) rotates Y to Z."""
@@ -259,7 +259,7 @@ class TestMatrix3x3RotationFactories:
         """Test rotation_y(0) returns identity."""
         m = Matrix3x3.rotation_y(0.0)
 
-        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+        np.testing.assert_array_almost_equal(m._to_array(), np.eye(3))
 
     def test_rotation_y_90_degrees(self):
         """Test rotation_y(90 deg) rotates Z to X."""
@@ -274,7 +274,7 @@ class TestMatrix3x3RotationFactories:
         """Test rotation_z(0) returns identity."""
         m = Matrix3x3.rotation_z(0.0)
 
-        np.testing.assert_array_almost_equal(m.to_array(), np.eye(3))
+        np.testing.assert_array_almost_equal(m._to_array(), np.eye(3))
 
     def test_rotation_z_90_degrees(self):
         """Test rotation_z(90 deg) rotates X to Y."""
@@ -344,7 +344,7 @@ class TestMatrix3x3Multiplication:
 
         assert isinstance(result, Matrix3x3)
         expected = make_simple_matrix() @ make_rotation_matrix(np.pi / 6)
-        np.testing.assert_array_almost_equal(result.to_array(), expected)
+        np.testing.assert_array_almost_equal(result._to_array(), expected)
 
     def test_matmul_rotation_composition(self):
         """Test composing rotations via @."""
@@ -354,8 +354,8 @@ class TestMatrix3x3Multiplication:
         result = rx @ ry
 
         assert isinstance(result, Matrix3x3)
-        expected = rx.to_array() @ ry.to_array()
-        np.testing.assert_array_almost_equal(result.to_array(), expected)
+        expected = rx._to_array() @ ry._to_array()
+        np.testing.assert_array_almost_equal(result._to_array(), expected)
 
 
 class TestMatrix3x3Serialization:
@@ -386,7 +386,7 @@ class TestMatrix3x3Serialization:
         data = original.to_list()
         restored = Matrix3x3.from_list(data)
 
-        np.testing.assert_array_almost_equal(restored.to_array(), original.to_array())
+        np.testing.assert_array_almost_equal(restored._to_array(), original._to_array())
 
 
 class TestMatrix3x3Hashability:

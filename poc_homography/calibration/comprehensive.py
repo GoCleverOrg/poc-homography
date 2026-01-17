@@ -311,7 +311,7 @@ def compute_projection_error(
                 errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
-            H = homography.to_matrix().to_array()
+            H = homography.to_matrix()._to_array()
 
             # Project world point to image (gives undistorted coordinates)
             world_pt = np.array([[x_m], [y_m], [1.0]])

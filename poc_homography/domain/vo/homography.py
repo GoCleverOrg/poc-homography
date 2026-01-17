@@ -175,7 +175,7 @@ class Homography:
             ValueError: If point projects to infinity (on or near horizon).
         """
         pt_homogeneous = np.array([u, v, 1.0])
-        world_homogeneous = self._inverse_matrix.to_array() @ pt_homogeneous
+        world_homogeneous = self._inverse_matrix._to_array() @ pt_homogeneous
 
         if abs(world_homogeneous[2]) < 1e-10:
             raise ValueError("Point projects to infinity (on horizon line)")
@@ -199,7 +199,7 @@ class Homography:
             ValueError: If point projects to infinity.
         """
         world_homogeneous = np.array([Xw, Yw, 1.0])
-        image_homogeneous = self._matrix.to_array() @ world_homogeneous
+        image_homogeneous = self._matrix._to_array() @ world_homogeneous
 
         if abs(image_homogeneous[2]) < 1e-10:
             raise ValueError("Point projects to infinity")

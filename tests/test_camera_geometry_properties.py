@@ -193,7 +193,7 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
     orientation = Orientation.create(yaw=Degrees(pan), pitch=Degrees(tilt), roll=Degrees(0.0))
 
     homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-    H = homography._matrix.to_array()
+    H = homography._matrix._to_array()
 
     # Property 2a: det(H) != 0 (invertible)
     det_H = np.linalg.det(H)
@@ -275,8 +275,8 @@ def test_projection_round_trip_consistency(
     orientation = Orientation.create(yaw=Degrees(pan), pitch=Degrees(tilt), roll=Degrees(0.0))
 
     homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-    H = homography._matrix.to_array()
-    H_inv = homography.inverse._matrix.to_array()
+    H = homography._matrix._to_array()
+    H_inv = homography.inverse._matrix._to_array()
 
     # Forward projection: pixel -> world
     pixel_hom = np.array([[pixel_u], [pixel_v], [1.0]])
@@ -560,7 +560,7 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     orientation = Orientation.create(yaw=Degrees(pan), pitch=Degrees(tilt), roll=Degrees(0.0))
 
     homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-    H = homography._matrix.to_array()
+    H = homography._matrix._to_array()
 
     # Create three collinear points in world coordinates (along a line)
     # Point A: 10m in front of camera

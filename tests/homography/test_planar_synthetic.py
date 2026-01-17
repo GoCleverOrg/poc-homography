@@ -291,7 +291,7 @@ class TestHomographySyntheticProjection:
         )
 
         # Get the homography matrix
-        H = homography._matrix.to_array()
+        H = homography._matrix._to_array()
         assert H.shape == (3, 3), f"Homography must be 3x3, got {H.shape}"
 
         # Compute rotation matrix independently
@@ -447,7 +447,7 @@ class TestHomographyShapeAndNormalization:
             orientation=orientation,
         )
 
-        H = homography._matrix.to_array()
+        H = homography._matrix._to_array()
         assert H.shape == (3, 3), (
             f"Homography must be 3x3 (planar), got {H.shape}. "
             f"A 3x4 matrix would be a projection matrix, not a homography."
@@ -501,7 +501,7 @@ class TestHomographyShapeAndNormalization:
             orientation=orientation,
         )
 
-        H = homography._matrix.to_array()
+        H = homography._matrix._to_array()
 
         # Skip if we got identity (normalization failed)
         if np.allclose(H, np.eye(3)):
@@ -576,7 +576,7 @@ class TestHomographyConsistencyBetweenModules:
             camera_position=camera_position_vo,
             orientation=orientation,
         )
-        H_geo = homography._matrix.to_array()
+        H_geo = homography._matrix._to_array()
 
         # Setup IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -631,7 +631,7 @@ class TestSpecificCameraConfigurations:
             orientation=orientation,
         )
 
-        H = homography._matrix.to_array()
+        H = homography._matrix._to_array()
 
         # Verify shape
         assert H.shape == (3, 3)
@@ -677,7 +677,7 @@ class TestSpecificCameraConfigurations:
             orientation=orientation,
         )
 
-        H = homography._matrix.to_array()
+        H = homography._matrix._to_array()
 
         # Verify shape
         assert H.shape == (3, 3)
@@ -728,7 +728,7 @@ class TestSpecificCameraConfigurations:
                 camera_position=camera_position_vo,
                 orientation=orientation,
             )
-            H_geo = homography._matrix.to_array()
+            H_geo = homography._matrix._to_array()
 
             # IntrinsicExtrinsicHomography via static method
             H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(

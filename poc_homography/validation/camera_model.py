@@ -127,7 +127,7 @@ def project_map_point_to_pixel(
             orientation=orientation,
             distortion=distortion,
         )
-        H = homography.to_matrix().to_array()
+        H = homography.to_matrix()._to_array()
 
         # Project world point to image
         world_pt = np.array([[x_m], [y_m], [1.0]])

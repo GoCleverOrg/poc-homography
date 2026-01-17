@@ -48,7 +48,7 @@ class TestHomographyCreation:
         H = make_simple_homography()
         homography = Homography.create(H)
 
-        np.testing.assert_array_almost_equal(homography.to_matrix().to_array(), H)
+        np.testing.assert_array_almost_equal(homography.to_matrix()._to_array(), H)
 
     def test_create_computes_condition_number(self):
         """Test that condition number is computed correctly."""
@@ -141,7 +141,7 @@ class TestHomographyMatrixAccess:
 
         result = homography.to_matrix()
 
-        np.testing.assert_array_almost_equal(result.to_array(), H)
+        np.testing.assert_array_almost_equal(result._to_array(), H)
 
     def test_condition_number_accessible(self):
         """Test that condition number is accessible."""
@@ -175,7 +175,7 @@ class TestHomographyInverse:
         inv = homography.inverse
         expected_inv = np.linalg.inv(H)
 
-        np.testing.assert_array_almost_equal(inv.to_matrix().to_array(), expected_inv)
+        np.testing.assert_array_almost_equal(inv.to_matrix()._to_array(), expected_inv)
 
     def test_inverse_determinant_is_reciprocal(self):
         """Test that inverse determinant is 1/original."""
@@ -201,7 +201,7 @@ class TestHomographyInverse:
         double_inv = homography.inverse.inverse
 
         np.testing.assert_array_almost_equal(
-            double_inv.to_matrix().to_array(), homography.to_matrix().to_array()
+            double_inv.to_matrix()._to_array(), homography.to_matrix()._to_array()
         )
 
 
@@ -308,7 +308,7 @@ class TestHomographySerialization:
         restored = Homography.from_dict(data)
 
         np.testing.assert_array_almost_equal(
-            restored.to_matrix().to_array(), original.to_matrix().to_array()
+            restored.to_matrix()._to_array(), original.to_matrix()._to_array()
         )
         assert restored.condition_number == pytest.approx(original.condition_number, rel=1e-10)
         assert restored.determinant == pytest.approx(original.determinant, rel=1e-10)

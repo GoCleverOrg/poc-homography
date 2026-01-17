@@ -216,7 +216,7 @@ class TestCameraIntrinsicsMatrix:
             focal_length=FOCAL_LENGTH_1X,
         )
 
-        K = intrinsics.to_K().to_array()
+        K = intrinsics.to_K()._to_array()
 
         # K should be:
         # [fx  0  cx]
@@ -261,7 +261,7 @@ class TestCameraIntrinsicsMatrix:
             focal_length=FOCAL_LENGTH_1X,
         )
 
-        K = intrinsics.to_K().to_array()
+        K = intrinsics.to_K()._to_array()
 
         with pytest.raises(ValueError):
             K[0, 0] = 999.0

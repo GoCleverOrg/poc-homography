@@ -107,7 +107,7 @@ class Orientation:
         Returns:
             New Orientation instance.
         """
-        R = rotation.to_matrix().to_array()
+        R = rotation.to_matrix()._to_array()
 
         # Handle gimbal lock case
         if abs(R[2, 0]) >= 1.0 - 1e-6:

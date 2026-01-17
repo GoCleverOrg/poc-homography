@@ -37,8 +37,8 @@ def quick_test():
     orientation = Orientation.create(yaw=Degrees(0.0), pitch=Degrees(45.0), roll=Degrees(0.0))
 
     homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
-    H = homography._matrix.to_array()
-    H_inv = homography.inverse._matrix.to_array()
+    H = homography._matrix._to_array()
+    H_inv = homography.inverse._matrix._to_array()
 
     print("\n" + "-" * 70)
     print("TEST 1: Image Center Projection")

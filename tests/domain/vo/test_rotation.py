@@ -26,7 +26,7 @@ class TestRotationCreation:
         """Test from_euler(0, 0, 0) creates identity rotation."""
         r = Rotation.from_euler(Degrees(0), Degrees(0), Degrees(0))
 
-        np.testing.assert_array_almost_equal(r.to_matrix().to_array(), np.eye(3))
+        np.testing.assert_array_almost_equal(r.to_matrix()._to_array(), np.eye(3))
 
     def test_from_euler_yaw_only(self):
         """Test from_euler with yaw rotation only."""
@@ -124,8 +124,8 @@ class TestRotationComposition:
         result = r.compose(identity)
 
         np.testing.assert_array_almost_equal(
-            result.to_matrix().to_array(),
-            r.to_matrix().to_array(),
+            result.to_matrix()._to_array(),
+            r.to_matrix()._to_array(),
         )
 
     def test_compose_two_yaw_rotations(self):
@@ -137,8 +137,8 @@ class TestRotationComposition:
         expected = Rotation.from_euler(Degrees(75), Degrees(0), Degrees(0))
 
         np.testing.assert_array_almost_equal(
-            result.to_matrix().to_array(),
-            expected.to_matrix().to_array(),
+            result.to_matrix()._to_array(),
+            expected.to_matrix()._to_array(),
         )
 
     def test_compose_returns_rotation(self):
@@ -161,8 +161,8 @@ class TestRotationComposition:
         # Rotations don't commute in general
         with pytest.raises(AssertionError):
             np.testing.assert_array_almost_equal(
-                result1.to_matrix().to_array(),
-                result2.to_matrix().to_array(),
+                result1.to_matrix()._to_array(),
+                result2.to_matrix()._to_array(),
             )
 
 

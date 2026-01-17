@@ -133,7 +133,7 @@ def _format_human_readable(
     intr: CameraIntrinsics,
 ) -> str:
     """Format result for human-readable output."""
-    K = intr.to_K().to_array()
+    K = intr.to_K()._to_array()
 
     lines = [
         "=" * 60,

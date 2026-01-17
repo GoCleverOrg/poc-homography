@@ -162,7 +162,7 @@ class Matrix3x3:
             )
         )
 
-    def to_array(self) -> np.ndarray:
+    def _to_array(self) -> np.ndarray:
         """Get the matrix as an immutable numpy array.
 
         Returns:
@@ -175,7 +175,7 @@ class Matrix3x3:
     @property
     def determinant(self) -> float:
         """Compute the determinant of the matrix."""
-        return float(np.linalg.det(self.to_array()))
+        return float(np.linalg.det(self._to_array()))
 
     @property
     def condition_number(self) -> float:
@@ -184,7 +184,7 @@ class Matrix3x3:
         The condition number indicates numerical stability.
         Lower values are better; high values indicate potential numerical issues.
         """
-        return float(np.linalg.cond(self.to_array()))
+        return float(np.linalg.cond(self._to_array()))
 
     def inverse(self) -> Matrix3x3:
         """Compute the inverse matrix.
@@ -195,7 +195,7 @@ class Matrix3x3:
         Raises:
             ValueError: If matrix is singular (determinant near zero).
         """
-        arr = self.to_array()
+        arr = self._to_array()
         det = np.linalg.det(arr)
 
         if abs(det) < 1e-10:
@@ -223,15 +223,15 @@ class Matrix3x3:
         from poc_homography.domain.vo.vector3 import Vector3
 
         if isinstance(other, Vector3):
-            result = self.to_array() @ other.to_array()
+            result = self._to_array() @ other.to_array()
             return Vector3.from_array(result)
         if isinstance(other, Matrix3x3):
-            return Matrix3x3.create(self.to_array() @ other.to_array())
+            return Matrix3x3.create(self._to_array() @ other._to_array())
         return NotImplemented
 
     def to_list(self) -> list[list[float]]:
         """Convert to nested list for serialization."""
-        return self.to_array().tolist()
+        return self._to_array().tolist()
 
     @classmethod
     def from_list(cls, data: list[list[float]]) -> Matrix3x3:

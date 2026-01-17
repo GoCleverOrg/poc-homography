@@ -156,7 +156,7 @@ class TestCameraIntrinsicsCreateFactory:
         assert intrinsics.image_height == 1080
 
         # K matrix should be reconstructed
-        K = intrinsics.to_K().to_array()
+        K = intrinsics.to_K()._to_array()
         assert K.shape == (3, 3)
 
     def test_create_rejects_invalid_params(self):
@@ -348,8 +348,8 @@ class TestCameraGeometryComputeFromVoPureFunction:
             orientation=sample_orientation,
         )
 
-        H1 = result1._matrix.to_array()
-        H2 = result2._matrix.to_array()
+        H1 = result1._matrix._to_array()
+        H2 = result2._matrix._to_array()
 
         assert np.allclose(H1, H2)
         assert result1.condition_number == result2.condition_number
@@ -667,7 +667,7 @@ class TestImmutablePatternIntegration:
         assert result.determinant != 0
 
         # Should be able to project and inverse-project
-        H = result._matrix.to_array()
+        H = result._matrix._to_array()
         assert not np.allclose(H, np.eye(3))
 
     def test_intrinsic_extrinsic_full_pipeline(

@@ -484,7 +484,7 @@ class TestHomographyConsistency:
             camera_position=camera_position,
             orientation=orientation,
         )
-        H_geo = homography._matrix.to_array()
+        H_geo = homography._matrix._to_array()
 
         # IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -532,7 +532,7 @@ class TestHomographyConsistency:
             camera_position=camera_position,
             orientation=orientation,
         )
-        H_geo = homography._matrix.to_array()
+        H_geo = homography._matrix._to_array()
 
         # IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -606,7 +606,7 @@ class TestGPSProjection:
 
         # Inverse project image center
         center = np.array([[valte_config["width"] / 2], [valte_config["height"] / 2], [1.0]])
-        H_inv = homography.inverse._matrix.to_array()
+        H_inv = homography.inverse._matrix._to_array()
         world_pt = H_inv @ center
         x = world_pt[0, 0] / world_pt[2, 0]
         y = world_pt[1, 0] / world_pt[2, 0]
@@ -660,7 +660,7 @@ class TestGPSProjection:
 
         # Project
         pt = np.array([[x], [y], [1.0]])
-        H = homography._matrix.to_array()
+        H = homography._matrix._to_array()
         img_pt = H @ pt
         u = img_pt[0, 0] / img_pt[2, 0]
         v = img_pt[1, 0] / img_pt[2, 0]
