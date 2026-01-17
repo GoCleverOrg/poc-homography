@@ -27,7 +27,7 @@ import numpy as np
 from scipy.optimize import differential_evolution, minimize
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
@@ -290,30 +290,28 @@ def compute_projection_error(
                 errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
-            # Create parameters and compute homography using immutable API
-            w_pos = np.array([0.0, 0.0, float(params.height_m)])
-
+            # Create VOs and compute homography using new API
             try:
                 with suppress_stdout():
-                    camera_params = CameraParameters.create(
+                    intrinsics = CameraIntrinsics.from_K_matrix(
+                        K=K,
                         image_width=image_width,
                         image_height=image_height,
-                        intrinsic_matrix=K,
-                        camera_position=w_pos,
-                        pan_deg=pan_deg,
-                        tilt_deg=tilt_deg,
-                        roll_deg=Degrees(0.0),
-                        map_width=Pixels(640),
-                        map_height=Pixels(640),
-                        pixels_per_meter=Unitless(100.0),
+                        sensor_width=params.sensor_width_mm,
                     )
-                    result = CameraGeometry.compute(camera_params)
+                    camera_position = Vector3.create(0.0, 0.0, float(params.height_m))
+                    orientation = Orientation.create(yaw=pan_deg, pitch=tilt_deg, roll=Degrees(0.0))
+                    homography = CameraGeometry.compute_from_vo(
+                        intrinsics=intrinsics,
+                        camera_position=camera_position,
+                        orientation=orientation,
+                    )
             except ValueError as e:
                 _logger.debug("GCP %s: invalid camera parameters: %s", gcp.map_point_id, e)
                 errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
-            H = result.homography_matrix
+            H = homography.to_matrix().to_array()
 
             # Project world point to image (gives undistorted coordinates)
             world_pt = np.array([[x_m], [y_m], [1.0]])

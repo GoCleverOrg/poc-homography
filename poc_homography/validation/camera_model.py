@@ -16,9 +16,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
-from poc_homography.domain.vo import LensDistortion
-from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
+from poc_homography.domain.vo import CameraIntrinsics, LensDistortion, Orientation, Vector3
+from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.ground_control_point import GroundControlPoint
@@ -106,30 +105,29 @@ def project_map_point_to_pixel(
         actual_pan = Degrees(float(pan_deg) + float(pan_offset_deg))
         actual_tilt = Degrees(float(tilt_deg) + float(tilt_offset_deg))
 
-        # Create geometry using immutable API
-        w_pos = np.array([0.0, 0.0, float(camera_height)])
-
         # Set up distortion if needed
         distortion = None
         if k1 != 0.0 or k2 != 0.0:
             distortion = LensDistortion.radial_only(k1=Unitless(k1), k2=Unitless(k2))
 
-        params = CameraParameters.create(
+        # Create VOs for the new API
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K=K,
             image_width=image_width,
             image_height=image_height,
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=actual_pan,
-            tilt_deg=actual_tilt,
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+            sensor_width=Millimeters(sensor_width_mm),
+        )
+        camera_position = Vector3.create(0.0, 0.0, float(camera_height))
+        orientation = Orientation.create(yaw=actual_pan, pitch=actual_tilt, roll=Degrees(0.0))
+
+        # Compute homography using new VO-based API
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation,
             distortion=distortion,
         )
-
-        result = CameraGeometry.compute(params)
-        H = result.homography_matrix
+        H = homography.to_matrix().to_array()
 
         # Project world point to image
         world_pt = np.array([[x_m], [y_m], [1.0]])

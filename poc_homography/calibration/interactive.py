@@ -23,8 +23,8 @@ import numpy as np
 import numpy.typing as npt
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
 from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 # OpenCV is optional - not all environments have GUI support
@@ -197,23 +197,24 @@ class CalibrationSession:
                 self.sensor_width_mm,
             )
             pan_deg = Degrees(self.pan_raw + self.best_pan_offset)
-            w_pos = np.array([0.0, 0.0, float(self.best_height)])
 
             try:
-                params = CameraParameters.create(
+                intrinsics = CameraIntrinsics.from_K_matrix(
+                    K=K,
                     image_width=Pixels(self.image_width),
                     image_height=Pixels(self.image_height),
-                    intrinsic_matrix=K,
-                    camera_position=w_pos,
-                    pan_deg=pan_deg,
-                    tilt_deg=self.tilt_deg,
-                    roll_deg=Degrees(0.0),
-                    map_width=Pixels(640),
-                    map_height=Pixels(640),
-                    pixels_per_meter=Unitless(100.0),
+                    sensor_width=self.sensor_width_mm,
                 )
-                result = CameraGeometry.compute(params)
-                H = result.homography_matrix
+                camera_position = Vector3.create(0.0, 0.0, float(self.best_height))
+                orientation = Orientation.create(
+                    yaw=pan_deg, pitch=self.tilt_deg, roll=Degrees(0.0)
+                )
+                homography = CameraGeometry.compute_from_vo(
+                    intrinsics=intrinsics,
+                    camera_position=camera_position,
+                    orientation=orientation,
+                )
+                H = homography.to_matrix().to_array()
 
                 for pt in self.reference_points:
                     map_point = self.registry[pt.map_point_id].map_point
@@ -299,6 +300,14 @@ class CalibrationSession:
             self.sensor_width_mm,
         )
 
+        # Create intrinsics once for reuse
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K=K,
+            image_width=Pixels(self.image_width),
+            image_height=Pixels(self.image_height),
+            sensor_width=self.sensor_width_mm,
+        )
+
         best_error = float("inf")
         best_pan_offset = self.pan_offset_deg
         best_height = self.height_m
@@ -307,25 +316,20 @@ class CalibrationSession:
         for test_offset in np.arange(-180, 180, 1):
             test_pan = Degrees(self.pan_raw + test_offset)
             for test_height in np.arange(1.0, 20.0, 0.2):
-                test_w_pos = np.array([0.0, 0.0, test_height])
+                camera_position = Vector3.create(0.0, 0.0, test_height)
+                orientation = Orientation.create(
+                    yaw=test_pan, pitch=self.tilt_deg, roll=Degrees(0.0)
+                )
                 try:
-                    params = CameraParameters.create(
-                        image_width=Pixels(self.image_width),
-                        image_height=Pixels(self.image_height),
-                        intrinsic_matrix=K,
-                        camera_position=test_w_pos,
-                        pan_deg=test_pan,
-                        tilt_deg=self.tilt_deg,
-                        roll_deg=Degrees(0.0),
-                        map_width=Pixels(640),
-                        map_height=Pixels(640),
-                        pixels_per_meter=Unitless(100.0),
+                    homography = CameraGeometry.compute_from_vo(
+                        intrinsics=intrinsics,
+                        camera_position=camera_position,
+                        orientation=orientation,
                     )
-                    result = CameraGeometry.compute(params)
                 except ValueError:
                     continue
 
-                H = result.homography_matrix
+                H = homography.to_matrix().to_array()
                 total_error = 0.0
                 valid_points = 0
 

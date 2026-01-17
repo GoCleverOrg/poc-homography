@@ -17,10 +17,10 @@ Mathematical Background:
 
     where H = K @ [r1, r2, t] is a 3x3 matrix (NOT 3x4 projection matrix).
 
-Run with: python -m pytest tests/test_planar_homography_synthetic.py -v
+Run with: python -m pytest tests/homography/test_planar_synthetic.py -v
 
-UPDATED: Refactored for immutable API (Phase 2)
-- Uses CameraParameters.create() + CameraGeometry.compute() for CameraGeometry
+UPDATED: Refactored for VO-based API
+- Uses CameraGeometry.compute_from_vo() with domain VOs for CameraGeometry
 - Uses IntrinsicExtrinsicHomography._compute_ground_homography() static method
 """
 
@@ -33,12 +33,12 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
 from poc_homography.homography import IntrinsicExtrinsicHomography
-from poc_homography.types import Degrees, Pixels, Unitless
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 # ============================================================================
 # Hypothesis Strategies for Camera Parameters
@@ -275,24 +275,23 @@ class TestHomographySyntheticProjection:
         """
         width, height = dimensions
 
-        # Setup CameraGeometry via immutable API
+        # Setup CameraGeometry via VO-based API
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result = CameraGeometry.compute(params)
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
 
-        # Get the homography
-        H = result.homography_matrix
+        # Get the homography matrix
+        H = homography._matrix.to_array()
         assert H.shape == (3, 3), f"Homography must be 3x3, got {H.shape}"
 
         # Compute rotation matrix independently
@@ -435,22 +434,22 @@ class TestHomographyShapeAndNormalization:
         width, height = dimensions
 
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result = CameraGeometry.compute(params)
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
 
-        assert result.homography_matrix.shape == (3, 3), (
-            f"Homography must be 3x3 (planar), got {result.homography_matrix.shape}. "
+        H = homography._matrix.to_array()
+        assert H.shape == (3, 3), (
+            f"Homography must be 3x3 (planar), got {H.shape}. "
             f"A 3x4 matrix would be a projection matrix, not a homography."
         )
 
@@ -489,26 +488,27 @@ class TestHomographyShapeAndNormalization:
         width, height = dimensions
 
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result = CameraGeometry.compute(params)
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
+
+        H = homography._matrix.to_array()
 
         # Skip if we got identity (normalization failed)
-        if np.allclose(result.homography_matrix, np.eye(3)):
+        if np.allclose(H, np.eye(3)):
             return
 
-        assert abs(result.homography_matrix[2, 2] - 1.0) < 1e-10, (
-            f"Homography should be normalized with H[2,2] = 1, got H[2,2] = {result.homography_matrix[2, 2]}"
+        assert abs(H[2, 2] - 1.0) < 1e-10, (
+            f"Homography should be normalized with H[2,2] = 1, got H[2,2] = {H[2, 2]}"
         )
 
     @given(
@@ -562,22 +562,21 @@ class TestHomographyConsistencyBetweenModules:
         """
         width, height = dimensions
 
-        # Setup CameraGeometry via immutable API
+        # Setup CameraGeometry via VO-based API
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result_geo = CameraGeometry.compute(params)
-        H_geo = result_geo.homography_matrix
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
+        H_geo = homography._matrix.to_array()
 
         # Setup IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -619,25 +618,26 @@ class TestSpecificCameraConfigurations:
         zoom = 1.0
 
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result = CameraGeometry.compute(params)
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
+
+        H = homography._matrix.to_array()
 
         # Verify shape
-        assert result.homography_matrix.shape == (3, 3)
+        assert H.shape == (3, 3)
 
         # Verify normalization
-        assert abs(result.homography_matrix[2, 2] - 1.0) < 1e-10
+        assert abs(H[2, 2] - 1.0) < 1e-10
 
         # Point directly in front at ground distance = height = 10m
         world_point = np.array([0.0, 10.0, 0.0])
@@ -648,7 +648,7 @@ class TestSpecificCameraConfigurations:
         assert expected is not None, "Point should be visible"
 
         # Compare with homography
-        actual = project_via_homography(result.homography_matrix, world_point[:2])
+        actual = project_via_homography(H, world_point[:2])
 
         pixel_diff = math.sqrt((actual[0] - expected[0]) ** 2 + (actual[1] - expected[1]) ** 2)
         assert pixel_diff < 1e-6
@@ -664,22 +664,23 @@ class TestSpecificCameraConfigurations:
         zoom = 2.0
 
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result = CameraGeometry.compute(params)
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
+
+        H = homography._matrix.to_array()
 
         # Verify shape
-        assert result.homography_matrix.shape == (3, 3)
+        assert H.shape == (3, 3)
 
         # Point to the east of camera
         ground_dist = 15.0 / math.tan(math.radians(60.0))
@@ -689,7 +690,7 @@ class TestSpecificCameraConfigurations:
         expected = compute_expected_projection_3d(K, R, pos, world_point)
         assert expected is not None
 
-        actual = project_via_homography(result.homography_matrix, world_point[:2])
+        actual = project_via_homography(H, world_point[:2])
 
         pixel_diff = math.sqrt((actual[0] - expected[0]) ** 2 + (actual[1] - expected[1]) ** 2)
         assert pixel_diff < 1e-6
@@ -713,21 +714,21 @@ class TestSpecificCameraConfigurations:
         for pos, pan_deg, tilt_deg, zoom in configurations:
             width, height = 1920, 1080
 
-            # CameraGeometry via immutable API
+            # CameraGeometry via VO-based API
             K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
-            params = CameraParameters.create(
-                image_width=Pixels(width),
-                image_height=Pixels(height),
-                intrinsic_matrix=K,
-                camera_position=pos,
-                pan_deg=Degrees(pan_deg),
-                tilt_deg=Degrees(tilt_deg),
-                roll_deg=Degrees(0.0),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            intrinsics = CameraIntrinsics.from_K_matrix(
+                K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
             )
-            result_geo = CameraGeometry.compute(params)
+            camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+            orientation = Orientation.create(
+                yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+            )
+            homography = CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position_vo,
+                orientation=orientation,
+            )
+            H_geo = homography._matrix.to_array()
 
             # IntrinsicExtrinsicHomography via static method
             H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -735,11 +736,11 @@ class TestSpecificCameraConfigurations:
             )
 
             # Verify both are 3x3
-            assert result_geo.homography_matrix.shape == (3, 3)
+            assert H_geo.shape == (3, 3)
             assert H_ieh.shape == (3, 3)
 
             # Verify they match
-            assert np.allclose(result_geo.homography_matrix, H_ieh, atol=1e-6)
+            assert np.allclose(H_geo, H_ieh, atol=1e-6)
 
             # Test projection consistency
             R = compute_rotation_matrix(pan_deg, tilt_deg)
@@ -771,7 +772,7 @@ class TestSpecificCameraConfigurations:
                 if expected is None:
                     continue
 
-                actual = project_via_homography(result_geo.homography_matrix, wp[:2])
+                actual = project_via_homography(H_geo, wp[:2])
                 pixel_diff = math.sqrt(
                     (actual[0] - expected[0]) ** 2 + (actual[1] - expected[1]) ** 2
                 )

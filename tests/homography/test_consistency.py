@@ -1,7 +1,7 @@
 """
 Automated tests to verify homography consistency and correctness.
 
-These tests verify the immutable CameraGeometry.compute() API produces
+These tests verify the CameraGeometry.compute_from_vo() API produces
 consistent and correct homography matrices.
 """
 
@@ -13,8 +13,8 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
-from poc_homography.types import Degrees, Pixels, Unitless
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 
 def test_forward_backward_consistency():
@@ -27,24 +27,21 @@ def test_forward_backward_consistency():
     K = CameraGeometry.get_intrinsics(
         zoom_factor=Unitless(1.0), W_px=Pixels(2560), H_px=Pixels(1440)
     )
-    w_pos = np.array([0.0, 0.0, 5.0])  # 5m height
 
-    params = CameraParameters.create(
-        image_width=Pixels(2560),
-        image_height=Pixels(1440),
-        intrinsic_matrix=K,
-        camera_position=w_pos,
-        pan_deg=Degrees(0.0),
-        tilt_deg=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
-        roll_deg=Degrees(0.0),
-        map_width=Pixels(640),
-        map_height=Pixels(480),
-        pixels_per_meter=Unitless(100.0),
+    # Create VOs for compute_from_vo()
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(2560), Pixels(1440), sensor_width=Millimeters(6.78)
+    )
+    camera_position = Vector3.create(0.0, 0.0, 5.0)  # 5m height
+    orientation = Orientation.create(
+        yaw=Degrees(0.0),
+        pitch=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
+        roll=Degrees(0.0),
     )
 
-    result = CameraGeometry.compute(params)
-    H = result.homography_matrix
-    H_inv = result.inverse_homography_matrix
+    homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+    H = homography._matrix.to_array()
+    H_inv = homography.inverse._matrix.to_array()
 
     # Test points at various distances
     world_points = [
@@ -92,24 +89,20 @@ def test_principal_point_projection():
     K = CameraGeometry.get_intrinsics(
         zoom_factor=Unitless(1.0), W_px=Pixels(2560), H_px=Pixels(1440)
     )
-    w_pos = np.array([0.0, 0.0, 5.0])
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(2560), Pixels(1440), sensor_width=Millimeters(6.78)
+    )
+    camera_position = Vector3.create(0.0, 0.0, 5.0)
 
     for tilt in [30, 45, 60]:  # Positive = pointing down (Hikvision convention)
-        params = CameraParameters.create(
-            image_width=Pixels(2560),
-            image_height=Pixels(1440),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(0.0),
-            tilt_deg=Degrees(float(tilt)),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(480),
-            pixels_per_meter=Unitless(100.0),
+        orientation = Orientation.create(
+            yaw=Degrees(0.0),
+            pitch=Degrees(float(tilt)),
+            roll=Degrees(0.0),
         )
 
-        result = CameraGeometry.compute(params)
-        H_inv = result.inverse_homography_matrix
+        homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+        H_inv = homography.inverse._matrix.to_array()
 
         # Project center of image to ground
         cx, cy = 2560 / 2, 1440 / 2
@@ -143,23 +136,18 @@ def test_horizon_behavior():
     K = CameraGeometry.get_intrinsics(
         zoom_factor=Unitless(1.0), W_px=Pixels(2560), H_px=Pixels(1440)
     )
-    w_pos = np.array([0.0, 0.0, 5.0])
-
-    params = CameraParameters.create(
-        image_width=Pixels(2560),
-        image_height=Pixels(1440),
-        intrinsic_matrix=K,
-        camera_position=w_pos,
-        pan_deg=Degrees(0.0),
-        tilt_deg=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
-        roll_deg=Degrees(0.0),
-        map_width=Pixels(640),
-        map_height=Pixels(480),
-        pixels_per_meter=Unitless(100.0),
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(2560), Pixels(1440), sensor_width=Millimeters(6.78)
+    )
+    camera_position = Vector3.create(0.0, 0.0, 5.0)
+    orientation = Orientation.create(
+        yaw=Degrees(0.0),
+        pitch=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
+        roll=Degrees(0.0),
     )
 
-    result = CameraGeometry.compute(params)
-    H_inv = result.inverse_homography_matrix
+    homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+    H_inv = homography.inverse._matrix.to_array()
 
     print("\nProjecting points from bottom to top of image:")
     # Test points at different vertical positions
@@ -188,28 +176,24 @@ def test_pan_rotation():
     K = CameraGeometry.get_intrinsics(
         zoom_factor=Unitless(1.0), W_px=Pixels(2560), H_px=Pixels(1440)
     )
-    w_pos = np.array([0.0, 0.0, 5.0])
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(2560), Pixels(1440), sensor_width=Millimeters(6.78)
+    )
+    camera_position = Vector3.create(0.0, 0.0, 5.0)
 
     # Test same image point with different pan angles
     u, v = 2560 / 2, 1440 - 200  # Near bottom center
 
     print(f"\nProjecting point ({u:.0f}, {v:.0f})px with different pan angles:")
     for pan in [-90, -45, 0, 45, 90]:
-        params = CameraParameters.create(
-            image_width=Pixels(2560),
-            image_height=Pixels(1440),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(float(pan)),
-            tilt_deg=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(480),
-            pixels_per_meter=Unitless(100.0),
+        orientation = Orientation.create(
+            yaw=Degrees(float(pan)),
+            pitch=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
+            roll=Degrees(0.0),
         )
 
-        result = CameraGeometry.compute(params)
-        H_inv = result.inverse_homography_matrix
+        homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+        H_inv = homography.inverse._matrix.to_array()
 
         pt_image = np.array([[u], [v], [1.0]])
         pt_world = H_inv @ pt_image
@@ -229,7 +213,12 @@ def test_zoom_effect():
     print("TEST 5: Zoom Effect on Projection")
     print("=" * 60)
 
-    w_pos = np.array([0.0, 0.0, 5.0])
+    camera_position = Vector3.create(0.0, 0.0, 5.0)
+    orientation = Orientation.create(
+        yaw=Degrees(0.0),
+        pitch=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
+        roll=Degrees(0.0),
+    )
 
     # Same image point, different zoom levels
     u, v = 2560 / 2, 1440 - 200
@@ -239,22 +228,12 @@ def test_zoom_effect():
         K = CameraGeometry.get_intrinsics(
             zoom_factor=Unitless(zoom), W_px=Pixels(2560), H_px=Pixels(1440)
         )
-
-        params = CameraParameters.create(
-            image_width=Pixels(2560),
-            image_height=Pixels(1440),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(0.0),
-            tilt_deg=Degrees(45.0),  # Positive = pointing down (Hikvision convention)
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(480),
-            pixels_per_meter=Unitless(100.0),
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(2560), Pixels(1440), sensor_width=Millimeters(6.78)
         )
 
-        result = CameraGeometry.compute(params)
-        H_inv = result.inverse_homography_matrix
+        homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+        H_inv = homography.inverse._matrix.to_array()
 
         pt_image = np.array([[u], [v], [1.0]])
         pt_world = H_inv @ pt_image

@@ -125,6 +125,61 @@ class CameraIntrinsics:
             _sentinel=_PRIVATE_SENTINEL,
         )
 
+    @classmethod
+    def from_K_matrix(
+        cls,
+        K: np.ndarray,
+        image_width: Pixels,
+        image_height: Pixels,
+        sensor_width: Millimeters = Millimeters(6.78),
+        base_focal_length: Millimeters = Millimeters(5.9),
+    ) -> CameraIntrinsics:
+        """Create from pre-computed K matrix for legacy code migration.
+
+        This factory allows creating CameraIntrinsics from an existing K matrix
+        when the physical sensor parameters are not known precisely.
+
+        Args:
+            K: Pre-computed 3x3 intrinsic matrix.
+            image_width: Image width in pixels.
+            image_height: Image height in pixels.
+            sensor_width: Sensor width in mm (default: Hikvision PTZ spec).
+            base_focal_length: Base focal length in mm (default: 5.9mm).
+
+        Returns:
+            New CameraIntrinsics instance with matching K matrix.
+
+        Raises:
+            ValueError: If K matrix is invalid (not 3x3, contains NaN/Inf).
+        """
+        if K.shape != (3, 3):
+            raise ValueError(f"K must be 3x3, got shape {K.shape}")
+        if not np.all(np.isfinite(K)):
+            raise ValueError("K matrix contains NaN or Infinity values")
+
+        focal_length_px = float(K[0, 0])
+        focal_length_mm = Millimeters(focal_length_px * sensor_width / image_width)
+        dimensions = ImageDimensions.create(width=image_width, height=image_height)
+
+        K_rebuilt = np.array(
+            [
+                [focal_length_px, 0.0, dimensions.center_x],
+                [0.0, focal_length_px, dimensions.center_y],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+        K_matrix = Matrix3x3.create(K_rebuilt)
+
+        return cls(
+            sensor_width=sensor_width,
+            base_focal_length=base_focal_length,
+            dimensions=dimensions,
+            focal_length=focal_length_mm,
+            _K=K_matrix,
+            _sentinel=_PRIVATE_SENTINEL,
+        )
+
     @property
     def focal_length_px(self) -> PixelsFloat:
         """Focal length in pixels (computed from mm and sensor width)."""

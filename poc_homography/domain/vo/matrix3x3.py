@@ -225,7 +225,9 @@ class Matrix3x3:
         if isinstance(other, Vector3):
             result = self.to_array() @ other.to_array()
             return Vector3.from_array(result)
-        return Matrix3x3.create(self.to_array() @ other.to_array())
+        if isinstance(other, Matrix3x3):
+            return Matrix3x3.create(self.to_array() @ other.to_array())
+        return NotImplemented
 
     def to_list(self) -> list[list[float]]:
         """Convert to nested list for serialization."""

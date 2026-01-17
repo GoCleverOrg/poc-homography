@@ -9,11 +9,15 @@ across different approaches.
 """
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import (
-    CameraGeometryResult,
-    CameraParameters,
+from poc_homography.domain.vo import (
+    CameraIntrinsics,
+    HeightUncertainty,
+    Homography,
+    LensDistortion,
+    MapPoint,
+    Orientation,
+    Vector3,
 )
-from poc_homography.domain.vo import HeightUncertainty, LensDistortion, MapPoint
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography import (
     CoordinateSystemMode,
@@ -32,10 +36,12 @@ from poc_homography.homography import (
 )
 
 __all__ = [
-    # Core camera geometry (immutable API)
+    # Core camera geometry (VO-based API)
     "CameraGeometry",
-    "CameraParameters",
-    "CameraGeometryResult",
+    "CameraIntrinsics",
+    "Homography",
+    "Orientation",
+    "Vector3",
     "LensDistortion",
     "HeightUncertainty",
     # Homography interface

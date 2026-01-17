@@ -161,6 +161,54 @@ class Homography:
         matrix = np.array(data["matrix"], dtype=np.float64)
         return cls.create(matrix=matrix)
 
+    def image_to_world(self, u: float, v: float) -> tuple[float, float]:
+        """Project image point to world ground plane (Z=0).
+
+        Args:
+            u: Pixel x-coordinate in image.
+            v: Pixel y-coordinate in image.
+
+        Returns:
+            Tuple of (Xw, Yw) world coordinates in meters.
+
+        Raises:
+            ValueError: If point projects to infinity (on or near horizon).
+        """
+        pt_homogeneous = np.array([u, v, 1.0])
+        world_homogeneous = self._inverse_matrix.to_array() @ pt_homogeneous
+
+        if abs(world_homogeneous[2]) < 1e-10:
+            raise ValueError("Point projects to infinity (on horizon line)")
+
+        Xw = world_homogeneous[0] / world_homogeneous[2]
+        Yw = world_homogeneous[1] / world_homogeneous[2]
+
+        return float(Xw), float(Yw)
+
+    def world_to_image(self, Xw: float, Yw: float) -> tuple[float, float]:
+        """Project world point to image plane.
+
+        Args:
+            Xw: World x-coordinate in meters (East).
+            Yw: World y-coordinate in meters (North).
+
+        Returns:
+            Tuple of (u, v) pixel coordinates.
+
+        Raises:
+            ValueError: If point projects to infinity.
+        """
+        world_homogeneous = np.array([Xw, Yw, 1.0])
+        image_homogeneous = self._matrix.to_array() @ world_homogeneous
+
+        if abs(image_homogeneous[2]) < 1e-10:
+            raise ValueError("Point projects to infinity")
+
+        u = image_homogeneous[0] / image_homogeneous[2]
+        v = image_homogeneous[1] / image_homogeneous[2]
+
+        return float(u), float(v)
+
     def __hash__(self) -> int:
         """Compute hash for use in sets and as dict keys."""
         return hash((self._matrix, self._inverse_matrix))

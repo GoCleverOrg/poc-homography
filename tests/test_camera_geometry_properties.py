@@ -25,8 +25,8 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
-from poc_homography.types import Degrees, Pixels, Unitless
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
 # ============================================================================
 # Hypothesis Strategies for Valid Camera Parameters
@@ -184,23 +184,16 @@ def test_homography_invertibility(pan, tilt, height, zoom, dims):
     width, height_px = dims
 
     K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height_px))
-    w_pos = np.array([0.0, 0.0, height])
 
-    params = CameraParameters.create(
-        image_width=Pixels(width),
-        image_height=Pixels(height_px),
-        intrinsic_matrix=K,
-        camera_position=w_pos,
-        pan_deg=Degrees(pan),
-        tilt_deg=Degrees(tilt),
-        roll_deg=Degrees(0.0),
-        map_width=Pixels(640),
-        map_height=Pixels(640),
-        pixels_per_meter=Unitless(100.0),
+    # Create VOs for compute_from_vo()
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(width), Pixels(height_px), sensor_width=Millimeters(6.78)
     )
+    camera_position = Vector3.create(0.0, 0.0, height)
+    orientation = Orientation.create(yaw=Degrees(pan), pitch=Degrees(tilt), roll=Degrees(0.0))
 
-    result = CameraGeometry.compute(params)
-    H = result.homography_matrix
+    homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+    H = homography._matrix.to_array()
 
     # Property 2a: det(H) != 0 (invertible)
     det_H = np.linalg.det(H)
@@ -273,26 +266,21 @@ def test_projection_round_trip_consistency(
     pixel_v = pixel_v_fraction * height_px
 
     K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height_px))
-    w_pos = np.array([0.0, 0.0, height])
 
-    params = CameraParameters.create(
-        image_width=Pixels(width),
-        image_height=Pixels(height_px),
-        intrinsic_matrix=K,
-        camera_position=w_pos,
-        pan_deg=Degrees(pan),
-        tilt_deg=Degrees(tilt),
-        roll_deg=Degrees(0.0),
-        map_width=Pixels(640),
-        map_height=Pixels(640),
-        pixels_per_meter=Unitless(100.0),
+    # Create VOs for compute_from_vo()
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(width), Pixels(height_px), sensor_width=Millimeters(6.78)
     )
+    camera_position = Vector3.create(0.0, 0.0, height)
+    orientation = Orientation.create(yaw=Degrees(pan), pitch=Degrees(tilt), roll=Degrees(0.0))
 
-    result = CameraGeometry.compute(params)
+    homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+    H = homography._matrix.to_array()
+    H_inv = homography.inverse._matrix.to_array()
 
     # Forward projection: pixel -> world
     pixel_hom = np.array([[pixel_u], [pixel_v], [1.0]])
-    world_hom = result.inverse_homography_matrix @ pixel_hom
+    world_hom = H_inv @ pixel_hom
 
     # Normalize world coordinates
     w_scale = world_hom[2, 0]
@@ -305,7 +293,7 @@ def test_projection_round_trip_consistency(
 
     # Backward projection: world -> pixel
     world_hom_back = np.array([[world_x], [world_y], [1.0]])
-    pixel_hom_back = result.homography_matrix @ world_hom_back
+    pixel_hom_back = H @ world_hom_back
 
     # Normalize pixel coordinates
     pixel_u_back = pixel_hom_back[0, 0] / pixel_hom_back[2, 0]
@@ -563,22 +551,16 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     width, height_px = dims
 
     K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height_px))
-    w_pos = np.array([0.0, 0.0, height])
 
-    params = CameraParameters.create(
-        image_width=Pixels(width),
-        image_height=Pixels(height_px),
-        intrinsic_matrix=K,
-        camera_position=w_pos,
-        pan_deg=Degrees(pan),
-        tilt_deg=Degrees(tilt),
-        roll_deg=Degrees(0.0),
-        map_width=Pixels(640),
-        map_height=Pixels(640),
-        pixels_per_meter=Unitless(100.0),
+    # Create VOs for compute_from_vo()
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K, Pixels(width), Pixels(height_px), sensor_width=Millimeters(6.78)
     )
+    camera_position = Vector3.create(0.0, 0.0, height)
+    orientation = Orientation.create(yaw=Degrees(pan), pitch=Degrees(tilt), roll=Degrees(0.0))
 
-    result = CameraGeometry.compute(params)
+    homography = CameraGeometry.compute_from_vo(intrinsics, camera_position, orientation)
+    H = homography._matrix.to_array()
 
     # Create three collinear points in world coordinates (along a line)
     # Point A: 10m in front of camera
@@ -592,16 +574,16 @@ def test_homography_preserves_collinearity(pan, tilt, height, zoom, dims):
     B_world = (A_world + C_world) / 2.0
 
     # Project all three points to image
-    a_img_hom = result.homography_matrix @ A_world.reshape(-1, 1)
-    b_img_hom = result.homography_matrix @ B_world.reshape(-1, 1)
-    c_img_hom = result.homography_matrix @ C_world.reshape(-1, 1)
+    a_img_hom = H @ A_world.reshape(-1, 1)
+    b_img_hom = H @ B_world.reshape(-1, 1)
+    c_img_hom = H @ C_world.reshape(-1, 1)
 
     # Normalize to pixel coordinates
     a_img = np.array([a_img_hom[0, 0] / a_img_hom[2, 0], a_img_hom[1, 0] / a_img_hom[2, 0]])
     b_img = np.array([b_img_hom[0, 0] / b_img_hom[2, 0], b_img_hom[1, 0] / b_img_hom[2, 0]])
     c_img = np.array([c_img_hom[0, 0] / c_img_hom[2, 0], c_img_hom[1, 0] / c_img_hom[2, 0]])
 
-    # Skip if any point projects outside image bounds (not visible)
+    # Skip if any point projects outside reasonable image bounds (not visible)
     assume(0 <= a_img[0] <= width and 0 <= a_img[1] <= height_px)
     assume(0 <= b_img[0] <= width and 0 <= b_img[1] <= height_px)
     assume(0 <= c_img[0] <= width and 0 <= c_img[1] <= height_px)

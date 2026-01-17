@@ -4,15 +4,21 @@ from __future__ import annotations
 import logging
 import math
 import warnings
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from poc_homography.camera_parameters import (
-    CameraGeometryResult,
-    CameraParameters,
-)
 from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless, degrees_to_radians
+
+if TYPE_CHECKING:
+    from poc_homography.domain.vo import (
+        CameraIntrinsics,
+        Homography,
+        LensDistortion,
+        Orientation,
+        Vector3,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +29,7 @@ class CameraGeometry:
     Calculates the homography matrix H to map image points to the world ground plane.
 
     This class uses an IMMUTABLE pattern - all computation is done through the
-    static `compute()` classmethod which takes a CameraParameters config and returns
-    a CameraGeometryResult.
+    `compute_from_vo()` classmethod which takes domain VOs and returns a Homography VO.
 
     COORDINATE SYSTEM CONVENTIONS:
     ===============================
@@ -62,16 +67,23 @@ class CameraGeometry:
     USAGE:
     ======
     ```python
-    params = CameraParameters.create(
-        image_width=Pixels(1920), image_height=Pixels(1080),
-        intrinsic_matrix=K, camera_position=w_pos,
-        pan_deg=Degrees(45.0), tilt_deg=Degrees(30.0), roll_deg=Degrees(0.0),
-        map_width=Pixels(640), map_height=Pixels(640),
-        pixels_per_meter=Unitless(100.0)
+    from poc_homography.domain.vo import CameraIntrinsics, Vector3, Orientation
+    from poc_homography.types import Millimeters, Pixels, Degrees
+
+    intrinsics = CameraIntrinsics.create(
+        sensor_width=Millimeters(6.78),
+        base_focal_length=Millimeters(5.9),
+        image_width=Pixels(1920),
+        image_height=Pixels(1080),
+        zoom_factor=1.0,
     )
-    result = CameraGeometry.compute(params)
-    if result.is_valid:
-        H = result.homography_matrix
+    position = Vector3.create(0.0, 0.0, 10.0)
+    orientation = Orientation.create(
+        yaw=Degrees(45.0), pitch=Degrees(30.0), roll=Degrees(0.0)
+    )
+    homography = CameraGeometry.compute_from_vo(intrinsics, position, orientation)
+    u, v = homography.world_to_image(5.0, 10.0)
+    Xw, Yw = homography.image_to_world(u, v)
     ```
     """
 
@@ -167,143 +179,6 @@ class CameraGeometry:
         cx, cy = W_px / 2.0, H_px / 2.0
         K = np.array([[f_px, 0, cx], [0, f_px, cy], [0, 0, 1]])
         return K
-
-    @classmethod
-    def compute(cls, params: CameraParameters) -> CameraGeometryResult:
-        """Compute homography from camera parameters (pure function).
-
-        This is a pure classmethod that computes the ground plane homography
-        without modifying any instance state. It takes an immutable
-        CameraParameters config and returns an immutable CameraGeometryResult.
-
-        This enables functional-style programming patterns:
-        - Deterministic: same inputs always produce same outputs
-        - Parallelizable: no shared mutable state
-        - Testable: easy to test with known inputs/outputs
-        - Cacheable: results can be cached based on input parameters
-
-        Args:
-            params: Immutable camera configuration containing all required
-                parameters for homography computation.
-
-        Returns:
-            CameraGeometryResult containing the computed homography matrices
-            and validation state.
-
-        Raises:
-            ValueError: If parameters fail validation checks.
-
-        Example:
-            >>> params = CameraParameters.create(
-            ...     image_width=Pixels(1920),
-            ...     image_height=Pixels(1080),
-            ...     intrinsic_matrix=K,
-            ...     camera_position=np.array([0.0, 0.0, 10.0]),
-            ...     pan_deg=Degrees(0.0),
-            ...     tilt_deg=Degrees(45.0),
-            ...     roll_deg=Degrees(0.0),
-            ...     map_width=Pixels(640),
-            ...     map_height=Pixels(640),
-            ...     pixels_per_meter=Unitless(100.0),
-            ... )
-            >>> result = CameraGeometry.compute(params)
-            >>> if result.is_valid:
-            ...     H = result.homography_matrix
-        """
-        # Extract parameters from immutable config
-        K = params.intrinsic_matrix
-        w_pos = params.camera_position
-        pan_deg = params.pan_deg
-        tilt_deg = params.tilt_deg
-        roll_deg = params.roll_deg
-        image_width = params.image_width
-        image_height = params.image_height
-
-        # Validate parameters (using class validation constants)
-        cls._validate_parameters_static(K, w_pos, pan_deg, tilt_deg, roll_deg)
-
-        # Log parameters at INFO level
-        logger.info("Computing homography from CameraParameters:")
-        logger.info(f"  Camera position: [{w_pos[0]:.2f}, {w_pos[1]:.2f}, {w_pos[2]:.2f}] meters")
-        logger.info(f"  Pan: {pan_deg:.1f}, Tilt: {tilt_deg:.1f}, Roll: {roll_deg:.1f}")
-        logger.info(f"  Image dimensions: {image_width}x{image_height} pixels")
-
-        # Compute rotation matrix
-        R = cls._get_rotation_matrix_static(pan_deg, tilt_deg, roll_deg)
-
-        # Compute homography matrix
-        H = cls._calculate_ground_homography_static(K, w_pos, R)
-
-        # Collect validation messages
-        validation_messages: list[str] = []
-        is_valid = True
-
-        # Validate and compute inverse homography with condition number checks
-        det_H = float(np.linalg.det(H))
-        if abs(det_H) < 1e-10:
-            validation_messages.append(
-                f"Homography matrix is singular (det={det_H:.2e}). Cannot compute inverse."
-            )
-            is_valid = False
-            return CameraGeometryResult.create(
-                homography_matrix=H,
-                inverse_homography_matrix=np.eye(3),
-                condition_number=float("inf"),
-                determinant=det_H,
-                is_valid=False,
-                validation_messages=tuple(validation_messages),
-                center_projection_distance=None,
-            )
-
-        # Compute condition number
-        cond_H = float(np.linalg.cond(H))
-        if cond_H > cls.CONDITION_ERROR:
-            validation_messages.append(
-                f"Homography condition number {cond_H:.2e} exceeds error threshold ({cls.CONDITION_ERROR:.2e}). "
-                f"Matrix is ill-conditioned."
-            )
-            is_valid = False
-        elif cond_H > cls.CONDITION_WARN:
-            validation_messages.append(
-                f"Homography condition number {cond_H:.2e} exceeds warning threshold ({cls.CONDITION_WARN:.2e}). "
-                f"Inverse may be numerically unstable."
-            )
-
-        # Compute inverse
-        H_inv = np.asarray(np.linalg.inv(H))
-
-        # Validate projection and compute center distance
-        center_distance = cls._compute_center_projection_distance(
-            H_inv, w_pos, image_width, image_height, validation_messages
-        )
-
-        # Check for unreasonable projection distance
-        height_m = w_pos[2]
-        if center_distance is not None:
-            max_reasonable_distance = height_m * cls.MAX_DISTANCE_HEIGHT_RATIO
-            if center_distance > max_reasonable_distance:
-                validation_messages.append(
-                    f"Projected ground distance {center_distance:.2f}m is very large "
-                    f"(>{max_reasonable_distance:.2f}m). Near-horizontal tilt angle suspected."
-                )
-
-        logger.info("Homography computation complete.")
-        logger.info(f"  Homography det(H): {det_H:.2e}")
-        logger.info(f"  Homography condition number: {cond_H:.2e}")
-        if center_distance is not None:
-            logger.info(f"  Image center projects to ground at distance: {center_distance:.2f}m")
-
-        return CameraGeometryResult.create(
-            homography_matrix=H,
-            inverse_homography_matrix=H_inv,
-            condition_number=cond_H,
-            determinant=det_H,
-            is_valid=is_valid,
-            validation_messages=tuple(validation_messages),
-            center_projection_distance=Meters(center_distance)
-            if center_distance is not None
-            else None,
-        )
 
     @staticmethod
     def _validate_parameters_static(
@@ -572,65 +447,6 @@ class CameraGeometry:
         return distance
 
     @staticmethod
-    def project_image_to_world(
-        result: CameraGeometryResult,
-        u: float,
-        v: float,
-    ) -> tuple[float, float]:
-        """
-        Project an image point to world ground plane coordinates.
-
-        Args:
-            result: The computed CameraGeometryResult containing the inverse homography
-            u: Pixel x-coordinate in image
-            v: Pixel y-coordinate in image
-
-        Returns:
-            Tuple of (Xw, Yw) world coordinates in meters
-
-        Raises:
-            ValueError: If point projects to infinity (on or near horizon)
-        """
-        pt_homogeneous = np.array([u, v, 1.0])
-        world_homogeneous = result.inverse_homography_matrix @ pt_homogeneous
-
-        if abs(world_homogeneous[2]) < 1e-10:
-            raise ValueError("Point projects to infinity (on horizon line)")
-
-        Xw = world_homogeneous[0] / world_homogeneous[2]
-        Yw = world_homogeneous[1] / world_homogeneous[2]
-
-        return float(Xw), float(Yw)
-
-    @staticmethod
-    def project_world_to_image(
-        result: CameraGeometryResult,
-        Xw: float,
-        Yw: float,
-    ) -> tuple[float, float]:
-        """
-        Project a world ground plane point to image coordinates.
-
-        Args:
-            result: The computed CameraGeometryResult containing the homography
-            Xw: World x-coordinate in meters (East)
-            Yw: World y-coordinate in meters (North)
-
-        Returns:
-            Tuple of (u, v) pixel coordinates
-        """
-        world_homogeneous = np.array([Xw, Yw, 1.0])
-        image_homogeneous = result.homography_matrix @ world_homogeneous
-
-        if abs(image_homogeneous[2]) < 1e-10:
-            raise ValueError("Point projects to infinity")
-
-        u = image_homogeneous[0] / image_homogeneous[2]
-        v = image_homogeneous[1] / image_homogeneous[2]
-
-        return float(u), float(v)
-
-    @staticmethod
     def world_to_map(
         Xw: Meters,
         Yw: Meters,
@@ -723,3 +539,51 @@ class CameraGeometry:
         v_undist = y * fy + cy
 
         return (u_undist, v_undist)
+
+    @classmethod
+    def compute_from_vo(
+        cls,
+        intrinsics: CameraIntrinsics,
+        camera_position: Vector3,
+        orientation: Orientation,
+        distortion: LensDistortion | None = None,  # noqa: ARG003
+    ) -> Homography:
+        """Compute homography from domain value objects.
+
+        This is the primary API for computing homography matrices using the
+        immutable VO pattern. It takes domain VOs and returns a Homography VO.
+
+        Args:
+            intrinsics: Camera intrinsic parameters (K matrix, dimensions).
+            camera_position: Camera position in world coordinates [X, Y, Z] (meters).
+            orientation: Camera orientation (yaw, pitch, roll).
+            distortion: Optional lens distortion coefficients (currently not applied
+                to homography, but reserved for future use).
+
+        Returns:
+            Homography VO with projection methods (world_to_image, image_to_world).
+
+        Raises:
+            ValueError: If parameters are invalid or produce degenerate homography.
+        """
+        # Import here to avoid circular imports
+        from poc_homography.domain.vo import Homography
+
+        # Extract numpy arrays from VOs
+        K = intrinsics.to_K().to_array()
+        w_pos = camera_position.to_array()
+        pan_deg = Degrees(float(orientation.yaw))
+        tilt_deg = Degrees(float(orientation.pitch))
+        roll_deg = Degrees(float(orientation.roll))
+
+        # Validate parameters
+        cls._validate_parameters_static(K, w_pos, pan_deg, tilt_deg, roll_deg)
+
+        # Compute rotation matrix
+        R = cls._get_rotation_matrix_static(pan_deg, tilt_deg, roll_deg)
+
+        # Compute homography matrix
+        H = cls._calculate_ground_homography_static(K, w_pos, R)
+
+        # Create and return Homography VO
+        return Homography.create(H)

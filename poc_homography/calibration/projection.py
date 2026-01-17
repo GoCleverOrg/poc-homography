@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, PixelsFloat, Unitless
 
 
@@ -113,24 +113,23 @@ def analyze_projection_error(
 
     # Get intrinsics
     K = CameraGeometry.get_intrinsics(zoom, image_width, image_height, Millimeters(7.18))
-    w_pos = np.array([0.0, 0.0, float(height_m)])
 
-    # Create parameters and compute homography using immutable API
-    params = CameraParameters.create(
+    # Create VOs and compute homography using new API
+    intrinsics = CameraIntrinsics.from_K_matrix(
+        K=K,
         image_width=image_width,
         image_height=image_height,
-        intrinsic_matrix=K,
-        camera_position=w_pos,
-        pan_deg=pan_deg,
-        tilt_deg=tilt_deg,
-        roll_deg=Degrees(0.0),
-        map_width=Pixels(640),
-        map_height=Pixels(640),
-        pixels_per_meter=Unitless(100.0),
+        sensor_width=Millimeters(7.18),
     )
+    camera_position = Vector3.create(0.0, 0.0, float(height_m))
+    orientation = Orientation.create(yaw=pan_deg, pitch=tilt_deg, roll=Degrees(0.0))
 
-    result = CameraGeometry.compute(params)
-    H = result.homography_matrix
+    homography = CameraGeometry.compute_from_vo(
+        intrinsics=intrinsics,
+        camera_position=camera_position,
+        orientation=orientation,
+    )
+    H = homography.to_matrix().to_array()
 
     world_pt = np.array([[float(x_m)], [float(y_m)], [1.0]])
     img_pt = H @ world_pt
@@ -166,21 +165,14 @@ def analyze_projection_error(
     for test_offset in np.arange(-180, 180, 1):
         test_pan = Degrees(pan_raw + float(test_offset))
 
-        test_params = CameraParameters.create(
-            image_width=image_width,
-            image_height=image_height,
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=test_pan,
-            tilt_deg=tilt_deg,
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        test_orientation = Orientation.create(yaw=test_pan, pitch=tilt_deg, roll=Degrees(0.0))
+        test_homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=test_orientation,
         )
 
-        test_result = CameraGeometry.compute(test_params)
-        test_H = test_result.homography_matrix
+        test_H = test_homography.to_matrix().to_array()
         img_pt = test_H @ world_pt
 
         if img_pt[2, 0] > 0:
@@ -203,23 +195,15 @@ def analyze_projection_error(
     best_height = height_m
 
     for test_height in np.arange(1.0, 20.0, 0.1):
-        test_w_pos = np.array([0.0, 0.0, test_height])
+        test_camera_position = Vector3.create(0.0, 0.0, float(test_height))
 
-        test_params = CameraParameters.create(
-            image_width=image_width,
-            image_height=image_height,
-            intrinsic_matrix=K,
-            camera_position=test_w_pos,
-            pan_deg=pan_deg,
-            tilt_deg=tilt_deg,
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        test_homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=test_camera_position,
+            orientation=orientation,
         )
 
-        test_result = CameraGeometry.compute(test_params)
-        test_H = test_result.homography_matrix
+        test_H = test_homography.to_matrix().to_array()
         img_pt = test_H @ world_pt
 
         if img_pt[2, 0] > 0:
@@ -245,24 +229,17 @@ def analyze_projection_error(
     for test_offset in np.arange(-180, 180, 5):  # Coarser grid for speed
         test_pan = Degrees(pan_raw + float(test_offset))
         for test_height in np.arange(1.0, 20.0, 0.5):
-            test_w_pos = np.array([0.0, 0.0, float(test_height)])
+            test_camera_position = Vector3.create(0.0, 0.0, float(test_height))
+            test_orientation = Orientation.create(yaw=test_pan, pitch=tilt_deg, roll=Degrees(0.0))
             try:
-                test_params = CameraParameters.create(
-                    image_width=image_width,
-                    image_height=image_height,
-                    intrinsic_matrix=K,
-                    camera_position=test_w_pos,
-                    pan_deg=test_pan,
-                    tilt_deg=tilt_deg,
-                    roll_deg=Degrees(0.0),
-                    map_width=Pixels(640),
-                    map_height=Pixels(640),
-                    pixels_per_meter=Unitless(100.0),
+                test_homography = CameraGeometry.compute_from_vo(
+                    intrinsics=intrinsics,
+                    camera_position=test_camera_position,
+                    orientation=test_orientation,
                 )
-                test_result = CameraGeometry.compute(test_params)
             except ValueError:
                 continue
-            test_H = test_result.homography_matrix
+            test_H = test_homography.to_matrix().to_array()
             img_pt = test_H @ world_pt
             if img_pt[2, 0] > 0:
                 u = img_pt[0, 0] / img_pt[2, 0]

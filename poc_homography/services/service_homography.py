@@ -10,9 +10,8 @@ from poc_homography.services.homography.strategy_intrinsic_extrinsic import (
 from poc_homography.services.orientation import ServiceOrientation
 
 if TYPE_CHECKING:
-    from poc_homography.camera_parameters import CameraGeometryResult
     from poc_homography.domain.entities import CameraCalibration, CameraConfig, Map
-    from poc_homography.domain.vo import PTZState
+    from poc_homography.domain.vo import Homography, PTZState
     from poc_homography.services.homography.strategy import StrategyHomography
     from poc_homography.services.orientation.strategy import StrategyOrientation
 
@@ -35,14 +34,13 @@ class ServiceHomography:
         ...     StrategyIntrinsicExtrinsic,
         ... )
         >>> service = ServiceHomography()
-        >>> result = service.compute(
+        >>> homography = service.compute(
         ...     config=camera_config,
         ...     calibration=camera_calibration,
         ...     ptz_state=ptz_state,
         ...     map_entity=map_entity,
         ... )
-        >>> if result.is_valid:
-        ...     H = result.homography_matrix
+        >>> u, v = homography.world_to_image(5.0, 10.0)
     """
 
     def __init__(
@@ -67,7 +65,7 @@ class ServiceHomography:
         calibration: CameraCalibration,
         ptz_state: PTZState,
         map_entity: Map,
-    ) -> CameraGeometryResult:
+    ) -> Homography:
         """Compute homography from camera configuration and state.
 
         Args:
@@ -77,11 +75,7 @@ class ServiceHomography:
             map_entity: Map entity with GeoTiff metadata for coordinate transforms.
 
         Returns:
-            CameraGeometryResult containing:
-            - homography_matrix: 3x3 matrix H mapping world to image
-            - inverse_homography_matrix: 3x3 matrix H^-1 mapping image to world
-            - is_valid: Whether the homography passes validation
-            - validation_messages: Any warnings or errors
+            Homography VO with projection methods (world_to_image, image_to_world).
         """
         # Step 1: Compute final orientation from base + PTZ
         final_orientation = self._orientation_service.compute_orientation(

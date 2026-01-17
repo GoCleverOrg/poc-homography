@@ -7,9 +7,9 @@ produces results consistent with CameraGeometry.
 
 Run with: python -m pytest tests/test_rotation_matrix_consistency.py -v
 
-UPDATED: Refactored for immutable API (Phase 2)
+UPDATED: Refactored for VO-based API
 - Uses static methods for rotation matrix computation
-- Uses CameraParameters.create() + CameraGeometry.compute() for homography
+- Uses CameraGeometry.compute_from_vo() with domain VOs for homography
 - Uses IntrinsicExtrinsicConfig.create() + compute_from_config() for IEH
 """
 
@@ -24,7 +24,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
 from poc_homography.homography import IntrinsicExtrinsicConfig, IntrinsicExtrinsicHomography
 from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
@@ -199,31 +199,29 @@ class TestRollRotation:
 
 
 class TestRollValidation:
-    """Test roll validation in CameraGeometry."""
+    """Test roll validation in CameraGeometry.compute_from_vo()."""
 
     def test_roll_warning_threshold(self):
         """Verify warning is issued when |roll_deg| > 5.0."""
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
-        # Create parameters with roll=6.0 (should trigger warning but not error)
+        # Create orientation with roll=6.0 (should trigger warning but not error)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            params = CameraParameters.create(
-                image_width=Pixels(1920),
-                image_height=Pixels(1080),
-                intrinsic_matrix=K,
-                camera_position=w_pos,
-                pan_deg=Degrees(0.0),
-                tilt_deg=Degrees(30.0),
-                roll_deg=Degrees(6.0),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            orientation = Orientation.create(
+                yaw=Degrees(0.0), pitch=Degrees(30.0), roll=Degrees(6.0)
             )
-            result = CameraGeometry.compute(params)
+            homography = CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position,
+                orientation=orientation,
+            )
 
             # Should have at least one warning
             assert len(w) > 0, "Expected warning for |roll_deg| > 5.0"
@@ -236,23 +234,21 @@ class TestRollValidation:
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
         # This should raise ValueError during validation
         with pytest.raises(ValueError) as exc_info:
-            params = CameraParameters.create(
-                image_width=Pixels(1920),
-                image_height=Pixels(1080),
-                intrinsic_matrix=K,
-                camera_position=w_pos,
-                pan_deg=Degrees(0.0),
-                tilt_deg=Degrees(30.0),
-                roll_deg=Degrees(16.0),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            orientation = Orientation.create(
+                yaw=Degrees(0.0), pitch=Degrees(30.0), roll=Degrees(16.0)
             )
-            CameraGeometry.compute(params)
+            CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position,
+                orientation=orientation,
+            )
 
         assert "roll" in str(exc_info.value).lower(), "Error message should mention roll"
 
@@ -261,23 +257,21 @@ class TestRollValidation:
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
         # This should raise ValueError during validation
         with pytest.raises(ValueError) as exc_info:
-            params = CameraParameters.create(
-                image_width=Pixels(1920),
-                image_height=Pixels(1080),
-                intrinsic_matrix=K,
-                camera_position=w_pos,
-                pan_deg=Degrees(0.0),
-                tilt_deg=Degrees(30.0),
-                roll_deg=Degrees(-16.0),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            orientation = Orientation.create(
+                yaw=Degrees(0.0), pitch=Degrees(30.0), roll=Degrees(-16.0)
             )
-            CameraGeometry.compute(params)
+            CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position,
+                orientation=orientation,
+            )
 
         assert "roll" in str(exc_info.value).lower(), "Error message should mention roll"
 
@@ -287,25 +281,24 @@ class TestRollValidation:
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
         # These should not raise - test various acceptable roll values
         # Note: ±10° triggers a warning (>5°) but is still within valid range (±15°)
         for roll in [0.0, 5.0, -5.0, 10.0, -10.0]:
-            params = CameraParameters.create(
-                image_width=Pixels(1920),
-                image_height=Pixels(1080),
-                intrinsic_matrix=K,
-                camera_position=w_pos,
-                pan_deg=Degrees(0.0),
-                tilt_deg=Degrees(30.0),
-                roll_deg=Degrees(roll),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            orientation = Orientation.create(
+                yaw=Degrees(0.0), pitch=Degrees(30.0), roll=Degrees(roll)
             )
-            result = CameraGeometry.compute(params)
-            assert result.is_valid, f"Roll {roll} should be accepted"
+            homography = CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position,
+                orientation=orientation,
+            )
+            # Homography VO is always valid if created successfully
+            assert homography is not None, f"Roll {roll} should be accepted"
 
 
 class TestComputeHomographyWithRoll:
@@ -473,21 +466,25 @@ class TestHomographyConsistency:
         )
         w_pos = np.array([0.0, 0.0, camera_params["height_m"]])
 
-        # CameraGeometry via immutable API
-        params = CameraParameters.create(
-            image_width=Pixels(camera_params["width"]),
-            image_height=Pixels(camera_params["height"]),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(camera_params["pan_deg"]),
-            tilt_deg=Degrees(camera_params["tilt_deg"]),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        # CameraGeometry via VO-based API
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K,
+            Pixels(camera_params["width"]),
+            Pixels(camera_params["height"]),
+            sensor_width=Millimeters(camera_params["sensor_width_mm"]),
         )
-        result_geo = CameraGeometry.compute(params)
-        H_geo = result_geo.homography_matrix
+        camera_position = Vector3.create(float(w_pos[0]), float(w_pos[1]), float(w_pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(camera_params["pan_deg"]),
+            pitch=Degrees(camera_params["tilt_deg"]),
+            roll=Degrees(0.0),
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation,
+        )
+        H_geo = homography._matrix.to_array()
 
         # IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -517,21 +514,25 @@ class TestHomographyConsistency:
         )
         w_pos = np.array([0.0, 0.0, camera_params["height_m"]])
 
-        # CameraGeometry via immutable API
-        params = CameraParameters.create(
-            image_width=Pixels(camera_params["width"]),
-            image_height=Pixels(camera_params["height"]),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(camera_params["pan_deg"]),
-            tilt_deg=Degrees(camera_params["tilt_deg"]),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        # CameraGeometry via VO-based API
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K,
+            Pixels(camera_params["width"]),
+            Pixels(camera_params["height"]),
+            sensor_width=Millimeters(camera_params["sensor_width_mm"]),
         )
-        result_geo = CameraGeometry.compute(params)
-        H_geo = result_geo.homography_matrix
+        camera_position = Vector3.create(float(w_pos[0]), float(w_pos[1]), float(w_pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(camera_params["pan_deg"]),
+            pitch=Degrees(camera_params["tilt_deg"]),
+            roll=Degrees(0.0),
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation,
+        )
+        H_geo = homography._matrix.to_array()
 
         # IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -584,24 +585,29 @@ class TestGPSProjection:
         w_pos = np.array([0.0, 0.0, valte_config["height_m"]])
         pan_deg = valte_config["pan_raw"] + valte_config["pan_offset_deg"]
 
-        # Create parameters and compute
-        params = CameraParameters.create(
-            image_width=Pixels(valte_config["width"]),
-            image_height=Pixels(valte_config["height"]),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(valte_config["tilt_deg"]),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        # Create VOs and compute homography
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K,
+            Pixels(valte_config["width"]),
+            Pixels(valte_config["height"]),
+            sensor_width=Millimeters(7.18),
         )
-        result = CameraGeometry.compute(params)
+        camera_position = Vector3.create(float(w_pos[0]), float(w_pos[1]), float(w_pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg),
+            pitch=Degrees(valte_config["tilt_deg"]),
+            roll=Degrees(0.0),
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation,
+        )
 
         # Inverse project image center
         center = np.array([[valte_config["width"] / 2], [valte_config["height"] / 2], [1.0]])
-        world_pt = result.inverse_homography_matrix @ center
+        H_inv = homography.inverse._matrix.to_array()
+        world_pt = H_inv @ center
         x = world_pt[0, 0] / world_pt[2, 0]
         y = world_pt[1, 0] / world_pt[2, 0]
 
@@ -624,20 +630,24 @@ class TestGPSProjection:
         w_pos = np.array([0.0, 0.0, valte_config["height_m"]])
         pan_deg = valte_config["pan_raw"] + valte_config["pan_offset_deg"]
 
-        # Create parameters and compute
-        params = CameraParameters.create(
-            image_width=Pixels(valte_config["width"]),
-            image_height=Pixels(valte_config["height"]),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(valte_config["tilt_deg"]),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        # Create VOs and compute homography
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K,
+            Pixels(valte_config["width"]),
+            Pixels(valte_config["height"]),
+            sensor_width=Millimeters(7.18),
         )
-        result = CameraGeometry.compute(params)
+        camera_position = Vector3.create(float(w_pos[0]), float(w_pos[1]), float(w_pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg),
+            pitch=Degrees(valte_config["tilt_deg"]),
+            roll=Degrees(0.0),
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation,
+        )
 
         # Calculate ground distance for center projection
         ground_distance = valte_config["height_m"] / math.tan(
@@ -650,7 +660,8 @@ class TestGPSProjection:
 
         # Project
         pt = np.array([[x], [y], [1.0]])
-        img_pt = result.homography_matrix @ pt
+        H = homography._matrix.to_array()
+        img_pt = H @ pt
         u = img_pt[0, 0] / img_pt[2, 0]
         v = img_pt[1, 0] / img_pt[2, 0]
 
@@ -677,80 +688,69 @@ class TestEdgeCases:
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
         with pytest.raises(ValueError):
-            params = CameraParameters.create(
-                image_width=Pixels(1920),
-                image_height=Pixels(1080),
-                intrinsic_matrix=K,
-                camera_position=w_pos,
-                pan_deg=Degrees(0.0),
-                tilt_deg=Degrees(0.0),
-                roll_deg=Degrees(0.0),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            orientation = Orientation.create(
+                yaw=Degrees(0.0), pitch=Degrees(0.0), roll=Degrees(0.0)
             )
-            CameraGeometry.compute(params)
+            CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position,
+                orientation=orientation,
+            )
 
     def test_negative_tilt_rejected(self):
         """Verify negative tilt (looking up) is rejected."""
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
         with pytest.raises(ValueError):
-            params = CameraParameters.create(
-                image_width=Pixels(1920),
-                image_height=Pixels(1080),
-                intrinsic_matrix=K,
-                camera_position=w_pos,
-                pan_deg=Degrees(0.0),
-                tilt_deg=Degrees(-10.0),
-                roll_deg=Degrees(0.0),
-                map_width=Pixels(640),
-                map_height=Pixels(640),
-                pixels_per_meter=Unitless(100.0),
+            orientation = Orientation.create(
+                yaw=Degrees(0.0), pitch=Degrees(-10.0), roll=Degrees(0.0)
             )
-            CameraGeometry.compute(params)
+            CameraGeometry.compute_from_vo(
+                intrinsics=intrinsics,
+                camera_position=camera_position,
+                orientation=orientation,
+            )
 
     def test_extreme_pan_values(self):
         """Verify extreme pan values (> 360) are handled correctly."""
         K = CameraGeometry.get_intrinsics(
             Unitless(1.0), Pixels(1920), Pixels(1080), Millimeters(7.18)
         )
-        w_pos = np.array([0.0, 0.0, 5.0])
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(1920), Pixels(1080), sensor_width=Millimeters(7.18)
+        )
+        camera_position = Vector3.create(0.0, 0.0, 5.0)
 
         # These should not raise - pan angles wrap around
-        params1 = CameraParameters.create(
-            image_width=Pixels(1920),
-            image_height=Pixels(1080),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(400.0),
-            tilt_deg=Degrees(30.0),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        orientation1 = Orientation.create(
+            yaw=Degrees(400.0), pitch=Degrees(30.0), roll=Degrees(0.0)
         )
-        result1 = CameraGeometry.compute(params1)
+        homography1 = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation1,
+        )
 
-        params2 = CameraParameters.create(
-            image_width=Pixels(1920),
-            image_height=Pixels(1080),
-            intrinsic_matrix=K,
-            camera_position=w_pos,
-            pan_deg=Degrees(-400.0),
-            tilt_deg=Degrees(30.0),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        orientation2 = Orientation.create(
+            yaw=Degrees(-400.0), pitch=Degrees(30.0), roll=Degrees(0.0)
         )
-        result2 = CameraGeometry.compute(params2)
+        homography2 = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position,
+            orientation=orientation2,
+        )
 
         # Verify rotation still works - 400 mod 360 = 40
         R1 = CameraGeometry._get_rotation_matrix_static(Degrees(400.0), Degrees(30.0), Degrees(0.0))

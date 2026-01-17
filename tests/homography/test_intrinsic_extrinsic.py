@@ -6,12 +6,12 @@ hold across a wide range of input parameters. Property-based testing with
 Hypothesis explores the input space more thoroughly than example-based tests,
 catching edge cases and validating fundamental mathematical relationships.
 
-Run with: python -m pytest tests/test_intrinsic_extrinsic_homography_properties.py -v
+Run with: python -m pytest tests/homography/test_intrinsic_extrinsic.py -v
 
-UPDATED: Refactored for immutable API (Phase 2)
+UPDATED: Refactored for VO-based API
 - Uses static methods for rotation matrices: CameraGeometry._get_rotation_matrix_static()
 - Uses static methods for homography: IntrinsicExtrinsicHomography._compute_ground_homography()
-- Uses CameraParameters.create() + CameraGeometry.compute() for parameter validation
+- Uses CameraGeometry.compute_from_vo() with domain VOs for CameraGeometry homography
 - Uses IntrinsicExtrinsicConfig.create() + compute_from_config() for IEH homography
 """
 
@@ -24,10 +24,10 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import CameraIntrinsics, Orientation, Vector3
 from poc_homography.homography import IntrinsicExtrinsicConfig, IntrinsicExtrinsicHomography
 from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 
@@ -511,21 +511,20 @@ class TestHomographyConsistencyProperties:
 
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
 
-        # CameraGeometry approach via immutable API
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        # CameraGeometry approach via VO-based API
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result_geo = CameraGeometry.compute(params)
-        H_geo = result_geo.homography_matrix
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
+        H_geo = homography._matrix.to_array()
 
         # IntrinsicExtrinsicHomography approach via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
@@ -581,21 +580,20 @@ class TestHomographyConsistencyProperties:
 
         K = CameraGeometry.get_intrinsics(Unitless(zoom), Pixels(width), Pixels(height))
 
-        # Setup CameraGeometry via immutable API
-        params = CameraParameters.create(
-            image_width=Pixels(width),
-            image_height=Pixels(height),
-            intrinsic_matrix=K,
-            camera_position=pos,
-            pan_deg=Degrees(pan_deg),
-            tilt_deg=Degrees(tilt_deg),
-            roll_deg=Degrees(0.0),
-            map_width=Pixels(640),
-            map_height=Pixels(640),
-            pixels_per_meter=Unitless(100.0),
+        # Setup CameraGeometry via VO-based API
+        intrinsics = CameraIntrinsics.from_K_matrix(
+            K, Pixels(width), Pixels(height), sensor_width=Millimeters(7.18)
         )
-        result_geo = CameraGeometry.compute(params)
-        H_geo = result_geo.homography_matrix
+        camera_position_vo = Vector3.create(float(pos[0]), float(pos[1]), float(pos[2]))
+        orientation = Orientation.create(
+            yaw=Degrees(pan_deg), pitch=Degrees(tilt_deg), roll=Degrees(0.0)
+        )
+        homography = CameraGeometry.compute_from_vo(
+            intrinsics=intrinsics,
+            camera_position=camera_position_vo,
+            orientation=orientation,
+        )
+        H_geo = homography._matrix.to_array()
 
         # Setup IntrinsicExtrinsicHomography via static method
         H_ieh = IntrinsicExtrinsicHomography._compute_ground_homography(
