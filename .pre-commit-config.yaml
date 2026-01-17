@@ -32,3 +32,10 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: pylint
+        name: pylint (protected-access)
+        entry: uv run pylint poc_homography
+        language: system
+        types: [python]
+        pass_filenames: false

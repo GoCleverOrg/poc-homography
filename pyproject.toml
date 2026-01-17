@@ -52,6 +52,7 @@ dev = [
     "vulture>=2.14",
     "deadcode>=2.4",
     "poethepoet>=0.31",
+    "pylint>=3.0",
 ]
 
 [tool.ruff]
@@ -186,6 +187,15 @@ ignore_names = ["frame", "kwargs", "gcp_id", "map_id", "gcp"]
 [tool.deadcode]
 exclude = ["build", "dist"]
 
+[tool.pylint.main]
+# Only check protected-access violations (accessing _prefixed members from outside class)
+disable = "all"
+enable = "W0212"  # protected-access
+
+[tool.pylint.reports]
+output-format = "colorized"
+score = false
+
 [tool.poe.tasks]
 lint = "ruff check poc_homography"
 lint-fix = "ruff check poc_homography --fix"
@@ -193,6 +203,7 @@ format = "ruff format poc_homography"
 format-check = "ruff format --check poc_homography"
 typecheck = "pyright poc_homography"
 vulture = "vulture poc_homography --min-confidence 80"
+pylint = "pylint poc_homography"
 deadcode = "deadcode . --only poc_homography/"
 deadcode-fix = "deadcode . --only poc_homography/ --fix"
 test = "pytest tests/ -v"
@@ -200,11 +211,11 @@ test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
 
 [tool.poe.tasks.validate]
-sequence = ["lint", "format-check", "typecheck", "vulture"]
+sequence = ["lint", "format-check", "typecheck", "vulture", "pylint"]
 help = "Run all validation checks (no tests)"
 
 [tool.poe.tasks.ci]
-sequence = ["lint", "format-check", "typecheck", "vulture", "test"]
+sequence = ["lint", "format-check", "typecheck", "vulture", "pylint", "test"]
 help = "Run full CI: validation + tests"
 
 [tool.poe.tasks.clean]

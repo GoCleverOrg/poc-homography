@@ -11,10 +11,11 @@ All tools run via `uv run`:
 | Format | `uv run ruff format poc_homography` |
 | Test | `uv run pytest tests/ -v` |
 | Dead code | `uv run vulture poc_homography` |
+| Protected access | `uv run pylint poc_homography` |
 
 ## Task Runner
 
 ```bash
-uv run poe validate  # lint + format-check + typecheck + vulture
+uv run poe validate  # lint + format-check + typecheck + vulture + pylint
 uv run poe ci        # validate + tests
 ```
