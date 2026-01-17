@@ -178,7 +178,7 @@ exclude_lines = [
 ]
 
 [tool.vulture]
-min_confidence = 80
+min_confidence = 60
 paths = ["poc_homography"]
 exclude = ["tests/", "examples/", "build/", "dist/"]
 # Ignore interface parameters required by ABC/Protocol but not used in all implementations
@@ -202,7 +202,7 @@ lint-fix = "ruff check poc_homography --fix"
 format = "ruff format poc_homography"
 format-check = "ruff format --check poc_homography"
 typecheck = "pyright poc_homography"
-vulture = "vulture poc_homography --min-confidence 80"
+vulture = "vulture poc_homography --min-confidence 60"
 pylint = "pylint poc_homography"
 deadcode = "deadcode . --only poc_homography/"
 deadcode-fix = "deadcode . --only poc_homography/ --fix"
