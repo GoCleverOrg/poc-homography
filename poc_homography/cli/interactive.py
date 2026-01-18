@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path  # noqa: TC003 - Typer needs Path at runtime for CLI arg parsing
 from typing import TYPE_CHECKING
 
 import typer
@@ -11,8 +12,6 @@ from poc_homography.application import ApplicationContext
 from poc_homography.cli.main import app
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 
 # Check for OpenCV availability without importing (avoids unused import warning)
