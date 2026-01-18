@@ -107,23 +107,12 @@ class Orientation:
         Returns:
             New Orientation instance.
         """
-        R = rotation.to_matrix()._to_array()
-
-        # Handle gimbal lock case
-        if abs(R[2, 0]) >= 1.0 - 1e-6:
-            # Gimbal lock: pitch is +/- 90 degrees
-            yaw = math.atan2(-R[0, 1], R[0, 2])
-            pitch = -math.asin(max(-1.0, min(1.0, R[2, 0])))
-            roll = 0.0
-        else:
-            yaw = math.atan2(R[1, 0], R[0, 0])
-            pitch = -math.asin(R[2, 0])
-            roll = math.atan2(R[2, 1], R[2, 2])
+        yaw, pitch, roll = rotation.to_euler_zyx()
 
         return cls(
-            yaw=Degrees(math.degrees(yaw)),
-            pitch=Degrees(math.degrees(pitch)),
-            roll=Degrees(math.degrees(roll)),
+            yaw=yaw,
+            pitch=pitch,
+            roll=roll,
             _rotation=rotation,
             _sentinel=_PRIVATE_SENTINEL,
         )

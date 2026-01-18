@@ -318,7 +318,7 @@ class TestVector3CreateFactory:
     def test_to_array(self):
         """to_array returns numpy array."""
         vec = Vector3.create(1.0, 2.0, 3.0)
-        arr = vec.to_array()
+        arr = vec._to_array()
 
         assert isinstance(arr, np.ndarray)
         assert arr.shape == (3,)

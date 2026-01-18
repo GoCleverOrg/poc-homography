@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         CameraIntrinsics,
         Homography,
         LensDistortion,
+        Matrix3x3,
         Orientation,
         Vector3,
     )
@@ -107,12 +108,6 @@ class CameraGeometry:
     FOV_WARN_MIN_DEG = 10.0
     FOV_WARN_MAX_DEG = 90.0
 
-    CONDITION_WARN = 1e6
-    CONDITION_ERROR = 1e10
-
-    # Maximum reasonable distance ratio for ground projection validation
-    MAX_DISTANCE_HEIGHT_RATIO = 20.0
-
     # Roll validation thresholds
     ROLL_WARN_THRESHOLD = 5.0  # Warning when |roll_deg| > 5.0
     ROLL_ERROR_THRESHOLD = 15.0  # Error when |roll_deg| > 15.0
@@ -182,47 +177,29 @@ class CameraGeometry:
 
     @staticmethod
     def _validate_parameters_static(
-        K: np.ndarray,
-        w_pos: np.ndarray,
-        _pan_deg: Degrees,  # Currently unused but kept for API consistency
+        intrinsics: CameraIntrinsics,
+        camera_position: Vector3,
         tilt_deg: Degrees,
         roll_deg: Degrees = Degrees(0.0),
     ) -> None:
-        """Static version of parameter validation for use in compute().
+        """Validate camera parameters for homography computation.
 
-        This is a static method to enable pure function computation without
-        requiring an instance.
+        Note: Shape and NaN/Infinity checks are already enforced by VO factories
+        (Matrix3x3.create, Vector3.create), so we only validate domain constraints.
 
         Args:
-            K: 3x3 intrinsic matrix
-            w_pos: Camera position in world coordinates [X, Y, Z] (meters)
-            _pan_deg: Pan angle in degrees (currently unused, kept for API consistency)
-            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention)
-            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0)
+            intrinsics: Camera intrinsic parameters.
+            camera_position: Camera position in world coordinates.
+            tilt_deg: Tilt angle in degrees (positive = down, Hikvision convention).
+            roll_deg: Roll angle in degrees (positive = clockwise, default = 0.0).
 
         Raises:
             ValueError: If any parameter is invalid or out of acceptable range.
         """
         cls = CameraGeometry
 
-        # Validate K matrix shape
-        if K.shape != (3, 3):
-            raise ValueError(f"K must be 3x3, got shape {K.shape}")
-
-        # Validate K matrix for NaN/Infinity
-        if not np.all(np.isfinite(K)):
-            raise ValueError("K matrix contains NaN or Infinity values")
-
-        # Validate w_pos structure
-        if len(w_pos) != 3:
-            raise ValueError(f"w_pos must have 3 elements [X, Y, Z], got {len(w_pos)}")
-
-        # Validate w_pos for NaN/Infinity
-        if not np.all(np.isfinite(w_pos)):
-            raise ValueError("w_pos contains NaN or Infinity values")
-
-        # Camera height validation (w_pos[2])
-        height = w_pos[2]
+        # Camera height validation
+        height = camera_position.z
         if height < cls.HEIGHT_MIN or height > cls.HEIGHT_MAX:
             raise ValueError(
                 f"Camera height {height:.2f}m is out of valid range "
@@ -259,9 +236,9 @@ class CameraGeometry:
                 f"Ground coverage area will be very limited."
             )
 
-        # FOV validation (calculated from K)
-        focal_length = K[0, 0]  # Assuming square pixels (fx = fy)
-        sensor_width_px = 2.0 * K[0, 2]  # Principal point is at center
+        # FOV validation using intrinsics properties
+        focal_length = intrinsics.focal_length_px
+        sensor_width_px = 2.0 * intrinsics.cx
         fov_rad = 2.0 * math.atan(sensor_width_px / (2.0 * focal_length))
         fov_deg = math.degrees(fov_rad)
 
@@ -296,7 +273,7 @@ class CameraGeometry:
     @staticmethod
     def _get_rotation_matrix_static(
         pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees
-    ) -> np.ndarray:
+    ) -> Matrix3x3:
         """Static version of rotation matrix calculation for use in compute().
 
         Calculates the 3x3 rotation matrix R from world to camera coordinates
@@ -310,6 +287,8 @@ class CameraGeometry:
         Returns:
             R: 3x3 rotation matrix transforming world coordinates to camera frame
         """
+        from poc_homography.domain.vo import Matrix3x3
+
         pan_rad = degrees_to_radians(pan_deg)
         tilt_rad = degrees_to_radians(tilt_deg)
         roll_rad = degrees_to_radians(roll_deg)
@@ -345,12 +324,12 @@ class CameraGeometry:
         )
 
         # Full rotation: R = R_tilt @ R_roll @ R_base @ R_pan
-        R: np.ndarray = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
-        return R
+        R = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
+        return Matrix3x3.create(R)
 
     @staticmethod
     def _calculate_ground_homography_static(
-        K: np.ndarray, w_pos: np.ndarray, R: np.ndarray
+        K: Matrix3x3, w_pos: Vector3, R: Matrix3x3
     ) -> np.ndarray:
         """Static version of ground homography calculation for use in compute().
 
@@ -359,27 +338,28 @@ class CameraGeometry:
 
         Args:
             K: 3x3 intrinsic matrix
-            w_pos: Camera position [X, Y, Z] in world coordinates
+            w_pos: Camera position in world coordinates
             R: 3x3 rotation matrix from world to camera frame
 
         Returns:
             H: 3x3 normalized homography matrix
         """
+        # Extract numpy arrays for computation
+        K_arr = K._to_array()
+        w_pos_arr = w_pos._to_array()
+        R_arr = R._to_array()
+
         # Translation from camera to world origin: t = -R @ C
-        t = -R @ w_pos
+        t = -R_arr @ w_pos_arr
 
         # Build homography: H = K @ [r1, r2, t]
-        r1 = R[:, 0]  # Column 0: world X-axis in camera frame
-        r2 = R[:, 1]  # Column 1: world Y-axis in camera frame
+        r1 = R_arr[:, 0]  # Column 0: world X-axis in camera frame
+        r2 = R_arr[:, 1]  # Column 1: world Y-axis in camera frame
 
-        # Construct 3x3 extrinsic homography matrix
+        # Construct 3x3 extrinsic homography matrix: [r1, r2, t]
         H_extrinsic = np.column_stack([r1, r2, t])
-        if H_extrinsic.shape != (3, 3):
-            raise ValueError(f"H_extrinsic must be 3x3, got {H_extrinsic.shape}")
 
-        H = K @ H_extrinsic
-        if H.shape != (3, 3):
-            raise ValueError(f"Homography must be 3x3, got {H.shape}")
+        H = K_arr @ H_extrinsic
 
         # Normalize so H[2, 2] = 1 for consistent scale
         if abs(H[2, 2]) < 1e-10:
@@ -569,21 +549,16 @@ class CameraGeometry:
         # Import here to avoid circular imports
         from poc_homography.domain.vo import Homography
 
-        # Extract numpy arrays from VOs
-        K = intrinsics.to_K()._to_array()
-        w_pos = camera_position.to_array()
-        pan_deg = Degrees(float(orientation.yaw))
-        tilt_deg = Degrees(float(orientation.pitch))
-        roll_deg = Degrees(float(orientation.roll))
-
-        # Validate parameters
-        cls._validate_parameters_static(K, w_pos, pan_deg, tilt_deg, roll_deg)
+        # Validate parameters using VOs directly
+        cls._validate_parameters_static(
+            intrinsics, camera_position, orientation.pitch, orientation.roll
+        )
 
         # Compute rotation matrix
-        R = cls._get_rotation_matrix_static(pan_deg, tilt_deg, roll_deg)
+        R = cls._get_rotation_matrix_static(orientation.yaw, orientation.pitch, orientation.roll)
 
         # Compute homography matrix
-        H = cls._calculate_ground_homography_static(K, w_pos, R)
+        H = cls._calculate_ground_homography_static(intrinsics.to_K(), camera_position, R)
 
         # Create and return Homography VO
         return Homography.create(H)

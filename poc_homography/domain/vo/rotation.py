@@ -108,6 +108,30 @@ class Rotation:
         composed = self._matrix @ other._matrix
         return Rotation(_matrix=composed, _sentinel=_PRIVATE_SENTINEL)
 
+    def to_euler_zyx(self) -> tuple[Degrees, Degrees, Degrees]:
+        """Extract ZYX Euler angles (yaw, pitch, roll) from the rotation matrix.
+
+        Returns:
+            Tuple of (yaw, pitch, roll) in degrees.
+        """
+        R = self._matrix._to_array()
+
+        if abs(R[2, 0]) >= 1.0 - 1e-6:
+            # Gimbal lock: pitch is +/- 90 degrees
+            yaw = math.atan2(-R[0, 1], R[0, 2])
+            pitch = -math.asin(max(-1.0, min(1.0, R[2, 0])))
+            roll = 0.0
+        else:
+            yaw = math.atan2(R[1, 0], R[0, 0])
+            pitch = -math.asin(R[2, 0])
+            roll = math.atan2(R[2, 1], R[2, 2])
+
+        return (
+            Degrees(math.degrees(yaw)),
+            Degrees(math.degrees(pitch)),
+            Degrees(math.degrees(roll)),
+        )
+
     def __hash__(self) -> int:
         """Compute hash for use in sets and as dict keys."""
         return hash(self._matrix)

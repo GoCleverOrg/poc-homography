@@ -119,7 +119,6 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
     # Edge factor constants for point confidence calculation
     EDGE_FACTOR_CENTER = 1.0
     EDGE_FACTOR_EDGE = 0.7
-    EDGE_FACTOR_CORNER_DECAY = 0.2
     EDGE_FACTOR_MIN = 0.3
 
     # Roll validation thresholds
@@ -604,66 +603,6 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             map_height=Pixels(map_height),
             determinant=det_H,
             validation_messages=validation_messages,
-        )
-
-    # =========================================================================
-    # HomographyProvider Interface Implementation (kept for interface compliance)
-    # =========================================================================
-
-    def project_point(self, image_point: PixelPoint, point_id: str = "") -> MapPoint:
-        """
-        Project image point to map pixel coordinates.
-
-        Note: This method requires that a result has been stored from a previous
-        compute_from_config call. For pure functional usage, use the static
-        project_point_with_result method instead.
-
-        Args:
-            image_point: Pixel coordinates in camera image
-            point_id: Optional ID for the generated MapPoint
-
-        Returns:
-            MapPoint with pixel coordinates on the map
-
-        Raises:
-            RuntimeError: If no valid homography computed
-        """
-        raise NotImplementedError(
-            "Use compute_from_config() to get a result, then use "
-            "IntrinsicExtrinsicHomography.project_point_static(result, image_point, ...) instead."
-        )
-
-    def project_points(
-        self, image_points: list[PixelPoint], point_id_prefix: str = "proj"
-    ) -> list[MapPoint]:
-        """
-        Project multiple image points to map pixel coordinates.
-
-        Note: This method requires that a result has been stored from a previous
-        compute_from_config call. For pure functional usage, use the static methods instead.
-        """
-        raise NotImplementedError(
-            "Use compute_from_config() to get a result, then use static projection methods."
-        )
-
-    def get_confidence(self) -> float:
-        """
-        Return confidence score of current homography.
-
-        Note: For immutable usage, get confidence from IntrinsicExtrinsicResult.
-        """
-        raise NotImplementedError(
-            "Use compute_from_config() to get a result, then access result.confidence."
-        )
-
-    def is_valid(self) -> bool:
-        """
-        Check if homography is valid and ready for projection.
-
-        Note: For immutable usage, check validity from IntrinsicExtrinsicResult.
-        """
-        raise NotImplementedError(
-            "Use compute_from_config() to get a result, then check result.confidence > 0."
         )
 
     # =========================================================================

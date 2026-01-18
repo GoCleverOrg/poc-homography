@@ -74,7 +74,6 @@ class MapPointHomography:
         self._H_inv: npt.NDArray[np.float64] | None = None
         self._is_valid: bool = False
         self._result: MapPointComputationResult | None = None
-        self._point_counter: int = 0
 
     def _require_forward_homography(self) -> npt.NDArray[np.float64]:
         """Return forward homography matrix or raise RuntimeError if not computed."""

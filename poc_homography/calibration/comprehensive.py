@@ -311,19 +311,15 @@ def compute_projection_error(
                 errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
-            H = homography.to_matrix()._to_array()
-
             # Project world point to image (gives undistorted coordinates)
-            world_pt = np.array([[x_m], [y_m], [1.0]])
-            img_pt = H @ world_pt
+            result = homography.try_world_to_image(x_m, y_m)
 
-            if img_pt[2, 0] <= 0:
+            if result is None:
                 _logger.debug("GCP %s: point projects behind camera", gcp.map_point_id)
                 errors.append(INVALID_PROJECTION_PENALTY)
                 continue
 
-            projected_u = img_pt[0, 0] / img_pt[2, 0]
-            projected_v = img_pt[1, 0] / img_pt[2, 0]
+            projected_u, projected_v = result
 
             # Undistort the observed GCP pixel coordinates
             # (GCP pixels are in distorted image space, projected coords are undistorted)

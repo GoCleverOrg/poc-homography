@@ -40,7 +40,6 @@ from poc_homography.infrastructure.repositories import (
     RepoYamlCameraConfig,
     RepoYamlCapturedFrame,
     RepoYamlGroundControlPoint,
-    RepoYamlMap,
 )
 
 
@@ -72,11 +71,6 @@ class ApplicationContext:
     def repo_camera_calibration(self) -> RepoYamlCameraCalibration:
         """Repository for camera calibration entities."""
         return RepoYamlCameraCalibration(self.data_dir / "calibrations")
-
-    @cached_property
-    def repo_map(self) -> RepoYamlMap:
-        """Repository for map entities."""
-        return RepoYamlMap(self.data_dir / "maps")
 
     @cached_property
     def repo_gcp(self) -> RepoYamlGroundControlPoint:

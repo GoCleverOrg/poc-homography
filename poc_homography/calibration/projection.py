@@ -129,14 +129,12 @@ def analyze_projection_error(
         camera_position=camera_position,
         orientation=orientation,
     )
-    H = homography.to_matrix()._to_array()
 
-    world_pt = np.array([[float(x_m)], [float(y_m)], [1.0]])
-    img_pt = H @ world_pt
+    result = homography.try_world_to_image(float(x_m), float(y_m))
 
-    if img_pt[2, 0] > 0:
-        projected_u = PixelsFloat(img_pt[0, 0] / img_pt[2, 0])
-        projected_v = PixelsFloat(img_pt[1, 0] / img_pt[2, 0])
+    if result is not None:
+        projected_u = PixelsFloat(result[0])
+        projected_v = PixelsFloat(result[1])
         error_u = actual_u - projected_u
         error_v = actual_v - projected_v
         error_dist = math.sqrt(error_u**2 + error_v**2)
@@ -172,12 +170,10 @@ def analyze_projection_error(
             orientation=test_orientation,
         )
 
-        test_H = test_homography.to_matrix()._to_array()
-        img_pt = test_H @ world_pt
+        test_result = test_homography.try_world_to_image(float(x_m), float(y_m))
 
-        if img_pt[2, 0] > 0:
-            u = img_pt[0, 0] / img_pt[2, 0]
-            v = img_pt[1, 0] / img_pt[2, 0]
+        if test_result is not None:
+            u, v = test_result
             error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
             if error < best_pan_error:
                 best_pan_error = error
@@ -203,12 +199,10 @@ def analyze_projection_error(
             orientation=orientation,
         )
 
-        test_H = test_homography.to_matrix()._to_array()
-        img_pt = test_H @ world_pt
+        test_result = test_homography.try_world_to_image(float(x_m), float(y_m))
 
-        if img_pt[2, 0] > 0:
-            u = img_pt[0, 0] / img_pt[2, 0]
-            v = img_pt[1, 0] / img_pt[2, 0]
+        if test_result is not None:
+            u, v = test_result
             error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
             if error < best_height_error:
                 best_height_error = error
@@ -239,11 +233,9 @@ def analyze_projection_error(
                 )
             except ValueError:
                 continue
-            test_H = test_homography.to_matrix()._to_array()
-            img_pt = test_H @ world_pt
-            if img_pt[2, 0] > 0:
-                u = img_pt[0, 0] / img_pt[2, 0]
-                v = img_pt[1, 0] / img_pt[2, 0]
+            test_result = test_homography.try_world_to_image(float(x_m), float(y_m))
+            if test_result is not None:
+                u, v = test_result
                 error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
                 if error < best_joint_error:
                     best_joint_error = error

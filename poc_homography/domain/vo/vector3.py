@@ -75,7 +75,7 @@ class Vector3:
 
         return cls(_data=arr.tobytes(), _sentinel=_PRIVATE_SENTINEL)
 
-    def to_array(self) -> np.ndarray:
+    def _to_array(self) -> np.ndarray:
         """Get the vector as an immutable numpy array.
 
         Returns:

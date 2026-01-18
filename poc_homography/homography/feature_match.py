@@ -78,7 +78,6 @@ class FeatureMatchHomography(HomographyProvider):
     MIN_COVERAGE_RATIO = 0.15  # Minimum convex hull area / image area ratio
     GOOD_COVERAGE_RATIO = 0.35  # Good coverage threshold
     MIN_QUADRANT_COVERAGE = 2  # Minimum number of quadrants with GCPs
-    GOOD_QUADRANT_COVERAGE = 3  # Good quadrant coverage
 
     # Distribution confidence multipliers
     DIST_PENALTY_POOR_COVERAGE = 0.5  # Penalty for very clustered GCPs

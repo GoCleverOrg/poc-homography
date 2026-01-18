@@ -173,6 +173,11 @@ class Matrix3x3:
         return arr
 
     @property
+    def T(self) -> Matrix3x3:
+        """Return the transpose of the matrix."""
+        return Matrix3x3.create(self._to_array().T)
+
+    @property
     def determinant(self) -> float:
         """Compute the determinant of the matrix."""
         return float(np.linalg.det(self._to_array()))
@@ -223,7 +228,7 @@ class Matrix3x3:
         from poc_homography.domain.vo.vector3 import Vector3
 
         if isinstance(other, Vector3):
-            result = self._to_array() @ other.to_array()
+            result = self._to_array() @ other._to_array()
             return Vector3.from_array(result)
         if isinstance(other, Matrix3x3):
             return Matrix3x3.create(self._to_array() @ other._to_array())

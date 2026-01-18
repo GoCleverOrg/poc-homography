@@ -484,3 +484,8 @@ poc_homography/
         ├── ptz_state.py
         └── rotation.py
 ```
+
+
+Classes that we need to review because they are code smells:
+* poc_homography/domain/vo/height_uncertainty.py
+* poc_homography/domain/vo/camera_snapshot.py

@@ -127,17 +127,14 @@ def project_map_point_to_pixel(
             orientation=orientation,
             distortion=distortion,
         )
-        H = homography.to_matrix()._to_array()
 
         # Project world point to image
-        world_pt = np.array([[x_m], [y_m], [1.0]])
-        img_pt = H @ world_pt
+        result = homography.try_world_to_image(x_m, y_m)
 
-        if img_pt[2, 0] <= 0:
+        if result is None:
             return ProjectionResult(None, None, False, "Point behind camera")
 
-        u = img_pt[0, 0] / img_pt[2, 0]
-        v = img_pt[1, 0] / img_pt[2, 0]
+        u, v = result
 
         # Apply distortion if set
         if k1 != 0.0 or k2 != 0.0:

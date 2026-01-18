@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from poc_homography.domain.vo.matrix3x3 import Matrix3x3
 from poc_homography.domain.vo.pixel_point import PixelPoint
-
-if TYPE_CHECKING:
-    from poc_homography.domain.vo.vector3 import Vector3
+from poc_homography.domain.vo.vector3 import Vector3
 
 CONDITION_THRESHOLD = 1e10
 DETERMINANT_THRESHOLD = 1e-10
@@ -174,16 +172,13 @@ class Homography:
         Raises:
             ValueError: If point projects to infinity (on or near horizon).
         """
-        pt_homogeneous = np.array([u, v, 1.0])
-        world_homogeneous = self._inverse_matrix._to_array() @ pt_homogeneous
+        pt = Vector3.create(u, v, 1.0)
+        result: Vector3 = self._inverse_matrix @ pt
 
-        if abs(world_homogeneous[2]) < 1e-10:
+        if abs(result.z) < 1e-10:
             raise ValueError("Point projects to infinity (on horizon line)")
 
-        Xw = world_homogeneous[0] / world_homogeneous[2]
-        Yw = world_homogeneous[1] / world_homogeneous[2]
-
-        return float(Xw), float(Yw)
+        return float(result.x / result.z), float(result.y / result.z)
 
     def world_to_image(self, Xw: float, Yw: float) -> tuple[float, float]:
         """Project world point to image plane.
@@ -198,16 +193,31 @@ class Homography:
         Raises:
             ValueError: If point projects to infinity.
         """
-        world_homogeneous = np.array([Xw, Yw, 1.0])
-        image_homogeneous = self._matrix._to_array() @ world_homogeneous
+        pt = Vector3.create(Xw, Yw, 1.0)
+        result: Vector3 = self._matrix @ pt
 
-        if abs(image_homogeneous[2]) < 1e-10:
+        if abs(result.z) < 1e-10:
             raise ValueError("Point projects to infinity")
 
-        u = image_homogeneous[0] / image_homogeneous[2]
-        v = image_homogeneous[1] / image_homogeneous[2]
+        return float(result.x / result.z), float(result.y / result.z)
 
-        return float(u), float(v)
+    def try_world_to_image(self, Xw: float, Yw: float) -> tuple[float, float] | None:
+        """Project world point to image, returning None if behind camera.
+
+        Args:
+            Xw: World x-coordinate in meters (East).
+            Yw: World y-coordinate in meters (North).
+
+        Returns:
+            Tuple of (u, v) pixel coordinates, or None if point is behind camera.
+        """
+        pt = Vector3.create(Xw, Yw, 1.0)
+        result: Vector3 = self._matrix @ pt
+
+        if result.z <= 1e-10:
+            return None
+
+        return (result.x / result.z, result.y / result.z)
 
     def __hash__(self) -> int:
         """Compute hash for use in sets and as dict keys."""

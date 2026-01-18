@@ -214,16 +214,13 @@ class CalibrationSession:
                     camera_position=camera_position,
                     orientation=orientation,
                 )
-                H = homography.to_matrix()._to_array()
 
                 for pt in self.reference_points:
                     map_point = self.registry[pt.map_point_id].map_point
                     x_m, y_m = float(map_point.pixel_point.x), float(map_point.pixel_point.y)
-                    world_pt = np.array([[x_m], [y_m], [1.0]])
-                    img_pt = H @ world_pt
-                    if img_pt[2, 0] > 0:
-                        proj_u = int(img_pt[0, 0] / img_pt[2, 0])
-                        proj_v = int(img_pt[1, 0] / img_pt[2, 0])
+                    result = homography.try_world_to_image(x_m, y_m)
+                    if result is not None:
+                        proj_u, proj_v = int(result[0]), int(result[1])
                         # Draw projected point (red)
                         cv2.circle(self.display_frame, (proj_u, proj_v), 8, (0, 0, 255), 2)
                         cv2.drawMarker(
@@ -329,19 +326,16 @@ class CalibrationSession:
                 except ValueError:
                     continue
 
-                H = homography.to_matrix()._to_array()
                 total_error = 0.0
                 valid_points = 0
 
                 for pt in self.reference_points:
                     map_point = self.registry[pt.map_point_id].map_point
                     x_m, y_m = float(map_point.pixel_point.x), float(map_point.pixel_point.y)
-                    world_pt = np.array([[x_m], [y_m], [1.0]])
-                    img_pt = H @ world_pt
+                    result = homography.try_world_to_image(x_m, y_m)
 
-                    if img_pt[2, 0] > 0:
-                        proj_u = float(img_pt[0, 0] / img_pt[2, 0])
-                        proj_v = float(img_pt[1, 0] / img_pt[2, 0])
+                    if result is not None:
+                        proj_u, proj_v = result
                         error = math.sqrt((pt.pixel_u - proj_u) ** 2 + (pt.pixel_v - proj_v) ** 2)
                         total_error += error
                         valid_points += 1
