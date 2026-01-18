@@ -179,10 +179,40 @@ exclude_lines = [
 
 [tool.vulture]
 min_confidence = 60
-paths = ["poc_homography"]
+paths = ["poc_homography", "webapp"]
 exclude = ["tests/", "examples/", "build/", "dist/"]
-# Ignore interface parameters required by ABC/Protocol but not used in all implementations
-ignore_names = ["frame", "kwargs", "gcp_id", "map_id", "gcp"]
+
+# Ignore decorated entry points (zero maintenance for new commands)
+ignore_decorators = [
+    "@*.command",            # Typer/Click CLI commands
+    "@register.simple_tag",  # Django template tags
+    "@register.filter",      # Django template filters
+]
+
+# Ignore known framework conventions and interface contracts
+ignore_names = [
+    # Interface parameters (required by ABC/Protocol but not used in all implementations)
+    "frame", "kwargs", "gcp_id", "map_id", "gcp",
+
+    # Protocol methods (interface contracts - implementations may not call these directly)
+    "last_ptz_state",
+    "move_relative",
+
+    # Django settings.py conventions
+    "SECRET_KEY", "DEBUG", "ALLOWED_HOSTS", "INSTALLED_APPS",
+    "MIDDLEWARE", "ROOT_URLCONF", "TEMPLATES", "WSGI_APPLICATION",
+    "DATABASES", "AUTH_PASSWORD_VALIDATORS", "LANGUAGE_CODE",
+    "TIME_ZONE", "USE_I18N", "USE_TZ", "STATIC_URL", "DEFAULT_AUTO_FIELD",
+
+    # Django apps.py conventions
+    "default_auto_field", "GcpConfig",
+
+    # Django urls.py conventions
+    "urlpatterns", "app_name",
+
+    # Django wsgi/asgi conventions
+    "application",
+]
 
 [tool.deadcode]
 exclude = ["build", "dist"]
@@ -202,7 +232,7 @@ lint-fix = "ruff check poc_homography --fix"
 format = "ruff format poc_homography"
 format-check = "ruff format --check poc_homography"
 typecheck = "pyright poc_homography"
-vulture = "vulture poc_homography --min-confidence 60"
+vulture = "vulture"  # Uses [tool.vulture] config
 pylint = "pylint poc_homography"
 deadcode = "deadcode . --only poc_homography/"
 deadcode-fix = "deadcode . --only poc_homography/ --fix"
