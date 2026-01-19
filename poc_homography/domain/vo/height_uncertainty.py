@@ -40,15 +40,6 @@ class HeightUncertainty:
         """The uncertainty range (upper - lower)."""
         return Meters(float(self.upper) - float(self.lower))
 
-    @property
-    def midpoint(self) -> Meters:
-        """The midpoint of the confidence interval."""
-        return Meters((float(self.lower) + float(self.upper)) / 2)
-
-    def contains(self, height: Meters) -> bool:
-        """Check if a height value falls within the uncertainty bounds."""
-        return self.lower <= height <= self.upper
-
     # --- Serialization ---
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,23 +56,3 @@ class HeightUncertainty:
             lower=Meters(data["lower"]),
             upper=Meters(data["upper"]),
         )
-
-    # --- Factory Methods ---
-
-    @classmethod
-    def symmetric(cls, center: Meters, margin: Meters) -> HeightUncertainty:
-        """Create symmetric uncertainty around a center value.
-
-        Args:
-            center: The center height value.
-            margin: The uncertainty margin (+/-).
-
-        Returns:
-            HeightUncertainty with bounds [center - margin, center + margin].
-
-        Raises:
-            ValueError: If resulting lower bound is not positive.
-        """
-        lower = Meters(float(center) - float(margin))
-        upper = Meters(float(center) + float(margin))
-        return cls(lower=lower, upper=upper)

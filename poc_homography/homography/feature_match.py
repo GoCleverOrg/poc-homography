@@ -16,7 +16,6 @@ Coordinate Systems:
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any
 
 import cv2
@@ -84,11 +83,6 @@ class FeatureMatchHomography(HomographyProvider):
     DIST_PENALTY_LOW_COVERAGE = 0.75  # Penalty for somewhat clustered GCPs
     DIST_BONUS_GOOD_COVERAGE = 1.1  # Bonus for well-distributed GCPs (capped at 1.0)
 
-    # Edge factor constants for point confidence calculation
-    EDGE_FACTOR_CENTER = 1.0
-    EDGE_FACTOR_EDGE = 0.7
-    EDGE_FACTOR_MIN = 0.3
-
     def __init__(
         self,
         width: int,
@@ -154,7 +148,6 @@ class FeatureMatchHomography(HomographyProvider):
         self.H = np.eye(3)  # Maps map pixels to image
         self.H_inv = np.eye(3)  # Maps image to map pixels
         self._confidence: float = 0.0
-        self._last_metadata: dict[str, Any] = {}
 
     @property
     def width(self) -> int:
@@ -385,47 +378,6 @@ class FeatureMatchHomography(HomographyProvider):
                 return "Review GCP quality and distribution."
 
         return " | ".join(suggestions)
-
-    def _calculate_point_confidence(self, image_point: PixelPoint, base_confidence: float) -> float:
-        """
-        Calculate per-point confidence based on distance from image center.
-
-        Points near the image edges are less reliable due to lens distortion
-        and perspective effects.
-
-        Args:
-            image_point: Pixel coordinates
-            base_confidence: Base confidence from homography quality
-
-        Returns:
-            float: Adjusted confidence score in range [0.0, 1.0]
-        """
-        u, v = image_point.x, image_point.y
-
-        # Calculate distance from image center (normalized)
-        if self.width <= 0 or self.height <= 0:
-            return base_confidence
-
-        center_u = self.width / 2.0
-        center_v = self.height / 2.0
-
-        dx = (u - center_u) / (self.width / 2.0)
-        dy = (v - center_v) / (self.height / 2.0)
-
-        dist_from_center = math.sqrt(dx * dx + dy * dy)
-
-        # Reduce confidence for points far from center
-        if dist_from_center < 1.0:
-            edge_factor = (
-                self.EDGE_FACTOR_CENTER
-                - (self.EDGE_FACTOR_CENTER - self.EDGE_FACTOR_EDGE) * dist_from_center
-            )
-        else:
-            edge_factor = self.EDGE_FACTOR_EDGE * (2.0 - dist_from_center)
-
-        edge_factor = max(self.EDGE_FACTOR_MIN, min(self.EDGE_FACTOR_CENTER, edge_factor))
-
-        return base_confidence * edge_factor
 
     def _project_image_point_to_map(self, image_point: PixelPoint) -> PixelPoint:
         """
@@ -773,8 +725,6 @@ class FeatureMatchHomography(HomographyProvider):
             "suggested_action": self._get_suggested_action(confidence_breakdown, outlier_analysis),
         }
 
-        self._last_metadata = metadata
-
         logger.info(
             "Homography computed: %d/%d inliers, confidence=%.3f, distribution_score=%.2f, method=%s",
             metadata["num_inliers"],
@@ -820,43 +770,6 @@ class FeatureMatchHomography(HomographyProvider):
             map_id=self.map_id,
             pixel_point=PixelPoint.create(map_pixel.x, map_pixel.y),
         )
-
-    def project_points(
-        self, image_points: list[PixelPoint], point_id_prefix: str = "proj"
-    ) -> list[MapPoint]:
-        """
-        Project multiple image points to map pixel coordinates.
-
-        Args:
-            image_points: List of pixel coordinates in camera image
-            point_id_prefix: Prefix for generated MapPoint IDs (default: "proj")
-
-        Returns:
-            List of MapPoint objects with pixel coordinates on the reference map
-
-        Raises:
-            RuntimeError: If no valid homography computed
-            ValueError: If any image_point is outside valid bounds
-        """
-        if not self.is_valid():
-            raise RuntimeError("No valid homography available. Call compute_homography() first.")
-
-        map_points = []
-        for i, image_point in enumerate(image_points):
-            point_id = f"{point_id_prefix}_{i}"
-            map_point = self.project_point(image_point, point_id=point_id)
-            map_points.append(map_point)
-
-        return map_points
-
-    def get_confidence(self) -> float:
-        """
-        Return confidence score of current homography.
-
-        Returns:
-            float: Confidence in range [0.0, 1.0]
-        """
-        return self._confidence
 
     def is_valid(self) -> bool:
         """

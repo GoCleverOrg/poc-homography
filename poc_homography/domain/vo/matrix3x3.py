@@ -63,72 +63,6 @@ class Matrix3x3:
         return cls(_data=arr.tobytes(), _sentinel=_PRIVATE_SENTINEL)
 
     @classmethod
-    def rotation_x(cls, angle_rad: Radians) -> Matrix3x3:
-        """Create rotation matrix around X axis.
-
-        Args:
-            angle_rad: Rotation angle in radians.
-
-        Returns:
-            Rotation matrix for rotation around X axis.
-        """
-        c, s = math.cos(angle_rad), math.sin(angle_rad)
-        return cls.create(
-            np.array(
-                [
-                    [1, 0, 0],
-                    [0, c, -s],
-                    [0, s, c],
-                ],
-                dtype=np.float64,
-            )
-        )
-
-    @classmethod
-    def rotation_y(cls, angle_rad: Radians) -> Matrix3x3:
-        """Create rotation matrix around Y axis.
-
-        Args:
-            angle_rad: Rotation angle in radians.
-
-        Returns:
-            Rotation matrix for rotation around Y axis.
-        """
-        c, s = math.cos(angle_rad), math.sin(angle_rad)
-        return cls.create(
-            np.array(
-                [
-                    [c, 0, s],
-                    [0, 1, 0],
-                    [-s, 0, c],
-                ],
-                dtype=np.float64,
-            )
-        )
-
-    @classmethod
-    def rotation_z(cls, angle_rad: Radians) -> Matrix3x3:
-        """Create rotation matrix around Z axis.
-
-        Args:
-            angle_rad: Rotation angle in radians.
-
-        Returns:
-            Rotation matrix for rotation around Z axis.
-        """
-        c, s = math.cos(angle_rad), math.sin(angle_rad)
-        return cls.create(
-            np.array(
-                [
-                    [c, -s, 0],
-                    [s, c, 0],
-                    [0, 0, 1],
-                ],
-                dtype=np.float64,
-            )
-        )
-
-    @classmethod
     def from_euler_zyx(cls, yaw_rad: Radians, pitch_rad: Radians, roll_rad: Radians) -> Matrix3x3:
         """Create rotation matrix from ZYX Euler angles.
 
@@ -237,18 +171,6 @@ class Matrix3x3:
     def to_list(self) -> list[list[float]]:
         """Convert to nested list for serialization."""
         return self._to_array().tolist()
-
-    @classmethod
-    def from_list(cls, data: list[list[float]]) -> Matrix3x3:
-        """Create from nested list.
-
-        Args:
-            data: 3x3 nested list of floats.
-
-        Returns:
-            New Matrix3x3 instance.
-        """
-        return cls.create(np.array(data, dtype=np.float64))
 
     def __hash__(self) -> int:
         """Compute hash for use in sets and as dict keys."""

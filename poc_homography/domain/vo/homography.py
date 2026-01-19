@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 
 from poc_homography.domain.vo.matrix3x3 import Matrix3x3
-from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.domain.vo.vector3 import Vector3
 
 CONDITION_THRESHOLD = 1e10
@@ -85,14 +84,6 @@ class Homography:
 
         return cls(_matrix=m, _inverse_matrix=m_inv, _sentinel=_PRIVATE_SENTINEL)
 
-    def to_matrix(self) -> Matrix3x3:
-        """Get the homography matrix.
-
-        Returns:
-            The 3x3 homography matrix as a Matrix3x3 value object.
-        """
-        return self._matrix
-
     @property
     def condition_number(self) -> float:
         """Get the condition number of the homography matrix."""
@@ -119,21 +110,6 @@ class Homography:
             _sentinel=_PRIVATE_SENTINEL,
         )
 
-    def project(self, point: PixelPoint) -> PixelPoint:
-        """Project a point through this homography.
-
-        Args:
-            point: The source point to project.
-
-        Returns:
-            The projected point in the destination coordinate system.
-
-        Raises:
-            ValueError: If point projects to infinity (homogeneous coordinate near zero).
-        """
-        result: Vector3 = self._matrix @ point.to_homogeneous()
-        return PixelPoint.from_homogeneous(result)
-
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization.
 
@@ -158,48 +134,6 @@ class Homography:
         """
         matrix = np.array(data["matrix"], dtype=np.float64)
         return cls.create(matrix=matrix)
-
-    def image_to_world(self, u: float, v: float) -> tuple[float, float]:
-        """Project image point to world ground plane (Z=0).
-
-        Args:
-            u: Pixel x-coordinate in image.
-            v: Pixel y-coordinate in image.
-
-        Returns:
-            Tuple of (Xw, Yw) world coordinates in meters.
-
-        Raises:
-            ValueError: If point projects to infinity (on or near horizon).
-        """
-        pt = Vector3.create(u, v, 1.0)
-        result: Vector3 = self._inverse_matrix @ pt
-
-        if abs(result.z) < 1e-10:
-            raise ValueError("Point projects to infinity (on horizon line)")
-
-        return float(result.x / result.z), float(result.y / result.z)
-
-    def world_to_image(self, Xw: float, Yw: float) -> tuple[float, float]:
-        """Project world point to image plane.
-
-        Args:
-            Xw: World x-coordinate in meters (East).
-            Yw: World y-coordinate in meters (North).
-
-        Returns:
-            Tuple of (u, v) pixel coordinates.
-
-        Raises:
-            ValueError: If point projects to infinity.
-        """
-        pt = Vector3.create(Xw, Yw, 1.0)
-        result: Vector3 = self._matrix @ pt
-
-        if abs(result.z) < 1e-10:
-            raise ValueError("Point projects to infinity")
-
-        return float(result.x / result.z), float(result.y / result.z)
 
     def try_world_to_image(self, Xw: float, Yw: float) -> tuple[float, float] | None:
         """Project world point to image, returning None if behind camera.

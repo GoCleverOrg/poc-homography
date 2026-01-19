@@ -6,10 +6,7 @@ Supports runtime selection and fallback chains for robust operation.
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
-
-import yaml
 
 # Import GCP validation from dedicated module
 from poc_homography.gcp_validation import (
@@ -38,57 +35,6 @@ class HomographyConfig:
     fallback_approaches: list[HomographyApproach] = field(default_factory=list)
     approach_specific_config: dict[str, dict[str, Any]] = field(default_factory=dict)
     coordinate_system_mode: CoordinateSystemMode = CoordinateSystemMode.ORIGIN_AT_CAMERA
-
-    @classmethod
-    def from_yaml(cls, path: str) -> "HomographyConfig":
-        """Load configuration from YAML file.
-
-        Args:
-            path: Path to YAML configuration file
-
-        Returns:
-            HomographyConfig instance loaded from file
-
-        Raises:
-            FileNotFoundError: If configuration file does not exist
-            ValueError: If configuration file is malformed or contains invalid values
-            yaml.YAMLError: If YAML parsing fails
-
-        Example:
-            >>> config = HomographyConfig.from_yaml('config/homography_config.yaml')
-            >>> print(config.approach)
-            HomographyApproach.INTRINSIC_EXTRINSIC
-        """
-        config_path = Path(path)
-
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {path}\n"
-                f"Please create a configuration file or use get_default_config()"
-            )
-
-        try:
-            with open(config_path) as f:
-                data = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            raise ValueError(f"Failed to parse YAML configuration file: {e}") from e
-
-        if not data:
-            raise ValueError(
-                f"Configuration file is empty: {path}\n"
-                f"Expected a 'homography' section with approach configuration"
-            )
-
-        # Extract homography configuration section
-        if "homography" not in data:
-            raise ValueError(
-                f"Configuration file missing 'homography' section: {path}\n"
-                f"Expected structure: homography:\n  approach: ...\n  ..."
-            )
-
-        homography_config = data["homography"]
-
-        return cls.from_dict(homography_config)
 
     @staticmethod
     def _parse_approach(approach_str: str) -> HomographyApproach:
@@ -266,66 +212,6 @@ class HomographyConfig:
             result[approach_key] = approach_config
 
         return result
-
-    def get_approach_config(self, approach: HomographyApproach) -> dict[str, Any]:
-        """Get configuration for a specific approach.
-
-        Args:
-            approach: The homography approach to get configuration for
-
-        Returns:
-            Dictionary of approach-specific configuration parameters.
-            Returns empty dict if no configuration exists for this approach.
-
-        Example:
-            >>> config = get_default_config()
-            >>> intrinsic_config = config.get_approach_config(
-            ...     HomographyApproach.INTRINSIC_EXTRINSIC
-            ... )
-            >>> print(intrinsic_config.get('sensor_width_mm'))
-            7.18
-        """
-        return self.approach_specific_config.get(approach.value, {})
-
-    def save_to_yaml(self, path: str) -> None:
-        """Save configuration to YAML file.
-
-        Args:
-            path: Path where configuration file should be written.
-                Should be a relative path within the project directory
-                or an absolute path to a trusted location.
-
-        Raises:
-            IOError: If file cannot be written
-            ValueError: If path contains suspicious patterns or escapes project directory
-
-        Example:
-            >>> config = get_default_config()
-            >>> config.save_to_yaml('my_config.yaml')
-        """
-        config_path = Path(path).resolve()
-
-        # Ensure path doesn't escape current directory or project root
-        # This prevents directory traversal attacks
-        try:
-            config_path.relative_to(Path.cwd())
-        except ValueError:
-            raise ValueError(
-                f"Path '{path}' must be within the project directory. "
-                f"Resolved path: {config_path}, Current directory: {Path.cwd()}"
-            ) from None
-
-        # Create parent directories if needed
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Wrap in 'homography' section for consistency with from_yaml
-        output = {"homography": self.to_dict()}
-
-        try:
-            with open(config_path, "w") as f:
-                yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False)
-        except OSError as e:
-            raise OSError(f"Failed to write configuration file: {e}") from e
 
 
 def get_default_config() -> HomographyConfig:

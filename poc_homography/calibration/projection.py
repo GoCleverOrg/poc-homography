@@ -29,7 +29,6 @@ class ProjectionAnalysisResult:
     # Current projection
     projected_u: PixelsFloat | None
     projected_v: PixelsFloat | None
-    error_pixels: float | None
 
     # Parameter sweep results
     best_pan_offset: Degrees
@@ -38,13 +37,8 @@ class ProjectionAnalysisResult:
     best_height_error: PixelsFloat
 
     # Joint optimization
-    best_joint_pan_offset: Degrees
     best_joint_height: Meters
     best_joint_error: PixelsFloat
-
-    # Whether parameters need adjustment
-    needs_pan_adjustment: bool
-    needs_height_adjustment: bool
 
 
 def analyze_projection_error(
@@ -267,14 +261,10 @@ def analyze_projection_error(
     return ProjectionAnalysisResult(
         projected_u=projected_u,
         projected_v=projected_v,
-        error_pixels=error_dist,
         best_pan_offset=best_pan_offset,
         best_pan_error=PixelsFloat(best_pan_error),
         best_height=best_height,
         best_height_error=PixelsFloat(best_height_error),
-        best_joint_pan_offset=best_joint_pan,
         best_joint_height=best_joint_height,
         best_joint_error=PixelsFloat(best_joint_error),
-        needs_pan_adjustment=abs(best_pan_offset - pan_offset_deg) > 5,
-        needs_height_adjustment=abs(best_height - height_m) > 0.5,
     )

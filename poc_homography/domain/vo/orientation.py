@@ -152,14 +152,6 @@ class Orientation:
         R_composed = self._rotation.compose(other._rotation)
         return Orientation.from_rotation(R_composed)
 
-    def to_rotation(self) -> Rotation:
-        """Get the rotation matrix.
-
-        Returns:
-            The rotation as a Rotation value object.
-        """
-        return self._rotation
-
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {

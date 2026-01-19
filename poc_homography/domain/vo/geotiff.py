@@ -35,11 +35,6 @@ class GeoTransform:
     col_rotation: Unitless
     pixel_height: Meters
 
-    @property
-    def is_north_up(self) -> bool:
-        """True if the image is north-up (no rotation)."""
-        return self.row_rotation == 0.0 and self.col_rotation == 0.0
-
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -61,33 +56,6 @@ class GeoTransform:
             origin_northing=Northing(data["origin_northing"]),
             col_rotation=Unitless(data["col_rotation"]),
             pixel_height=Meters(data["pixel_height"]),
-        )
-
-    @classmethod
-    def from_gdal_tuple(cls, gt: tuple[float, float, float, float, float, float]) -> GeoTransform:
-        """Create from GDAL 6-parameter geotransform tuple.
-
-        Args:
-            gt: GDAL geotransform (origin_x, pixel_width, row_rot, origin_y, col_rot, pixel_height)
-        """
-        return cls(
-            origin_easting=Easting(gt[0]),
-            pixel_width=Meters(gt[1]),
-            row_rotation=Unitless(gt[2]),
-            origin_northing=Northing(gt[3]),
-            col_rotation=Unitless(gt[4]),
-            pixel_height=Meters(gt[5]),
-        )
-
-    def to_gdal_tuple(self) -> tuple[float, float, float, float, float, float]:
-        """Convert to GDAL 6-parameter geotransform tuple."""
-        return (
-            self.origin_easting,
-            float(self.pixel_width),
-            self.row_rotation,
-            self.origin_northing,
-            self.col_rotation,
-            float(self.pixel_height),
         )
 
 
@@ -121,32 +89,6 @@ class GeoTiff:
             gt.origin_northing + pixel_x * gt.col_rotation + pixel_y * float(gt.pixel_height)
         )
         return (easting, northing)
-
-    def geo_to_pixel(self, easting: Easting, northing: Northing) -> tuple[PixelsFloat, PixelsFloat]:
-        """Convert geographic coordinates to pixel coordinates.
-
-        Args:
-            easting: X-coordinate in CRS units.
-            northing: Y-coordinate in CRS units.
-
-        Returns:
-            Tuple of (pixel_x, pixel_y).
-
-        Raises:
-            ValueError: If the geotransform is singular (cannot be inverted).
-        """
-        gt = self.geotransform
-        pw = float(gt.pixel_width)
-        ph = float(gt.pixel_height)
-        det = pw * ph - float(gt.row_rotation) * float(gt.col_rotation)
-        if det == 0:
-            raise ValueError("Geotransform is singular and cannot be inverted")
-
-        dx = float(easting) - float(gt.origin_easting)
-        dy = float(northing) - float(gt.origin_northing)
-        pixel_x = PixelsFloat((ph * dx - float(gt.row_rotation) * dy) / det)
-        pixel_y = PixelsFloat((pw * dy - float(gt.col_rotation) * dx) / det)
-        return (pixel_x, pixel_y)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

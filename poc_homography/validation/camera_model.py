@@ -50,7 +50,6 @@ class ValidationResult(NamedTuple):
     gcp: GCPData
     projected_u: PixelsFloat | None
     projected_v: PixelsFloat | None
-    error_px: float
 
 
 def project_map_point_to_pixel(
@@ -205,7 +204,7 @@ def validate_model(
                     f"Map point '{gcp.map_point_id}' not found"
                 )
             errors.append(1000.0)
-            results.append(ValidationResult(gcp, None, None, 1000.0))
+            results.append(ValidationResult(gcp, None, None))
             continue
 
         point = registry[gcp.map_point_id].map_point
@@ -241,12 +240,12 @@ def validate_model(
                     f"Error: {error:6.1f}px {status}"
                 )
 
-            results.append(ValidationResult(gcp, proj_result.u, proj_result.v, error))
+            results.append(ValidationResult(gcp, proj_result.u, proj_result.v))
         else:
             if verbose:
                 print(f"GCP {i + 1}: {gcp.name[:20]:20s} | FAILED: {proj_result.error_msg}")
             errors.append(1000.0)
-            results.append(ValidationResult(gcp, None, None, 1000.0))
+            results.append(ValidationResult(gcp, None, None))
 
     if errors:
         # Filter out error sentinel values (1000.0) when computing mean

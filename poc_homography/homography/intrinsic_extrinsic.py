@@ -116,11 +116,6 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
     GIMBAL_LOCK_THRESHOLD_DEG = 0.1
     CONFIDENCE_PENALTY_GIMBAL_LOCK = 0.3
 
-    # Edge factor constants for point confidence calculation
-    EDGE_FACTOR_CENTER = 1.0
-    EDGE_FACTOR_EDGE = 0.7
-    EDGE_FACTOR_MIN = 0.3
-
     # Roll validation thresholds
     ROLL_WARN_THRESHOLD = 5.0
     ROLL_ERROR_THRESHOLD = 15.0

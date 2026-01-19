@@ -81,20 +81,3 @@ class Mask:
                 cv2.fillPoly(mask_data, [pts], (255,))
 
         return cls(data=mask_data, dimensions=dimensions)
-
-    @classmethod
-    def empty(cls, shape: tuple[int, int]) -> Mask:
-        """Create an empty mask (all zeros).
-
-        Args:
-            shape: Tuple of (height, width) for the mask dimensions.
-
-        Returns:
-            Empty mask with no regions filled.
-        """
-        height, width = shape
-        dimensions = ImageDimensions.create(width=width, height=height)
-        return cls(
-            data=np.zeros((height, width), dtype=np.uint8),
-            dimensions=dimensions,
-        )

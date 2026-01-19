@@ -23,9 +23,6 @@ DEFAULT_MAX_ZOOM = 23
 DEFAULT_MAX_NATIVE_ZOOM = 19
 DEFAULT_LAYER = "google"
 
-# Valid layer names
-VALID_LAYERS = frozenset({"osm", "esri", "pnoa", "google", "hybrid"})
-
 # Map layer names to JavaScript variable names
 LAYER_VAR_NAMES: dict[str, str] = {
     "osm": "osm",

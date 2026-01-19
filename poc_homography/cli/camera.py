@@ -49,7 +49,6 @@ class OutputFormat(str, Enum):
 
     HUMAN = "human"
     JSON = "json"
-    YAML = "yaml"
 
 
 @camera_app.command("intrinsics")

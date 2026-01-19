@@ -212,6 +212,9 @@ ignore_names = [
 
     # Django wsgi/asgi conventions
     "application",
+
+    # Numpy array immutability pattern (intentionally set, not read)
+    "writeable",
 ]
 
 [tool.deadcode]
