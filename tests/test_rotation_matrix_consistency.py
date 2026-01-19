@@ -63,12 +63,20 @@ class TestRotationMatrixConsistency:
             Degrees(pan_deg), Degrees(tilt_deg), Degrees(0.0)
         )
 
-        # Check they're equal
-        max_diff = np.max(np.abs(R_geo - R_ieh))
-        assert max_diff < 1e-10, (
-            f"Rotation matrices differ at pan={pan_deg}, tilt={tilt_deg}. "
-            f"Max difference: {max_diff}"
-        )
+        # Check they're equal by verifying they produce the same transformations
+        # Test on standard basis vectors
+        test_vectors = [
+            Vector3.create(1.0, 0.0, 0.0),
+            Vector3.create(0.0, 1.0, 0.0),
+            Vector3.create(0.0, 0.0, 1.0),
+        ]
+        for v in test_vectors:
+            v_geo = R_geo @ v
+            v_ieh = R_ieh @ v
+            assert v_geo == v_ieh, (
+                f"Rotation matrices differ at pan={pan_deg}, tilt={tilt_deg}. "
+                f"Vector {v} transforms differently: {v_geo} vs {v_ieh}"
+            )
 
     @pytest.mark.parametrize(
         "pan_deg,tilt_deg",
@@ -151,12 +159,20 @@ class TestRollRotation:
             Degrees(pan_deg), Degrees(tilt_deg), Degrees(roll_deg)
         )
 
-        # Check they're equal
-        max_diff = np.max(np.abs(R_geo - R_ieh))
-        assert max_diff < 1e-10, (
-            f"Rotation matrices differ at pan={pan_deg}, tilt={tilt_deg}, roll={roll_deg}. "
-            f"Max difference: {max_diff}"
-        )
+        # Check they're equal by verifying they produce the same transformations
+        # Test on standard basis vectors
+        test_vectors = [
+            Vector3.create(1.0, 0.0, 0.0),
+            Vector3.create(0.0, 1.0, 0.0),
+            Vector3.create(0.0, 0.0, 1.0),
+        ]
+        for v in test_vectors:
+            v_geo = R_geo @ v
+            v_ieh = R_ieh @ v
+            assert v_geo == v_ieh, (
+                f"Rotation matrices differ at pan={pan_deg}, tilt={tilt_deg}, roll={roll_deg}. "
+                f"Vector {v} transforms differently: {v_geo} vs {v_ieh}"
+            )
 
     def test_backward_compatibility_roll_defaults_to_zero(self):
         """Verify roll defaults to 0.0 for backward compatibility."""
@@ -173,8 +189,19 @@ class TestRollRotation:
             Degrees(pan_deg), Degrees(tilt_deg), Degrees(0.0)
         )
 
-        max_diff = np.max(np.abs(R_geo_default - R_ieh_with_zero_roll))
-        assert max_diff < 1e-10, "Default roll=0 should match between implementations"
+        # Check they're equal by verifying they produce the same transformations
+        test_vectors = [
+            Vector3.create(1.0, 0.0, 0.0),
+            Vector3.create(0.0, 1.0, 0.0),
+            Vector3.create(0.0, 0.0, 1.0),
+        ]
+        for v in test_vectors:
+            v_geo = R_geo_default @ v
+            v_ieh = R_ieh_with_zero_roll @ v
+            assert v_geo == v_ieh, (
+                f"Default roll=0 should match between implementations. "
+                f"Vector {v} transforms differently: {v_geo} vs {v_ieh}"
+            )
 
     def test_homography_differs_with_roll(self):
         """Verify homography changes when roll != 0."""
@@ -377,12 +404,13 @@ class TestCameraViewingDirection:
     def get_camera_forward(self, R):
         """Get camera forward direction in world coordinates."""
         # Camera Z-axis (forward) transformed to world
-        return R.T @ np.array([0, 0, 1])
+        camera_z = Vector3.create(0.0, 0.0, 1.0)
+        return R.T @ camera_z
 
     def get_azimuth_elevation(self, forward):
         """Get azimuth (degrees from North) and elevation (degrees from horizontal)."""
-        azimuth = math.degrees(math.atan2(forward[0], forward[1]))
-        elevation = math.degrees(math.asin(-forward[2]))
+        azimuth = math.degrees(math.atan2(forward.x, forward.y))
+        elevation = math.degrees(math.asin(-forward.z))
         return azimuth, elevation
 
     @pytest.mark.parametrize(
@@ -757,8 +785,19 @@ class TestEdgeCases:
         R2 = CameraGeometry._get_rotation_matrix_static(Degrees(40.0), Degrees(30.0), Degrees(0.0))
 
         # Rotation matrices should be identical (within floating point)
-        max_diff = np.max(np.abs(R1 - R2))
-        assert max_diff < 1e-10, f"400 and 40 should produce same rotation, diff={max_diff}"
+        # Verify by testing transformation on standard basis vectors
+        test_vectors = [
+            Vector3.create(1.0, 0.0, 0.0),
+            Vector3.create(0.0, 1.0, 0.0),
+            Vector3.create(0.0, 0.0, 1.0),
+        ]
+        for v in test_vectors:
+            v1 = R1 @ v
+            v2 = R2 @ v
+            assert v1 == v2, (
+                f"400 and 40 should produce same rotation. "
+                f"Vector {v} transforms differently: {v1} vs {v2}"
+            )
 
 
 if __name__ == "__main__":
