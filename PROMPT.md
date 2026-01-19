@@ -36,6 +36,16 @@ This skill will:
 
 ## State Detection (Run First Every Loop)
 
+### Check 0: Production Code W0212 Violations (PRIORITY CHECK - NEW!)
+```bash
+uv run pylint poc_homography/ 2>&1 | grep -c W0212
+```
+
+**If count > 0** → Enter PRODUCTION_W0212_REPAIR MODE (see "MODE 0" below and @production_w0212_fix_plan.md)
+**If count = 0** → Proceed to Check 1
+
+**WHY THIS IS FIRST**: Production code violations indicate architectural issues that must be resolved before test fixes. Test violations likely stem from these production issues.
+
 ### Check 1: Test Status
 ```bash
 uv run pytest tests/ -v
@@ -43,6 +53,70 @@ uv run pytest tests/ -v
 
 **If tests FAIL** → Enter TEST REPAIR MODE
 **If tests PASS** → Enter DEADCODE ELIMINATION MODE
+
+---
+
+## MODE 0: PRODUCTION_W0212_REPAIR MODE (NEW - HIGHEST PRIORITY)
+**Goal**: Fix all pylint W0212 (protected-access) violations in production code
+
+### Why This Mode Exists
+Production code has 12 W0212 violations that MUST be fixed before test violations. This mode ensures:
+1. Value Object encapsulation is properly respected in production
+2. Provides patterns for fixing test violations afterward
+3. Prevents accumulating more architectural debt
+
+### Detailed Fix Plan
+**See `@production_w0212_fix_plan.md` for complete step-by-step instructions.**
+
+### Quick Process (Execute For Each Violation)
+
+**MANDATORY BEFORE EACH FIX:**
+```
+Use Skill(skill="validate-design") to analyze the violation and get architectural guidance
+```
+
+**Steps:**
+1. Check remaining violations: `uv run pylint poc_homography/ 2>&1 | grep W0212`
+2. Pick ONE violation to fix (start with Phase 1 from @production_w0212_fix_plan.md)
+3. Read the file context around the violation
+4. **Invoke validate-design skill** with the violation context
+5. Follow skill's guidance (usually: use public API or create public method)
+6. Implement the fix
+7. Verify fix: `uv run pylint <file> 2>&1 | grep W0212` → should be reduced
+8. Run tests: `uv run pytest tests/ -v` (may fail, that's OK for now)
+9. Commit: `fix(validation): eliminate W0212 in <file> - <description>`
+10. Repeat for next violation
+
+### Exit Conditions
+
+**Continue PRODUCTION_W0212_REPAIR** (EXIT_SIGNAL: false) when:
+- Still have W0212 violations in production code
+- Making progress on fixes
+
+**Switch to TEST REPAIR MODE** (EXIT_SIGNAL: false) when:
+- Production W0212 violations = 0
+- Tests are failing (address test violations next)
+
+**Request help** (EXIT_SIGNAL: true, STATUS: BLOCKED) when:
+- Stuck on same violation for 3+ loops
+- Need architectural decision on how to expose API
+- Unclear which fix approach is correct
+
+### RALPH_STATUS Format for This Mode
+
+```
+RALPH_STATUS:
+MODE: PRODUCTION_W0212_REPAIR
+STATUS: IN_PROGRESS | BLOCKED
+EXIT_SIGNAL: false | true
+PHASE: <1-4 from @production_w0212_fix_plan.md>
+VIOLATIONS_REMAINING: N (started with 12)
+VIOLATIONS_FIXED: M
+FILES_MODIFIED: ["file1.py", "file2.py"]
+LAST_FIX: "Added to_numpy() to Matrix3x3"
+NEXT_TARGET: "Fix camera_geometry.py:349 - use to_numpy()"
+SUMMARY: "Fixed 3/8 VO ._to_array() violations in Phase 1"
+```
 
 ---
 
