@@ -244,8 +244,8 @@ test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
 
 [tool.poe.tasks.validate]
-sequence = ["lint", "format-check", "typecheck", "vulture", "pylint"]
-help = "Run all validation checks (no tests)"
+sequence = ["lint", "format-check", "typecheck", "pylint", "vulture"]
+help = "Run all validation checks (no tests) - pylint before vulture to catch protected-access"
 
 [tool.poe.tasks.ci]
 sequence = ["lint", "format-check", "typecheck", "vulture", "pylint", "test"]
