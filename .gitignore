@@ -173,3 +173,16 @@ ptz_discovery_and_control/hikvision/ptz_test_results_*.json
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Ralph loop runtime files (session state, tracking)
+.claude_session_id
+.response_analysis
+.ralph_session
+.ralph_session_history
+.call_count
+.circuit_breaker_state
+.circuit_breaker_history
+.exit_signals
+.last_reset
+status.json
+progress.json
