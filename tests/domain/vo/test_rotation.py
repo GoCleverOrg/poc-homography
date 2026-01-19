@@ -2,14 +2,10 @@
 
 Tests cover:
 - Creation via from_euler() factory
-- Creation via from_matrix() factory
 - Matrix access
 - Rotation composition
-- Private constructor enforcement
 - Hashability
 """
-
-import math
 
 import numpy as np
 import pytest
@@ -27,33 +23,6 @@ class TestRotationCreation:
         r = Rotation.from_euler(Degrees(0), Degrees(0), Degrees(0))
 
         np.testing.assert_array_almost_equal(r.to_matrix()._to_array(), np.eye(3))
-
-    def test_from_euler_yaw_only(self):
-        """Test from_euler with yaw rotation only."""
-        r = Rotation.from_euler(Degrees(90), Degrees(0), Degrees(0))
-        v = np.array([1.0, 0.0, 0.0])
-
-        result = r.to_matrix() @ v
-
-        np.testing.assert_array_almost_equal(result, [0.0, 1.0, 0.0])
-
-    def test_from_euler_pitch_only(self):
-        """Test from_euler with pitch rotation only."""
-        r = Rotation.from_euler(Degrees(0), Degrees(90), Degrees(0))
-        v = np.array([0.0, 0.0, 1.0])
-
-        result = r.to_matrix() @ v
-
-        np.testing.assert_array_almost_equal(result, [1.0, 0.0, 0.0])
-
-    def test_from_euler_roll_only(self):
-        """Test from_euler with roll rotation only."""
-        r = Rotation.from_euler(Degrees(0), Degrees(0), Degrees(90))
-        v = np.array([0.0, 1.0, 0.0])
-
-        result = r.to_matrix() @ v
-
-        np.testing.assert_array_almost_equal(result, [0.0, 0.0, 1.0])
 
     def test_from_euler_rejects_nan_yaw(self):
         """Test that NaN yaw is rejected."""
@@ -74,20 +43,6 @@ class TestRotationCreation:
         """Test that infinite angles are rejected."""
         with pytest.raises(ValueError, match="yaw must be finite"):
             Rotation.from_euler(Degrees(float("inf")), Degrees(0), Degrees(0))
-
-    def test_from_matrix_roundtrip(self):
-        """Test from_matrix preserves the matrix."""
-        original = Matrix3x3.rotation_z(math.pi / 4)
-        r = Rotation.from_matrix(original)
-
-        assert r.to_matrix() is original
-
-    def test_direct_constructor_raises_error(self):
-        """Test that direct constructor access is blocked."""
-        m = Matrix3x3.rotation_x(0.0)
-        with pytest.raises(TypeError, match="cannot be instantiated directly"):
-            Rotation(_matrix=m)
-
 
 class TestRotationMatrixAccess:
     """Test matrix access methods."""

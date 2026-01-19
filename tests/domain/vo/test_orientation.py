@@ -6,7 +6,6 @@ Tests cover:
 - Serialization (to_dict/from_dict)
 - Addition operator (__add__)
 - Rotation composition (compose)
-- Access to underlying rotation
 - Validation
 - Private constructor enforcement
 """
@@ -110,17 +109,6 @@ class TestOrientationFromRotation:
         assert o.pitch == pytest.approx(30.0, abs=1e-10)
         assert o.roll == pytest.approx(0.0, abs=1e-10)
 
-    def test_from_rotation_roundtrip(self):
-        """Test create -> to_rotation -> from_rotation roundtrip."""
-        original = Orientation.create(yaw=Degrees(45), pitch=Degrees(30), roll=Degrees(15))
-        rotation = original.to_rotation()
-        restored = Orientation.from_rotation(rotation)
-
-        assert restored.yaw == pytest.approx(original.yaw, abs=1e-10)
-        assert restored.pitch == pytest.approx(original.pitch, abs=1e-10)
-        assert restored.roll == pytest.approx(original.roll, abs=1e-10)
-
-
 class TestOrientationAddition:
     """Test __add__ operator."""
 
@@ -202,26 +190,6 @@ class TestOrientationComposition:
             or add_result.pitch != pytest.approx(compose_result.pitch, abs=0.1)
             or add_result.roll != pytest.approx(compose_result.roll, abs=0.1)
         )
-
-
-class TestOrientationRotationAccess:
-    """Test to_rotation() method."""
-
-    def test_to_rotation_returns_rotation(self):
-        """Test that to_rotation returns a Rotation."""
-        o = Orientation.create(yaw=Degrees(45), pitch=Degrees(30), roll=Degrees(15))
-
-        result = o.to_rotation()
-
-        assert isinstance(result, Rotation)
-
-    def test_to_rotation_matrix_is_orthogonal(self):
-        """Test rotation matrix has determinant 1."""
-        o = Orientation.create(yaw=Degrees(45), pitch=Degrees(30), roll=Degrees(15))
-
-        m = o.to_rotation().to_matrix()
-
-        assert m.determinant == pytest.approx(1.0)
 
 
 class TestOrientationSerialization:

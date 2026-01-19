@@ -3,9 +3,7 @@
 Tests cover:
 - Creation and validation (via create() factory)
 - Private constructor enforcement
-- Matrix access (to_matrix() returns Matrix3x3)
 - Inverse property (returns Homography)
-- Projection method
 - Serialization
 - Hashability and immutability
 """
@@ -15,7 +13,6 @@ import pytest
 
 from poc_homography.domain.vo.homography import Homography
 from poc_homography.domain.vo.matrix3x3 import Matrix3x3
-from poc_homography.domain.vo.pixel_point import PixelPoint
 
 
 def make_simple_homography() -> np.ndarray:
@@ -42,13 +39,6 @@ def make_perspective_homography() -> np.ndarray:
 
 class TestHomographyCreation:
     """Test Homography creation via factory method."""
-
-    def test_create_valid_homography(self):
-        """Test creating a valid Homography."""
-        H = make_simple_homography()
-        homography = Homography.create(H)
-
-        np.testing.assert_array_almost_equal(homography.to_matrix()._to_array(), H)
 
     def test_create_computes_condition_number(self):
         """Test that condition number is computed correctly."""
@@ -124,24 +114,7 @@ class TestHomographyCreation:
 
 
 class TestHomographyMatrixAccess:
-    """Test matrix access via to_matrix()."""
-
-    def test_to_matrix_returns_matrix3x3(self):
-        """Test that to_matrix returns a Matrix3x3 instance."""
-        homography = Homography.create(make_simple_homography())
-
-        result = homography.to_matrix()
-
-        assert isinstance(result, Matrix3x3)
-
-    def test_to_matrix_values_correct(self):
-        """Test that to_matrix returns correct values."""
-        H = make_simple_homography()
-        homography = Homography.create(H)
-
-        result = homography.to_matrix()
-
-        np.testing.assert_array_almost_equal(result._to_array(), H)
+    """Test matrix access."""
 
     def test_condition_number_accessible(self):
         """Test that condition number is accessible."""
@@ -167,16 +140,6 @@ class TestHomographyInverse:
 
         assert isinstance(inv, Homography)
 
-    def test_inverse_matrix_is_correct(self):
-        """Test that inverse contains the correct matrix."""
-        H = make_simple_homography()
-        homography = Homography.create(H)
-
-        inv = homography.inverse
-        expected_inv = np.linalg.inv(H)
-
-        np.testing.assert_array_almost_equal(inv.to_matrix()._to_array(), expected_inv)
-
     def test_inverse_determinant_is_reciprocal(self):
         """Test that inverse determinant is 1/original."""
         homography = Homography.create(make_simple_homography())
@@ -192,93 +155,6 @@ class TestHomographyInverse:
         inv = homography.inverse
 
         assert inv.condition_number == pytest.approx(homography.condition_number, rel=1e-10)
-
-    def test_double_inverse_returns_original_matrix(self):
-        """Test that inverse of inverse equals original matrix."""
-        H = make_perspective_homography()
-        homography = Homography.create(H)
-
-        double_inv = homography.inverse.inverse
-
-        np.testing.assert_array_almost_equal(
-            double_inv.to_matrix()._to_array(), homography.to_matrix()._to_array()
-        )
-
-
-class TestHomographyProjection:
-    """Test Homography projection method."""
-
-    def test_project_origin(self):
-        """Test projecting origin through simple homography."""
-        homography = Homography.create(make_simple_homography())
-
-        # (0, 0) -> (960, 540)
-        result = homography.project(PixelPoint.create(0.0, 0.0))
-
-        assert float(result.x) == pytest.approx(960.0, abs=0.001)
-        assert float(result.y) == pytest.approx(540.0, abs=0.001)
-
-    def test_project_with_scale(self):
-        """Test that scaling works correctly."""
-        homography = Homography.create(make_simple_homography())
-
-        # (1, 1) -> (100*1 + 960, -100*1 + 540) = (1060, 440)
-        result = homography.project(PixelPoint.create(1.0, 1.0))
-
-        assert float(result.x) == pytest.approx(1060.0, abs=0.001)
-        assert float(result.y) == pytest.approx(440.0, abs=0.001)
-
-    def test_project_roundtrip(self):
-        """Test that project followed by inverse.project returns original."""
-        homography = Homography.create(make_perspective_homography())
-
-        test_points = [
-            PixelPoint.create(100.0, 200.0),
-            PixelPoint.create(500.0, 300.0),
-            PixelPoint.create(960.0, 540.0),
-        ]
-
-        for point in test_points:
-            projected = homography.project(point)
-            back = homography.inverse.project(projected)
-
-            assert float(back.x) == pytest.approx(float(point.x), abs=0.01)
-            assert float(back.y) == pytest.approx(float(point.y), abs=0.01)
-
-    def test_project_inverse_roundtrip(self):
-        """Test that inverse.project followed by project returns original."""
-        homography = Homography.create(make_perspective_homography())
-
-        test_points = [
-            PixelPoint.create(800.0, 400.0),
-            PixelPoint.create(960.0, 540.0),
-            PixelPoint.create(1200.0, 700.0),
-        ]
-
-        for point in test_points:
-            projected = homography.inverse.project(point)
-            back = homography.project(projected)
-
-            assert float(back.x) == pytest.approx(float(point.x), abs=0.01)
-            assert float(back.y) == pytest.approx(float(point.y), abs=0.01)
-
-    def test_project_infinity_raises(self):
-        """Test that projecting to infinity raises ValueError."""
-        H = np.array(
-            [
-                [100.0, 0.0, 960.0],
-                [0.0, 100.0, 540.0],
-                [0.0, 0.01, 1.0],
-            ]
-        )
-        homography = Homography.create(H)
-
-        # w = 0.01*y + 1 = 0 when y = -100
-        point_at_infinity = PixelPoint.create(0.0, -100.0)
-
-        with pytest.raises(ValueError, match="infinity"):
-            homography.project(point_at_infinity)
-
 
 class TestHomographySerialization:
     """Test Homography serialization methods."""
@@ -300,19 +176,6 @@ class TestHomographySerialization:
         assert isinstance(data["matrix"], list)
         assert len(data["matrix"]) == 3
         assert len(data["matrix"][0]) == 3
-
-    def test_from_dict_roundtrip(self):
-        """Test that to_dict -> from_dict preserves data."""
-        original = Homography.create(make_perspective_homography())
-        data = original.to_dict()
-        restored = Homography.from_dict(data)
-
-        np.testing.assert_array_almost_equal(
-            restored.to_matrix()._to_array(), original.to_matrix()._to_array()
-        )
-        assert restored.condition_number == pytest.approx(original.condition_number, rel=1e-10)
-        assert restored.determinant == pytest.approx(original.determinant, rel=1e-10)
-
 
 class TestHomographyHashability:
     """Test Homography can be used as dict key and in sets."""

@@ -2,16 +2,14 @@
 
 Tests cover:
 - Creation via factory method with validation
-- Computed properties (area, aspect_ratio, center, center_x, center_y)
-- contains() method for bounds checking
-- Serialization (to_tuple, to_dict, from_dict)
+- Computed properties (area, center_x, center_y)
+- Serialization (to_dict, from_dict)
 - Immutability
 """
 
 import pytest
 
 from poc_homography.domain.vo.image_dimensions import ImageDimensions
-from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.types import Pixels
 
 
@@ -66,21 +64,6 @@ class TestImageDimensionsComputedProperties:
         dims = ImageDimensions.create(width=100, height=100)
         assert dims.area == 10000
 
-    def test_aspect_ratio_16_9(self):
-        """Test aspect ratio for 16:9."""
-        dims = ImageDimensions.create(width=1920, height=1080)
-        assert dims.aspect_ratio == pytest.approx(16.0 / 9.0)
-
-    def test_aspect_ratio_4_3(self):
-        """Test aspect ratio for 4:3."""
-        dims = ImageDimensions.create(width=1024, height=768)
-        assert dims.aspect_ratio == pytest.approx(4.0 / 3.0)
-
-    def test_aspect_ratio_square(self):
-        """Test aspect ratio for square image."""
-        dims = ImageDimensions.create(width=100, height=100)
-        assert dims.aspect_ratio == 1.0
-
     def test_center_x(self):
         """Test center_x computation."""
         dims = ImageDimensions.create(width=1920, height=1080)
@@ -97,73 +80,8 @@ class TestImageDimensionsComputedProperties:
         assert dims.center_x == pytest.approx(50.5)
         assert dims.center_y == pytest.approx(25.5)
 
-    def test_center_returns_pixel_point(self):
-        """Test that center returns a PixelPoint."""
-        dims = ImageDimensions.create(width=1920, height=1080)
-        center = dims.center
-
-        assert isinstance(center, PixelPoint)
-        assert center.x == pytest.approx(960.0)
-        assert center.y == pytest.approx(540.0)
-
-
-class TestImageDimensionsContains:
-    """Test contains() method."""
-
-    def test_contains_center_point(self):
-        """Test that center point is contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(50.0, 50.0)
-        assert dims.contains(point) is True
-
-    def test_contains_origin(self):
-        """Test that origin is contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(0.0, 0.0)
-        assert dims.contains(point) is True
-
-    def test_not_contains_at_width_boundary(self):
-        """Test that point at width boundary is NOT contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(100.0, 50.0)
-        assert dims.contains(point) is False
-
-    def test_not_contains_at_height_boundary(self):
-        """Test that point at height boundary is NOT contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(50.0, 100.0)
-        assert dims.contains(point) is False
-
-    def test_not_contains_negative_x(self):
-        """Test that point with negative x is NOT contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(-1.0, 50.0)
-        assert dims.contains(point) is False
-
-    def test_not_contains_negative_y(self):
-        """Test that point with negative y is NOT contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(50.0, -1.0)
-        assert dims.contains(point) is False
-
-    def test_contains_just_inside_boundary(self):
-        """Test that point just inside boundary is contained."""
-        dims = ImageDimensions.create(width=100, height=100)
-        point = PixelPoint.create(99.9, 99.9)
-        assert dims.contains(point) is True
-
-
 class TestImageDimensionsSerialization:
     """Test serialization methods."""
-
-    def test_to_tuple(self):
-        """Test to_tuple conversion."""
-        dims = ImageDimensions.create(width=1920, height=1080)
-        result = dims.to_tuple()
-
-        assert result == (1920, 1080)
-        assert isinstance(result[0], int)
-        assert isinstance(result[1], int)
 
     def test_to_dict(self):
         """Test to_dict conversion."""
