@@ -46,6 +46,7 @@ import numpy as np
 
 from poc_homography.domain import MapPoint
 from poc_homography.domain.vo.image_dimensions import ImageDimensions
+from poc_homography.domain.vo.matrix3x3 import Matrix3x3
 from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.homography.interface import (
     HomographyProvider,
@@ -348,7 +349,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
     @staticmethod
     def _compute_rotation_matrix(
         pan_deg: Degrees, tilt_deg: Degrees, roll_deg: Degrees = Degrees(0.0)
-    ) -> np.ndarray:
+    ) -> Matrix3x3:
         """
         Calculate rotation matrix from world to camera coordinates (static version).
         """
@@ -383,7 +384,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         )
 
         R: np.ndarray = Rx_tilt @ Rz_roll @ R_base @ Rz_pan
-        return R
+        return Matrix3x3.create(R)
 
     @staticmethod
     def _compute_ground_homography(
