@@ -2,12 +2,71 @@
 
 ## Current State
 - **Tests Status**: FAILING (from previous deadcode elimination)
-- **First Priority**: Fix all failing tests (TEST REPAIR MODE)
-- **Second Priority**: Continue deadcode elimination (DEADCODE ELIMINATION MODE)
+- **CRITICAL BLOCKER**: Production code has 12 W0212 violations (protected-access)
+- **First Priority**: Fix production code W0212 violations (PHASE 0)
+- **Second Priority**: Fix test W0212 violations and failing tests (PHASE 1)
+- **Third Priority**: Continue deadcode elimination (PHASE 2)
 
 ---
 
-## PHASE 1: TEST REPAIR MODE (Active)
+## PHASE 0: FIX PRODUCTION CODE W0212 VIOLATIONS (Active - MANDATORY)
+
+**DECISION**: User selected Option C - Fix production code violations FIRST, then tests.
+
+**Goal**: Eliminate all 12 W0212 (protected-access) violations in `poc_homography/` production code.
+
+### Why This Matters
+- Production code violations must be fixed before test violations
+- Validates that Value Object encapsulation is respected in production
+- Provides pattern for fixing test violations afterward
+- Prevents introducing more protected-access in tests
+
+### Production Code Violations (12 total)
+
+#### Group 1: `._to_array()` access (5 violations)
+- [ ] `camera_geometry.py:348` - accessing `._to_array` of Matrix/Vector
+- [ ] `camera_geometry.py:349` - accessing `._to_array` of Matrix/Vector
+- [ ] `camera_geometry.py:350` - accessing `._to_array` of Matrix/Vector
+- [ ] `cli/camera.py:135` - accessing `._to_array` of Matrix/Vector
+- [ ] `domain/vo/rotation.py:117` - accessing `._to_array` of Matrix
+
+#### Group 2: `._update_display()` access (4 violations)
+- [ ] `calibration/interactive.py:465` - accessing `._update_display`
+- [ ] `calibration/interactive.py:521` - accessing `._update_display`
+- [ ] `cli/frame.py:407` - accessing `._update_display`
+- [ ] `cli/frame.py:486` - accessing `._update_display`
+
+#### Group 3: Other protected members (3 violations)
+- [ ] `application/services/frame_capture_service.py:94` - accessing `._data_dir`
+- [ ] `domain/vo/orientation.py:152` - accessing `._rotation`
+- [ ] `domain/vo/rotation.py:108` - accessing `._matrix`
+
+### Strategy
+
+**MANDATORY: Use validate-design skill before EACH fix**
+```
+Skill(skill="validate-design")
+```
+
+For each violation:
+1. Read the file and understand the context
+2. Invoke validate-design skill with the proposed fix
+3. Follow skill's guidance to use public API
+4. Fix the violation
+5. Run `uv run pylint poc_homography/` to verify fix
+6. Commit with message: `fix(validation): eliminate W0212 in <file>`
+7. Move to next violation
+
+### Exit Criteria for Phase 0
+- [ ] All 12 production code W0212 violations eliminated
+- [ ] `uv run pylint poc_homography/` returns 0 W0212 errors
+- [ ] `uv run poe validate` passes
+- [ ] Tests may still fail (that's Phase 1)
+- [ ] Ready to proceed to Phase 1 (test violations)
+
+---
+
+## PHASE 1: TEST REPAIR MODE (Pending Phase 0 Completion)
 **Goal**: Get all tests to pass before continuing deadcode elimination
 
 ### Pre-Work: Analyze Current Failures
