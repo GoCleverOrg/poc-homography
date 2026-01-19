@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "homography_precision",
     "line_picker",
     "camera_annotator",
+    "camera_line_annotator",
 ]
 
 MIDDLEWARE = [

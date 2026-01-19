@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Line Annotator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            height: 100vh;
+            background: #1a1a1a;
+        }
+
+        /* Left panel - Image */
+        #image-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #222;
+            overflow: hidden;
+        }
+
+        #image-container {
+            flex: 1;
+            overflow: auto;
+            cursor: crosshair;
+        }
+
+        #image-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        #frame-image {
+            display: block;
+            max-width: none;
+        }
+
+        /* Line rendering on canvas */
+        #annotation-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        /* Temporary line during creation */
+        .temp-line {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        /* Point markers for line endpoints */
+        .endpoint-marker {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-left: -6px;
+            margin-top: -6px;
+            pointer-events: none;
+        }
+
+        .endpoint-marker.start {
+            background: #4caf50;
+            border: 2px solid white;
+        }
+
+        .endpoint-marker.end {
+            background: #f44336;
+            border: 2px solid white;
+        }
+
+        .endpoint-marker.pending {
+            background: #ff9800;
+            border: 2px solid white;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        /* Line label */
+        .line-label {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Right panel - Controls & Preview */
+        #control-panel {
+            width: 400px;
+            background: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid #333;
+        }
+
+        .panel-section {
+            padding: 16px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .panel-section h2 {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #image-selector {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            outline: none;
+        }
+
+        #image-selector:hover {
+            border-color: #2196f3;
+        }
+
+        #image-selector:focus {
+            border-color: #2196f3;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
+        }
+
+        #filename {
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+            margin-bottom: 8px;
+        }
+
+        #registry-info {
+            font-size: 11px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        /* Line ID Input */
+        #line-input-section {
+            display: none;
+        }
+
+        #line-input-section.active {
+            display: block;
+            background: #e3f2fd;
+        }
+
+        #line-search {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #2196f3;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        #line-search:focus {
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
+        }
+
+        #line-dropdown {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .line-option {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        .line-option:hover, .line-option.selected {
+            background: #e3f2fd;
+        }
+
+        .line-option .id {
+            font-weight: 600;
+            color: #1976d2;
+        }
+
+        /* Annotations list */
+        #annotations-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            max-height: 250px;
+        }
+
+        .annotation-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #fff;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .annotation-item .info {
+            font-size: 13px;
+        }
+
+        .annotation-item .line-id {
+            font-weight: 600;
+            color: #1976d2;
+        }
+
+        .annotation-item .coords {
+            color: #666;
+            font-size: 10px;
+            display: block;
+        }
+
+        .annotation-item .delete-btn {
+            background: #f44336;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .annotation-item .delete-btn:hover {
+            background: #d32f2f;
+        }
+
+        /* Camera Status */
+        .camera-status-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        .camera-status-form label {
+            font-size: 11px;
+            color: #666;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .camera-status-form input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* Export Section */
+        #export-section {
+            padding: 16px;
+            background: #e8f5e9;
+        }
+
+        #export-btn {
+            width: 100%;
+            padding: 12px;
+            background: #4caf50;
+            color: #fff;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #export-btn:hover {
+            background: #43a047;
+        }
+
+        #export-btn:disabled {
+            background: #9e9e9e;
+            cursor: not-allowed;
+        }
+
+        #export-status {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #2e7d32;
+        }
+
+        /* YAML Preview */
+        #yaml-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 150px;
+        }
+
+        #yaml-preview {
+            flex: 1;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+            padding: 12px;
+            background: #263238;
+            color: #aed581;
+            border: none;
+            resize: none;
+            white-space: pre;
+            overflow: auto;
+        }
+
+        #copy-btn {
+            padding: 10px;
+            background: #607d8b;
+            color: #fff;
+            border: none;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        #copy-btn:hover {
+            background: #546e7a;
+        }
+
+        #copy-btn.copied {
+            background: #2196f3;
+        }
+
+        /* Instructions */
+        #instructions {
+            padding: 12px;
+            background: #fff3e0;
+            font-size: 12px;
+            color: #e65100;
+        }
+
+        /* Coordinates display */
+        #coords-display {
+            position: fixed;
+            bottom: 16px;
+            left: 16px;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        /* Back link */
+        .back-link {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 13px;
+            z-index: 100;
+        }
+
+        .back-link:hover {
+            background: rgba(0,0,0,0.9);
+        }
+
+        /* Annotation mode indicator */
+        #mode-indicator {
+            position: fixed;
+            top: 16px;
+            left: 150px;
+            background: rgba(255, 152, 0, 0.9);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 100;
+            display: none;
+        }
+
+        #mode-indicator.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+    <div id="mode-indicator">Click second point to complete line</div>
+
+    <div id="image-panel">
+        <div id="image-container">
+            <div id="image-wrapper">
+                <img id="frame-image" src="{% url 'camera_line_annotator:serve_image' %}" alt="Camera Frame">
+                <canvas id="annotation-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div id="control-panel">
+        <div class="panel-section">
+            <h2>Select Image</h2>
+            <select id="image-selector">
+                <!-- Options populated via JavaScript -->
+            </select>
+        </div>
+
+        <div class="panel-section">
+            <h2>Camera Frame</h2>
+            <div id="filename">{{ image_filename }}</div>
+            <div id="registry-info">Registry: {{ registry_filename }} ({{ map_id }})</div>
+            <div id="instructions">Click twice on the image to create a line annotation. First click = start, second click = end.</div>
+        </div>
+
+        <div id="line-input-section" class="panel-section">
+            <h2>Select Line ID</h2>
+            <input type="text" id="line-search" placeholder="Type to filter line IDs..." autocomplete="off">
+            <div id="line-dropdown"></div>
+        </div>
+
+        <div class="panel-section">
+            <h2>Annotations (<span id="annotation-count">0</span>)</h2>
+        </div>
+        <div id="annotations-list"></div>
+
+        <div class="panel-section">
+            <h2>Camera Status</h2>
+            <div class="camera-status-form">
+                <div>
+                    <label for="pan-input">Pan</label>
+                    <input type="number" id="pan-input" step="0.1" placeholder="0.0">
+                </div>
+                <div>
+                    <label for="tilt-input">Tilt</label>
+                    <input type="number" id="tilt-input" step="0.1" placeholder="0.0">
+                </div>
+                <div>
+                    <label for="zoom-input">Zoom</label>
+                    <input type="number" id="zoom-input" step="1" placeholder="1">
+                </div>
+            </div>
+        </div>
+
+        <div id="export-section">
+            <button id="export-btn" disabled>Export to YAML</button>
+            <div id="export-status"></div>
+        </div>
+
+        <div id="yaml-section" class="panel-section">
+            <h2>YAML Preview</h2>
+            <textarea id="yaml-preview" readonly></textarea>
+            <button id="copy-btn">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <div id="coords-display">Move mouse over image</div>
+
+    <script>
+        // API base URL
+        const API_BASE = '{% url "camera_line_annotator:index" %}';
+
+        // State
+        let lineIds = [];
+        let annotations = [];
+        let pendingLine = null;  // {startX, startY} when first point is clicked
+        let selectedLineIndex = -1;
+        let filteredLines = [];
+        let currentFilename = '{{ image_filename }}';
+
+        // Elements
+        const img = document.getElementById('frame-image');
+        const wrapper = document.getElementById('image-wrapper');
+        const canvas = document.getElementById('annotation-canvas');
+        const ctx = canvas.getContext('2d');
+        const lineSection = document.getElementById('line-input-section');
+        const lineSearch = document.getElementById('line-search');
+        const lineDropdown = document.getElementById('line-dropdown');
+        const annotationsList = document.getElementById('annotations-list');
+        const annotationCount = document.getElementById('annotation-count');
+        const yamlPreview = document.getElementById('yaml-preview');
+        const copyBtn = document.getElementById('copy-btn');
+        const coordsDisplay = document.getElementById('coords-display');
+        const imageSelector = document.getElementById('image-selector');
+        const filenameDisplay = document.getElementById('filename');
+        const modeIndicator = document.getElementById('mode-indicator');
+        const panInput = document.getElementById('pan-input');
+        const tiltInput = document.getElementById('tilt-input');
+        const zoomInput = document.getElementById('zoom-input');
+        const exportBtn = document.getElementById('export-btn');
+        const exportStatus = document.getElementById('export-status');
+
+        // Load line IDs from registry
+        async function loadLineIds() {
+            const resp = await fetch('{% url "camera_line_annotator:api_line_ids" %}');
+            const data = await resp.json();
+            lineIds = data.line_ids || [];
+            filteredLines = [...lineIds];
+        }
+
+        // Setup canvas size
+        function setupCanvas() {
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            renderLines();
+        }
+
+        // Render all lines on canvas
+        function renderLines() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw completed annotations
+            annotations.forEach((ann, i) => {
+                drawLine(ann.start_pixel_x, ann.start_pixel_y, ann.end_pixel_x, ann.end_pixel_y, '#2196f3', ann.line_id);
+            });
+
+            // Draw pending line preview
+            if (pendingLine && pendingLine.endX !== undefined) {
+                drawLine(pendingLine.startX, pendingLine.startY, pendingLine.endX, pendingLine.endY, '#ff9800', null, true);
+            }
+        }
+
+        // Draw a line with endpoints
+        function drawLine(x1, y1, x2, y2, color, label, isPending = false) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isPending ? 2 : 3;
+            if (isPending) {
+                ctx.setLineDash([5, 5]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            ctx.stroke();
+
+            // Draw endpoints
+            ctx.beginPath();
+            ctx.arc(x1, y1, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#4caf50';
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(x2, y2, 6, 0, Math.PI * 2);
+            ctx.fillStyle = isPending ? '#ff9800' : '#f44336';
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw label at midpoint
+            if (label) {
+                const midX = (x1 + x2) / 2;
+                const midY = (y1 + y2) / 2;
+                ctx.font = 'bold 12px system-ui';
+                const metrics = ctx.measureText(label);
+                const padding = 4;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(midX - metrics.width/2 - padding, midY - 8 - padding, metrics.width + padding*2, 16 + padding);
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, midX, midY);
+            }
+        }
+
+        // Draw pending start point
+        function drawPendingStart() {
+            if (!pendingLine) return;
+
+            ctx.beginPath();
+            ctx.arc(pendingLine.startX, pendingLine.startY, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff9800';
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Filter line IDs
+        function filterLines(query) {
+            const q = query.toLowerCase();
+            filteredLines = lineIds.filter(id => id.toLowerCase().includes(q));
+
+            // Exclude already used line IDs
+            const usedIds = new Set(annotations.map(a => a.line_id));
+            filteredLines = filteredLines.filter(id => !usedIds.has(id));
+
+            selectedLineIndex = filteredLines.length > 0 ? 0 : -1;
+            renderLineDropdown();
+        }
+
+        // Render line ID dropdown
+        function renderLineDropdown() {
+            lineDropdown.innerHTML = '';
+
+            if (filteredLines.length === 0) {
+                lineDropdown.innerHTML = '<div style="padding: 12px; color: #999;">No matching line IDs</div>';
+                return;
+            }
+
+            filteredLines.forEach((lineId, i) => {
+                const div = document.createElement('div');
+                div.className = 'line-option' + (i === selectedLineIndex ? ' selected' : '');
+                div.innerHTML = `<span class="id">${lineId}</span>`;
+                div.addEventListener('click', () => selectLineId(lineId));
+                lineDropdown.appendChild(div);
+            });
+        }
+
+        // Select line ID for pending line
+        async function selectLineId(lineId) {
+            if (!pendingLine || pendingLine.endX === undefined) return;
+
+            // Create annotation via API
+            const resp = await fetch('{% url "camera_line_annotator:api_annotations_create" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    line_id: lineId,
+                    start_pixel_x: pendingLine.startX,
+                    start_pixel_y: pendingLine.startY,
+                    end_pixel_x: pendingLine.endX,
+                    end_pixel_y: pendingLine.endY
+                })
+            });
+
+            const data = await resp.json();
+            if (data.success) {
+                annotations.push(data.annotation);
+            }
+
+            pendingLine = null;
+            lineSection.classList.remove('active');
+            lineSearch.value = '';
+            modeIndicator.classList.remove('active');
+
+            renderLines();
+            renderAnnotationsList();
+            updateYamlPreview();
+            updateExportButton();
+        }
+
+        // Render annotations list
+        function renderAnnotationsList() {
+            annotationsList.innerHTML = '';
+            annotationCount.textContent = annotations.length;
+
+            annotations.forEach((ann, i) => {
+                const div = document.createElement('div');
+                div.className = 'annotation-item';
+                div.innerHTML = `
+                    <div class="info">
+                        <span class="line-id">${ann.line_id}</span>
+                        <span class="coords">Start: (${ann.start_pixel_x.toFixed(1)}, ${ann.start_pixel_y.toFixed(1)}) End: (${ann.end_pixel_x.toFixed(1)}, ${ann.end_pixel_y.toFixed(1)})</span>
+                    </div>
+                    <button class="delete-btn" data-index="${i}">Delete</button>
+                `;
+                annotationsList.appendChild(div);
+            });
+
+            // Add delete handlers
+            annotationsList.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    await deleteAnnotation(idx);
+                });
+            });
+        }
+
+        // Delete annotation
+        async function deleteAnnotation(index) {
+            const resp = await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${index}/`, {
+                method: 'DELETE'
+            });
+
+            if (resp.ok) {
+                annotations.splice(index, 1);
+                renderLines();
+                renderAnnotationsList();
+                updateYamlPreview();
+                updateExportButton();
+            }
+        }
+
+        // Update YAML preview
+        function updateYamlPreview() {
+            if (annotations.length === 0) {
+                yamlPreview.value = '# Click twice on image to create line annotations';
+                return;
+            }
+
+            let yaml = `line_registry: ${document.getElementById('registry-info').textContent.split(': ')[1].split(' ')[0]}\n\n`;
+            yaml += 'test_cases:\n';
+            yaml += `  - name: ${currentFilename.replace(/\.[^/.]+$/, '')}_lines\n`;
+            yaml += `    image: ${currentFilename}\n`;
+            yaml += '    camera_status:\n';
+            yaml += `      pan: ${panInput.value || 0}\n`;
+            yaml += `      tilt: ${tiltInput.value || 0}\n`;
+            yaml += `      zoom: ${zoomInput.value || 1}\n`;
+            yaml += `    point_annotations_ref: ${currentFilename.replace(/\.[^/.]+$/, '').replace(/_\d+$/, '')}\n`;
+            yaml += '    line_annotations:\n';
+
+            annotations.forEach(ann => {
+                yaml += `      - line_id: ${ann.line_id}\n`;
+                yaml += `        start_pixel_x: ${ann.start_pixel_x.toFixed(1)}\n`;
+                yaml += `        start_pixel_y: ${ann.start_pixel_y.toFixed(1)}\n`;
+                yaml += `        end_pixel_x: ${ann.end_pixel_x.toFixed(1)}\n`;
+                yaml += `        end_pixel_y: ${ann.end_pixel_y.toFixed(1)}\n`;
+            });
+
+            yamlPreview.value = yaml;
+        }
+
+        // Update export button state
+        function updateExportButton() {
+            exportBtn.disabled = annotations.length === 0;
+        }
+
+        // Event: Click on image (canvas parent)
+        document.getElementById('image-container').addEventListener('click', (e) => {
+            // Don't process if clicking on canvas directly (let it bubble from img)
+            if (e.target !== img) return;
+
+            const rect = img.getBoundingClientRect();
+            const scaleX = img.naturalWidth / rect.width;
+            const scaleY = img.naturalHeight / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            if (!pendingLine) {
+                // First click - set start point
+                pendingLine = { startX: x, startY: y };
+                modeIndicator.classList.add('active');
+                renderLines();
+                drawPendingStart();
+            } else if (pendingLine.endX === undefined) {
+                // Second click - set end point
+                pendingLine.endX = x;
+                pendingLine.endY = y;
+                renderLines();
+
+                // Show line ID selection
+                lineSection.classList.add('active');
+                lineSearch.value = '';
+                filterLines('');
+                lineSearch.focus();
+            }
+        });
+
+        // Event: Mouse move for coordinates and preview
+        img.addEventListener('mousemove', (e) => {
+            const rect = img.getBoundingClientRect();
+            const scaleX = img.naturalWidth / rect.width;
+            const scaleY = img.naturalHeight / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            coordsDisplay.textContent = `Pixel: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+
+            // Update preview line
+            if (pendingLine && pendingLine.endX === undefined) {
+                pendingLine.endX = x;
+                pendingLine.endY = y;
+                renderLines();
+                drawPendingStart();
+                delete pendingLine.endX;
+                delete pendingLine.endY;
+            }
+        });
+
+        // Event: Line search input
+        lineSearch.addEventListener('input', (e) => {
+            filterLines(e.target.value);
+        });
+
+        // Event: Keyboard navigation in dropdown
+        lineSearch.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (selectedLineIndex < filteredLines.length - 1) {
+                    selectedLineIndex++;
+                    renderLineDropdown();
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (selectedLineIndex > 0) {
+                    selectedLineIndex--;
+                    renderLineDropdown();
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedLineIndex >= 0 && filteredLines[selectedLineIndex]) {
+                    selectLineId(filteredLines[selectedLineIndex]);
+                }
+            } else if (e.key === 'Escape') {
+                // Cancel pending line
+                pendingLine = null;
+                lineSection.classList.remove('active');
+                modeIndicator.classList.remove('active');
+                renderLines();
+            }
+        });
+
+        // Event: Copy button
+        copyBtn.addEventListener('click', () => {
+            yamlPreview.select();
+            document.execCommand('copy');
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+                copyBtn.textContent = 'Copy to Clipboard';
+                copyBtn.classList.remove('copied');
+            }, 2000);
+        });
+
+        // Event: Export button
+        exportBtn.addEventListener('click', async () => {
+            exportStatus.textContent = 'Exporting...';
+            exportBtn.disabled = true;
+
+            try {
+                const resp = await fetch('{% url "camera_line_annotator:api_export" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        camera_status: {
+                            pan: parseFloat(panInput.value) || 0,
+                            tilt: parseFloat(tiltInput.value) || 0,
+                            zoom: parseInt(zoomInput.value) || 1
+                        }
+                    })
+                });
+
+                const data = await resp.json();
+                if (data.success) {
+                    exportStatus.textContent = `Exported to ${data.filename} (${data.annotation_count} annotations)`;
+                    exportStatus.style.color = '#2e7d32';
+                } else {
+                    exportStatus.textContent = `Error: ${data.error}`;
+                    exportStatus.style.color = '#c62828';
+                }
+            } catch (e) {
+                exportStatus.textContent = `Error: ${e.message}`;
+                exportStatus.style.color = '#c62828';
+            }
+
+            updateExportButton();
+        });
+
+        // Event: Camera status input changes
+        [panInput, tiltInput, zoomInput].forEach(input => {
+            input.addEventListener('input', updateYamlPreview);
+        });
+
+        // Load existing annotations for current image
+        async function loadExistingAnnotations() {
+            try {
+                const resp = await fetch('{% url "camera_line_annotator:api_annotations" %}');
+                const existing = await resp.json();
+                if (existing && existing.length > 0) {
+                    annotations = existing;
+                    renderLines();
+                    renderAnnotationsList();
+                    updateYamlPreview();
+                    updateExportButton();
+                }
+            } catch (e) {
+                console.error('Failed to load existing annotations:', e);
+            }
+        }
+
+        // Load available images and populate selector
+        async function loadAvailableImages() {
+            try {
+                const resp = await fetch('{% url "camera_line_annotator:api_images" %}');
+                const images = await resp.json();
+                imageSelector.innerHTML = '';
+                images.forEach(filename => {
+                    const option = document.createElement('option');
+                    option.value = filename;
+                    option.textContent = filename;
+                    if (filename === currentFilename) {
+                        option.selected = true;
+                    }
+                    imageSelector.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load available images:', e);
+            }
+        }
+
+        // Load camera status from filename
+        async function loadCameraStatus() {
+            try {
+                const resp = await fetch('{% url "camera_line_annotator:api_camera_status" %}');
+                const status = await resp.json();
+                if (status.pan !== null) panInput.value = status.pan;
+                if (status.tilt !== null) tiltInput.value = status.tilt;
+                if (status.zoom !== null) zoomInput.value = status.zoom;
+                updateYamlPreview();
+            } catch (e) {
+                console.error('Failed to load camera status:', e);
+            }
+        }
+
+        // Switch to a different image
+        async function switchImage(filename) {
+            try {
+                const resp = await fetch('{% url "camera_line_annotator:api_switch_image" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    // Clear pending line
+                    pendingLine = null;
+                    lineSection.classList.remove('active');
+                    modeIndicator.classList.remove('active');
+
+                    // Load annotations from response
+                    annotations = data.annotations || [];
+                    currentFilename = data.filename;
+
+                    // Update filename display
+                    filenameDisplay.textContent = data.filename;
+
+                    // Update camera status
+                    if (data.camera_status) {
+                        if (data.camera_status.pan !== null) panInput.value = data.camera_status.pan;
+                        if (data.camera_status.tilt !== null) tiltInput.value = data.camera_status.tilt;
+                        if (data.camera_status.zoom !== null) zoomInput.value = data.camera_status.zoom;
+                    }
+
+                    // Update image src with cache-busting
+                    img.onload = function() {
+                        setupCanvas();
+                        renderAnnotationsList();
+                        updateYamlPreview();
+                        updateExportButton();
+                    };
+                    img.src = '{% url "camera_line_annotator:serve_image" %}?t=' + Date.now();
+
+                    exportStatus.textContent = '';
+                } else {
+                    alert('Failed to switch image: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to switch image: ' + e.message);
+            }
+        }
+
+        // Event: Image selector change
+        imageSelector.addEventListener('change', (e) => {
+            switchImage(e.target.value);
+        });
+
+        // Initialize
+        img.onload = function() {
+            setupCanvas();
+            loadLineIds().then(() => {
+                loadAvailableImages().then(() => {
+                    loadCameraStatus().then(() => {
+                        loadExistingAnnotations().then(() => {
+                            updateYamlPreview();
+                        });
+                    });
+                });
+            });
+        };
+
+        // Handle image already loaded
+        if (img.complete) {
+            setupCanvas();
+            loadLineIds().then(() => {
+                loadAvailableImages().then(() => {
+                    loadCameraStatus().then(() => {
+                        loadExistingAnnotations().then(() => {
+                            updateYamlPreview();
+                        });
+                    });
+                });
+            });
+        }
+    </script>
+</body>
+</html>
