@@ -96,19 +96,34 @@
     <p class="subtitle">Ground Control Point management and visualization for camera homography</p>
 
     <div class="tool-grid">
-        <a href="{% url 'gcp:gcp_capture' %}" class="tool-card">
-            <div class="tool-title">GCP Capture Tool <span class="badge">Primary</span></div>
+        <a href="{% url 'point_picker:index' %}" class="tool-card">
+            <div class="tool-title">Point Picker <span class="badge">Primary</span></div>
             <div class="tool-description">
-                Interactive map interface for capturing and managing Ground Control Points.
-                Click on satellite imagery to mark precise GCP locations.
+                Pick and annotate points on high-resolution images.
+                Supports tiled image viewing and coordinate export.
             </div>
         </a>
 
-        <a href="{% url 'gcp:debug_map' %}" class="tool-card">
-            <div class="tool-title">MapPoint Debug Visualization</div>
+        <a href="{% url 'homography_precision:index' %}" class="tool-card">
+            <div class="tool-title">Homography Precision Tool</div>
             <div class="tool-description">
-                View stored MapPoints and their pixel coordinates.
-                Useful for debugging homography calculations.
+                Visualize and analyze homography transformation precision across camera frames.
+                Compare predicted vs. actual GCP locations.
+            </div>
+        </a>
+
+        <a href="{% url 'line_picker:index' %}" class="tool-card">
+            <div class="tool-title">Line Picker</div>
+            <div class="tool-description">
+                Select and annotate lines on camera frames for calibration and analysis.
+            </div>
+        </a>
+
+        <a href="{% url 'camera_annotator:index' %}" class="tool-card">
+            <div class="tool-title">Camera Frame Annotator</div>
+            <div class="tool-description">
+                Annotate camera frames with GCP references.
+                Generate YAML annotations for test cases.
             </div>
         </a>
     </div>
