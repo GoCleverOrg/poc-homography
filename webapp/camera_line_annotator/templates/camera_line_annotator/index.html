@@ -160,6 +160,8 @@
         #line-input-section.active {
             display: block;
             background: #e3f2fd;
+            position: relative;
+            z-index: 10;
         }
 
         #line-search {
@@ -621,11 +623,22 @@
             filteredLines.forEach((lineId, i) => {
                 const div = document.createElement('div');
                 div.className = 'line-option' + (i === selectedLineIndex ? ' selected' : '');
-                div.innerHTML = `<span class="id">${lineId}</span>`;
-                div.addEventListener('click', () => selectLineId(lineId));
+                div.setAttribute('data-line-id', lineId);
+                div.textContent = lineId;
                 lineDropdown.appendChild(div);
             });
         }
+
+        // Event delegation for dropdown clicks
+        lineDropdown.addEventListener('click', (e) => {
+            const option = e.target.closest('.line-option');
+            if (option) {
+                const lineId = option.getAttribute('data-line-id');
+                if (lineId) {
+                    selectLineId(lineId);
+                }
+            }
+        });
 
         // Select line ID for pending line
         async function selectLineId(lineId) {
@@ -736,11 +749,8 @@
             exportBtn.disabled = annotations.length === 0;
         }
 
-        // Event: Click on image (canvas parent)
-        document.getElementById('image-container').addEventListener('click', (e) => {
-            // Don't process if clicking on canvas directly (let it bubble from img)
-            if (e.target !== img) return;
-
+        // Event: Click on image
+        img.addEventListener('click', (e) => {
             const rect = img.getBoundingClientRect();
             const scaleX = img.naturalWidth / rect.width;
             const scaleY = img.naturalHeight / rect.height;
@@ -750,6 +760,7 @@
             if (!pendingLine) {
                 // First click - set start point
                 pendingLine = { startX: x, startY: y };
+                modeIndicator.textContent = 'Click second point to complete line';
                 modeIndicator.classList.add('active');
                 renderLines();
                 drawPendingStart();
@@ -758,6 +769,9 @@
                 pendingLine.endX = x;
                 pendingLine.endY = y;
                 renderLines();
+
+                // Update mode indicator
+                modeIndicator.textContent = 'Select a line ID from dropdown';
 
                 // Show line ID selection
                 lineSection.classList.add('active');
