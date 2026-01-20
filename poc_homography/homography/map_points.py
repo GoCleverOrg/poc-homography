@@ -279,12 +279,14 @@ class MapPointHomography:
             RuntimeError: If homography computation fails
         """
         if len(line_annotations) < 2:
-            raise ValueError(f"Need at least 2 line annotations (4 points), got {len(line_annotations)}")
+            raise ValueError(
+                f"Need at least 2 line annotations (4 points), got {len(line_annotations)}"
+            )
 
         # Parse line annotations and build data structures
         camera_points = []  # All camera points
-        line_indices = []   # Which line each point belongs to
-        line_info = []      # Line metadata
+        line_indices = []  # Which line each point belongs to
+        line_info = []  # Line metadata
 
         for idx, ann in enumerate(line_annotations):
             line_id = ann["line_id"]
@@ -308,13 +310,15 @@ class MapPointHomography:
             camera_points.extend([cam_start, cam_end])
             line_indices.extend([idx, idx])
 
-            line_info.append({
-                "line_id": line_id,
-                "map_start": map_start,
-                "map_end": map_end,
-                "cam_start": cam_start,
-                "cam_end": cam_end,
-            })
+            line_info.append(
+                {
+                    "line_id": line_id,
+                    "map_start": map_start,
+                    "map_end": map_end,
+                    "cam_start": cam_start,
+                    "cam_end": cam_end,
+                }
+            )
 
         camera_points = np.array(camera_points, dtype=np.float64)
         num_points = len(camera_points)
@@ -327,7 +331,7 @@ class MapPointHomography:
             raise RuntimeError("Failed to compute initial homography estimate")
 
         # Step 2: Iterative Closest Point refinement
-        prev_mean_error = float('inf')
+        prev_mean_error = float("inf")
 
         for iteration in range(max_iterations):
             # Project all camera points to map
@@ -340,9 +344,7 @@ class MapPointHomography:
             for i, (proj_pt, line_idx) in enumerate(zip(projected, line_indices)):
                 info = line_info[line_idx]
                 # Project onto infinite line (not clamped to segment)
-                closest = self._project_point_onto_line(
-                    proj_pt, info["map_start"], info["map_end"]
-                )
+                closest = self._project_point_onto_line(proj_pt, info["map_start"], info["map_end"])
                 map_correspondences[i] = closest
 
             # Compute new homography from (camera_points, map_correspondences)
@@ -350,7 +352,7 @@ class MapPointHomography:
                 camera_points.astype(np.float32),
                 map_correspondences.astype(np.float32),
                 cv2.RANSAC,
-                ransac_threshold
+                ransac_threshold,
             )
 
             if H_new is None:
@@ -406,7 +408,7 @@ class MapPointHomography:
         errors = np.array(errors)
         mean_error = float(np.mean(errors))
         max_error = float(np.max(errors))
-        rmse = float(np.sqrt(np.mean(errors ** 2)))
+        rmse = float(np.sqrt(np.mean(errors**2)))
 
         # Store state
         self._H = H_array
@@ -445,9 +447,9 @@ class MapPointHomography:
             return self._get_initial_homography_greedy(line_info, ransac_threshold)
 
         best_H = None
-        best_error = float('inf')
+        best_error = float("inf")
 
-        for orientation_bits in range(2 ** n_lines):
+        for orientation_bits in range(2**n_lines):
             camera_points = []
             map_points = []
 
@@ -476,9 +478,7 @@ class MapPointHomography:
                 continue
 
             # Compute total reprojection error
-            projected = cv2.perspectiveTransform(
-                camera_pts.reshape(-1, 1, 2), H
-            ).reshape(-1, 2)
+            projected = cv2.perspectiveTransform(camera_pts.reshape(-1, 1, 2), H).reshape(-1, 2)
             error = np.sum(np.linalg.norm(projected - map_pts, axis=1))
 
             if error < best_error:
