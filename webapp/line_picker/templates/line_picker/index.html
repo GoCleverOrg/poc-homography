@@ -75,32 +75,25 @@
             padding: 2px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;
         }
 
-        #gcp-list { max-height: 150px; overflow-y: auto; font-size: 12px; }
-        .gcp-item {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 4px 8px; border-bottom: 1px solid #eee;
+        /* Line labels */
+        .line-label {
+            background: rgba(33, 150, 243, 0.9);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: auto;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
-        .gcp-item .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; color: white; }
-        .gcp-item .tag.PS { background: #e63946; }
-        .gcp-item .tag.AR { background: #2a9d8f; }
-        .gcp-item .tag.CW { background: #f4a261; }
-        .gcp-item .tag.EX { background: #9c27b0; }
-
-        /* GCP Markers - reference points displayed on map (read-only) */
-        .gcp-marker {
-            width: 16px; height: 16px;
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 8px; font-weight: bold; color: white;
-            border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            opacity: 0.7;
-            pointer-events: none;
+        .line-label:hover {
+            background: rgba(33, 150, 243, 1);
         }
-        .gcp-marker.PS { background: #e63946; }
-        .gcp-marker.AR { background: #2a9d8f; }
-        .gcp-marker.CW { background: #f4a261; }
-        .gcp-marker.EX { background: #9c27b0; }
+        .line-label.selected {
+            background: rgba(255, 152, 0, 0.95);
+        }
 
         /* Line endpoint markers - draggable */
         .endpoint-marker {
@@ -160,19 +153,13 @@
         #line-overlay line {
             stroke-width: 3;
             stroke-linecap: round;
+            pointer-events: stroke;
+            cursor: pointer;
         }
         #line-overlay line.default { stroke: #2196f3; }
+        #line-overlay line.default:hover { stroke: #1976d2; stroke-width: 5; }
         #line-overlay line.selected { stroke: #ff9800; stroke-width: 4; }
-        #line-overlay line.pending { stroke: #9c27b0; stroke-dasharray: 8,4; }
-
-        /* GCP visibility toggle */
-        .toggle-container {
-            display: flex; align-items: center; gap: 8px;
-            font-size: 12px; color: #666;
-        }
-        .toggle-container input {
-            width: 16px; height: 16px;
-        }
+        #line-overlay line.pending { stroke: #9c27b0; stroke-dasharray: 8,4; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -204,15 +191,6 @@
         <div class="section">
             <div class="section-title">Lines (<span id="line-count">0</span>)</div>
             <div id="line-list"></div>
-        </div>
-
-        <div class="section">
-            <div class="section-title">Reference GCPs (<span id="gcp-count">0</span>)</div>
-            <div class="toggle-container">
-                <input type="checkbox" id="show-gcps" checked>
-                <label for="show-gcps">Show GCP markers</label>
-            </div>
-            <div id="gcp-list"></div>
         </div>
 
         <div class="section">
@@ -250,10 +228,9 @@
     <script>
         let viewer;
         let imageInfo;
-        let gcps = {};  // GCP data by ID (for reference display)
-        let gcpMarkers = {};  // GCP DOM elements by ID
         let lines = [];  // Line data array
         let lineEndpointMarkers = {};  // Line endpoint DOM elements by line ID
+        let lineLabels = {};  // Line label DOM elements by line ID
         let selectedLineId = null;
 
         // Line creation state - now stores pixel coordinates
@@ -356,11 +333,6 @@
                 });
                 document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
 
-                // GCP visibility toggle
-                document.getElementById('show-gcps').addEventListener('change', (e) => {
-                    toggleGcpVisibility(e.target.checked);
-                });
-
                 // ESC key to cancel line creation
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'Escape') {
@@ -370,8 +342,7 @@
                     }
                 });
 
-                // Load GCPs and lines
-                await loadGcps();
+                // Load lines
                 await loadLines();
                 await updateNextId();
             } catch (e) {
@@ -450,66 +421,6 @@
             }
         }
 
-        async function loadGcps() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/gcps/`);
-                if (!resp.ok) {
-                    throw new Error(`HTTP ${resp.status}`);
-                }
-                const data = await resp.json();
-                gcps = {};
-
-                // Clear existing markers
-                Object.keys(gcpMarkers).forEach(id => removeGcpMarker(id));
-
-                // Add markers for all GCPs (as reference)
-                data.points.forEach(point => {
-                    gcps[point.id] = point;
-                    addGcpMarker(point);
-                });
-
-                updateGcpList();
-                document.getElementById('gcp-count').textContent = data.points.length;
-            } catch (e) {
-                showError(`Failed to load GCPs: ${e.message}`);
-            }
-        }
-
-        function addGcpMarker(point) {
-            const element = document.createElement('div');
-            const tag = getTagFromId(point.id);
-            element.className = `gcp-marker ${tag}`;
-            element.dataset.gcpId = point.id;
-            element.textContent = point.id.replace(/[A-Z]+/, '');
-            element.title = point.id;
-
-            viewer.addOverlay({
-                element: element,
-                location: viewer.viewport.imageToViewportCoordinates(point.pixel_x, point.pixel_y),
-                placement: OpenSeadragon.Placement.CENTER
-            });
-
-            gcpMarkers[point.id] = { element, point };
-        }
-
-        function removeGcpMarker(gcpId) {
-            if (gcpMarkers[gcpId]) {
-                viewer.removeOverlay(gcpMarkers[gcpId].element);
-                delete gcpMarkers[gcpId];
-            }
-        }
-
-        function toggleGcpVisibility(show) {
-            Object.values(gcpMarkers).forEach(({ element }) => {
-                element.style.display = show ? '' : 'none';
-            });
-        }
-
-        function getTagFromId(id) {
-            const match = id.match(/^([A-Z]+)/);
-            return match ? match[1] : 'EX';
-        }
-
         function cancelLineCreation() {
             // Clear pending state
             startPoint = null;
@@ -564,11 +475,15 @@
                 const data = await resp.json();
                 lines = data.lines || [];
 
-                // Clear existing endpoint markers
+                // Clear existing endpoint markers and labels
                 Object.keys(lineEndpointMarkers).forEach(id => removeLineEndpointMarkers(id));
+                Object.keys(lineLabels).forEach(id => removeLineLabel(id));
 
-                // Add endpoint markers for all lines
-                lines.forEach(line => addLineEndpointMarkers(line));
+                // Add endpoint markers and labels for all lines
+                lines.forEach(line => {
+                    addLineEndpointMarkers(line);
+                    addLineLabel(line);
+                });
 
                 updateLineList();
                 updateLineOverlay();
@@ -576,6 +491,57 @@
             } catch (e) {
                 showError(`Failed to load lines: ${e.message}`);
             }
+        }
+
+        function addLineLabel(line) {
+            const element = document.createElement('div');
+            element.className = `line-label ${line.line_id === selectedLineId ? 'selected' : ''}`;
+            element.textContent = line.line_id;
+            element.title = `Click to select ${line.line_id}`;
+
+            // Position label at midpoint of line
+            const midX = (line.start_x + line.end_x) / 2;
+            const midY = (line.start_y + line.end_y) / 2;
+
+            viewer.addOverlay({
+                element: element,
+                location: viewer.viewport.imageToViewportCoordinates(midX, midY),
+                placement: OpenSeadragon.Placement.CENTER
+            });
+
+            // Click handler for label
+            element.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectLine(line.line_id);
+            });
+
+            lineLabels[line.line_id] = { element, line };
+        }
+
+        function removeLineLabel(lineId) {
+            if (lineLabels[lineId]) {
+                viewer.removeOverlay(lineLabels[lineId].element);
+                delete lineLabels[lineId];
+            }
+        }
+
+        function updateLineLabels() {
+            // Update label positions and selection state
+            lines.forEach(line => {
+                if (lineLabels[line.line_id]) {
+                    const midX = (line.start_x + line.end_x) / 2;
+                    const midY = (line.start_y + line.end_y) / 2;
+                    const label = lineLabels[line.line_id].element;
+
+                    viewer.updateOverlay(label, viewer.viewport.imageToViewportCoordinates(midX, midY));
+
+                    if (line.line_id === selectedLineId) {
+                        label.classList.add('selected');
+                    } else {
+                        label.classList.remove('selected');
+                    }
+                }
+            });
         }
 
         function addLineEndpointMarkers(line) {
@@ -686,6 +652,7 @@
                 }
                 if (selectedLineId === lineId) selectedLineId = null;
                 removeLineEndpointMarkers(lineId);
+                removeLineLabel(lineId);
                 await loadLines();
                 await updateNextId();
             } catch (e) {
@@ -694,18 +661,24 @@
         }
 
         function selectLine(lineId) {
-            // Remove selection from previous line markers
+            // Remove selection from previous line markers and labels
             if (selectedLineId && lineEndpointMarkers[selectedLineId]) {
                 lineEndpointMarkers[selectedLineId].start.classList.remove('selected-line');
                 lineEndpointMarkers[selectedLineId].end.classList.remove('selected-line');
             }
+            if (selectedLineId && lineLabels[selectedLineId]) {
+                lineLabels[selectedLineId].element.classList.remove('selected');
+            }
 
             selectedLineId = lineId;
 
-            // Add selection to new line markers
+            // Add selection to new line markers and labels
             if (lineId && lineEndpointMarkers[lineId]) {
                 lineEndpointMarkers[lineId].start.classList.add('selected-line');
                 lineEndpointMarkers[lineId].end.classList.add('selected-line');
+            }
+            if (lineId && lineLabels[lineId]) {
+                lineLabels[lineId].element.classList.add('selected');
             }
 
             updateLineList();
@@ -762,27 +735,6 @@
             });
         }
 
-        function updateGcpList() {
-            const list = document.getElementById('gcp-list');
-            list.innerHTML = '';
-
-            Object.values(gcps).forEach(point => {
-                const item = document.createElement('div');
-                item.className = 'gcp-item';
-
-                const span = document.createElement('span');
-                span.textContent = point.id;
-
-                const tag = document.createElement('span');
-                tag.className = `tag ${getTagFromId(point.id)}`;
-                tag.textContent = getTagFromId(point.id);
-
-                item.appendChild(span);
-                item.appendChild(tag);
-                list.appendChild(item);
-            });
-        }
-
         function updateLineOverlay() {
             if (!viewer || !viewer.viewport) return;
 
@@ -810,6 +762,16 @@
                             endY = imgCoords.y;
                         }
                     }
+
+                    // Update label position during drag
+                    if (lineLabels[line.line_id]) {
+                        const midX = (startX + endX) / 2;
+                        const midY = (startY + endY) / 2;
+                        viewer.updateOverlay(
+                            lineLabels[line.line_id].element,
+                            viewer.viewport.imageToViewportCoordinates(midX, midY)
+                        );
+                    }
                 }
 
                 const start = viewer.viewport.imageToViewportCoordinates(startX, startY);
@@ -824,6 +786,14 @@
                 lineEl.setAttribute('x2', endPx.x);
                 lineEl.setAttribute('y2', endPx.y);
                 lineEl.setAttribute('class', line.line_id === selectedLineId ? 'selected' : 'default');
+                lineEl.setAttribute('data-line-id', line.line_id);
+
+                // Click handler for line selection
+                lineEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectLine(line.line_id);
+                });
+
                 svg.appendChild(lineEl);
             });
 
