@@ -74,11 +74,43 @@ DEFAULT_MAX_ZOOM = 25.0  # Maximum optical zoom factor
 # - If calibration_table is None: falls back to linear focal length approximation
 # =============================================================================
 
-# Camera configurations
+# =============================================================================
+# TENANT AND CAMERA CONFIGURATION
+# =============================================================================
+# A Tenant represents a deployment site (e.g., "Valte", "Setram").
+# Each Tenant can have multiple cameras, named CamXX (e.g., Cam01, Cam02).
+# Each camera belongs to exactly one tenant via tenant_id.
+# =============================================================================
+
+# Tenant definitions
+TENANTS = [
+    {
+        "id": "valte",
+        "name": "Valte",
+        "description": "Valte deployment site - Valencia, Spain",
+        "location": {
+            "lat": "39°38'25.72\"N",
+            "lon": "0°13'48.63\"W",
+        },
+    },
+    {
+        "id": "setram",
+        "name": "Setram",
+        "description": "Setram deployment site - Barcelona, Spain",
+        "location": {
+            "lat": "41°19'46.8\"N",
+            "lon": "2°08'31.3\"E",
+        },
+    },
+]
+
+# Camera configurations - each camera belongs to a tenant
 CAMERAS = [
     {
+        "id": "valte_cam01",
+        "tenant_id": "valte",
+        "name": "Cam01",
         "ip": "10.207.99.178",
-        "name": "Valte",
         "model": "DS-2DF8425IX-AELW(T5)",
         "lat": "39°38'25.72\"N",
         "lon": "0°13'48.63\"W",
@@ -113,11 +145,13 @@ CAMERAS = [
             "geotransform": [737575.05, 0.15, 0, 4391595.45, 0, -0.15],
             "utm_crs": "EPSG:25830",
         },
-        "description": "Valte camera location",
+        "description": "Valte Cam01 - primary camera",
     },
     {
+        "id": "setram_cam01",
+        "tenant_id": "setram",
+        "name": "Cam01",
         "ip": "10.237.100.15",
-        "name": "Setram",
         "model": "DS-2DF8425IX-AELW(T5)",  # Assumed same model
         "lat": "41°19'46.8\"N",
         "lon": "2°08'31.3\"E",
@@ -133,9 +167,68 @@ CAMERAS = [
         "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
         # Zoom-dependent intrinsic calibration table (optional)
         "calibration_table": None,
-        "description": "Setram camera location",
+        "description": "Setram Cam01 - primary camera",
     },
 ]
+
+
+# =============================================================================
+# TENANT FUNCTIONS
+# =============================================================================
+
+
+def get_tenants() -> list:
+    """
+    Get list of all tenant configurations.
+
+    Returns:
+        List of tenant configuration dicts.
+    """
+    return TENANTS
+
+
+def get_tenant_by_id(tenant_id: str) -> dict | None:
+    """
+    Find tenant configuration by ID.
+
+    Args:
+        tenant_id: ID of the tenant (e.g., "valte", "setram")
+
+    Returns:
+        Tenant configuration dict or None if not found
+    """
+    return next((t for t in TENANTS if t.get("id") == tenant_id), None)
+
+
+def get_tenant_by_name(tenant_name: str) -> dict | None:
+    """
+    Find tenant configuration by name.
+
+    Args:
+        tenant_name: Name of the tenant (e.g., "Valte", "Setram")
+
+    Returns:
+        Tenant configuration dict or None if not found
+    """
+    return next((t for t in TENANTS if t.get("name") == tenant_name), None)
+
+
+def get_cameras_for_tenant(tenant_id: str) -> list:
+    """
+    Get all cameras belonging to a tenant.
+
+    Args:
+        tenant_id: ID of the tenant
+
+    Returns:
+        List of camera configuration dicts for the tenant
+    """
+    return [cam for cam in CAMERAS if cam.get("tenant_id") == tenant_id]
+
+
+# =============================================================================
+# CAMERA FUNCTIONS
+# =============================================================================
 
 
 def get_camera_configs() -> list:
@@ -150,17 +243,47 @@ def get_camera_configs() -> list:
     return CAMERAS
 
 
-def get_camera_by_name(camera_name: str) -> dict | None:
+def get_camera_by_id(camera_id: str) -> dict | None:
     """
-    Find camera configuration by name.
+    Find camera configuration by ID.
 
     Args:
-        camera_name: Name of the camera (e.g., "Valte", "Setram")
+        camera_id: Full camera ID (e.g., "valte_cam01", "setram_cam01")
 
     Returns:
         Camera configuration dict or None if not found
     """
-    return next((cam for cam in CAMERAS if cam.get("name") == camera_name), None)
+    return next((cam for cam in CAMERAS if cam.get("id") == camera_id), None)
+
+
+def get_camera_by_name(camera_name: str) -> dict | None:
+    """
+    Find camera configuration by name.
+
+    For backwards compatibility, this searches by:
+    1. Full camera ID (e.g., "valte_cam01")
+    2. Legacy tenant name (e.g., "Valte" -> finds first camera for that tenant)
+
+    Args:
+        camera_name: Name/ID of the camera
+
+    Returns:
+        Camera configuration dict or None if not found
+    """
+    # First try exact ID match
+    cam = get_camera_by_id(camera_name)
+    if cam:
+        return cam
+
+    # Then try legacy tenant name match (backwards compatibility)
+    # Find tenant by name and return first camera
+    tenant = get_tenant_by_name(camera_name)
+    if tenant:
+        cameras = get_cameras_for_tenant(tenant["id"])
+        if cameras:
+            return cameras[0]
+
+    return None
 
 
 def get_camera_by_name_safe(camera_name: str) -> dict | None:
@@ -196,12 +319,27 @@ def get_camera_gps(camera_name: str) -> dict | None:
     return None
 
 
+def get_camera_display_name(camera: dict) -> str:
+    """
+    Get display name for a camera (Tenant - CamXX format).
+
+    Args:
+        camera: Camera configuration dict
+
+    Returns:
+        Display name like "Valte - Cam01"
+    """
+    tenant = get_tenant_by_id(camera.get("tenant_id", ""))
+    tenant_name = tenant["name"] if tenant else "Unknown"
+    return f"{tenant_name} - {camera.get('name', 'Unknown')}"
+
+
 def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     """
     Get RTSP URL for a camera.
 
     Args:
-        camera_name: Name of the camera
+        camera_name: Name or ID of the camera
         stream_type: "main" (101) or "sub" (102)
 
     Returns:
@@ -230,11 +368,12 @@ if __name__ == "__main__":
     print("Camera Configuration")
     print("=" * 70)
     print(f"\nCredentials: {USERNAME} / {'*' * len(PASSWORD or '')}")
-    print(f"\nConfigured Cameras: {len(CAMERAS)}")
 
-    for cam in CAMERAS:
-        print(f"\n{cam['name']}:")
-        print(f"  IP: {cam['ip']}")
-        print(f"  GPS: {cam['lat']}, {cam['lon']}")
-        print(f"  Height: {cam['height_m']}m")
-        print(f"  RTSP: {get_rtsp_url(str(cam['name']))}")
+    print(f"\nConfigured Tenants: {len(TENANTS)}")
+    for tenant in TENANTS:
+        cameras = get_cameras_for_tenant(tenant["id"])
+        print(f"\n{tenant['name']} ({tenant['id']}):")
+        print(f"  Location: {tenant['location']['lat']}, {tenant['location']['lon']}")
+        print(f"  Cameras: {len(cameras)}")
+        for cam in cameras:
+            print(f"    - {cam['name']} ({cam['id']}): {cam['ip']}")

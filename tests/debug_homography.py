@@ -8,7 +8,7 @@ import sys
 import numpy as np
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-from poc_homography.camera_config import CAMERAS, PASSWORD, USERNAME, get_camera_by_name
+from poc_homography.camera_config import PASSWORD, USERNAME, get_camera_by_name, get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Pixels, Unitless
@@ -22,9 +22,10 @@ def debug_homography(camera_name: str, height: float = 5.0):
     print("=" * 70)
 
     # Get camera info and status
-    cam_info = get_camera_by_name(camera_name, CAMERAS)
+    cam_info = get_camera_by_name(camera_name)
     if not cam_info:
-        print(f"Camera '{camera_name}' not found")
+        available = [cam["name"] for cam in get_camera_configs()]
+        print(f"Camera '{camera_name}' not found. Available: {', '.join(available)}")
         return
 
     camera = HikvisionPTZ(
@@ -184,7 +185,7 @@ def debug_homography(camera_name: str, height: float = 5.0):
 def main():
     if len(sys.argv) < 2:
         print("Usage: python debug_homography.py CAMERA_NAME [HEIGHT]")
-        print("Available cameras: Valte, Setram")
+        print("Available cameras: valte_cam01, setram_cam01 (or legacy names: Valte, Setram)")
         sys.exit(1)
 
     camera_name = sys.argv[1]

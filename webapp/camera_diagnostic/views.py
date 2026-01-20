@@ -16,7 +16,14 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-from poc_homography.camera_config import get_camera_by_name, get_camera_configs, get_rtsp_url
+from poc_homography.camera_config import (
+    get_camera_by_id,
+    get_camera_by_name,
+    get_camera_configs,
+    get_cameras_for_tenant,
+    get_rtsp_url,
+    get_tenants,
+)
 
 from .services import (
     PTZ_MOVEMENT_DURATION,
@@ -84,16 +91,46 @@ def index(request: HttpRequest) -> HttpResponse:
 
 
 @require_GET
+def api_tenants(request: HttpRequest) -> JsonResponse:
+    """Get list of available tenants.
+
+    Returns:
+        JSON response with tenant list or error.
+    """
+    try:
+        tenants = get_tenants()
+        tenant_list = [
+            {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
+            for t in tenants
+        ]
+        return _success_response({"tenants": tenant_list})
+    except Exception as e:
+        return _error_response(CameraErrorCategory.API_ERROR, f"Failed to load tenants: {e}")
+
+
+@require_GET
 def api_cameras(request: HttpRequest) -> JsonResponse:
-    """Get list of available cameras with name and IP.
+    """Get list of available cameras, optionally filtered by tenant.
+
+    Query params:
+        tenant_id: Optional tenant ID to filter cameras
 
     Returns:
         JSON response with camera list or error.
     """
     try:
-        cameras = get_camera_configs()
-        # Return only name and ip fields for the dropdown
-        camera_list = [{"name": cam["name"], "ip": cam["ip"]} for cam in cameras]
+        tenant_id = request.GET.get("tenant_id")
+
+        if tenant_id:
+            cameras = get_cameras_for_tenant(tenant_id)
+        else:
+            cameras = get_camera_configs()
+
+        # Return camera info including id, name, and ip
+        camera_list = [
+            {"id": cam["id"], "name": cam["name"], "ip": cam["ip"], "tenant_id": cam.get("tenant_id")}
+            for cam in cameras
+        ]
         return _success_response({"cameras": camera_list})
     except Exception as e:
         return _error_response(CameraErrorCategory.API_ERROR, f"Failed to load cameras: {e}")

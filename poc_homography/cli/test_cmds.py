@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from poc_homography.camera_config import CAMERAS
+from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import test_app
 from poc_homography.testing.data_generator import run_data_generator
 from poc_homography.testing.sam3 import PROMPTS_TO_TEST, PromptTestResult, test_prompts
@@ -202,7 +202,7 @@ def data_generator_command(
     # Handle --list-cameras
     if list_cameras:
         typer.echo("Available cameras:")
-        for cam in CAMERAS:
+        for cam in get_camera_configs():
             typer.echo(f"  - {cam['name']} ({cam['ip']})")
         raise typer.Exit(0)
 
@@ -214,11 +214,13 @@ def data_generator_command(
         )
         raise typer.Exit(1)
 
-    # Validate camera exists
-    available_names = [cam["name"] for cam in CAMERAS]
-    if camera_name not in available_names:
+    # Validate camera exists - support both camera ID (valte_cam01) and name (Cam01)
+    cameras = get_camera_configs()
+    available_ids = [cam["id"] for cam in cameras]
+    available_names = [cam["name"] for cam in cameras]
+    if camera_name not in available_ids and camera_name not in available_names:
         typer.echo(
-            f"Error: Camera '{camera_name}' not found. Available: {', '.join(available_names)}",
+            f"Error: Camera '{camera_name}' not found. Available: {', '.join(available_ids)}",
             err=True,
         )
         raise typer.Exit(1)
