@@ -136,3 +136,5 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Camera Diagnostic App Settings
 CAMERA_DIAGNOSTIC_SCREENSHOTS_DIR = BASE_DIR / "diagnostic_screenshots"
+# Browser headless mode for WebUI tests (False for Hikvision compatibility, True for server deployment)
+CAMERA_DIAGNOSTIC_BROWSER_HEADLESS = False

@@ -290,12 +290,12 @@ def detect_ptz_controls(page) -> list[dict]:
                                 "selector": selector,
                                 "tag": element.evaluate("el => el.tagName.toLowerCase()"),
                             })
-                    except Exception:
+                    except Exception as e:
                         # Element may have become stale, skip it
-                        pass
-            except Exception:
+                        logger.debug(f"PTZ control element stale or inaccessible: {e}")
+            except Exception as e:
                 # Selector may not be valid for this page, skip it
-                pass
+                logger.debug(f"PTZ selector '{selector}' not valid for page: {e}")
 
     # Remove duplicates based on type and tag combination
     seen = set()
@@ -385,7 +385,8 @@ def attempt_login(page, username: str, password: str) -> bool:
                 element.fill(username)
                 username_filled = True
                 break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Username selector '{selector}' failed: {e}")
             continue
 
     if not username_filled:
@@ -410,7 +411,8 @@ def attempt_login(page, username: str, password: str) -> bool:
                 }""", [selector, password])
                 password_filled = True
                 break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Password selector '{selector}' failed: {e}")
             continue
 
     # Approach 2: Tab from username and type (fallback)
@@ -420,8 +422,8 @@ def attempt_login(page, username: str, password: str) -> bool:
             page.wait_for_timeout(100)
             page.keyboard.type(password, delay=30)
             password_filled = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Tab-to-password fallback failed: {e}")
 
     # Try to click submit button
     for selector in submit_selectors:
@@ -432,10 +434,11 @@ def attempt_login(page, username: str, password: str) -> bool:
                 # Wait for navigation or page change after login
                 try:
                     page.wait_for_load_state("networkidle", timeout=5000)
-                except Exception:
-                    pass  # May timeout if no navigation, that's ok
+                except Exception as e:
+                    logger.debug(f"Post-login navigation wait timeout (expected): {e}")
                 return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Submit selector '{selector}' failed: {e}")
             continue
 
     # If no submit button found, try pressing Enter on password field
@@ -447,11 +450,11 @@ def attempt_login(page, username: str, password: str) -> bool:
                 # Wait for navigation
                 try:
                     page.wait_for_load_state("networkidle", timeout=5000)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Post-Enter navigation wait timeout (expected): {e}")
                 return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Enter key login fallback failed: {e}")
 
     return False
 
@@ -502,7 +505,8 @@ def get_login_error_message(page) -> str | None:
                         # Return if it contains error keywords
                         if any(keyword in text_lower for keyword in error_keywords):
                             return text.strip()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Error selector '{selector}' failed: {e}")
             continue
 
     return None
@@ -534,8 +538,8 @@ def check_login_success(page) -> bool:
             pass  # Still shows login title, continue checking
         elif any(indicator in title for indicator in ["live", "preview", "view", "camera"]):
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Title check failed: {e}")
 
     # Check for absence of login form (common login success indicator)
     login_form_selectors = [
@@ -552,8 +556,8 @@ def check_login_success(page) -> bool:
         try:
             if page.locator(selector).is_visible():
                 return False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Login form selector '{selector}' check failed: {e}")
 
     # Check for common error messages (be more specific to avoid false positives)
     error_selectors = [
@@ -570,8 +574,8 @@ def check_login_success(page) -> bool:
                 text = element.text_content().lower() if element.text_content() else ""
                 if any(word in text for word in ["invalid", "incorrect", "failed", "wrong", "denied"]):
                     return False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Error message selector '{selector}' check failed: {e}")
 
     # Check for common post-login elements
     post_login_indicators = [
@@ -596,8 +600,8 @@ def check_login_success(page) -> bool:
         try:
             if page.locator(selector).first.is_visible():
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Post-login indicator '{selector}' check failed: {e}")
 
     # If we can't definitively tell, assume success if no login form is visible
     return True
@@ -616,8 +620,6 @@ def dismiss_hikvision_warning_dialog(page) -> bool:
     Returns:
         True if a dialog was dismissed, False otherwise
     """
-    import time
-
     # Wait a moment for any dialogs to appear
     time.sleep(1)
 
@@ -641,7 +643,8 @@ def dismiss_hikvision_warning_dialog(page) -> bool:
             if dialog.is_visible():
                 dialog_found = True
                 break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Dialog selector '{selector}' check failed: {e}")
             continue
 
     if not dialog_found:
@@ -670,7 +673,8 @@ def dismiss_hikvision_warning_dialog(page) -> bool:
                     if inner_checkbox.is_visible() and not inner_checkbox.is_checked():
                         inner_checkbox.check()
                 break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Checkbox selector '{selector}' failed: {e}")
             continue
 
     # Try to click OK/Close/Confirm button
@@ -692,7 +696,8 @@ def dismiss_hikvision_warning_dialog(page) -> bool:
                 button.click()
                 time.sleep(0.5)
                 return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Dialog button selector '{selector}' failed: {e}")
             continue
 
     return False
@@ -709,8 +714,6 @@ def test_webui_ptz_controls(page) -> dict:
     Returns:
         Dict with test results including which controls were found and tested
     """
-    import time
-
     result = {
         "controls_found": [],
         "controls_tested": [],
@@ -741,7 +744,8 @@ def test_webui_ptz_controls(page) -> dict:
                 toggle.click()
                 time.sleep(1)
                 break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"PTZ panel toggle '{selector}' failed: {e}")
             continue
 
     # Find and test PTZ controls
@@ -757,10 +761,11 @@ def test_webui_ptz_controls(page) -> dict:
                         control.click()
                         time.sleep(0.2)
                         result["controls_tested"].append(control_name)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"PTZ control '{control_name}' click failed: {e}")
                     break
-            except Exception:
+            except Exception as e:
+                logger.debug(f"PTZ control selector '{selector}' failed: {e}")
                 continue
 
     result["success"] = len(result["controls_tested"]) > 0

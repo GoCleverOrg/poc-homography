@@ -11,6 +11,7 @@ import time
 
 import cv2
 import requests
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
@@ -46,6 +47,73 @@ from .services import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_camera_for_rtsp(camera_name: str) -> tuple[dict, str] | JsonResponse:
+    """Validate camera exists and get RTSP URL.
+
+    Args:
+        camera_name: Name of the camera to validate
+
+    Returns:
+        Tuple of (camera_dict, rtsp_url) if valid, or JsonResponse with error
+    """
+    camera = get_camera_by_name(camera_name)
+    if not camera:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Camera not found: {camera_name}",
+            status_code=404,
+        )
+
+    try:
+        rtsp_url = get_rtsp_url(camera_name)
+        if not rtsp_url:
+            return _error_response(
+                CameraErrorCategory.CAMERA_NOT_FOUND,
+                f"Camera not found: {camera_name}",
+                status_code=404,
+            )
+    except ValueError as e:
+        return _error_response(CameraErrorCategory.CREDENTIALS_NOT_SET, str(e))
+
+    return (camera, rtsp_url)
+
+
+def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, str] | JsonResponse:
+    """Validate camera exists, has IP, and credentials are set.
+
+    Args:
+        camera_name: Name of the camera to validate
+
+    Returns:
+        Tuple of (camera_dict, camera_ip, username, password) if valid, or JsonResponse with error
+    """
+    camera = get_camera_by_name(camera_name)
+    if not camera:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Camera not found: {camera_name}",
+            status_code=404,
+        )
+
+    camera_ip = camera.get("ip")
+    if not camera_ip:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            f"No IP address configured for camera: {camera_name}",
+        )
+
+    username = os.getenv("CAMERA_USERNAME")
+    password = os.getenv("CAMERA_PASSWORD")
+
+    if not username or not password:
+        return _error_response(
+            CameraErrorCategory.CREDENTIALS_NOT_SET,
+            "Camera credentials not set. Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
+        )
+
+    return (camera, camera_ip, username, password)
 
 
 def _success_response(data: dict) -> JsonResponse:
@@ -147,26 +215,10 @@ def api_video_stream(request: HttpRequest, camera_name: str) -> StreamingHttpRes
     Returns:
         StreamingHttpResponse with MJPEG content type, or JsonResponse with error
     """
-    # Validate camera exists
-    camera = get_camera_by_name(camera_name)
-    if not camera:
-        return _error_response(
-            CameraErrorCategory.CAMERA_NOT_FOUND,
-            f"Camera not found: {camera_name}",
-            status_code=404,
-        )
-
-    # Validate credentials are set
-    try:
-        rtsp_url = get_rtsp_url(camera_name)
-        if not rtsp_url:
-            return _error_response(
-                CameraErrorCategory.CAMERA_NOT_FOUND,
-                f"Camera not found: {camera_name}",
-                status_code=404,
-            )
-    except ValueError as e:
-        return _error_response(CameraErrorCategory.CREDENTIALS_NOT_SET, str(e))
+    validation_result = _validate_camera_for_rtsp(camera_name)
+    if isinstance(validation_result, JsonResponse):
+        return validation_result
+    camera, rtsp_url = validation_result
 
     response = StreamingHttpResponse(
         generate_mjpeg_frames(camera_name), content_type="multipart/x-mixed-replace; boundary=frame"
@@ -189,26 +241,10 @@ def api_test_rtsp(request: HttpRequest, camera_name: str) -> JsonResponse:
     Returns:
         JsonResponse with connection status and metrics
     """
-    # Validate camera exists
-    camera = get_camera_by_name(camera_name)
-    if not camera:
-        return _error_response(
-            CameraErrorCategory.CAMERA_NOT_FOUND,
-            f"Camera not found: {camera_name}",
-            status_code=404,
-        )
-
-    # Get RTSP URL
-    try:
-        rtsp_url = get_rtsp_url(camera_name)
-        if not rtsp_url:
-            return _error_response(
-                CameraErrorCategory.CAMERA_NOT_FOUND,
-                f"Camera not found: {camera_name}",
-                status_code=404,
-            )
-    except ValueError as e:
-        return _error_response(CameraErrorCategory.CREDENTIALS_NOT_SET, str(e))
+    validation_result = _validate_camera_for_rtsp(camera_name)
+    if isinstance(validation_result, JsonResponse):
+        return validation_result
+    camera, rtsp_url = validation_result
 
     # Measure connection time
     start_time = time.time()
@@ -273,26 +309,10 @@ def api_capture_snapshot(request: HttpRequest, camera_name: str) -> HttpResponse
     Returns:
         HttpResponse with JPEG image, or JsonResponse with error
     """
-    # Validate camera exists
-    camera = get_camera_by_name(camera_name)
-    if not camera:
-        return _error_response(
-            CameraErrorCategory.CAMERA_NOT_FOUND,
-            f"Camera not found: {camera_name}",
-            status_code=404,
-        )
-
-    # Get RTSP URL
-    try:
-        rtsp_url = get_rtsp_url(camera_name)
-        if not rtsp_url:
-            return _error_response(
-                CameraErrorCategory.CAMERA_NOT_FOUND,
-                f"Camera not found: {camera_name}",
-                status_code=404,
-            )
-    except ValueError as e:
-        return _error_response(CameraErrorCategory.CREDENTIALS_NOT_SET, str(e))
+    validation_result = _validate_camera_for_rtsp(camera_name)
+    if isinstance(validation_result, JsonResponse):
+        return validation_result
+    camera, rtsp_url = validation_result
 
     cap = None
     try:
@@ -352,31 +372,10 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
     Returns:
         JsonResponse with web UI test results
     """
-    # Validate camera exists
-    camera = get_camera_by_name(camera_name)
-    if not camera:
-        return _error_response(
-            CameraErrorCategory.CAMERA_NOT_FOUND,
-            f"Camera not found: {camera_name}",
-            status_code=404,
-        )
-
-    camera_ip = camera.get("ip")
-    if not camera_ip:
-        return _error_response(
-            CameraErrorCategory.INVALID_RESPONSE,
-            f"No IP address configured for camera: {camera_name}",
-        )
-
-    # Get credentials from environment variables
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
-
-    if not username or not password:
-        return _error_response(
-            CameraErrorCategory.CREDENTIALS_NOT_SET,
-            "Camera credentials not set. Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
-        )
+    validation_result = _validate_camera_for_webui_ptz(camera_name)
+    if isinstance(validation_result, JsonResponse):
+        return validation_result
+    camera, camera_ip, username, password = validation_result
 
     # Import Playwright here to avoid import errors if not installed
     try:
@@ -393,9 +392,10 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
 
     try:
         with sync_playwright() as p:
-            # Launch browser in visible mode for Hikvision cameras
-            # Headless mode often fails with complex camera web interfaces
-            browser = p.chromium.launch(headless=False)
+            # Launch browser - headless mode configurable via settings
+            # Non-headless mode often required for Hikvision camera web interfaces
+            headless = getattr(settings, "CAMERA_DIAGNOSTIC_BROWSER_HEADLESS", False)
+            browser = p.chromium.launch(headless=headless)
             context = browser.new_context(
                 ignore_https_errors=True,  # Many cameras use self-signed certs
                 viewport={"width": 1280, "height": 720},
@@ -515,31 +515,10 @@ def api_test_ptz(request: HttpRequest, camera_name: str) -> JsonResponse:
     Returns:
         JsonResponse with PTZ test results
     """
-    # Validate camera exists
-    camera = get_camera_by_name(camera_name)
-    if not camera:
-        return _error_response(
-            CameraErrorCategory.CAMERA_NOT_FOUND,
-            f"Camera not found: {camera_name}",
-            status_code=404,
-        )
-
-    camera_ip = camera.get("ip")
-    if not camera_ip:
-        return _error_response(
-            CameraErrorCategory.API_ERROR,
-            f"No IP address configured for camera: {camera_name}",
-        )
-
-    # Get credentials from environment variables
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
-
-    if not username or not password:
-        return _error_response(
-            CameraErrorCategory.CREDENTIALS_NOT_SET,
-            "Camera credentials not set. Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
-        )
+    validation_result = _validate_camera_for_webui_ptz(camera_name)
+    if isinstance(validation_result, JsonResponse):
+        return validation_result
+    camera, camera_ip, username, password = validation_result
 
     # Initialize PTZ controller
     ptz = HikvisionPTZ(ip=camera_ip, username=username, password=password, name=camera_name)
