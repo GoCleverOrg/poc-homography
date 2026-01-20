@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Diagnostic Tool</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        /* Back link */
+        .back-link {
+            display: inline-block;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+
+        .back-link:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* Camera selector panel */
+        .selector-panel {
+            background: #252525;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .selector-panel label {
+            font-weight: 600;
+            color: #ccc;
+        }
+
+        #camera-select {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #333;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        #camera-select:hover {
+            border-color: #667eea;
+        }
+
+        #camera-select:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+        }
+
+        #run-all-btn {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #run-all-btn:hover {
+            background: #5a6fd6;
+            transform: translateY(-1px);
+        }
+
+        #run-all-btn:disabled {
+            background: #444;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Test sections */
+        .test-section {
+            background: #252525;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .test-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: #2a2a2a;
+            border-bottom: 1px solid #333;
+        }
+
+        .test-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .test-title h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        /* Status badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.pending {
+            background: #333;
+            color: #888;
+        }
+
+        .status-badge.running {
+            background: #1e3a5f;
+            color: #64b5f6;
+        }
+
+        .status-badge.pass {
+            background: #1b4332;
+            color: #4caf50;
+        }
+
+        .status-badge.fail {
+            background: #4a1c1c;
+            color: #f44336;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-badge.pending .status-indicator {
+            background: #666;
+        }
+
+        .status-badge.running .status-indicator {
+            background: #64b5f6;
+            animation: pulse 1s infinite;
+        }
+
+        .status-badge.pass .status-indicator {
+            background: #4caf50;
+        }
+
+        .status-badge.fail .status-indicator {
+            background: #f44336;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Test actions */
+        .test-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .run-test-btn {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            background: #3a3a3a;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .run-test-btn:hover {
+            background: #444;
+            border-color: #555;
+        }
+
+        .run-test-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .toggle-details-btn {
+            padding: 8px 12px;
+            font-size: 13px;
+            background: transparent;
+            color: #888;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-details-btn:hover {
+            color: #fff;
+            border-color: #555;
+        }
+
+        /* Test content area */
+        .test-content {
+            padding: 16px 20px;
+        }
+
+        /* RTSP specific - video preview */
+        .video-preview {
+            margin-bottom: 16px;
+        }
+
+        .video-container {
+            background: #111;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            position: relative;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-container img {
+            max-width: 100%;
+            display: block;
+        }
+
+        .video-placeholder {
+            color: #555;
+            font-size: 14px;
+        }
+
+        .snapshot-btn {
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 500;
+            background: #2196f3;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .snapshot-btn:hover {
+            background: #1976d2;
+        }
+
+        .snapshot-btn:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        /* Detail panels (expandable) */
+        .detail-panel {
+            display: none;
+            background: #1e1e1e;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+
+        .detail-panel.expanded {
+            display: block;
+        }
+
+        .detail-section {
+            margin-bottom: 16px;
+        }
+
+        .detail-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-value {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #aaa;
+        }
+
+        .detail-value.success {
+            color: #4caf50;
+        }
+
+        .detail-value.error {
+            color: #f44336;
+        }
+
+        /* Log output */
+        .log-output {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            background: #111;
+            border-radius: 4px;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #aed581;
+        }
+
+        .log-output .log-error {
+            color: #f44336;
+        }
+
+        .log-output .log-warn {
+            color: #ff9800;
+        }
+
+        .log-output .log-info {
+            color: #64b5f6;
+        }
+
+        /* Timing info */
+        .timing-info {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .timing-item {
+            background: #2a2a2a;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+
+        .timing-item .label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .timing-item .value {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            color: #fff;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 8px;
+            color: #888;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #444;
+            border-top-color: #64b5f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+
+        <div class="header">
+            <h1>Camera Diagnostic Tool</h1>
+            <p>Test camera connectivity: RTSP streaming, web interface, and PTZ API</p>
+        </div>
+
+        <!-- Camera selector -->
+        <div class="selector-panel">
+            <label for="camera-select">Camera:</label>
+            <select id="camera-select">
+                <option value="">-- Select a camera --</option>
+            </select>
+            <button id="run-all-btn" disabled>Run All Tests</button>
+        </div>
+
+        <!-- Test sections -->
+        <div id="test-sections">
+            <!-- RTSP Streaming Test -->
+            <div class="test-section" id="rtsp-section">
+                <div class="test-header">
+                    <div class="test-title">
+                        <h2>RTSP Streaming</h2>
+                        <span class="status-badge pending" id="rtsp-badge">
+                            <span class="status-indicator"></span>
+                            <span class="status-text">Pending</span>
+                        </span>
+                    </div>
+                    <div class="test-actions">
+                        <button class="run-test-btn" id="rtsp-run-btn" disabled>Run Test</button>
+                        <button class="toggle-details-btn" id="rtsp-toggle-btn">Details</button>
+                    </div>
+                </div>
+                <div class="test-content">
+                    <div class="video-preview">
+                        <div class="video-container" id="rtsp-video-container">
+                            <span class="video-placeholder">Select a camera and run the RTSP test to see live preview</span>
+                            <img id="rtsp-video-stream" style="display: none;" alt="RTSP Stream">
+                        </div>
+                        <button class="snapshot-btn" id="snapshot-btn" disabled>Capture Snapshot</button>
+                    </div>
+                    <div class="detail-panel" id="rtsp-details">
+                        <div class="detail-section">
+                            <div class="detail-label">Timing</div>
+                            <div class="timing-info" id="rtsp-timing">
+                                <div class="timing-item">
+                                    <div class="label">Connection</div>
+                                    <div class="value" id="rtsp-time-connection">--</div>
+                                </div>
+                                <div class="timing-item">
+                                    <div class="label">First Frame</div>
+                                    <div class="value" id="rtsp-time-first-frame">--</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-section">
+                            <div class="detail-label">Logs</div>
+                            <div class="log-output" id="rtsp-logs">No logs yet</div>
+                        </div>
+                        <div class="detail-section">
+                            <div class="detail-label">Error Messages</div>
+                            <div class="detail-value" id="rtsp-errors">None</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Web Interface Test -->
+            <div class="test-section" id="webui-section">
+                <div class="test-header">
+                    <div class="test-title">
+                        <h2>Web Interface</h2>
+                        <span class="status-badge pending" id="webui-badge">
+                            <span class="status-indicator"></span>
+                            <span class="status-text">Pending</span>
+                        </span>
+                    </div>
+                    <div class="test-actions">
+                        <button class="run-test-btn" id="webui-run-btn" disabled>Run Test</button>
+                        <button class="toggle-details-btn" id="webui-toggle-btn">Details</button>
+                    </div>
+                </div>
+                <div class="test-content">
+                    <div class="detail-panel" id="webui-details">
+                        <div class="detail-section">
+                            <div class="detail-label">Timing</div>
+                            <div class="timing-info" id="webui-timing">
+                                <div class="timing-item">
+                                    <div class="label">Response Time</div>
+                                    <div class="value" id="webui-time-response">--</div>
+                                </div>
+                                <div class="timing-item">
+                                    <div class="label">Status Code</div>
+                                    <div class="value" id="webui-status-code">--</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-section">
+                            <div class="detail-label">Logs</div>
+                            <div class="log-output" id="webui-logs">No logs yet</div>
+                        </div>
+                        <div class="detail-section">
+                            <div class="detail-label">Error Messages</div>
+                            <div class="detail-value" id="webui-errors">None</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PTZ API Test -->
+            <div class="test-section" id="ptz-section">
+                <div class="test-header">
+                    <div class="test-title">
+                        <h2>PTZ API</h2>
+                        <span class="status-badge pending" id="ptz-badge">
+                            <span class="status-indicator"></span>
+                            <span class="status-text">Pending</span>
+                        </span>
+                    </div>
+                    <div class="test-actions">
+                        <button class="run-test-btn" id="ptz-run-btn" disabled>Run Test</button>
+                        <button class="toggle-details-btn" id="ptz-toggle-btn">Details</button>
+                    </div>
+                </div>
+                <div class="test-content">
+                    <div class="detail-panel" id="ptz-details">
+                        <div class="detail-section">
+                            <div class="detail-label">Timing</div>
+                            <div class="timing-info" id="ptz-timing">
+                                <div class="timing-item">
+                                    <div class="label">Response Time</div>
+                                    <div class="value" id="ptz-time-response">--</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="detail-section">
+                            <div class="detail-label">Logs</div>
+                            <div class="log-output" id="ptz-logs">No logs yet</div>
+                        </div>
+                        <div class="detail-section">
+                            <div class="detail-label">Error Messages</div>
+                            <div class="detail-value" id="ptz-errors">None</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let selectedCamera = null;
+        let isRunningAll = false;
+
+        // Elements
+        const cameraSelect = document.getElementById('camera-select');
+        const runAllBtn = document.getElementById('run-all-btn');
+        const snapshotBtn = document.getElementById('snapshot-btn');
+        const videoStream = document.getElementById('rtsp-video-stream');
+        const videoPlaceholder = document.querySelector('.video-placeholder');
+
+        // Test buttons
+        const rtspRunBtn = document.getElementById('rtsp-run-btn');
+        const webuiRunBtn = document.getElementById('webui-run-btn');
+        const ptzRunBtn = document.getElementById('ptz-run-btn');
+
+        // Toggle buttons
+        const rtspToggleBtn = document.getElementById('rtsp-toggle-btn');
+        const webuiToggleBtn = document.getElementById('webui-toggle-btn');
+        const ptzToggleBtn = document.getElementById('ptz-toggle-btn');
+
+        // Detail panels
+        const rtspDetails = document.getElementById('rtsp-details');
+        const webuiDetails = document.getElementById('webui-details');
+        const ptzDetails = document.getElementById('ptz-details');
+
+        // Load cameras on page load
+        async function loadCameras() {
+            try {
+                const resp = await fetch('{% url "camera_diagnostic:api_cameras" %}');
+                const cameras = await resp.json();
+
+                cameraSelect.innerHTML = '<option value="">-- Select a camera --</option>';
+                cameras.forEach(camera => {
+                    const option = document.createElement('option');
+                    option.value = camera.name;
+                    option.textContent = camera.name;
+                    cameraSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load cameras:', e);
+                cameraSelect.innerHTML = '<option value="">Error loading cameras</option>';
+            }
+        }
+
+        // Update status badge
+        function updateBadge(testId, status, text) {
+            const badge = document.getElementById(`${testId}-badge`);
+            badge.className = `status-badge ${status}`;
+            badge.querySelector('.status-text').textContent = text || status.toUpperCase();
+        }
+
+        // Update logs
+        function updateLogs(testId, logs) {
+            const logsEl = document.getElementById(`${testId}-logs`);
+            if (Array.isArray(logs)) {
+                logsEl.innerHTML = logs.map(log => {
+                    let className = '';
+                    if (log.toLowerCase().includes('error')) className = 'log-error';
+                    else if (log.toLowerCase().includes('warn')) className = 'log-warn';
+                    else if (log.toLowerCase().includes('info')) className = 'log-info';
+                    return `<span class="${className}">${escapeHtml(log)}</span>`;
+                }).join('\n');
+            } else {
+                logsEl.textContent = logs || 'No logs';
+            }
+        }
+
+        // Update errors
+        function updateErrors(testId, errors) {
+            const errorsEl = document.getElementById(`${testId}-errors`);
+            if (errors && errors.length > 0) {
+                errorsEl.className = 'detail-value error';
+                errorsEl.textContent = Array.isArray(errors) ? errors.join('\n') : errors;
+            } else {
+                errorsEl.className = 'detail-value';
+                errorsEl.textContent = 'None';
+            }
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Toggle detail panel
+        function toggleDetails(testId) {
+            const panel = document.getElementById(`${testId}-details`);
+            panel.classList.toggle('expanded');
+        }
+
+        // Run RTSP test
+        async function runRtspTest() {
+            if (!selectedCamera) return;
+
+            updateBadge('rtsp', 'running', 'Testing...');
+            rtspRunBtn.disabled = true;
+
+            // Reset details
+            document.getElementById('rtsp-time-connection').textContent = '--';
+            document.getElementById('rtsp-time-first-frame').textContent = '--';
+            updateLogs('rtsp', 'Running RTSP test...');
+            updateErrors('rtsp', null);
+
+            try {
+                const url = '{% url "camera_diagnostic:api_test_rtsp" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(selectedCamera));
+                const startTime = Date.now();
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.success) {
+                    updateBadge('rtsp', 'pass', 'Pass');
+
+                    // Show video stream
+                    const streamUrl = '{% url "camera_diagnostic:api_video_stream" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(selectedCamera));
+                    videoStream.src = streamUrl + '?t=' + Date.now();
+                    videoStream.style.display = 'block';
+                    videoPlaceholder.style.display = 'none';
+                    snapshotBtn.disabled = false;
+                } else {
+                    updateBadge('rtsp', 'fail', 'Fail');
+                    videoStream.style.display = 'none';
+                    videoPlaceholder.style.display = 'block';
+                    videoPlaceholder.textContent = 'RTSP test failed - no stream available';
+                    snapshotBtn.disabled = true;
+                }
+
+                // Update timing
+                if (result.timing) {
+                    document.getElementById('rtsp-time-connection').textContent = result.timing.connection ? `${result.timing.connection}ms` : '--';
+                    document.getElementById('rtsp-time-first-frame').textContent = result.timing.first_frame ? `${result.timing.first_frame}ms` : '--';
+                }
+
+                // Update logs and errors
+                updateLogs('rtsp', result.logs || ['Test completed']);
+                updateErrors('rtsp', result.errors);
+
+            } catch (e) {
+                updateBadge('rtsp', 'fail', 'Error');
+                updateLogs('rtsp', [`Request failed: ${e.message}`]);
+                updateErrors('rtsp', [e.message]);
+            } finally {
+                rtspRunBtn.disabled = false;
+            }
+        }
+
+        // Run Web UI test
+        async function runWebuiTest() {
+            if (!selectedCamera) return;
+
+            updateBadge('webui', 'running', 'Testing...');
+            webuiRunBtn.disabled = true;
+
+            // Reset details
+            document.getElementById('webui-time-response').textContent = '--';
+            document.getElementById('webui-status-code').textContent = '--';
+            updateLogs('webui', 'Running Web UI test...');
+            updateErrors('webui', null);
+
+            try {
+                const url = '{% url "camera_diagnostic:api_test_webui" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(selectedCamera));
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.success) {
+                    updateBadge('webui', 'pass', 'Pass');
+                } else {
+                    updateBadge('webui', 'fail', 'Fail');
+                }
+
+                // Update timing
+                if (result.timing) {
+                    document.getElementById('webui-time-response').textContent = result.timing.response ? `${result.timing.response}ms` : '--';
+                }
+                if (result.status_code) {
+                    document.getElementById('webui-status-code').textContent = result.status_code;
+                }
+
+                // Update logs and errors
+                updateLogs('webui', result.logs || ['Test completed']);
+                updateErrors('webui', result.errors);
+
+            } catch (e) {
+                updateBadge('webui', 'fail', 'Error');
+                updateLogs('webui', [`Request failed: ${e.message}`]);
+                updateErrors('webui', [e.message]);
+            } finally {
+                webuiRunBtn.disabled = false;
+            }
+        }
+
+        // Run PTZ test
+        async function runPtzTest() {
+            if (!selectedCamera) return;
+
+            updateBadge('ptz', 'running', 'Testing...');
+            ptzRunBtn.disabled = true;
+
+            // Reset details
+            document.getElementById('ptz-time-response').textContent = '--';
+            updateLogs('ptz', 'Running PTZ API test...');
+            updateErrors('ptz', null);
+
+            try {
+                const url = '{% url "camera_diagnostic:api_test_ptz" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(selectedCamera));
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.success) {
+                    updateBadge('ptz', 'pass', 'Pass');
+                } else {
+                    updateBadge('ptz', 'fail', 'Fail');
+                }
+
+                // Update timing
+                if (result.timing) {
+                    document.getElementById('ptz-time-response').textContent = result.timing.response ? `${result.timing.response}ms` : '--';
+                }
+
+                // Update logs and errors
+                updateLogs('ptz', result.logs || ['Test completed']);
+                updateErrors('ptz', result.errors);
+
+            } catch (e) {
+                updateBadge('ptz', 'fail', 'Error');
+                updateLogs('ptz', [`Request failed: ${e.message}`]);
+                updateErrors('ptz', [e.message]);
+            } finally {
+                ptzRunBtn.disabled = false;
+            }
+        }
+
+        // Run all tests sequentially
+        async function runAllTests() {
+            if (!selectedCamera || isRunningAll) return;
+
+            isRunningAll = true;
+            runAllBtn.disabled = true;
+            runAllBtn.textContent = 'Running...';
+
+            // Reset all badges
+            updateBadge('rtsp', 'pending', 'Pending');
+            updateBadge('webui', 'pending', 'Pending');
+            updateBadge('ptz', 'pending', 'Pending');
+
+            // Run tests sequentially
+            await runRtspTest();
+            await runWebuiTest();
+            await runPtzTest();
+
+            isRunningAll = false;
+            runAllBtn.disabled = false;
+            runAllBtn.textContent = 'Run All Tests';
+        }
+
+        // Capture snapshot
+        async function captureSnapshot() {
+            if (!selectedCamera) return;
+
+            snapshotBtn.disabled = true;
+            snapshotBtn.textContent = 'Capturing...';
+
+            try {
+                const url = '{% url "camera_diagnostic:api_capture_snapshot" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(selectedCamera));
+                const resp = await fetch(url);
+
+                if (resp.ok) {
+                    // Get the blob and download it
+                    const blob = await resp.blob();
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `${selectedCamera}_snapshot_${Date.now()}.jpg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadUrl);
+                } else {
+                    const result = await resp.json();
+                    alert('Failed to capture snapshot: ' + (result.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to capture snapshot: ' + e.message);
+            } finally {
+                snapshotBtn.disabled = false;
+                snapshotBtn.textContent = 'Capture Snapshot';
+            }
+        }
+
+        // Camera selection change
+        cameraSelect.addEventListener('change', (e) => {
+            selectedCamera = e.target.value || null;
+
+            // Enable/disable buttons
+            const hasCamera = !!selectedCamera;
+            runAllBtn.disabled = !hasCamera;
+            rtspRunBtn.disabled = !hasCamera;
+            webuiRunBtn.disabled = !hasCamera;
+            ptzRunBtn.disabled = !hasCamera;
+
+            // Reset all test states
+            if (!hasCamera) {
+                updateBadge('rtsp', 'pending', 'Pending');
+                updateBadge('webui', 'pending', 'Pending');
+                updateBadge('ptz', 'pending', 'Pending');
+
+                // Hide video stream
+                videoStream.style.display = 'none';
+                videoPlaceholder.style.display = 'block';
+                videoPlaceholder.textContent = 'Select a camera and run the RTSP test to see live preview';
+                snapshotBtn.disabled = true;
+            }
+        });
+
+        // Event listeners
+        runAllBtn.addEventListener('click', runAllTests);
+        rtspRunBtn.addEventListener('click', runRtspTest);
+        webuiRunBtn.addEventListener('click', runWebuiTest);
+        ptzRunBtn.addEventListener('click', runPtzTest);
+        snapshotBtn.addEventListener('click', captureSnapshot);
+
+        rtspToggleBtn.addEventListener('click', () => toggleDetails('rtsp'));
+        webuiToggleBtn.addEventListener('click', () => toggleDetails('webui'));
+        ptzToggleBtn.addEventListener('click', () => toggleDetails('ptz'));
+
+        // Initialize
+        loadCameras();
+    </script>
+</body>
+</html>

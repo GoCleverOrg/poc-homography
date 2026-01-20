@@ -55,6 +55,7 @@ dev = [
     "vulture>=2.14",
     "deadcode>=2.4",
     "poethepoet>=0.31",
+    "playwright>=1.40",
 ]
 
 [tool.ruff]

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "line_picker",
     "camera_annotator",
     "camera_line_annotator",
+    "camera_diagnostic",
 ]
 
 MIDDLEWARE = [
