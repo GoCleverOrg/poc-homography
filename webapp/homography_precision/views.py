@@ -679,6 +679,55 @@ def api_line_test_cases(request: HttpRequest) -> JsonResponse:
 
 
 @require_GET
+def api_line_test_case_detail(request: HttpRequest, name: str) -> JsonResponse:
+    """
+    Get a specific line test case by name.
+
+    GET /api/line-test-cases/{name}/
+
+    Returns:
+        JSON with full line test case data including point_annotations_ref:
+        {"name": "...", "image": "...", "point_annotations_ref": "...", "line_annotations": [{...}, ...]}
+    """
+    if not LINE_ANNOTATIONS_FILE.exists():
+        return JsonResponse(
+            {"error": f"Line annotations file not found: {LINE_ANNOTATIONS_FILE}"},
+            status=404,
+        )
+
+    try:
+        with open(LINE_ANNOTATIONS_FILE, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return JsonResponse(
+            {"error": f"Failed to parse line annotations YAML: {e}"},
+            status=500,
+        )
+
+    if not data or "test_cases" not in data:
+        return JsonResponse(
+            {"error": "No test_cases found in line annotations file"},
+            status=404,
+        )
+
+    for tc in data["test_cases"]:
+        if tc.get("name") == name:
+            return JsonResponse(
+                {
+                    "name": tc.get("name", ""),
+                    "image": tc.get("image", ""),
+                    "point_annotations_ref": tc.get("point_annotations_ref", ""),
+                    "line_annotations": tc.get("line_annotations", []),
+                }
+            )
+
+    return JsonResponse(
+        {"error": f"Line test case not found: {name}"},
+        status=404,
+    )
+
+
+@require_GET
 def api_line_registry(request: HttpRequest) -> JsonResponse:
     """
     Get the line registry.
@@ -718,6 +767,111 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
+    """
+    Compute homography from line correspondences.
+
+    POST /api/compute-homography-from-lines/
+
+    Request body:
+        {"test_case_name": "valte_102.5_20.7_1_20260115_lines"}
+        OR
+        {"line_annotations": [...], "line_registry": {...}}
+
+    Returns:
+        JSON with homography computation results using line-based approach.
+    """
+    # Parse request body
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError as e:
+        return JsonResponse(
+            {"success": False, "error": f"Invalid JSON: {e}"},
+            status=400,
+        )
+
+    # Determine input mode: test case name or direct annotations
+    test_case_name = body.get("test_case_name")
+    line_annotations = body.get("line_annotations")
+
+    if test_case_name:
+        # Load line test case
+        line_test_case = _load_line_test_case_by_name(test_case_name)
+        if line_test_case is None:
+            return JsonResponse(
+                {"success": False, "error": f"Line test case not found: {test_case_name}"},
+                status=404,
+            )
+        line_annotations = line_test_case.get("line_annotations", [])
+    elif not line_annotations:
+        return JsonResponse(
+            {"success": False, "error": "Missing required field: test_case_name or line_annotations"},
+            status=400,
+        )
+
+    if len(line_annotations) < 2:
+        return JsonResponse(
+            {"success": False, "error": f"Need at least 2 line annotations, got {len(line_annotations)}"},
+            status=400,
+        )
+
+    # Load line registry
+    if not LINE_REGISTRY_FILE.exists():
+        return JsonResponse(
+            {"success": False, "error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
+            status=500,
+        )
+
+    try:
+        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
+            line_registry_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return JsonResponse(
+            {"success": False, "error": f"Failed to parse line registry YAML: {e}"},
+            status=500,
+        )
+
+    if not line_registry_data or "lines" not in line_registry_data:
+        return JsonResponse(
+            {"success": False, "error": "No lines found in line registry"},
+            status=500,
+        )
+
+    # Create line registry lookup
+    line_registry = {line["line_id"]: line for line in line_registry_data["lines"]}
+
+    # Compute homography from lines
+    try:
+        homography = MapPointHomography(map_id=line_registry_data.get("map_id", "unknown"))
+        result = homography.compute_from_lines(
+            line_annotations=line_annotations,
+            line_registry=line_registry,
+            ransac_threshold=50.0,
+            min_inlier_ratio=0.3,
+        )
+    except (ValueError, RuntimeError) as e:
+        return JsonResponse(
+            {"success": False, "error": f"Line-based homography computation failed: {e}"},
+            status=500,
+        )
+
+    return JsonResponse({
+        "success": True,
+        "homography_source": "lines",
+        "metrics": {
+            "num_lines": result.num_lines,
+            "num_inliers": result.num_inliers,
+            "inlier_ratio": round(result.inlier_ratio, 2),
+            "mean_perp_error": round(result.mean_perp_error, 2),
+            "max_perp_error": round(result.max_perp_error, 2),
+            "rmse": round(result.rmse, 2),
+        },
+        "homography_matrix": result.homography_matrix.tolist(),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
     """
     Compute line errors from a line test case.
@@ -726,6 +880,11 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
     Request body:
         {"test_case_name": "valte_30.8_13.1_1_20260112_lines"}
+        OR
+        {"test_case_name": "...", "use_line_homography": true}
+
+    When use_line_homography is true, computes homography from the line annotations
+    themselves instead of requiring point_annotations_ref.
 
     Returns:
         JSON with line error computation results including per-line errors and overlay data.
@@ -740,6 +899,8 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         )
 
     test_case_name = body.get("test_case_name")
+    use_line_homography = body.get("use_line_homography", False)
+
     if not test_case_name:
         return JsonResponse(
             {"success": False, "error": "Missing required field: test_case_name"},
@@ -761,58 +922,108 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    # Get point annotations reference to compute homography
-    point_annotations_ref = line_test_case.get("point_annotations_ref")
-    if not point_annotations_ref:
+    # Load line registry (needed for both approaches)
+    if not LINE_REGISTRY_FILE.exists():
         return JsonResponse(
-            {"success": False, "error": "No point_annotations_ref found in line test case"},
-            status=400,
-        )
-
-    # Load the referenced point test case
-    point_test_case = _load_test_case_by_name(point_annotations_ref)
-    if point_test_case is None:
-        return JsonResponse(
-            {"success": False, "error": f"Referenced point test case not found: {point_annotations_ref}"},
-            status=404,
-        )
-
-    annotations = point_test_case.get("annotations", [])
-    if len(annotations) < 4:
-        return JsonResponse(
-            {"success": False, "error": f"Need at least 4 point annotations, got {len(annotations)}"},
-            status=400,
-        )
-
-    # Load GCP registry
-    if not GCP_REGISTRY_FILE.exists():
-        return JsonResponse(
-            {"success": False, "error": f"GCP registry file not found: {GCP_REGISTRY_FILE}"},
+            {"success": False, "error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
             status=500,
         )
 
     try:
-        gcp_registry = MapPointRegistry.load(GCP_REGISTRY_FILE)
-    except (yaml.YAMLError, KeyError, ValueError) as e:
+        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
+            line_registry_data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
         return JsonResponse(
-            {"success": False, "error": f"Failed to load GCP registry: {e}"},
+            {"success": False, "error": f"Failed to parse line registry YAML: {e}"},
             status=500,
         )
 
-    # Compute homography from point annotations
-    try:
-        homography = MapPointHomography(map_id=gcp_registry.map_id)
-        homography.compute_from_gcps(
-            gcps=annotations,
-            map_registry=gcp_registry,
-            ransac_threshold=50.0,
-            min_inlier_ratio=0.5,
-        )
-    except (ValueError, RuntimeError) as e:
+    if not line_registry_data or "lines" not in line_registry_data:
         return JsonResponse(
-            {"success": False, "error": f"Homography computation failed: {e}"},
+            {"success": False, "error": "No lines found in line registry"},
             status=500,
         )
+
+    # Create line registry lookup
+    line_registry = {line["line_id"]: line for line in line_registry_data["lines"]}
+
+    # Compute homography - either from lines or from referenced point annotations
+    homography_source = "lines" if use_line_homography else "points"
+
+    if use_line_homography:
+        # Compute homography from line annotations
+        if len(line_annotations) < 2:
+            return JsonResponse(
+                {"success": False, "error": f"Need at least 2 line annotations for line-based homography, got {len(line_annotations)}"},
+                status=400,
+            )
+
+        try:
+            homography = MapPointHomography(map_id=line_registry_data.get("map_id", "unknown"))
+            line_result = homography.compute_from_lines(
+                line_annotations=line_annotations,
+                line_registry=line_registry,
+                ransac_threshold=50.0,
+                min_inlier_ratio=0.3,
+            )
+        except (ValueError, RuntimeError) as e:
+            return JsonResponse(
+                {"success": False, "error": f"Line-based homography computation failed: {e}"},
+                status=500,
+            )
+    else:
+        # Use point-based homography (original behavior)
+        point_annotations_ref = line_test_case.get("point_annotations_ref")
+        if not point_annotations_ref:
+            return JsonResponse(
+                {"success": False, "error": "No point_annotations_ref found in line test case. Use use_line_homography=true for line-based homography."},
+                status=400,
+            )
+
+        # Load the referenced point test case
+        point_test_case = _load_test_case_by_name(point_annotations_ref)
+        if point_test_case is None:
+            return JsonResponse(
+                {"success": False, "error": f"Referenced point test case not found: {point_annotations_ref}"},
+                status=404,
+            )
+
+        annotations = point_test_case.get("annotations", [])
+        if len(annotations) < 4:
+            return JsonResponse(
+                {"success": False, "error": f"Need at least 4 point annotations, got {len(annotations)}"},
+                status=400,
+            )
+
+        # Load GCP registry
+        if not GCP_REGISTRY_FILE.exists():
+            return JsonResponse(
+                {"success": False, "error": f"GCP registry file not found: {GCP_REGISTRY_FILE}"},
+                status=500,
+            )
+
+        try:
+            gcp_registry = MapPointRegistry.load(GCP_REGISTRY_FILE)
+        except (yaml.YAMLError, KeyError, ValueError) as e:
+            return JsonResponse(
+                {"success": False, "error": f"Failed to load GCP registry: {e}"},
+                status=500,
+            )
+
+        # Compute homography from point annotations
+        try:
+            homography = MapPointHomography(map_id=gcp_registry.map_id)
+            homography.compute_from_gcps(
+                gcps=annotations,
+                map_registry=gcp_registry,
+                ransac_threshold=50.0,
+                min_inlier_ratio=0.5,
+            )
+        except (ValueError, RuntimeError) as e:
+            return JsonResponse(
+                {"success": False, "error": f"Homography computation failed: {e}"},
+                status=500,
+            )
 
     # Load line registry
     if not LINE_REGISTRY_FILE.exists():

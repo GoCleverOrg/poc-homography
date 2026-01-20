@@ -24,5 +24,6 @@ urlpatterns = [
     path("line-picker/", include("line_picker.urls")),
     path("homography-precision/", include("homography_precision.urls")),
     path("camera-annotator/", include("camera_annotator.urls")),
+    path("camera-line-annotator/", include("camera_line_annotator.urls")),
     path("", include("gcp.urls")),
 ]
