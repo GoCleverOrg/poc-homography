@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "line_picker",
     "camera_annotator",
     "camera_line_annotator",
+    "camera_diagnostic",
 ]
 
 MIDDLEWARE = [
@@ -132,3 +133,8 @@ STATICFILES_DIRS = [
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Camera Diagnostic App Settings
+CAMERA_DIAGNOSTIC_SCREENSHOTS_DIR = BASE_DIR / "diagnostic_screenshots"
+# Browser headless mode for WebUI tests (False for Hikvision compatibility, True for server deployment)
+CAMERA_DIAGNOSTIC_BROWSER_HEADLESS = False

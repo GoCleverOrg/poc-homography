@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Diagnostic Tool</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Back link */
+        .back-link {
+            display: inline-block;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+
+        .back-link:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* Selector panels */
+        .selector-panel {
+            background: #252525;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .selector-panel label {
+            font-weight: 600;
+            color: #ccc;
+        }
+
+        .selector-panel select {
+            min-width: 200px;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #333;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .selector-panel select:hover {
+            border-color: #667eea;
+        }
+
+        .selector-panel select:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover {
+            background: #5a6fd6;
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            background: #444;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Summary Report */
+        .summary-report {
+            background: #252525;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .summary-report.visible {
+            display: block;
+        }
+
+        .summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .summary-header h2 {
+            font-size: 18px;
+            color: #fff;
+        }
+
+        .summary-stats {
+            display: flex;
+            gap: 16px;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .stat-item.pass {
+            background: #1b4332;
+            color: #4caf50;
+        }
+
+        .stat-item.fail {
+            background: #4a1c1c;
+            color: #f44336;
+        }
+
+        .stat-item.pending {
+            background: #333;
+            color: #888;
+        }
+
+        .camera-results {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .camera-result-item {
+            background: #1e1e1e;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .camera-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .camera-result-header:hover {
+            background: #2a2a2a;
+        }
+
+        .camera-result-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .camera-result-title h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .test-badges {
+            display: flex;
+            gap: 8px;
+        }
+
+        .test-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .test-badge.pass {
+            background: #1b4332;
+            color: #4caf50;
+        }
+
+        .test-badge.fail {
+            background: #4a1c1c;
+            color: #f44336;
+        }
+
+        .test-badge.pending {
+            background: #333;
+            color: #666;
+        }
+
+        .test-badge.running {
+            background: #1e3a5f;
+            color: #64b5f6;
+        }
+
+        .expand-icon {
+            color: #666;
+            transition: transform 0.2s;
+        }
+
+        .camera-result-item.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .camera-result-details {
+            display: none;
+            padding: 16px;
+            border-top: 1px solid #333;
+            background: #181818;
+        }
+
+        .camera-result-item.expanded .camera-result-details {
+            display: block;
+        }
+
+        /* Test sections within camera details */
+        .test-section-mini {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .test-section-mini:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .test-section-mini h4 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .test-section-mini .log-output {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 11px;
+            line-height: 1.5;
+            background: #111;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #aaa;
+        }
+
+        .test-section-mini .error-text {
+            color: #f44336;
+        }
+
+        /* Video preview */
+        .video-preview-container {
+            background: #252525;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .video-preview-container.visible {
+            display: block;
+        }
+
+        .video-preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .video-preview-header h3 {
+            color: #fff;
+            font-size: 16px;
+        }
+
+        .video-container {
+            background: #111;
+            border-radius: 6px;
+            overflow: hidden;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-container img {
+            max-width: 100%;
+            display: block;
+        }
+
+        .video-placeholder {
+            color: #555;
+            font-size: 14px;
+        }
+
+        /* Credentials warning banner */
+        .credentials-warning {
+            background: #4a3000;
+            border: 1px solid #ff9800;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            color: #ffcc80;
+            display: none;
+        }
+
+        .credentials-warning.visible {
+            display: block;
+        }
+
+        .credentials-warning strong {
+            color: #ff9800;
+            font-size: 16px;
+        }
+
+        .credentials-warning p {
+            margin: 8px 0 0 0;
+            font-size: 14px;
+        }
+
+        .credentials-warning code {
+            display: block;
+            background: #2a2a2a;
+            padding: 10px 14px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-family: Monaco, Menlo, 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            color: #81c784;
+        }
+
+        /* Loading state */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #444;
+            border-top-color: #64b5f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Progress bar */
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: #667eea;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+
+        <div class="header">
+            <h1>Camera Diagnostic Tool</h1>
+            <p>Test camera connectivity: RTSP streaming, web interface, and PTZ API</p>
+        </div>
+
+        <!-- Credentials warning banner -->
+        <div id="credentials-warning" class="credentials-warning">
+            <strong>&#9888; Camera Credentials Not Set</strong>
+            <p>Set environment variables before running tests:</p>
+            <code>export CAMERA_USERNAME=admin<br>export CAMERA_PASSWORD=your_password</code>
+            <p style="margin-top: 8px; font-size: 12px;">Then restart the Django server.</p>
+        </div>
+
+        <!-- Tenant and Camera selector -->
+        <div class="selector-panel">
+            <label for="tenant-select">Tenant:</label>
+            <select id="tenant-select">
+                <option value="">-- Select a tenant --</option>
+            </select>
+
+            <label for="camera-select">Camera:</label>
+            <select id="camera-select" disabled>
+                <option value="">-- Select tenant first --</option>
+            </select>
+
+            <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+        </div>
+
+        <!-- Summary Report -->
+        <div id="summary-report" class="summary-report">
+            <div class="summary-header">
+                <h2>Test Results Summary</h2>
+                <div class="summary-stats">
+                    <div class="stat-item pass">
+                        <span>&#10003;</span>
+                        <span id="pass-count">0</span> Passed
+                    </div>
+                    <div class="stat-item fail">
+                        <span>&#10007;</span>
+                        <span id="fail-count">0</span> Failed
+                    </div>
+                    <div class="stat-item pending">
+                        <span>&#8987;</span>
+                        <span id="pending-count">0</span> Pending
+                    </div>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div id="camera-results" class="camera-results" style="margin-top: 16px;">
+                <!-- Camera results will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Video preview for selected camera -->
+        <div id="video-preview" class="video-preview-container">
+            <div class="video-preview-header">
+                <h3 id="video-camera-name">Camera Preview</h3>
+                <button id="snapshot-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;" disabled>
+                    Capture Snapshot
+                </button>
+            </div>
+            <div class="video-container">
+                <span class="video-placeholder" id="video-placeholder">Select a camera to see preview</span>
+                <img id="video-stream" style="display: none;" alt="RTSP Stream">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let selectedTenant = null;
+        let selectedCamera = null;
+        let tenantCameras = [];
+        let isRunning = false;
+        let testResults = {}; // camera_id -> {rtsp: status, webui: status, ptz: status}
+
+        // Elements
+        const tenantSelect = document.getElementById('tenant-select');
+        const cameraSelect = document.getElementById('camera-select');
+        const runAllBtn = document.getElementById('run-all-btn');
+        const summaryReport = document.getElementById('summary-report');
+        const cameraResults = document.getElementById('camera-results');
+        const videoPreview = document.getElementById('video-preview');
+        const videoStream = document.getElementById('video-stream');
+        const videoPlaceholder = document.getElementById('video-placeholder');
+        const videoCameraName = document.getElementById('video-camera-name');
+        const snapshotBtn = document.getElementById('snapshot-btn');
+        const credentialsWarning = document.getElementById('credentials-warning');
+        const passCount = document.getElementById('pass-count');
+        const failCount = document.getElementById('fail-count');
+        const pendingCount = document.getElementById('pending-count');
+        const progressFill = document.getElementById('progress-fill');
+
+        // Load tenants on page load
+        async function loadTenants() {
+            try {
+                const resp = await fetch('{% url "camera_diagnostic:api_tenants" %}');
+                const result = await resp.json();
+
+                if (result.status !== 'success') {
+                    throw new Error(result.message || 'Failed to load tenants');
+                }
+
+                const tenants = result.data.tenants;
+                tenantSelect.innerHTML = '<option value="">-- Select a tenant --</option>';
+                tenants.forEach(tenant => {
+                    const option = document.createElement('option');
+                    option.value = tenant.id;
+                    option.textContent = tenant.name;
+                    tenantSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load tenants:', e);
+                tenantSelect.innerHTML = '<option value="">Error loading tenants</option>';
+            }
+        }
+
+        // Load cameras for selected tenant
+        async function loadCameras(tenantId) {
+            try {
+                const resp = await fetch(`{% url "camera_diagnostic:api_cameras" %}?tenant_id=${encodeURIComponent(tenantId)}`);
+                const result = await resp.json();
+
+                if (result.status !== 'success') {
+                    throw new Error(result.message || 'Failed to load cameras');
+                }
+
+                tenantCameras = result.data.cameras;
+                cameraSelect.innerHTML = '<option value="">-- All cameras --</option>';
+                tenantCameras.forEach(camera => {
+                    const option = document.createElement('option');
+                    option.value = camera.id;
+                    option.textContent = `${camera.name} (${camera.ip})`;
+                    cameraSelect.appendChild(option);
+                });
+
+                cameraSelect.disabled = false;
+                runAllBtn.disabled = false;
+                runAllBtn.textContent = `Run All Tests on ${tenantCameras.length} Camera(s)`;
+
+            } catch (e) {
+                console.error('Failed to load cameras:', e);
+                cameraSelect.innerHTML = '<option value="">Error loading cameras</option>';
+            }
+        }
+
+        // Initialize test results structure for all cameras
+        function initializeResults() {
+            testResults = {};
+            tenantCameras.forEach(cam => {
+                testResults[cam.id] = {
+                    name: cam.name,
+                    ip: cam.ip,
+                    rtsp: 'pending',
+                    webui: 'pending',
+                    ptz: 'pending',
+                    rtspLogs: '',
+                    webuiLogs: '',
+                    ptzLogs: '',
+                };
+            });
+        }
+
+        // Update summary statistics
+        function updateSummaryStats() {
+            let passed = 0, failed = 0, pending = 0;
+
+            Object.values(testResults).forEach(result => {
+                ['rtsp', 'webui', 'ptz'].forEach(test => {
+                    if (result[test] === 'pass') passed++;
+                    else if (result[test] === 'fail') failed++;
+                    else if (result[test] === 'pending') pending++;
+                });
+            });
+
+            passCount.textContent = passed;
+            failCount.textContent = failed;
+            pendingCount.textContent = pending;
+
+            const total = passed + failed + pending;
+            const completed = passed + failed;
+            progressFill.style.width = total > 0 ? `${(completed / total) * 100}%` : '0%';
+        }
+
+        // Render camera results
+        function renderCameraResults() {
+            cameraResults.innerHTML = '';
+
+            Object.entries(testResults).forEach(([cameraId, result]) => {
+                const allPass = result.rtsp === 'pass' && result.webui === 'pass' && result.ptz === 'pass';
+                const anyFail = result.rtsp === 'fail' || result.webui === 'fail' || result.ptz === 'fail';
+
+                const item = document.createElement('div');
+                item.className = 'camera-result-item';
+                item.innerHTML = `
+                    <div class="camera-result-header" onclick="toggleCameraDetails('${cameraId}')">
+                        <div class="camera-result-title">
+                            <h3>${result.name} (${result.ip})</h3>
+                            <div class="test-badges">
+                                <span class="test-badge ${result.rtsp}">RTSP: ${result.rtsp.toUpperCase()}</span>
+                                <span class="test-badge ${result.webui}">WebUI: ${result.webui.toUpperCase()}</span>
+                                <span class="test-badge ${result.ptz}">PTZ: ${result.ptz.toUpperCase()}</span>
+                            </div>
+                        </div>
+                        <span class="expand-icon">&#9660;</span>
+                    </div>
+                    <div class="camera-result-details" id="details-${cameraId}">
+                        <div class="test-section-mini">
+                            <h4><span class="test-badge ${result.rtsp}">${result.rtsp.toUpperCase()}</span> RTSP Streaming</h4>
+                            <div class="log-output">${escapeHtml(result.rtspLogs) || 'No logs yet'}</div>
+                        </div>
+                        <div class="test-section-mini">
+                            <h4><span class="test-badge ${result.webui}">${result.webui.toUpperCase()}</span> Web Interface</h4>
+                            <div class="log-output">${escapeHtml(result.webuiLogs) || 'No logs yet'}</div>
+                        </div>
+                        <div class="test-section-mini">
+                            <h4><span class="test-badge ${result.ptz}">${result.ptz.toUpperCase()}</span> PTZ API</h4>
+                            <div class="log-output">${escapeHtml(result.ptzLogs) || 'No logs yet'}</div>
+                        </div>
+                    </div>
+                `;
+                cameraResults.appendChild(item);
+            });
+        }
+
+        function toggleCameraDetails(cameraId) {
+            const item = document.querySelector(`#details-${cameraId}`).parentElement;
+            item.classList.toggle('expanded');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Run tests for a single camera
+        async function runTestsForCamera(cameraId) {
+            const result = testResults[cameraId];
+
+            // Run RTSP test
+            result.rtsp = 'running';
+            renderCameraResults();
+            try {
+                const rtspUrl = '{% url "camera_diagnostic:api_test_rtsp" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
+                const rtspResp = await fetch(rtspUrl);
+                const rtspResult = await rtspResp.json();
+
+                if (rtspResult.status === 'success') {
+                    result.rtsp = 'pass';
+                    const metrics = rtspResult.data?.metrics;
+                    result.rtspLogs = `${rtspResult.data?.message || 'Connected successfully'}\n`;
+                    if (metrics) {
+                        result.rtspLogs += `Latency: ${metrics.latency_ms}ms\n`;
+                        result.rtspLogs += `Resolution: ${metrics.resolution?.width}x${metrics.resolution?.height}`;
+                    }
+                } else {
+                    result.rtsp = 'fail';
+                    result.rtspLogs = `Error: ${rtspResult.message || 'Unknown error'}`;
+                    checkCredentialsError(rtspResult);
+                }
+            } catch (e) {
+                result.rtsp = 'fail';
+                result.rtspLogs = `Request failed: ${e.message}`;
+            }
+            updateSummaryStats();
+            renderCameraResults();
+
+            // Run WebUI test
+            result.webui = 'running';
+            renderCameraResults();
+            try {
+                const webuiUrl = '{% url "camera_diagnostic:api_test_webui" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
+                const webuiResp = await fetch(webuiUrl);
+                const webuiResult = await webuiResp.json();
+
+                if (webuiResult.status === 'success') {
+                    const data = webuiResult.data;
+                    result.webui = data.login_success ? 'pass' : 'fail';
+                    result.webuiLogs = `${data.message || 'Test completed'}\n`;
+                    if (data.login_attempted && !data.login_success) {
+                        result.webuiLogs += data.login_error ? `Error: ${data.login_error}\n` : 'Login failed silently\n';
+                    }
+                    if (data.ptz_controls_found?.length > 0) {
+                        result.webuiLogs += `PTZ controls found: ${data.ptz_controls_found.length}\n`;
+                    }
+                    if (data.screenshot_path) {
+                        result.webuiLogs += `Screenshot: ${data.screenshot_path}`;
+                    }
+                } else {
+                    result.webui = 'fail';
+                    result.webuiLogs = `Error: ${webuiResult.message || 'Unknown error'}`;
+                    checkCredentialsError(webuiResult);
+                }
+            } catch (e) {
+                result.webui = 'fail';
+                result.webuiLogs = `Request failed: ${e.message}`;
+            }
+            updateSummaryStats();
+            renderCameraResults();
+
+            // Run PTZ test
+            result.ptz = 'running';
+            renderCameraResults();
+            try {
+                const ptzUrl = '{% url "camera_diagnostic:api_test_ptz" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
+                const ptzResp = await fetch(ptzUrl);
+                const ptzResult = await ptzResp.json();
+
+                if (ptzResult.status === 'success') {
+                    const data = ptzResult.data;
+                    const tests = data.tests || {};
+                    const allPassed = Object.values(tests).every(t => t.success !== false);
+                    result.ptz = allPassed ? 'pass' : 'fail';
+
+                    const logs = [];
+                    if (data.initial_position) {
+                        logs.push(`Initial: Pan=${data.initial_position.pan?.toFixed(1)}° Tilt=${data.initial_position.tilt?.toFixed(1)}° Zoom=${data.initial_position.zoom?.toFixed(1)}`);
+                    }
+                    Object.entries(tests).forEach(([name, test]) => {
+                        const status = test.success ? '✓' : '✗';
+                        logs.push(`${status} ${name}: ${test.success ? 'OK' : (test.error || 'Failed')}`);
+                    });
+                    if (data.position_restored) {
+                        logs.push('✓ Position restored');
+                    }
+                    result.ptzLogs = logs.join('\n');
+                } else {
+                    result.ptz = 'fail';
+                    result.ptzLogs = `Error: ${ptzResult.message || 'Unknown error'}`;
+                    checkCredentialsError(ptzResult);
+                }
+            } catch (e) {
+                result.ptz = 'fail';
+                result.ptzLogs = `Request failed: ${e.message}`;
+            }
+            updateSummaryStats();
+            renderCameraResults();
+        }
+
+        // Run all tests on all cameras
+        async function runAllTests() {
+            if (isRunning) return;
+
+            isRunning = true;
+            runAllBtn.disabled = true;
+            runAllBtn.innerHTML = '<span class="spinner"></span> Running...';
+
+            // Initialize and show summary
+            initializeResults();
+            summaryReport.classList.add('visible');
+            updateSummaryStats();
+            renderCameraResults();
+
+            // Run tests for each camera sequentially
+            for (const camera of tenantCameras) {
+                await runTestsForCamera(camera.id);
+            }
+
+            isRunning = false;
+            runAllBtn.disabled = false;
+            runAllBtn.textContent = `Run All Tests on ${tenantCameras.length} Camera(s)`;
+        }
+
+        // Check for credentials error
+        function checkCredentialsError(result) {
+            if (result.error_category === 'CREDENTIALS_NOT_SET') {
+                credentialsWarning.classList.add('visible');
+            }
+        }
+
+        // Show video preview for selected camera
+        function showVideoPreview(cameraId) {
+            if (!cameraId) {
+                videoPreview.classList.remove('visible');
+                videoStream.style.display = 'none';
+                videoPlaceholder.style.display = 'block';
+                snapshotBtn.disabled = true;
+                return;
+            }
+
+            const camera = tenantCameras.find(c => c.id === cameraId);
+            if (!camera) return;
+
+            videoCameraName.textContent = `${camera.name} (${camera.ip})`;
+            videoPreview.classList.add('visible');
+
+            // Start video stream
+            const streamUrl = '{% url "camera_diagnostic:api_video_stream" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
+            videoStream.src = streamUrl + '?t=' + Date.now();
+            videoStream.style.display = 'block';
+            videoPlaceholder.style.display = 'none';
+            snapshotBtn.disabled = false;
+        }
+
+        // Capture snapshot
+        async function captureSnapshot() {
+            if (!selectedCamera) return;
+
+            snapshotBtn.disabled = true;
+            snapshotBtn.textContent = 'Capturing...';
+
+            try {
+                const url = '{% url "camera_diagnostic:api_capture_snapshot" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(selectedCamera));
+                const resp = await fetch(url);
+
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `${selectedCamera}_snapshot_${Date.now()}.jpg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadUrl);
+                } else {
+                    const result = await resp.json();
+                    alert('Failed to capture snapshot: ' + (result.message || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to capture snapshot: ' + e.message);
+            } finally {
+                snapshotBtn.disabled = false;
+                snapshotBtn.textContent = 'Capture Snapshot';
+            }
+        }
+
+        // Event listeners
+        tenantSelect.addEventListener('change', async (e) => {
+            selectedTenant = e.target.value || null;
+            selectedCamera = null;
+            tenantCameras = [];
+
+            if (selectedTenant) {
+                await loadCameras(selectedTenant);
+            } else {
+                cameraSelect.innerHTML = '<option value="">-- Select tenant first --</option>';
+                cameraSelect.disabled = true;
+                runAllBtn.disabled = true;
+                runAllBtn.textContent = 'Run All Tests on All Cameras';
+            }
+
+            // Hide video preview
+            showVideoPreview(null);
+            // Hide summary
+            summaryReport.classList.remove('visible');
+        });
+
+        cameraSelect.addEventListener('change', (e) => {
+            selectedCamera = e.target.value || null;
+            showVideoPreview(selectedCamera);
+        });
+
+        runAllBtn.addEventListener('click', runAllTests);
+        snapshotBtn.addEventListener('click', captureSnapshot);
+
+        // Initialize
+        loadTenants();
+    </script>
+</body>
+</html>

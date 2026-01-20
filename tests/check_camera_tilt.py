@@ -5,12 +5,12 @@ Quick script to check camera tilt values.
 
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-from poc_homography.camera_config import CAMERAS, PASSWORD, USERNAME
+from poc_homography.camera_config import PASSWORD, USERNAME, get_camera_configs
 
 print("Checking camera tilt angles...")
 print("=" * 60)
 
-for cam_info in CAMERAS:
+for cam_info in get_camera_configs():
     camera = HikvisionPTZ(
         ip=cam_info["ip"], username=USERNAME, password=PASSWORD, name=cam_info["name"]
     )

@@ -15,10 +15,10 @@ import numpy as np
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
 from poc_homography.camera_config import (
-    CAMERAS,
     PASSWORD,
     USERNAME,
     get_camera_by_name,
+    get_camera_configs,
     get_rtsp_url,
 )
 from poc_homography.camera_geometry import CameraGeometry
@@ -231,7 +231,7 @@ class HomographyVerifier:
 def main():
     if len(sys.argv) != 2:
         print("Usage: python verify_homography.py CAMERA_NAME")
-        print(f"Available cameras: {', '.join([cam['name'] for cam in CAMERAS])}")
+        print(f"Available cameras: {', '.join([cam['id'] for cam in get_camera_configs()])}")
         sys.exit(1)
 
     camera_name = sys.argv[1]
