@@ -344,7 +344,10 @@ class MapPointHomography:
             for i, (proj_pt, line_idx) in enumerate(zip(projected, line_indices)):
                 info = line_info[line_idx]
                 # Project onto infinite line (not clamped to segment)
-                closest = self._project_point_onto_line(proj_pt, info["map_start"], info["map_end"])
+                proj_pt_typed: npt.NDArray[np.float64] = np.asarray(proj_pt, dtype=np.float64)
+                closest = self._project_point_onto_line(
+                    proj_pt_typed, info["map_start"], info["map_end"]
+                )
                 map_correspondences[i] = closest
 
             # Compute new homography from (camera_points, map_correspondences)
@@ -485,7 +488,9 @@ class MapPointHomography:
                 best_error = error
                 best_H = H
 
-        return best_H
+        if best_H is None:
+            return None
+        return np.asarray(best_H, dtype=np.float64)
 
     def _get_initial_homography_greedy(
         self,
@@ -505,7 +510,9 @@ class MapPointHomography:
         map_pts = np.array(map_points, dtype=np.float32)
 
         H, _ = cv2.findHomography(camera_pts, map_pts, cv2.RANSAC, ransac_threshold)
-        return H
+        if H is None:
+            return None
+        return np.asarray(H, dtype=np.float64)
 
     def _project_point_onto_line(
         self,
@@ -628,13 +635,16 @@ class MapPointHomography:
         H = self._require_forward_homography()
         points = np.array([[[p.x, p.y]] for p in camera_pixels], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H)
+        transformed_2d: npt.NDArray[np.float64] = np.asarray(transformed, dtype=np.float64).reshape(
+            -1, 2
+        )
 
         results = []
-        for t in transformed:
+        for pt in transformed_2d:
             results.append(
                 MapPoint(
-                    pixel_x=float(t[0][0]),
-                    pixel_y=float(t[0][1]),
+                    pixel_x=float(pt[0]),
+                    pixel_y=float(pt[1]),
                 )
             )
         return results
@@ -654,7 +664,10 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         points = np.array([[[c.x, c.y]] for c in map_coords], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H_inv)
-        return [PixelPoint(float(t[0][0]), float(t[0][1])) for t in transformed]
+        transformed_2d: npt.NDArray[np.float64] = np.asarray(transformed, dtype=np.float64).reshape(
+            -1, 2
+        )
+        return [PixelPoint(float(pt[0]), float(pt[1])) for pt in transformed_2d]
 
     def is_valid(self) -> bool:
         """Check if a valid homography has been computed."""
