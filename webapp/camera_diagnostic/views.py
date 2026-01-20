@@ -356,10 +356,12 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
 
     try:
         with sync_playwright() as p:
-            # Launch browser in headless mode
-            browser = p.chromium.launch(headless=True)
+            # Launch browser in visible mode for Hikvision cameras
+            # Headless mode often fails with complex camera web interfaces
+            browser = p.chromium.launch(headless=False)
             context = browser.new_context(
                 ignore_https_errors=True,  # Many cameras use self-signed certs
+                viewport={"width": 1280, "height": 720},
             )
             page = context.new_page()
 
@@ -390,11 +392,32 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
                 except PlaywrightTimeout:
                     pass  # Continue even if page doesn't settle
 
-            # Check login success
+                # Handle Hikvision "low resources" warning dialog
+                # This dialog appears after login and needs to be dismissed
+                try:
+                    from .services import dismiss_hikvision_warning_dialog
+                    dismiss_hikvision_warning_dialog(page)
+                except Exception as e:
+                    logger.debug(f"Warning dialog handling: {e}")
+
+            # Check login success and capture any error message
             login_success = check_login_success(page) if login_attempted else False
+            login_error = None
+            if login_attempted and not login_success:
+                from .services import get_login_error_message
+                login_error = get_login_error_message(page)
 
             # Detect PTZ controls
             ptz_controls = detect_ptz_controls(page)
+
+            # If login succeeded, try to interact with PTZ controls
+            ptz_test_result = None
+            if login_success and ptz_controls:
+                try:
+                    from .services import test_webui_ptz_controls
+                    ptz_test_result = test_webui_ptz_controls(page)
+                except Exception as e:
+                    logger.debug(f"PTZ control test: {e}")
 
             # Capture screenshot
             screenshot_path = get_screenshot_path(camera_name)
@@ -404,13 +427,19 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
             browser.close()
             browser = None
 
-            return _success_response({
+            response_data = {
                 "message": f"Web UI test completed for {camera_name}",
                 "login_success": login_success,
                 "login_attempted": login_attempted,
                 "ptz_controls_found": ptz_controls,
                 "screenshot_path": str(screenshot_path),
-            })
+            }
+            if login_error:
+                response_data["login_error"] = login_error
+            if ptz_test_result:
+                response_data["ptz_test_result"] = ptz_test_result
+
+            return _success_response(response_data)
 
     except Exception as e:
         error_category = classify_webui_error(e)

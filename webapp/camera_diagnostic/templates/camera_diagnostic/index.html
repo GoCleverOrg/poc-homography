@@ -423,6 +423,37 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Credentials warning banner */
+        .credentials-warning {
+            background: #4a3000;
+            border: 1px solid #ff9800;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            color: #ffcc80;
+        }
+
+        .credentials-warning strong {
+            color: #ff9800;
+            font-size: 16px;
+        }
+
+        .credentials-warning p {
+            margin: 8px 0 0 0;
+            font-size: 14px;
+        }
+
+        .credentials-warning code {
+            display: block;
+            background: #2a2a2a;
+            padding: 10px 14px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-family: Monaco, Menlo, 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            color: #81c784;
+        }
     </style>
 </head>
 <body>
@@ -441,6 +472,14 @@
                 <option value="">-- Select a camera --</option>
             </select>
             <button id="run-all-btn" disabled>Run All Tests</button>
+        </div>
+
+        <!-- Credentials warning banner (hidden by default) -->
+        <div id="credentials-warning" class="credentials-warning" style="display: none;">
+            <strong>⚠️ Camera Credentials Not Set</strong>
+            <p>Set environment variables before running tests:</p>
+            <code>export CAMERA_USERNAME=admin<br>export CAMERA_PASSWORD=your_password</code>
+            <p style="margin-top: 8px; font-size: 12px;">Then restart the Django server.</p>
         </div>
 
         <!-- Test sections -->
@@ -603,12 +642,29 @@
         const webuiDetails = document.getElementById('webui-details');
         const ptzDetails = document.getElementById('ptz-details');
 
+        // Credentials warning banner
+        const credentialsWarning = document.getElementById('credentials-warning');
+
+        // Show credentials warning if error indicates missing credentials
+        function checkCredentialsError(result) {
+            if (result.error_category === 'CREDENTIALS_NOT_SET') {
+                credentialsWarning.style.display = 'block';
+                return true;
+            }
+            return false;
+        }
+
         // Load cameras on page load
         async function loadCameras() {
             try {
                 const resp = await fetch('{% url "camera_diagnostic:api_cameras" %}');
-                const cameras = await resp.json();
+                const result = await resp.json();
 
+                if (result.status !== 'success') {
+                    throw new Error(result.message || 'Failed to load cameras');
+                }
+
+                const cameras = result.data.cameras;
                 cameraSelect.innerHTML = '<option value="">-- Select a camera --</option>';
                 cameras.forEach(camera => {
                     const option = document.createElement('option');
@@ -689,7 +745,7 @@
                 const resp = await fetch(url);
                 const result = await resp.json();
 
-                if (result.success) {
+                if (result.status === 'success') {
                     updateBadge('rtsp', 'pass', 'Pass');
 
                     // Show video stream
@@ -698,23 +754,26 @@
                     videoStream.style.display = 'block';
                     videoPlaceholder.style.display = 'none';
                     snapshotBtn.disabled = false;
+
+                    // Update timing from metrics
+                    const metrics = result.data?.metrics;
+                    if (metrics) {
+                        document.getElementById('rtsp-time-connection').textContent = metrics.latency_ms ? `${metrics.latency_ms}ms` : '--';
+                        const resolution = metrics.resolution;
+                        document.getElementById('rtsp-time-first-frame').textContent = resolution ? `${resolution.width}x${resolution.height}` : '--';
+                    }
+                    updateLogs('rtsp', [result.data?.message || 'Test completed']);
+                    updateErrors('rtsp', null);
                 } else {
                     updateBadge('rtsp', 'fail', 'Fail');
                     videoStream.style.display = 'none';
                     videoPlaceholder.style.display = 'block';
                     videoPlaceholder.textContent = 'RTSP test failed - no stream available';
                     snapshotBtn.disabled = true;
+                    checkCredentialsError(result);
+                    updateLogs('rtsp', [`Error: ${result.message || 'Unknown error'}`]);
+                    updateErrors('rtsp', [result.message]);
                 }
-
-                // Update timing
-                if (result.timing) {
-                    document.getElementById('rtsp-time-connection').textContent = result.timing.connection ? `${result.timing.connection}ms` : '--';
-                    document.getElementById('rtsp-time-first-frame').textContent = result.timing.first_frame ? `${result.timing.first_frame}ms` : '--';
-                }
-
-                // Update logs and errors
-                updateLogs('rtsp', result.logs || ['Test completed']);
-                updateErrors('rtsp', result.errors);
 
             } catch (e) {
                 updateBadge('rtsp', 'fail', 'Error');
@@ -743,23 +802,39 @@
                 const resp = await fetch(url);
                 const result = await resp.json();
 
-                if (result.success) {
-                    updateBadge('webui', 'pass', 'Pass');
+                if (result.status === 'success') {
+                    const data = result.data;
+                    updateBadge('webui', data.login_success ? 'pass' : 'fail', data.login_success ? 'Pass' : 'Fail');
+
+                    // Update details
+                    document.getElementById('webui-time-response').textContent = '--';
+                    document.getElementById('webui-status-code').textContent = data.login_success ? 'OK' : 'Login Failed';
+
+                    // Build log messages
+                    const logs = [data.message || 'Test completed'];
+                    if (data.login_attempted && !data.login_success) {
+                        if (data.login_error) {
+                            logs.push(`Error: ${data.login_error}`);
+                        } else {
+                            logs.push('Login failed silently - credentials may not work for Web UI');
+                            logs.push('Note: RTSP/API credentials may differ from Web UI credentials');
+                        }
+                    }
+                    if (data.ptz_controls_found?.length > 0) {
+                        logs.push(`PTZ controls found: ${data.ptz_controls_found.length}`);
+                    }
+                    if (data.screenshot_path) {
+                        logs.push(`Screenshot: ${data.screenshot_path}`);
+                    }
+                    updateLogs('webui', logs);
+                    updateErrors('webui', data.login_success ? null : ['Web UI login failed']);
                 } else {
                     updateBadge('webui', 'fail', 'Fail');
+                    document.getElementById('webui-status-code').textContent = result.error_category || 'Error';
+                    checkCredentialsError(result);
+                    updateLogs('webui', [`Error: ${result.message || 'Unknown error'}`]);
+                    updateErrors('webui', [result.message]);
                 }
-
-                // Update timing
-                if (result.timing) {
-                    document.getElementById('webui-time-response').textContent = result.timing.response ? `${result.timing.response}ms` : '--';
-                }
-                if (result.status_code) {
-                    document.getElementById('webui-status-code').textContent = result.status_code;
-                }
-
-                // Update logs and errors
-                updateLogs('webui', result.logs || ['Test completed']);
-                updateErrors('webui', result.errors);
 
             } catch (e) {
                 updateBadge('webui', 'fail', 'Error');
@@ -787,20 +862,41 @@
                 const resp = await fetch(url);
                 const result = await resp.json();
 
-                if (result.success) {
-                    updateBadge('ptz', 'pass', 'Pass');
+                if (result.status === 'success') {
+                    const data = result.data;
+
+                    // Check if all tests passed
+                    const tests = data.tests || {};
+                    const allPassed = Object.values(tests).every(t => t.success !== false);
+
+                    updateBadge('ptz', allPassed ? 'pass' : 'fail', allPassed ? 'Pass' : 'Partial');
+
+                    // Update timing from status test
+                    if (tests.status?.response_time_ms) {
+                        document.getElementById('ptz-time-response').textContent = `${tests.status.response_time_ms}ms`;
+                    }
+
+                    // Build log messages
+                    const logs = [];
+                    if (data.initial_position) {
+                        logs.push(`Initial position: Pan=${data.initial_position.pan?.toFixed(1)}° Tilt=${data.initial_position.tilt?.toFixed(1)}° Zoom=${data.initial_position.zoom?.toFixed(1)}`);
+                    }
+                    Object.entries(tests).forEach(([name, test]) => {
+                        const status = test.success ? '✓' : '✗';
+                        logs.push(`${status} ${name}: ${test.success ? 'OK' : (test.error || 'Failed')}`);
+                    });
+                    if (data.position_restored) {
+                        logs.push('✓ Position restored');
+                    }
+
+                    updateLogs('ptz', logs);
+                    updateErrors('ptz', null);
                 } else {
                     updateBadge('ptz', 'fail', 'Fail');
+                    checkCredentialsError(result);
+                    updateLogs('ptz', [`Error: ${result.message || 'Unknown error'}`]);
+                    updateErrors('ptz', [result.message]);
                 }
-
-                // Update timing
-                if (result.timing) {
-                    document.getElementById('ptz-time-response').textContent = result.timing.response ? `${result.timing.response}ms` : '--';
-                }
-
-                // Update logs and errors
-                updateLogs('ptz', result.logs || ['Test completed']);
-                updateErrors('ptz', result.errors);
 
             } catch (e) {
                 updateBadge('ptz', 'fail', 'Error');

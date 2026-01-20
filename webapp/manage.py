@@ -3,6 +3,13 @@
 
 import os
 import sys
+from pathlib import Path
+
+# Load .env file from project root (parent of webapp/)
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(env_path)
 
 
 def main():

@@ -228,7 +228,7 @@ def analyze_projection_error(
             error = math.sqrt((actual_u - u) ** 2 + (actual_v - v) ** 2)
             if error < best_height_error:
                 best_height_error = error
-                best_height = Meters(test_height)
+                best_height = Meters(float(test_height))
 
     print(f"  Current height: {height_m}m")
     print(f"  Best height: {best_height:.2f}m")

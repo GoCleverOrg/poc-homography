@@ -336,8 +336,15 @@ def attempt_login(page, username: str, password: str) -> bool:
         'input[placeholder*="name" i]',
     ]
 
-    # Common password field selectors
+    # Common password field selectors (Hikvision-specific first)
     password_selectors = [
+        # Hikvision specific - often uses placeholder or class-based identification
+        'input[placeholder="Password"]',
+        'input[placeholder*="password" i]',
+        'input[placeholder*="Password"]',
+        'input[class*="password"]',
+        'input[class*="pwd"]',
+        # Standard selectors
         "#password",
         "#pass",
         "#pwd",
@@ -345,16 +352,25 @@ def attempt_login(page, username: str, password: str) -> bool:
         'input[name="pass"]',
         'input[name="pwd"]',
         'input[type="password"]',
+        # Fallback - second input field (after username)
+        'input:nth-of-type(2)',
     ]
 
-    # Common submit button selectors
+    # Common submit button selectors (Hikvision-specific first)
     submit_selectors = [
+        # Hikvision specific
+        'button:has-text("Login")',
+        'a:has-text("Login")',
+        'div:has-text("Login"):not(:has(*))',  # Leaf div with just "Login" text
+        '[class*="login-btn"]',
+        '[class*="loginBtn"]',
+        '[class*="btn-login"]',
+        # Generic selectors
         'button[type="submit"]',
         'input[type="submit"]',
         "#login",
         "#loginBtn",
         "#submit",
-        'button:has-text("login")',
         'button:has-text("sign in")',
         'input[value*="login" i]',
         'input[value*="sign" i]',
@@ -375,20 +391,37 @@ def attempt_login(page, username: str, password: str) -> bool:
     if not username_filled:
         return False
 
-    # Try to find and fill password field
+    # Try multiple approaches to fill password field (Hikvision has tricky login forms)
     password_filled = False
+
+    # Approach 1: Use JavaScript to set value directly (bypasses custom input handlers)
     for selector in password_selectors:
         try:
             element = page.locator(selector).first
             if element.is_visible():
-                element.fill(password)
+                # Use evaluate to set value via JavaScript - pass password as argument
+                page.evaluate("""([selector, pwd]) => {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        el.value = pwd;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }""", [selector, password])
                 password_filled = True
                 break
         except Exception:
             continue
 
+    # Approach 2: Tab from username and type (fallback)
     if not password_filled:
-        return False
+        try:
+            page.keyboard.press("Tab")
+            page.wait_for_timeout(100)
+            page.keyboard.type(password, delay=30)
+            password_filled = True
+        except Exception:
+            pass
 
     # Try to click submit button
     for selector in submit_selectors:
@@ -396,6 +429,11 @@ def attempt_login(page, username: str, password: str) -> bool:
             element = page.locator(selector).first
             if element.is_visible():
                 element.click()
+                # Wait for navigation or page change after login
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass  # May timeout if no navigation, that's ok
                 return True
         except Exception:
             continue
@@ -406,11 +444,68 @@ def attempt_login(page, username: str, password: str) -> bool:
             element = page.locator(selector).first
             if element.is_visible():
                 element.press("Enter")
+                # Wait for navigation
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
                 return True
     except Exception:
         pass
 
     return False
+
+
+def get_login_error_message(page) -> str | None:
+    """Try to detect and extract login error message from the page.
+
+    Args:
+        page: Playwright page object
+
+    Returns:
+        Error message text if found, None otherwise
+    """
+    # Text patterns that indicate real login errors
+    error_keywords = [
+        "invalid", "incorrect", "wrong", "failed", "denied",
+        "error", "locked", "disabled", "expired", "unauthorized",
+    ]
+
+    # Text patterns to filter out (not actual errors)
+    filter_patterns = [
+        "privacy", "respect", "rights", "product",
+        "copyright", "reserved", "technology",
+    ]
+
+    # Look for common error message patterns
+    error_selectors = [
+        '[class*="error"]',
+        '[class*="alert"]',
+        '[class*="warning"]',
+        '[id*="error"]',
+        '[id*="msg"]',
+        '[class*="msg"]',
+        '[class*="tip"]',
+    ]
+
+    for selector in error_selectors:
+        try:
+            elements = page.locator(selector).all()
+            for element in elements:
+                if element.is_visible():
+                    text = element.text_content()
+                    if text:
+                        text_lower = text.strip().lower()
+                        # Skip if it matches filter patterns
+                        if any(pattern in text_lower for pattern in filter_patterns):
+                            continue
+                        # Return if it contains error keywords
+                        if any(keyword in text_lower for keyword in error_keywords):
+                            return text.strip()
+        except Exception:
+            continue
+
+    return None
 
 
 def check_login_success(page) -> bool:
@@ -422,6 +517,26 @@ def check_login_success(page) -> bool:
     Returns:
         True if login appears successful, False otherwise
     """
+    # Primary check: URL-based detection (most reliable for Hikvision cameras)
+    # After successful login, URL changes from login.asp to preview.asp or similar
+    current_url = page.url.lower()
+    if "login" in current_url:
+        # Still on login page - check if it's due to an error or just slow redirect
+        pass  # Continue with other checks
+    elif any(indicator in current_url for indicator in ["preview", "live", "main", "index", "home"]):
+        # Successfully redirected to post-login page
+        return True
+
+    # Secondary check: Page title (Hikvision changes from "Login" to "Live View")
+    try:
+        title = page.title().lower()
+        if "login" in title:
+            pass  # Still shows login title, continue checking
+        elif any(indicator in title for indicator in ["live", "preview", "view", "camera"]):
+            return True
+    except Exception:
+        pass
+
     # Check for absence of login form (common login success indicator)
     login_form_selectors = [
         "#loginForm",
@@ -429,6 +544,8 @@ def check_login_success(page) -> bool:
         'form[id*="login"]',
         "#username",
         'input[name="username"]',
+        # Hikvision-specific: check for User Name textbox
+        'input[placeholder*="User" i]',
     ]
 
     for selector in login_form_selectors:
@@ -438,22 +555,20 @@ def check_login_success(page) -> bool:
         except Exception:
             pass
 
-    # Check for common error messages
+    # Check for common error messages (be more specific to avoid false positives)
     error_selectors = [
-        '[class*="error"]',
-        '[class*="alert"]',
-        '[id*="error"]',
-        ':text("invalid")',
-        ':text("incorrect")',
-        ':text("failed")',
+        '[class*="login-error"]',
+        '[class*="error-msg"]',
+        '[class*="alert-error"]',
+        '[id*="loginError"]',
     ]
 
     for selector in error_selectors:
         try:
             element = page.locator(selector).first
             if element.is_visible():
-                text = element.text_content().lower()
-                if any(word in text for word in ["invalid", "incorrect", "failed", "wrong", "error", "denied"]):
+                text = element.text_content().lower() if element.text_content() else ""
+                if any(word in text for word in ["invalid", "incorrect", "failed", "wrong", "denied"]):
                     return False
         except Exception:
             pass
@@ -461,15 +576,20 @@ def check_login_success(page) -> bool:
     # Check for common post-login elements
     post_login_indicators = [
         '[class*="dashboard"]',
-        '[class*="main"]',
+        '[class*="main-content"]',
         '[class*="menu"]',
         '[class*="nav"]',
         '[id*="dashboard"]',
-        '[id*="main"]',
+        '[id*="mainContent"]',
         "video",
         "canvas",
         '[class*="live"]',
         '[class*="stream"]',
+        '[class*="preview"]',
+        # Hikvision-specific indicators
+        '[class*="ptz"]',
+        'a[href*="ptzConfig"]',
+        'a[href*="preview"]',
     ]
 
     for selector in post_login_indicators:
@@ -481,6 +601,170 @@ def check_login_success(page) -> bool:
 
     # If we can't definitively tell, assume success if no login form is visible
     return True
+
+
+def dismiss_hikvision_warning_dialog(page) -> bool:
+    """Dismiss Hikvision's 'low resources' or similar warning dialogs.
+
+    Hikvision cameras often show a warning dialog about low browser resources
+    or plugin requirements after login. This function finds and dismisses it
+    by checking "Don't warn me again" and clicking OK/Close.
+
+    Args:
+        page: Playwright page object
+
+    Returns:
+        True if a dialog was dismissed, False otherwise
+    """
+    import time
+
+    # Wait a moment for any dialogs to appear
+    time.sleep(1)
+
+    # Common selectors for Hikvision warning dialogs
+    dialog_selectors = [
+        # Dialog containers
+        '[class*="dialog"]',
+        '[class*="modal"]',
+        '[class*="popup"]',
+        '[class*="alert"]',
+        '[id*="dialog"]',
+        '[id*="modal"]',
+        '[id*="warning"]',
+    ]
+
+    # Check if any dialog is visible
+    dialog_found = False
+    for selector in dialog_selectors:
+        try:
+            dialog = page.locator(selector).first
+            if dialog.is_visible():
+                dialog_found = True
+                break
+        except Exception:
+            continue
+
+    if not dialog_found:
+        return False
+
+    # Try to find and check "Don't warn me again" checkbox
+    checkbox_selectors = [
+        'input[type="checkbox"]',
+        '[class*="checkbox"]',
+        ':text("Don\'t")',
+        ':text("again")',
+        ':text("remind")',
+    ]
+
+    for selector in checkbox_selectors:
+        try:
+            checkbox = page.locator(selector).first
+            if checkbox.is_visible():
+                # Check if it's a checkbox input or contains one
+                if checkbox.get_attribute("type") == "checkbox":
+                    if not checkbox.is_checked():
+                        checkbox.check()
+                else:
+                    # Try to find checkbox within the element
+                    inner_checkbox = checkbox.locator('input[type="checkbox"]').first
+                    if inner_checkbox.is_visible() and not inner_checkbox.is_checked():
+                        inner_checkbox.check()
+                break
+        except Exception:
+            continue
+
+    # Try to click OK/Close/Confirm button
+    button_selectors = [
+        'button:text("OK")',
+        'button:text("Close")',
+        'button:text("Confirm")',
+        'button:text("Accept")',
+        '[class*="close"]',
+        '[class*="confirm"]',
+        '[class*="ok-btn"]',
+        'button[type="button"]',
+    ]
+
+    for selector in button_selectors:
+        try:
+            button = page.locator(selector).first
+            if button.is_visible():
+                button.click()
+                time.sleep(0.5)
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def test_webui_ptz_controls(page) -> dict:
+    """Test PTZ controls in the web interface.
+
+    Attempts to interact with PTZ direction controls to verify they're functional.
+
+    Args:
+        page: Playwright page object
+
+    Returns:
+        Dict with test results including which controls were found and tested
+    """
+    import time
+
+    result = {
+        "controls_found": [],
+        "controls_tested": [],
+        "success": False,
+    }
+
+    # Hikvision PTZ control selectors
+    ptz_control_selectors = {
+        "up": ['[class*="ptz-up"]', '[class*="up"]', '[title*="Up"]', 'button:text("▲")'],
+        "down": ['[class*="ptz-down"]', '[class*="down"]', '[title*="Down"]', 'button:text("▼")'],
+        "left": ['[class*="ptz-left"]', '[class*="left"]', '[title*="Left"]', 'button:text("◀")'],
+        "right": ['[class*="ptz-right"]', '[class*="right"]', '[title*="Right"]', 'button:text("▶")'],
+        "zoom_in": ['[class*="zoom-in"]', '[class*="zoomin"]', '[title*="Zoom In"]'],
+        "zoom_out": ['[class*="zoom-out"]', '[class*="zoomout"]', '[title*="Zoom Out"]'],
+    }
+
+    # First, try to open PTZ panel if it's collapsed
+    ptz_panel_toggles = [
+        'a[href*="ptzConfig"]',
+        '[class*="ptz-toggle"]',
+        ':text("PTZ")',
+    ]
+
+    for selector in ptz_panel_toggles:
+        try:
+            toggle = page.locator(selector).first
+            if toggle.is_visible():
+                toggle.click()
+                time.sleep(1)
+                break
+        except Exception:
+            continue
+
+    # Find and test PTZ controls
+    for control_name, selectors in ptz_control_selectors.items():
+        for selector in selectors:
+            try:
+                control = page.locator(selector).first
+                if control.is_visible():
+                    result["controls_found"].append(control_name)
+
+                    # Try to click the control (mouse down/up for PTZ)
+                    try:
+                        control.click()
+                        time.sleep(0.2)
+                        result["controls_tested"].append(control_name)
+                    except Exception:
+                        pass
+                    break
+            except Exception:
+                continue
+
+    result["success"] = len(result["controls_tested"]) > 0
+    return result
 
 
 # =============================================================================
