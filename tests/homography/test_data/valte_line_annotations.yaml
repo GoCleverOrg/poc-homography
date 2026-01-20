@@ -12,16 +12,23 @@ test_cases:
       zoom: 1
     point_annotations_ref: valte_102.5_20.7_1_20260115
     line_annotations:
-      # L21: CW1 -> CW21 (crosswalk edge line)
-      - line_id: L21
-        start_pixel_x: 1724.0
-        start_pixel_y: 581.5
-        end_pixel_x: 617.0
-        end_pixel_y: 176.0
+      # L4: Road marking line
+      - line_id: L4
+        start_pixel_x: 608.0
+        start_pixel_y: 169.5
+        end_pixel_x: 1724.0
+        end_pixel_y: 580.5
 
-      # L22: CW2 -> CW22 (crosswalk edge line)
-      - line_id: L22
-        start_pixel_x: 1821.5
-        start_pixel_y: 514.5
-        end_pixel_x: 717.5
-        end_pixel_y: 159.5
+      # L5: Road marking line
+      - line_id: L5
+        start_pixel_x: 1874.0
+        start_pixel_y: 533.5
+        end_pixel_x: 714.0
+        end_pixel_y: 160.5
+
+      # L6: Road marking line
+      - line_id: L6
+        start_pixel_x: 323.0
+        start_pixel_y: 174.0
+        end_pixel_x: 3.0
+        end_pixel_y: 96.0

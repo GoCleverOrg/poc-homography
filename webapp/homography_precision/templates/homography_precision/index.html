@@ -529,6 +529,10 @@
             <select id="line-test-case-select">
                 <option value="">-- Select line test case --</option>
             </select>
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;">
+                <input type="checkbox" id="use-line-homography" checked>
+                Line H
+            </label>
             <button class="btn btn-primary" id="load-line-btn" disabled>Load Lines</button>
         </div>
 
@@ -887,8 +891,59 @@
             currentLineTestCase = caseId;
 
             try {
-                // Compute line errors
-                await computeLineErrors(caseId);
+                // Fetch line test case details to get image and point_annotations_ref
+                const detailResp = await fetch(`${API_BASE}/api/line-test-cases/${encodeURIComponent(caseId)}/`);
+                if (!detailResp.ok) throw new Error(`Failed to fetch line test case: ${detailResp.status}`);
+                const lineTestCase = await detailResp.json();
+
+                const useLineHomography = document.getElementById('use-line-homography').checked;
+
+                // If viewers not initialized, we need to initialize them
+                if (!cameraViewer || !mapViewer) {
+                    // Determine which test case to use for the camera image
+                    let imageCaseId;
+                    if (!useLineHomography && lineTestCase.point_annotations_ref) {
+                        // Use the referenced point test case
+                        imageCaseId = lineTestCase.point_annotations_ref;
+                    } else {
+                        // Use line test case name (API will look up the image)
+                        // For line test cases, we need to get the image from the line test case itself
+                        // The camera-info API needs a point test case, so we'll use the referenced one
+                        if (lineTestCase.point_annotations_ref) {
+                            imageCaseId = lineTestCase.point_annotations_ref;
+                        } else {
+                            throw new Error('Line test case has no point_annotations_ref for viewer initialization');
+                        }
+                    }
+
+                    // Set currentTestCase for the camera tile URLs
+                    currentTestCase = imageCaseId;
+
+                    // Fetch camera and map info
+                    const [cameraResp, mapResp] = await Promise.all([
+                        fetch(`${API_BASE}/api/camera-info/?case=${encodeURIComponent(imageCaseId)}`),
+                        fetch(`${API_BASE}/api/map-info/`)
+                    ]);
+
+                    if (!cameraResp.ok) throw new Error(`Camera info failed: ${cameraResp.status}`);
+                    if (!mapResp.ok) throw new Error(`Map info failed: ${mapResp.status}`);
+
+                    cameraInfo = await cameraResp.json();
+                    mapInfo = await mapResp.json();
+
+                    // Initialize viewers
+                    initCameraViewer();
+                    initMapViewer();
+
+                    // Wait for viewers to be ready
+                    await Promise.all([
+                        waitForViewer(cameraViewer),
+                        waitForViewer(mapViewer)
+                    ]);
+                }
+
+                // Compute line errors with appropriate homography source
+                await computeLineErrors(caseId, useLineHomography);
 
                 // Show line tables, hide point tables
                 document.getElementById('camera-point-section').classList.add('hidden');
@@ -1007,22 +1062,27 @@
         }
 
         // Compute line errors and render line overlays
-        async function computeLineErrors(caseId) {
+        async function computeLineErrors(caseId, useLineHomography = false) {
             try {
                 const resp = await fetch(`${API_BASE}/api/compute-line-errors/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ test_case_name: caseId })
+                    body: JSON.stringify({
+                        test_case_name: caseId,
+                        use_line_homography: useLineHomography
+                    })
                 });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                if (!resp.ok) {
+                    const errorData = await resp.json().catch(() => ({}));
+                    throw new Error(errorData.error || `HTTP ${resp.status}`);
+                }
 
                 lineOverlayData = await resp.json();
 
-                // If viewers aren't initialized yet, initialize them
+                // If viewers aren't initialized, caller should have initialized them
                 if (!cameraViewer || !mapViewer) {
-                    // Need to initialize viewers - extract referenced point test case
-                    // For now, we'll need the viewers to already be initialized
-                    throw new Error('Please load a point test case first to initialize viewers');
+                    throw new Error('Viewers not initialized');
                 }
 
                 // Wait for viewers to be ready before adding overlays
@@ -1031,9 +1091,11 @@
                     waitForViewer(mapViewer)
                 ]);
 
-                // Clear existing point overlays
+                // Clear existing overlays
                 clearOverlays(cameraViewer, cameraOverlays);
                 clearOverlays(mapViewer, mapOverlays);
+                clearLineOverlays(cameraViewer, cameraLineOverlays);
+                clearLineOverlays(mapViewer, mapLineOverlays);
 
                 // Render line overlays
                 renderCameraLineOverlays();
@@ -1041,6 +1103,10 @@
 
                 // Update line metrics
                 updateLineMetrics();
+
+                // Update status to show which homography source was used
+                const source = useLineHomography ? 'line-based' : 'point-based';
+                showStatus(`Loaded with ${source} homography`, 'success');
             } catch (e) {
                 console.error('Failed to compute line errors:', e);
                 showStatus('Failed to compute line errors: ' + e.message, 'error');
