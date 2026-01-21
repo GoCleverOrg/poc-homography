@@ -1,0 +1,231 @@
+"""PTZ camera abstraction layer.
+
+Provides abstract base class for PTZ camera control to support
+multi-brand camera support in the future.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from abc import ABC, abstractmethod
+
+from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
+
+from .models import CameraCapabilities, PTZPosition
+
+logger = logging.getLogger(__name__)
+
+
+class BasePTZCamera(ABC):
+    """Abstract base class for PTZ camera control.
+
+    Provides a brand-agnostic interface for PTZ operations used by
+    the survey service. Concrete implementations wrap vendor-specific
+    SDKs/APIs.
+    """
+
+    @abstractmethod
+    def get_status(self) -> PTZPosition | None:
+        """Get current PTZ position.
+
+        Returns:
+            PTZPosition with pan, tilt, zoom values, or None if failed.
+        """
+
+    @abstractmethod
+    def move_to_position(self, pan: float | None, tilt: float | None, zoom: float | None) -> bool:
+        """Move camera to absolute position.
+
+        Args:
+            pan: Pan angle in degrees (0-360), or None to keep current
+            tilt: Tilt angle in degrees, or None to keep current
+            zoom: Zoom level, or None to keep current
+
+        Returns:
+            True if movement command was accepted, False otherwise.
+        """
+
+    @abstractmethod
+    def get_capabilities(self) -> CameraCapabilities:
+        """Get camera PTZ capabilities (ranges).
+
+        Returns:
+            CameraCapabilities with valid ranges for pan, tilt, zoom.
+        """
+
+    @abstractmethod
+    def wait_for_stabilization(self, max_wait: float = 5.0) -> PTZPosition | None:
+        """Wait for camera to reach target position and stabilize.
+
+        Args:
+            max_wait: Maximum time to wait in seconds.
+
+        Returns:
+            Final PTZPosition after stabilization, or None if failed.
+        """
+
+
+class HikvisionPTZCamera(BasePTZCamera):
+    """Hikvision PTZ camera implementation.
+
+    Wraps the existing HikvisionPTZ class to provide BasePTZCamera interface.
+    """
+
+    # PTZ stabilization parameters
+    POLL_INTERVAL = 0.1  # Seconds between status polls
+    STABLE_THRESHOLD = 0.5  # Seconds of no change to consider stable
+    POSITION_TOLERANCE = 0.1  # Degrees tolerance for position comparison
+
+    def __init__(self, camera_ip: str, camera_name: str = "Camera"):
+        """Initialize Hikvision PTZ camera.
+
+        Args:
+            camera_ip: IP address of the camera.
+            camera_name: Display name for logging.
+
+        Raises:
+            ValueError: If camera credentials are not set.
+        """
+        self.camera_ip = camera_ip
+        self.camera_name = camera_name
+
+        # Get credentials from environment
+        username = os.getenv("CAMERA_USERNAME")
+        password = os.getenv("CAMERA_PASSWORD")
+
+        if not username or not password:
+            raise ValueError(
+                "Camera credentials not set. Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables."
+            )
+
+        # Create underlying HikvisionPTZ instance
+        self._ptz = HikvisionPTZ(
+            ip=camera_ip,
+            username=username,
+            password=password,
+            name=camera_name,
+        )
+
+        # Default capabilities for Hikvision DS-2DF8425IX series
+        self._capabilities = CameraCapabilities(
+            pan_min=0.0,
+            pan_max=360.0,
+            tilt_min=-15.0,
+            tilt_max=90.0,
+            zoom_min=1.0,
+            zoom_max=25.0,
+        )
+
+    def get_status(self) -> PTZPosition | None:
+        """Get current PTZ position from Hikvision camera."""
+        try:
+            status = self._ptz.get_status()
+            if status:
+                return PTZPosition(
+                    pan=status.get("pan"),
+                    tilt=status.get("tilt"),
+                    zoom=status.get("zoom"),
+                )
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get PTZ status for {self.camera_name}: {e}")
+            return None
+
+    def move_to_position(self, pan: float | None, tilt: float | None, zoom: float | None) -> bool:
+        """Move Hikvision camera to absolute position.
+
+        Uses the send_ptz_return method which sends absolute positioning commands.
+        """
+        try:
+            # Build status dict for send_ptz_return
+            # If any value is None, get current position for that axis
+            current = self.get_status()
+            if current is None:
+                logger.error(f"Cannot move {self.camera_name}: failed to get current position")
+                return False
+
+            target = {
+                "pan": pan if pan is not None else current.pan,
+                "tilt": tilt if tilt is not None else current.tilt,
+                "zoom": zoom if zoom is not None else current.zoom,
+            }
+
+            return self._ptz.send_ptz_return(target)
+        except Exception as e:
+            logger.error(f"Failed to move {self.camera_name} to position: {e}")
+            return False
+
+    def get_capabilities(self) -> CameraCapabilities:
+        """Get Hikvision camera capabilities.
+
+        Currently returns default values for DS-2DF8425IX series.
+        Future enhancement: Query camera capabilities via ISAPI.
+        """
+        return self._capabilities
+
+    def wait_for_stabilization(self, max_wait: float = 5.0) -> PTZPosition | None:
+        """Wait for Hikvision camera to stabilize.
+
+        Polls camera status until position stops changing for STABLE_THRESHOLD seconds.
+        """
+        start_time = time.time()
+        last_position: PTZPosition | None = None
+        stable_since: float | None = None
+
+        while time.time() - start_time < max_wait:
+            current = self.get_status()
+            if current is None:
+                time.sleep(self.POLL_INTERVAL)
+                continue
+
+            if last_position is not None:
+                # Check if position has changed
+                position_changed = False
+
+                if current.pan is not None and last_position.pan is not None:
+                    if abs(current.pan - last_position.pan) > self.POSITION_TOLERANCE:
+                        position_changed = True
+
+                if current.tilt is not None and last_position.tilt is not None:
+                    if abs(current.tilt - last_position.tilt) > self.POSITION_TOLERANCE:
+                        position_changed = True
+
+                if current.zoom is not None and last_position.zoom is not None:
+                    if abs(current.zoom - last_position.zoom) > self.POSITION_TOLERANCE:
+                        position_changed = True
+
+                if not position_changed:
+                    if stable_since is None:
+                        stable_since = time.time()
+                    elif time.time() - stable_since >= self.STABLE_THRESHOLD:
+                        # Position has been stable long enough
+                        return current
+                else:
+                    stable_since = None
+
+            last_position = current
+            time.sleep(self.POLL_INTERVAL)
+
+        # Return last known position even if not fully stabilized
+        return self.get_status()
+
+
+def create_ptz_camera(camera_ip: str, camera_name: str, camera_model: str | None = None) -> BasePTZCamera:
+    """Factory function to create appropriate PTZ camera instance.
+
+    Args:
+        camera_ip: IP address of the camera.
+        camera_name: Display name for logging.
+        camera_model: Camera model string (used to detect brand).
+
+    Returns:
+        BasePTZCamera instance appropriate for the camera brand.
+
+    Currently only supports Hikvision cameras. Future enhancement:
+    detect brand from model string and return appropriate implementation.
+    """
+    # For now, default to Hikvision
+    # Future: detect brand from camera_model and return appropriate implementation
+    return HikvisionPTZCamera(camera_ip=camera_ip, camera_name=camera_name)
