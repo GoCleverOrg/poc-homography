@@ -455,3 +455,116 @@ def api_export(request: HttpRequest) -> JsonResponse:
         "test_case_name": test_case_name,
         "annotation_count": len(image_annotations),
     })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_detect_lines(request: HttpRequest) -> JsonResponse:
+    """Run automatic line detection on the current image.
+
+    Uses the Hough-based line detector from the lens distortion calibration
+    module to find candidate parking spot lines in the image.
+
+    Request body (optional):
+    {
+        "min_line_length": 100,  // Minimum line length in pixels
+        "min_confidence": 0.3,   // Minimum confidence threshold
+        "canny_low": 50,         // Canny edge detection lower threshold
+        "canny_high": 150        // Canny edge detection upper threshold
+    }
+
+    Response:
+    {
+        "success": true,
+        "filename": "image.jpg",
+        "detected_lines": [
+            {
+                "start_x": 100.0,
+                "start_y": 200.0,
+                "end_x": 500.0,
+                "end_y": 210.0,
+                "confidence": 0.85,
+                "angle_deg": 1.2,
+                "length": 400.5,
+                "cluster_id": 0
+            },
+            ...
+        ],
+        "total_detected": 15
+    }
+    """
+    current_image = get_current_image(request)
+    if not current_image:
+        return JsonResponse({"error": "No image selected"}, status=400)
+
+    image_path = TEST_DATA_DIR / current_image
+
+    try:
+        resolved_path = image_path.resolve()
+        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
+            return JsonResponse({"error": "Invalid image path"}, status=400)
+    except (ValueError, RuntimeError):
+        return JsonResponse({"error": "Invalid image path"}, status=400)
+
+    if not resolved_path.exists():
+        return JsonResponse({"error": f"Image not found: {current_image}"}, status=404)
+
+    # Parse optional configuration from request
+    config_overrides = {}
+    if request.body:
+        try:
+            data = json.loads(request.body)
+            if "min_line_length" in data:
+                config_overrides["min_line_length"] = int(data["min_line_length"])
+            if "min_confidence" in data:
+                config_overrides["min_confidence"] = float(data["min_confidence"])
+            if "canny_low" in data:
+                config_overrides["canny_low"] = int(data["canny_low"])
+            if "canny_high" in data:
+                config_overrides["canny_high"] = int(data["canny_high"])
+        except json.JSONDecodeError:
+            pass  # Use default config
+
+    try:
+        from poc_homography.calibration.lens_distortion.line_detection import (
+            LineDetectionConfig,
+            LineDetector,
+        )
+
+        # Create config with any overrides
+        config = LineDetectionConfig(**config_overrides)
+        detector = LineDetector(config)
+
+        # Run detection
+        candidates = detector.detect_from_file(resolved_path)
+
+        # Convert to JSON-serializable format
+        detected_lines = []
+        for c in candidates:
+            detected_lines.append({
+                "start_x": c.start[0],
+                "start_y": c.start[1],
+                "end_x": c.end[0],
+                "end_y": c.end[1],
+                "confidence": c.confidence,
+                "angle_deg": c.angle_deg,
+                "length": c.length,
+                "cluster_id": c.cluster_id,
+            })
+
+        return JsonResponse({
+            "success": True,
+            "filename": current_image,
+            "detected_lines": detected_lines,
+            "total_detected": len(detected_lines),
+        })
+
+    except ImportError as e:
+        return JsonResponse({
+            "error": f"Line detection module not available: {e}",
+            "details": "Ensure opencv-python is installed",
+        }, status=500)
+    except Exception as e:
+        return JsonResponse({
+            "error": f"Line detection failed: {e}",
+        }, status=500)

@@ -71,6 +71,58 @@ class DistortionCoefficients:
             k3=Unitless(float(coeffs[4])),
         )
 
+    @classmethod
+    def load_calibration(
+        cls,
+        camera_id: str,
+        zoom_factor: float,
+        calibration_dir: str,
+    ) -> DistortionCoefficients | None:
+        """Load calibrated distortion coefficients for a camera.
+
+        Loads from a calibration table file and interpolates for the
+        requested zoom level if needed.
+
+        Args:
+            camera_id: Identifier for the camera.
+            zoom_factor: Current zoom level.
+            calibration_dir: Directory containing calibration YAML files.
+
+        Returns:
+            DistortionCoefficients if calibration exists, None otherwise.
+
+        Example:
+            >>> coeffs = DistortionCoefficients.load_calibration(
+            ...     camera_id="camera_valte",
+            ...     zoom_factor=5.0,
+            ...     calibration_dir="/path/to/calibrations",
+            ... )
+            >>> if coeffs:
+            ...     print(f"k1={coeffs.k1}")
+        """
+        from pathlib import Path
+
+        calibration_file = Path(calibration_dir) / f"{camera_id}_calibration.yaml"
+
+        if not calibration_file.exists():
+            return None
+
+        try:
+            # Import here to avoid circular imports
+            from poc_homography.calibration.lens_distortion.calibration_table import (
+                CameraCalibrationTable,
+            )
+
+            table = CameraCalibrationTable.load(calibration_file)
+
+            if not table.entries:
+                return None
+
+            return table.get_coefficients(zoom_factor)
+        except Exception:
+            # Log would be nice but we don't want to add logging import
+            return None
+
 
 @dataclass(frozen=True)
 class HeightUncertainty:
