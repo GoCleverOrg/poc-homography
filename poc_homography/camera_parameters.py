@@ -7,11 +7,14 @@ easier testing/debugging of the camera geometry pipeline.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -119,8 +122,11 @@ class DistortionCoefficients:
                 return None
 
             return table.get_coefficients(zoom_factor)
-        except Exception:
-            # Log would be nice but we don't want to add logging import
+        except FileNotFoundError:
+            logger.debug(f"Calibration file not found: {calibration_file}")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to load calibration from {calibration_file}: {e}")
             return None
 
 

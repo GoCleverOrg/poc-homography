@@ -210,18 +210,20 @@ class DistortionSolver:
         for i, samples in enumerate(line_samples):
             undistorted = self._undistort_points(samples, final_coeffs, cx, cy, fx, fy)
             error = self._line_straightness_error(undistorted)
-            rmse = np.sqrt(error / len(samples))
+            num_samples = len(samples)
+            rmse = np.sqrt(error / num_samples) if num_samples > 0 else 0.0
             rmse_per_line.append(float(rmse))
 
             line_errors.append(
                 {
                     "line_id": lines[i].line_id,
                     "rmse_pixels": float(rmse),
-                    "num_samples": len(samples),
+                    "num_samples": num_samples,
                 }
             )
 
-        overall_rmse = np.sqrt(result.fun / sum(len(s) for s in line_samples))
+        total_samples = sum(len(s) for s in line_samples)
+        overall_rmse = np.sqrt(result.fun / total_samples) if total_samples > 0 else 0.0
 
         logger.info(f"Final straightness error: {result.fun:.6f}")
         logger.info(f"Overall RMSE: {overall_rmse:.4f} pixels")
@@ -312,13 +314,19 @@ class DistortionSolver:
         x_u = x.copy()
         y_u = y.copy()
 
-        for _ in range(10):  # Usually converges in 3-5 iterations
+        # Newton-Raphson typically converges in 3-5 iterations for reasonable distortion
+        max_undistort_iterations = 10
+        # Minimum radial factor to prevent division by zero
+        min_radial_factor = 1e-6
+
+        for _ in range(max_undistort_iterations):
             r2 = x_u * x_u + y_u * y_u
             r4 = r2 * r2
             r6 = r4 * r2
 
-            # Radial distortion
+            # Radial distortion factor (clamped to prevent division by zero)
             radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
+            radial = np.maximum(np.abs(radial), min_radial_factor) * np.sign(radial + 1e-10)
 
             # Tangential distortion
             dx_tangential = 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u)

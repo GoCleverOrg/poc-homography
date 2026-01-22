@@ -206,7 +206,8 @@ class LineCorrespondence:
     """Mapping between a camera line and its ground truth equivalent.
 
     Used to establish which detected line in the camera image corresponds
-    to which known line in the ground truth map.
+    to which known line in the ground truth map. Any pairing is allowed
+    for flexibility in matching strategies.
 
     Attributes:
         camera_line: The detected line in camera image coordinates.
@@ -215,11 +216,6 @@ class LineCorrespondence:
 
     camera_line: CameraLine
     ground_truth_line: GroundTruthLine
-
-    def __post_init__(self) -> None:
-        """Validate correspondence."""
-        # Line IDs should match or be explicitly paired
-        pass  # Allow any pairing for flexibility
 
 
 @dataclass(frozen=True)

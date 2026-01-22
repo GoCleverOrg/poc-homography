@@ -180,6 +180,21 @@ class CameraCalibrationTable:
             return True
         return False
 
+    def _find_matching_zoom(self, zoom_factor: float, tolerance: float = 1e-6) -> float | None:
+        """Find a matching zoom level within tolerance.
+
+        Args:
+            zoom_factor: The zoom level to find.
+            tolerance: Maximum difference for a match.
+
+        Returns:
+            The matching zoom level key, or None if no match.
+        """
+        for stored_zoom in self.entries:
+            if abs(stored_zoom - zoom_factor) < tolerance:
+                return stored_zoom
+        return None
+
     def get_coefficients(self, zoom_factor: float) -> DistortionCoefficients:
         """Get distortion coefficients for a zoom level.
 
@@ -198,9 +213,10 @@ class CameraCalibrationTable:
         if not self.entries:
             raise ValueError("No calibration entries available")
 
-        # Check for exact match
-        if zoom_factor in self.entries:
-            return self.entries[zoom_factor].to_distortion_coefficients()
+        # Check for exact match (with floating-point tolerance)
+        matching_zoom = self._find_matching_zoom(zoom_factor)
+        if matching_zoom is not None:
+            return self.entries[matching_zoom].to_distortion_coefficients()
 
         # Sort available zoom levels
         zoom_levels = sorted(self.entries.keys())
