@@ -19,6 +19,7 @@ urlpatterns = [
     # Session management
     path("api/survey/sessions/", views.api_sessions_list, name="api_sessions_list"),
     path("api/survey/sessions/<str:session_id>/", views.api_session_detail, name="api_session_detail"),
+    path("api/survey/sessions/<str:session_id>/delete/", views.api_delete_session, name="api_delete_session"),
     path("api/survey/sessions/<str:session_id>/manifest/", views.api_session_manifest, name="api_session_manifest"),
     path("api/survey/sessions/<str:session_id>/images/<str:filename>", views.api_session_image, name="api_session_image"),
     # Presets

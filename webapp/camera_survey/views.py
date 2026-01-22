@@ -339,3 +339,25 @@ def api_presets(request: HttpRequest) -> JsonResponse:
     return _success_response({
         "presets": [p.to_dict() for p in presets],
     })
+
+
+@csrf_exempt
+@require_POST
+def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Delete a survey session.
+
+    Args:
+        session_id: Survey session ID
+
+    Returns:
+        JSON response with deletion status.
+    """
+    success, error = _survey_service.delete_session(session_id)
+
+    if not success:
+        return _error_response(error or "Failed to delete session", 400)
+
+    return _success_response({
+        "session_id": session_id,
+        "message": "Session deleted successfully",
+    })

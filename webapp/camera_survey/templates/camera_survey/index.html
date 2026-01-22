@@ -473,6 +473,74 @@
             gap: 12px;
             margin-bottom: 16px;
         }
+
+        /* Modal styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+        }
+
+        .modal {
+            background: #252525;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .modal-header .icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(231, 76, 60, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            color: #fff;
+            margin: 0;
+        }
+
+        .modal-body {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .modal-body strong {
+            color: #fff;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body>
@@ -666,6 +734,25 @@
             <h3 style="margin: 20px 0 12px; font-size: 14px; color: #ccc;">Captured Images (<span id="image-count">0</span>)</h3>
             <div id="image-gallery" class="image-gallery"></div>
         </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div id="delete-modal" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="icon">&#9888;</div>
+                    <h3>Delete Session</h3>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this survey session?</p>
+                    <p style="margin-top: 12px;">Session ID: <strong id="delete-session-id"></strong></p>
+                    <p style="margin-top: 8px; color: #e74c3c;">This action cannot be undone. All captured images and manifest data will be permanently deleted.</p>
+                </div>
+                <div class="modal-actions">
+                    <button id="cancel-delete-btn" class="btn btn-secondary">Cancel</button>
+                    <button id="confirm-delete-btn" class="btn btn-danger">Delete Session</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -677,6 +764,7 @@
         let presets = [];
         let currentSessionId = null;
         let pollInterval = null;
+        let sessionToDelete = null;
 
         // Elements
         const tenantSelect = document.getElementById('tenant-select');
@@ -712,6 +800,10 @@
         const imageGallery = document.getElementById('image-gallery');
         const imageCount = document.getElementById('image-count');
         const credentialsWarning = document.getElementById('credentials-warning');
+        const deleteModal = document.getElementById('delete-modal');
+        const deleteSessionIdSpan = document.getElementById('delete-session-id');
+        const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 
         // API URLs
         const API_TENANTS = '{% url "camera_survey:api_tenants" %}';
@@ -817,6 +909,7 @@
                         <td><span class="status-badge ${s.status}">${s.status}</span></td>
                         <td>
                             <button class="btn btn-secondary btn-small" onclick="viewSession('${s.id}')">View</button>
+                            <button class="btn btn-danger btn-small" onclick="showDeleteModal('${s.id}')" ${s.status === 'running' ? 'disabled' : ''}>Delete</button>
                         </td>
                     </tr>
                 `).join('');
@@ -1012,6 +1105,51 @@
             }
         }
 
+        // Show delete confirmation modal
+        function showDeleteModal(sessionId) {
+            sessionToDelete = sessionId;
+            deleteSessionIdSpan.textContent = sessionId.substring(0, 8) + '...';
+            deleteModal.classList.add('visible');
+        }
+
+        // Hide delete confirmation modal
+        function hideDeleteModal() {
+            sessionToDelete = null;
+            deleteModal.classList.remove('visible');
+        }
+
+        // Delete session
+        async function deleteSession() {
+            if (!sessionToDelete) return;
+
+            try {
+                confirmDeleteBtn.disabled = true;
+                confirmDeleteBtn.innerHTML = '<span class="spinner"></span>Deleting...';
+
+                const resp = await fetch(`{% url 'camera_survey:api_delete_session' 'PLACEHOLDER' %}`.replace('PLACEHOLDER', sessionToDelete), {
+                    method: 'POST',
+                });
+                const result = await resp.json();
+
+                if (result.status !== 'success') throw new Error(result.message);
+
+                hideDeleteModal();
+                loadSessions();
+
+                // Close detail panel if viewing the deleted session
+                if (detailSessionId.textContent.startsWith(sessionToDelete.substring(0, 8))) {
+                    sessionDetail.classList.remove('visible');
+                }
+
+            } catch (e) {
+                console.error('Failed to delete session:', e);
+                alert('Failed to delete session: ' + e.message);
+            } finally {
+                confirmDeleteBtn.disabled = false;
+                confirmDeleteBtn.textContent = 'Delete Session';
+            }
+        }
+
         // Event listeners
         tenantSelect.addEventListener('change', async (e) => {
             selectedTenant = e.target.value || null;
@@ -1052,6 +1190,11 @@
         abortBtn.addEventListener('click', abortSurvey);
         refreshSessionsBtn.addEventListener('click', loadSessions);
         closeDetailBtn.addEventListener('click', () => sessionDetail.classList.remove('visible'));
+        cancelDeleteBtn.addEventListener('click', hideDeleteModal);
+        confirmDeleteBtn.addEventListener('click', deleteSession);
+        deleteModal.addEventListener('click', (e) => {
+            if (e.target === deleteModal) hideDeleteModal();
+        });
 
         // Initialize
         loadTenants();

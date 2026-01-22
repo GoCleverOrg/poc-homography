@@ -777,6 +777,61 @@ class CameraSurveyService:
 
         return None
 
+    def delete_session(self, session_id: str) -> tuple[bool, str | None]:
+        """Delete a survey session and all its data.
+
+        Args:
+            session_id: Session ID to delete
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        import shutil
+
+        # Check if session is currently running
+        if session_id in _active_surveys:
+            if _active_surveys[session_id].status == SurveyStatus.RUNNING:
+                return False, "Cannot delete a running survey session"
+
+        base_path = _get_survey_base_path()
+
+        if not base_path.exists():
+            return False, "Session not found"
+
+        # Find session directory
+        session_path = None
+        for date_dir in base_path.iterdir():
+            if not date_dir.is_dir():
+                continue
+
+            candidate_path = date_dir / session_id
+            if candidate_path.exists() and candidate_path.is_dir():
+                session_path = candidate_path
+                break
+
+        if session_path is None:
+            return False, "Session not found"
+
+        try:
+            # Remove the session directory and all its contents
+            shutil.rmtree(session_path)
+
+            # Clean up empty date directories
+            date_dir = session_path.parent
+            if date_dir.exists() and not any(date_dir.iterdir()):
+                date_dir.rmdir()
+
+            # Remove from active surveys if present
+            if session_id in _active_surveys:
+                del _active_surveys[session_id]
+
+            logger.info(f"Deleted session {session_id}")
+            return True, None
+
+        except Exception as e:
+            logger.error(f"Failed to delete session {session_id}: {e}")
+            return False, str(e)
+
 
 def get_survey_presets() -> list[SurveyPreset]:
     """Get list of available survey presets.
