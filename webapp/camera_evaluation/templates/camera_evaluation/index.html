@@ -1253,6 +1253,19 @@
         const testProgressText = document.getElementById('test-progress-text');
         const ptzDisplay = document.getElementById('ptz-display');
 
+        // CSRF token helper for Django CSRF protection
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+                if (cookie.startsWith(name + '=')) {
+                    return decodeURIComponent(cookie.substring(name.length + 1));
+                }
+            }
+            return null;
+        }
+
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1477,7 +1490,10 @@
             try {
                 const resp = await fetch('{% url "camera_evaluation:api_stress_test_start" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
                     body: JSON.stringify(config),
                 });
                 const result = await resp.json();
@@ -1614,7 +1630,10 @@
             try {
                 const resp = await fetch(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
                     body: JSON.stringify({ evaluation: currentEvaluation, notes }),
                 });
                 const result = await resp.json();
@@ -1636,7 +1655,7 @@
 
             const url = '{% url "camera_evaluation:api_stress_test_abort" "PLACEHOLDER" %}'.replace('PLACEHOLDER', currentSessionId);
             try {
-                await fetch(url, { method: 'POST' });
+                await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
             } catch (e) {
                 console.error('Failed to abort:', e);
             }
@@ -1729,7 +1748,7 @@
 
             const url = '{% url "camera_evaluation:api_stress_test_delete" "PLACEHOLDER" %}'.replace('PLACEHOLDER', sessionId);
             try {
-                const resp = await fetch(url, { method: 'POST' });
+                const resp = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
                 const result = await resp.json();
                 if (result.status === 'success') {
                     loadSessions();
@@ -1876,7 +1895,7 @@
 
             try {
                 const url = '{% url "camera_evaluation:api_survey_delete_session" "PLACEHOLDER" %}'.replace('PLACEHOLDER', sessionId);
-                const resp = await fetch(url, { method: 'POST' });
+                const resp = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
                 const result = await resp.json();
 
                 if (result.status === 'success') {
@@ -1918,7 +1937,10 @@
 
                 const resp = await fetch('{% url "camera_evaluation:api_survey_start" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
                     body: JSON.stringify({
                         tenant_id: surveyTenant,
                         camera_id: surveyCamera,
@@ -2023,7 +2045,7 @@
 
             try {
                 const url = '{% url "camera_evaluation:api_survey_abort" "PLACEHOLDER" %}'.replace('PLACEHOLDER', currentSurveySessionId);
-                const resp = await fetch(url, { method: 'POST' });
+                const resp = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
                 const result = await resp.json();
 
                 if (result.status !== 'success') throw new Error(result.message);

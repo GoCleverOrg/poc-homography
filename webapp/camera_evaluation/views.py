@@ -11,7 +11,6 @@ import os
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from poc_homography.camera_config import (
@@ -31,12 +30,11 @@ from .services import CameraStressTestService, generate_mjpeg_frames
 
 # Import survey functionality from camera_survey app
 from camera_survey.models import SurveyAxis, SurveyConfig
-from camera_survey.services import CameraSurveyService, get_survey_presets
+from camera_survey.services import get_survey_presets
+# Import the shared survey service instance to avoid duplicate state
+from camera_survey.views import _survey_service
 
 logger = logging.getLogger(__name__)
-
-# Singleton survey service instance
-_survey_service = CameraSurveyService()
 
 
 # =============================================================================
@@ -84,7 +82,8 @@ def api_tenants(request: HttpRequest) -> JsonResponse:
         ]
         return _success_response({"tenants": tenant_list})
     except Exception as e:
-        return _error_response(f"Failed to load tenants: {e}", status_code=500)
+        logger.exception("Failed to load tenants")
+        return _error_response("Failed to load tenants. Check server logs for details.", status_code=500)
 
 
 @require_GET
@@ -102,7 +101,8 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
         ]
         return _success_response({"cameras": camera_list})
     except Exception as e:
-        return _error_response(f"Failed to load cameras: {e}", status_code=500)
+        logger.exception("Failed to load cameras")
+        return _error_response("Failed to load cameras. Check server logs for details.", status_code=500)
 
 
 # =============================================================================
@@ -139,7 +139,6 @@ def api_stress_test_presets(request: HttpRequest) -> JsonResponse:
     return _success_response({"presets": presets})
 
 
-@csrf_exempt
 @require_POST
 def api_stress_test_start(request: HttpRequest) -> JsonResponse:
     """Start a new stress test.
@@ -243,7 +242,6 @@ def api_stress_test_status(request: HttpRequest, session_id: str) -> JsonRespons
     return _success_response(progress.to_dict())
 
 
-@csrf_exempt
 @require_POST
 def api_stress_test_abort(request: HttpRequest, session_id: str) -> JsonResponse:
     """Abort a running stress test."""
@@ -289,7 +287,6 @@ def api_stress_test_session_detail(request: HttpRequest, session_id: str) -> Jso
     return _success_response({"session": session.to_dict()})
 
 
-@csrf_exempt
 @require_POST
 def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonResponse:
     """Save user evaluation for a stress test session.
@@ -325,7 +322,6 @@ def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonRespo
     return _success_response({"message": "Evaluation saved"})
 
 
-@csrf_exempt
 @require_POST
 def api_stress_test_delete(request: HttpRequest, session_id: str) -> JsonResponse:
     """Delete a stress test session."""
@@ -349,7 +345,6 @@ def api_survey_presets(request: HttpRequest) -> JsonResponse:
     return _success_response({"presets": [p.to_dict() for p in presets]})
 
 
-@csrf_exempt
 @require_POST
 def api_survey_start(request: HttpRequest) -> JsonResponse:
     """Start a new survey.
@@ -445,7 +440,6 @@ def api_survey_status(request: HttpRequest, session_id: str) -> JsonResponse:
     return _success_response(progress.to_dict())
 
 
-@csrf_exempt
 @require_POST
 def api_survey_abort(request: HttpRequest, session_id: str) -> JsonResponse:
     """Abort a running survey."""
@@ -520,7 +514,6 @@ def api_survey_session_image(request: HttpRequest, session_id: str, filename: st
     )
 
 
-@csrf_exempt
 @require_POST
 def api_survey_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     """Delete a survey session."""

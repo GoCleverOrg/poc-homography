@@ -52,6 +52,24 @@ _survey_lock = threading.Lock()
 
 # In-memory storage for active survey progress
 _active_surveys: dict[str, SurveyProgress] = {}
+_active_surveys_lock = threading.Lock()  # Separate lock for _active_surveys access
+
+
+def _is_valid_session_id(session_id: str) -> bool:
+    """Validate that session_id is a valid UUID to prevent path traversal.
+
+    Args:
+        session_id: String to validate
+
+    Returns:
+        True if valid UUID format, False otherwise
+    """
+    try:
+        # Parse as UUID to validate format
+        uuid.UUID(session_id)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def _get_survey_base_path() -> Path:
@@ -398,13 +416,14 @@ class CameraSurveyService:
             total_steps = len(steps)
 
             # Initialize progress tracking
-            _active_surveys[session_id] = SurveyProgress(
-                session_id=session_id,
-                status=SurveyStatus.RUNNING,
-                step_count=0,
-                total_steps=total_steps,
-                current_ptz=initial_ptz,
-            )
+            with _active_surveys_lock:
+                _active_surveys[session_id] = SurveyProgress(
+                    session_id=session_id,
+                    status=SurveyStatus.RUNNING,
+                    step_count=0,
+                    total_steps=total_steps,
+                    current_ptz=initial_ptz,
+                )
 
             # Reset abort flag
             self._abort_flag.clear()
@@ -516,10 +535,11 @@ class CameraSurveyService:
                 session.captures.append(capture_record)
 
                 # Update progress
-                if session.id in _active_surveys:
-                    _active_surveys[session.id].step_count = step_index + 1
-                    _active_surveys[session.id].current_ptz = final_pos
-                    _active_surveys[session.id].last_capture_path = str(image_path) if capture_success else None
+                with _active_surveys_lock:
+                    if session.id in _active_surveys:
+                        _active_surveys[session.id].step_count = step_index + 1
+                        _active_surveys[session.id].current_ptz = final_pos
+                        _active_surveys[session.id].last_capture_path = str(image_path) if capture_success else None
 
                 # Write manifest after each step for crash recovery
                 _write_manifest(session, session_path)
@@ -556,8 +576,9 @@ class CameraSurveyService:
             _write_manifest(session, session_path)
 
             # Update progress
-            if session.id in _active_surveys:
-                _active_surveys[session.id].status = session.status
+            with _active_surveys_lock:
+                if session.id in _active_surveys:
+                    _active_surveys[session.id].status = session.status
 
         except Exception as e:
             logger.error(f"Survey execution error: {e}")
@@ -566,15 +587,17 @@ class CameraSurveyService:
             session.end_time = datetime.now(timezone.utc)
             _write_manifest(session, session_path)
 
-            if session.id in _active_surveys:
-                _active_surveys[session.id].status = SurveyStatus.FAILED
-                _active_surveys[session.id].error_message = str(e)
+            with _active_surveys_lock:
+                if session.id in _active_surveys:
+                    _active_surveys[session.id].status = SurveyStatus.FAILED
+                    _active_surveys[session.id].error_message = str(e)
 
         finally:
             # Cleanup
-            if session.id in _active_surveys:
-                # Keep progress for a while for status queries
-                _active_surveys[session.id].status = session.status
+            with _active_surveys_lock:
+                if session.id in _active_surveys:
+                    # Keep progress for a while for status queries
+                    _active_surveys[session.id].status = session.status
 
             _survey_lock.release()
 
@@ -626,11 +649,12 @@ class CameraSurveyService:
         Returns:
             Tuple of (success, error_message)
         """
-        if session_id not in _active_surveys:
-            return False, "Survey not found or not running"
+        with _active_surveys_lock:
+            if session_id not in _active_surveys:
+                return False, "Survey not found or not running"
 
-        if _active_surveys[session_id].status != SurveyStatus.RUNNING:
-            return False, "Survey is not running"
+            if _active_surveys[session_id].status != SurveyStatus.RUNNING:
+                return False, "Survey is not running"
 
         self._abort_flag.set()
         return True, None
@@ -644,7 +668,8 @@ class CameraSurveyService:
         Returns:
             SurveyProgress or None if not found
         """
-        return _active_surveys.get(session_id)
+        with _active_surveys_lock:
+            return _active_surveys.get(session_id)
 
     def list_sessions(self, limit: int = 50, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         """List survey sessions.
@@ -710,6 +735,10 @@ class CameraSurveyService:
         Returns:
             SurveySession or None if not found
         """
+        # Validate session_id to prevent path traversal
+        if not _is_valid_session_id(session_id):
+            return None
+
         base_path = _get_survey_base_path()
 
         if not base_path.exists():
@@ -735,6 +764,10 @@ class CameraSurveyService:
         Returns:
             Path to manifest.yaml or None if not found
         """
+        # Validate session_id to prevent path traversal
+        if not _is_valid_session_id(session_id):
+            return None
+
         base_path = _get_survey_base_path()
 
         if not base_path.exists():
@@ -760,6 +793,10 @@ class CameraSurveyService:
         Returns:
             Path to image file or None if not found
         """
+        # Validate session_id to prevent path traversal
+        if not _is_valid_session_id(session_id):
+            return None
+
         base_path = _get_survey_base_path()
 
         if not base_path.exists():
@@ -790,10 +827,15 @@ class CameraSurveyService:
         """
         import shutil
 
+        # Validate session_id to prevent path traversal
+        if not _is_valid_session_id(session_id):
+            return False, "Invalid session ID format"
+
         # Check if session is currently running
-        if session_id in _active_surveys:
-            if _active_surveys[session_id].status == SurveyStatus.RUNNING:
-                return False, "Cannot delete a running survey session"
+        with _active_surveys_lock:
+            if session_id in _active_surveys:
+                if _active_surveys[session_id].status == SurveyStatus.RUNNING:
+                    return False, "Cannot delete a running survey session"
 
         base_path = _get_survey_base_path()
 
@@ -824,10 +866,11 @@ class CameraSurveyService:
                 date_dir.rmdir()
 
             # Remove from active surveys if present
-            if session_id in _active_surveys:
-                del _active_surveys[session_id]
+            with _active_surveys_lock:
+                if session_id in _active_surveys:
+                    del _active_surveys[session_id]
 
-            logger.info(f"Deleted session {session_id}")
+            logger.info("Deleted session %s", session_id)
             return True, None
 
         except Exception as e:

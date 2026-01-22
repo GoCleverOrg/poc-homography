@@ -18,9 +18,11 @@ from pathlib import Path
 import cv2
 import yaml
 from django.conf import settings
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
 from poc_homography.camera_config import get_camera_by_id, get_rtsp_url
+# Use the PTZ abstraction layer for multi-brand camera support
+from camera_survey.ptz import BasePTZCamera, create_ptz_camera
+from camera_survey.models import PTZPosition
 
 from .models import (
     AxisMovementConfig,
@@ -42,6 +44,34 @@ STRESS_TEST_STABILIZATION_TIMEOUT = 10.0  # Max seconds to wait for position sta
 STRESS_TEST_STABILIZATION_THRESHOLD = 0.5  # Seconds of no change to consider stabilized
 STRESS_TEST_POLL_INTERVAL = 0.1  # Polling interval for position checks
 POSITION_TOLERANCE = 0.5  # Position tolerance in degrees for matching
+
+
+def _ptz_position_to_dict(position: PTZPosition | None) -> dict[str, float]:
+    """Convert PTZPosition to dict for backward compatibility."""
+    if position is None:
+        return {"pan": 0.0, "tilt": 0.0, "zoom": 0.0}
+    return {
+        "pan": position.pan or 0.0,
+        "tilt": position.tilt or 0.0,
+        "zoom": position.zoom or 0.0,
+    }
+
+
+def _is_valid_session_id(session_id: str) -> bool:
+    """Validate that session_id is a valid UUID to prevent path traversal.
+
+    Args:
+        session_id: String to validate
+
+    Returns:
+        True if valid UUID format, False otherwise
+    """
+    try:
+        # Parse as UUID to validate format
+        uuid.UUID(session_id)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def get_stress_test_storage_dir() -> Path:
@@ -200,13 +230,8 @@ class CameraStressTestService:
             cls._session_progress[session_id].status = StressTestStatus.RUNNING
             cls._session_progress[session_id].message = "Connecting to camera..."
 
-        # Initialize PTZ controller
-        ptz = HikvisionPTZ(
-            ip=camera_ip,
-            username=username,
-            password=password,
-            name=session.camera_name,
-        )
+        # Initialize PTZ controller using abstraction layer
+        ptz = create_ptz_camera(camera_ip, session.camera_name)
 
         movements: list[MovementTiming] = []
         test_start_time = time.time()
@@ -218,11 +243,7 @@ class CameraStressTestService:
             if not initial_status:
                 raise RuntimeError("Failed to get initial camera position")
 
-            initial_position = {
-                "pan": initial_status.get("pan", 0),
-                "tilt": initial_status.get("tilt", 0),
-                "zoom": initial_status.get("zoom", 0),
-            }
+            initial_position = _ptz_position_to_dict(initial_status)
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = initial_position
@@ -254,12 +275,7 @@ class CameraStressTestService:
                 return
 
             # Get final position and calculate error
-            final_status = ptz.get_status()
-            final_position = {
-                "pan": final_status.get("pan", 0) if final_status else 0,
-                "tilt": final_status.get("tilt", 0) if final_status else 0,
-                "zoom": final_status.get("zoom", 0) if final_status else 0,
-            }
+            final_position = _ptz_position_to_dict(ptz.get_status())
 
             position_error = {
                 "pan": abs(final_position["pan"] - initial_position["pan"]),
@@ -319,8 +335,8 @@ class CameraStressTestService:
                 try:
                     with cls._lock:
                         cls._session_progress[session_id].message = "Restoring initial position..."
-                    ptz.send_ptz_return(initial_position)
-                    cls._wait_for_stabilization(ptz)
+                    ptz.move_to_position(initial_position["pan"], initial_position["tilt"], initial_position["zoom"])
+                    ptz.wait_for_stabilization()
                     with cls._lock:
                         cls._session_progress[session_id].current_position = initial_position
                     logger.info(f"Restored initial position for session {session_id}")
@@ -330,19 +346,14 @@ class CameraStressTestService:
     @classmethod
     def _measure_movement(
         cls,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         target_pan: float,
         target_tilt: float,
         target_zoom: float,
     ) -> MovementTiming:
         """Measure timing for a single movement operation."""
         # Get starting position
-        start_status = ptz.get_status()
-        start_position = {
-            "pan": start_status.get("pan", 0) if start_status else 0,
-            "tilt": start_status.get("tilt", 0) if start_status else 0,
-            "zoom": start_status.get("zoom", 0) if start_status else 0,
-        }
+        start_position = _ptz_position_to_dict(ptz.get_status())
 
         target_position = {
             "pan": target_pan,
@@ -352,7 +363,7 @@ class CameraStressTestService:
 
         # Send move command
         command_sent = datetime.now(timezone.utc)
-        ptz.send_ptz_return({"pan": target_pan, "tilt": target_tilt, "zoom": target_zoom})
+        ptz.move_to_position(target_pan, target_tilt, target_zoom)
 
         # Wait for stabilization
         final_position = cls._wait_for_stabilization(ptz)
@@ -380,12 +391,12 @@ class CameraStressTestService:
     @classmethod
     def _wait_for_stabilization(
         cls,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         max_wait: float = STRESS_TEST_STABILIZATION_TIMEOUT,
     ) -> dict[str, float]:
         """Wait for PTZ position to stabilize."""
         start_time = time.time()
-        last_position = None
+        last_position: dict[str, float] | None = None
         stable_since = None
 
         while time.time() - start_time < max_wait:
@@ -394,11 +405,7 @@ class CameraStressTestService:
                 time.sleep(STRESS_TEST_POLL_INTERVAL)
                 continue
 
-            current_position = {
-                "pan": status.get("pan", 0),
-                "tilt": status.get("tilt", 0),
-                "zoom": status.get("zoom", 0),
-            }
+            current_position = _ptz_position_to_dict(status)
 
             if last_position is not None:
                 position_changed = False
@@ -419,7 +426,7 @@ class CameraStressTestService:
             time.sleep(STRESS_TEST_POLL_INTERVAL)
 
         # Return last known position even if not stabilized
-        return last_position or {"pan": 0, "tilt": 0, "zoom": 0}
+        return last_position or {"pan": 0.0, "tilt": 0.0, "zoom": 0.0}
 
     @classmethod
     def _positions_match(
@@ -460,7 +467,7 @@ class CameraStressTestService:
     def _execute_oscillation_test(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute oscillation test - back and forth movement."""
@@ -472,9 +479,9 @@ class CameraStressTestService:
 
         # Get current position
         status = ptz.get_status()
-        current_pan = status.get("pan", 0) if status else 0
-        current_tilt = status.get("tilt", 0) if status else 0
-        current_zoom = status.get("zoom", 0) if status else 0
+        current_pan = (status.pan or 0) if status else 0
+        current_tilt = (status.tilt or 0) if status else 0
+        current_zoom = (status.zoom or 0) if status else 0
 
         # Calculate total movements (2 per repetition: forward and back)
         total_movements = config.repetitions * 2
@@ -524,7 +531,7 @@ class CameraStressTestService:
     def _execute_random_step_accuracy_test(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute random step accuracy test."""
@@ -536,9 +543,9 @@ class CameraStressTestService:
 
         # Get current position
         status = ptz.get_status()
-        current_pan = status.get("pan", 0) if status else 0
-        current_tilt = status.get("tilt", 0) if status else 0
-        current_zoom = status.get("zoom", 0) if status else 0
+        current_pan = (status.pan or 0) if status else 0
+        current_tilt = (status.tilt or 0) if status else 0
+        current_zoom = (status.zoom or 0) if status else 0
         start_pan, start_tilt = current_pan, current_tilt
 
         # Generate random steps
@@ -609,7 +616,7 @@ class CameraStressTestService:
     def _execute_full_range_sweep(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute full range sweep test."""
@@ -620,9 +627,9 @@ class CameraStressTestService:
             return movements
 
         status = ptz.get_status()
-        current_pan = status.get("pan", 0) if status else 0
-        current_tilt = status.get("tilt", 0) if status else 0
-        current_zoom = status.get("zoom", 0) if status else 0
+        current_pan = (status.pan or 0) if status else 0
+        current_tilt = (status.tilt or 0) if status else 0
+        current_zoom = (status.zoom or 0) if status else 0
 
         total_movements = config.repetitions * 2  # Forward and back
 
@@ -676,7 +683,7 @@ class CameraStressTestService:
     def _execute_tilt_stress_test(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute tilt stress test - rapid tilt movements."""
@@ -687,7 +694,7 @@ class CameraStressTestService:
     def _execute_combined_axis_load(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute combined axis load test - simultaneous pan and tilt."""
@@ -697,9 +704,9 @@ class CameraStressTestService:
             return movements
 
         status = ptz.get_status()
-        start_pan = status.get("pan", 0) if status else 0
-        start_tilt = status.get("tilt", 0) if status else 0
-        current_zoom = status.get("zoom", 0) if status else 0
+        start_pan = (status.pan or 0) if status else 0
+        start_tilt = (status.tilt or 0) if status else 0
+        current_zoom = (status.zoom or 0) if status else 0
 
         total_movements = config.repetitions * 2
 
@@ -744,16 +751,16 @@ class CameraStressTestService:
     def _execute_position_repeatability(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute position repeatability test - same position multiple times."""
         movements = []
 
         status = ptz.get_status()
-        start_pan = status.get("pan", 0) if status else 0
-        start_tilt = status.get("tilt", 0) if status else 0
-        current_zoom = status.get("zoom", 0) if status else 0
+        start_pan = (status.pan or 0) if status else 0
+        start_tilt = (status.tilt or 0) if status else 0
+        current_zoom = (status.zoom or 0) if status else 0
 
         # Calculate target position
         target_pan = start_pan
@@ -803,7 +810,7 @@ class CameraStressTestService:
     def _execute_speed_test(
         cls,
         session_id: str,
-        ptz: HikvisionPTZ,
+        ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute speed test - measure degrees per second."""
@@ -932,6 +939,10 @@ class CameraStressTestService:
     @classmethod
     def delete_session(cls, session_id: str) -> tuple[bool, str | None]:
         """Delete a stress test session."""
+        # Validate session_id to prevent path traversal
+        if not _is_valid_session_id(session_id):
+            return False, "Invalid session ID format"
+
         # Remove from memory
         with cls._lock:
             cls._active_sessions.pop(session_id, None)
@@ -971,6 +982,10 @@ class CameraStressTestService:
     @classmethod
     def _load_session(cls, session_id: str) -> StressTestSession | None:
         """Load session from disk by ID."""
+        # Validate session_id to prevent path traversal
+        if not _is_valid_session_id(session_id):
+            return None
+
         storage_dir = get_stress_test_storage_dir()
         if not storage_dir.exists():
             return None

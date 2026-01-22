@@ -812,6 +812,19 @@
         const API_PRESETS = '{% url "camera_survey:api_presets" %}';
         const API_SESSIONS = '{% url "camera_survey:api_sessions_list" %}';
 
+        // CSRF token helper for Django CSRF protection
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+                if (cookie.startsWith(name + '=')) {
+                    return decodeURIComponent(cookie.substring(name.length + 1));
+                }
+            }
+            return null;
+        }
+
         // Load tenants
         async function loadTenants() {
             try {
@@ -983,7 +996,10 @@
 
                 const resp = await fetch(API_START, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
                     body: JSON.stringify({
                         tenant_id: selectedTenant,
                         camera_id: selectedCamera,
@@ -1092,6 +1108,9 @@
             try {
                 const resp = await fetch(`{% url 'camera_survey:api_abort_survey' 'PLACEHOLDER' %}`.replace('PLACEHOLDER', currentSessionId), {
                     method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCsrfToken(),
+                    },
                 });
                 const result = await resp.json();
 
@@ -1128,6 +1147,9 @@
 
                 const resp = await fetch(`{% url 'camera_survey:api_delete_session' 'PLACEHOLDER' %}`.replace('PLACEHOLDER', sessionToDelete), {
                     method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCsrfToken(),
+                    },
                 });
                 const result = await resp.json();
 
