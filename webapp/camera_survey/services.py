@@ -329,14 +329,17 @@ class CameraSurveyService:
             # Get camera and tenant info
             camera = get_camera_by_id(config.camera_id)
             if not camera:
+                _survey_lock.release()
                 return "", f"Camera not found: {config.camera_id}"
 
             tenant = get_tenant_by_id(config.tenant_id)
             if not tenant:
+                _survey_lock.release()
                 return "", f"Tenant not found: {config.tenant_id}"
 
             camera_ip = camera.get("ip")
             if not camera_ip:
+                _survey_lock.release()
                 return "", f"Camera {config.camera_id} has no IP address"
 
             # Create PTZ camera instance
@@ -347,25 +350,30 @@ class CameraSurveyService:
                     camera_model=camera.get("model"),
                 )
             except ValueError as e:
+                _survey_lock.release()
                 return "", str(e)
 
-            # Get RTSP URL
+            # Get RTSP URL - use camera_id which is the full ID like "valte_cam01"
             try:
-                rtsp_url = get_rtsp_url(camera.get("name", config.camera_id))
+                rtsp_url = get_rtsp_url(config.camera_id)
                 if not rtsp_url:
+                    _survey_lock.release()
                     return "", f"No RTSP URL configured for camera: {config.camera_id}"
             except ValueError as e:
+                _survey_lock.release()
                 return "", str(e)
 
             # Get initial PTZ position
             initial_ptz = ptz_camera.get_status()
             if initial_ptz is None:
+                _survey_lock.release()
                 return "", "Failed to get initial PTZ position"
 
             # Validate survey range
             capabilities = ptz_camera.get_capabilities()
             is_valid, error = capabilities.validate_range(config.axis, config.start, config.end)
             if not is_valid:
+                _survey_lock.release()
                 return "", error
 
             # Initialize session

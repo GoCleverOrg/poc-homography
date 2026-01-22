@@ -919,6 +919,16 @@
                 abortBtn.disabled = false;
                 progressContainer.style.display = 'block';
                 progressStatus.textContent = 'Starting...';
+                progressSteps.textContent = 'Step 0 of 0';
+                progressFill.style.width = '0%';
+                ptzPan.textContent = '-';
+                ptzTilt.textContent = '-';
+                ptzZoom.textContent = '-';
+
+                // Reset thumbnail
+                lastCapture.style.display = 'none';
+                lastCapture.src = '';
+                thumbnailPlaceholder.style.display = 'block';
 
                 // Start polling
                 pollInterval = setInterval(pollStatus, 1000);
@@ -953,12 +963,15 @@
                     ptzZoom.textContent = data.current_ptz.zoom?.toFixed(1) + 'x';
                 }
 
-                if (data.last_capture_path) {
-                    // Extract session ID and filename from path for API URL
-                    // Note: In production, you'd want a proper URL for the image
+                if (data.last_capture_path && currentSessionId) {
+                    // Extract filename from path and construct API URL
+                    const filename = data.last_capture_path.split('/').pop();
+                    const imageUrl = `{% url 'camera_survey:api_session_image' 'SID' 'FNAME' %}`
+                        .replace('SID', currentSessionId)
+                        .replace('FNAME', filename);
+                    lastCapture.src = imageUrl;
                     thumbnailPlaceholder.style.display = 'none';
                     lastCapture.style.display = 'block';
-                    // For now, we'll just show placeholder until survey completes
                 }
 
                 if (data.status === 'completed' || data.status === 'aborted' || data.status === 'failed') {

@@ -58,7 +58,7 @@ class CameraCapabilities:
 
     pan_min: float = 0.0
     pan_max: float = 360.0
-    tilt_min: float = -15.0
+    tilt_min: float = -90.0  # Wide range to support various camera models
     tilt_max: float = 90.0
     zoom_min: float = 1.0
     zoom_max: float = 25.0

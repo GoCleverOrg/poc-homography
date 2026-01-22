@@ -109,10 +109,11 @@ class HikvisionPTZCamera(BasePTZCamera):
         )
 
         # Default capabilities for Hikvision DS-2DF8425IX series
+        # Using wide tilt range to support various camera models
         self._capabilities = CameraCapabilities(
             pan_min=0.0,
             pan_max=360.0,
-            tilt_min=-15.0,
+            tilt_min=-90.0,
             tilt_max=90.0,
             zoom_min=1.0,
             zoom_max=25.0,
