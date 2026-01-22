@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     "camera_annotator",
     "camera_line_annotator",
     "camera_diagnostic",
+    "camera_survey",
+    "camera_evaluation",
 ]
 
 MIDDLEWARE = [
