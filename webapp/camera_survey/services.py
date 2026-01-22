@@ -686,6 +686,8 @@ class CameraSurveyService:
                         sessions.append({
                             "id": session.id,
                             "date": date_dir.name,
+                            "tenant_id": session.tenant.id if session.tenant else None,
+                            "tenant_name": session.tenant.name if session.tenant else None,
                             "camera_id": session.camera.id if session.camera else None,
                             "camera_name": session.camera.name if session.camera else None,
                             "axis": session.survey_parameters.axis.value if session.survey_parameters else None,

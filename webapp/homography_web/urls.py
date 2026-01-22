@@ -27,5 +27,6 @@ urlpatterns = [
     path("camera-line-annotator/", include("camera_line_annotator.urls")),
     path("camera-diagnostic/", include("camera_diagnostic.urls")),
     path("camera-survey/", include("camera_survey.urls")),
+    path("camera-evaluation/", include("camera_evaluation.urls")),
     path("", include("gcp.urls")),
 ]
