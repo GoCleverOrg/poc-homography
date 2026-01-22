@@ -149,9 +149,15 @@ class StressTestConfig:
             tenant_id=data["tenant_id"],
             camera_id=data["camera_id"],
             test_type=StressTestType(data["test_type"]),
-            pan_config=AxisMovementConfig.from_dict(data["pan_config"]) if data.get("pan_config") else None,
-            tilt_config=AxisMovementConfig.from_dict(data["tilt_config"]) if data.get("tilt_config") else None,
-            zoom_config=AxisMovementConfig.from_dict(data["zoom_config"]) if data.get("zoom_config") else None,
+            pan_config=AxisMovementConfig.from_dict(data["pan_config"])
+            if data.get("pan_config")
+            else None,
+            tilt_config=AxisMovementConfig.from_dict(data["tilt_config"])
+            if data.get("tilt_config")
+            else None,
+            zoom_config=AxisMovementConfig.from_dict(data["zoom_config"])
+            if data.get("zoom_config")
+            else None,
             repetitions=data.get("repetitions", 1),
         )
 
@@ -231,8 +237,12 @@ class StressTestSession:
         return cls(
             id=data["id"],
             created_at=datetime.fromisoformat(data["created_at"]),
-            started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
-            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
+            started_at=datetime.fromisoformat(data["started_at"])
+            if data.get("started_at")
+            else None,
+            completed_at=datetime.fromisoformat(data["completed_at"])
+            if data.get("completed_at")
+            else None,
             status=StressTestStatus(data["status"]),
             tenant_id=data.get("tenant_id", ""),
             camera_id=data.get("camera_id", ""),

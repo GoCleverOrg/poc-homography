@@ -116,9 +116,7 @@ def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:
     return annotations
 
 
-def save_session_annotations(
-    request: HttpRequest, annotations: dict[str, list[dict]]
-) -> None:
+def save_session_annotations(request: HttpRequest, annotations: dict[str, list[dict]]) -> None:
     """Save annotations to session storage."""
     request.session[SESSION_ANNOTATIONS_KEY] = annotations
     request.session.modified = True
@@ -215,12 +213,14 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     # Extract camera status from filename
     camera_status = extract_camera_status(filename)
 
-    return JsonResponse({
-        "success": True,
-        "filename": filename,
-        "annotations": image_annotations,
-        "camera_status": camera_status,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "filename": filename,
+            "annotations": image_annotations,
+            "camera_status": camera_status,
+        }
+    )
 
 
 @require_GET
@@ -263,10 +263,12 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
         registry = load_lines_registry()
         lines = registry.get("lines", [])
         line_ids = [line.get("line_id") for line in lines if line.get("line_id")]
-        return JsonResponse({
-            "map_id": registry.get("map_id", ""),
-            "line_ids": line_ids,
-        })
+        return JsonResponse(
+            {
+                "map_id": registry.get("map_id", ""),
+                "line_ids": line_ids,
+            }
+        )
     except Exception as e:
         return JsonResponse({"error": f"Failed to load line IDs: {e}"}, status=500)
 
@@ -321,11 +323,13 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     all_annotations[current_image].append(annotation)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "annotation": annotation,
-        "index": len(all_annotations[current_image]) - 1,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotation": annotation,
+            "index": len(all_annotations[current_image]) - 1,
+        }
+    )
 
 
 @csrf_exempt
@@ -345,10 +349,12 @@ def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
     deleted = image_annotations.pop(index)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "deleted": deleted,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "deleted": deleted,
+        }
+    )
 
 
 @require_GET
@@ -448,13 +454,15 @@ def api_export(request: HttpRequest) -> JsonResponse:
     with open(resolved_path, "w") as f:
         yaml.dump(export_data, f, default_flow_style=False, sort_keys=False)
 
-    return JsonResponse({
-        "success": True,
-        "filename": output_filename,
-        "path": str(resolved_path),
-        "test_case_name": test_case_name,
-        "annotation_count": len(image_annotations),
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "filename": output_filename,
+            "path": str(resolved_path),
+            "test_case_name": test_case_name,
+            "annotation_count": len(image_annotations),
+        }
+    )
 
 
 @csrf_exempt
@@ -541,30 +549,40 @@ def api_detect_lines(request: HttpRequest) -> JsonResponse:
         # Convert to JSON-serializable format
         detected_lines = []
         for c in candidates:
-            detected_lines.append({
-                "start_x": c.start[0],
-                "start_y": c.start[1],
-                "end_x": c.end[0],
-                "end_y": c.end[1],
-                "confidence": c.confidence,
-                "angle_deg": c.angle_deg,
-                "length": c.length,
-                "cluster_id": c.cluster_id,
-            })
+            detected_lines.append(
+                {
+                    "start_x": c.start[0],
+                    "start_y": c.start[1],
+                    "end_x": c.end[0],
+                    "end_y": c.end[1],
+                    "confidence": c.confidence,
+                    "angle_deg": c.angle_deg,
+                    "length": c.length,
+                    "cluster_id": c.cluster_id,
+                }
+            )
 
-        return JsonResponse({
-            "success": True,
-            "filename": current_image,
-            "detected_lines": detected_lines,
-            "total_detected": len(detected_lines),
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "filename": current_image,
+                "detected_lines": detected_lines,
+                "total_detected": len(detected_lines),
+            }
+        )
 
     except ImportError as e:
-        return JsonResponse({
-            "error": f"Line detection module not available: {e}",
-            "details": "Ensure opencv-python is installed",
-        }, status=500)
+        return JsonResponse(
+            {
+                "error": f"Line detection module not available: {e}",
+                "details": "Ensure opencv-python is installed",
+            },
+            status=500,
+        )
     except Exception as e:
-        return JsonResponse({
-            "error": f"Line detection failed: {e}",
-        }, status=500)
+        return JsonResponse(
+            {
+                "error": f"Line detection failed: {e}",
+            },
+            status=500,
+        )

@@ -84,9 +84,15 @@ class CameraCapabilities:
                 return False, f"End value {end} outside valid pan range [{min_val}, {max_val}]"
         else:
             if not (min_val <= start <= max_val):
-                return False, f"Start value {start} outside valid {axis.value} range [{min_val}, {max_val}]"
+                return (
+                    False,
+                    f"Start value {start} outside valid {axis.value} range [{min_val}, {max_val}]",
+                )
             if not (min_val <= end <= max_val):
-                return False, f"End value {end} outside valid {axis.value} range [{min_val}, {max_val}]"
+                return (
+                    False,
+                    f"End value {end} outside valid {axis.value} range [{min_val}, {max_val}]",
+                )
 
         return True, None
 

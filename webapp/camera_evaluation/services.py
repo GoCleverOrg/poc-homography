@@ -20,6 +20,7 @@ import yaml
 from django.conf import settings
 
 from poc_homography.camera_config import get_camera_by_id, get_rtsp_url
+
 # Use the PTZ abstraction layer for multi-brand camera support
 from camera_survey.ptz import BasePTZCamera, create_ptz_camera
 from camera_survey.models import PTZPosition
@@ -126,7 +127,7 @@ def generate_mjpeg_frames(camera_id: str) -> Generator[bytes, None, None]:
             if not success:
                 continue
 
-            yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
 
     finally:
         cap.release()
@@ -335,13 +336,17 @@ class CameraStressTestService:
                 try:
                     with cls._lock:
                         cls._session_progress[session_id].message = "Restoring initial position..."
-                    ptz.move_to_position(initial_position["pan"], initial_position["tilt"], initial_position["zoom"])
+                    ptz.move_to_position(
+                        initial_position["pan"], initial_position["tilt"], initial_position["zoom"]
+                    )
                     ptz.wait_for_stabilization()
                     with cls._lock:
                         cls._session_progress[session_id].current_position = initial_position
                     logger.info(f"Restored initial position for session {session_id}")
                 except Exception as restore_error:
-                    logger.warning(f"Failed to restore initial position for session {session_id}: {restore_error}")
+                    logger.warning(
+                        f"Failed to restore initial position for session {session_id}: {restore_error}"
+                    )
 
     @classmethod
     def _measure_movement(
@@ -495,7 +500,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Repetition {rep + 1}/{config.repetitions}"
+                cls._session_progress[
+                    session_id
+                ].message = f"Repetition {rep + 1}/{config.repetitions}"
 
             # Move forward
             if axis_config.axis == "pan":
@@ -550,8 +557,12 @@ class CameraStressTestService:
 
         # Generate random steps
         total_distance = axis_config.end - axis_config.start
-        forward_steps = cls._generate_random_steps(total_distance, axis_config.step_min, axis_config.step_max)
-        backward_steps = cls._generate_random_steps(-total_distance, axis_config.step_min, axis_config.step_max)
+        forward_steps = cls._generate_random_steps(
+            total_distance, axis_config.step_min, axis_config.step_max
+        )
+        backward_steps = cls._generate_random_steps(
+            -total_distance, axis_config.step_min, axis_config.step_max
+        )
 
         total_movements = (len(forward_steps) + len(backward_steps)) * config.repetitions
 
@@ -642,7 +653,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Sweep {rep + 1}/{config.repetitions}: Forward"
+                cls._session_progress[
+                    session_id
+                ].message = f"Sweep {rep + 1}/{config.repetitions}: Forward"
 
             # Sweep forward
             if axis_config.axis == "pan":
@@ -660,7 +673,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = movement.end_position
-                cls._session_progress[session_id].message = f"Sweep {rep + 1}/{config.repetitions}: Return"
+                cls._session_progress[
+                    session_id
+                ].message = f"Sweep {rep + 1}/{config.repetitions}: Return"
 
             # Sweep back
             if axis_config.axis == "pan":
@@ -719,7 +734,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Diagonal {rep + 1}/{config.repetitions}: Moving"
+                cls._session_progress[
+                    session_id
+                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Moving"
 
             # Move diagonally to end position
             target_pan = start_pan + (config.pan_config.end - config.pan_config.start)
@@ -733,7 +750,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = movement.end_position
-                cls._session_progress[session_id].message = f"Diagonal {rep + 1}/{config.repetitions}: Return"
+                cls._session_progress[
+                    session_id
+                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Return"
 
             # Return to start
             with cls._lock:
@@ -781,7 +800,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Position test {rep + 1}/{config.repetitions}: To target"
+                cls._session_progress[
+                    session_id
+                ].message = f"Position test {rep + 1}/{config.repetitions}: To target"
 
             # Move to target
             with cls._lock:
@@ -792,7 +813,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = movement.end_position
-                cls._session_progress[session_id].message = f"Position test {rep + 1}/{config.repetitions}: Return"
+                cls._session_progress[
+                    session_id
+                ].message = f"Position test {rep + 1}/{config.repetitions}: Return"
 
             # Return to start
             with cls._lock:

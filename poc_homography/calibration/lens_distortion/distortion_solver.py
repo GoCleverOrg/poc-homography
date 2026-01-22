@@ -21,6 +21,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.types import Unitless
 
 if TYPE_CHECKING:
     from poc_homography.calibration.lens_distortion.models import CameraLine
@@ -173,9 +174,7 @@ class DistortionSolver:
             x0 = initial_guess.to_array()
 
         # Calculate initial error
-        initial_error = self._total_straightness_error(
-            x0, line_samples, cx, cy, fx, fy
-        )
+        initial_error = self._total_straightness_error(x0, line_samples, cx, cy, fx, fy)
         logger.info(f"Initial straightness error: {initial_error:.6f}")
 
         # Optimize
@@ -194,11 +193,11 @@ class DistortionSolver:
         # Extract optimized coefficients
         if self.config.use_radial_only:
             optimized = DistortionCoefficients(
-                k1=float(result.x[0]),
-                k2=float(result.x[1]),
-                k3=float(result.x[2]),
-                p1=0.0,
-                p2=0.0,
+                k1=Unitless(float(result.x[0])),
+                k2=Unitless(float(result.x[1])),
+                k3=Unitless(float(result.x[2])),
+                p1=Unitless(0.0),
+                p2=Unitless(0.0),
             )
         else:
             optimized = DistortionCoefficients.from_array(result.x)
@@ -214,17 +213,21 @@ class DistortionSolver:
             rmse = np.sqrt(error / len(samples))
             rmse_per_line.append(float(rmse))
 
-            line_errors.append({
-                "line_id": lines[i].line_id,
-                "rmse_pixels": float(rmse),
-                "num_samples": len(samples),
-            })
+            line_errors.append(
+                {
+                    "line_id": lines[i].line_id,
+                    "rmse_pixels": float(rmse),
+                    "num_samples": len(samples),
+                }
+            )
 
         overall_rmse = np.sqrt(result.fun / sum(len(s) for s in line_samples))
 
         logger.info(f"Final straightness error: {result.fun:.6f}")
         logger.info(f"Overall RMSE: {overall_rmse:.4f} pixels")
-        logger.info(f"Optimized k1={optimized.k1:.6f}, k2={optimized.k2:.6f}, k3={optimized.k3:.6f}")
+        logger.info(
+            f"Optimized k1={optimized.k1:.6f}, k2={optimized.k2:.6f}, k3={optimized.k3:.6f}"
+        )
 
         return SolverResult(
             distortion=optimized,
@@ -326,10 +329,12 @@ class DistortionSolver:
             y_u = (y - dy_tangential) / radial
 
         # Convert back to pixel coordinates
-        undistorted = np.column_stack([
-            x_u * fx + cx,
-            y_u * fy + cy,
-        ])
+        undistorted = np.column_stack(
+            [
+                x_u * fx + cx,
+                y_u * fy + cy,
+            ]
+        )
 
         return undistorted
 
@@ -361,7 +366,7 @@ class DistortionSolver:
         # Perpendicular distances
         distances = np.abs(centered @ line_normal)
 
-        return float(np.sum(distances ** 2))
+        return float(np.sum(distances**2))
 
     def calculate_line_errors(
         self,
@@ -395,11 +400,13 @@ class DistortionSolver:
             error = self._line_straightness_error(undistorted)
             rmse = np.sqrt(error / len(samples))
 
-            errors.append({
-                "line_id": line.line_id,
-                "rmse_pixels": float(rmse),
-                "num_samples": len(samples),
-            })
+            errors.append(
+                {
+                    "line_id": line.line_id,
+                    "rmse_pixels": float(rmse),
+                    "num_samples": len(samples),
+                }
+            )
 
         return errors
 

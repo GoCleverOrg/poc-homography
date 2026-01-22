@@ -29,7 +29,9 @@ class PointPickerConfig(AppConfig):
 
         # Use the Cartografia valencia map and GCPs
         map_file = project_root / "Cartografia_valencia.tif"
-        gcp_file = project_root / "tests" / "homography" / "test_data" / "Cartografia_valencia_gcps.yaml"
+        gcp_file = (
+            project_root / "tests" / "homography" / "test_data" / "Cartografia_valencia_gcps.yaml"
+        )
 
         if map_file.exists():
             initialize_state(map_file)

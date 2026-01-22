@@ -11,13 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 from poc_homography.calibration.lens_distortion.calibration_table import (
     CameraCalibrationTable,
     ZoomCalibrationEntry,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.camera_parameters import DistortionCoefficients  # noqa: TC001
 
 if TYPE_CHECKING:
     from poc_homography.calibration.lens_distortion.distortion_solver import SolverResult
@@ -50,7 +48,7 @@ class CalibrationApplicationResult:
     def summary(self) -> str:
         """Generate summary of the calibration application."""
         lines = [
-            f"Calibration Application Result",
+            "Calibration Application Result",
             f"Camera: {self.camera_id}",
             f"Zoom: {self.zoom_factor}x",
             f"Status: {'Success' if self.success else 'Failed'}",

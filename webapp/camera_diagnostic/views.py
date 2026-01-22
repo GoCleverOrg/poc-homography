@@ -129,7 +129,10 @@ def _success_response(data: dict) -> JsonResponse:
 
 
 def _error_response(
-    error_category: CameraErrorCategory, message: str, status_code: int = 500, extra: dict | None = None
+    error_category: CameraErrorCategory,
+    message: str,
+    status_code: int = 500,
+    extra: dict | None = None,
 ) -> JsonResponse:
     """Create a standardized error response.
 
@@ -196,7 +199,12 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
 
         # Return camera info including id, name, and ip
         camera_list = [
-            {"id": cam["id"], "name": cam["name"], "ip": cam["ip"], "tenant_id": cam.get("tenant_id")}
+            {
+                "id": cam["id"],
+                "name": cam["name"],
+                "ip": cam["ip"],
+                "tenant_id": cam.get("tenant_id"),
+            }
             for cam in cameras
         ]
         return _success_response({"cameras": camera_list})
@@ -205,7 +213,9 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
 
 
 @require_GET
-def api_video_stream(request: HttpRequest, camera_name: str) -> StreamingHttpResponse | JsonResponse:
+def api_video_stream(
+    request: HttpRequest, camera_name: str
+) -> StreamingHttpResponse | JsonResponse:
     """Stream MJPEG video from a camera's RTSP feed.
 
     Args:
@@ -278,14 +288,16 @@ def api_test_rtsp(request: HttpRequest, camera_name: str) -> JsonResponse:
                 status_code=503,
             )
 
-        return _success_response({
-            "message": f"Successfully connected to {camera_name}",
-            "metrics": {
-                "fps": fps if fps > 0 else None,
-                "resolution": {"width": width, "height": height},
-                "latency_ms": round(latency_ms, 2),
-            },
-        })
+        return _success_response(
+            {
+                "message": f"Successfully connected to {camera_name}",
+                "metrics": {
+                    "fps": fps if fps > 0 else None,
+                    "resolution": {"width": width, "height": height},
+                    "latency_ms": round(latency_ms, 2),
+                },
+            }
+        )
 
     except Exception as e:
         error_category = classify_rtsp_error(e, rtsp_url)
@@ -433,6 +445,7 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
                 # This dialog appears after login and needs to be dismissed
                 try:
                     from .services import dismiss_hikvision_warning_dialog
+
                     dismiss_hikvision_warning_dialog(page)
                 except Exception as e:
                     logger.debug(f"Warning dialog handling: {e}")
@@ -442,6 +455,7 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
             login_error = None
             if login_attempted and not login_success:
                 from .services import get_login_error_message
+
                 login_error = get_login_error_message(page)
 
             # Detect PTZ controls
@@ -452,6 +466,7 @@ def api_test_webui(request: HttpRequest, camera_name: str) -> JsonResponse:
             if login_success and ptz_controls:
                 try:
                     from .services import test_webui_ptz_controls
+
                     ptz_test_result = test_webui_ptz_controls(page)
                 except Exception as e:
                     logger.debug(f"PTZ control test: {e}")

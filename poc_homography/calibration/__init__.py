@@ -22,10 +22,6 @@ from poc_homography.calibration.interactive import (
     run_batch_calibration,
     run_interactive_session,
 )
-from poc_homography.calibration.projection import (
-    ProjectionAnalysisResult,
-    analyze_projection_error,
-)
 
 # Lens distortion calibration exports
 from poc_homography.calibration.lens_distortion import (
@@ -40,6 +36,10 @@ from poc_homography.calibration.lens_distortion import (
     SolverConfig,
     SolverResult,
     ZoomCalibrationEntry,
+)
+from poc_homography.calibration.projection import (
+    ProjectionAnalysisResult,
+    analyze_projection_error,
 )
 
 __all__ = [

@@ -23,9 +23,17 @@ api_patterns = [
     path("api/compute-homography/", views.api_compute_homography, name="api_compute_homography"),
     # Line validation endpoints
     path("api/line-test-cases/", views.api_line_test_cases, name="api_line_test_cases"),
-    path("api/line-test-cases/<str:name>/", views.api_line_test_case_detail, name="api_line_test_case_detail"),
+    path(
+        "api/line-test-cases/<str:name>/",
+        views.api_line_test_case_detail,
+        name="api_line_test_case_detail",
+    ),
     path("api/line-registry/", views.api_line_registry, name="api_line_registry"),
-    path("api/compute-homography-from-lines/", views.api_compute_homography_from_lines, name="api_compute_homography_from_lines"),
+    path(
+        "api/compute-homography-from-lines/",
+        views.api_compute_homography_from_lines,
+        name="api_compute_homography_from_lines",
+    ),
     path("api/compute-line-errors/", views.api_compute_line_errors, name="api_compute_line_errors"),
     # Image info endpoints
     path("api/camera-info/", views.api_camera_info, name="api_camera_info"),

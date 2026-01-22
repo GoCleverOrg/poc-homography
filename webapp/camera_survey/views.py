@@ -178,10 +178,12 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
     if error:
         return _error_response(error, 500)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Survey started successfully",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Survey started successfully",
+        }
+    )
 
 
 @require_GET
@@ -200,14 +202,16 @@ def api_survey_status(request: HttpRequest, session_id: str) -> JsonResponse:
         # Check if it's a completed session
         session = _survey_service.get_session(session_id)
         if session:
-            return _success_response({
-                "session_id": session_id,
-                "status": session.status.value,
-                "step_count": len(session.captures),
-                "total_steps": len(session.captures),
-                "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
-                "last_capture_path": None,
-            })
+            return _success_response(
+                {
+                    "session_id": session_id,
+                    "status": session.status.value,
+                    "step_count": len(session.captures),
+                    "total_steps": len(session.captures),
+                    "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
+                    "last_capture_path": None,
+                }
+            )
         return _error_response("Survey not found", 404)
 
     return _success_response(progress.to_dict())
@@ -228,10 +232,12 @@ def api_abort_survey(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to abort survey", 400)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Survey abort requested",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Survey abort requested",
+        }
+    )
 
 
 @require_GET
@@ -253,12 +259,14 @@ def api_sessions_list(request: HttpRequest) -> JsonResponse:
 
     sessions, total = _survey_service.list_sessions(limit=limit, offset=offset)
 
-    return _success_response({
-        "sessions": sessions,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    })
+    return _success_response(
+        {
+            "sessions": sessions,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @require_GET
@@ -333,9 +341,11 @@ def api_presets(request: HttpRequest) -> JsonResponse:
     """
     presets = get_survey_presets()
 
-    return _success_response({
-        "presets": [p.to_dict() for p in presets],
-    })
+    return _success_response(
+        {
+            "presets": [p.to_dict() for p in presets],
+        }
+    )
 
 
 @require_POST
@@ -353,7 +363,9 @@ def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to delete session", 400)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Session deleted successfully",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Session deleted successfully",
+        }
+    )

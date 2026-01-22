@@ -99,7 +99,12 @@ def classify_rtsp_error(exception: Exception, rtsp_url: str | None = None) -> Ca
         return CameraErrorCategory.TIMEOUT
 
     # Authentication indicators
-    if "401" in error_str or "403" in error_str or "unauthorized" in error_str or "auth" in error_str:
+    if (
+        "401" in error_str
+        or "403" in error_str
+        or "unauthorized" in error_str
+        or "auth" in error_str
+    ):
         return CameraErrorCategory.AUTH_FAILED
 
     # Default to camera offline for OpenCV capture failures
@@ -167,7 +172,7 @@ def generate_mjpeg_frames(camera_name: str) -> Generator[bytes, None, None]:
                 continue
 
             # Yield MJPEG multipart frame
-            yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
 
     finally:
         cap.release()
@@ -188,7 +193,9 @@ def get_screenshot_path(camera_name: str) -> Path:
         Path object for the screenshot file
     """
     screenshots_dir = getattr(
-        settings, "CAMERA_DIAGNOSTIC_SCREENSHOTS_DIR", Path(settings.BASE_DIR) / "diagnostic_screenshots"
+        settings,
+        "CAMERA_DIAGNOSTIC_SCREENSHOTS_DIR",
+        Path(settings.BASE_DIR) / "diagnostic_screenshots",
     )
     screenshots_dir = Path(screenshots_dir)
     screenshots_dir.mkdir(parents=True, exist_ok=True)
@@ -285,11 +292,13 @@ def detect_ptz_controls(page) -> list[dict]:
                 for element in elements:
                     try:
                         if element.is_visible():
-                            ptz_controls.append({
-                                "type": control_type,
-                                "selector": selector,
-                                "tag": element.evaluate("el => el.tagName.toLowerCase()"),
-                            })
+                            ptz_controls.append(
+                                {
+                                    "type": control_type,
+                                    "selector": selector,
+                                    "tag": element.evaluate("el => el.tagName.toLowerCase()"),
+                                }
+                            )
                     except Exception as e:
                         # Element may have become stale, skip it
                         logger.debug(f"PTZ control element stale or inaccessible: {e}")
@@ -353,7 +362,7 @@ def attempt_login(page, username: str, password: str) -> bool:
         'input[name="pwd"]',
         'input[type="password"]',
         # Fallback - second input field (after username)
-        'input:nth-of-type(2)',
+        "input:nth-of-type(2)",
     ]
 
     # Common submit button selectors (Hikvision-specific first)
@@ -401,14 +410,17 @@ def attempt_login(page, username: str, password: str) -> bool:
             element = page.locator(selector).first
             if element.is_visible():
                 # Use evaluate to set value via JavaScript - pass password as argument
-                page.evaluate("""([selector, pwd]) => {
+                page.evaluate(
+                    """([selector, pwd]) => {
                     const el = document.querySelector(selector);
                     if (el) {
                         el.value = pwd;
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         el.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                }""", [selector, password])
+                }""",
+                    [selector, password],
+                )
                 password_filled = True
                 break
         except Exception as e:
@@ -470,14 +482,27 @@ def get_login_error_message(page) -> str | None:
     """
     # Text patterns that indicate real login errors
     error_keywords = [
-        "invalid", "incorrect", "wrong", "failed", "denied",
-        "error", "locked", "disabled", "expired", "unauthorized",
+        "invalid",
+        "incorrect",
+        "wrong",
+        "failed",
+        "denied",
+        "error",
+        "locked",
+        "disabled",
+        "expired",
+        "unauthorized",
     ]
 
     # Text patterns to filter out (not actual errors)
     filter_patterns = [
-        "privacy", "respect", "rights", "product",
-        "copyright", "reserved", "technology",
+        "privacy",
+        "respect",
+        "rights",
+        "product",
+        "copyright",
+        "reserved",
+        "technology",
     ]
 
     # Look for common error message patterns
@@ -527,7 +552,9 @@ def check_login_success(page) -> bool:
     if "login" in current_url:
         # Still on login page - check if it's due to an error or just slow redirect
         pass  # Continue with other checks
-    elif any(indicator in current_url for indicator in ["preview", "live", "main", "index", "home"]):
+    elif any(
+        indicator in current_url for indicator in ["preview", "live", "main", "index", "home"]
+    ):
         # Successfully redirected to post-login page
         return True
 
@@ -572,7 +599,9 @@ def check_login_success(page) -> bool:
             element = page.locator(selector).first
             if element.is_visible():
                 text = element.text_content().lower() if element.text_content() else ""
-                if any(word in text for word in ["invalid", "incorrect", "failed", "wrong", "denied"]):
+                if any(
+                    word in text for word in ["invalid", "incorrect", "failed", "wrong", "denied"]
+                ):
                     return False
         except Exception as e:
             logger.debug(f"Error message selector '{selector}' check failed: {e}")
@@ -725,7 +754,12 @@ def test_webui_ptz_controls(page) -> dict:
         "up": ['[class*="ptz-up"]', '[class*="up"]', '[title*="Up"]', 'button:text("▲")'],
         "down": ['[class*="ptz-down"]', '[class*="down"]', '[title*="Down"]', 'button:text("▼")'],
         "left": ['[class*="ptz-left"]', '[class*="left"]', '[title*="Left"]', 'button:text("◀")'],
-        "right": ['[class*="ptz-right"]', '[class*="right"]', '[title*="Right"]', 'button:text("▶")'],
+        "right": [
+            '[class*="ptz-right"]',
+            '[class*="right"]',
+            '[title*="Right"]',
+            'button:text("▶")',
+        ],
         "zoom_in": ['[class*="zoom-in"]', '[class*="zoomin"]', '[title*="Zoom In"]'],
         "zoom_out": ['[class*="zoom-out"]', '[class*="zoomout"]', '[title*="Zoom Out"]'],
     }

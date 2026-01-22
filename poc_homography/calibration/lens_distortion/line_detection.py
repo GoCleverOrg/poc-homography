@@ -198,12 +198,15 @@ class LineDetector:
         # Convert to candidate lines
         candidates = []
         for line in lines:
-            x1, y1, x2, y2 = line[0]
+            # HoughLinesP returns shape (N, 1, 4), flatten to get [x1, y1, x2, y2]
+            flat_line = line.flatten()
+            x1 = int(flat_line[0])
+            y1 = int(flat_line[1])
+            x2 = int(flat_line[2])
+            y2 = int(flat_line[3])
 
             # Calculate edge strength along the line
-            edge_strength = self._calculate_edge_strength(
-                edge_magnitude, (x1, y1), (x2, y2)
-            )
+            edge_strength = self._calculate_edge_strength(edge_magnitude, (x1, y1), (x2, y2))
 
             candidate = CandidateLine(
                 start=(float(x1), float(y1)),
@@ -290,9 +293,7 @@ class LineDetector:
 
         return float(np.mean(magnitudes))
 
-    def _cluster_parallel_lines(
-        self, candidates: list[CandidateLine]
-    ) -> list[CandidateLine]:
+    def _cluster_parallel_lines(self, candidates: list[CandidateLine]) -> list[CandidateLine]:
         """Group parallel lines into clusters.
 
         Lines with similar angles are grouped together. This helps
@@ -358,9 +359,7 @@ class LineDetector:
 
         return result
 
-    def _calculate_confidence(
-        self, candidates: list[CandidateLine]
-    ) -> list[CandidateLine]:
+    def _calculate_confidence(self, candidates: list[CandidateLine]) -> list[CandidateLine]:
         """Calculate confidence scores for candidate lines.
 
         Confidence is based on:
@@ -437,9 +436,9 @@ class LineDetector:
 
         # Color map for clusters
         colors = [
-            (0, 255, 0),    # Green
-            (255, 0, 0),    # Blue
-            (0, 0, 255),    # Red
+            (0, 255, 0),  # Green
+            (255, 0, 0),  # Blue
+            (0, 0, 255),  # Red
             (255, 255, 0),  # Cyan
             (255, 0, 255),  # Magenta
             (0, 255, 255),  # Yellow

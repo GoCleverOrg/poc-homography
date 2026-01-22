@@ -241,9 +241,7 @@ class MapPixelLine:
     end_pixel: tuple[Pixels, Pixels]
     map_id: str = ""
 
-    def to_world_coordinates(
-        self, geotransform: list[float]
-    ) -> GroundTruthLine:
+    def to_world_coordinates(self, geotransform: list[float]) -> GroundTruthLine:
         """Convert map pixel coordinates to world coordinates using geotransform.
 
         Args:
@@ -261,12 +259,28 @@ class MapPixelLine:
         pixel_height = geotransform[5]
 
         # Convert start point
-        start_x = origin_x + float(self.start_pixel[0]) * pixel_width + float(self.start_pixel[1]) * rotation_x
-        start_y = origin_y + float(self.start_pixel[0]) * rotation_y + float(self.start_pixel[1]) * pixel_height
+        start_x = (
+            origin_x
+            + float(self.start_pixel[0]) * pixel_width
+            + float(self.start_pixel[1]) * rotation_x
+        )
+        start_y = (
+            origin_y
+            + float(self.start_pixel[0]) * rotation_y
+            + float(self.start_pixel[1]) * pixel_height
+        )
 
         # Convert end point
-        end_x = origin_x + float(self.end_pixel[0]) * pixel_width + float(self.end_pixel[1]) * rotation_x
-        end_y = origin_y + float(self.end_pixel[0]) * rotation_y + float(self.end_pixel[1]) * pixel_height
+        end_x = (
+            origin_x
+            + float(self.end_pixel[0]) * pixel_width
+            + float(self.end_pixel[1]) * rotation_x
+        )
+        end_y = (
+            origin_y
+            + float(self.end_pixel[0]) * rotation_y
+            + float(self.end_pixel[1]) * pixel_height
+        )
 
         return GroundTruthLine(
             line_id=self.line_id,

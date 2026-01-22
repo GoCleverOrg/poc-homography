@@ -12,15 +12,11 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-import numpy as np
 import yaml
 
 from poc_homography.camera_parameters import DistortionCoefficients
-
-if TYPE_CHECKING:
-    pass
+from poc_homography.types import Unitless
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +57,11 @@ class ZoomCalibrationEntry:
     def to_distortion_coefficients(self) -> DistortionCoefficients:
         """Convert to DistortionCoefficients instance."""
         return DistortionCoefficients(
-            k1=self.k1,
-            k2=self.k2,
-            p1=self.p1,
-            p2=self.p2,
-            k3=self.k3,
+            k1=Unitless(self.k1),
+            k2=Unitless(self.k2),
+            p1=Unitless(self.p1),
+            p2=Unitless(self.p2),
+            k3=Unitless(self.k3),
         )
 
     def to_dict(self) -> dict:
@@ -267,11 +263,11 @@ class CameraCalibrationTable:
         )
 
         return DistortionCoefficients(
-            k1=k1,
-            k2=k2,
-            p1=p1,
-            p2=p2,
-            k3=k3,
+            k1=Unitless(k1),
+            k2=Unitless(k2),
+            p1=Unitless(p1),
+            p2=Unitless(p2),
+            k3=Unitless(k3),
         )
 
     def get_zoom_levels(self) -> list[float]:

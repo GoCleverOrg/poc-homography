@@ -199,11 +199,13 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     # Load annotations for the new image
     annotations = load_existing_annotations(filename)
 
-    return JsonResponse({
-        "success": True,
-        "filename": filename,
-        "annotations": annotations,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "filename": filename,
+            "annotations": annotations,
+        }
+    )
 
 
 @require_GET

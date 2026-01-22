@@ -213,7 +213,9 @@ class HikvisionPTZCamera(BasePTZCamera):
         return self.get_status()
 
 
-def create_ptz_camera(camera_ip: str, camera_name: str, camera_model: str | None = None) -> BasePTZCamera:
+def create_ptz_camera(
+    camera_ip: str, camera_name: str, camera_model: str | None = None
+) -> BasePTZCamera:
     """Factory function to create appropriate PTZ camera instance.
 
     Args:

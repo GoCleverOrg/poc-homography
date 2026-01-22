@@ -157,7 +157,9 @@ def _create_rtsp_capture(rtsp_url: str) -> cv2.VideoCapture:
     return cap
 
 
-def _capture_frame(rtsp_url: str, output_path: Path) -> tuple[bool, str | None, tuple[int, int] | None]:
+def _capture_frame(
+    rtsp_url: str, output_path: Path
+) -> tuple[bool, str | None, tuple[int, int] | None]:
     """Capture a single frame and save as JPEG.
 
     Args:
@@ -255,8 +257,12 @@ def _load_manifest(session_path: Path) -> SurveySession | None:
         session_data = data.get("session", {})
         session = SurveySession(
             id=session_data.get("id", ""),
-            start_time=datetime.fromisoformat(session_data["start_time"]) if session_data.get("start_time") else datetime.now(timezone.utc),
-            end_time=datetime.fromisoformat(session_data["end_time"]) if session_data.get("end_time") else None,
+            start_time=datetime.fromisoformat(session_data["start_time"])
+            if session_data.get("start_time")
+            else datetime.now(timezone.utc),
+            end_time=datetime.fromisoformat(session_data["end_time"])
+            if session_data.get("end_time")
+            else None,
             status=SurveyStatus(session_data.get("status", "completed")),
             abort_reason=session_data.get("abort_reason"),
         )
@@ -287,6 +293,7 @@ def _load_manifest(session_path: Path) -> SurveySession | None:
         # Load survey parameters
         if "survey_parameters" in data:
             from .models import SurveyAxis
+
             params = data["survey_parameters"]
             session.survey_parameters = SurveyConfig(
                 tenant_id=session.tenant.id if session.tenant else "",
@@ -514,7 +521,9 @@ class CameraSurveyService:
                 )
                 image_path = session_path / filename
 
-                capture_success, capture_error, frame_resolution = _capture_frame(rtsp_url, image_path)
+                capture_success, capture_error, frame_resolution = _capture_frame(
+                    rtsp_url, image_path
+                )
 
                 # Track resolution from first successful capture
                 if capture_success and resolution is None:
@@ -539,7 +548,9 @@ class CameraSurveyService:
                     if session.id in _active_surveys:
                         _active_surveys[session.id].step_count = step_index + 1
                         _active_surveys[session.id].current_ptz = final_pos
-                        _active_surveys[session.id].last_capture_path = str(image_path) if capture_success else None
+                        _active_surveys[session.id].last_capture_path = (
+                            str(image_path) if capture_success else None
+                        )
 
                 # Write manifest after each step for crash recovery
                 _write_manifest(session, session_path)
@@ -708,23 +719,29 @@ class CameraSurveyService:
                 try:
                     session = _load_manifest(session_dir)
                     if session:
-                        sessions.append({
-                            "id": session.id,
-                            "date": date_dir.name,
-                            "tenant_id": session.tenant.id if session.tenant else None,
-                            "tenant_name": session.tenant.name if session.tenant else None,
-                            "camera_id": session.camera.id if session.camera else None,
-                            "camera_name": session.camera.name if session.camera else None,
-                            "axis": session.survey_parameters.axis.value if session.survey_parameters else None,
-                            "step_count": len(session.captures),
-                            "status": session.status.value,
-                            "start_time": session.start_time.isoformat() if session.start_time else None,
-                        })
+                        sessions.append(
+                            {
+                                "id": session.id,
+                                "date": date_dir.name,
+                                "tenant_id": session.tenant.id if session.tenant else None,
+                                "tenant_name": session.tenant.name if session.tenant else None,
+                                "camera_id": session.camera.id if session.camera else None,
+                                "camera_name": session.camera.name if session.camera else None,
+                                "axis": session.survey_parameters.axis.value
+                                if session.survey_parameters
+                                else None,
+                                "step_count": len(session.captures),
+                                "status": session.status.value,
+                                "start_time": session.start_time.isoformat()
+                                if session.start_time
+                                else None,
+                            }
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to load session from {session_dir}: {e}")
 
         total = len(sessions)
-        return sessions[offset:offset + limit], total
+        return sessions[offset : offset + limit], total
 
     def get_session(self, session_id: str) -> SurveySession | None:
         """Get complete session data.
