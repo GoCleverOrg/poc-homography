@@ -24,8 +24,27 @@ urlpatterns = [
     path("api/survey/<str:session_id>/status/", views.api_survey_status, name="api_survey_status"),
     path("api/survey/<str:session_id>/abort/", views.api_survey_abort, name="api_survey_abort"),
     path("api/survey/sessions/", views.api_survey_sessions, name="api_survey_sessions"),
-    path("api/survey/sessions/<str:session_id>/", views.api_survey_session_detail, name="api_survey_session_detail"),
-    path("api/survey/sessions/<str:session_id>/manifest/", views.api_survey_session_manifest, name="api_survey_session_manifest"),
-    path("api/survey/sessions/<str:session_id>/images/<str:filename>/", views.api_survey_session_image, name="api_survey_session_image"),
-    path("api/survey/sessions/<str:session_id>/delete/", views.api_survey_delete_session, name="api_survey_delete_session"),
+    path(
+        "api/survey/sessions/<str:session_id>/",
+        views.api_survey_session_detail,
+        name="api_survey_session_detail",
+    ),
+    path(
+        "api/survey/sessions/<str:session_id>/manifest/",
+        views.api_survey_session_manifest,
+        name="api_survey_session_manifest",
+    ),
+    path(
+        "api/survey/sessions/<str:session_id>/images/<str:filename>/",
+        views.api_survey_session_image,
+        name="api_survey_session_image",
+    ),
+    path(
+        "api/survey/sessions/<str:session_id>/delete/",
+        views.api_survey_delete_session,
+        name="api_survey_delete_session",
+    ),
+    # Camera PTZ API endpoints
+    path("api/camera/capabilities/", views.api_camera_capabilities, name="api_camera_capabilities"),
+    path("api/camera/position/", views.api_camera_position, name="api_camera_position"),
 ]

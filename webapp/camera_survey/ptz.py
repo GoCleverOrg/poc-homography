@@ -167,11 +167,28 @@ class HikvisionPTZCamera(BasePTZCamera):
             return False
 
     def get_capabilities(self) -> CameraCapabilities:
-        """Get Hikvision camera capabilities.
+        """Get Hikvision camera capabilities from camera.
 
-        Currently returns default values for DS-2DF8425IX series.
-        Future enhancement: Query camera capabilities via ISAPI.
+        Queries the camera's ISAPI endpoint for actual capabilities.
+        Falls back to default values if query fails.
         """
+        try:
+            caps = self._ptz.get_capabilities()
+            if caps:
+                return CameraCapabilities(
+                    pan_min=caps["pan"]["min"] if caps["pan"]["min"] is not None else 0.0,
+                    pan_max=caps["pan"]["max"] if caps["pan"]["max"] is not None else 360.0,
+                    tilt_min=caps["tilt"]["min"] if caps["tilt"]["min"] is not None else -90.0,
+                    tilt_max=caps["tilt"]["max"] if caps["tilt"]["max"] is not None else 90.0,
+                    zoom_min=caps["zoom"]["min"] if caps["zoom"]["min"] is not None else 1.0,
+                    zoom_max=caps["zoom"]["max"] if caps["zoom"]["max"] is not None else 25.0,
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to get capabilities for {self.camera_name}, using defaults: {e}"
+            )
+
+        # Return default capabilities if query failed
         return self._capabilities
 
     def get_device_info(self) -> DeviceInfo | None:

@@ -11,6 +11,7 @@ import logging
 
 # Import survey functionality from camera_survey app
 from camera_survey.models import SurveyAxis, SurveyConfig
+from camera_survey.ptz import create_ptz_camera
 from camera_survey.services import get_survey_presets
 
 # Import the shared survey service instance to avoid duplicate state
@@ -330,3 +331,128 @@ def api_survey_delete_session(request: HttpRequest, session_id: str) -> JsonResp
             "message": "Session deleted successfully",
         }
     )
+
+
+# =============================================================================
+# Camera PTZ API Endpoints
+# =============================================================================
+
+
+@require_GET
+def api_camera_capabilities(request: HttpRequest) -> JsonResponse:
+    """Get camera PTZ capabilities (axis ranges) from the camera.
+
+    Query parameters:
+        tenant_id: Tenant ID
+        camera_id: Camera ID
+
+    Returns:
+        JSON with pan, tilt, zoom min/max ranges and minimum step size.
+    """
+    tenant_id = request.GET.get("tenant_id")
+    camera_id = request.GET.get("camera_id")
+
+    if not tenant_id:
+        return _error_response("tenant_id is required")
+    if not camera_id:
+        return _error_response("camera_id is required")
+
+    # Get camera configuration
+    camera = get_camera_by_id(camera_id)
+    if not camera:
+        return _error_response(f"Camera not found: {camera_id}", status_code=404)
+
+    camera_ip = camera.get("ip")
+    camera_name = camera.get("name", camera_id)
+
+    if not camera_ip:
+        return _error_response(f"Camera IP not configured: {camera_id}", status_code=500)
+
+    try:
+        # Create PTZ camera instance and get capabilities via abstraction layer
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name)
+        capabilities = ptz_camera.get_capabilities()
+
+        # Build response from CameraCapabilities model
+        capabilities_data = {
+            "pan": {
+                "min": capabilities.pan_min,
+                "max": capabilities.pan_max,
+            },
+            "tilt": {
+                "min": capabilities.tilt_min,
+                "max": capabilities.tilt_max,
+            },
+            "zoom": {
+                "min": capabilities.zoom_min,
+                "max": capabilities.zoom_max,
+            },
+            "min_step": 0.1,  # Cameras report position in 0.1° increments
+        }
+
+        return _success_response({"capabilities": capabilities_data})
+
+    except ValueError as e:
+        # Raised by create_ptz_camera if credentials not set
+        logger.exception(f"Credentials error for {camera_id}")
+        return _error_response(str(e), status_code=500)
+    except Exception as e:
+        logger.exception(f"Error getting capabilities for {camera_id}")
+        return _error_response("Failed to get camera capabilities", status_code=502)
+
+
+@require_GET
+def api_camera_position(request: HttpRequest) -> JsonResponse:
+    """Get current camera PTZ position.
+
+    Query parameters:
+        tenant_id: Tenant ID
+        camera_id: Camera ID
+
+    Returns:
+        JSON with current pan, tilt, zoom values.
+    """
+    tenant_id = request.GET.get("tenant_id")
+    camera_id = request.GET.get("camera_id")
+
+    if not tenant_id:
+        return _error_response("tenant_id is required")
+    if not camera_id:
+        return _error_response("camera_id is required")
+
+    # Get camera configuration
+    camera = get_camera_by_id(camera_id)
+    if not camera:
+        return _error_response(f"Camera not found: {camera_id}", status_code=404)
+
+    camera_ip = camera.get("ip")
+    camera_name = camera.get("name", camera_id)
+
+    if not camera_ip:
+        return _error_response(f"Camera IP not configured: {camera_id}", status_code=500)
+
+    try:
+        # Create PTZ camera instance using existing abstraction
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name)
+
+        # Get current position
+        position = ptz_camera.get_status()
+
+        if position is None:
+            return _error_response("Failed to get camera position", status_code=502)
+
+        return _success_response(
+            {
+                "pan": position.pan,
+                "tilt": position.tilt,
+                "zoom": position.zoom,
+            }
+        )
+
+    except ValueError as e:
+        # Raised by create_ptz_camera if credentials not set
+        logger.exception(f"Credentials error for {camera_id}")
+        return _error_response(str(e), status_code=500)
+    except Exception as e:
+        logger.exception(f"Error getting position for {camera_id}")
+        return _error_response(f"Failed to get camera position: {e}", status_code=502)
