@@ -237,6 +237,11 @@ class CameraStressTestService:
         initial_position: dict[str, float] | None = None
 
         try:
+            # Get device info from camera API
+            device_info = ptz.get_device_info()
+            with cls._lock:
+                session.device_info = device_info
+
             # Get initial position
             initial_status = ptz.get_status()
             if not initial_status:

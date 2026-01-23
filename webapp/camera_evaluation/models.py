@@ -10,6 +10,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from camera_survey.models import DeviceInfo
+
 
 class StressTestType(Enum):
     """Types of stress tests available."""
@@ -149,9 +151,15 @@ class StressTestConfig:
             tenant_id=data["tenant_id"],
             camera_id=data["camera_id"],
             test_type=StressTestType(data["test_type"]),
-            pan_config=AxisMovementConfig.from_dict(data["pan_config"]) if data.get("pan_config") else None,
-            tilt_config=AxisMovementConfig.from_dict(data["tilt_config"]) if data.get("tilt_config") else None,
-            zoom_config=AxisMovementConfig.from_dict(data["zoom_config"]) if data.get("zoom_config") else None,
+            pan_config=AxisMovementConfig.from_dict(data["pan_config"])
+            if data.get("pan_config")
+            else None,
+            tilt_config=AxisMovementConfig.from_dict(data["tilt_config"])
+            if data.get("tilt_config")
+            else None,
+            zoom_config=AxisMovementConfig.from_dict(data["zoom_config"])
+            if data.get("zoom_config")
+            else None,
             repetitions=data.get("repetitions", 1),
         )
 
@@ -203,6 +211,7 @@ class StressTestSession:
     tenant_id: str = ""
     camera_id: str = ""
     camera_name: str = ""
+    device_info: DeviceInfo | None = None  # Hardware info from camera API
     config: StressTestConfig | None = None
     result: StressTestResult | None = None
     user_evaluation: UserEvaluation = UserEvaluation.NOT_EVALUATED
@@ -219,6 +228,7 @@ class StressTestSession:
             "tenant_id": self.tenant_id,
             "camera_id": self.camera_id,
             "camera_name": self.camera_name,
+            "device_info": self.device_info.to_dict() if self.device_info else None,
             "config": self.config.to_dict() if self.config else None,
             "result": self.result.to_dict() if self.result else None,
             "user_evaluation": self.user_evaluation.value,
@@ -231,12 +241,19 @@ class StressTestSession:
         return cls(
             id=data["id"],
             created_at=datetime.fromisoformat(data["created_at"]),
-            started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
-            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
+            started_at=datetime.fromisoformat(data["started_at"])
+            if data.get("started_at")
+            else None,
+            completed_at=datetime.fromisoformat(data["completed_at"])
+            if data.get("completed_at")
+            else None,
             status=StressTestStatus(data["status"]),
             tenant_id=data.get("tenant_id", ""),
             camera_id=data.get("camera_id", ""),
             camera_name=data.get("camera_name", ""),
+            device_info=DeviceInfo.from_dict(data.get("device_info"))
+            if data.get("device_info")
+            else None,
             config=StressTestConfig.from_dict(data["config"]) if data.get("config") else None,
             result=StressTestResult.from_dict(data["result"]) if data.get("result") else None,
             user_evaluation=UserEvaluation(data.get("user_evaluation", "not_evaluated")),

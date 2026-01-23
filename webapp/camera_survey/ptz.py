@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-from .models import CameraCapabilities, PTZPosition
+from .models import CameraCapabilities, DeviceInfo, PTZPosition
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,14 @@ class BasePTZCamera(ABC):
 
         Returns:
             Final PTZPosition after stabilization, or None if failed.
+        """
+
+    @abstractmethod
+    def get_device_info(self) -> DeviceInfo | None:
+        """Get device hardware information (model, serial, MAC, firmware).
+
+        Returns:
+            DeviceInfo with hardware details, or None if failed.
         """
 
 
@@ -166,6 +174,27 @@ class HikvisionPTZCamera(BasePTZCamera):
         """
         return self._capabilities
 
+    def get_device_info(self) -> DeviceInfo | None:
+        """Get device hardware information from Hikvision camera.
+
+        Queries /ISAPI/System/deviceInfo endpoint.
+        """
+        try:
+            info = self._ptz.get_device_info()
+            if info:
+                return DeviceInfo(
+                    model=info.get("model"),
+                    serial_number=info.get("serial_number"),
+                    mac_address=info.get("mac_address"),
+                    firmware_version=info.get("firmware_version"),
+                    device_name=info.get("device_name"),
+                    device_type=info.get("device_type"),
+                )
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get device info for {self.camera_name}: {e}")
+            return None
+
     def wait_for_stabilization(self, max_wait: float = 5.0) -> PTZPosition | None:
         """Wait for Hikvision camera to stabilize.
 
@@ -213,7 +242,9 @@ class HikvisionPTZCamera(BasePTZCamera):
         return self.get_status()
 
 
-def create_ptz_camera(camera_ip: str, camera_name: str, camera_model: str | None = None) -> BasePTZCamera:
+def create_ptz_camera(
+    camera_ip: str, camera_name: str, camera_model: str | None = None
+) -> BasePTZCamera:
     """Factory function to create appropriate PTZ camera instance.
 
     Args:

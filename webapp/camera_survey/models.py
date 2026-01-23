@@ -84,9 +84,15 @@ class CameraCapabilities:
                 return False, f"End value {end} outside valid pan range [{min_val}, {max_val}]"
         else:
             if not (min_val <= start <= max_val):
-                return False, f"Start value {start} outside valid {axis.value} range [{min_val}, {max_val}]"
+                return (
+                    False,
+                    f"Start value {start} outside valid {axis.value} range [{min_val}, {max_val}]",
+                )
             if not (min_val <= end <= max_val):
-                return False, f"End value {end} outside valid {axis.value} range [{min_val}, {max_val}]"
+                return (
+                    False,
+                    f"End value {end} outside valid {axis.value} range [{min_val}, {max_val}]",
+                )
 
         return True, None
 
@@ -217,6 +223,47 @@ class TenantInfo:
 
 
 @dataclass
+class DeviceInfo:
+    """Device hardware information from camera API.
+
+    Contains identifying information retrieved from the camera's
+    system API (e.g., /ISAPI/System/deviceInfo for Hikvision).
+    """
+
+    model: str | None = None
+    serial_number: str | None = None
+    mac_address: str | None = None
+    firmware_version: str | None = None
+    device_name: str | None = None
+    device_type: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Convert to dictionary."""
+        return {
+            "model": self.model,
+            "serial_number": self.serial_number,
+            "mac_address": self.mac_address,
+            "firmware_version": self.firmware_version,
+            "device_name": self.device_name,
+            "device_type": self.device_type,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> DeviceInfo | None:
+        """Create from dictionary."""
+        if data is None:
+            return None
+        return cls(
+            model=data.get("model"),
+            serial_number=data.get("serial_number"),
+            mac_address=data.get("mac_address"),
+            firmware_version=data.get("firmware_version"),
+            device_name=data.get("device_name"),
+            device_type=data.get("device_type"),
+        )
+
+
+@dataclass
 class CameraInfo:
     """Camera information for manifest."""
 
@@ -255,6 +302,7 @@ class SurveySession:
     # Context info
     tenant: TenantInfo | None = None
     camera: CameraInfo | None = None
+    device_info: DeviceInfo | None = None  # Hardware info from camera API
     capture_metadata: CaptureMetadata | None = None
 
     # Survey configuration
@@ -287,6 +335,9 @@ class SurveySession:
 
         if self.camera:
             result["camera"] = self.camera.to_dict()
+
+        if self.device_info:
+            result["device_info"] = self.device_info.to_dict()
 
         if self.capture_metadata:
             result["capture_metadata"] = self.capture_metadata.to_dict()

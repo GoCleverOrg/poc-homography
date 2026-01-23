@@ -103,6 +103,55 @@ class HikvisionPTZ:
             print(f"Response: {response}")
             return None
 
+    def get_device_info(self) -> dict[str, str | None] | None:
+        """Get device information (model, serial, MAC, firmware).
+
+        Returns:
+            Dictionary with device info, or None if failed:
+            {
+                "model": "DS-2DF8425IX-AEL",
+                "serial_number": "DS-2DF8425IX-AEL20190101AAWRG12345678",
+                "mac_address": "44:19:B6:XX:XX:XX",
+                "firmware_version": "V5.7.2",
+                "device_name": "Camera 1",
+                "device_type": "IPDome",
+                "raw_xml": "<DeviceInfo>...</DeviceInfo>"
+            }
+        """
+        endpoint = "/ISAPI/System/deviceInfo"
+        status_code, response = self._make_request("GET", endpoint)
+
+        if status_code == 200:
+            try:
+                root = ET.fromstring(response)
+                # Handle namespace - Hikvision uses xmlns
+                ns = {"h": "http://www.hikvision.com/ver20/XMLSchema"}
+
+                def get_text(xpath: str) -> str | None:
+                    """Get text from element, trying with and without namespace."""
+                    elem = root.find(f".//h:{xpath}", ns)
+                    if elem is None:
+                        elem = root.find(f".//{xpath}")
+                    return elem.text if elem is not None else None
+
+                return {
+                    "model": get_text("model"),
+                    "serial_number": get_text("serialNumber"),
+                    "mac_address": get_text("macAddress"),
+                    "firmware_version": get_text("firmwareVersion"),
+                    "device_name": get_text("deviceName"),
+                    "device_type": get_text("deviceType"),
+                    "raw_xml": response,
+                }
+            except Exception as e:
+                print(f"Error parsing device info: {e}")
+                print(f"Response: {response}")
+                return None
+        else:
+            print(f"Failed to get device info. Status code: {status_code}")
+            print(f"Response: {response}")
+            return None
+
     def discover_endpoints(self) -> dict[str, tuple[int, str]]:
         """Discover available PTZ endpoints"""
         endpoints_to_test = [
