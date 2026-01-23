@@ -10,6 +10,7 @@ import logging
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from poc_homography.camera_config import (
@@ -107,6 +108,7 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
         return _error_response("Failed to load cameras. Check server logs for details.", 500)
 
 
+@csrf_exempt
 @require_POST
 def api_start_survey(request: HttpRequest) -> JsonResponse:
     """Start a new survey.
@@ -217,6 +219,7 @@ def api_survey_status(request: HttpRequest, session_id: str) -> JsonResponse:
     return _success_response(progress.to_dict())
 
 
+@csrf_exempt
 @require_POST
 def api_abort_survey(request: HttpRequest, session_id: str) -> JsonResponse:
     """Abort a running survey.
@@ -348,6 +351,7 @@ def api_presets(request: HttpRequest) -> JsonResponse:
     )
 
 
+@csrf_exempt
 @require_POST
 def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     """Delete a survey session.
