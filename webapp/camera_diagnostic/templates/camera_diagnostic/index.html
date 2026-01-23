@@ -408,6 +408,127 @@
             background: #667eea;
             transition: width 0.3s ease;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: #252525;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            color: #888;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #ccc;
+            background: #2a2a2a;
+        }
+
+        .tab.active {
+            background: #333;
+            color: #fff;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Session history */
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .session-item {
+            background: #252525;
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .session-item:hover {
+            background: #2a2a2a;
+        }
+
+        .session-info {
+            flex: 1;
+        }
+
+        .session-info h3 {
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .session-info p {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .session-stats {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .session-stat {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .session-stat.pass {
+            background: #1b4332;
+            color: #4caf50;
+        }
+
+        .session-stat.fail {
+            background: #4a1c1c;
+            color: #f44336;
+        }
+
+        .btn-danger {
+            padding: 8px 16px;
+            font-size: 13px;
+            background: #4a1c1c;
+            color: #f44336;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-danger:hover {
+            background: #5a2222;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state p {
+            margin-bottom: 16px;
+        }
     </style>
 </head>
 <body>
@@ -427,23 +548,31 @@
             <p style="margin-top: 8px; font-size: 12px;">Then restart the Django server.</p>
         </div>
 
-        <!-- Tenant and Camera selector -->
-        <div class="selector-panel">
-            <label for="tenant-select">Tenant:</label>
-            <select id="tenant-select">
-                <option value="">-- Select a tenant --</option>
-            </select>
-
-            <label for="camera-select">Camera:</label>
-            <select id="camera-select" disabled>
-                <option value="">-- Select tenant first --</option>
-            </select>
-
-            <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="run-tests">Run Tests</button>
+            <button class="tab" data-tab="history">Session History</button>
         </div>
 
-        <!-- Summary Report -->
-        <div id="summary-report" class="summary-report">
+        <!-- Run Tests Tab -->
+        <div id="run-tests-tab" class="tab-content active">
+            <!-- Tenant and Camera selector -->
+            <div class="selector-panel">
+                <label for="tenant-select">Tenant:</label>
+                <select id="tenant-select">
+                    <option value="">-- Select a tenant --</option>
+                </select>
+
+                <label for="camera-select">Camera:</label>
+                <select id="camera-select" disabled>
+                    <option value="">-- Select tenant first --</option>
+                </select>
+
+                <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+            </div>
+
+            <!-- Summary Report -->
+            <div id="summary-report" class="summary-report">
             <div class="summary-header">
                 <h2>Test Results Summary</h2>
                 <div class="summary-stats">
@@ -469,17 +598,40 @@
             </div>
         </div>
 
-        <!-- Video preview for selected camera -->
-        <div id="video-preview" class="video-preview-container">
-            <div class="video-preview-header">
-                <h3 id="video-camera-name">Camera Preview</h3>
-                <button id="snapshot-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;" disabled>
-                    Capture Snapshot
+            <!-- Video preview for selected camera -->
+            <div id="video-preview" class="video-preview-container">
+                <div class="video-preview-header">
+                    <h3 id="video-camera-name">Camera Preview</h3>
+                    <button id="snapshot-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;" disabled>
+                        Capture Snapshot
+                    </button>
+                </div>
+                <div class="video-container">
+                    <span class="video-placeholder" id="video-placeholder">Select a camera to see preview</span>
+                    <img id="video-stream" style="display: none;" alt="RTSP Stream">
+                </div>
+            </div>
+        </div>
+
+        <!-- Session History Tab -->
+        <div id="history-tab" class="tab-content">
+            <div class="selector-panel" style="justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <label for="history-tenant-select">Filter by Tenant:</label>
+                    <select id="history-tenant-select">
+                        <option value="">All tenants</option>
+                    </select>
+                </div>
+                <button id="refresh-history-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;">
+                    Refresh
                 </button>
             </div>
-            <div class="video-container">
-                <span class="video-placeholder" id="video-placeholder">Select a camera to see preview</span>
-                <img id="video-stream" style="display: none;" alt="RTSP Stream">
+
+            <div id="session-list" class="session-list">
+                <div class="empty-state">
+                    <p>No diagnostic sessions found.</p>
+                    <p style="font-size: 13px;">Run tests to create a session.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -508,6 +660,23 @@
         const failCount = document.getElementById('fail-count');
         const pendingCount = document.getElementById('pending-count');
         const progressFill = document.getElementById('progress-fill');
+        const historyTenantSelect = document.getElementById('history-tenant-select');
+        const sessionList = document.getElementById('session-list');
+        const refreshHistoryBtn = document.getElementById('refresh-history-btn');
+
+        // Tab handling
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+
+                if (tab.dataset.tab === 'history') {
+                    loadSessionHistory();
+                }
+            });
+        });
 
         // Load tenants on page load
         async function loadTenants() {
@@ -757,7 +926,7 @@
             renderCameraResults();
         }
 
-        // Run all tests on all cameras
+        // Run all tests on all cameras (using new API that saves session)
         async function runAllTests() {
             if (isRunning) return;
 
@@ -771,14 +940,79 @@
             updateSummaryStats();
             renderCameraResults();
 
-            // Run tests for each camera sequentially
-            for (const camera of tenantCameras) {
-                await runTestsForCamera(camera.id);
+            try {
+                // Use the new API endpoint that runs all tests and saves the session
+                const resp = await fetch('{% url "camera_diagnostic:api_run_diagnostic" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tenant_id: selectedTenant,
+                        camera_ids: tenantCameras.map(c => c.id),
+                    }),
+                });
+
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // Update test results from API response
+                    const cameraResultsData = result.data.camera_results || [];
+                    cameraResultsData.forEach(camResult => {
+                        if (testResults[camResult.camera_id]) {
+                            const r = testResults[camResult.camera_id];
+
+                            // Update RTSP
+                            if (camResult.rtsp_test) {
+                                r.rtsp = camResult.rtsp_test.status === 'pass' ? 'pass' : 'fail';
+                                r.rtspLogs = formatTestLogs(camResult.rtsp_test);
+                            }
+
+                            // Update WebUI
+                            if (camResult.webui_test) {
+                                r.webui = camResult.webui_test.status === 'pass' ? 'pass' : 'fail';
+                                r.webuiLogs = formatTestLogs(camResult.webui_test);
+                            }
+
+                            // Update PTZ
+                            if (camResult.ptz_test) {
+                                r.ptz = camResult.ptz_test.status === 'pass' ? 'pass' : 'fail';
+                                r.ptzLogs = formatTestLogs(camResult.ptz_test);
+                            }
+                        }
+                    });
+
+                    updateSummaryStats();
+                    renderCameraResults();
+                } else {
+                    alert('Test run failed: ' + (result.message || 'Unknown error'));
+                    checkCredentialsError(result);
+                }
+            } catch (e) {
+                alert('Request failed: ' + e.message);
             }
 
             isRunning = false;
             runAllBtn.disabled = false;
             runAllBtn.textContent = `Run All Tests on ${tenantCameras.length} Camera(s)`;
+        }
+
+        function formatTestLogs(testResult) {
+            let logs = [];
+            if (testResult.response_time_ms) {
+                logs.push(`Response time: ${testResult.response_time_ms}ms`);
+            }
+            if (testResult.error_message) {
+                logs.push(`Error: ${testResult.error_message}`);
+            }
+            if (testResult.details) {
+                Object.entries(testResult.details).forEach(([key, value]) => {
+                    if (typeof value === 'object') {
+                        logs.push(`${key}: ${JSON.stringify(value)}`);
+                    } else {
+                        logs.push(`${key}: ${value}`);
+                    }
+                });
+            }
+            return logs.join('\n') || 'No details available';
         }
 
         // Check for credentials error
@@ -845,6 +1079,122 @@
             }
         }
 
+        // Session history functions
+        async function loadSessionHistory() {
+            const tenantFilter = historyTenantSelect.value;
+            let url = '{% url "camera_diagnostic:api_list_sessions" %}';
+            if (tenantFilter) {
+                url += `?tenant_id=${encodeURIComponent(tenantFilter)}`;
+            }
+
+            try {
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    renderSessionList(result.data.sessions);
+                } else {
+                    sessionList.innerHTML = '<div class="empty-state"><p>Failed to load sessions</p></div>';
+                }
+            } catch (e) {
+                sessionList.innerHTML = '<div class="empty-state"><p>Failed to load sessions: ' + e.message + '</p></div>';
+            }
+        }
+
+        function renderSessionList(sessions) {
+            if (!sessions || sessions.length === 0) {
+                sessionList.innerHTML = `
+                    <div class="empty-state">
+                        <p>No diagnostic sessions found.</p>
+                        <p style="font-size: 13px;">Run tests to create a session.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            sessionList.innerHTML = sessions.map(session => {
+                const summary = session.summary || {};
+                const date = new Date(session.created_at).toLocaleString();
+                return `
+                    <div class="session-item" data-session-id="${session.id}">
+                        <div class="session-info" onclick="viewSession('${session.id}')">
+                            <h3>${session.tenant_name || session.tenant_id}</h3>
+                            <p>${date} &bull; ${summary.total_cameras || 0} cameras</p>
+                        </div>
+                        <div class="session-stats">
+                            <span class="session-stat pass">${summary.tests_passed || 0} passed</span>
+                            <span class="session-stat fail">${summary.tests_failed || 0} failed</span>
+                            <button class="btn-danger" onclick="deleteSession('${session.id}', event)">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function viewSession(sessionId) {
+            try {
+                const url = '{% url "camera_diagnostic:api_get_session" "SESSION_PLACEHOLDER" %}'.replace('SESSION_PLACEHOLDER', sessionId);
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // Switch to run tests tab and display results
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    document.querySelector('.tab[data-tab="run-tests"]').classList.add('active');
+                    document.getElementById('run-tests-tab').classList.add('active');
+
+                    // Populate results from session
+                    const sessionData = result.data;
+                    const cameraResultsData = sessionData.camera_results || [];
+
+                    testResults = {};
+                    cameraResultsData.forEach(camResult => {
+                        testResults[camResult.camera_id] = {
+                            name: camResult.camera_name,
+                            ip: camResult.camera_ip,
+                            rtsp: camResult.rtsp_test?.status === 'pass' ? 'pass' : (camResult.rtsp_test ? 'fail' : 'pending'),
+                            webui: camResult.webui_test?.status === 'pass' ? 'pass' : (camResult.webui_test ? 'fail' : 'pending'),
+                            ptz: camResult.ptz_test?.status === 'pass' ? 'pass' : (camResult.ptz_test ? 'fail' : 'pending'),
+                            rtspLogs: camResult.rtsp_test ? formatTestLogs(camResult.rtsp_test) : '',
+                            webuiLogs: camResult.webui_test ? formatTestLogs(camResult.webui_test) : '',
+                            ptzLogs: camResult.ptz_test ? formatTestLogs(camResult.ptz_test) : '',
+                        };
+                    });
+
+                    summaryReport.classList.add('visible');
+                    updateSummaryStats();
+                    renderCameraResults();
+                } else {
+                    alert('Failed to load session: ' + (result.message || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to load session: ' + e.message);
+            }
+        }
+
+        async function deleteSession(sessionId, event) {
+            event.stopPropagation();
+
+            if (!confirm('Are you sure you want to delete this session?')) {
+                return;
+            }
+
+            try {
+                const url = '{% url "camera_diagnostic:api_delete_session" "SESSION_PLACEHOLDER" %}'.replace('SESSION_PLACEHOLDER', sessionId);
+                const resp = await fetch(url, { method: 'POST' });
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    loadSessionHistory();
+                } else {
+                    alert('Failed to delete session: ' + (result.message || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to delete session: ' + e.message);
+            }
+        }
+
         // Event listeners
         tenantSelect.addEventListener('change', async (e) => {
             selectedTenant = e.target.value || null;
@@ -873,9 +1223,18 @@
 
         runAllBtn.addEventListener('click', runAllTests);
         snapshotBtn.addEventListener('click', captureSnapshot);
+        refreshHistoryBtn.addEventListener('click', loadSessionHistory);
+        historyTenantSelect.addEventListener('change', loadSessionHistory);
 
         // Initialize
-        loadTenants();
+        loadTenants().then(() => {
+            // Populate history tenant dropdown too
+            const options = tenantSelect.innerHTML;
+            historyTenantSelect.innerHTML = '<option value="">All tenants</option>' +
+                Array.from(tenantSelect.options).slice(1).map(o =>
+                    `<option value="${o.value}">${o.textContent}</option>`
+                ).join('');
+        });
     </script>
 </body>
 </html>
