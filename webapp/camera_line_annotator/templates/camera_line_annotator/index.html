@@ -401,6 +401,121 @@
         #mode-indicator.active {
             display: block;
         }
+
+        /* Auto-detect section */
+        #detect-section {
+            padding: 16px;
+            background: #e1f5fe;
+        }
+
+        #detect-btn {
+            width: 100%;
+            padding: 12px;
+            background: #0288d1;
+            color: #fff;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        #detect-btn:hover {
+            background: #0277bd;
+        }
+
+        #detect-btn:disabled {
+            background: #9e9e9e;
+            cursor: not-allowed;
+        }
+
+        #detect-status {
+            font-size: 12px;
+            color: #01579b;
+            margin-bottom: 8px;
+        }
+
+        /* Detection config */
+        .detect-config {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .detect-config label {
+            font-size: 11px;
+            color: #666;
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .detect-config input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        /* Detected lines list */
+        #detected-lines-list {
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+
+        .detected-line-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            background: #fff;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            font-size: 12px;
+            border-left: 3px solid #ff9800;
+        }
+
+        .detected-line-item .info {
+            color: #666;
+        }
+
+        .detected-line-item .confidence {
+            font-weight: bold;
+            color: #ff9800;
+        }
+
+        .detected-line-item .accept-btn {
+            background: #4caf50;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .detected-line-item .accept-btn:hover {
+            background: #43a047;
+        }
+
+        #clear-detected-btn {
+            width: 100%;
+            padding: 8px;
+            background: #f44336;
+            color: #fff;
+            border: none;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        #clear-detected-btn:hover {
+            background: #d32f2f;
+        }
     </style>
 </head>
 <body>
@@ -460,6 +575,24 @@
             </div>
         </div>
 
+        <div id="detect-section">
+            <h2 style="font-size: 14px; color: #333; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Auto-Detect Lines</h2>
+            <div class="detect-config">
+                <div>
+                    <label for="min-length-input">Min Length (px)</label>
+                    <input type="number" id="min-length-input" value="100" min="10" max="1000">
+                </div>
+                <div>
+                    <label for="min-confidence-input">Min Confidence</label>
+                    <input type="number" id="min-confidence-input" value="0.3" min="0" max="1" step="0.1">
+                </div>
+            </div>
+            <button id="detect-btn">Detect Lines in Image</button>
+            <div id="detect-status"></div>
+            <div id="detected-lines-list"></div>
+            <button id="clear-detected-btn" style="display: none;">Clear Detected Lines</button>
+        </div>
+
         <div id="export-section">
             <button id="export-btn" disabled>Export to YAML</button>
             <div id="export-status"></div>
@@ -485,6 +618,8 @@
         let selectedLineIndex = -1;
         let filteredLines = [];
         let currentFilename = '{{ image_filename }}';
+        let detectedLines = [];  // Auto-detected lines from backend
+        let acceptingDetectedLine = null;  // Detected line being accepted
 
         // Elements
         const img = document.getElementById('frame-image');
@@ -507,6 +642,12 @@
         const zoomInput = document.getElementById('zoom-input');
         const exportBtn = document.getElementById('export-btn');
         const exportStatus = document.getElementById('export-status');
+        const detectBtn = document.getElementById('detect-btn');
+        const detectStatus = document.getElementById('detect-status');
+        const detectedLinesList = document.getElementById('detected-lines-list');
+        const clearDetectedBtn = document.getElementById('clear-detected-btn');
+        const minLengthInput = document.getElementById('min-length-input');
+        const minConfidenceInput = document.getElementById('min-confidence-input');
 
         // Load line IDs from registry
         async function loadLineIds() {
@@ -527,6 +668,11 @@
         function renderLines() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // Draw detected lines (dashed orange, behind annotations)
+            detectedLines.forEach((line, i) => {
+                drawDetectedLine(line.start_x, line.start_y, line.end_x, line.end_y, line.confidence, i);
+            });
+
             // Draw completed annotations
             annotations.forEach((ann, i) => {
                 drawLine(ann.start_pixel_x, ann.start_pixel_y, ann.end_pixel_x, ann.end_pixel_y, '#2196f3', ann.line_id);
@@ -536,6 +682,38 @@
             if (pendingLine && pendingLine.endX !== undefined) {
                 drawLine(pendingLine.startX, pendingLine.startY, pendingLine.endX, pendingLine.endY, '#ff9800', null, true);
             }
+        }
+
+        // Draw a detected line (dashed, orange)
+        function drawDetectedLine(x1, y1, x2, y2, confidence, index) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = `rgba(255, 152, 0, ${0.5 + confidence * 0.5})`;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw small endpoint circles
+            ctx.beginPath();
+            ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff9800';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff9800';
+            ctx.fill();
+
+            // Draw index label at midpoint
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            ctx.font = 'bold 10px system-ui';
+            ctx.fillStyle = 'rgba(255, 152, 0, 0.9)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`#${index + 1}`, midX, midY - 10);
         }
 
         // Draw a line with endpoints
@@ -660,6 +838,14 @@
             const data = await resp.json();
             if (data.success) {
                 annotations.push(data.annotation);
+            }
+
+            // If accepting a detected line, remove it from the detected list
+            if (acceptingDetectedLine !== null) {
+                detectedLines.splice(acceptingDetectedLine, 1);
+                acceptingDetectedLine = null;
+                renderDetectedLinesList();
+                clearDetectedBtn.style.display = detectedLines.length > 0 ? 'block' : 'none';
             }
 
             pendingLine = null;
@@ -952,6 +1138,13 @@
                     lineSection.classList.remove('active');
                     modeIndicator.classList.remove('active');
 
+                    // Clear detected lines
+                    detectedLines = [];
+                    acceptingDetectedLine = null;
+                    renderDetectedLinesList();
+                    clearDetectedBtn.style.display = 'none';
+                    detectStatus.textContent = '';
+
                     // Load annotations from response
                     annotations = data.annotations || [];
                     currentFilename = data.filename;
@@ -988,6 +1181,114 @@
         imageSelector.addEventListener('change', (e) => {
             switchImage(e.target.value);
         });
+
+        // Auto-detect lines via API
+        async function detectLines() {
+            detectBtn.disabled = true;
+            detectStatus.textContent = 'Detecting lines...';
+            detectStatus.style.color = '#01579b';
+
+            try {
+                const resp = await fetch('{% url "camera_line_annotator:api_detect_lines" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        min_line_length: parseInt(minLengthInput.value) || 100,
+                        min_confidence: parseFloat(minConfidenceInput.value) || 0.3
+                    })
+                });
+
+                const data = await resp.json();
+                if (data.success) {
+                    detectedLines = data.detected_lines || [];
+                    detectStatus.textContent = `Detected ${detectedLines.length} lines`;
+                    detectStatus.style.color = '#2e7d32';
+                    renderDetectedLinesList();
+                    renderLines();
+                    clearDetectedBtn.style.display = detectedLines.length > 0 ? 'block' : 'none';
+                } else {
+                    detectStatus.textContent = `Error: ${data.error}`;
+                    detectStatus.style.color = '#c62828';
+                }
+            } catch (e) {
+                detectStatus.textContent = `Error: ${e.message}`;
+                detectStatus.style.color = '#c62828';
+            }
+
+            detectBtn.disabled = false;
+        }
+
+        // Render detected lines list
+        function renderDetectedLinesList() {
+            detectedLinesList.innerHTML = '';
+
+            if (detectedLines.length === 0) {
+                return;
+            }
+
+            detectedLines.forEach((line, i) => {
+                const div = document.createElement('div');
+                div.className = 'detected-line-item';
+                div.innerHTML = `
+                    <div class="info">
+                        <strong>#${i + 1}</strong>
+                        <span class="confidence">${(line.confidence * 100).toFixed(0)}%</span>
+                        <span style="color: #999; font-size: 10px;">${line.length.toFixed(0)}px, ${line.angle_deg.toFixed(1)}°</span>
+                    </div>
+                    <button class="accept-btn" data-index="${i}">Accept</button>
+                `;
+                detectedLinesList.appendChild(div);
+            });
+
+            // Add accept handlers
+            detectedLinesList.querySelectorAll('.accept-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    acceptDetectedLine(idx);
+                });
+            });
+        }
+
+        // Accept a detected line (show line ID selection)
+        function acceptDetectedLine(index) {
+            const line = detectedLines[index];
+            if (!line) return;
+
+            // Set as pending line (as if user clicked the endpoints)
+            pendingLine = {
+                startX: line.start_x,
+                startY: line.start_y,
+                endX: line.end_x,
+                endY: line.end_y
+            };
+            acceptingDetectedLine = index;
+
+            // Show line ID selection
+            modeIndicator.textContent = 'Select a line ID for detected line';
+            modeIndicator.classList.add('active');
+            lineSection.classList.add('active');
+            lineSearch.value = '';
+            filterLines('');
+            lineSearch.focus();
+
+            renderLines();
+        }
+
+        // Clear detected lines
+        function clearDetectedLines() {
+            detectedLines = [];
+            acceptingDetectedLine = null;
+            renderDetectedLinesList();
+            renderLines();
+            clearDetectedBtn.style.display = 'none';
+            detectStatus.textContent = '';
+        }
+
+        // Event: Detect button click
+        detectBtn.addEventListener('click', detectLines);
+
+        // Event: Clear detected lines button
+        clearDetectedBtn.addEventListener('click', clearDetectedLines);
 
         // Initialize
         img.onload = function() {

@@ -13,6 +13,8 @@ The calibration process:
 5. Show recommended parameter updates
 """
 
+from __future__ import annotations
+
 import json
 import math
 from dataclasses import dataclass

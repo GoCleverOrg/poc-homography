@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lens Distortion Calibration Tool</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #333;
+        }
+
+        .back-link {
+            background: #607d8b;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            background: #546e7a;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1000px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: #263238;
+            color: white;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card-body {
+            padding: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            border-color: #2196f3;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .form-row-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #2196f3;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1976d2;
+        }
+
+        .btn-primary:disabled {
+            background: #9e9e9e;
+            cursor: not-allowed;
+        }
+
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #43a047;
+        }
+
+        .btn-secondary {
+            background: #607d8b;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #546e7a;
+        }
+
+        .btn-block {
+            width: 100%;
+        }
+
+        /* Results section */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .result-item {
+            text-align: center;
+            padding: 12px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .result-item .label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .result-item .value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            font-family: 'Monaco', monospace;
+        }
+
+        .result-item.highlight .value {
+            color: #2196f3;
+        }
+
+        /* Quality badge */
+        .quality-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .quality-good {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .quality-acceptable {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .quality-poor {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        /* Lines list */
+        .lines-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+
+        .lines-list table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .lines-list th, .lines-list td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .lines-list th {
+            background: #f5f5f5;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        .lines-list td.mono {
+            font-family: 'Monaco', monospace;
+        }
+
+        /* Status messages */
+        .status {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .status.warning {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        /* Progress indicator */
+        .progress-bar {
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            background: #2196f3;
+            transition: width 0.3s;
+        }
+
+        /* Coefficients display */
+        .coefficients-display {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .coef-item {
+            text-align: center;
+            padding: 12px 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .coef-item .name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .coef-item .value {
+            font-size: 12px;
+            font-family: 'Monaco', monospace;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .coef-item.radial {
+            background: #e3f2fd;
+        }
+
+        .coef-item.tangential {
+            background: #f3e5f5;
+        }
+
+        /* Actions */
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* Fullwidth card */
+        .card-fullwidth {
+            grid-column: 1 / -1;
+        }
+
+        /* Line input textarea */
+        #lines-input {
+            min-height: 150px;
+            font-family: 'Monaco', monospace;
+            font-size: 12px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 16px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab:hover {
+            color: #333;
+        }
+
+        .tab.active {
+            color: #2196f3;
+            border-bottom-color: #2196f3;
+            font-weight: 500;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Lens Distortion Calibration Tool</h1>
+            <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+        </header>
+
+        <div class="grid">
+            <!-- Camera Intrinsics -->
+            <div class="card">
+                <div class="card-header">Camera Intrinsics</div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="fx">Focal Length X (fx)</label>
+                            <input type="number" id="fx" value="1000" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="fy">Focal Length Y (fy)</label>
+                            <input type="number" id="fy" value="1000" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="cx">Principal Point X (cx)</label>
+                            <input type="number" id="cx" value="960" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="cy">Principal Point Y (cy)</label>
+                            <input type="number" id="cy" value="540" step="0.1">
+                        </div>
+                    </div>
+                    <div class="form-row-2" style="margin-top: 12px;">
+                        <div class="form-group">
+                            <label for="camera-id">Camera ID</label>
+                            <input type="text" id="camera-id" value="my_camera" placeholder="Camera identifier">
+                        </div>
+                        <div class="form-group">
+                            <label for="zoom">Zoom Factor</label>
+                            <input type="number" id="zoom" value="1" step="0.1" min="0.1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Calibration Config -->
+            <div class="card">
+                <div class="card-header">Calibration Configuration</div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="min-length">Min Line Length (px)</label>
+                            <input type="number" id="min-length" value="100" min="10">
+                        </div>
+                        <div class="form-group">
+                            <label for="min-confidence">Min Confidence</label>
+                            <input type="number" id="min-confidence" value="0.3" step="0.1" min="0" max="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="max-lines">Max Lines/Image</label>
+                            <input type="number" id="max-lines" value="10" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="max-iterations">Max Iterations</label>
+                            <input type="number" id="max-iterations" value="1000" min="100">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label>
+                            <input type="checkbox" id="radial-only">
+                            Radial distortion only (k1, k2, k3) - ignore tangential (p1, p2)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Line Input -->
+            <div class="card card-fullwidth">
+                <div class="card-header">Input Lines</div>
+                <div class="card-body">
+                    <div class="tabs">
+                        <button class="tab active" data-tab="manual">Manual Input</button>
+                        <button class="tab" data-tab="survey">From Survey Session</button>
+                    </div>
+
+                    <div id="tab-manual" class="tab-content active">
+                        <div class="form-group">
+                            <label for="lines-input">Lines (JSON format - one line per array item)</label>
+                            <textarea id="lines-input" placeholder='[
+  {"start_x": 100, "start_y": 200, "end_x": 500, "end_y": 210, "confidence": 0.9},
+  {"start_x": 100, "start_y": 400, "end_x": 500, "end_y": 405, "confidence": 0.85}
+]'></textarea>
+                        </div>
+                        <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                            Tip: Use the Camera Line Annotator tool to detect and export lines, then paste here.
+                        </p>
+                    </div>
+
+                    <div id="tab-survey" class="tab-content">
+                        <div class="form-group">
+                            <label for="survey-select">Select Survey Session</label>
+                            <select id="survey-select">
+                                <option value="">-- Select a survey session --</option>
+                            </select>
+                        </div>
+                        <div id="survey-info" style="display: none; margin-top: 12px;">
+                            <div class="status info">
+                                <strong>Session:</strong> <span id="session-id"></span><br>
+                                <strong>Images:</strong> <span id="image-count"></span><br>
+                                <strong>Path:</strong> <span id="session-path"></span>
+                            </div>
+                        </div>
+                        <button id="load-survey-btn" class="btn btn-secondary" style="margin-top: 12px;" disabled>
+                            Load & Detect Lines from Survey
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Run Calibration -->
+            <div class="card card-fullwidth">
+                <div class="card-header">Calibration</div>
+                <div class="card-body">
+                    <div id="calibration-status" class="status info" style="display: none;"></div>
+                    <div class="progress-bar" id="progress-bar" style="display: none;">
+                        <div class="fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="actions">
+                        <button id="calibrate-btn" class="btn btn-primary">
+                            Run Calibration
+                        </button>
+                        <button id="validate-btn" class="btn btn-secondary" disabled>
+                            Validate Results
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="card card-fullwidth" id="results-card" style="display: none;">
+                <div class="card-header">Calibration Results</div>
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div>
+                            <strong>Quality:</strong>
+                            <span id="quality-badge" class="quality-badge"></span>
+                        </div>
+                        <div style="font-size: 14px; color: #666;">
+                            <strong>RMSE:</strong> <span id="rmse-value">0.00</span> pixels
+                        </div>
+                    </div>
+
+                    <h4 style="font-size: 14px; color: #333; margin-bottom: 12px;">Distortion Coefficients</h4>
+                    <div class="coefficients-display">
+                        <div class="coef-item radial">
+                            <div class="name">k1</div>
+                            <div class="value" id="coef-k1">0.000000</div>
+                        </div>
+                        <div class="coef-item radial">
+                            <div class="name">k2</div>
+                            <div class="value" id="coef-k2">0.000000</div>
+                        </div>
+                        <div class="coef-item radial">
+                            <div class="name">k3</div>
+                            <div class="value" id="coef-k3">0.000000</div>
+                        </div>
+                        <div class="coef-item tangential">
+                            <div class="name">p1</div>
+                            <div class="value" id="coef-p1">0.000000</div>
+                        </div>
+                        <div class="coef-item tangential">
+                            <div class="name">p2</div>
+                            <div class="value" id="coef-p2">0.000000</div>
+                        </div>
+                    </div>
+
+                    <div class="results-grid">
+                        <div class="result-item">
+                            <div class="label">Lines Used</div>
+                            <div class="value" id="num-lines">0</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="label">Iterations</div>
+                            <div class="value" id="iterations">0</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="label">Initial Error</div>
+                            <div class="value" id="initial-error">0.00</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="label">Final Error</div>
+                            <div class="value" id="final-error">0.00</div>
+                        </div>
+                        <div class="result-item highlight">
+                            <div class="label">Improvement</div>
+                            <div class="value" id="improvement">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <button id="save-btn" class="btn btn-success">
+                            Save Calibration
+                        </button>
+                        <button id="copy-coeffs-btn" class="btn btn-secondary">
+                            Copy Coefficients
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Line Errors -->
+            <div class="card card-fullwidth" id="errors-card" style="display: none;">
+                <div class="card-header">Per-Line Errors (Top 20)</div>
+                <div class="card-body">
+                    <div class="lines-list">
+                        <table id="errors-table">
+                            <thead>
+                                <tr>
+                                    <th>Line ID</th>
+                                    <th>RMSE (px)</th>
+                                    <th>Samples</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Elements
+        const fxInput = document.getElementById('fx');
+        const fyInput = document.getElementById('fy');
+        const cxInput = document.getElementById('cx');
+        const cyInput = document.getElementById('cy');
+        const cameraIdInput = document.getElementById('camera-id');
+        const zoomInput = document.getElementById('zoom');
+        const minLengthInput = document.getElementById('min-length');
+        const minConfidenceInput = document.getElementById('min-confidence');
+        const maxLinesInput = document.getElementById('max-lines');
+        const maxIterationsInput = document.getElementById('max-iterations');
+        const radialOnlyInput = document.getElementById('radial-only');
+        const linesInput = document.getElementById('lines-input');
+        const surveySelect = document.getElementById('survey-select');
+        const loadSurveyBtn = document.getElementById('load-survey-btn');
+        const surveyInfo = document.getElementById('survey-info');
+        const calibrateBtn = document.getElementById('calibrate-btn');
+        const validateBtn = document.getElementById('validate-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const copyCoeffsBtn = document.getElementById('copy-coeffs-btn');
+        const calibrationStatus = document.getElementById('calibration-status');
+        const progressBar = document.getElementById('progress-bar');
+        const resultsCard = document.getElementById('results-card');
+        const errorsCard = document.getElementById('errors-card');
+
+        // State
+        let currentResults = null;
+        let surveyPath = null;
+
+        // Tab handling
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        // Load survey sessions
+        async function loadSurveySessions() {
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_survey_sessions" %}');
+                const data = await resp.json();
+
+                surveySelect.innerHTML = '<option value="">-- Select a survey session --</option>';
+                (data.sessions || []).forEach(session => {
+                    const option = document.createElement('option');
+                    option.value = session.path;
+                    option.textContent = `${session.date} / ${session.session_id} (${session.image_count} images)`;
+                    option.dataset.info = JSON.stringify(session);
+                    surveySelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load survey sessions:', e);
+            }
+        }
+
+        // Survey select change
+        surveySelect.addEventListener('change', () => {
+            const selected = surveySelect.selectedOptions[0];
+            if (selected && selected.value) {
+                const info = JSON.parse(selected.dataset.info);
+                document.getElementById('session-id').textContent = info.session_id;
+                document.getElementById('image-count').textContent = info.image_count;
+                document.getElementById('session-path').textContent = info.path;
+                surveyInfo.style.display = 'block';
+                loadSurveyBtn.disabled = false;
+                surveyPath = info.path;
+            } else {
+                surveyInfo.style.display = 'none';
+                loadSurveyBtn.disabled = true;
+                surveyPath = null;
+            }
+        });
+
+        // Get intrinsics from form
+        function getIntrinsics() {
+            return {
+                fx: parseFloat(fxInput.value) || 1000,
+                fy: parseFloat(fyInput.value) || 1000,
+                cx: parseFloat(cxInput.value) || 960,
+                cy: parseFloat(cyInput.value) || 540
+            };
+        }
+
+        // Get config from form
+        function getConfig() {
+            return {
+                min_line_length: parseInt(minLengthInput.value) || 100,
+                min_confidence: parseFloat(minConfidenceInput.value) || 0.3,
+                max_lines_per_image: parseInt(maxLinesInput.value) || 10,
+                max_iterations: parseInt(maxIterationsInput.value) || 1000,
+                radial_only: radialOnlyInput.checked
+            };
+        }
+
+        // Show status message
+        function showStatus(message, type = 'info') {
+            calibrationStatus.textContent = message;
+            calibrationStatus.className = `status ${type}`;
+            calibrationStatus.style.display = 'block';
+        }
+
+        // Hide status
+        function hideStatus() {
+            calibrationStatus.style.display = 'none';
+        }
+
+        // Update results display
+        function updateResults(data) {
+            currentResults = data;
+            resultsCard.style.display = 'block';
+            errorsCard.style.display = 'block';
+
+            // Quality badge
+            const qualityBadge = document.getElementById('quality-badge');
+            qualityBadge.textContent = data.quality;
+            qualityBadge.className = `quality-badge quality-${data.quality}`;
+
+            // RMSE
+            document.getElementById('rmse-value').textContent = data.overall_rmse.toFixed(3);
+
+            // Coefficients
+            document.getElementById('coef-k1').textContent = data.coefficients.k1.toFixed(6);
+            document.getElementById('coef-k2').textContent = data.coefficients.k2.toFixed(6);
+            document.getElementById('coef-k3').textContent = data.coefficients.k3.toFixed(6);
+            document.getElementById('coef-p1').textContent = data.coefficients.p1.toFixed(6);
+            document.getElementById('coef-p2').textContent = data.coefficients.p2.toFixed(6);
+
+            // Stats
+            document.getElementById('num-lines').textContent = data.num_lines;
+            document.getElementById('iterations').textContent = data.iterations;
+            document.getElementById('initial-error').textContent = data.initial_error.toFixed(4);
+            document.getElementById('final-error').textContent = data.final_error.toFixed(4);
+            document.getElementById('improvement').textContent = `${data.improvement_percent.toFixed(1)}%`;
+
+            // Line errors table
+            const tbody = document.querySelector('#errors-table tbody');
+            tbody.innerHTML = '';
+            (data.line_errors || []).forEach(err => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${err.line_id}</td>
+                    <td class="mono">${err.rmse_pixels.toFixed(3)}</td>
+                    <td>${err.num_samples}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            validateBtn.disabled = false;
+        }
+
+        // Run calibration
+        async function runCalibration() {
+            calibrateBtn.disabled = true;
+            showStatus('Running calibration...', 'info');
+            progressBar.style.display = 'block';
+            progressBar.querySelector('.fill').style.width = '30%';
+
+            try {
+                let requestBody;
+                const activeTab = document.querySelector('.tab.active').dataset.tab;
+
+                if (activeTab === 'survey' && surveyPath) {
+                    // Calibrate from survey images
+                    requestBody = {
+                        source: 'images',
+                        images_path: surveyPath,
+                        intrinsics: getIntrinsics(),
+                        config: getConfig()
+                    };
+                } else {
+                    // Calibrate from manual lines
+                    let lines;
+                    try {
+                        lines = JSON.parse(linesInput.value || '[]');
+                    } catch (e) {
+                        throw new Error('Invalid JSON in lines input');
+                    }
+
+                    if (!Array.isArray(lines) || lines.length === 0) {
+                        throw new Error('Please provide at least one line');
+                    }
+
+                    requestBody = {
+                        source: 'lines',
+                        lines: lines,
+                        intrinsics: getIntrinsics(),
+                        config: getConfig()
+                    };
+                }
+
+                progressBar.querySelector('.fill').style.width = '60%';
+
+                const resp = await fetch('{% url "lens_calibration:api_calibrate" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await resp.json();
+
+                progressBar.querySelector('.fill').style.width = '100%';
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                if (data.success) {
+                    showStatus(`Calibration complete! RMSE: ${data.overall_rmse.toFixed(3)} pixels`, 'success');
+                    updateResults(data);
+                } else {
+                    showStatus(`Calibration completed with warnings: ${data.message}`, 'warning');
+                    updateResults(data);
+                }
+
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+
+            calibrateBtn.disabled = false;
+            setTimeout(() => {
+                progressBar.style.display = 'none';
+                progressBar.querySelector('.fill').style.width = '0%';
+            }, 1000);
+        }
+
+        // Save calibration
+        async function saveCalibration() {
+            if (!currentResults) return;
+
+            saveBtn.disabled = true;
+            showStatus('Saving calibration...', 'info');
+
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_save" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        camera_id: cameraIdInput.value || 'unknown_camera',
+                        zoom: parseFloat(zoomInput.value) || 1.0,
+                        coefficients: currentResults.coefficients,
+                        intrinsics: getIntrinsics(),
+                        validation_rmse: currentResults.overall_rmse,
+                        num_lines: currentResults.num_lines
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                showStatus(`Saved to ${data.filename}`, 'success');
+
+            } catch (e) {
+                showStatus(`Save failed: ${e.message}`, 'error');
+            }
+
+            saveBtn.disabled = false;
+        }
+
+        // Copy coefficients
+        function copyCoefficients() {
+            if (!currentResults) return;
+
+            const text = `k1: ${currentResults.coefficients.k1}
+k2: ${currentResults.coefficients.k2}
+k3: ${currentResults.coefficients.k3}
+p1: ${currentResults.coefficients.p1}
+p2: ${currentResults.coefficients.p2}`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                copyCoeffsBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyCoeffsBtn.textContent = 'Copy Coefficients';
+                }, 2000);
+            });
+        }
+
+        // Event listeners
+        calibrateBtn.addEventListener('click', runCalibration);
+        saveBtn.addEventListener('click', saveCalibration);
+        copyCoeffsBtn.addEventListener('click', copyCoefficients);
+        loadSurveyBtn.addEventListener('click', () => {
+            document.querySelector('.tab[data-tab="survey"]').click();
+            runCalibration();
+        });
+
+        // Initialize
+        loadSurveySessions();
+    </script>
+</body>
+</html>
