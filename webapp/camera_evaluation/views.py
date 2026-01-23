@@ -1,6 +1,7 @@
 """Views for the Camera Evaluation Tool Django app.
 
-This module contains HTTP request handlers for stress testing and survey functionality.
+Note: Stress test views have been moved to camera_diagnostic app.
+This module now only handles survey functionality.
 """
 
 from __future__ import annotations
@@ -26,14 +27,7 @@ from poc_homography.camera_config import (
     get_tenants,
 )
 
-from .models import (
-    STRESS_TEST_PRESETS,
-    AxisMovementConfig,
-    StressTestConfig,
-    StressTestType,
-    UserEvaluation,
-)
-from .services import CameraStressTestService, generate_mjpeg_frames
+from .services import generate_mjpeg_frames
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +64,7 @@ def index(request: HttpRequest) -> HttpResponse:
 
 
 # =============================================================================
-# Common API Endpoints (reused from camera_diagnostic)
+# Common API Endpoints
 # =============================================================================
 
 
@@ -129,220 +123,6 @@ def api_video_stream(request: HttpRequest, camera_id: str) -> StreamingHttpRespo
     response["Pragma"] = "no-cache"
     response["Expires"] = "0"
     return response
-
-
-# =============================================================================
-# Stress Test API Endpoints
-# =============================================================================
-
-
-@require_GET
-def api_stress_test_presets(request: HttpRequest) -> JsonResponse:
-    """Get available stress test presets."""
-    presets = [preset.to_dict() for preset in STRESS_TEST_PRESETS]
-    return _success_response({"presets": presets})
-
-
-@csrf_exempt
-@require_POST
-def api_stress_test_start(request: HttpRequest) -> JsonResponse:
-    """Start a new stress test.
-
-    Request body:
-    {
-        "tenant_id": "valencia",
-        "camera_id": "valencia_cam01",
-        "test_type": "oscillation",
-        "pan_config": {...} | null,
-        "tilt_config": {...} | null,
-        "repetitions": 10
-    }
-    """
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return _error_response("Invalid JSON body")
-
-    # Validate required fields
-    tenant_id = body.get("tenant_id")
-    camera_id = body.get("camera_id")
-    test_type_str = body.get("test_type")
-
-    if not tenant_id:
-        return _error_response("tenant_id is required")
-    if not camera_id:
-        return _error_response("camera_id is required")
-    if not test_type_str:
-        return _error_response("test_type is required")
-
-    # Validate test type
-    try:
-        test_type = StressTestType(test_type_str)
-    except ValueError:
-        valid_types = [t.value for t in StressTestType]
-        return _error_response(f"Invalid test_type. Valid values: {valid_types}")
-
-    # Parse axis configs
-    pan_config = None
-    tilt_config = None
-    zoom_config = None
-
-    if body.get("pan_config"):
-        try:
-            pan_config = AxisMovementConfig.from_dict(body["pan_config"])
-        except Exception as e:
-            return _error_response(f"Invalid pan_config: {e}")
-
-    if body.get("tilt_config"):
-        try:
-            tilt_config = AxisMovementConfig.from_dict(body["tilt_config"])
-        except Exception as e:
-            return _error_response(f"Invalid tilt_config: {e}")
-
-    if body.get("zoom_config"):
-        try:
-            zoom_config = AxisMovementConfig.from_dict(body["zoom_config"])
-        except Exception as e:
-            return _error_response(f"Invalid zoom_config: {e}")
-
-    repetitions = body.get("repetitions", 1)
-
-    # Create config
-    config = StressTestConfig(
-        tenant_id=tenant_id,
-        camera_id=camera_id,
-        test_type=test_type,
-        pan_config=pan_config,
-        tilt_config=tilt_config,
-        zoom_config=zoom_config,
-        repetitions=repetitions,
-    )
-
-    # Start test
-    session_id, error = CameraStressTestService.start_stress_test(config)
-
-    if error:
-        return _error_response(error, status_code=500)
-
-    return _success_response({"session_id": session_id})
-
-
-@require_GET
-def api_stress_test_status(request: HttpRequest, session_id: str) -> JsonResponse:
-    """Get status of a running stress test."""
-    progress = CameraStressTestService.get_stress_test_status(session_id)
-
-    if not progress:
-        # Try to get completed session
-        session = CameraStressTestService.get_session(session_id)
-        if session:
-            return _success_response(
-                {
-                    "session_id": session.id,
-                    "status": session.status.value,
-                    "message": "Test completed" if session.result else "Session found",
-                    "completed": session.status.value in ("completed", "failed", "aborted"),
-                }
-            )
-        return _error_response("Session not found", status_code=404)
-
-    return _success_response(progress.to_dict())
-
-
-@csrf_exempt
-@require_POST
-def api_stress_test_abort(request: HttpRequest, session_id: str) -> JsonResponse:
-    """Abort a running stress test."""
-    success, error = CameraStressTestService.abort_stress_test(session_id)
-
-    if not success:
-        return _error_response(error or "Failed to abort", status_code=400)
-
-    return _success_response({"message": "Test abort requested"})
-
-
-@require_GET
-def api_stress_test_sessions(request: HttpRequest) -> JsonResponse:
-    """List stress test sessions."""
-    tenant_id = request.GET.get("tenant_id")
-    camera_id = request.GET.get("camera_id")
-    limit = int(request.GET.get("limit", 50))
-    offset = int(request.GET.get("offset", 0))
-
-    sessions, total = CameraStressTestService.list_stress_test_sessions(
-        tenant_id=tenant_id,
-        camera_id=camera_id,
-        limit=limit,
-        offset=offset,
-    )
-
-    return _success_response(
-        {
-            "sessions": [s.to_dict() for s in sessions],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        }
-    )
-
-
-@require_GET
-def api_stress_test_session_detail(request: HttpRequest, session_id: str) -> JsonResponse:
-    """Get details of a specific stress test session."""
-    session = CameraStressTestService.get_session(session_id)
-
-    if not session:
-        return _error_response("Session not found", status_code=404)
-
-    return _success_response({"session": session.to_dict()})
-
-
-@csrf_exempt
-@require_POST
-def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonResponse:
-    """Save user evaluation for a stress test session.
-
-    Request body:
-    {
-        "evaluation": "good" | "needs_improvement" | "bad",
-        "notes": "Optional notes..."
-    }
-    """
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return _error_response("Invalid JSON body")
-
-    evaluation_str = body.get("evaluation")
-    if not evaluation_str:
-        return _error_response("evaluation is required")
-
-    try:
-        evaluation = UserEvaluation(evaluation_str)
-    except ValueError:
-        valid_values = [e.value for e in UserEvaluation]
-        return _error_response(f"Invalid evaluation. Valid values: {valid_values}")
-
-    notes = body.get("notes", "")
-
-    success, error = CameraStressTestService.update_user_evaluation(session_id, evaluation, notes)
-
-    if not success:
-        return _error_response(error or "Failed to update evaluation", status_code=400)
-
-    return _success_response({"message": "Evaluation saved"})
-
-
-@csrf_exempt
-@require_POST
-def api_stress_test_delete(request: HttpRequest, session_id: str) -> JsonResponse:
-    """Delete a stress test session."""
-    success, error = CameraStressTestService.delete_session(session_id)
-
-    if not success:
-        return _error_response(error or "Failed to delete session", status_code=400)
-
-    return _success_response({"message": "Session deleted"})
 
 
 # =============================================================================

@@ -33,17 +33,23 @@ from poc_homography.camera_config import (
 )
 
 from .models import (
+    STRESS_TEST_PRESETS,
+    AxisMovementConfig,
     CameraDiagnosticResult,
     DiagnosticSession,
     DiagnosticSessionStatus,
     DiagnosticTestResult,
     DiagnosticTestStatus,
+    StressTestConfig,
+    StressTestType,
+    UserEvaluation,
 )
 from .services import (
     PTZ_MOVEMENT_DURATION,
     PTZ_MOVEMENT_SPEED,
     WEBUI_CONNECTION_TIMEOUT_SEC,
     CameraErrorCategory,
+    CameraStressTestService,
     _sanitize_camera_name,
     attempt_login,
     check_login_success,
@@ -1091,3 +1097,372 @@ def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
         )
 
     return _success_response({"message": f"Session {session_id} deleted"})
+
+
+# =============================================================================
+# Stress Test API Endpoints
+# =============================================================================
+
+
+@require_GET
+def api_stress_test_presets(request: HttpRequest) -> JsonResponse:
+    """Get available stress test presets.
+
+    Returns:
+        JsonResponse with list of presets
+    """
+    return _success_response({
+        "presets": [preset.to_dict() for preset in STRESS_TEST_PRESETS]
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_start(request: HttpRequest) -> JsonResponse:
+    """Start a new stress test session.
+
+    POST body:
+        tenant_id: Tenant ID
+        camera_id: Camera ID
+        preset_name: Name of preset to use, OR
+        test_type: Custom test type with axis configs
+
+    Returns:
+        JsonResponse with session_id
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "Invalid JSON request body",
+            status_code=400,
+        )
+
+    tenant_id = data.get("tenant_id")
+    camera_id = data.get("camera_id")
+    preset_name = data.get("preset_name")
+
+    if not tenant_id or not camera_id:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "tenant_id and camera_id are required",
+            status_code=400,
+        )
+
+    # Build config from preset or custom settings
+    if preset_name:
+        # Find preset by name
+        preset = next(
+            (p for p in STRESS_TEST_PRESETS if p.name == preset_name),
+            None,
+        )
+        if not preset:
+            return _error_response(
+                CameraErrorCategory.INVALID_RESPONSE,
+                f"Preset not found: {preset_name}",
+                status_code=404,
+            )
+
+        config = StressTestConfig(
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            test_type=preset.test_type,
+            pan_config=preset.pan_config,
+            tilt_config=preset.tilt_config,
+            zoom_config=preset.zoom_config,
+            repetitions=preset.repetitions,
+        )
+    else:
+        # Custom config
+        test_type_str = data.get("test_type")
+        if not test_type_str:
+            return _error_response(
+                CameraErrorCategory.INVALID_RESPONSE,
+                "preset_name or test_type is required",
+                status_code=400,
+            )
+
+        try:
+            test_type = StressTestType(test_type_str)
+        except ValueError:
+            return _error_response(
+                CameraErrorCategory.INVALID_RESPONSE,
+                f"Invalid test_type: {test_type_str}",
+                status_code=400,
+            )
+
+        # Parse axis configs
+        pan_config = None
+        tilt_config = None
+        zoom_config = None
+
+        if data.get("pan_config"):
+            pan_config = AxisMovementConfig.from_dict(data["pan_config"])
+        if data.get("tilt_config"):
+            tilt_config = AxisMovementConfig.from_dict(data["tilt_config"])
+        if data.get("zoom_config"):
+            zoom_config = AxisMovementConfig.from_dict(data["zoom_config"])
+
+        config = StressTestConfig(
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            test_type=test_type,
+            pan_config=pan_config,
+            tilt_config=tilt_config,
+            zoom_config=zoom_config,
+            repetitions=data.get("repetitions", 1),
+        )
+
+    # Start the stress test
+    session_id, error = CameraStressTestService.start_stress_test(config)
+
+    if error:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error,
+            status_code=500,
+        )
+
+    return _success_response({
+        "session_id": session_id,
+        "message": "Stress test started",
+    })
+
+
+@require_GET
+def api_stress_test_status(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Get current status/progress of a stress test.
+
+    Args:
+        session_id: Session UUID
+
+    Returns:
+        JsonResponse with progress info
+    """
+    progress = CameraStressTestService.get_stress_test_status(session_id)
+
+    if not progress:
+        # Try to get from completed session
+        session = CameraStressTestService.get_session(session_id)
+        if session:
+            return _success_response({
+                "session_id": session.id,
+                "status": session.status.value,
+                "current_repetition": session.config.repetitions if session.config else 0,
+                "total_repetitions": session.config.repetitions if session.config else 0,
+                "message": "Test completed" if session.status.value == "completed" else session.status.value,
+            })
+
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Session not found: {session_id}",
+            status_code=404,
+        )
+
+    return _success_response(progress.to_dict())
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_abort(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Abort a running stress test.
+
+    Args:
+        session_id: Session UUID to abort
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    success, error = CameraStressTestService.abort_stress_test(session_id)
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to abort test",
+            status_code=404 if "not found" in (error or "").lower() else 400,
+        )
+
+    return _success_response({"message": f"Stress test {session_id} abort requested"})
+
+
+@require_GET
+def api_stress_test_sessions(request: HttpRequest) -> JsonResponse:
+    """List stress test sessions.
+
+    Query params:
+        tenant_id: Optional tenant filter
+        camera_id: Optional camera filter
+        limit: Max results (default 50)
+        offset: Pagination offset (default 0)
+
+    Returns:
+        JsonResponse with session list
+    """
+    tenant_id = request.GET.get("tenant_id")
+    camera_id = request.GET.get("camera_id")
+    limit = int(request.GET.get("limit", 50))
+    offset = int(request.GET.get("offset", 0))
+
+    sessions, total = CameraStressTestService.list_stress_test_sessions(
+        tenant_id=tenant_id,
+        camera_id=camera_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return _success_response({
+        "sessions": [
+            {
+                "id": s.id,
+                "created_at": s.created_at.isoformat(),
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "status": s.status.value,
+                "tenant_id": s.tenant_id,
+                "camera_id": s.camera_id,
+                "camera_name": s.camera_name,
+                "test_type": s.config.test_type.value if s.config else None,
+                "user_evaluation": s.user_evaluation.value,
+                "result_success": s.result.success if s.result else None,
+            }
+            for s in sessions
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
+@require_GET
+def api_stress_test_session_detail(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Get detailed stress test session info.
+
+    Args:
+        session_id: Session UUID
+
+    Returns:
+        JsonResponse with full session data
+    """
+    session = CameraStressTestService.get_session(session_id)
+    if not session:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Session not found: {session_id}",
+            status_code=404,
+        )
+
+    return _success_response(session.to_dict())
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Submit user evaluation for a stress test session.
+
+    POST body:
+        evaluation: "good" | "needs_improvement" | "bad"
+        notes: Optional user notes
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "Invalid JSON request body",
+            status_code=400,
+        )
+
+    evaluation_str = data.get("evaluation")
+    notes = data.get("notes", "")
+
+    if not evaluation_str:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "evaluation is required",
+            status_code=400,
+        )
+
+    try:
+        evaluation = UserEvaluation(evaluation_str)
+    except ValueError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            f"Invalid evaluation value: {evaluation_str}",
+            status_code=400,
+        )
+
+    success, error = CameraStressTestService.update_user_evaluation(
+        session_id, evaluation, notes
+    )
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to update evaluation",
+            status_code=404 if "not found" in (error or "").lower() else 500,
+        )
+
+    return _success_response({
+        "message": "Evaluation saved",
+        "session_id": session_id,
+        "evaluation": evaluation.value,
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_delete(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Delete a stress test session.
+
+    Args:
+        session_id: Session UUID to delete
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    success, error = CameraStressTestService.delete_stress_test_session(session_id)
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to delete session",
+            status_code=404 if "not found" in (error or "").lower() else 500,
+        )
+
+    return _success_response({"message": f"Stress test session {session_id} deleted"})
+
+
+@require_GET
+def api_stress_video_stream(
+    request: HttpRequest, camera_id: str
+) -> StreamingHttpResponse | JsonResponse:
+    """Stream MJPEG video from a camera during stress testing.
+
+    Args:
+        request: HTTP request
+        camera_id: Camera ID to stream
+
+    Returns:
+        StreamingHttpResponse with MJPEG content type
+    """
+    # For stress testing, we use camera_id directly (not camera_name)
+    camera = get_camera_by_id(camera_id)
+    if not camera:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Camera not found: {camera_id}",
+            status_code=404,
+        )
+
+    camera_name = camera.get("name", camera_id)
+
+    response = StreamingHttpResponse(
+        generate_mjpeg_frames(camera_name), content_type="multipart/x-mixed-replace; boundary=frame"
+    )
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response
