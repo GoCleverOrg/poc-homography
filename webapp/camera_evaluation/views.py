@@ -7,10 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import xml.etree.ElementTree as ET
-
-import requests
 
 # Import survey functionality from camera_survey app
 from camera_survey.models import SurveyAxis, SurveyConfig
@@ -23,7 +19,6 @@ from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse, S
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from requests.auth import HTTPDigestAuth
 
 from poc_homography.camera_config import (
     get_camera_by_id,
@@ -565,7 +560,7 @@ def api_survey_delete_session(request: HttpRequest, session_id: str) -> JsonResp
 
 @require_GET
 def api_camera_capabilities(request: HttpRequest) -> JsonResponse:
-    """Get camera PTZ capabilities (axis ranges) from the camera's ISAPI endpoint.
+    """Get camera PTZ capabilities (axis ranges) from the camera.
 
     Query parameters:
         tenant_id: Tenant ID
@@ -588,95 +583,42 @@ def api_camera_capabilities(request: HttpRequest) -> JsonResponse:
         return _error_response(f"Camera not found: {camera_id}", status_code=404)
 
     camera_ip = camera.get("ip")
+    camera_name = camera.get("name", camera_id)
+
     if not camera_ip:
         return _error_response(f"Camera IP not configured: {camera_id}", status_code=500)
 
-    # Get credentials from environment
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
-
-    if not username or not password:
-        return _error_response(
-            "Camera credentials not configured. Set CAMERA_USERNAME and CAMERA_PASSWORD.",
-            status_code=500,
-        )
-
-    # Fetch capabilities from Hikvision ISAPI
     try:
-        capabilities_url = f"http://{camera_ip}/ISAPI/PTZCtrl/channels/1/capabilities"
-        auth = HTTPDigestAuth(username, password)
-        response = requests.get(capabilities_url, auth=auth, timeout=10)
+        # Create PTZ camera instance and get capabilities via abstraction layer
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name)
+        capabilities = ptz_camera.get_capabilities()
 
-        if response.status_code != 200:
-            logger.warning(
-                f"Failed to fetch capabilities for {camera_id}: HTTP {response.status_code}"
-            )
-            return _error_response(
-                f"Failed to fetch camera capabilities: HTTP {response.status_code}",
-                status_code=502,
-            )
-
-        # Parse XML response
-        root = ET.fromstring(response.text)
-
-        # Handle Hikvision namespace
-        ns = {"h": "http://www.hikvision.com/ver20/XMLSchema"}
-
-        def find_range(element_name: str) -> tuple[float | None, float | None]:
-            """Find Min/Max values for a range element."""
-            # Try with namespace first
-            elem = root.find(f".//h:{element_name}", ns)
-            if elem is None:
-                elem = root.find(f".//{element_name}")
-            if elem is None:
-                return None, None
-
-            min_elem = elem.find("h:Min", ns)
-            if min_elem is None:
-                min_elem = elem.find("Min")
-
-            max_elem = elem.find("h:Max", ns)
-            if max_elem is None:
-                max_elem = elem.find("Max")
-
-            min_val = float(min_elem.text) / 10 if min_elem is not None and min_elem.text else None
-            max_val = float(max_elem.text) / 10 if max_elem is not None and max_elem.text else None
-
-            return min_val, max_val
-
-        # Extract ranges (XRange=pan, YRange=tilt, ZRange=zoom)
-        pan_min, pan_max = find_range("XRange")
-        tilt_min, tilt_max = find_range("YRange")
-        zoom_min, zoom_max = find_range("ZRange")
-
-        # Build response with fallback defaults
+        # Build response from CameraCapabilities model
         capabilities_data = {
             "pan": {
-                "min": pan_min if pan_min is not None else 0.0,
-                "max": pan_max if pan_max is not None else 360.0,
+                "min": capabilities.pan_min,
+                "max": capabilities.pan_max,
             },
             "tilt": {
-                "min": tilt_min if tilt_min is not None else -90.0,
-                "max": tilt_max if tilt_max is not None else 90.0,
+                "min": capabilities.tilt_min,
+                "max": capabilities.tilt_max,
             },
             "zoom": {
-                "min": zoom_min if zoom_min is not None else 1.0,
-                "max": zoom_max if zoom_max is not None else 25.0,
+                "min": capabilities.zoom_min,
+                "max": capabilities.zoom_max,
             },
             "min_step": 0.1,  # Cameras report position in 0.1° increments
         }
 
         return _success_response({"capabilities": capabilities_data})
 
-    except requests.exceptions.Timeout:
-        logger.exception(f"Timeout fetching capabilities for {camera_id}")
-        return _error_response("Camera connection timeout", status_code=504)
-    except requests.exceptions.RequestException as e:
-        logger.exception(f"Network error fetching capabilities for {camera_id}")
-        return _error_response(f"Camera connection error: {e}", status_code=502)
-    except ET.ParseError as e:
-        logger.exception(f"Failed to parse capabilities XML for {camera_id}")
-        return _error_response(f"Invalid capabilities response: {e}", status_code=502)
+    except ValueError as e:
+        # Raised by create_ptz_camera if credentials not set
+        logger.exception(f"Credentials error for {camera_id}")
+        return _error_response(str(e), status_code=500)
+    except Exception as e:
+        logger.exception(f"Error getting capabilities for {camera_id}")
+        return _error_response("Failed to get camera capabilities", status_code=502)
 
 
 @require_GET
