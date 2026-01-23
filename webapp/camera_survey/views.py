@@ -10,6 +10,7 @@ import logging
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
 from poc_homography.camera_config import (
@@ -55,6 +56,7 @@ def _error_response(message: str, status_code: int = 400) -> JsonResponse:
 
 
 @require_GET
+@ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main camera survey HTML page."""
     return render(request, "camera_survey/index.html")
