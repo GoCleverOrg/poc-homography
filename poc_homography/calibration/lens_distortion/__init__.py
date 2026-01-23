@@ -14,6 +14,7 @@ Modules:
     line_detection: Automatic parking line detection using Hough transforms
     distortion_solver: Optimization-based distortion coefficient solver
     calibration_table: Zoom-dependent calibration storage with interpolation
+    survey_automation: MCP Playwright and API automation for Camera Survey Tool
 """
 
 from poc_homography.calibration.lens_distortion.calibration_table import (
@@ -35,6 +36,17 @@ from poc_homography.calibration.lens_distortion.models import (
     GroundTruthLine,
     LineCorrespondence,
 )
+from poc_homography.calibration.lens_distortion.survey_automation import (
+    CALIBRATION_SURVEY_PRESETS,
+    CameraInfo,
+    SurveyAutomation,
+    SurveyAutomationError,
+    SurveyAxis,
+    SurveyProgress,
+    SurveySession,
+    SurveyStatus,
+    TenantInfo,
+)
 
 __all__ = [
     # Models
@@ -52,4 +64,14 @@ __all__ = [
     # Calibration table
     "CameraCalibrationTable",
     "ZoomCalibrationEntry",
+    # Survey automation
+    "SurveyAutomation",
+    "SurveyAutomationError",
+    "SurveyAxis",
+    "SurveyStatus",
+    "SurveyProgress",
+    "SurveySession",
+    "TenantInfo",
+    "CameraInfo",
+    "CALIBRATION_SURVEY_PRESETS",
 ]
