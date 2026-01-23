@@ -172,6 +172,30 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
         }
 
+        /* Helper text and error styles */
+        .helper-text {
+            color: #888;
+            font-size: 12px;
+            display: block;
+            margin-top: 4px;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            display: none;
+            margin-top: 4px;
+        }
+
+        .form-group input.error {
+            border-color: #e74c3c;
+            background-color: rgba(231, 76, 60, 0.1);
+        }
+
+        .form-group input.error:focus {
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.3);
+        }
+
         /* Buttons */
         .btn {
             padding: 12px 24px;
@@ -817,6 +841,23 @@
                     </div>
                 </div>
 
+                <!-- Current Position Display -->
+                <div id="survey-current-position" class="camera-info hidden" style="margin-bottom: 16px;">
+                    <div style="font-weight: 500; margin-bottom: 8px; color: #ccc;">Current Position</div>
+                    <div class="camera-info-row">
+                        <span class="camera-info-label">Pan:</span>
+                        <span class="camera-info-value" id="survey-current-pan">-</span>
+                    </div>
+                    <div class="camera-info-row">
+                        <span class="camera-info-label">Tilt:</span>
+                        <span class="camera-info-value" id="survey-current-tilt">-</span>
+                    </div>
+                    <div class="camera-info-row">
+                        <span class="camera-info-label">Zoom:</span>
+                        <span class="camera-info-value" id="survey-current-zoom">-</span>
+                    </div>
+                </div>
+
                 <div class="form-group" style="margin-bottom: 16px;">
                     <label>Presets</label>
                     <div id="survey-preset-buttons" class="preset-buttons">
@@ -828,14 +869,20 @@
                     <div class="form-group">
                         <label>Start</label>
                         <input type="number" id="survey-start-input" value="0" step="1">
+                        <small id="survey-start-helper" class="helper-text"></small>
+                        <small id="survey-start-error" class="error-message"></small>
                     </div>
                     <div class="form-group">
                         <label>End</label>
                         <input type="number" id="survey-end-input" value="360" step="1">
+                        <small id="survey-end-helper" class="helper-text"></small>
+                        <small id="survey-end-error" class="error-message"></small>
                     </div>
                     <div class="form-group">
                         <label>Step</label>
                         <input type="number" id="survey-step-input" value="10" min="0.1" step="0.1">
+                        <small id="survey-step-helper" class="helper-text"></small>
+                        <small id="survey-step-error" class="error-message"></small>
                     </div>
                 </div>
 
@@ -1186,6 +1233,8 @@
         let surveyPresets = [];
         let currentSurveySessionId = null;
         let surveyPollInterval = null;
+        let surveyCameraCapabilities = null;  // PTZ limits from camera
+        let surveyCurrentPosition = null;     // Current PTZ position
 
         // State - Stress testing tab
         let stressTenant = null;
@@ -1209,6 +1258,16 @@
         const surveyStartInput = document.getElementById('survey-start-input');
         const surveyEndInput = document.getElementById('survey-end-input');
         const surveyStepInput = document.getElementById('survey-step-input');
+        const surveyStartHelper = document.getElementById('survey-start-helper');
+        const surveyEndHelper = document.getElementById('survey-end-helper');
+        const surveyStepHelper = document.getElementById('survey-step-helper');
+        const surveyStartError = document.getElementById('survey-start-error');
+        const surveyEndError = document.getElementById('survey-end-error');
+        const surveyStepError = document.getElementById('survey-step-error');
+        const surveyCurrentPositionDisplay = document.getElementById('survey-current-position');
+        const surveyCurrentPan = document.getElementById('survey-current-pan');
+        const surveyCurrentTilt = document.getElementById('survey-current-tilt');
+        const surveyCurrentZoom = document.getElementById('survey-current-zoom');
         const surveyTimeoutInput = document.getElementById('survey-timeout-input');
         const surveyTagsInput = document.getElementById('survey-tags-input');
         const surveyRestorePtz = document.getElementById('survey-restore-ptz');
@@ -1797,6 +1856,141 @@
             surveyStartInput.value = preset.start;
             surveyEndInput.value = preset.end;
             surveyStepInput.value = preset.step;
+            validateSurveyInputs();
+        }
+
+        // Fetch camera capabilities from API
+        async function fetchCameraCapabilities() {
+            if (!surveyTenant || !surveyCamera) return;
+
+            try {
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_capabilities" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    surveyCameraCapabilities = result.data.capabilities;
+                    updateSurveyHelperText();
+                    validateSurveyInputs();
+                } else {
+                    console.error('Failed to fetch capabilities:', result.message);
+                    surveyCameraCapabilities = null;
+                    updateSurveyHelperText();
+                }
+            } catch (e) {
+                console.error('Failed to fetch camera capabilities:', e);
+                surveyCameraCapabilities = null;
+                updateSurveyHelperText();
+            }
+        }
+
+        // Fetch current camera position from API
+        async function fetchCurrentPosition() {
+            if (!surveyTenant || !surveyCamera) return;
+
+            try {
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    surveyCurrentPosition = result.data;
+                    updateCurrentPositionDisplay();
+                } else {
+                    console.error('Failed to fetch position:', result.message);
+                    surveyCurrentPosition = null;
+                    updateCurrentPositionDisplay();
+                }
+            } catch (e) {
+                console.error('Failed to fetch camera position:', e);
+                surveyCurrentPosition = null;
+                updateCurrentPositionDisplay();
+            }
+        }
+
+        // Update helper text based on selected axis and camera capabilities
+        function updateSurveyHelperText() {
+            const axis = document.querySelector('input[name="survey-axis"]:checked').value;
+            const limits = surveyCameraCapabilities?.[axis];
+
+            if (limits) {
+                const unit = axis === 'zoom' ? 'x' : '\u00B0';
+                surveyStartHelper.textContent = `Min: ${limits.min}${unit} / Max: ${limits.max}${unit}`;
+                surveyEndHelper.textContent = `Min: ${limits.min}${unit} / Max: ${limits.max}${unit}`;
+            } else {
+                surveyStartHelper.textContent = '';
+                surveyEndHelper.textContent = '';
+            }
+
+            const minStep = surveyCameraCapabilities?.min_step || 0.1;
+            surveyStepHelper.textContent = `Minimum step: ${minStep}\u00B0`;
+        }
+
+        // Update current position display
+        function updateCurrentPositionDisplay() {
+            if (surveyCurrentPosition) {
+                surveyCurrentPositionDisplay.classList.remove('hidden');
+                surveyCurrentPan.textContent = surveyCurrentPosition.pan != null ? surveyCurrentPosition.pan.toFixed(1) + '\u00B0' : '-';
+                surveyCurrentTilt.textContent = surveyCurrentPosition.tilt != null ? surveyCurrentPosition.tilt.toFixed(1) + '\u00B0' : '-';
+                surveyCurrentZoom.textContent = surveyCurrentPosition.zoom != null ? surveyCurrentPosition.zoom.toFixed(1) + 'x' : '-';
+            } else {
+                surveyCurrentPositionDisplay.classList.add('hidden');
+            }
+        }
+
+        // Validate survey input fields
+        function validateSurveyInputs() {
+            const axis = document.querySelector('input[name="survey-axis"]:checked').value;
+            const limits = surveyCameraCapabilities?.[axis];
+            const minStep = surveyCameraCapabilities?.min_step || 0.1;
+
+            const startValue = parseFloat(surveyStartInput.value);
+            const endValue = parseFloat(surveyEndInput.value);
+            const stepValue = parseFloat(surveyStepInput.value);
+
+            let isValid = true;
+            const unit = axis === 'zoom' ? 'x' : '\u00B0';
+
+            // Validate Start
+            if (limits && (startValue < limits.min || startValue > limits.max)) {
+                surveyStartInput.classList.add('error');
+                surveyStartError.textContent = `Start must be between ${limits.min}${unit} and ${limits.max}${unit}`;
+                surveyStartError.style.display = 'block';
+                isValid = false;
+            } else {
+                surveyStartInput.classList.remove('error');
+                surveyStartError.style.display = 'none';
+            }
+
+            // Validate End
+            if (limits && (endValue < limits.min || endValue > limits.max)) {
+                surveyEndInput.classList.add('error');
+                surveyEndError.textContent = `End must be between ${limits.min}${unit} and ${limits.max}${unit}`;
+                surveyEndError.style.display = 'block';
+                isValid = false;
+            } else {
+                surveyEndInput.classList.remove('error');
+                surveyEndError.style.display = 'none';
+            }
+
+            // Validate Step
+            if (stepValue < minStep) {
+                surveyStepInput.classList.add('error');
+                surveyStepError.textContent = `Step must be at least ${minStep}\u00B0`;
+                surveyStepError.style.display = 'block';
+                isValid = false;
+            } else if (stepValue <= 0) {
+                surveyStepInput.classList.add('error');
+                surveyStepError.textContent = 'Step must be greater than 0';
+                surveyStepError.style.display = 'block';
+                isValid = false;
+            } else {
+                surveyStepInput.classList.remove('error');
+                surveyStepError.style.display = 'none';
+            }
+
+            // Control submit button
+            surveyStartBtn.disabled = !isValid || !surveyCamera;
+
+            return isValid;
         }
 
         // Load survey sessions list
@@ -1919,6 +2113,12 @@
                 return;
             }
 
+            // Run validation before starting
+            if (!validateSurveyInputs()) {
+                alert('Please correct input errors before starting survey');
+                return;
+            }
+
             const axis = document.querySelector('input[name="survey-axis"]:checked').value;
             const start = parseFloat(surveyStartInput.value);
             const end = parseFloat(surveyEndInput.value);
@@ -1926,6 +2126,7 @@
             const retryTimeout = parseInt(surveyTimeoutInput.value);
             const tags = surveyTagsInput.value.split(',').map(t => t.trim()).filter(t => t);
 
+            // Fallback validation (in case capabilities weren't fetched)
             if (step <= 0) {
                 alert('Step must be greater than 0');
                 return;
@@ -2068,18 +2269,21 @@
             surveyCamera = null;
             surveyCameraData = null;
             surveyCameras = [];
+            surveyCameraCapabilities = null;
+            surveyCurrentPosition = null;
             surveyCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
             surveyCameraSelect.disabled = true;
             surveyCameraInfo.classList.add('hidden');
             surveyConfigPanel.classList.add('hidden');
             surveyControlPanel.classList.add('hidden');
+            updateCurrentPositionDisplay();
 
             if (surveyTenant) {
                 await loadCameras(surveyTenant, 'survey');
             }
         });
 
-        surveyCameraSelect.addEventListener('change', (e) => {
+        surveyCameraSelect.addEventListener('change', async (e) => {
             surveyCamera = e.target.value;
             surveyCameraData = surveyCameras.find(c => c.id === surveyCamera);
 
@@ -2089,22 +2293,43 @@
                 surveyCameraModel.textContent = surveyCameraData.model || 'Unknown';
                 surveyConfigPanel.classList.remove('hidden');
                 surveyControlPanel.classList.remove('hidden');
+
+                // Fetch camera capabilities and current position
+                await Promise.all([
+                    fetchCameraCapabilities(),
+                    fetchCurrentPosition()
+                ]);
             } else {
                 surveyCameraInfo.classList.add('hidden');
                 surveyConfigPanel.classList.add('hidden');
                 surveyControlPanel.classList.add('hidden');
+                surveyCameraCapabilities = null;
+                surveyCurrentPosition = null;
+                updateCurrentPositionDisplay();
             }
         });
 
-        // Survey axis change listener
+        // Survey axis change listener - update helper text and validate
         document.querySelectorAll('input[name="survey-axis"]').forEach(radio => {
-            radio.addEventListener('change', renderSurveyPresetButtons);
+            radio.addEventListener('change', () => {
+                renderSurveyPresetButtons();
+                updateSurveyHelperText();
+                validateSurveyInputs();
+            });
         });
 
         // Survey control listeners
         surveyStartBtn.addEventListener('click', startSurvey);
         surveyAbortBtn.addEventListener('click', abortSurvey);
         surveyCloseDetailBtn.addEventListener('click', () => surveySessionDetail.classList.add('hidden'));
+
+        // Input validation on blur and input events
+        surveyStartInput.addEventListener('blur', validateSurveyInputs);
+        surveyEndInput.addEventListener('blur', validateSurveyInputs);
+        surveyStepInput.addEventListener('blur', validateSurveyInputs);
+        surveyStartInput.addEventListener('input', validateSurveyInputs);
+        surveyEndInput.addEventListener('input', validateSurveyInputs);
+        surveyStepInput.addEventListener('input', validateSurveyInputs);
 
         // Event listeners - Stress testing tab
         stressTenantSelect.addEventListener('change', async (e) => {
