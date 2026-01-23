@@ -777,6 +777,26 @@
                 const allPass = result.rtsp === 'pass' && result.webui === 'pass' && result.ptz === 'pass';
                 const anyFail = result.rtsp === 'fail' || result.webui === 'fail' || result.ptz === 'fail';
 
+                // Format device info if available
+                let deviceInfoHtml = '';
+                if (result.deviceInfo) {
+                    const di = result.deviceInfo;
+                    const infoLines = [];
+                    if (di.model) infoLines.push(`Model: ${di.model}`);
+                    if (di.serial_number) infoLines.push(`Serial: ${di.serial_number}`);
+                    if (di.mac_address) infoLines.push(`MAC: ${di.mac_address}`);
+                    if (di.firmware_version) infoLines.push(`Firmware: ${di.firmware_version}`);
+                    if (di.device_name) infoLines.push(`Device Name: ${di.device_name}`);
+                    if (infoLines.length > 0) {
+                        deviceInfoHtml = `
+                            <div class="test-section-mini">
+                                <h4>&#128247; Camera Hardware Info</h4>
+                                <div class="log-output">${infoLines.join('\n')}</div>
+                            </div>
+                        `;
+                    }
+                }
+
                 const item = document.createElement('div');
                 item.className = 'camera-result-item';
                 item.innerHTML = `
@@ -792,6 +812,7 @@
                         <span class="expand-icon">&#9660;</span>
                     </div>
                     <div class="camera-result-details" id="details-${cameraId}">
+                        ${deviceInfoHtml}
                         <div class="test-section-mini">
                             <h4><span class="test-badge ${result.rtsp}">${result.rtsp.toUpperCase()}</span> RTSP Streaming</h4>
                             <div class="log-output">${escapeHtml(result.rtspLogs) || 'No logs yet'}</div>
@@ -959,6 +980,11 @@
                     cameraResultsData.forEach(camResult => {
                         if (testResults[camResult.camera_id]) {
                             const r = testResults[camResult.camera_id];
+
+                            // Update device info
+                            if (camResult.device_info) {
+                                r.deviceInfo = camResult.device_info;
+                            }
 
                             // Update RTSP
                             if (camResult.rtsp_test) {
@@ -1153,6 +1179,7 @@
                         testResults[camResult.camera_id] = {
                             name: camResult.camera_name,
                             ip: camResult.camera_ip,
+                            deviceInfo: camResult.device_info || null,
                             rtsp: camResult.rtsp_test?.status === 'pass' ? 'pass' : (camResult.rtsp_test ? 'fail' : 'pending'),
                             webui: camResult.webui_test?.status === 'pass' ? 'pass' : (camResult.webui_test ? 'fail' : 'pending'),
                             ptz: camResult.ptz_test?.status === 'pass' ? 'pass' : (camResult.ptz_test ? 'fail' : 'pending'),
