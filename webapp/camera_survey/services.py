@@ -493,17 +493,18 @@ class CameraSurveyService:
                     current_ptz = session.initial_ptz or PTZPosition()
 
                 # Set target position based on axis
+                # Use config's fixed values for non-swept axes, falling back to current_ptz
                 if config.axis.value == "pan":
                     target_pan = axis_value
-                    target_tilt = current_ptz.tilt
-                    target_zoom = current_ptz.zoom
+                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
                 elif config.axis.value == "tilt":
-                    target_pan = current_ptz.pan
+                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
                     target_tilt = axis_value
-                    target_zoom = current_ptz.zoom
+                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
                 else:  # zoom
-                    target_pan = current_ptz.pan
-                    target_tilt = current_ptz.tilt
+                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
                     target_zoom = axis_value
 
                 # Move to target position with retry logic
