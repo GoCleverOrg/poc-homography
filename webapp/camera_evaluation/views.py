@@ -7,10 +7,16 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 
+# Import survey functionality from camera_survey app
+from camera_survey.models import SurveyAxis, SurveyConfig
+from camera_survey.services import get_survey_presets
+
+# Import the shared survey service instance to avoid duplicate state
+from camera_survey.views import _survey_service
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from poc_homography.camera_config import (
@@ -28,12 +34,6 @@ from .models import (
 )
 from .services import CameraStressTestService, generate_mjpeg_frames
 
-# Import survey functionality from camera_survey app
-from camera_survey.models import SurveyAxis, SurveyConfig
-from camera_survey.services import get_survey_presets
-# Import the shared survey service instance to avoid duplicate state
-from camera_survey.views import _survey_service
-
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +47,9 @@ def _success_response(data: dict) -> JsonResponse:
     return JsonResponse({"status": "success", "data": data})
 
 
-def _error_response(message: str, status_code: int = 400, extra: dict | None = None) -> JsonResponse:
+def _error_response(
+    message: str, status_code: int = 400, extra: dict | None = None
+) -> JsonResponse:
     """Create a standardized error response."""
     response_data = {"status": "error", "message": message}
     if extra:
@@ -83,7 +85,9 @@ def api_tenants(request: HttpRequest) -> JsonResponse:
         return _success_response({"tenants": tenant_list})
     except Exception as e:
         logger.exception("Failed to load tenants")
-        return _error_response("Failed to load tenants. Check server logs for details.", status_code=500)
+        return _error_response(
+            "Failed to load tenants. Check server logs for details.", status_code=500
+        )
 
 
 @require_GET
@@ -95,14 +99,13 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
 
     try:
         cameras = get_cameras_for_tenant(tenant_id)
-        camera_list = [
-            {"id": cam["id"], "name": cam["name"], "ip": cam["ip"]}
-            for cam in cameras
-        ]
+        camera_list = [{"id": cam["id"], "name": cam["name"], "ip": cam["ip"]} for cam in cameras]
         return _success_response({"cameras": camera_list})
     except Exception as e:
         logger.exception("Failed to load cameras")
-        return _error_response("Failed to load cameras. Check server logs for details.", status_code=500)
+        return _error_response(
+            "Failed to load cameras. Check server logs for details.", status_code=500
+        )
 
 
 # =============================================================================
@@ -139,6 +142,7 @@ def api_stress_test_presets(request: HttpRequest) -> JsonResponse:
     return _success_response({"presets": presets})
 
 
+@csrf_exempt
 @require_POST
 def api_stress_test_start(request: HttpRequest) -> JsonResponse:
     """Start a new stress test.
@@ -231,17 +235,20 @@ def api_stress_test_status(request: HttpRequest, session_id: str) -> JsonRespons
         # Try to get completed session
         session = CameraStressTestService.get_session(session_id)
         if session:
-            return _success_response({
-                "session_id": session.id,
-                "status": session.status.value,
-                "message": "Test completed" if session.result else "Session found",
-                "completed": session.status.value in ("completed", "failed", "aborted"),
-            })
+            return _success_response(
+                {
+                    "session_id": session.id,
+                    "status": session.status.value,
+                    "message": "Test completed" if session.result else "Session found",
+                    "completed": session.status.value in ("completed", "failed", "aborted"),
+                }
+            )
         return _error_response("Session not found", status_code=404)
 
     return _success_response(progress.to_dict())
 
 
+@csrf_exempt
 @require_POST
 def api_stress_test_abort(request: HttpRequest, session_id: str) -> JsonResponse:
     """Abort a running stress test."""
@@ -268,12 +275,14 @@ def api_stress_test_sessions(request: HttpRequest) -> JsonResponse:
         offset=offset,
     )
 
-    return _success_response({
-        "sessions": [s.to_dict() for s in sessions],
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    })
+    return _success_response(
+        {
+            "sessions": [s.to_dict() for s in sessions],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @require_GET
@@ -287,6 +296,7 @@ def api_stress_test_session_detail(request: HttpRequest, session_id: str) -> Jso
     return _success_response({"session": session.to_dict()})
 
 
+@csrf_exempt
 @require_POST
 def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonResponse:
     """Save user evaluation for a stress test session.
@@ -322,6 +332,7 @@ def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonRespo
     return _success_response({"message": "Evaluation saved"})
 
 
+@csrf_exempt
 @require_POST
 def api_stress_test_delete(request: HttpRequest, session_id: str) -> JsonResponse:
     """Delete a stress test session."""
@@ -345,6 +356,7 @@ def api_survey_presets(request: HttpRequest) -> JsonResponse:
     return _success_response({"presets": [p.to_dict() for p in presets]})
 
 
+@csrf_exempt
 @require_POST
 def api_survey_start(request: HttpRequest) -> JsonResponse:
     """Start a new survey.
@@ -412,10 +424,12 @@ def api_survey_start(request: HttpRequest) -> JsonResponse:
     if error:
         return _error_response(error, status_code=500)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Survey started successfully",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Survey started successfully",
+        }
+    )
 
 
 @require_GET
@@ -427,19 +441,22 @@ def api_survey_status(request: HttpRequest, session_id: str) -> JsonResponse:
         # Check if it's a completed session
         session = _survey_service.get_session(session_id)
         if session:
-            return _success_response({
-                "session_id": session_id,
-                "status": session.status.value,
-                "step_count": len(session.captures),
-                "total_steps": len(session.captures),
-                "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
-                "last_capture_path": None,
-            })
+            return _success_response(
+                {
+                    "session_id": session_id,
+                    "status": session.status.value,
+                    "step_count": len(session.captures),
+                    "total_steps": len(session.captures),
+                    "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
+                    "last_capture_path": None,
+                }
+            )
         return _error_response("Survey not found", status_code=404)
 
     return _success_response(progress.to_dict())
 
 
+@csrf_exempt
 @require_POST
 def api_survey_abort(request: HttpRequest, session_id: str) -> JsonResponse:
     """Abort a running survey."""
@@ -448,10 +465,12 @@ def api_survey_abort(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to abort survey", status_code=400)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Survey abort requested",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Survey abort requested",
+        }
+    )
 
 
 @require_GET
@@ -465,12 +484,14 @@ def api_survey_sessions(request: HttpRequest) -> JsonResponse:
 
     sessions, total = _survey_service.list_sessions(limit=limit, offset=offset)
 
-    return _success_response({
-        "sessions": sessions,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    })
+    return _success_response(
+        {
+            "sessions": sessions,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @require_GET
@@ -514,6 +535,7 @@ def api_survey_session_image(request: HttpRequest, session_id: str, filename: st
     )
 
 
+@csrf_exempt
 @require_POST
 def api_survey_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     """Delete a survey session."""
@@ -522,7 +544,9 @@ def api_survey_delete_session(request: HttpRequest, session_id: str) -> JsonResp
     if not success:
         return _error_response(error or "Failed to delete session", status_code=400)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Session deleted successfully",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Session deleted successfully",
+        }
+    )

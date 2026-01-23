@@ -17,18 +17,17 @@ from pathlib import Path
 
 import cv2
 import yaml
+from camera_survey.models import PTZPosition
+
+# Use the PTZ abstraction layer for multi-brand camera support
+from camera_survey.ptz import BasePTZCamera, create_ptz_camera
 from django.conf import settings
 
 from poc_homography.camera_config import get_camera_by_id, get_rtsp_url
-# Use the PTZ abstraction layer for multi-brand camera support
-from camera_survey.ptz import BasePTZCamera, create_ptz_camera
-from camera_survey.models import PTZPosition
 
 from .models import (
-    AxisMovementConfig,
     MovementTiming,
     StressTestConfig,
-    StressTestPreset,
     StressTestProgress,
     StressTestResult,
     StressTestSession,
@@ -126,7 +125,7 @@ def generate_mjpeg_frames(camera_id: str) -> Generator[bytes, None, None]:
             if not success:
                 continue
 
-            yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
 
     finally:
         cap.release()
@@ -335,13 +334,17 @@ class CameraStressTestService:
                 try:
                     with cls._lock:
                         cls._session_progress[session_id].message = "Restoring initial position..."
-                    ptz.move_to_position(initial_position["pan"], initial_position["tilt"], initial_position["zoom"])
+                    ptz.move_to_position(
+                        initial_position["pan"], initial_position["tilt"], initial_position["zoom"]
+                    )
                     ptz.wait_for_stabilization()
                     with cls._lock:
                         cls._session_progress[session_id].current_position = initial_position
                     logger.info(f"Restored initial position for session {session_id}")
                 except Exception as restore_error:
-                    logger.warning(f"Failed to restore initial position for session {session_id}: {restore_error}")
+                    logger.warning(
+                        f"Failed to restore initial position for session {session_id}: {restore_error}"
+                    )
 
     @classmethod
     def _measure_movement(
@@ -495,7 +498,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Repetition {rep + 1}/{config.repetitions}"
+                cls._session_progress[
+                    session_id
+                ].message = f"Repetition {rep + 1}/{config.repetitions}"
 
             # Move forward
             if axis_config.axis == "pan":
@@ -550,8 +555,12 @@ class CameraStressTestService:
 
         # Generate random steps
         total_distance = axis_config.end - axis_config.start
-        forward_steps = cls._generate_random_steps(total_distance, axis_config.step_min, axis_config.step_max)
-        backward_steps = cls._generate_random_steps(-total_distance, axis_config.step_min, axis_config.step_max)
+        forward_steps = cls._generate_random_steps(
+            total_distance, axis_config.step_min, axis_config.step_max
+        )
+        backward_steps = cls._generate_random_steps(
+            -total_distance, axis_config.step_min, axis_config.step_max
+        )
 
         total_movements = (len(forward_steps) + len(backward_steps)) * config.repetitions
 
@@ -613,13 +622,42 @@ class CameraStressTestService:
         return movements
 
     @classmethod
+    def _generate_sweep_waypoints(
+        cls, start: float, end: float, max_step: float = 90.0
+    ) -> list[float]:
+        """Generate waypoints for a sweep, breaking large sweeps into smaller steps.
+
+        This is needed because PTZ cameras normalize positions (e.g., 360° = 0°),
+        so a sweep from 0° to 360° would result in no movement. By breaking into
+        smaller steps (e.g., 0° → 90° → 180° → 270° → 360°), we force the camera
+        to actually traverse the full range.
+        """
+        sweep_range = end - start
+        if abs(sweep_range) <= max_step:
+            return [end]
+
+        # Break into steps of max_step degrees
+        num_steps = int(abs(sweep_range) / max_step)
+        step_size = sweep_range / num_steps
+
+        waypoints = []
+        for i in range(1, num_steps + 1):
+            waypoints.append(start + i * step_size)
+
+        return waypoints
+
+    @classmethod
     def _execute_full_range_sweep(
         cls,
         session_id: str,
         ptz: BasePTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
-        """Execute full range sweep test."""
+        """Execute full range sweep test.
+
+        For full rotations (360°), the sweep is broken into quadrants to avoid
+        the PTZ camera's position normalization (where 360° = 0°).
+        """
         movements = []
         axis_config = config.pan_config or config.tilt_config
 
@@ -631,7 +669,17 @@ class CameraStressTestService:
         current_tilt = (status.tilt or 0) if status else 0
         current_zoom = (status.zoom or 0) if status else 0
 
-        total_movements = config.repetitions * 2  # Forward and back
+        # Generate waypoints for forward and back sweeps
+        forward_waypoints = cls._generate_sweep_waypoints(
+            axis_config.start, axis_config.end
+        )
+        back_waypoints = cls._generate_sweep_waypoints(
+            axis_config.end, axis_config.start
+        )
+
+        # Calculate total movements: (forward waypoints + back waypoints) * repetitions
+        movements_per_rep = len(forward_waypoints) + len(back_waypoints)
+        total_movements = config.repetitions * movements_per_rep
 
         with cls._lock:
             cls._session_progress[session_id].total_movements = total_movements
@@ -642,40 +690,54 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Sweep {rep + 1}/{config.repetitions}: Forward"
 
-            # Sweep forward
-            if axis_config.axis == "pan":
-                target_pan = axis_config.end
-                target_tilt = current_tilt
-            else:
-                target_pan = current_pan
-                target_tilt = axis_config.end
+            # Sweep forward through all waypoints
+            for i, waypoint in enumerate(forward_waypoints):
+                if cls._abort_flags.get(session_id):
+                    break
 
-            with cls._lock:
-                cls._session_progress[session_id].current_movement = len(movements) + 1
+                with cls._lock:
+                    cls._session_progress[session_id].current_movement = len(movements) + 1
+                    cls._session_progress[session_id].message = (
+                        f"Sweep {rep + 1}/{config.repetitions}: "
+                        f"Forward {i + 1}/{len(forward_waypoints)}"
+                    )
 
-            movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
-            movements.append(movement)
+                if axis_config.axis == "pan":
+                    target_pan = waypoint
+                    target_tilt = current_tilt
+                else:
+                    target_pan = current_pan
+                    target_tilt = waypoint
 
-            with cls._lock:
-                cls._session_progress[session_id].current_position = movement.end_position
-                cls._session_progress[session_id].message = f"Sweep {rep + 1}/{config.repetitions}: Return"
+                movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
+                movements.append(movement)
 
-            # Sweep back
-            if axis_config.axis == "pan":
-                target_pan = axis_config.start
-            else:
-                target_tilt = axis_config.start
+                with cls._lock:
+                    cls._session_progress[session_id].current_position = movement.end_position
 
-            with cls._lock:
-                cls._session_progress[session_id].current_movement = len(movements) + 1
+            # Sweep back through all waypoints
+            for i, waypoint in enumerate(back_waypoints):
+                if cls._abort_flags.get(session_id):
+                    break
 
-            movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
-            movements.append(movement)
+                with cls._lock:
+                    cls._session_progress[session_id].current_movement = len(movements) + 1
+                    cls._session_progress[session_id].message = (
+                        f"Sweep {rep + 1}/{config.repetitions}: "
+                        f"Return {i + 1}/{len(back_waypoints)}"
+                    )
 
-            with cls._lock:
-                cls._session_progress[session_id].current_position = movement.end_position
+                if axis_config.axis == "pan":
+                    target_pan = waypoint
+                else:
+                    target_tilt = waypoint
+
+                movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
+                movements.append(movement)
+
+                with cls._lock:
+                    cls._session_progress[session_id].current_position = movement.end_position
 
         return movements
 
@@ -719,7 +781,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Diagonal {rep + 1}/{config.repetitions}: Moving"
+                cls._session_progress[
+                    session_id
+                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Moving"
 
             # Move diagonally to end position
             target_pan = start_pan + (config.pan_config.end - config.pan_config.start)
@@ -733,7 +797,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = movement.end_position
-                cls._session_progress[session_id].message = f"Diagonal {rep + 1}/{config.repetitions}: Return"
+                cls._session_progress[
+                    session_id
+                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Return"
 
             # Return to start
             with cls._lock:
@@ -781,7 +847,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
-                cls._session_progress[session_id].message = f"Position test {rep + 1}/{config.repetitions}: To target"
+                cls._session_progress[
+                    session_id
+                ].message = f"Position test {rep + 1}/{config.repetitions}: To target"
 
             # Move to target
             with cls._lock:
@@ -792,7 +860,9 @@ class CameraStressTestService:
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = movement.end_position
-                cls._session_progress[session_id].message = f"Position test {rep + 1}/{config.repetitions}: Return"
+                cls._session_progress[
+                    session_id
+                ].message = f"Position test {rep + 1}/{config.repetitions}: Return"
 
             # Return to start
             with cls._lock:
