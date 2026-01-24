@@ -3,11 +3,11 @@ from django.db import models
 
 class CameraConfig(models.Model):
     """
-    Camera configuration model for externally-managed camera_configs table.
+    Camera configuration model for the camera_configs table.
 
-    This model provides read-only access to camera configurations populated by
-    the infra project's GitHub Actions. The table schema is owned by infra,
-    so this model uses managed=False to prevent Django from modifying the schema.
+    This model stores camera configurations that are populated by the infra
+    project's GitHub Actions. The infra workflow fetches camera data from
+    inventory, decrypts credentials with Ansible Vault, and writes to this table.
     """
 
     camera_id = models.CharField(max_length=100, primary_key=True)
@@ -25,7 +25,6 @@ class CameraConfig(models.Model):
     status = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
-        managed = False
         db_table = "camera_configs"
 
     def __str__(self):
