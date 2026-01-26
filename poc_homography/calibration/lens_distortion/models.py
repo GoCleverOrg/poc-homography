@@ -50,6 +50,9 @@ class CameraLine:
         ptz_position: Camera PTZ position when image was captured.
         line_type: Category of line ("boundary", "divider", "crosswalk", etc.).
         confidence: Detection confidence score (0.0 to 1.0).
+        edge_pixels: Optional array of actual edge pixel coordinates along
+            the line, shape (N, 2). If provided, sample_points() returns
+            these instead of interpolated points.
     """
 
     line_id: str
@@ -59,6 +62,7 @@ class CameraLine:
     ptz_position: PTZPosition
     line_type: str = "parking"
     confidence: float = 1.0
+    edge_pixels: tuple[tuple[float, float], ...] | None = None
 
     def __post_init__(self) -> None:
         """Validate line coordinates."""
@@ -88,14 +92,28 @@ class CameraLine:
         return np.array([self.start_pixel, self.end_pixel], dtype=np.float64)
 
     def sample_points(self, num_samples: int = 20) -> np.ndarray:
-        """Sample evenly-spaced points along the line.
+        """Sample points along the line.
+
+        If edge_pixels are available, returns a subsampled version of those
+        actual edge coordinates (which contain the distortion information).
+        Otherwise, falls back to linear interpolation between endpoints.
 
         Args:
             num_samples: Number of points to sample.
 
         Returns:
-            Array of shape (num_samples, 2) with (u, v) coordinates.
+            Array of shape (N, 2) with (u, v) coordinates.
         """
+        if self.edge_pixels is not None and len(self.edge_pixels) >= 2:
+            # Use actual edge pixels - these contain the distortion signal
+            edge_arr = np.array(self.edge_pixels, dtype=np.float64)
+            if len(edge_arr) <= num_samples:
+                return edge_arr
+            # Subsample evenly
+            indices = np.linspace(0, len(edge_arr) - 1, num_samples, dtype=int)
+            return edge_arr[indices]
+
+        # Fallback to linear interpolation (only useful for visualization)
         t = np.linspace(0, 1, num_samples)
         start = np.array(self.start_pixel)
         end = np.array(self.end_pixel)

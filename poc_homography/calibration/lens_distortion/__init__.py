@@ -36,6 +36,18 @@ from poc_homography.calibration.lens_distortion.models import (
     GroundTruthLine,
     LineCorrespondence,
 )
+from poc_homography.calibration.lens_distortion.sam3_masking import (
+    SAM3Config,
+    SAM3Result,
+    SAM3Segmenter,
+    apply_mask,
+    dilate_mask,
+)
+from poc_homography.calibration.lens_distortion.masked_line_detection import (
+    MaskedLineDetectionConfig,
+    MaskedLineDetectionResult,
+    MaskedLineDetector,
+)
 from poc_homography.calibration.lens_distortion.survey_automation import (
     CALIBRATION_SURVEY_PRESETS,
     CameraInfo,
@@ -74,4 +86,14 @@ __all__ = [
     "TenantInfo",
     "CameraInfo",
     "CALIBRATION_SURVEY_PRESETS",
+    # SAM3 masking
+    "SAM3Config",
+    "SAM3Result",
+    "SAM3Segmenter",
+    "apply_mask",
+    "dilate_mask",
+    # Masked line detection
+    "MaskedLineDetectionConfig",
+    "MaskedLineDetectionResult",
+    "MaskedLineDetector",
 ]

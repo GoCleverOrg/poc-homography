@@ -13,7 +13,7 @@ import yaml
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 # Paths relative to webapp directory
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
@@ -125,11 +125,25 @@ def save_session_annotations(request: HttpRequest, annotations: dict[str, list[d
 def extract_camera_status(filename: str) -> dict[str, Any]:
     """Extract pan/tilt/zoom from filename pattern.
 
-    Pattern: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
-    Example: valte_56.7_20.7_1_20260114_182208.jpg
+    Supports two patterns:
+    1. Old: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
+       Example: valte_56.7_20.7_1_20260114_182208.jpg
+    2. New: valte_valte_cam01_{date}_{time}_{pan}_{tilt}_{zoom}.{ext}
+       Example: valte_valte_cam01_20260123_120715_30.0_20.6_1.0.jpg
     """
-    pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
-    match = re.match(pattern, filename)
+    # Try new format first (PTZ at the end before extension)
+    new_pattern = r".*_([0-9.]+)_([0-9.]+)_([0-9.]+)\.[a-zA-Z]+$"
+    match = re.match(new_pattern, filename)
+    if match:
+        return {
+            "pan": float(match.group(1)),
+            "tilt": float(match.group(2)),
+            "zoom": int(float(match.group(3))),
+        }
+
+    # Try old format (PTZ at the beginning after valte_)
+    old_pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
+    match = re.match(old_pattern, filename)
     if match:
         return {
             "pan": float(match.group(1)),
@@ -534,10 +548,17 @@ def api_detect_lines(request: HttpRequest) -> JsonResponse:
             pass  # Use default config
 
     try:
+        from PIL import Image
+
         from poc_homography.calibration.lens_distortion.line_detection import (
             LineDetectionConfig,
             LineDetector,
         )
+
+        # Get image dimensions for filtering
+        with Image.open(resolved_path) as img:
+            img_width = img.width
+            img_height = img.height
 
         # Create config with any overrides
         config = LineDetectionConfig(**config_overrides)
@@ -546,21 +567,31 @@ def api_detect_lines(request: HttpRequest) -> JsonResponse:
         # Run detection
         candidates = detector.detect_from_file(resolved_path)
 
-        # Convert to JSON-serializable format
+        # Filter: only keep lines where both endpoints are within image bounds
         detected_lines = []
         for c in candidates:
-            detected_lines.append(
-                {
-                    "start_x": c.start[0],
-                    "start_y": c.start[1],
-                    "end_x": c.end[0],
-                    "end_y": c.end[1],
-                    "confidence": c.confidence,
-                    "angle_deg": c.angle_deg,
-                    "length": c.length,
-                    "cluster_id": c.cluster_id,
-                }
-            )
+            # Check all coordinates are within image bounds
+            if (
+                0 <= c.start[0] <= img_width
+                and 0 <= c.start[1] <= img_height
+                and 0 <= c.end[0] <= img_width
+                and 0 <= c.end[1] <= img_height
+            ):
+                detected_lines.append(
+                    {
+                        "start_x": c.start[0],
+                        "start_y": c.start[1],
+                        "end_x": c.end[0],
+                        "end_y": c.end[1],
+                        "confidence": c.confidence,
+                        "angle_deg": c.angle_deg,
+                        "length": c.length,
+                        "cluster_id": c.cluster_id,
+                    }
+                )
+
+        # Sort by confidence (highest first)
+        detected_lines.sort(key=lambda x: x["confidence"], reverse=True)
 
         return JsonResponse(
             {
@@ -586,3 +617,163 @@ def api_detect_lines(request: HttpRequest) -> JsonResponse:
             },
             status=500,
         )
+
+
+@csrf_exempt
+@require_POST
+def api_detect_lines_masked(request: HttpRequest) -> JsonResponse:
+    """Detect lines using SAM3 masking to filter to ground markings only.
+
+    POST /api/detect-lines-masked/
+    Optional JSON body:
+        - min_line_length: Minimum line length in pixels
+        - min_confidence: Minimum confidence score (0.0-1.0)
+        - sam3_prompt: SAM3 segmentation prompt (default: "white lines on ground")
+        - include_comparison: If true, also return count of unmasked detection
+
+    Returns JSON with detected lines, SAM3 mask info, and comparison stats.
+    """
+    current_image = get_current_image(request)
+    if not current_image:
+        return JsonResponse({"error": "No image selected"}, status=400)
+
+    image_path = TEST_DATA_DIR / current_image
+
+    try:
+        resolved_path = image_path.resolve()
+        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
+            return JsonResponse({"error": "Invalid image path"}, status=400)
+    except (ValueError, RuntimeError):
+        return JsonResponse({"error": "Invalid image path"}, status=400)
+
+    if not resolved_path.exists():
+        return JsonResponse({"error": f"Image not found: {current_image}"}, status=404)
+
+    # Parse configuration from request
+    line_config_overrides = {}
+    sam3_prompt = "white lines on ground"
+    include_comparison = False
+
+    if request.body:
+        try:
+            data = json.loads(request.body)
+            if "min_line_length" in data:
+                line_config_overrides["min_line_length"] = int(data["min_line_length"])
+            if "min_confidence" in data:
+                line_config_overrides["min_confidence"] = float(data["min_confidence"])
+            if "sam3_prompt" in data:
+                sam3_prompt = str(data["sam3_prompt"])
+            if "include_comparison" in data:
+                include_comparison = bool(data["include_comparison"])
+        except json.JSONDecodeError:
+            pass  # Use default config
+
+    try:
+        import os
+
+        from PIL import Image
+
+        from poc_homography.calibration.lens_distortion.line_detection import (
+            LineDetectionConfig,
+        )
+        from poc_homography.calibration.lens_distortion.masked_line_detection import (
+            MaskedLineDetectionConfig,
+            MaskedLineDetector,
+        )
+        from poc_homography.calibration.lens_distortion.sam3_masking import SAM3Config
+
+        # Get image dimensions
+        with Image.open(resolved_path) as img:
+            img_width = img.width
+            img_height = img.height
+
+        # Check for API key
+        api_key = os.environ.get("ROBOFLOW_API_KEY")
+        if not api_key:
+            return JsonResponse(
+                {
+                    "error": "ROBOFLOW_API_KEY environment variable not set",
+                    "details": "Set ROBOFLOW_API_KEY to use SAM3 masked detection",
+                },
+                status=500,
+            )
+
+        # Create configs
+        sam3_config = SAM3Config(api_key=api_key, prompt=sam3_prompt)
+        line_config = LineDetectionConfig(**line_config_overrides) if line_config_overrides else None
+        config = MaskedLineDetectionConfig(
+            sam3_config=sam3_config,
+            line_config=line_config,
+        )
+
+        # Run masked detection
+        detector = MaskedLineDetector(config)
+        result = detector.detect_from_file(resolved_path, include_original_count=include_comparison)
+
+        # Filter and convert lines
+        detected_lines = []
+        for c in result.lines:
+            if (
+                0 <= c.start[0] <= img_width
+                and 0 <= c.start[1] <= img_height
+                and 0 <= c.end[0] <= img_width
+                and 0 <= c.end[1] <= img_height
+            ):
+                detected_lines.append(
+                    {
+                        "start_x": c.start[0],
+                        "start_y": c.start[1],
+                        "end_x": c.end[0],
+                        "end_y": c.end[1],
+                        "confidence": c.confidence,
+                        "angle_deg": c.angle_deg,
+                        "length": c.length,
+                        "cluster_id": c.cluster_id,
+                    }
+                )
+
+        detected_lines.sort(key=lambda x: x["confidence"], reverse=True)
+
+        response_data = {
+            "success": True,
+            "filename": current_image,
+            "detected_lines": detected_lines,
+            "total_detected": len(detected_lines),
+            "sam3": {
+                "prompt": result.sam3_result.prompt,
+                "coverage_percent": result.sam3_result.coverage_percent,
+                "polygon_count": len(result.sam3_result.polygons),
+                "error": result.sam3_result.error,
+            },
+        }
+
+        if include_comparison and result.original_line_count > 0:
+            reduction = (1 - len(detected_lines) / result.original_line_count) * 100
+            response_data["comparison"] = {
+                "original_line_count": result.original_line_count,
+                "masked_line_count": len(detected_lines),
+                "reduction_percent": round(reduction, 1),
+            }
+
+        return JsonResponse(response_data)
+
+    except ImportError as e:
+        return JsonResponse(
+            {
+                "error": f"Masked line detection module not available: {e}",
+                "details": "Ensure opencv-python and requests are installed",
+            },
+            status=500,
+        )
+    except Exception as e:
+        import traceback
+
+        return JsonResponse(
+            {
+                "error": f"Masked line detection failed: {e}",
+                "traceback": traceback.format_exc(),
+            },
+            status=500,
+        )
+
+

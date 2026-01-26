@@ -84,6 +84,8 @@ class CandidateLine:
         angle_deg: Line angle in degrees (0 = horizontal).
         length: Line length in pixels.
         cluster_id: ID of parallel line cluster (-1 if unclustered).
+        edge_pixels: Actual edge pixel coordinates along this line, shape (N, 2).
+            These contain the distortion signal needed for calibration.
     """
 
     start: tuple[float, float]
@@ -94,6 +96,7 @@ class CandidateLine:
     length: float = 0.0
     cluster_id: int = -1
     metadata: dict = field(default_factory=dict)
+    edge_pixels: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         """Calculate derived properties if not set."""
@@ -124,6 +127,13 @@ class CandidateLine:
         """
         from poc_homography.calibration.lens_distortion.models import CameraLine
 
+        # Convert edge_pixels array to tuple of tuples for frozen dataclass
+        edge_pixels_tuple = None
+        if self.edge_pixels is not None and len(self.edge_pixels) > 0:
+            edge_pixels_tuple = tuple(
+                (float(p[0]), float(p[1])) for p in self.edge_pixels
+            )
+
         return CameraLine(
             line_id=line_id,
             image_path=image_path,
@@ -132,6 +142,7 @@ class CandidateLine:
             ptz_position=ptz_position,
             line_type=line_type,
             confidence=self.confidence,
+            edge_pixels=edge_pixels_tuple,
         )
 
 
@@ -208,10 +219,14 @@ class LineDetector:
             # Calculate edge strength along the line
             edge_strength = self._calculate_edge_strength(edge_magnitude, (x1, y1), (x2, y2))
 
+            # Extract actual edge pixels along this line corridor
+            edge_pixels = self._extract_edge_pixels(edges, (x1, y1), (x2, y2))
+
             candidate = CandidateLine(
                 start=(float(x1), float(y1)),
                 end=(float(x2), float(y2)),
                 edge_strength=edge_strength,
+                edge_pixels=edge_pixels,
             )
             candidates.append(candidate)
 
@@ -293,6 +308,58 @@ class LineDetector:
 
         return float(np.mean(magnitudes))
 
+    def _extract_edge_pixels(
+        self,
+        edges: np.ndarray,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        corridor_width: int = 3,
+    ) -> np.ndarray:
+        """Extract actual edge pixel coordinates along a line corridor.
+
+        These edge pixels contain the distortion signal - if the lens has
+        distortion, the edge pixels will deviate from a perfect straight line.
+
+        Args:
+            edges: Binary edge image from Canny detector.
+            start: (x, y) start point.
+            end: (x, y) end point.
+            corridor_width: Half-width of corridor to search (pixels).
+
+        Returns:
+            Array of shape (N, 2) with (x, y) edge pixel coordinates,
+            sorted along the line direction.
+        """
+        height, width = edges.shape[:2]
+
+        # Create a corridor mask along the line
+        mask = np.zeros_like(edges)
+        pt1 = (int(start[0]), int(start[1]))
+        pt2 = (int(end[0]), int(end[1]))
+        cv2.line(mask, pt1, pt2, 255, corridor_width * 2 + 1)
+
+        # Find edge pixels within the corridor
+        edge_coords = np.column_stack(np.where((edges > 0) & (mask > 0)))
+
+        if len(edge_coords) == 0:
+            return np.array([]).reshape(0, 2)
+
+        # Convert from (row, col) to (x, y)
+        edge_pixels = edge_coords[:, ::-1].astype(np.float64)
+
+        # Sort along the line direction
+        line_vec = np.array([end[0] - start[0], end[1] - start[1]], dtype=np.float64)
+        line_len = np.linalg.norm(line_vec)
+        if line_len > 0:
+            line_vec = line_vec / line_len
+            # Project each point onto the line to get parameter t
+            relative = edge_pixels - np.array(start, dtype=np.float64)
+            t_values = relative @ line_vec
+            sort_indices = np.argsort(t_values)
+            edge_pixels = edge_pixels[sort_indices]
+
+        return edge_pixels
+
     def _cluster_parallel_lines(self, candidates: list[CandidateLine]) -> list[CandidateLine]:
         """Group parallel lines into clusters.
 
@@ -352,6 +419,7 @@ class LineDetector:
                         length=old.length,
                         cluster_id=cluster_id,
                         metadata=old.metadata,
+                        edge_pixels=old.edge_pixels,
                     )
                 )
 
@@ -411,6 +479,7 @@ class LineDetector:
                     length=c.length,
                     cluster_id=c.cluster_id,
                     metadata=c.metadata,
+                    edge_pixels=c.edge_pixels,
                 )
             )
 

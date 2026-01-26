@@ -244,6 +244,172 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
+    """Run distortion calibration from camera_line_annotator calibration JSON files.
+
+    This endpoint accepts multiple calibration JSON files (from the camera_line_annotator
+    tool) and uses the n-point calibration lines for lens distortion calibration.
+    Lines with the same line_id across multiple frames are combined.
+
+    Request body:
+    {
+        "files": [
+            {
+                "image": "filename.jpg",
+                "camera_status": {"pan": 30.0, "tilt": 20.6, "zoom": 1.0},
+                "calibration_lines": [
+                    {"index": 0, "point_count": 4, "points": [[x,y],...], "line_id": "L5"},
+                    ...
+                ]
+            },
+            ...
+        ],
+        "intrinsics": {
+            "fx": 1000.0,
+            "fy": 1000.0,
+            "cx": 960.0,
+            "cy": 540.0
+        },
+        "config": {
+            "radial_only": false,
+            "max_iterations": 1000
+        }
+    }
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    # Validate required fields
+    if "intrinsics" not in data:
+        return JsonResponse({"error": "Missing intrinsics"}, status=400)
+
+    if "files" not in data or not data["files"]:
+        return JsonResponse({"error": "No calibration files provided"}, status=400)
+
+    try:
+        import numpy as np
+
+        from poc_homography.calibration.lens_distortion.distortion_solver import (
+            DistortionSolver,
+            SolverConfig,
+        )
+        from poc_homography.calibration.lens_distortion.models import (
+            CameraLine,
+            PTZPosition,
+        )
+        from poc_homography.types import Degrees
+
+        # Build intrinsic matrix
+        intrinsics = data["intrinsics"]
+        intrinsic_matrix = np.array(
+            [
+                [intrinsics.get("fx", 1000.0), 0.0, intrinsics.get("cx", 960.0)],
+                [0.0, intrinsics.get("fy", 1000.0), intrinsics.get("cy", 540.0)],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+
+        # Get config
+        config_data = data.get("config", {})
+        solver_config = SolverConfig(
+            use_radial_only=config_data.get("radial_only", False),
+            max_iterations=config_data.get("max_iterations", 1000),
+        )
+
+        # Parse calibration files and create CameraLine objects
+        camera_lines: list[CameraLine] = []
+        frame_info: list[dict] = []
+
+        for file_data in data["files"]:
+            image_name = file_data.get("image", "unknown")
+            camera_status = file_data.get("camera_status", {})
+            calibration_lines = file_data.get("calibration_lines", [])
+
+            # Create PTZ position from camera status
+            ptz = PTZPosition(
+                pan_deg=Degrees(camera_status.get("pan", 0.0)),
+                tilt_deg=Degrees(camera_status.get("tilt", 30.0)),
+                zoom_factor=camera_status.get("zoom", 1.0),
+            )
+
+            frame_info.append({
+                "image": image_name,
+                "ptz": {"pan": float(ptz.pan_deg), "tilt": float(ptz.tilt_deg), "zoom": ptz.zoom_factor},
+                "num_lines": len(calibration_lines),
+            })
+
+            for cal_line in calibration_lines:
+                points = cal_line.get("points", [])
+                if len(points) < 2:
+                    continue
+
+                line_id = cal_line.get("line_id") or f"line_{cal_line.get('index', 0):04d}"
+
+                # Convert points to tuples for edge_pixels
+                edge_pixels = tuple(tuple(pt) for pt in points)
+
+                # Use first and last point as start/end
+                start_pixel = tuple(points[0])
+                end_pixel = tuple(points[-1])
+
+                camera_line = CameraLine(
+                    line_id=f"{line_id}_{image_name}",  # Make unique per frame
+                    image_path=image_name,
+                    start_pixel=start_pixel,
+                    end_pixel=end_pixel,
+                    ptz_position=ptz,
+                    confidence=1.0,
+                    edge_pixels=edge_pixels,
+                )
+                camera_lines.append(camera_line)
+
+        if len(camera_lines) < 1:
+            return JsonResponse({"error": "No valid calibration lines found (need at least 2 points per line)"}, status=400)
+
+        # Run calibration
+        solver = DistortionSolver(config=solver_config)
+        result = solver.solve(camera_lines, intrinsic_matrix)
+
+        # Build response
+        response_data: dict[str, Any] = {
+            "success": result.success,
+            "message": result.message,
+            "iterations": result.iterations,
+            "num_lines": len(camera_lines),
+            "num_frames": len(data["files"]),
+            "frame_info": frame_info,
+            "initial_error": result.initial_error,
+            "final_error": result.final_error,
+            "improvement_percent": (1 - result.improvement_ratio()) * 100,
+            "overall_rmse": result.overall_rmse,
+            "coefficients": {
+                "k1": float(result.distortion.k1),
+                "k2": float(result.distortion.k2),
+                "k3": float(result.distortion.k3),
+                "p1": float(result.distortion.p1),
+                "p2": float(result.distortion.p2),
+            },
+            "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
+            "line_errors": result.line_errors[:20],  # Top 20 worst lines
+        }
+
+        return JsonResponse(response_data)
+
+    except ImportError as e:
+        logger.exception("Calibration module not available")
+        return JsonResponse({"error": f"Calibration module not available: {e}"}, status=500)
+    except ValueError as e:
+        logger.exception("Calibration validation error")
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        logger.exception("Calibration failed")
+        return JsonResponse({"error": f"Calibration failed: {e}"}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def api_validate(request: HttpRequest) -> JsonResponse:
     """Validate calibration by computing straightness RMSE on test lines.
 

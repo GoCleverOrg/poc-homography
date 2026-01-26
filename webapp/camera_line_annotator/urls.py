@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/camera-status/", views.api_camera_status, name="api_camera_status"),
     path("api/export/", views.api_export, name="api_export"),
     path("api/detect-lines/", views.api_detect_lines, name="api_detect_lines"),
+    path("api/detect-lines-masked/", views.api_detect_lines_masked, name="api_detect_lines_masked"),
     # Image serving
     path("image/", views.serve_image, name="serve_image"),
 ]
