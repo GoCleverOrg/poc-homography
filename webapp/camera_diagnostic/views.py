@@ -29,6 +29,7 @@ from poc_homography.camera_config import (
     get_cameras_for_tenant,
     get_rtsp_url,
     get_tenant_by_id,
+    get_tenant_credentials,
     get_tenants,
 )
 
@@ -127,13 +128,16 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
             f"No IP address configured for camera: {camera_name}",
         )
 
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
+    # Get tenant-specific credentials (falls back to global)
+    tenant_id = camera.get("tenant_id")
+    username, password = get_tenant_credentials(tenant_id)
 
     if not username or not password:
         return _error_response(
             CameraErrorCategory.CREDENTIALS_NOT_SET,
-            "Camera credentials not set. Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
+            f"Camera credentials not set for tenant '{tenant_id}'. "
+            f"Set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD, "
+            "or global CAMERA_USERNAME/CAMERA_PASSWORD as fallback.",
         )
 
     return (camera, camera_ip, username, password)
@@ -707,14 +711,15 @@ def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
             status_code=404,
         )
 
-    # Get credentials
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
+    # Get tenant-specific credentials (falls back to global)
+    username, password = get_tenant_credentials(tenant_id)
 
     if not username or not password:
         return _error_response(
             CameraErrorCategory.CREDENTIALS_NOT_SET,
-            "Camera credentials not set (CAMERA_USERNAME, CAMERA_PASSWORD)",
+            f"Camera credentials not set for tenant '{tenant_id}'. "
+            f"Set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD, "
+            "or global CAMERA_USERNAME/CAMERA_PASSWORD as fallback.",
         )
 
     # Create session
@@ -741,7 +746,7 @@ def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
         # Get device info if possible
         if camera_ip:
             try:
-                ptz_camera = create_ptz_camera(camera_ip, camera_name)
+                ptz_camera = create_ptz_camera(camera_ip, camera_name, tenant_id=tenant_id)
                 camera_result.device_info = ptz_camera.get_device_info()
             except Exception as e:
                 logger.warning(f"Could not get device info for {camera_name}: {e}")

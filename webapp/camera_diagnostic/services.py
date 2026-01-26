@@ -29,7 +29,7 @@ from django.conf import settings
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 from requests.auth import HTTPDigestAuth
 
-from poc_homography.camera_config import get_camera_by_id, get_rtsp_url
+from poc_homography.camera_config import get_camera_by_id, get_rtsp_url, get_tenant_credentials
 
 from .models import (
     MovementTiming,
@@ -1342,10 +1342,15 @@ class CameraStressTestService:
         if not camera_ip:
             return None, f"No IP address for camera: {config.camera_id}"
 
-        username = os.getenv("CAMERA_USERNAME")
-        password = os.getenv("CAMERA_PASSWORD")
+        # Get tenant-specific credentials (falls back to global)
+        tenant_id = camera.get("tenant_id") or config.tenant_id
+        username, password = get_tenant_credentials(tenant_id)
         if not username or not password:
-            return None, "Camera credentials not set (CAMERA_USERNAME, CAMERA_PASSWORD)"
+            return None, (
+                f"Camera credentials not set for tenant '{tenant_id}'. "
+                f"Set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD, "
+                "or global CAMERA_USERNAME/CAMERA_PASSWORD as fallback."
+            )
 
         # Create session
         session_id = str(uuid.uuid4())
@@ -1407,7 +1412,7 @@ class CameraStressTestService:
             cls._session_progress[session_id].message = "Connecting to camera..."
 
         # Initialize PTZ controller using abstraction layer
-        ptz = create_ptz_camera(camera_ip, session.camera_name)
+        ptz = create_ptz_camera(camera_ip, session.camera_name, tenant_id=session.tenant_id)
 
         movements: list[MovementTiming] = []
         test_start_time = time.time()

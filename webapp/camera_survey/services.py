@@ -376,6 +376,7 @@ class CameraSurveyService:
                     camera_ip=camera_ip,
                     camera_name=camera.get("name", config.camera_id),
                     camera_model=camera.get("model"),
+                    tenant_id=config.tenant_id,
                 )
             except ValueError as e:
                 _survey_lock.release()

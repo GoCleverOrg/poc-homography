@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
+from poc_homography.camera_config import get_tenant_credentials
+
 from .models import CameraCapabilities, DeviceInfo, PTZPosition
 
 logger = logging.getLogger(__name__)
@@ -86,12 +88,20 @@ class HikvisionPTZCamera(BasePTZCamera):
     STABLE_THRESHOLD = 0.5  # Seconds of no change to consider stable
     POSITION_TOLERANCE = 0.1  # Degrees tolerance for position comparison
 
-    def __init__(self, camera_ip: str, camera_name: str = "Camera"):
+    def __init__(
+        self,
+        camera_ip: str,
+        camera_name: str = "Camera",
+        username: str | None = None,
+        password: str | None = None,
+    ):
         """Initialize Hikvision PTZ camera.
 
         Args:
             camera_ip: IP address of the camera.
             camera_name: Display name for logging.
+            username: Camera username. If None, falls back to CAMERA_USERNAME env var.
+            password: Camera password. If None, falls back to CAMERA_PASSWORD env var.
 
         Raises:
             ValueError: If camera credentials are not set.
@@ -99,9 +109,9 @@ class HikvisionPTZCamera(BasePTZCamera):
         self.camera_ip = camera_ip
         self.camera_name = camera_name
 
-        # Get credentials from environment
-        username = os.getenv("CAMERA_USERNAME")
-        password = os.getenv("CAMERA_PASSWORD")
+        # Use provided credentials or fall back to environment variables
+        username = username or os.getenv("CAMERA_USERNAME")
+        password = password or os.getenv("CAMERA_PASSWORD")
 
         if not username or not password:
             raise ValueError(
@@ -260,7 +270,10 @@ class HikvisionPTZCamera(BasePTZCamera):
 
 
 def create_ptz_camera(
-    camera_ip: str, camera_name: str, camera_model: str | None = None
+    camera_ip: str,
+    camera_name: str,
+    camera_model: str | None = None,
+    tenant_id: str | None = None,
 ) -> BasePTZCamera:
     """Factory function to create appropriate PTZ camera instance.
 
@@ -268,6 +281,7 @@ def create_ptz_camera(
         camera_ip: IP address of the camera.
         camera_name: Display name for logging.
         camera_model: Camera model string (used to detect brand).
+        tenant_id: Tenant ID to look up credentials. If None, uses global credentials.
 
     Returns:
         BasePTZCamera instance appropriate for the camera brand.
@@ -275,6 +289,16 @@ def create_ptz_camera(
     Currently only supports Hikvision cameras. Future enhancement:
     detect brand from model string and return appropriate implementation.
     """
+    # Get tenant-specific credentials if tenant_id provided
+    username, password = None, None
+    if tenant_id:
+        username, password = get_tenant_credentials(tenant_id)
+
     # For now, default to Hikvision
     # Future: detect brand from camera_model and return appropriate implementation
-    return HikvisionPTZCamera(camera_ip=camera_ip, camera_name=camera_name)
+    return HikvisionPTZCamera(
+        camera_ip=camera_ip,
+        camera_name=camera_name,
+        username=username,
+        password=password,
+    )

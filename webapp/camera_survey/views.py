@@ -200,6 +200,7 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
                 camera_ip=camera_ip,
                 camera_name=camera.get("name", data["camera_id"]),
                 camera_model=camera.get("model"),
+                tenant_id=data["tenant_id"],
             )
             capabilities = ptz_camera.get_capabilities()
         except ValueError as e:
@@ -473,7 +474,7 @@ def api_ptz_status(request: HttpRequest) -> JsonResponse:
 
     try:
         # Create PTZ camera instance
-        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name)
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
 
         # Get current position
         position = ptz_camera.get_status()
