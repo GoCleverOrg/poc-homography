@@ -1177,6 +1177,7 @@ def api_stress_test_start(request: HttpRequest) -> JsonResponse:
             tilt_config=preset.tilt_config,
             zoom_config=preset.zoom_config,
             repetitions=preset.repetitions,
+            max_speed=preset.max_speed,
         )
     else:
         # Custom config
@@ -1217,6 +1218,7 @@ def api_stress_test_start(request: HttpRequest) -> JsonResponse:
             tilt_config=tilt_config,
             zoom_config=zoom_config,
             repetitions=data.get("repetitions", 1),
+            max_speed=data.get("max_speed", False),
         )
 
     # Start the stress test

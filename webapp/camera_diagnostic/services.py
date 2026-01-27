@@ -1579,6 +1579,104 @@ class CameraStressTestService:
         )
 
     @classmethod
+    def _measure_movement_max_speed(
+        cls,
+        ptz: BasePTZCamera,
+        target_pan: float,
+        target_tilt: float,
+        target_zoom: float,
+    ) -> MovementTiming:
+        """Measure timing for movement using continuous movement at max speed.
+
+        Uses move_continuous with ±100 speed values for maximum motor speed,
+        creating more vibration and torque for installation stress testing.
+        """
+        MAX_SPEED = 100
+        POSITION_THRESHOLD = 2.0  # degrees - stop when within this of target
+
+        # Get starting position
+        start_position = _ptz_position_to_dict(ptz.get_status())
+
+        target_position = {
+            "pan": target_pan,
+            "tilt": target_tilt,
+            "zoom": target_zoom,
+        }
+
+        # Calculate direction for each axis
+        pan_diff = target_pan - start_position["pan"]
+        tilt_diff = target_tilt - start_position["tilt"]
+        zoom_diff = target_zoom - start_position["zoom"]
+
+        # Determine speed values (-100 to +100)
+        pan_speed = MAX_SPEED if pan_diff > POSITION_THRESHOLD else (-MAX_SPEED if pan_diff < -POSITION_THRESHOLD else 0)
+        tilt_speed = MAX_SPEED if tilt_diff > POSITION_THRESHOLD else (-MAX_SPEED if tilt_diff < -POSITION_THRESHOLD else 0)
+        zoom_speed = MAX_SPEED if zoom_diff > POSITION_THRESHOLD else (-MAX_SPEED if zoom_diff < -POSITION_THRESHOLD else 0)
+
+        # Start continuous movement at max speed
+        command_sent = datetime.now(timezone.utc)
+        ptz.move_continuous(pan=pan_speed, tilt=tilt_speed, zoom=zoom_speed)
+
+        # Wait until position is reached (or timeout)
+        start_time = time.time()
+        last_position = start_position.copy()
+
+        while time.time() - start_time < STRESS_TEST_STABILIZATION_TIMEOUT:
+            time.sleep(STRESS_TEST_POLL_INTERVAL)
+
+            status = ptz.get_status()
+            if status is None:
+                continue
+
+            current = _ptz_position_to_dict(status)
+
+            # Check if we've reached or passed the target on each active axis
+            reached_pan = pan_speed == 0 or (
+                (pan_speed > 0 and current["pan"] >= target_pan - POSITION_THRESHOLD) or
+                (pan_speed < 0 and current["pan"] <= target_pan + POSITION_THRESHOLD)
+            )
+            reached_tilt = tilt_speed == 0 or (
+                (tilt_speed > 0 and current["tilt"] >= target_tilt - POSITION_THRESHOLD) or
+                (tilt_speed < 0 and current["tilt"] <= target_tilt + POSITION_THRESHOLD)
+            )
+            reached_zoom = zoom_speed == 0 or (
+                (zoom_speed > 0 and current["zoom"] >= target_zoom - POSITION_THRESHOLD) or
+                (zoom_speed < 0 and current["zoom"] <= target_zoom + POSITION_THRESHOLD)
+            )
+
+            if reached_pan and reached_tilt and reached_zoom:
+                break
+
+            last_position = current
+
+        # Stop movement immediately
+        ptz.stop_movement()
+        stabilized = datetime.now(timezone.utc)
+
+        # Get final position after stopping
+        final_status = ptz.get_status()
+        final_position = _ptz_position_to_dict(final_status) if final_status else last_position
+
+        duration_ms = (stabilized - command_sent).total_seconds() * 1000
+
+        # Calculate position error
+        position_error = {
+            "pan": abs(final_position["pan"] - target_pan),
+            "tilt": abs(final_position["tilt"] - target_tilt),
+            "zoom": abs(final_position["zoom"] - target_zoom),
+        }
+
+        return MovementTiming(
+            command_sent=command_sent,
+            stabilized=stabilized,
+            duration_ms=duration_ms,
+            start_position=start_position,
+            end_position=final_position,
+            target_position=target_position,
+            position_error=position_error,
+        )
+
+    @classmethod
     def _wait_for_stabilization(
         cls,
         ptz: BasePTZCamera,
@@ -1679,15 +1777,19 @@ class CameraStressTestService:
         with cls._lock:
             cls._session_progress[session_id].total_movements = total_movements
 
+        # Select movement method based on max_speed setting
+        measure_fn = cls._measure_movement_max_speed if config.max_speed else cls._measure_movement
+
         for rep in range(config.repetitions):
             if cls._abort_flags.get(session_id):
                 break
 
             with cls._lock:
                 cls._session_progress[session_id].current_repetition = rep + 1
+                speed_mode = " [MAX SPEED]" if config.max_speed else ""
                 cls._session_progress[
                     session_id
-                ].message = f"Repetition {rep + 1}/{config.repetitions}"
+                ].message = f"Repetition {rep + 1}/{config.repetitions}{speed_mode}"
 
             # Move forward
             if axis_config.axis == "pan":
@@ -1701,7 +1803,7 @@ class CameraStressTestService:
             with cls._lock:
                 cls._session_progress[session_id].current_movement = len(movements) + 1
 
-            movement = cls._measure_movement(ptz, target_pan, target_tilt, target_zoom)
+            movement = measure_fn(ptz, target_pan, target_tilt, target_zoom)
             movements.append(movement)
 
             with cls._lock:
@@ -1711,7 +1813,7 @@ class CameraStressTestService:
             with cls._lock:
                 cls._session_progress[session_id].current_movement = len(movements) + 1
 
-            movement = cls._measure_movement(ptz, current_pan, current_tilt, current_zoom)
+            movement = measure_fn(ptz, current_pan, current_tilt, current_zoom)
             movements.append(movement)
 
             with cls._lock:
@@ -1861,6 +1963,10 @@ class CameraStressTestService:
         with cls._lock:
             cls._session_progress[session_id].total_movements = total_movements
 
+        # Select movement method based on max_speed setting
+        measure_fn = cls._measure_movement_max_speed if config.max_speed else cls._measure_movement
+        speed_mode = " [MAX SPEED]" if config.max_speed else ""
+
         for rep in range(config.repetitions):
             if cls._abort_flags.get(session_id):
                 break
@@ -1877,7 +1983,7 @@ class CameraStressTestService:
                     cls._session_progress[session_id].current_movement = len(movements) + 1
                     cls._session_progress[session_id].message = (
                         f"Sweep {rep + 1}/{config.repetitions}: "
-                        f"Forward {i + 1}/{len(forward_waypoints)}"
+                        f"Forward {i + 1}/{len(forward_waypoints)}{speed_mode}"
                     )
 
                 if axis_config.axis == "pan":
@@ -1887,7 +1993,7 @@ class CameraStressTestService:
                     target_pan = current_pan
                     target_tilt = waypoint
 
-                movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
+                movement = measure_fn(ptz, target_pan, target_tilt, current_zoom)
                 movements.append(movement)
 
                 with cls._lock:
@@ -1902,7 +2008,7 @@ class CameraStressTestService:
                     cls._session_progress[session_id].current_movement = len(movements) + 1
                     cls._session_progress[session_id].message = (
                         f"Sweep {rep + 1}/{config.repetitions}: "
-                        f"Return {i + 1}/{len(back_waypoints)}"
+                        f"Return {i + 1}/{len(back_waypoints)}{speed_mode}"
                     )
 
                 if axis_config.axis == "pan":
@@ -1910,7 +2016,7 @@ class CameraStressTestService:
                 else:
                     target_tilt = waypoint
 
-                movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
+                movement = measure_fn(ptz, target_pan, target_tilt, current_zoom)
                 movements.append(movement)
 
                 with cls._lock:
@@ -1952,6 +2058,10 @@ class CameraStressTestService:
         with cls._lock:
             cls._session_progress[session_id].total_movements = total_movements
 
+        # Select movement method based on max_speed setting
+        measure_fn = cls._measure_movement_max_speed if config.max_speed else cls._measure_movement
+        speed_mode = " [MAX SPEED]" if config.max_speed else ""
+
         for rep in range(config.repetitions):
             if cls._abort_flags.get(session_id):
                 break
@@ -1960,7 +2070,7 @@ class CameraStressTestService:
                 cls._session_progress[session_id].current_repetition = rep + 1
                 cls._session_progress[
                     session_id
-                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Moving"
+                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Moving{speed_mode}"
 
             # Move diagonally to end position
             target_pan = start_pan + (config.pan_config.end - config.pan_config.start)
@@ -1969,20 +2079,20 @@ class CameraStressTestService:
             with cls._lock:
                 cls._session_progress[session_id].current_movement = len(movements) + 1
 
-            movement = cls._measure_movement(ptz, target_pan, target_tilt, current_zoom)
+            movement = measure_fn(ptz, target_pan, target_tilt, current_zoom)
             movements.append(movement)
 
             with cls._lock:
                 cls._session_progress[session_id].current_position = movement.end_position
                 cls._session_progress[
                     session_id
-                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Return"
+                ].message = f"Diagonal {rep + 1}/{config.repetitions}: Return{speed_mode}"
 
             # Return to start
             with cls._lock:
                 cls._session_progress[session_id].current_movement = len(movements) + 1
 
-            movement = cls._measure_movement(ptz, start_pan, start_tilt, current_zoom)
+            movement = measure_fn(ptz, start_pan, start_tilt, current_zoom)
             movements.append(movement)
 
             with cls._lock:

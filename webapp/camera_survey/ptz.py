@@ -76,6 +76,27 @@ class BasePTZCamera(ABC):
             DeviceInfo with hardware details, or None if failed.
         """
 
+    @abstractmethod
+    def move_continuous(self, pan: int = 0, tilt: int = 0, zoom: int = 0) -> bool:
+        """Move camera continuously at specified speed.
+
+        Args:
+            pan: Pan speed (-100 to +100, negative=left, positive=right, 0=stop)
+            tilt: Tilt speed (-100 to +100, negative=down, positive=up, 0=stop)
+            zoom: Zoom speed (-100 to +100, negative=out, positive=in, 0=stop)
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+
+    @abstractmethod
+    def stop_movement(self) -> bool:
+        """Stop all PTZ movement.
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+
 
 class HikvisionPTZCamera(BasePTZCamera):
     """Hikvision PTZ camera implementation.
@@ -221,6 +242,39 @@ class HikvisionPTZCamera(BasePTZCamera):
         except Exception as e:
             logger.error(f"Failed to get device info for {self.camera_name}: {e}")
             return None
+
+    def move_continuous(self, pan: int = 0, tilt: int = 0, zoom: int = 0) -> bool:
+        """Move Hikvision camera continuously at specified speed.
+
+        Uses the /ISAPI/PTZCtrl/channels/1/continuous endpoint.
+
+        Args:
+            pan: Pan speed (-100 to +100)
+            tilt: Tilt speed (-100 to +100)
+            zoom: Zoom speed (-100 to +100)
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+        try:
+            return self._ptz.move_continuous(pan=pan, tilt=tilt, zoom=zoom)
+        except Exception as e:
+            logger.error(f"Failed to move_continuous for {self.camera_name}: {e}")
+            return False
+
+    def stop_movement(self) -> bool:
+        """Stop all PTZ movement on Hikvision camera.
+
+        Sends pan=0, tilt=0, zoom=0 to the continuous endpoint.
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+        try:
+            return self._ptz.stop_movement()
+        except Exception as e:
+            logger.error(f"Failed to stop_movement for {self.camera_name}: {e}")
+            return False
 
     def wait_for_stabilization(self, max_wait: float = 5.0) -> PTZPosition | None:
         """Wait for Hikvision camera to stabilize.
