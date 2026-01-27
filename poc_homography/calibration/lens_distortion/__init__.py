@@ -31,6 +31,11 @@ from poc_homography.calibration.lens_distortion.line_detection import (
     LineDetectionConfig,
     LineDetector,
 )
+from poc_homography.calibration.lens_distortion.masked_line_detection import (
+    MaskedLineDetectionConfig,
+    MaskedLineDetectionResult,
+    MaskedLineDetector,
+)
 from poc_homography.calibration.lens_distortion.models import (
     CameraLine,
     GroundTruthLine,
@@ -42,11 +47,6 @@ from poc_homography.calibration.lens_distortion.sam3_masking import (
     SAM3Segmenter,
     apply_mask,
     dilate_mask,
-)
-from poc_homography.calibration.lens_distortion.masked_line_detection import (
-    MaskedLineDetectionConfig,
-    MaskedLineDetectionResult,
-    MaskedLineDetector,
 )
 from poc_homography.calibration.lens_distortion.survey_automation import (
     CALIBRATION_SURVEY_PRESETS,
