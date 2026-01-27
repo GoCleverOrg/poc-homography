@@ -74,8 +74,9 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
 
         # Convert to JSON-serializable format
         entries = []
+        has_missing_intrinsics = False
         for zoom, entry in table.entries.items():
-            entries.append({
+            entry_data = {
                 "zoom_factor": entry.zoom_factor,
                 "coefficients": {
                     "k1": float(entry.k1),
@@ -87,12 +88,36 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
                 "calibration_date": entry.calibration_date,
                 "validation_rmse": entry.validation_rmse,
                 "num_lines_used": entry.num_lines_used,
-            })
+            }
+            # Include intrinsics if stored
+            if entry.has_intrinsics():
+                entry_data["intrinsics"] = entry.get_intrinsics()
+            else:
+                has_missing_intrinsics = True
+            entries.append(entry_data)
 
-        return JsonResponse({
+        # Warn if any entries are missing intrinsics (old calibration file)
+        if has_missing_intrinsics:
+            logger.warning(
+                "Calibration file %s contains entries without stored intrinsics. "
+                "Validation intrinsics may not match calibration intrinsics, "
+                "which can cause inaccurate results.",
+                filename
+            )
+
+        response_data: dict[str, Any] = {
             "camera_id": table.camera_id,
             "entries": entries,
-        })
+        }
+
+        # Add warning in response if intrinsics are missing
+        if has_missing_intrinsics:
+            response_data["warning"] = (
+                "This calibration file was created without storing intrinsics. "
+                "Validation results may not match calibration if different intrinsics are used."
+            )
+
+        return JsonResponse(response_data)
 
     except Exception as e:
         logger.exception("Failed to load calibration file")
@@ -282,13 +307,25 @@ def api_undistort(request: HttpRequest) -> JsonResponse:
 
     IMPORTANT: This now uses the SAME undistortion method as the calibration
     solver to ensure RMSE measurements are consistent.
+
+    Request body:
+    {
+        "image_path": "path/to/image.jpg",
+        "coefficients": {k1, k2, k3, p1, p2},
+        "intrinsics": {fx, fy, cx, cy},  // Optional: request intrinsics
+        "calibration_intrinsics": {fx, fy, cx, cy},  // Optional: intrinsics from calibration file
+        "override_calibration_intrinsics": false,  // If true, use request intrinsics instead of calibration
+        "use_opencv": false
+    }
     """
     try:
         data = json.loads(request.body)
 
         image_path = data.get("image_path", "")
         coefficients = data.get("coefficients", {})
-        intrinsics = data.get("intrinsics", {})
+        request_intrinsics = data.get("intrinsics", {})
+        calibration_intrinsics = data.get("calibration_intrinsics", {})
+        override_calibration = data.get("override_calibration_intrinsics", False)
         use_opencv = data.get("use_opencv", False)  # Option to use OpenCV method for comparison
 
         if not image_path:
@@ -318,12 +355,51 @@ def api_undistort(request: HttpRequest) -> JsonResponse:
         p1 = coefficients.get("p1", 0.0)
         p2 = coefficients.get("p2", 0.0)
 
-        # Get intrinsics - CRITICAL: Must match what was used during calibration!
-        # Default to reasonable values but warn if not provided
-        fx = intrinsics.get("fx", 1000.0)  # Default focal length
-        fy = intrinsics.get("fy", 1000.0)
-        cx = intrinsics.get("cx", w / 2)   # Default to image center
-        cy = intrinsics.get("cy", h / 2)
+        # Determine intrinsics source:
+        # 1. If calibration_intrinsics provided AND not overriding, use calibration intrinsics
+        # 2. If override_calibration_intrinsics=True, use request intrinsics
+        # 3. If no calibration_intrinsics, use request intrinsics or defaults
+        intrinsics_source = "default"
+
+        if calibration_intrinsics and not override_calibration:
+            # Use calibration intrinsics - this ensures consistency with calibration
+            fx = calibration_intrinsics.get("fx", 1000.0)
+            fy = calibration_intrinsics.get("fy", 1000.0)
+            cx = calibration_intrinsics.get("cx", 960.0)
+            cy = calibration_intrinsics.get("cy", 540.0)
+            intrinsics_source = "calibration"
+            logger.debug(
+                "Using calibration intrinsics: fx=%.1f, fy=%.1f, cx=%.1f, cy=%.1f",
+                fx, fy, cx, cy
+            )
+        elif request_intrinsics:
+            # Use request intrinsics
+            fx = request_intrinsics.get("fx", 1000.0)
+            fy = request_intrinsics.get("fy", 1000.0)
+            cx = request_intrinsics.get("cx", w / 2)
+            cy = request_intrinsics.get("cy", h / 2)
+            intrinsics_source = "request"
+            if calibration_intrinsics and override_calibration:
+                logger.info(
+                    "Overriding calibration intrinsics with request intrinsics. "
+                    "Calibration: fx=%.1f, fy=%.1f, cx=%.1f, cy=%.1f. "
+                    "Using: fx=%.1f, fy=%.1f, cx=%.1f, cy=%.1f",
+                    calibration_intrinsics.get("fx", 0), calibration_intrinsics.get("fy", 0),
+                    calibration_intrinsics.get("cx", 0), calibration_intrinsics.get("cy", 0),
+                    fx, fy, cx, cy
+                )
+        else:
+            # Use defaults - warn about potential mismatch
+            fx = 1000.0
+            fy = 1000.0
+            cx = w / 2
+            cy = h / 2
+            intrinsics_source = "default"
+            logger.warning(
+                "No intrinsics provided. Using defaults (fx=1000, fy=1000, cx=%.1f, cy=%.1f). "
+                "This may not match calibration intrinsics.",
+                cx, cy
+            )
 
         if use_opencv:
             # Original OpenCV method (for comparison)
@@ -362,7 +438,8 @@ def api_undistort(request: HttpRequest) -> JsonResponse:
             },
             "intrinsics_used": {
                 "fx": fx, "fy": fy, "cx": cx, "cy": cy
-            }
+            },
+            "intrinsics_source": intrinsics_source,
         })
 
     except Exception as e:
@@ -436,7 +513,9 @@ def api_measure_straightness(request: HttpRequest) -> JsonResponse:
         "points": [[x1, y1], [x2, y2], ...],
         "undistort": false,  // Optional: apply undistortion before measuring
         "coefficients": {k1, k2, k3, p1, p2},  // Required if undistort=true
-        "intrinsics": {fx, fy, cx, cy}  // Required if undistort=true
+        "intrinsics": {fx, fy, cx, cy},  // Optional: request intrinsics
+        "calibration_intrinsics": {fx, fy, cx, cy},  // Optional: intrinsics from calibration file
+        "override_calibration_intrinsics": false  // If true, use request intrinsics instead
     }
     """
     try:
@@ -451,10 +530,14 @@ def api_measure_straightness(request: HttpRequest) -> JsonResponse:
 
         # Check if we should undistort points first
         should_undistort = data.get("undistort", False)
+        intrinsics_source = None
+        intrinsics_used = None
 
         if should_undistort:
             coefficients = data.get("coefficients", {})
-            intrinsics = data.get("intrinsics", {})
+            request_intrinsics = data.get("intrinsics", {})
+            calibration_intrinsics = data.get("calibration_intrinsics", {})
+            override_calibration = data.get("override_calibration_intrinsics", False)
 
             k1 = coefficients.get("k1", 0.0)
             k2 = coefficients.get("k2", 0.0)
@@ -462,11 +545,37 @@ def api_measure_straightness(request: HttpRequest) -> JsonResponse:
             p1 = coefficients.get("p1", 0.0)
             p2 = coefficients.get("p2", 0.0)
 
-            # Intrinsics MUST match what was used during calibration
-            fx = intrinsics.get("fx", 1000.0)
-            fy = intrinsics.get("fy", 1000.0)
-            cx = intrinsics.get("cx", 960.0)
-            cy = intrinsics.get("cy", 540.0)
+            # Determine intrinsics source - prefer calibration intrinsics for consistency
+            if calibration_intrinsics and not override_calibration:
+                fx = calibration_intrinsics.get("fx", 1000.0)
+                fy = calibration_intrinsics.get("fy", 1000.0)
+                cx = calibration_intrinsics.get("cx", 960.0)
+                cy = calibration_intrinsics.get("cy", 540.0)
+                intrinsics_source = "calibration"
+            elif request_intrinsics:
+                fx = request_intrinsics.get("fx", 1000.0)
+                fy = request_intrinsics.get("fy", 1000.0)
+                cx = request_intrinsics.get("cx", 960.0)
+                cy = request_intrinsics.get("cy", 540.0)
+                intrinsics_source = "request"
+                if calibration_intrinsics and override_calibration:
+                    logger.info(
+                        "Overriding calibration intrinsics with request intrinsics for straightness measurement"
+                    )
+            else:
+                # Use defaults - consistent with calibration defaults
+                fx = 1000.0
+                fy = 1000.0
+                cx = 960.0
+                cy = 540.0
+                intrinsics_source = "default"
+                logger.warning(
+                    "No intrinsics provided for straightness measurement. "
+                    "Using defaults (fx=1000, fy=1000, cx=960, cy=540). "
+                    "This may not match calibration intrinsics."
+                )
+
+            intrinsics_used = {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
 
             # Undistort points using the SAME method as the calibration solver
             pts = _undistort_points_solver_method(
@@ -486,6 +595,11 @@ def api_measure_straightness(request: HttpRequest) -> JsonResponse:
             else "poor"
         )
         result["undistorted"] = should_undistort
+
+        # Include intrinsics info if undistortion was applied
+        if intrinsics_source:
+            result["intrinsics_source"] = intrinsics_source
+            result["intrinsics_used"] = intrinsics_used
 
         return JsonResponse(result)
 

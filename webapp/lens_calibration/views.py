@@ -117,11 +117,34 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
         from poc_homography.types import Degrees
 
         # Build intrinsic matrix
-        intrinsics = data["intrinsics"]
+        intrinsics_data = data["intrinsics"]
+
+        # Define default intrinsics
+        default_fx, default_fy, default_cx, default_cy = 1000.0, 1000.0, 960.0, 540.0
+
+        # Extract intrinsics with defaults
+        fx = intrinsics_data.get("fx", default_fx)
+        fy = intrinsics_data.get("fy", default_fy)
+        cx = intrinsics_data.get("cx", default_cx)
+        cy = intrinsics_data.get("cy", default_cy)
+
+        # Check if using default intrinsics and warn
+        using_defaults = (
+            fx == default_fx and fy == default_fy and cx == default_cx and cy == default_cy
+        )
+        if using_defaults:
+            logger.warning(
+                "Using default intrinsics (fx=1000, fy=1000, cx=960, cy=540). "
+                "For best results, provide actual camera intrinsics."
+            )
+
+        # Store the actual intrinsics used for saving later
+        intrinsics_used = {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
+
         intrinsic_matrix = np.array(
             [
-                [intrinsics.get("fx", 1000.0), 0.0, intrinsics.get("cx", 960.0)],
-                [0.0, intrinsics.get("fy", 1000.0), intrinsics.get("cy", 540.0)],
+                [fx, 0.0, cx],
+                [0.0, fy, cy],
                 [0.0, 0.0, 1.0],
             ]
         )
@@ -217,7 +240,8 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
             "initial_error": result.initial_error,
             "final_error": result.final_error,
             "improvement_percent": (1 - result.improvement_ratio()) * 100,
-            "overall_rmse": result.overall_rmse,
+            "training_rmse": result.training_rmse,
+            "rmse_note": "Training RMSE is in-sample error. Use separate validation lines to measure generalization.",
             "coefficients": {
                 "k1": float(result.distortion.k1),
                 "k2": float(result.distortion.k2),
@@ -225,7 +249,8 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
                 "p1": float(result.distortion.p1),
                 "p2": float(result.distortion.p2),
             },
-            "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
+            "intrinsics_used": intrinsics_used,
+            "quality": "good" if result.training_rmse < 2.0 else "acceptable" if result.training_rmse < 5.0 else "poor",
             "line_errors": result.line_errors[:20],  # Top 20 worst lines
         }
 
@@ -294,6 +319,7 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
         from poc_homography.calibration.lens_distortion.distortion_solver import (
             DistortionSolver,
             SolverConfig,
+            calculate_validation_rmse,
         )
         from poc_homography.calibration.lens_distortion.models import (
             CameraLine,
@@ -302,11 +328,34 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
         from poc_homography.types import Degrees
 
         # Build intrinsic matrix
-        intrinsics = data["intrinsics"]
+        intrinsics_data = data["intrinsics"]
+
+        # Define default intrinsics
+        default_fx, default_fy, default_cx, default_cy = 1000.0, 1000.0, 960.0, 540.0
+
+        # Extract intrinsics with defaults
+        fx = intrinsics_data.get("fx", default_fx)
+        fy = intrinsics_data.get("fy", default_fy)
+        cx = intrinsics_data.get("cx", default_cx)
+        cy = intrinsics_data.get("cy", default_cy)
+
+        # Check if using default intrinsics and warn
+        using_defaults = (
+            fx == default_fx and fy == default_fy and cx == default_cx and cy == default_cy
+        )
+        if using_defaults:
+            logger.warning(
+                "Using default intrinsics (fx=1000, fy=1000, cx=960, cy=540). "
+                "For best results, provide actual camera intrinsics."
+            )
+
+        # Store the actual intrinsics used for saving later
+        intrinsics_used = {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
+
         intrinsic_matrix = np.array(
             [
-                [intrinsics.get("fx", 1000.0), 0.0, intrinsics.get("cx", 960.0)],
-                [0.0, intrinsics.get("fy", 1000.0), intrinsics.get("cy", 540.0)],
+                [fx, 0.0, cx],
+                [0.0, fy, cy],
                 [0.0, 0.0, 1.0],
             ]
         )
@@ -318,9 +367,14 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
             max_iterations=config_data.get("max_iterations", 1000),
         )
 
+        # Get optional validation split (e.g., 0.5 = 50% training, 50% validation)
+        validation_split = data.get("validation_split")
+
         # Parse calibration files and create CameraLine objects
         camera_lines: list[CameraLine] = []
         frame_info: list[dict] = []
+        lines_skipped_no_edge_pixels = 0
+        points_per_line: list[int] = []
 
         for file_data in data["files"]:
             image_name = file_data.get("image", "unknown")
@@ -334,11 +388,7 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
                 zoom_factor=camera_status.get("zoom", 1.0),
             )
 
-            frame_info.append({
-                "image": image_name,
-                "ptz": {"pan": float(ptz.pan_deg), "tilt": float(ptz.tilt_deg), "zoom": ptz.zoom_factor},
-                "num_lines": len(calibration_lines),
-            })
+            frame_lines_loaded = 0
 
             for cal_line in calibration_lines:
                 points = cal_line.get("points", [])
@@ -363,27 +413,116 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
                     confidence=1.0,
                     edge_pixels=edge_pixels,
                 )
+
+                # Validate edge_pixels was loaded correctly
+                if not camera_line.has_edge_pixels:
+                    logger.error(
+                        "Line %s from image %s has no edge_pixels data - skipping",
+                        line_id,
+                        image_name,
+                    )
+                    lines_skipped_no_edge_pixels += 1
+                    continue
+
+                # Log debug info for each loaded line
+                logger.debug(
+                    "Loaded line %s from %s: %d edge_pixels, angle=%.1f deg",
+                    line_id,
+                    image_name,
+                    len(camera_line.edge_pixels),  # type: ignore[arg-type]
+                    camera_line.angle_degrees,
+                )
+
                 camera_lines.append(camera_line)
+                frame_lines_loaded += 1
+                points_per_line.append(len(camera_line.edge_pixels))  # type: ignore[arg-type]
+
+            frame_info.append({
+                "image": image_name,
+                "ptz": {"pan": float(ptz.pan_deg), "tilt": float(ptz.tilt_deg), "zoom": ptz.zoom_factor},
+                "num_lines": frame_lines_loaded,
+            })
+
+        # Log summary statistics
+        total_lines_attempted = len(camera_lines) + lines_skipped_no_edge_pixels
+        if points_per_line:
+            min_points = min(points_per_line)
+            max_points = max(points_per_line)
+            avg_points = sum(points_per_line) / len(points_per_line)
+        else:
+            min_points = max_points = 0
+            avg_points = 0.0
+
+        logger.info(
+            "Calibration data loading summary: "
+            "%d lines loaded successfully, %d lines skipped (missing edge_pixels)",
+            len(camera_lines),
+            lines_skipped_no_edge_pixels,
+        )
+        if points_per_line:
+            logger.info(
+                "Points per line: min=%d, max=%d, avg=%.1f",
+                min_points,
+                max_points,
+                avg_points,
+            )
+        for fi in frame_info:
+            logger.info(
+                "Frame %s: %d lines loaded",
+                fi["image"],
+                fi["num_lines"],
+            )
+
+        # Validate that we have usable data
+        if total_lines_attempted > 0 and len(camera_lines) == 0:
+            return JsonResponse(
+                {
+                    "error": f"All {total_lines_attempted} lines have missing edge_pixels data. "
+                    "Cannot perform calibration without edge pixel coordinates."
+                },
+                status=400,
+            )
 
         if len(camera_lines) < 1:
             return JsonResponse({"error": "No valid calibration lines found (need at least 2 points per line)"}, status=400)
 
-        # Run calibration
+        # Split into training and validation sets if validation_split is specified
+        training_lines: list[CameraLine] = camera_lines
+        validation_lines: list[CameraLine] = []
+
+        if validation_split is not None and 0 < validation_split < 1:
+            split_index = int(len(camera_lines) * (1 - validation_split))
+            if split_index < 1:
+                return JsonResponse({"error": "Not enough lines for training after validation split"}, status=400)
+            if split_index >= len(camera_lines):
+                return JsonResponse({"error": "Not enough lines for validation after split"}, status=400)
+
+            training_lines = camera_lines[:split_index]
+            validation_lines = camera_lines[split_index:]
+            logger.info(
+                "Train/validation split: %d training lines, %d validation lines (split=%.2f)",
+                len(training_lines),
+                len(validation_lines),
+                validation_split,
+            )
+
+        # Run calibration on training lines
         solver = DistortionSolver(config=solver_config)
-        result = solver.solve(camera_lines, intrinsic_matrix)
+        result = solver.solve(training_lines, intrinsic_matrix)
 
         # Build response
         response_data: dict[str, Any] = {
             "success": result.success,
             "message": result.message,
             "iterations": result.iterations,
-            "num_lines": len(camera_lines),
+            "num_lines": len(training_lines),
             "num_frames": len(data["files"]),
             "frame_info": frame_info,
             "initial_error": result.initial_error,
             "final_error": result.final_error,
             "improvement_percent": (1 - result.improvement_ratio()) * 100,
-            "overall_rmse": result.overall_rmse,
+            "training_rmse": result.training_rmse,
+            "rmse_note": "Training RMSE is in-sample error. Use separate validation lines to measure generalization.",
             "coefficients": {
                 "k1": float(result.distortion.k1),
                 "k2": float(result.distortion.k2),
@@ -391,9 +530,26 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
                 "p1": float(result.distortion.p1),
                 "p2": float(result.distortion.p2),
             },
-            "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
+            "intrinsics_used": intrinsics_used,
+            "quality": "good" if result.training_rmse < 2.0 else "acceptable" if result.training_rmse < 5.0 else "poor",
             "line_errors": result.line_errors[:20],  # Top 20 worst lines
         }
+
+        # Add validation metrics if validation split was used
+        if validation_lines:
+            validation_rmse, baseline_rmse = calculate_validation_rmse(
+                validation_lines,
+                intrinsic_matrix,
+                result.distortion,
+                num_samples=solver_config.num_samples_per_line,
+            )
+            response_data["validation_rmse"] = validation_rmse
+            response_data["baseline_rmse"] = baseline_rmse
+            response_data["num_training_lines"] = len(training_lines)
+            response_data["num_validation_lines"] = len(validation_lines)
+            response_data["validation_split"] = validation_split
+            # Update quality based on validation RMSE when available
+            response_data["quality"] = "good" if validation_rmse < 2.0 else "acceptable" if validation_rmse < 5.0 else "poor"
 
         return JsonResponse(response_data)
 
@@ -533,6 +689,14 @@ def api_save(request: HttpRequest) -> JsonResponse:
         zoom = data.get("zoom", 1.0)
         coeffs = data.get("coefficients", {})
         validation_rmse = data.get("validation_rmse", 0.0)
+        intrinsics = data.get("intrinsics", {})
+
+        # Warn if no intrinsics provided - they will be missing in saved file
+        if not intrinsics:
+            logger.warning(
+                "Saving calibration without intrinsics. "
+                "Validation may use different intrinsics, causing mismatch."
+            )
 
         distortion = DistortionCoefficients(
             k1=Unitless(coeffs.get("k1", 0.0)),
@@ -542,7 +706,7 @@ def api_save(request: HttpRequest) -> JsonResponse:
             p2=Unitless(coeffs.get("p2", 0.0)),
         )
 
-        # Create calibration table
+        # Create calibration table with intrinsics
         table = CameraCalibrationTable(camera_id=camera_id)
         entry = ZoomCalibrationEntry.from_solver_result(
             zoom_factor=zoom,
@@ -550,6 +714,7 @@ def api_save(request: HttpRequest) -> JsonResponse:
             validation_rmse=validation_rmse,
             source_images=[],
             num_lines_used=data.get("num_lines", 0),
+            intrinsics=intrinsics if intrinsics else None,
         )
         table.add_entry(entry)
 
@@ -613,21 +778,23 @@ def api_load(request: HttpRequest) -> JsonResponse:
         # Convert to JSON-serializable format
         entries = []
         for zoom, entry in table.entries.items():
-            entries.append(
-                {
-                    "zoom_factor": entry.zoom_factor,
-                    "coefficients": {
-                        "k1": float(entry.k1),
-                        "k2": float(entry.k2),
-                        "k3": float(entry.k3),
-                        "p1": float(entry.p1),
-                        "p2": float(entry.p2),
-                    },
-                    "calibration_date": entry.calibration_date,
-                    "validation_rmse": entry.validation_rmse,
-                    "num_lines_used": entry.num_lines_used,
-                }
-            )
+            entry_data = {
+                "zoom_factor": entry.zoom_factor,
+                "coefficients": {
+                    "k1": float(entry.k1),
+                    "k2": float(entry.k2),
+                    "k3": float(entry.k3),
+                    "p1": float(entry.p1),
+                    "p2": float(entry.p2),
+                },
+                "calibration_date": entry.calibration_date,
+                "validation_rmse": entry.validation_rmse,
+                "num_lines_used": entry.num_lines_used,
+            }
+            # Include intrinsics if stored
+            if entry.has_intrinsics():
+                entry_data["intrinsics"] = entry.get_intrinsics()
+            entries.append(entry_data)
 
         return JsonResponse(
             {
@@ -641,3 +808,172 @@ def api_load(request: HttpRequest) -> JsonResponse:
     except Exception as e:
         logger.exception("Load failed")
         return JsonResponse({"error": f"Load failed: {e}"}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_debug_data(request: HttpRequest) -> JsonResponse:
+    """Debug endpoint to inspect loaded calibration data before running calibration.
+
+    Takes the same input as api_calibrate_from_calibration_files but returns
+    detailed JSON about what data was loaded, allowing developers to inspect
+    the data before running calibration.
+
+    Request body: Same as api_calibrate_from_calibration_files
+
+    Response:
+    {
+        "frames": [
+            {
+                "image": "filename.jpg",
+                "ptz": {"pan": 30, "tilt": 20, "zoom": 1},
+                "lines": [
+                    {
+                        "line_id": "L5",
+                        "has_edge_pixels": true,
+                        "num_points": 15,
+                        "start_pixel": [100, 200],
+                        "end_pixel": [500, 210],
+                        "angle_degrees": 1.14
+                    }
+                ]
+            }
+        ],
+        "summary": {
+            "total_frames": 5,
+            "total_lines": 20,
+            "lines_with_edge_pixels": 18,
+            "lines_without_edge_pixels": 2,
+            "min_points": 6,
+            "max_points": 25,
+            "avg_points": 15.2
+        }
+    }
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if "files" not in data or not data["files"]:
+        return JsonResponse({"error": "No calibration files provided"}, status=400)
+
+    try:
+        from poc_homography.calibration.lens_distortion.models import (
+            CameraLine,
+            PTZPosition,
+        )
+        from poc_homography.types import Degrees
+
+        frames: list[dict[str, Any]] = []
+        total_lines = 0
+        lines_with_edge_pixels = 0
+        lines_without_edge_pixels = 0
+        points_per_line: list[int] = []
+
+        for file_data in data["files"]:
+            image_name = file_data.get("image", "unknown")
+            camera_status = file_data.get("camera_status", {})
+            calibration_lines = file_data.get("calibration_lines", [])
+
+            # Create PTZ position from camera status
+            ptz = PTZPosition(
+                pan_deg=Degrees(camera_status.get("pan", 0.0)),
+                tilt_deg=Degrees(camera_status.get("tilt", 30.0)),
+                zoom_factor=camera_status.get("zoom", 1.0),
+            )
+
+            frame_lines: list[dict[str, Any]] = []
+
+            for cal_line in calibration_lines:
+                points = cal_line.get("points", [])
+                line_id = cal_line.get("line_id") or f"line_{cal_line.get('index', 0):04d}"
+
+                total_lines += 1
+
+                if len(points) < 2:
+                    # Line has no valid edge pixels
+                    frame_lines.append({
+                        "line_id": line_id,
+                        "has_edge_pixels": False,
+                        "num_points": len(points),
+                        "start_pixel": points[0] if len(points) > 0 else None,
+                        "end_pixel": points[-1] if len(points) > 0 else None,
+                        "angle_degrees": None,
+                    })
+                    lines_without_edge_pixels += 1
+                    continue
+
+                # Convert points to tuples for edge_pixels
+                edge_pixels = tuple(tuple(pt) for pt in points)
+                start_pixel = tuple(points[0])
+                end_pixel = tuple(points[-1])
+
+                camera_line = CameraLine(
+                    line_id=f"{line_id}_{image_name}",
+                    image_path=image_name,
+                    start_pixel=start_pixel,
+                    end_pixel=end_pixel,
+                    ptz_position=ptz,
+                    confidence=1.0,
+                    edge_pixels=edge_pixels,
+                )
+
+                has_edge_pixels = camera_line.has_edge_pixels
+                num_points = len(camera_line.edge_pixels) if has_edge_pixels else 0
+
+                if has_edge_pixels:
+                    lines_with_edge_pixels += 1
+                    points_per_line.append(num_points)
+                else:
+                    lines_without_edge_pixels += 1
+
+                frame_lines.append({
+                    "line_id": line_id,
+                    "has_edge_pixels": has_edge_pixels,
+                    "num_points": num_points,
+                    "start_pixel": list(start_pixel),
+                    "end_pixel": list(end_pixel),
+                    "angle_degrees": round(camera_line.angle_degrees, 2),
+                })
+
+            frames.append({
+                "image": image_name,
+                "ptz": {
+                    "pan": float(ptz.pan_deg),
+                    "tilt": float(ptz.tilt_deg),
+                    "zoom": ptz.zoom_factor,
+                },
+                "lines": frame_lines,
+            })
+
+        # Build summary
+        if points_per_line:
+            min_points = min(points_per_line)
+            max_points = max(points_per_line)
+            avg_points = round(sum(points_per_line) / len(points_per_line), 1)
+        else:
+            min_points = 0
+            max_points = 0
+            avg_points = 0.0
+
+        summary = {
+            "total_frames": len(frames),
+            "total_lines": total_lines,
+            "lines_with_edge_pixels": lines_with_edge_pixels,
+            "lines_without_edge_pixels": lines_without_edge_pixels,
+            "min_points": min_points,
+            "max_points": max_points,
+            "avg_points": avg_points,
+        }
+
+        return JsonResponse({
+            "frames": frames,
+            "summary": summary,
+        })
+
+    except ImportError as e:
+        return JsonResponse({"error": f"Calibration module not available: {e}"}, status=500)
+    except Exception as e:
+        logger.exception("Debug data inspection failed")
+        return JsonResponse({"error": f"Debug data inspection failed: {e}"}, status=500)
