@@ -193,7 +193,7 @@ class TestCameraLine:
         assert line.angle_degrees == 45.0
 
     def test_sample_points_returns_correct_count(self, ptz_position):
-        """Should return requested number of sample points."""
+        """Should return requested number of sample points with mode='linear'."""
         line = CameraLine(
             line_id="line_1",
             image_path="/path/to/image.jpg",
@@ -202,12 +202,13 @@ class TestCameraLine:
             ptz_position=ptz_position,
         )
 
-        samples = line.sample_points(num_samples=10)
+        # Use mode="linear" for testing linear interpolation
+        samples = line.sample_points(num_samples=10, mode="linear")
 
         assert samples.shape == (10, 2)
 
     def test_sample_points_includes_endpoints(self, ptz_position):
-        """Should include start and end points in samples."""
+        """Should include start and end points in samples with mode='linear'."""
         line = CameraLine(
             line_id="line_1",
             image_path="/path/to/image.jpg",
@@ -216,7 +217,8 @@ class TestCameraLine:
             ptz_position=ptz_position,
         )
 
-        samples = line.sample_points(num_samples=5)
+        # Use mode="linear" for testing linear interpolation
+        samples = line.sample_points(num_samples=5, mode="linear")
 
         np.testing.assert_array_almost_equal(samples[0], [0.0, 0.0])
         np.testing.assert_array_almost_equal(samples[-1], [100.0, 50.0])

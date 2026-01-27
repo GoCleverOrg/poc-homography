@@ -18,6 +18,23 @@ from poc_homography.camera_parameters import DistortionCoefficients
 from poc_homography.types import Unitless
 
 
+def make_edge_pixels(
+    start: tuple[float, float], end: tuple[float, float], num_points: int = 20
+) -> tuple[tuple[float, float], ...]:
+    """Generate edge_pixels as linear interpolation between start and end.
+
+    This is used for tests that need valid CameraLine objects with edge_pixels.
+    The resulting points form a perfectly straight line.
+    """
+    t = np.linspace(0, 1, num_points)
+    points = []
+    for ti in t:
+        x = start[0] + ti * (end[0] - start[0])
+        y = start[1] + ti * (end[1] - start[1])
+        points.append((x, y))
+    return tuple(points)
+
+
 class TestSolverConfig:
     """Tests for SolverConfig dataclass."""
 
@@ -154,12 +171,14 @@ class TestDistortionSolver:
     def test_solve_raises_with_invalid_intrinsic_matrix(self, ptz_position):
         """Should raise ValueError for non-3x3 intrinsic matrix."""
         solver = DistortionSolver()
+        start, end = (100.0, 200.0), (500.0, 200.0)
         line = CameraLine(
             line_id="line_1",
             image_path="/path/to/image.jpg",
-            start_pixel=(100.0, 200.0),
-            end_pixel=(500.0, 200.0),
+            start_pixel=start,
+            end_pixel=end,
             ptz_position=ptz_position,
+            edge_pixels=make_edge_pixels(start, end),
         )
         invalid_matrix = np.array([[1, 0], [0, 1]])
 
@@ -169,20 +188,24 @@ class TestDistortionSolver:
     def test_solve_returns_result(self, intrinsic_matrix, ptz_position):
         """Should return SolverResult with valid structure."""
         solver = DistortionSolver()
+        start1, end1 = (100.0, 300.0), (800.0, 300.0)
+        start2, end2 = (100.0, 500.0), (800.0, 500.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),  # Horizontal line
+                start_pixel=start1,
+                end_pixel=end1,  # Horizontal line
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start1, end1),
             ),
             CameraLine(
                 line_id="line_2",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 500.0),
-                end_pixel=(800.0, 500.0),  # Another horizontal line
+                start_pixel=start2,
+                end_pixel=end2,  # Another horizontal line
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start2, end2),
             ),
         ]
 
@@ -198,27 +221,33 @@ class TestDistortionSolver:
     def test_solve_returns_rmse_per_line(self, intrinsic_matrix, ptz_position):
         """Should return RMSE for each input line."""
         solver = DistortionSolver()
+        start1, end1 = (100.0, 300.0), (800.0, 300.0)
+        start2, end2 = (100.0, 500.0), (800.0, 500.0)
+        start3, end3 = (100.0, 700.0), (800.0, 700.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start1,
+                end_pixel=end1,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start1, end1),
             ),
             CameraLine(
                 line_id="line_2",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 500.0),
-                end_pixel=(800.0, 500.0),
+                start_pixel=start2,
+                end_pixel=end2,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start2, end2),
             ),
             CameraLine(
                 line_id="line_3",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 700.0),
-                end_pixel=(800.0, 700.0),
+                start_pixel=start3,
+                end_pixel=end3,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start3, end3),
             ),
         ]
 
@@ -230,20 +259,24 @@ class TestDistortionSolver:
     def test_solve_returns_line_errors_with_ids(self, intrinsic_matrix, ptz_position):
         """Should return line errors with line IDs."""
         solver = DistortionSolver()
+        start1, end1 = (100.0, 300.0), (800.0, 300.0)
+        start2, end2 = (100.0, 500.0), (800.0, 500.0)
         lines = [
             CameraLine(
                 line_id="my_line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start1,
+                end_pixel=end1,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start1, end1),
             ),
             CameraLine(
                 line_id="my_line_2",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 500.0),
-                end_pixel=(800.0, 500.0),
+                start_pixel=start2,
+                end_pixel=end2,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start2, end2),
             ),
         ]
 
@@ -258,13 +291,15 @@ class TestDistortionSolver:
     def test_solve_with_initial_guess(self, intrinsic_matrix, ptz_position):
         """Should accept initial guess for coefficients."""
         solver = DistortionSolver()
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
         initial = DistortionCoefficients(
@@ -283,13 +318,15 @@ class TestDistortionSolver:
         """Should optimize only radial coefficients when configured."""
         config = SolverConfig(use_radial_only=True)
         solver = DistortionSolver(config=config)
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
 
@@ -305,20 +342,24 @@ class TestDistortionSolver:
         """Perfectly straight lines should have very low straightness error."""
         solver = DistortionSolver()
         # Create perfectly horizontal lines (no distortion)
+        start1, end1 = (100.0, 300.0), (1800.0, 300.0)
+        start2, end2 = (100.0, 600.0), (1800.0, 600.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(1800.0, 300.0),
+                start_pixel=start1,
+                end_pixel=end1,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start1, end1),
             ),
             CameraLine(
                 line_id="line_2",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 600.0),
-                end_pixel=(1800.0, 600.0),
+                start_pixel=start2,
+                end_pixel=end2,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start2, end2),
             ),
         ]
 
@@ -331,13 +372,15 @@ class TestDistortionSolver:
     def test_calculate_line_errors(self, intrinsic_matrix, ptz_position):
         """Should calculate errors for lines with given distortion."""
         solver = DistortionSolver()
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
         distortion = DistortionCoefficients()  # Zero distortion
@@ -371,13 +414,15 @@ class TestStraightnessRmse:
 
     def test_returns_rmse_value(self, intrinsic_matrix, ptz_position):
         """Should return a non-negative RMSE value."""
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
 
@@ -388,13 +433,15 @@ class TestStraightnessRmse:
 
     def test_with_zero_distortion(self, intrinsic_matrix, ptz_position):
         """Should work with zero distortion coefficients."""
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
         zero_distortion = DistortionCoefficients()
@@ -405,13 +452,15 @@ class TestStraightnessRmse:
 
     def test_with_custom_distortion(self, intrinsic_matrix, ptz_position):
         """Should accept custom distortion coefficients."""
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
         distortion = DistortionCoefficients(
@@ -429,13 +478,15 @@ class TestStraightnessRmse:
 
     def test_with_custom_num_samples(self, intrinsic_matrix, ptz_position):
         """Should accept custom number of samples."""
+        start, end = (100.0, 300.0), (800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end, num_points=50),
             ),
         ]
 
@@ -445,13 +496,15 @@ class TestStraightnessRmse:
 
     def test_straight_lines_have_low_rmse(self, intrinsic_matrix, ptz_position):
         """Perfectly straight lines should have very low RMSE."""
+        start, end = (100.0, 300.0), (1800.0, 300.0)
         lines = [
             CameraLine(
                 line_id="line_1",
                 image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(1800.0, 300.0),
+                start_pixel=start,
+                end_pixel=end,
                 ptz_position=ptz_position,
+                edge_pixels=make_edge_pixels(start, end),
             ),
         ]
 
