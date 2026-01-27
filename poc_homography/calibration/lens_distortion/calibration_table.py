@@ -84,6 +84,11 @@ class ZoomCalibrationEntry:
         """
         if not self.has_intrinsics():
             return None
+        # Type narrowing: has_intrinsics() ensures all values are not None
+        assert self.fx is not None
+        assert self.fy is not None
+        assert self.cx is not None
+        assert self.cy is not None
         return {
             "fx": self.fx,
             "fy": self.fy,

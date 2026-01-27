@@ -250,16 +250,18 @@ def get_tenants() -> list:
     return TENANTS
 
 
-def get_tenant_by_id(tenant_id: str) -> dict | None:
+def get_tenant_by_id(tenant_id: str | None) -> dict | None:
     """
     Find tenant configuration by ID.
 
     Args:
-        tenant_id: ID of the tenant (e.g., "valte", "setram")
+        tenant_id: ID of the tenant (e.g., "valte", "setram"), or None
 
     Returns:
         Tenant configuration dict or None if not found
     """
+    if tenant_id is None:
+        return None
     return next((t for t in TENANTS if t.get("id") == tenant_id), None)
 
 
@@ -289,7 +291,7 @@ def get_cameras_for_tenant(tenant_id: str) -> list:
     return [cam for cam in CAMERAS if cam.get("tenant_id") == tenant_id]
 
 
-def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
+def get_tenant_credentials(tenant_id: str | None) -> tuple[str | None, str | None]:
     """
     Get credentials for a tenant.
 
@@ -297,7 +299,7 @@ def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
     credentials are not set.
 
     Args:
-        tenant_id: ID of the tenant
+        tenant_id: ID of the tenant, or None for global credentials
 
     Returns:
         Tuple of (username, password), either from tenant config or global fallback
@@ -446,12 +448,18 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     # Validate that credentials are set
     if not username or not password:
         tenant = get_tenant_by_id(tenant_id)
-        tenant_name = tenant["name"] if tenant else tenant_id
-        raise ValueError(
-            f"Camera credentials not set for tenant '{tenant_name}'. "
-            f"Please set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD "
-            "environment variables, or set global CAMERA_USERNAME/CAMERA_PASSWORD as fallback."
-        )
+        tenant_name = tenant["name"] if tenant else (tenant_id or "default")
+        if tenant_id:
+            raise ValueError(
+                f"Camera credentials not set for tenant '{tenant_name}'. "
+                f"Please set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD "
+                "environment variables, or set global CAMERA_USERNAME/CAMERA_PASSWORD as fallback."
+            )
+        else:
+            raise ValueError(
+                "Camera credentials not set. "
+                "Please set CAMERA_USERNAME and CAMERA_PASSWORD environment variables."
+            )
 
     channel = "101" if stream_type == "main" else "102"
     return f"rtsp://{username}:{password}@{cam['ip']}:554/Streaming/Channels/{channel}"
