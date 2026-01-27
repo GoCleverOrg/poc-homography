@@ -1,0 +1,287 @@
+# Lens Distortion Calibration: Minimum Data Requirements
+
+## Overview
+
+Lens distortion calibration is a critical step in achieving accurate geometric corrections for camera systems. The quality and quantity of input data directly impacts the reliability of the calibration results. Poor calibration data leads to:
+
+- **Overfitting**: The model memorizes noise rather than learning true distortion patterns
+- **Underfitting**: Insufficient constraints leave distortion coefficients poorly determined
+- **Spatial bias**: Calibration works well in some image regions but fails in others
+- **Validation failure**: In-sample metrics look good but out-of-sample performance is poor
+
+This document outlines the minimum data requirements to achieve robust, generalizable lens distortion calibration.
+
+---
+
+## Minimum Requirements
+
+### Points per Line
+
+| Metric | Minimum | Preferred |
+|--------|---------|-----------|
+| Points | 15 | 30+ |
+
+**Rationale**: The distortion model uses 5 coefficients (k1, k2, k3 for radial; p1, p2 for tangential). Each point on a line provides 2 constraints (x and y coordinates). With 15 points per line, you get 30 constraints per line, providing sufficient overdetermination for the 5-parameter model.
+
+Fewer points per line:
+- Increases sensitivity to annotation noise
+- Reduces the statistical power to detect subtle distortion
+- May cause individual lines to have inconsistent influence on the solution
+
+### Total Lines
+
+| Metric | Minimum | Preferred |
+|--------|---------|-----------|
+| Lines | 10 | 20+ |
+
+**Rationale**: Multiple lines are needed for:
+1. **Spatial diversity**: Distortion varies across the image; lines in different locations constrain different parts of the distortion field
+2. **Validation hold-out**: With a 50% validation split, 10 lines means only 5 for training - the absolute minimum for a robust fit
+3. **Redundancy**: More lines provide robustness against annotation errors in individual lines
+
+### Quadrant Coverage
+
+| Metric | Minimum | Preferred |
+|--------|---------|-----------|
+| Quadrants | 2 | 4 |
+
+**Rationale**: Lens distortion is not uniform across the image. Radial distortion increases with distance from the optical center, and tangential distortion can have directional bias. Lines should cover:
+
+```
++-------------------+-------------------+
+|                   |                   |
+|    Quadrant 1     |    Quadrant 2     |
+|    (top-left)     |    (top-right)    |
+|                   |                   |
++---------+---------+---------+---------+
+|                   |                   |
+|    Quadrant 3     |    Quadrant 4     |
+|    (bottom-left)  |    (bottom-right) |
+|                   |                   |
++-------------------+-------------------+
+```
+
+Lines concentrated in a single quadrant will produce calibration that fails in other image regions.
+
+### Orientation Diversity
+
+| Metric | Minimum | Preferred |
+|--------|---------|-----------|
+| Orientations | 2-3 | 4+ |
+
+Orientations are bucketed into 30-degree increments (0-30, 30-60, 60-90, etc.).
+
+**Rationale**:
+- **Radial distortion** affects all orientations similarly
+- **Tangential distortion** has directional components that require diverse line orientations to constrain
+
+A mix of horizontal, vertical, and diagonal lines provides the best constraint on all distortion parameters.
+
+---
+
+## Validation Split
+
+### Recommended Split
+
+| Set | Percentage | Purpose |
+|-----|------------|---------|
+| Training | 50% | Fit distortion coefficients |
+| Validation | 50% | Assess generalization |
+
+### In-Sample vs Out-of-Sample Error
+
+- **In-sample (training) error**: How well the model fits the data it was trained on
+- **Out-of-sample (validation) error**: How well the model predicts data it has never seen
+
+A large gap between training and validation error indicates **overfitting** - the model has learned noise specific to the training lines rather than the true underlying distortion.
+
+### Success Criteria
+
+Calibration is successful when:
+
+```
+validation_rmse < baseline_rmse
+```
+
+Where `baseline_rmse` is the error using no distortion correction (identity distortion). If the validation RMSE is higher than baseline, the calibration is making predictions worse, not better.
+
+---
+
+## Data Collection Tips
+
+### How to Annotate Lines for Good Coverage
+
+1. **Use real-world straight edges**: Building edges, window frames, road markings, railings
+2. **Spread lines across the image**: Avoid clustering all lines in the center
+3. **Include lines near image edges**: This is where distortion is typically strongest
+4. **Vary line orientations**: Mix horizontal, vertical, and diagonal lines
+5. **Annotate endpoints and intermediate points**: More points = better constraints
+
+### Edge Pixels vs Linear Interpolation
+
+- **edge_pixels**: The actual pixel coordinates extracted from the image where the line was detected
+- **Linear interpolation**: Points generated by connecting annotated endpoints with a straight line
+
+Always prefer `edge_pixels` when available:
+- They represent the actual observed distortion
+- Linear interpolation assumes the line appears straight (which defeats the purpose of distortion calibration)
+- Edge detection captures sub-pixel distortion effects
+
+### PTZ Settings Considerations
+
+Lens distortion calibration is specific to:
+- **Zoom level**: Distortion characteristics change significantly with zoom
+- **Focus distance**: Can affect distortion, especially for varifocal lenses
+
+Recommendations:
+- Calibrate at the zoom level(s) you will use operationally
+- Document the PTZ settings used during calibration
+- Consider separate calibrations for significantly different zoom settings
+- Pan and tilt generally do not affect lens distortion (it moves with the lens)
+
+---
+
+## Quality Assessment
+
+### RMSE Thresholds
+
+| Metric | Good | Acceptable | Poor |
+|--------|------|------------|------|
+| Training RMSE | < 2.0 px | < 4.0 px | > 4.0 px |
+| Validation RMSE | < 5.0 px | < 8.0 px | > 8.0 px |
+
+### RMSE Interpretation
+
+**RMSE (Root Mean Square Error)** measures the average pixel distance between:
+- The corrected point positions
+- Where they should lie on a perfect straight line
+
+An RMSE of 2.0 pixels means that, on average, corrected points deviate from the ideal line by 2 pixels.
+
+**What the numbers mean**:
+- **< 2.0 px**: Excellent calibration, suitable for precision applications
+- **2.0 - 5.0 px**: Good calibration, suitable for most applications
+- **5.0 - 10.0 px**: Acceptable for visualization, may cause issues in measurement applications
+- **> 10.0 px**: Poor calibration, likely data quality issues or model limitations
+
+### Warning Signs
+
+- **Training RMSE >> Validation RMSE**: Unusual, may indicate data leakage or bug
+- **Validation RMSE >> Training RMSE**: Overfitting, need more training data
+- **Both RMSE values high**: Poor data quality, insufficient points, or incorrect annotations
+- **Validation RMSE > Baseline RMSE**: Calibration is harmful, do not use
+
+---
+
+## API Usage Examples
+
+### Basic Calibration with Validation Split
+
+```python
+import requests
+
+# Prepare calibration request with validation split
+payload = {
+    "image_width": 1920,
+    "image_height": 1080,
+    "lines": [
+        {
+            "line_id": "line_001",
+            "edge_pixels": [[100, 200], [150, 210], [200, 225], ...]  # 15+ points
+        },
+        {
+            "line_id": "line_002",
+            "edge_pixels": [[1800, 100], [1750, 150], [1700, 200], ...]
+        },
+        # ... 10+ lines total
+    ],
+    "validation_split": 0.5  # 50% for validation
+}
+
+response = requests.post(
+    "https://api.example.com/calibrate/lens-distortion",
+    json=payload
+)
+result = response.json()
+```
+
+### Interpreting the Response
+
+```python
+# Extract metrics from response
+training_rmse = result["training_rmse"]
+validation_rmse = result["validation_rmse"]
+baseline_rmse = result["baseline_rmse"]
+coefficients = result["distortion_coefficients"]
+
+# Assess calibration quality
+print(f"Training RMSE: {training_rmse:.2f} pixels")
+print(f"Validation RMSE: {validation_rmse:.2f} pixels")
+print(f"Baseline RMSE: {baseline_rmse:.2f} pixels")
+
+# Check success criteria
+if validation_rmse < baseline_rmse:
+    print("SUCCESS: Calibration improves on baseline")
+    improvement = (baseline_rmse - validation_rmse) / baseline_rmse * 100
+    print(f"Improvement: {improvement:.1f}%")
+else:
+    print("WARNING: Calibration does not improve on baseline")
+    print("Consider collecting more data or checking annotation quality")
+
+# Quality assessment
+if training_rmse < 2.0 and validation_rmse < 5.0:
+    print("Quality: GOOD - calibration is reliable")
+elif training_rmse < 4.0 and validation_rmse < 8.0:
+    print("Quality: ACCEPTABLE - calibration may be used with caution")
+else:
+    print("Quality: POOR - review data collection and annotations")
+
+# Check for overfitting
+overfit_ratio = validation_rmse / training_rmse
+if overfit_ratio > 2.0:
+    print(f"WARNING: Possible overfitting (ratio: {overfit_ratio:.1f})")
+    print("Consider adding more lines or increasing points per line")
+```
+
+### Response Structure
+
+```json
+{
+    "distortion_coefficients": {
+        "k1": -0.0234,
+        "k2": 0.0012,
+        "k3": -0.0001,
+        "p1": 0.0005,
+        "p2": -0.0003
+    },
+    "training_rmse": 1.45,
+    "validation_rmse": 3.21,
+    "baseline_rmse": 8.76,
+    "training_lines": 10,
+    "validation_lines": 10,
+    "total_points": 450,
+    "quadrants_covered": 4,
+    "orientation_buckets": 5
+}
+```
+
+---
+
+## Summary Checklist
+
+Before running calibration, verify:
+
+- [ ] At least 15 points per line (30+ preferred)
+- [ ] At least 10 lines total (20+ preferred)
+- [ ] Lines cover at least 2 quadrants (4 preferred)
+- [ ] At least 2-3 different line orientations
+- [ ] Using `edge_pixels` rather than interpolated points
+- [ ] PTZ settings documented and consistent
+- [ ] Validation split set to 0.5 (50%)
+
+After calibration, verify:
+
+- [ ] Training RMSE < 4.0 pixels
+- [ ] Validation RMSE < 8.0 pixels
+- [ ] Validation RMSE < Baseline RMSE
+- [ ] Overfit ratio (validation/training) < 2.0
