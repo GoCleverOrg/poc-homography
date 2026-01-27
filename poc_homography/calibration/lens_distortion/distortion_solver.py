@@ -30,6 +30,179 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class DataQualityRequirements:
+    """Configuration for data quality validation requirements.
+
+    Attributes:
+        min_points_per_line: Minimum edge_pixels per line required.
+        min_total_lines: Minimum total number of lines required.
+        min_quadrant_coverage: Minimum number of image quadrants that must
+            have at least one line (based on line centroids).
+        min_orientations: Minimum number of different line orientations
+            required (angles binned into 30 degree buckets).
+    """
+
+    min_points_per_line: int = 15
+    min_total_lines: int = 10
+    min_quadrant_coverage: int = 2
+    min_orientations: int = 2
+
+
+@dataclass
+class ValidationResult:
+    """Result of calibration data quality validation.
+
+    Attributes:
+        is_valid: Whether the data meets all requirements.
+        errors: List of critical errors that prevent calibration.
+        warnings: List of non-critical issues that may affect quality.
+        statistics: Dictionary containing detailed data quality statistics.
+    """
+
+    is_valid: bool
+    errors: list[str]
+    warnings: list[str]
+    statistics: dict
+
+
+def validate_calibration_data(
+    lines: list[CameraLine],
+    requirements: DataQualityRequirements,
+    image_width: int,
+    image_height: int,
+) -> ValidationResult:
+    """Validate calibration data quality before running the solver.
+
+    Performs comprehensive validation of the input lines to ensure sufficient
+    data quality for reliable distortion coefficient estimation.
+
+    Args:
+        lines: List of detected camera lines to validate.
+        requirements: Data quality requirements to check against.
+        image_width: Width of the image in pixels.
+        image_height: Height of the image in pixels.
+
+    Returns:
+        ValidationResult with validation status, errors, warnings, and statistics.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    statistics: dict = {}
+
+    # Track per-line statistics
+    points_per_line: list[int] = []
+    lines_with_edge_pixels = 0
+    lines_without_edge_pixels = 0
+
+    # Track quadrant coverage (based on line centroids)
+    # Quadrants: 0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right
+    quadrant_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    mid_x = image_width / 2
+    mid_y = image_height / 2
+
+    # Track orientation diversity (30-degree buckets)
+    # Angles range from -180 to 180, we bin into 12 buckets of 30 degrees each
+    # Bucket 0: [-180, -150), Bucket 1: [-150, -120), ... Bucket 11: [150, 180)
+    orientation_buckets: set[int] = set()
+    line_angles: list[float] = []
+
+    for line in lines:
+        # Check edge_pixels availability
+        if line.edge_pixels is None:
+            lines_without_edge_pixels += 1
+            errors.append(
+                f"Line '{line.line_id}' has no edge_pixels (edge_pixels is None). "
+                "Edge pixels are required for distortion calibration."
+            )
+            continue
+
+        lines_with_edge_pixels += 1
+        num_points = len(line.edge_pixels)
+        points_per_line.append(num_points)
+
+        # Check minimum points per line
+        if num_points < requirements.min_points_per_line:
+            warnings.append(
+                f"Line '{line.line_id}' has only {num_points} edge_pixels "
+                f"(minimum: {requirements.min_points_per_line})"
+            )
+
+        # Calculate centroid for quadrant coverage
+        centroid_x = (line.start_pixel[0] + line.end_pixel[0]) / 2
+        centroid_y = (line.start_pixel[1] + line.end_pixel[1]) / 2
+
+        # Determine quadrant (0=TL, 1=TR, 2=BL, 3=BR)
+        quadrant = 0
+        if centroid_x >= mid_x:
+            quadrant += 1
+        if centroid_y >= mid_y:
+            quadrant += 2
+        quadrant_counts[quadrant] += 1
+
+        # Calculate line angle and bin into 30-degree buckets
+        angle = line.angle_degrees  # Returns angle in degrees
+        line_angles.append(angle)
+        # Normalize angle to [-180, 180) and bin into 30-degree buckets
+        bucket = int((angle + 180) // 30) % 12
+        orientation_buckets.add(bucket)
+
+    # Calculate statistics
+    num_quadrants_covered = sum(1 for count in quadrant_counts.values() if count > 0)
+    num_orientations = len(orientation_buckets)
+
+    statistics = {
+        "total_lines": len(lines),
+        "lines_with_edge_pixels": lines_with_edge_pixels,
+        "lines_without_edge_pixels": lines_without_edge_pixels,
+        "points_per_line": points_per_line,
+        "min_points_per_line": min(points_per_line) if points_per_line else 0,
+        "max_points_per_line": max(points_per_line) if points_per_line else 0,
+        "avg_points_per_line": (
+            sum(points_per_line) / len(points_per_line) if points_per_line else 0
+        ),
+        "quadrant_counts": quadrant_counts,
+        "num_quadrants_covered": num_quadrants_covered,
+        "orientation_buckets": sorted(orientation_buckets),
+        "num_orientations": num_orientations,
+        "line_angles": line_angles,
+    }
+
+    # Validate total line count
+    if lines_with_edge_pixels < requirements.min_total_lines:
+        errors.append(
+            f"Insufficient lines with edge_pixels: {lines_with_edge_pixels} "
+            f"(minimum: {requirements.min_total_lines})"
+        )
+
+    # Validate quadrant coverage
+    if num_quadrants_covered < requirements.min_quadrant_coverage:
+        quadrant_names = {0: "top-left", 1: "top-right", 2: "bottom-left", 3: "bottom-right"}
+        covered = [quadrant_names[q] for q, c in quadrant_counts.items() if c > 0]
+        errors.append(
+            f"Insufficient quadrant coverage: {num_quadrants_covered} quadrants covered "
+            f"(minimum: {requirements.min_quadrant_coverage}). "
+            f"Covered quadrants: {covered}"
+        )
+
+    # Validate orientation diversity
+    if num_orientations < requirements.min_orientations:
+        errors.append(
+            f"Insufficient orientation diversity: {num_orientations} orientation buckets "
+            f"(minimum: {requirements.min_orientations}). "
+            f"Lines should have varied angles for robust calibration."
+        )
+
+    is_valid = len(errors) == 0
+
+    return ValidationResult(
+        is_valid=is_valid,
+        errors=errors,
+        warnings=warnings,
+        statistics=statistics,
+    )
+
+
+@dataclass
 class SolverConfig:
     """Configuration for the distortion solver.
 
@@ -77,7 +250,9 @@ class SolverResult:
         initial_error: Total straightness error before optimization.
         final_error: Total straightness error after optimization.
         rmse_per_line: RMSE for each line (list of floats).
-        overall_rmse: Overall RMSE across all lines.
+        overall_rmse: Training RMSE (in-sample error calculated on lines used
+            for optimization). This measures how well the model fits the
+            training data, NOT generalization to unseen lines.
         iterations: Number of optimization iterations.
         success: Whether optimization converged successfully.
         message: Optimizer termination message.
@@ -93,6 +268,11 @@ class SolverResult:
     success: bool
     message: str
     line_errors: list[dict] = field(default_factory=list)
+
+    @property
+    def training_rmse(self) -> float:
+        """Alias for overall_rmse (training/in-sample RMSE)."""
+        return self.overall_rmse
 
     def is_improved(self) -> bool:
         """Check if optimization improved the error."""
@@ -132,6 +312,9 @@ class DistortionSolver:
         lines: list[CameraLine],
         intrinsic_matrix: np.ndarray,
         initial_guess: DistortionCoefficients | None = None,
+        data_requirements: DataQualityRequirements | None = None,
+        image_width: int | None = None,
+        image_height: int | None = None,
     ) -> SolverResult:
         """Solve for distortion coefficients that straighten the given lines.
 
@@ -139,18 +322,77 @@ class DistortionSolver:
             lines: List of detected camera lines to use for calibration.
             intrinsic_matrix: 3x3 camera intrinsic matrix K.
             initial_guess: Initial distortion coefficients. Uses zeros if None.
+            data_requirements: Data quality requirements for validation.
+                If provided, validation is performed before optimization.
+            image_width: Width of the image in pixels. Required if
+                data_requirements is provided.
+            image_height: Height of the image in pixels. Required if
+                data_requirements is provided.
 
         Returns:
             SolverResult with optimized coefficients and error metrics.
 
         Raises:
-            ValueError: If no lines provided or intrinsic matrix is invalid.
+            ValueError: If no lines provided, intrinsic matrix is invalid,
+                or data quality validation fails.
         """
         if not lines:
             raise ValueError("At least one line required for calibration")
 
         if intrinsic_matrix.shape != (3, 3):
             raise ValueError(f"Intrinsic matrix must be 3x3, got {intrinsic_matrix.shape}")
+
+        # Perform data quality validation if requirements are provided
+        if data_requirements is not None:
+            if image_width is None or image_height is None:
+                raise ValueError(
+                    "image_width and image_height are required when "
+                    "data_requirements is provided"
+                )
+
+            validation_result = validate_calibration_data(
+                lines=lines,
+                requirements=data_requirements,
+                image_width=image_width,
+                image_height=image_height,
+            )
+
+            # Log data quality statistics (INFO level)
+            stats = validation_result.statistics
+            logger.info(
+                "Data quality statistics: "
+                f"total_lines={stats['total_lines']}, "
+                f"lines_with_edge_pixels={stats['lines_with_edge_pixels']}, "
+                f"avg_points_per_line={stats['avg_points_per_line']:.1f}, "
+                f"min_points={stats['min_points_per_line']}, "
+                f"max_points={stats['max_points_per_line']}, "
+                f"quadrants_covered={stats['num_quadrants_covered']}/4, "
+                f"orientations={stats['num_orientations']}"
+            )
+
+            # Log quadrant distribution
+            quadrant_names = {
+                0: "top-left",
+                1: "top-right",
+                2: "bottom-left",
+                3: "bottom-right",
+            }
+            quadrant_summary = ", ".join(
+                f"{quadrant_names[q]}={c}"
+                for q, c in stats["quadrant_counts"].items()
+            )
+            logger.info(f"Quadrant distribution: {quadrant_summary}")
+
+            # Log warnings
+            for warning in validation_result.warnings:
+                logger.warning(warning)
+
+            # Fail if validation errors
+            if not validation_result.is_valid:
+                error_summary = "; ".join(validation_result.errors)
+                raise ValueError(
+                    f"Calibration data quality validation failed: {error_summary}"
+                )
 
         # Extract principal point from intrinsic matrix
         cx = intrinsic_matrix[0, 2]
@@ -226,7 +468,7 @@ class DistortionSolver:
         overall_rmse = np.sqrt(result.fun / total_samples) if total_samples > 0 else 0.0
 
         logger.info(f"Final straightness error: {result.fun:.6f}")
-        logger.info(f"Overall RMSE: {overall_rmse:.4f} pixels")
+        logger.info(f"Training RMSE: {overall_rmse:.4f} pixels (in-sample, optimization result)")
         logger.info(
             f"Optimized k1={optimized.k1:.6f}, k2={optimized.k2:.6f}, k3={optimized.k3:.6f}"
         )
@@ -446,3 +688,42 @@ def straightness_rmse(
     total_samples = sum(e["num_samples"] for e in errors)
 
     return float(np.sqrt(total_error / total_samples)) if total_samples > 0 else 0.0
+
+
+def calculate_validation_rmse(
+    validation_lines: list[CameraLine],
+    intrinsic_matrix: np.ndarray,
+    distortion: DistortionCoefficients,
+    num_samples: int = 20,
+) -> tuple[float, float]:
+    """Calculate RMSE on hold-out validation lines.
+
+    This should be called with lines NOT used during calibration to measure
+    generalization (out-of-sample performance).
+
+    Args:
+        validation_lines: Lines not used during calibration (hold-out set).
+        intrinsic_matrix: 3x3 camera intrinsic matrix.
+        distortion: Distortion coefficients from calibration.
+        num_samples: Points to sample per line.
+
+    Returns:
+        Tuple of (validation_rmse, baseline_rmse).
+        - validation_rmse: RMSE with distortion correction applied
+        - baseline_rmse: RMSE without any correction (to show improvement)
+    """
+    if not validation_lines:
+        return 0.0, 0.0
+
+    # Calculate baseline RMSE (no distortion correction)
+    no_distortion = DistortionCoefficients()
+    baseline_rmse = straightness_rmse(
+        validation_lines, intrinsic_matrix, distortion=no_distortion, num_samples=num_samples
+    )
+
+    # Calculate validation RMSE (with distortion correction)
+    validation_rmse = straightness_rmse(
+        validation_lines, intrinsic_matrix, distortion=distortion, num_samples=num_samples
+    )
+
+    return validation_rmse, baseline_rmse
