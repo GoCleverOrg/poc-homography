@@ -1291,8 +1291,8 @@ def delete_diagnostic_session(session_id: str) -> tuple[bool, str | None]:
 
 # Constants for stress testing
 STRESS_TEST_STABILIZATION_TIMEOUT = 10.0  # Max seconds to wait for position stabilization
-STRESS_TEST_STABILIZATION_THRESHOLD = 0.5  # Seconds of no change to consider stabilized
-STRESS_TEST_POLL_INTERVAL = 0.1  # Polling interval for position checks
+STRESS_TEST_STABILIZATION_THRESHOLD = 0.0  # Seconds of no change to consider stabilized (0 = no wait)
+STRESS_TEST_POLL_INTERVAL = 0.01  # Polling interval for position checks (minimal for max speed)
 POSITION_TOLERANCE = 0.5  # Position tolerance in degrees for matching
 
 
