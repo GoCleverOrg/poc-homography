@@ -135,6 +135,29 @@
             transform: none;
         }
 
+        .btn-warning {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #d97706;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-warning:hover {
+            background: #f59e0b;
+            transform: translateY(-1px);
+        }
+
+        .btn-warning:disabled {
+            background: #78350f;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         /* Summary Report */
         .summary-report {
             background: #252525;
@@ -1107,6 +1130,7 @@
                 <div class="stress-form-row">
                     <button id="start-stress-test-btn" class="btn-primary">Start Test</button>
                     <button id="run-all-stress-tests-btn" class="btn-secondary">Run All Tests</button>
+                    <button id="run-max-speed-tests-btn" class="btn-warning">Run Max Speed Tests</button>
                     <button id="abort-stress-test-btn" class="btn-danger" disabled>Abort Test</button>
                 </div>
 
@@ -1956,6 +1980,7 @@
         let stressPollInterval = null;
         let stressCurrentEvaluation = null;
         let runAllTestsMode = false;
+        let runMaxSpeedMode = false;  // Track if we're in max speed mode specifically
         let runAllTestsQueue = [];
         let runAllTestsResults = [];
 
@@ -1972,6 +1997,7 @@
         const stressPresetsGrid = document.getElementById('stress-presets-grid');
         const startStressTestBtn = document.getElementById('start-stress-test-btn');
         const runAllStressTestsBtn = document.getElementById('run-all-stress-tests-btn');
+        const runMaxSpeedTestsBtn = document.getElementById('run-max-speed-tests-btn');
         const abortStressTestBtn = document.getElementById('abort-stress-test-btn');
         const stressTestProgress = document.getElementById('stress-test-progress');
         const stressTestProgressFill = document.getElementById('stress-test-progress-fill');
@@ -2286,17 +2312,26 @@
                 }
 
                 if (runAllTestsQueue.length > 0) {
-                    setTimeout(runNextTestInQueue, 1000);
+                    // Call the appropriate next function based on mode
+                    if (runMaxSpeedMode) {
+                        setTimeout(runNextMaxSpeedTestInQueue, 1000);
+                    } else {
+                        setTimeout(runNextTestInQueue, 1000);
+                    }
                 } else {
                     // All tests completed
+                    const testType = runMaxSpeedMode ? 'Max Speed' : 'All';
                     runAllTestsMode = false;
+                    runMaxSpeedMode = false;
                     runAllStressTestsBtn.disabled = false;
                     runAllStressTestsBtn.textContent = 'Run All Tests';
+                    runMaxSpeedTestsBtn.disabled = false;
+                    runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
                     startStressTestBtn.disabled = false;
 
                     const passedCount = runAllTestsResults.filter(r => r.status === 'completed').length;
                     const failedCount = runAllTestsResults.filter(r => r.status === 'failed').length;
-                    alert(`All ${runAllTestsResults.length} tests completed!\n\nPassed: ${passedCount}\nFailed: ${failedCount}`);
+                    alert(`${testType} ${runAllTestsResults.length} tests completed!\n\nPassed: ${passedCount}\nFailed: ${failedCount}`);
                     runAllTestsResults = [];
                 }
             }
@@ -2310,11 +2345,13 @@
             }
 
             runAllTestsMode = true;
+            runMaxSpeedMode = false;
             runAllTestsQueue = [...Array(stressPresets.length).keys()]; // [0, 1, 2, ...]
             runAllTestsResults = [];
 
             runAllStressTestsBtn.disabled = true;
             runAllStressTestsBtn.textContent = `Running All (0/${stressPresets.length})...`;
+            runMaxSpeedTestsBtn.disabled = true;
             startStressTestBtn.disabled = true;
 
             runNextTestInQueue();
@@ -2334,10 +2371,51 @@
 
         function abortRunAllTests() {
             runAllTestsMode = false;
+            runMaxSpeedMode = false;
             runAllTestsQueue = [];
             runAllStressTestsBtn.disabled = false;
             runAllStressTestsBtn.textContent = 'Run All Tests';
+            runMaxSpeedTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
             startStressTestBtn.disabled = false;
+        }
+
+        // Run only MAX SPEED stress tests sequentially
+        async function startRunMaxSpeedTests() {
+            // Filter presets that have max_speed = true
+            const maxSpeedIndices = stressPresets
+                .map((preset, index) => preset.max_speed ? index : -1)
+                .filter(index => index !== -1);
+
+            if (maxSpeedIndices.length === 0) {
+                alert('No max speed presets available');
+                return;
+            }
+
+            runAllTestsMode = true;
+            runMaxSpeedMode = true;
+            runAllTestsQueue = maxSpeedIndices;
+            runAllTestsResults = [];
+
+            runAllStressTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.textContent = `Running Max Speed (0/${maxSpeedIndices.length})...`;
+            startStressTestBtn.disabled = true;
+
+            runNextMaxSpeedTestInQueue();
+        }
+
+        async function runNextMaxSpeedTestInQueue() {
+            if (runAllTestsQueue.length === 0) return;
+
+            const maxSpeedTotal = stressPresets.filter(p => p.max_speed).length;
+            const presetIndex = runAllTestsQueue.shift();
+            const completedCount = maxSpeedTotal - runAllTestsQueue.length - 1;
+            runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${maxSpeedTotal})...`;
+
+            // Select the preset and start test
+            selectStressPreset(presetIndex);
+            await startStressTest();
         }
 
         function showStressTestResults(session) {
@@ -2561,6 +2639,7 @@
         // Test control listeners
         startStressTestBtn.addEventListener('click', startStressTest);
         runAllStressTestsBtn.addEventListener('click', startRunAllTests);
+        runMaxSpeedTestsBtn.addEventListener('click', startRunMaxSpeedTests);
         abortStressTestBtn.addEventListener('click', () => {
             abortStressTest();
             if (runAllTestsMode) abortRunAllTests();
