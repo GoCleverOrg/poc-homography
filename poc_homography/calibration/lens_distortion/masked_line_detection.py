@@ -216,8 +216,7 @@ class MaskedLineDetector:
 
         # Add info text
         info_text = (
-            f"Lines: {len(result.lines)} | "
-            f"Coverage: {result.sam3_result.coverage_percent:.1f}%"
+            f"Lines: {len(result.lines)} | Coverage: {result.sam3_result.coverage_percent:.1f}%"
         )
         if result.original_line_count > 0:
             reduction = (1 - len(result.lines) / result.original_line_count) * 100

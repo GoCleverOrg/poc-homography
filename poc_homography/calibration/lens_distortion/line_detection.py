@@ -130,9 +130,7 @@ class CandidateLine:
         # Convert edge_pixels array to tuple of tuples for frozen dataclass
         edge_pixels_tuple = None
         if self.edge_pixels is not None and len(self.edge_pixels) > 0:
-            edge_pixels_tuple = tuple(
-                (float(p[0]), float(p[1])) for p in self.edge_pixels
-            )
+            edge_pixels_tuple = tuple((float(p[0]), float(p[1])) for p in self.edge_pixels)
 
         return CameraLine(
             line_id=line_id,

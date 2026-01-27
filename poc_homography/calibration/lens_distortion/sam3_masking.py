@@ -168,9 +168,7 @@ class SAM3Segmenter:
 
         return self.segment(image)
 
-    def _parse_response(
-        self, api_response: dict[str, Any], height: int, width: int
-    ) -> SAM3Result:
+    def _parse_response(self, api_response: dict[str, Any], height: int, width: int) -> SAM3Result:
         """Parse SAM3 API response into SAM3Result.
 
         Args:
@@ -203,11 +201,7 @@ class SAM3Segmenter:
                 for polygon_data in masks:
                     if isinstance(polygon_data, list) and len(polygon_data) >= 3:
                         # Convert to integer points
-                        pts = [
-                            (int(pt[0]), int(pt[1]))
-                            for pt in polygon_data
-                            if len(pt) >= 2
-                        ]
+                        pts = [(int(pt[0]), int(pt[1])) for pt in polygon_data if len(pt) >= 2]
 
                         if len(pts) >= 3:
                             polygons.append(pts)

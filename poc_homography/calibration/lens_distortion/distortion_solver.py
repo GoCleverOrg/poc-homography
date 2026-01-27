@@ -346,8 +346,7 @@ class DistortionSolver:
         if data_requirements is not None:
             if image_width is None or image_height is None:
                 raise ValueError(
-                    "image_width and image_height are required when "
-                    "data_requirements is provided"
+                    "image_width and image_height are required when data_requirements is provided"
                 )
 
             validation_result = validate_calibration_data(
@@ -378,8 +377,7 @@ class DistortionSolver:
                 3: "bottom-right",
             }
             quadrant_summary = ", ".join(
-                f"{quadrant_names[q]}={c}"
-                for q, c in stats["quadrant_counts"].items()
+                f"{quadrant_names[q]}={c}" for q, c in stats["quadrant_counts"].items()
             )
             logger.info(f"Quadrant distribution: {quadrant_summary}")
 
@@ -390,9 +388,7 @@ class DistortionSolver:
             # Fail if validation errors
             if not validation_result.is_valid:
                 error_summary = "; ".join(validation_result.errors)
-                raise ValueError(
-                    f"Calibration data quality validation failed: {error_summary}"
-                )
+                raise ValueError(f"Calibration data quality validation failed: {error_summary}")
 
         # Extract principal point from intrinsic matrix
         cx = intrinsic_matrix[0, 2]
