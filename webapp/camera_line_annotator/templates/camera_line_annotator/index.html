@@ -401,6 +401,311 @@
         #mode-indicator.active {
             display: block;
         }
+
+        /* Annotation mode toggle */
+        #mode-toggle-section {
+            padding: 12px 16px;
+            background: #fff3e0;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .mode-toggle-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .mode-toggle-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: 2px solid #ccc;
+            border-radius: 6px;
+            background: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mode-toggle-btn:hover {
+            border-color: #999;
+        }
+
+        .mode-toggle-btn.active {
+            border-color: #2196f3;
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .mode-toggle-btn.calibration.active {
+            border-color: #00796b;
+            background: #e0f2f1;
+            color: #00695c;
+        }
+
+        #mode-description {
+            font-size: 11px;
+            color: #666;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        /* Calibration line point markers */
+        .calibration-point {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00796b;
+            border: 2px solid white;
+            margin-left: -4px;
+            margin-top: -4px;
+            pointer-events: none;
+        }
+
+        .calibration-point.first {
+            background: #4caf50;
+            width: 10px;
+            height: 10px;
+            margin-left: -5px;
+            margin-top: -5px;
+        }
+
+        .calibration-point.last {
+            background: #f44336;
+            width: 10px;
+            height: 10px;
+            margin-left: -5px;
+            margin-top: -5px;
+        }
+
+        /* Calibration lines list */
+        #calibration-lines-section {
+            display: none;
+        }
+
+        #calibration-lines-section.active {
+            display: block;
+        }
+
+        #calibration-lines-list {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 0 16px 16px 16px;
+        }
+
+        /* Hide annotations section in calibration mode */
+        #annotations-section.hidden {
+            display: none;
+        }
+
+        .calibration-line-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #fff;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            border-left: 3px solid #00796b;
+        }
+
+        .calibration-line-item .info {
+            font-size: 13px;
+        }
+
+        .calibration-line-item .point-count {
+            font-weight: 600;
+            color: #00796b;
+        }
+
+        .calibration-line-item .coords {
+            color: #666;
+            font-size: 10px;
+            display: block;
+        }
+
+        .calibration-line-item .delete-btn {
+            background: #f44336;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .calibration-line-item .delete-btn:hover {
+            background: #d32f2f;
+        }
+
+        .calibration-line-item .set-id-btn {
+            background: #1976d2;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-right: 4px;
+        }
+
+        .calibration-line-item .set-id-btn:hover {
+            background: #1565c0;
+        }
+
+        .calibration-line-item .line-id-badge {
+            display: inline-block;
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .calibration-line-item .buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        /* Calibration line ID selection modal */
+        #calibration-line-id-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #calibration-line-id-modal.active {
+            display: flex;
+        }
+
+        #calibration-line-id-modal .modal-content {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            width: 320px;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #calibration-line-id-modal h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            color: #333;
+        }
+
+        #calibration-line-id-modal .modal-search {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            border: 2px solid #1976d2;
+            border-radius: 6px;
+            outline: none;
+            margin-bottom: 12px;
+        }
+
+        #calibration-line-id-modal .modal-dropdown {
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        #calibration-line-id-modal .modal-option {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        #calibration-line-id-modal .modal-option:hover,
+        #calibration-line-id-modal .modal-option.selected {
+            background: #e3f2fd;
+        }
+
+        #calibration-line-id-modal .modal-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        #calibration-line-id-modal .modal-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        #calibration-line-id-modal .modal-btn.cancel {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        #calibration-line-id-modal .modal-btn.clear {
+            background: #ff9800;
+            color: #fff;
+        }
+
+        #calibration-export-section {
+            padding: 16px;
+            background: #e0f2f1;
+            display: none;
+        }
+
+        #calibration-export-section.active {
+            display: block;
+        }
+
+        #calibration-export-btn {
+            width: 100%;
+            padding: 12px;
+            background: #00796b;
+            color: #fff;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #calibration-export-btn:hover {
+            background: #00695c;
+        }
+
+        #calibration-export-btn:disabled {
+            background: #9e9e9e;
+            cursor: not-allowed;
+        }
+
+        #calibration-import-btn {
+            width: 100%;
+            padding: 12px;
+            background: #5c6bc0;
+            color: #fff;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        #calibration-import-btn:hover {
+            background: #3f51b5;
+        }
     </style>
 </head>
 <body>
@@ -428,7 +733,14 @@
             <h2>Camera Frame</h2>
             <div id="filename">{{ image_filename }}</div>
             <div id="registry-info">Registry: {{ registry_filename }} ({{ map_id }})</div>
-            <div id="instructions">Click twice on the image to create a line annotation. First click = start, second click = end.</div>
+        </div>
+
+        <div id="mode-toggle-section">
+            <div class="mode-toggle-container">
+                <button id="mode-lines-btn" class="mode-toggle-btn active">2-Point Lines</button>
+                <button id="mode-calibration-btn" class="mode-toggle-btn calibration">N-Point Calibration</button>
+            </div>
+            <div id="mode-description">Click twice to create a line: first click = start, second click = end.</div>
         </div>
 
         <div id="line-input-section" class="panel-section">
@@ -437,10 +749,12 @@
             <div id="line-dropdown"></div>
         </div>
 
-        <div class="panel-section">
-            <h2>Annotations (<span id="annotation-count">0</span>)</h2>
+        <div id="annotations-section">
+            <div class="panel-section">
+                <h2>Annotations (<span id="annotation-count">0</span>)</h2>
+            </div>
+            <div id="annotations-list"></div>
         </div>
-        <div id="annotations-list"></div>
 
         <div class="panel-section">
             <h2>Camera Status</h2>
@@ -460,6 +774,20 @@
             </div>
         </div>
 
+        <div id="calibration-lines-section">
+            <div class="panel-section">
+                <h2>Calibration Lines (<span id="calibration-line-count">0</span>)</h2>
+            </div>
+            <div id="calibration-lines-list"></div>
+        </div>
+
+        <div id="calibration-export-section">
+            <button id="calibration-import-btn">Import Calibration Lines</button>
+            <input type="file" id="calibration-import-file" accept=".json" style="display: none;">
+            <button id="calibration-export-btn" disabled>Export Calibration Lines</button>
+            <div id="calibration-import-status" style="margin-top: 8px; font-size: 12px;"></div>
+        </div>
+
         <div id="export-section">
             <button id="export-btn" disabled>Export to YAML</button>
             <div id="export-status"></div>
@@ -473,6 +801,19 @@
     </div>
 
     <div id="coords-display">Move mouse over image</div>
+
+    <!-- Modal for selecting line ID for calibration lines -->
+    <div id="calibration-line-id-modal">
+        <div class="modal-content">
+            <h3>Select Line ID for Calibration Line</h3>
+            <input type="text" class="modal-search" id="calibration-modal-search" placeholder="Type to filter line IDs..." autocomplete="off">
+            <div class="modal-dropdown" id="calibration-modal-dropdown"></div>
+            <div class="modal-buttons">
+                <button class="modal-btn clear" id="calibration-modal-clear">Clear ID</button>
+                <button class="modal-btn cancel" id="calibration-modal-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         // API base URL
@@ -527,15 +868,18 @@
         function renderLines() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw completed annotations
+            // Draw completed 2-point annotations
             annotations.forEach((ann, i) => {
                 drawLine(ann.start_pixel_x, ann.start_pixel_y, ann.end_pixel_x, ann.end_pixel_y, '#2196f3', ann.line_id);
             });
 
-            // Draw pending line preview
+            // Draw pending 2-point line preview
             if (pendingLine && pendingLine.endX !== undefined) {
                 drawLine(pendingLine.startX, pendingLine.startY, pendingLine.endX, pendingLine.endY, '#ff9800', null, true);
             }
+
+            // Draw calibration lines (N-point)
+            drawCalibrationLinesOnCanvas();
         }
 
         // Draw a line with endpoints
@@ -757,6 +1101,13 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
 
+            // Handle based on current annotation mode
+            if (annotationMode === 'calibration') {
+                handleCalibrationClick(x, y);
+                return;
+            }
+
+            // 2-point line mode
             if (!pendingLine) {
                 // First click - set start point
                 pendingLine = { startX: x, startY: y };
@@ -790,7 +1141,7 @@
             const y = (e.clientY - rect.top) * scaleY;
             coordsDisplay.textContent = `Pixel: (${x.toFixed(1)}, ${y.toFixed(1)})`;
 
-            // Update preview line
+            // Update preview line for 2-point mode
             if (pendingLine && pendingLine.endX === undefined) {
                 pendingLine.endX = x;
                 pendingLine.endY = y;
@@ -798,6 +1149,12 @@
                 drawPendingStart();
                 delete pendingLine.endX;
                 delete pendingLine.endY;
+            }
+
+            // Update cursor position for calibration mode live preview
+            if (annotationMode === 'calibration' && pendingCalibrationLine && pendingCalibrationLine.points.length > 0) {
+                calibrationCursorPos = { x, y };
+                renderLines();
             }
         });
 
@@ -831,6 +1188,14 @@
                 lineSection.classList.remove('active');
                 modeIndicator.classList.remove('active');
                 renderLines();
+            }
+        });
+
+        // Global ESC key handler for calibration mode
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && annotationMode === 'calibration') {
+                e.preventDefault();
+                finishCalibrationLine();
             }
         });
 
@@ -952,6 +1317,12 @@
                     lineSection.classList.remove('active');
                     modeIndicator.classList.remove('active');
 
+                    // Clear calibration lines
+                    calibrationLines = [];
+                    pendingCalibrationLine = null;
+                    renderCalibrationLinesList();
+                    updateCalibrationExportButton();
+
                     // Load annotations from response
                     annotations = data.annotations || [];
                     currentFilename = data.filename;
@@ -988,6 +1359,541 @@
         imageSelector.addEventListener('change', (e) => {
             switchImage(e.target.value);
         });
+
+        // ========================================
+        // ANNOTATION MODE TOGGLE (2-point vs N-point)
+        // ========================================
+
+        let annotationMode = 'lines';  // 'lines' (2-point) or 'calibration' (N-point)
+        let calibrationLines = [];  // Array of {points: [[x,y], ...], line_id: string|null}
+        let pendingCalibrationLine = null;  // {points: [[x,y], ...]} - line being drawn
+        let calibrationCursorPos = null;  // {x, y} - current cursor position for live preview
+
+        const modeLinesBtn = document.getElementById('mode-lines-btn');
+        const modeCalibrationBtn = document.getElementById('mode-calibration-btn');
+        const modeDescriptionEl = document.getElementById('mode-description');
+        const calibrationLinesSection = document.getElementById('calibration-lines-section');
+        const calibrationLinesList = document.getElementById('calibration-lines-list');
+        const calibrationLineCount = document.getElementById('calibration-line-count');
+        const calibrationExportSection = document.getElementById('calibration-export-section');
+        const calibrationExportBtn = document.getElementById('calibration-export-btn');
+        const calibrationImportBtn = document.getElementById('calibration-import-btn');
+        const calibrationImportFile = document.getElementById('calibration-import-file');
+        const calibrationImportStatus = document.getElementById('calibration-import-status');
+        const calibrationLineIdModal = document.getElementById('calibration-line-id-modal');
+        const calibrationModalSearch = document.getElementById('calibration-modal-search');
+        const calibrationModalDropdown = document.getElementById('calibration-modal-dropdown');
+        const calibrationModalClear = document.getElementById('calibration-modal-clear');
+        const calibrationModalCancel = document.getElementById('calibration-modal-cancel');
+        const annotationsSection = document.getElementById('annotations-section');
+
+        // State for line ID selection modal
+        let calibrationLineIdSelectionIndex = null;  // Which calibration line we're setting ID for
+        let calibrationModalFilteredLines = [];
+        let calibrationModalSelectedIndex = -1;
+
+        // Switch to 2-point lines mode
+        modeLinesBtn.addEventListener('click', () => {
+            if (annotationMode === 'lines') return;
+
+            // Cancel any pending calibration line
+            if (pendingCalibrationLine) {
+                pendingCalibrationLine = null;
+                calibrationCursorPos = null;
+                modeIndicator.classList.remove('active');
+            }
+
+            annotationMode = 'lines';
+            modeLinesBtn.classList.add('active');
+            modeCalibrationBtn.classList.remove('active');
+            modeDescriptionEl.textContent = 'Click twice to create a line: first click = start, second click = end.';
+
+            // Show annotations section in 2-point mode
+            annotationsSection.classList.remove('hidden');
+
+            // Hide calibration sections in 2-point mode
+            calibrationLinesSection.classList.remove('active');
+            calibrationExportSection.classList.remove('active');
+
+            renderLines();
+        });
+
+        // Switch to N-point calibration mode
+        modeCalibrationBtn.addEventListener('click', () => {
+            if (annotationMode === 'calibration') return;
+
+            // Cancel any pending 2-point line
+            if (pendingLine) {
+                pendingLine = null;
+                lineSection.classList.remove('active');
+                modeIndicator.classList.remove('active');
+            }
+
+            annotationMode = 'calibration';
+            modeCalibrationBtn.classList.add('active');
+            modeLinesBtn.classList.remove('active');
+            modeDescriptionEl.textContent = 'Click multiple points along a line. Press ESC to finish the line. More points = better calibration.';
+
+            // Hide annotations section in calibration mode
+            annotationsSection.classList.add('hidden');
+
+            // Always show calibration sections in calibration mode (import always available)
+            calibrationLinesSection.classList.add('active');
+            calibrationExportSection.classList.add('active');
+
+            renderLines();
+        });
+
+        // Handle click for calibration mode
+        function handleCalibrationClick(x, y) {
+            if (!pendingCalibrationLine) {
+                // Start a new calibration line
+                pendingCalibrationLine = { points: [[x, y]] };
+                modeIndicator.textContent = 'Click more points along the line. Press ESC to finish.';
+                modeIndicator.classList.add('active');
+            } else {
+                // Add point to current line
+                pendingCalibrationLine.points.push([x, y]);
+                modeIndicator.textContent = `${pendingCalibrationLine.points.length} points. Click more or press ESC to finish.`;
+            }
+            renderLines();
+        }
+
+        // Finish current calibration line (ESC pressed)
+        function finishCalibrationLine() {
+            if (!pendingCalibrationLine) return;
+
+            if (pendingCalibrationLine.points.length >= 2) {
+                // Save the completed line
+                const newLineIndex = calibrationLines.length;
+                calibrationLines.push({
+                    points: [...pendingCalibrationLine.points],
+                    line_id: null  // Will be set via modal
+                });
+                renderCalibrationLinesList();
+                updateCalibrationExportButton();
+
+                // Auto-open the line ID selection modal for the new line
+                pendingCalibrationLine = null;
+                calibrationCursorPos = null;
+                modeIndicator.classList.remove('active');
+                renderLines();
+
+                // Open modal after a short delay to let the UI update
+                setTimeout(() => {
+                    openCalibrationLineIdModal(newLineIndex);
+                }, 100);
+                return;
+            }
+
+            pendingCalibrationLine = null;
+            calibrationCursorPos = null;  // Clear cursor preview
+            modeIndicator.classList.remove('active');
+            renderLines();
+        }
+
+        // Render calibration lines list in sidebar
+        function renderCalibrationLinesList() {
+            calibrationLinesList.innerHTML = '';
+            calibrationLineCount.textContent = calibrationLines.length;
+
+            // Only show calibration sections in calibration mode
+            if (annotationMode !== 'calibration') {
+                calibrationLinesSection.classList.remove('active');
+                calibrationExportSection.classList.remove('active');
+                return;
+            }
+
+            // In calibration mode, always show sections
+            calibrationLinesSection.classList.add('active');
+            calibrationExportSection.classList.add('active');
+
+            calibrationLines.forEach((line, i) => {
+                const firstPt = line.points[0];
+                const lastPt = line.points[line.points.length - 1];
+                const lineIdBadge = line.line_id
+                    ? `<span class="line-id-badge">${line.line_id}</span>`
+                    : '';
+                const div = document.createElement('div');
+                div.className = 'calibration-line-item';
+                div.innerHTML = `
+                    <div class="info">
+                        <span class="point-count">${line.points.length} points${lineIdBadge}</span>
+                        <span class="coords">Start: (${firstPt[0].toFixed(0)}, ${firstPt[1].toFixed(0)}) End: (${lastPt[0].toFixed(0)}, ${lastPt[1].toFixed(0)})</span>
+                    </div>
+                    <div class="buttons">
+                        <button class="set-id-btn" data-index="${i}">${line.line_id ? 'Change' : 'Set ID'}</button>
+                        <button class="delete-btn" data-index="${i}">Delete</button>
+                    </div>
+                `;
+                calibrationLinesList.appendChild(div);
+            });
+
+            // Add set ID handlers
+            calibrationLinesList.querySelectorAll('.set-id-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    openCalibrationLineIdModal(idx);
+                });
+            });
+
+            // Add delete handlers
+            calibrationLinesList.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    calibrationLines.splice(idx, 1);
+                    renderCalibrationLinesList();
+                    updateCalibrationExportButton();
+                    renderLines();
+                });
+            });
+        }
+
+        // Update calibration export button
+        function updateCalibrationExportButton() {
+            calibrationExportBtn.disabled = calibrationLines.length === 0;
+            calibrationExportBtn.textContent = calibrationLines.length > 0
+                ? `Export ${calibrationLines.length} Calibration Lines`
+                : 'Export Calibration Lines';
+        }
+
+        // Export calibration lines to JSON (copies to clipboard)
+        calibrationExportBtn.addEventListener('click', () => {
+            if (calibrationLines.length === 0) return;
+
+            const exportData = {
+                image: currentFilename,
+                camera_status: {
+                    pan: parseFloat(panInput.value) || 0,
+                    tilt: parseFloat(tiltInput.value) || 0,
+                    zoom: parseFloat(zoomInput.value) || 1
+                },
+                calibration_lines: calibrationLines.map((line, i) => ({
+                    index: i,
+                    point_count: line.points.length,
+                    points: line.points,
+                    line_id: line.line_id || null
+                }))
+            };
+
+            const json = JSON.stringify(exportData, null, 2);
+            navigator.clipboard.writeText(json).then(() => {
+                const originalText = calibrationExportBtn.textContent;
+                calibrationExportBtn.textContent = 'Copied to clipboard!';
+                setTimeout(() => {
+                    calibrationExportBtn.textContent = originalText;
+                }, 2000);
+            });
+        });
+
+        // Import calibration lines from JSON file
+        calibrationImportBtn.addEventListener('click', () => {
+            calibrationImportFile.click();
+        });
+
+        calibrationImportFile.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            calibrationImportStatus.textContent = 'Reading file...';
+            calibrationImportStatus.style.color = '#5c6bc0';
+
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+
+                // Validate JSON structure
+                if (!data.calibration_lines || !Array.isArray(data.calibration_lines)) {
+                    throw new Error('Invalid format: missing calibration_lines array');
+                }
+
+                // Check if image matches
+                if (data.image && data.image !== currentFilename) {
+                    // Try to switch to the correct image
+                    const availableImages = Array.from(imageSelector.options).map(opt => opt.value);
+                    if (availableImages.includes(data.image)) {
+                        if (confirm(`Import is for image "${data.image}" but current image is "${currentFilename}". Switch to the correct image?`)) {
+                            await switchImage(data.image);
+                            imageSelector.value = data.image;
+                        } else {
+                            calibrationImportStatus.textContent = 'Import cancelled - image mismatch';
+                            calibrationImportStatus.style.color = '#f57c00';
+                            calibrationImportFile.value = '';
+                            return;
+                        }
+                    } else {
+                        if (!confirm(`Warning: Import is for image "${data.image}" which is not available. Import anyway onto current image?`)) {
+                            calibrationImportStatus.textContent = 'Import cancelled - image not found';
+                            calibrationImportStatus.style.color = '#f57c00';
+                            calibrationImportFile.value = '';
+                            return;
+                        }
+                    }
+                }
+
+                // Import the calibration lines
+                const importedLines = data.calibration_lines.map(calLine => ({
+                    points: calLine.points || [],
+                    line_id: calLine.line_id || null
+                })).filter(line => line.points.length >= 2);
+
+                if (importedLines.length === 0) {
+                    throw new Error('No valid calibration lines found (need at least 2 points each)');
+                }
+
+                // Ask whether to replace or append
+                if (calibrationLines.length > 0) {
+                    if (confirm(`You have ${calibrationLines.length} existing calibration lines. Replace them with imported lines? (Cancel to append)`)) {
+                        calibrationLines = importedLines;
+                    } else {
+                        calibrationLines = [...calibrationLines, ...importedLines];
+                    }
+                } else {
+                    calibrationLines = importedLines;
+                }
+
+                // Update camera status if provided
+                if (data.camera_status) {
+                    if (data.camera_status.pan !== undefined) panInput.value = data.camera_status.pan;
+                    if (data.camera_status.tilt !== undefined) tiltInput.value = data.camera_status.tilt;
+                    if (data.camera_status.zoom !== undefined) zoomInput.value = data.camera_status.zoom;
+                }
+
+                // Render
+                renderCalibrationLinesList();
+                updateCalibrationExportButton();
+                renderLines();
+                updateYamlPreview();
+
+                calibrationImportStatus.textContent = `Imported ${importedLines.length} calibration lines`;
+                calibrationImportStatus.style.color = '#2e7d32';
+
+            } catch (err) {
+                calibrationImportStatus.textContent = `Error: ${err.message}`;
+                calibrationImportStatus.style.color = '#c62828';
+            }
+
+            // Reset file input
+            calibrationImportFile.value = '';
+        });
+
+        // ========================================
+        // CALIBRATION LINE ID SELECTION MODAL
+        // ========================================
+
+        // Open modal to select line ID for a calibration line
+        function openCalibrationLineIdModal(lineIndex) {
+            calibrationLineIdSelectionIndex = lineIndex;
+            calibrationModalFilteredLines = [...lineIds];
+            calibrationModalSelectedIndex = 0;
+
+            // Pre-fill search with current line ID if any
+            const currentLineId = calibrationLines[lineIndex].line_id;
+            calibrationModalSearch.value = currentLineId || '';
+
+            if (currentLineId) {
+                filterCalibrationModalLines(currentLineId);
+            } else {
+                renderCalibrationModalDropdown();
+            }
+
+            calibrationLineIdModal.classList.add('active');
+            calibrationModalSearch.focus();
+        }
+
+        // Close modal
+        function closeCalibrationLineIdModal() {
+            calibrationLineIdModal.classList.remove('active');
+            calibrationLineIdSelectionIndex = null;
+            calibrationModalSearch.value = '';
+        }
+
+        // Filter line IDs in modal
+        function filterCalibrationModalLines(query) {
+            const q = query.toLowerCase();
+            calibrationModalFilteredLines = lineIds.filter(id => id.toLowerCase().includes(q));
+            calibrationModalSelectedIndex = calibrationModalFilteredLines.length > 0 ? 0 : -1;
+            renderCalibrationModalDropdown();
+        }
+
+        // Render modal dropdown
+        function renderCalibrationModalDropdown() {
+            calibrationModalDropdown.innerHTML = '';
+
+            if (calibrationModalFilteredLines.length === 0) {
+                calibrationModalDropdown.innerHTML = '<div style="padding: 12px; color: #999;">No matching line IDs</div>';
+                return;
+            }
+
+            calibrationModalFilteredLines.forEach((lineId, i) => {
+                const div = document.createElement('div');
+                div.className = 'modal-option' + (i === calibrationModalSelectedIndex ? ' selected' : '');
+                div.setAttribute('data-line-id', lineId);
+                div.textContent = lineId;
+                calibrationModalDropdown.appendChild(div);
+            });
+        }
+
+        // Select line ID from modal
+        function selectCalibrationLineId(lineId) {
+            if (calibrationLineIdSelectionIndex === null) return;
+
+            calibrationLines[calibrationLineIdSelectionIndex].line_id = lineId;
+            closeCalibrationLineIdModal();
+            renderCalibrationLinesList();
+            renderLines();
+        }
+
+        // Clear line ID
+        function clearCalibrationLineId() {
+            if (calibrationLineIdSelectionIndex === null) return;
+
+            calibrationLines[calibrationLineIdSelectionIndex].line_id = null;
+            closeCalibrationLineIdModal();
+            renderCalibrationLinesList();
+            renderLines();
+        }
+
+        // Modal event listeners
+        calibrationModalSearch.addEventListener('input', (e) => {
+            filterCalibrationModalLines(e.target.value);
+        });
+
+        calibrationModalSearch.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (calibrationModalSelectedIndex < calibrationModalFilteredLines.length - 1) {
+                    calibrationModalSelectedIndex++;
+                    renderCalibrationModalDropdown();
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (calibrationModalSelectedIndex > 0) {
+                    calibrationModalSelectedIndex--;
+                    renderCalibrationModalDropdown();
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (calibrationModalSelectedIndex >= 0 && calibrationModalFilteredLines[calibrationModalSelectedIndex]) {
+                    selectCalibrationLineId(calibrationModalFilteredLines[calibrationModalSelectedIndex]);
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeCalibrationLineIdModal();
+            }
+        });
+
+        calibrationModalDropdown.addEventListener('click', (e) => {
+            const option = e.target.closest('.modal-option');
+            if (option) {
+                const lineId = option.getAttribute('data-line-id');
+                if (lineId) {
+                    selectCalibrationLineId(lineId);
+                }
+            }
+        });
+
+        calibrationModalCancel.addEventListener('click', closeCalibrationLineIdModal);
+        calibrationModalClear.addEventListener('click', clearCalibrationLineId);
+
+        // Close modal when clicking outside
+        calibrationLineIdModal.addEventListener('click', (e) => {
+            if (e.target === calibrationLineIdModal) {
+                closeCalibrationLineIdModal();
+            }
+        });
+
+        // Draw calibration lines on canvas
+        function drawCalibrationLinesOnCanvas() {
+            // Draw completed calibration lines
+            calibrationLines.forEach((line, lineIdx) => {
+                const label = line.line_id ? line.line_id : `Cal ${lineIdx + 1}`;
+                drawMultiPointLine(line.points, '#00796b', label);
+            });
+
+            // Draw pending calibration line
+            if (pendingCalibrationLine && pendingCalibrationLine.points.length > 0) {
+                drawMultiPointLine(pendingCalibrationLine.points, '#ff9800', null, true);
+
+                // Draw live preview line from last point to cursor
+                if (calibrationCursorPos) {
+                    const lastPoint = pendingCalibrationLine.points[pendingCalibrationLine.points.length - 1];
+                    ctx.beginPath();
+                    ctx.moveTo(lastPoint[0], lastPoint[1]);
+                    ctx.lineTo(calibrationCursorPos.x, calibrationCursorPos.y);
+                    ctx.strokeStyle = 'rgba(255, 152, 0, 0.6)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Draw cursor point indicator
+                    ctx.beginPath();
+                    ctx.arc(calibrationCursorPos.x, calibrationCursorPos.y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 152, 0, 0.8)';
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Draw a multi-point line with all its points
+        function drawMultiPointLine(points, color, label, isPending = false) {
+            if (points.length === 0) return;
+
+            // Draw lines between consecutive points
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isPending ? 2 : 3;
+            if (isPending) {
+                ctx.setLineDash([5, 5]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw all points
+            points.forEach((pt, i) => {
+                ctx.beginPath();
+                ctx.arc(pt[0], pt[1], i === 0 ? 6 : (i === points.length - 1 ? 6 : 4), 0, Math.PI * 2);
+
+                // Color: green for first, red for last, teal for middle
+                if (i === 0) {
+                    ctx.fillStyle = '#4caf50';
+                } else if (i === points.length - 1) {
+                    ctx.fillStyle = isPending ? '#ff9800' : '#f44336';
+                } else {
+                    ctx.fillStyle = color;
+                }
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Draw label at midpoint
+            if (label && points.length >= 2) {
+                const midIdx = Math.floor(points.length / 2);
+                const midX = points[midIdx][0];
+                const midY = points[midIdx][1];
+                ctx.font = 'bold 11px system-ui';
+                const metrics = ctx.measureText(label);
+                const padding = 3;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(midX - metrics.width/2 - padding, midY - 16, metrics.width + padding*2, 14);
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, midX, midY - 9);
+            }
+        }
 
         // Initialize
         img.onload = function() {

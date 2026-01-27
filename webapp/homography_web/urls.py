@@ -28,5 +28,7 @@ urlpatterns = [
     path("camera-diagnostic/", include("camera_diagnostic.urls")),
     path("camera-survey/", include("camera_survey.urls")),
     path("camera-evaluation/", include("camera_evaluation.urls")),
+    path("lens-calibration/", include("lens_calibration.urls")),
+    path("distortion-validator/", include("distortion_validator.urls")),
     path("", include("gcp.urls")),
 ]

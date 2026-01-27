@@ -809,3 +809,109 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             confidence=result.confidence,
             metadata=result.to_metadata_dict(),
         )
+
+    @classmethod
+    def load_lens_distortion_calibration(
+        cls,
+        camera_id: str,
+        calibration_dir: str,
+    ) -> dict[float, dict[str, float]] | None:
+        """Load lens distortion calibration as a calibration_table dict.
+
+        Loads from the YAML-based lens distortion calibration files and
+        converts to the calibration_table format used by this class.
+
+        This allows integrating parking-spot-based lens distortion calibration
+        with the existing zoom-dependent calibration system.
+
+        Args:
+            camera_id: Identifier for the camera.
+            calibration_dir: Directory containing calibration YAML files.
+
+        Returns:
+            Dictionary mapping zoom_factor to calibration params with
+            k1, k2, k3, p1, p2 keys, suitable for use as calibration_table.
+            Returns None if no calibration file exists.
+
+        Example:
+            >>> cal_table = IntrinsicExtrinsicHomography.load_lens_distortion_calibration(
+            ...     camera_id="camera_valte",
+            ...     calibration_dir="/path/to/calibrations",
+            ... )
+            >>> if cal_table:
+            ...     provider = IntrinsicExtrinsicHomography(
+            ...         width=1920, height=1080, map_id="map_valte",
+            ...         calibration_table=cal_table,
+            ...     )
+        """
+        from pathlib import Path
+
+        calibration_file = Path(calibration_dir) / f"{camera_id}_calibration.yaml"
+
+        if not calibration_file.exists():
+            return None
+
+        try:
+            from poc_homography.calibration.lens_distortion.calibration_table import (
+                CameraCalibrationTable,
+            )
+
+            table = CameraCalibrationTable.load(calibration_file)
+
+            if not table.entries:
+                return None
+
+            # Convert to calibration_table format
+            result: dict[float, dict[str, float]] = {}
+            for zoom, entry in table.entries.items():
+                result[zoom] = {
+                    "k1": entry.k1,
+                    "k2": entry.k2,
+                    "k3": entry.k3,
+                    "p1": entry.p1,
+                    "p2": entry.p2,
+                }
+
+            return result
+        except Exception:
+            logger.warning(f"Failed to load lens distortion calibration for {camera_id}")
+            return None
+
+    def merge_calibration_tables(
+        self,
+        lens_distortion_table: dict[float, dict[str, float]] | None,
+    ) -> dict[float, dict[str, float]] | None:
+        """Merge lens distortion calibration with existing calibration table.
+
+        Combines distortion coefficients from lens calibration with
+        intrinsic parameters from the existing calibration table.
+
+        Args:
+            lens_distortion_table: Table with k1, k2, k3, p1, p2 per zoom.
+
+        Returns:
+            Merged calibration table with both intrinsics and distortion,
+            or the existing table if no distortion data provided.
+        """
+        if lens_distortion_table is None:
+            return self.calibration_table
+
+        if self.calibration_table is None:
+            return lens_distortion_table
+
+        merged: dict[float, dict[str, float]] = {}
+
+        # Start with existing intrinsic calibrations
+        for zoom, params in self.calibration_table.items():
+            merged[zoom] = dict(params)
+
+        # Merge distortion coefficients
+        for zoom, distortion in lens_distortion_table.items():
+            if zoom in merged:
+                # Add distortion to existing entry
+                merged[zoom].update(distortion)
+            else:
+                # Create new entry with just distortion
+                merged[zoom] = dict(distortion)
+
+        return merged
