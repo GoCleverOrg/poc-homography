@@ -1983,6 +1983,7 @@
         let runMaxSpeedMode = false;  // Track if we're in max speed mode specifically
         let runAllTestsQueue = [];
         let runAllTestsResults = [];
+        let runAllTestsTotal = 0;  // Track total test count for progress display
 
         // Elements - Stress testing tab
         const stressTenantSelect = document.getElementById('stress-tenant-select');
@@ -2312,12 +2313,7 @@
                 }
 
                 if (runAllTestsQueue.length > 0) {
-                    // Call the appropriate next function based on mode
-                    if (runMaxSpeedMode) {
-                        setTimeout(runNextMaxSpeedTestInQueue, 1000);
-                    } else {
-                        setTimeout(runNextTestInQueue, 1000);
-                    }
+                    setTimeout(runNextTestInQueue, 1000);
                 } else {
                     // All tests completed
                     const testType = runMaxSpeedMode ? 'Max Speed' : 'All';
@@ -2348,36 +2344,14 @@
             runMaxSpeedMode = false;
             runAllTestsQueue = [...Array(stressPresets.length).keys()]; // [0, 1, 2, ...]
             runAllTestsResults = [];
+            runAllTestsTotal = stressPresets.length;
 
             runAllStressTestsBtn.disabled = true;
-            runAllStressTestsBtn.textContent = `Running All (0/${stressPresets.length})...`;
+            runAllStressTestsBtn.textContent = `Running All (0/${runAllTestsTotal})...`;
             runMaxSpeedTestsBtn.disabled = true;
             startStressTestBtn.disabled = true;
 
             runNextTestInQueue();
-        }
-
-        async function runNextTestInQueue() {
-            if (runAllTestsQueue.length === 0) return;
-
-            const presetIndex = runAllTestsQueue.shift();
-            const completedCount = stressPresets.length - runAllTestsQueue.length - 1;
-            runAllStressTestsBtn.textContent = `Running All (${completedCount}/${stressPresets.length})...`;
-
-            // Select the preset and start test
-            selectStressPreset(presetIndex);
-            await startStressTest();
-        }
-
-        function abortRunAllTests() {
-            runAllTestsMode = false;
-            runMaxSpeedMode = false;
-            runAllTestsQueue = [];
-            runAllStressTestsBtn.disabled = false;
-            runAllStressTestsBtn.textContent = 'Run All Tests';
-            runMaxSpeedTestsBtn.disabled = false;
-            runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
-            startStressTestBtn.disabled = false;
         }
 
         // Run only MAX SPEED stress tests sequentially
@@ -2396,26 +2370,45 @@
             runMaxSpeedMode = true;
             runAllTestsQueue = maxSpeedIndices;
             runAllTestsResults = [];
+            runAllTestsTotal = maxSpeedIndices.length;
 
             runAllStressTestsBtn.disabled = true;
             runMaxSpeedTestsBtn.disabled = true;
-            runMaxSpeedTestsBtn.textContent = `Running Max Speed (0/${maxSpeedIndices.length})...`;
+            runMaxSpeedTestsBtn.textContent = `Running Max Speed (0/${runAllTestsTotal})...`;
             startStressTestBtn.disabled = true;
 
-            runNextMaxSpeedTestInQueue();
+            runNextTestInQueue();
         }
 
-        async function runNextMaxSpeedTestInQueue() {
+        // Unified function to run next test in queue (for both all tests and max speed modes)
+        async function runNextTestInQueue() {
             if (runAllTestsQueue.length === 0) return;
 
-            const maxSpeedTotal = stressPresets.filter(p => p.max_speed).length;
             const presetIndex = runAllTestsQueue.shift();
-            const completedCount = maxSpeedTotal - runAllTestsQueue.length - 1;
-            runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${maxSpeedTotal})...`;
+            const completedCount = runAllTestsTotal - runAllTestsQueue.length - 1;
+
+            // Update the appropriate button based on mode
+            if (runMaxSpeedMode) {
+                runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${runAllTestsTotal})...`;
+            } else {
+                runAllStressTestsBtn.textContent = `Running All (${completedCount}/${runAllTestsTotal})...`;
+            }
 
             // Select the preset and start test
             selectStressPreset(presetIndex);
             await startStressTest();
+        }
+
+        function abortRunAllTests() {
+            runAllTestsMode = false;
+            runMaxSpeedMode = false;
+            runAllTestsQueue = [];
+            runAllTestsTotal = 0;
+            runAllStressTestsBtn.disabled = false;
+            runAllStressTestsBtn.textContent = 'Run All Tests';
+            runMaxSpeedTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
+            startStressTestBtn.disabled = false;
         }
 
         function showStressTestResults(session) {
