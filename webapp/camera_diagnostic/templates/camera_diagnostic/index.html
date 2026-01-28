@@ -112,6 +112,52 @@
             transform: none;
         }
 
+        .btn-secondary {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #4a5568;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6878;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary:disabled {
+            background: #333;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-warning {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #d97706;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-warning:hover {
+            background: #f59e0b;
+            transform: translateY(-1px);
+        }
+
+        .btn-warning:disabled {
+            background: #78350f;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         /* Summary Report */
         .summary-report {
             background: #252525;
@@ -1083,6 +1129,8 @@
                 <h2>Test Control</h2>
                 <div class="stress-form-row">
                     <button id="start-stress-test-btn" class="btn-primary">Start Test</button>
+                    <button id="run-all-stress-tests-btn" class="btn-secondary">Run All Tests</button>
+                    <button id="run-max-speed-tests-btn" class="btn-warning">Run Max Speed Tests</button>
                     <button id="abort-stress-test-btn" class="btn-danger" disabled>Abort Test</button>
                 </div>
 
@@ -1931,6 +1979,11 @@
         let stressCurrentSessionId = null;
         let stressPollInterval = null;
         let stressCurrentEvaluation = null;
+        let runAllTestsMode = false;
+        let runMaxSpeedMode = false;  // Track if we're in max speed mode specifically
+        let runAllTestsQueue = [];
+        let runAllTestsResults = [];
+        let runAllTestsTotal = 0;  // Track total test count for progress display
 
         // Elements - Stress testing tab
         const stressTenantSelect = document.getElementById('stress-tenant-select');
@@ -1944,6 +1997,8 @@
         const stressTestResultsPanel = document.getElementById('stress-test-results-panel');
         const stressPresetsGrid = document.getElementById('stress-presets-grid');
         const startStressTestBtn = document.getElementById('start-stress-test-btn');
+        const runAllStressTestsBtn = document.getElementById('run-all-stress-tests-btn');
+        const runMaxSpeedTestsBtn = document.getElementById('run-max-speed-tests-btn');
         const abortStressTestBtn = document.getElementById('abort-stress-test-btn');
         const stressTestProgress = document.getElementById('stress-test-progress');
         const stressTestProgressFill = document.getElementById('stress-test-progress-fill');
@@ -2227,13 +2282,18 @@
             abortStressTestBtn.disabled = true;
 
             // Load session details
+            let sessionResult = null;
             try {
                 const url = '{% url "camera_diagnostic:api_stress_test_session_detail" "PLACEHOLDER" %}'.replace('PLACEHOLDER', stressCurrentSessionId);
                 const resp = await fetch(url);
                 const result = await resp.json();
 
                 if (result.status === 'success') {
-                    showStressTestResults(result.data.session);
+                    sessionResult = result.data.session;
+                    // Only show results panel if not in "run all" mode
+                    if (!runAllTestsMode) {
+                        showStressTestResults(sessionResult);
+                    }
                 }
             } catch (e) {
                 console.error('Failed to load session details:', e);
@@ -2241,6 +2301,114 @@
 
             // Refresh sessions list
             loadStressSessions();
+
+            // If in "run all tests" mode, track result and continue
+            if (runAllTestsMode) {
+                if (sessionResult) {
+                    runAllTestsResults.push({
+                        preset: stressPresets[stressSelectedPreset]?.name || 'Unknown',
+                        status: sessionResult.status,
+                        sessionId: stressCurrentSessionId
+                    });
+                }
+
+                if (runAllTestsQueue.length > 0) {
+                    setTimeout(runNextTestInQueue, 1000);
+                } else {
+                    // All tests completed
+                    const testType = runMaxSpeedMode ? 'Max Speed' : 'All';
+                    runAllTestsMode = false;
+                    runMaxSpeedMode = false;
+                    runAllStressTestsBtn.disabled = false;
+                    runAllStressTestsBtn.textContent = 'Run All Tests';
+                    runMaxSpeedTestsBtn.disabled = false;
+                    runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
+                    startStressTestBtn.disabled = false;
+
+                    const passedCount = runAllTestsResults.filter(r => r.status === 'completed').length;
+                    const failedCount = runAllTestsResults.filter(r => r.status === 'failed').length;
+                    alert(`${testType} ${runAllTestsResults.length} tests completed!\n\nPassed: ${passedCount}\nFailed: ${failedCount}`);
+                    runAllTestsResults = [];
+                }
+            }
+        }
+
+        // Run all stress tests sequentially
+        async function startRunAllTests() {
+            if (stressPresets.length === 0) {
+                alert('No presets available');
+                return;
+            }
+
+            runAllTestsMode = true;
+            runMaxSpeedMode = false;
+            runAllTestsQueue = [...Array(stressPresets.length).keys()]; // [0, 1, 2, ...]
+            runAllTestsResults = [];
+            runAllTestsTotal = stressPresets.length;
+
+            runAllStressTestsBtn.disabled = true;
+            runAllStressTestsBtn.textContent = `Running All (0/${runAllTestsTotal})...`;
+            runMaxSpeedTestsBtn.disabled = true;
+            startStressTestBtn.disabled = true;
+
+            runNextTestInQueue();
+        }
+
+        // Run only MAX SPEED stress tests sequentially
+        async function startRunMaxSpeedTests() {
+            // Filter presets that have max_speed = true
+            const maxSpeedIndices = stressPresets
+                .map((preset, index) => preset.max_speed ? index : -1)
+                .filter(index => index !== -1);
+
+            if (maxSpeedIndices.length === 0) {
+                alert('No max speed presets available');
+                return;
+            }
+
+            runAllTestsMode = true;
+            runMaxSpeedMode = true;
+            runAllTestsQueue = maxSpeedIndices;
+            runAllTestsResults = [];
+            runAllTestsTotal = maxSpeedIndices.length;
+
+            runAllStressTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.textContent = `Running Max Speed (0/${runAllTestsTotal})...`;
+            startStressTestBtn.disabled = true;
+
+            runNextTestInQueue();
+        }
+
+        // Unified function to run next test in queue (for both all tests and max speed modes)
+        async function runNextTestInQueue() {
+            if (runAllTestsQueue.length === 0) return;
+
+            const presetIndex = runAllTestsQueue.shift();
+            const completedCount = runAllTestsTotal - runAllTestsQueue.length - 1;
+
+            // Update the appropriate button based on mode
+            if (runMaxSpeedMode) {
+                runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${runAllTestsTotal})...`;
+            } else {
+                runAllStressTestsBtn.textContent = `Running All (${completedCount}/${runAllTestsTotal})...`;
+            }
+
+            // Select the preset and start test
+            selectStressPreset(presetIndex);
+            await startStressTest();
+        }
+
+        function abortRunAllTests() {
+            runAllTestsMode = false;
+            runMaxSpeedMode = false;
+            runAllTestsQueue = [];
+            runAllTestsTotal = 0;
+            runAllStressTestsBtn.disabled = false;
+            runAllStressTestsBtn.textContent = 'Run All Tests';
+            runMaxSpeedTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
+            startStressTestBtn.disabled = false;
         }
 
         function showStressTestResults(session) {
@@ -2463,7 +2631,12 @@
 
         // Test control listeners
         startStressTestBtn.addEventListener('click', startStressTest);
-        abortStressTestBtn.addEventListener('click', abortStressTest);
+        runAllStressTestsBtn.addEventListener('click', startRunAllTests);
+        runMaxSpeedTestsBtn.addEventListener('click', startRunMaxSpeedTests);
+        abortStressTestBtn.addEventListener('click', () => {
+            abortStressTest();
+            if (runAllTestsMode) abortRunAllTests();
+        });
 
         // Evaluation listeners
         document.getElementById('stress-eval-good-btn').addEventListener('click', () => selectStressEvaluation('good'));

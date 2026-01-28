@@ -370,7 +370,7 @@ def api_camera_capabilities(request: HttpRequest) -> JsonResponse:
 
     try:
         # Create PTZ camera instance and get capabilities via abstraction layer
-        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name)
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
         capabilities = ptz_camera.get_capabilities()
 
         # Build response from CameraCapabilities model
@@ -433,7 +433,7 @@ def api_camera_position(request: HttpRequest) -> JsonResponse:
 
     try:
         # Create PTZ camera instance using existing abstraction
-        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name)
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
 
         # Get current position
         position = ptz_camera.get_status()

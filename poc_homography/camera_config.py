@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import os
 
-# Camera credentials - loaded from environment variables
+# Legacy global credentials - kept for backwards compatibility
+# Prefer tenant-specific credentials defined in TENANTS
 USERNAME = os.getenv("CAMERA_USERNAME")
 PASSWORD = os.getenv("CAMERA_PASSWORD")
 
@@ -83,6 +84,8 @@ DEFAULT_MAX_ZOOM = 25.0  # Maximum optical zoom factor
 # =============================================================================
 
 # Tenant definitions
+# Credentials are loaded from environment variables: {TENANT_ID}_CAMERA_USERNAME, {TENANT_ID}_CAMERA_PASSWORD
+# Falls back to global CAMERA_USERNAME/CAMERA_PASSWORD if tenant-specific not set
 TENANTS = [
     {
         "id": "valte",
@@ -92,6 +95,8 @@ TENANTS = [
             "lat": "39°38'25.72\"N",
             "lon": "0°13'48.63\"W",
         },
+        "username": os.getenv("VALTE_CAMERA_USERNAME"),
+        "password": os.getenv("VALTE_CAMERA_PASSWORD"),
     },
     {
         "id": "setram",
@@ -101,6 +106,19 @@ TENANTS = [
             "lat": "41°19'46.8\"N",
             "lon": "2°08'31.3\"E",
         },
+        "username": os.getenv("SETRAM_CAMERA_USERNAME"),
+        "password": os.getenv("SETRAM_CAMERA_PASSWORD"),
+    },
+    {
+        "id": "icozee",
+        "name": "Icozee",
+        "description": "Icozee deployment site",
+        "location": {
+            "lat": "",
+            "lon": "",
+        },
+        "username": os.getenv("ICOZEE_CAMERA_USERNAME"),
+        "password": os.getenv("ICOZEE_CAMERA_PASSWORD"),
     },
 ]
 
@@ -169,6 +187,51 @@ CAMERAS = [
         "calibration_table": None,
         "description": "Setram Cam01 - primary camera",
     },
+    {
+        "id": "icozee-camptz-01",
+        "tenant_id": "icozee",
+        "name": "Cam01",
+        "ip": "10.247.99.10",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam01 - primary camera",
+    },
+    {
+        "id": "icozee-camptz-02",
+        "tenant_id": "icozee",
+        "name": "Cam02",
+        "ip": "10.247.99.13",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam02 - primary camera",
+    },
+    {
+        "id": "icozee-camptz-03",
+        "tenant_id": "icozee",
+        "name": "Cam03",
+        "ip": "10.247.99.14",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam03 - primary camera",
+    },
 ]
 
 
@@ -224,6 +287,27 @@ def get_cameras_for_tenant(tenant_id: str) -> list:
         List of camera configuration dicts for the tenant
     """
     return [cam for cam in CAMERAS if cam.get("tenant_id") == tenant_id]
+
+
+def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
+    """
+    Get credentials for a tenant.
+
+    Falls back to global CAMERA_USERNAME/CAMERA_PASSWORD if tenant-specific
+    credentials are not set.
+
+    Args:
+        tenant_id: ID of the tenant
+
+    Returns:
+        Tuple of (username, password), either from tenant config or global fallback
+    """
+    tenant = get_tenant_by_id(tenant_id)
+    if tenant:
+        username = tenant.get("username") or USERNAME
+        password = tenant.get("password") or PASSWORD
+        return username, password
+    return USERNAME, PASSWORD
 
 
 # =============================================================================
@@ -338,6 +422,9 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     """
     Get RTSP URL for a camera.
 
+    Uses tenant-specific credentials if available, otherwise falls back to
+    global CAMERA_USERNAME/CAMERA_PASSWORD environment variables.
+
     Args:
         camera_name: Name or ID of the camera
         stream_type: "main" (101) or "sub" (102)
@@ -348,32 +435,42 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     Raises:
         ValueError: If camera credentials are not set
     """
-    # Validate that credentials are set
-    if not USERNAME or not PASSWORD:
-        raise ValueError(
-            "Camera credentials not set. Please set CAMERA_USERNAME and CAMERA_PASSWORD "
-            "environment variables. See .env.example for template."
-        )
-
     cam = get_camera_by_name(camera_name)
     if not cam:
         return None
 
+    # Get tenant-specific credentials (falls back to global)
+    tenant_id = cam.get("tenant_id") or ""
+    username, password = get_tenant_credentials(tenant_id)
+
+    # Validate that credentials are set
+    if not username or not password:
+        tenant = get_tenant_by_id(tenant_id)
+        tenant_name = tenant["name"] if tenant else tenant_id
+        raise ValueError(
+            f"Camera credentials not set for tenant '{tenant_name}'. "
+            f"Please set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD "
+            "environment variables, or set global CAMERA_USERNAME/CAMERA_PASSWORD as fallback."
+        )
+
     channel = "101" if stream_type == "main" else "102"
-    return f"rtsp://{USERNAME}:{PASSWORD}@{cam['ip']}:554/Streaming/Channels/{channel}"
+    return f"rtsp://{username}:{password}@{cam['ip']}:554/Streaming/Channels/{channel}"
 
 
 # Validation
 if __name__ == "__main__":
     print("Camera Configuration")
     print("=" * 70)
-    print(f"\nCredentials: {USERNAME} / {'*' * len(PASSWORD or '')}")
+    print(f"\nGlobal Credentials (fallback): {USERNAME} / {'*' * len(PASSWORD or '')}")
 
     print(f"\nConfigured Tenants: {len(TENANTS)}")
     for tenant in TENANTS:
         cameras = get_cameras_for_tenant(tenant["id"])
+        username, password = get_tenant_credentials(tenant["id"])
+        cred_source = "tenant" if tenant.get("username") else "global"
         print(f"\n{tenant['name']} ({tenant['id']}):")
         print(f"  Location: {tenant['location']['lat']}, {tenant['location']['lon']}")
+        print(f"  Credentials: {username} / {'*' * len(password or '')} ({cred_source})")
         print(f"  Cameras: {len(cameras)}")
         for cam in cameras:
             print(f"    - {cam['name']} ({cam['id']}): {cam['ip']}")
