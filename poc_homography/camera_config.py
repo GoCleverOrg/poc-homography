@@ -440,7 +440,7 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
         return None
 
     # Get tenant-specific credentials (falls back to global)
-    tenant_id = cam.get("tenant_id")
+    tenant_id = cam.get("tenant_id") or ""
     username, password = get_tenant_credentials(tenant_id)
 
     # Validate that credentials are set
