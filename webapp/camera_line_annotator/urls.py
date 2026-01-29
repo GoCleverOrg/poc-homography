@@ -15,13 +15,10 @@ urlpatterns = [
     path("api/line-ids/", views.api_line_ids, name="api_line_ids"),
     path("api/annotations/", views.api_annotations, name="api_annotations"),
     path("api/annotations/create/", views.api_annotations_create, name="api_annotations_create"),
-    path(
-        "api/annotations/<int:index>/", views.api_annotations_delete, name="api_annotations_delete"
-    ),
+    path("api/annotations/<int:index>/", views.api_annotations_delete, name="api_annotations_delete"),
     path("api/camera-status/", views.api_camera_status, name="api_camera_status"),
     path("api/export/", views.api_export, name="api_export"),
-    path("api/detect-lines/", views.api_detect_lines, name="api_detect_lines"),
-    path("api/detect-lines-masked/", views.api_detect_lines_masked, name="api_detect_lines_masked"),
+    path("api/import/", views.api_import, name="api_import"),
     # Image serving
     path("image/", views.serve_image, name="serve_image"),
 ]
