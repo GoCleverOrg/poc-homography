@@ -854,9 +854,13 @@ def api_save_diagnostic_session(request: HttpRequest) -> JsonResponse:
         for test_key in ("rtsp_test", "webui_test", "ptz_test"):
             test_data = cam_data.get(test_key)
             if test_data:
+                try:
+                    status = DiagnosticTestStatus(test_data.get("status", "pending"))
+                except ValueError:
+                    status = DiagnosticTestStatus.PENDING
                 test_result = DiagnosticTestResult(
                     test_type=test_key.replace("_test", ""),
-                    status=DiagnosticTestStatus(test_data.get("status", "pending")),
+                    status=status,
                     response_time_ms=test_data.get("response_time_ms"),
                     error_message=test_data.get("error_message"),
                     error_category=test_data.get("error_category"),

@@ -1764,29 +1764,30 @@
             try {
                 const cameraResults = tenantCameras.map(cam => {
                     const r = testResults[cam.id];
+                    const buildTest = (type) => {
+                        const status = r[type] === 'pass' ? 'pass' : (r[type] === 'fail' ? 'fail' : 'pending');
+                        const logsKey = type + 'Logs';
+                        const result = {
+                            test_type: type,
+                            status: status,
+                            details: { logs: r[logsKey] || '' },
+                        };
+                        if (status === 'fail') {
+                            result.error_message = r[logsKey] || 'Test failed';
+                        }
+                        return result;
+                    };
                     return {
                         camera_id: cam.id,
                         camera_name: r.name || cam.name,
                         camera_ip: r.ip || cam.ip || '',
-                        rtsp_test: {
-                            test_type: 'rtsp',
-                            status: r.rtsp === 'pass' ? 'pass' : (r.rtsp === 'fail' ? 'fail' : 'pending'),
-                            details: { logs: r.rtspLogs || '' },
-                        },
-                        webui_test: {
-                            test_type: 'webui',
-                            status: r.webui === 'pass' ? 'pass' : (r.webui === 'fail' ? 'fail' : 'pending'),
-                            details: { logs: r.webuiLogs || '' },
-                        },
-                        ptz_test: {
-                            test_type: 'ptz',
-                            status: r.ptz === 'pass' ? 'pass' : (r.ptz === 'fail' ? 'fail' : 'pending'),
-                            details: { logs: r.ptzLogs || '' },
-                        },
+                        rtsp_test: buildTest('rtsp'),
+                        webui_test: buildTest('webui'),
+                        ptz_test: buildTest('ptz'),
                     };
                 });
 
-                await fetch('{% url "camera_diagnostic:api_save_diagnostic_session" %}', {
+                const saveResp = await fetch('{% url "camera_diagnostic:api_save_diagnostic_session" %}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1794,8 +1795,12 @@
                         camera_results: cameraResults,
                     }),
                 });
+                const saveResult = await saveResp.json();
+                if (saveResult.status !== 'success') {
+                    alert('Warning: Failed to save diagnostic session: ' + (saveResult.message || 'Unknown error'));
+                }
             } catch (e) {
-                console.error('Failed to save diagnostic session:', e);
+                alert('Warning: Failed to save diagnostic session: ' + e.message);
             }
 
             isRunning = false;
