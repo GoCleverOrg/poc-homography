@@ -818,11 +818,8 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
     ) -> dict[float, dict[str, float]] | None:
         """Load lens distortion calibration as a calibration_table dict.
 
-        Loads from the YAML-based lens distortion calibration files and
-        converts to the calibration_table format used by this class.
-
-        This allows integrating parking-spot-based lens distortion calibration
-        with the existing zoom-dependent calibration system.
+        Delegates to
+        ``poc_homography.calibration.lens_distortion.calibration_table.load_lens_distortion_as_table``.
 
         Args:
             camera_id: Identifier for the camera.
@@ -832,50 +829,11 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             Dictionary mapping zoom_factor to calibration params with
             k1, k2, k3, p1, p2 keys, suitable for use as calibration_table.
             Returns None if no calibration file exists.
-
-        Example:
-            >>> cal_table = IntrinsicExtrinsicHomography.load_lens_distortion_calibration(
-            ...     camera_id="camera_valte",
-            ...     calibration_dir="/path/to/calibrations",
-            ... )
-            >>> if cal_table:
-            ...     provider = IntrinsicExtrinsicHomography(
-            ...         width=1920, height=1080, map_id="map_valte",
-            ...         calibration_table=cal_table,
-            ...     )
         """
-        from pathlib import Path
-
-        calibration_file = Path(calibration_dir) / f"{camera_id}_calibration.yaml"
-
-        if not calibration_file.exists():
-            return None
-
-        try:
-            from poc_homography.calibration.lens_distortion.calibration_table import (
-                CameraCalibrationTable,
-            )
-
-            table = CameraCalibrationTable.load(calibration_file)
-
-            if not table.entries:
-                return None
-
-            # Convert to calibration_table format
-            result: dict[float, dict[str, float]] = {}
-            for zoom, entry in table.entries.items():
-                result[zoom] = {
-                    "k1": entry.k1,
-                    "k2": entry.k2,
-                    "k3": entry.k3,
-                    "p1": entry.p1,
-                    "p2": entry.p2,
-                }
-
-            return result
-        except Exception:
-            logger.warning(f"Failed to load lens distortion calibration for {camera_id}")
-            return None
+        from poc_homography.calibration.lens_distortion.calibration_table import (
+            load_lens_distortion_as_table,
+        )
+        return load_lens_distortion_as_table(camera_id, calibration_dir)
 
     def merge_calibration_tables(
         self,

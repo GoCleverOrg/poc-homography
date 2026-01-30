@@ -9,14 +9,19 @@ In a distorted image, straight lines appear curved. By detecting parking spot li
 and measuring their curvature, we can solve for distortion coefficients that would
 straighten them.
 
-Modules:
+Public API modules:
     models: Data structures for lines, calibration entries, and results
     line_detection: Automatic parking line detection using Hough transforms
     distortion_solver: Optimization-based distortion coefficient solver
     calibration_table: Zoom-dependent calibration storage with interpolation
-    survey_automation: MCP Playwright and API automation for Camera Survey Tool
+    apply_calibration: Undistortion utilities and calibration file management
 """
 
+from poc_homography.calibration.lens_distortion.apply_calibration import (
+    measure_line_straightness,
+    undistort_image,
+    undistort_points,
+)
 from poc_homography.calibration.lens_distortion.calibration_table import (
     CameraCalibrationTable,
     ZoomCalibrationEntry,
@@ -36,29 +41,6 @@ from poc_homography.calibration.lens_distortion.models import (
     GroundTruthLine,
     LineCorrespondence,
 )
-from poc_homography.calibration.lens_distortion.sam3_masking import (
-    SAM3Config,
-    SAM3Result,
-    SAM3Segmenter,
-    apply_mask,
-    dilate_mask,
-)
-from poc_homography.calibration.lens_distortion.masked_line_detection import (
-    MaskedLineDetectionConfig,
-    MaskedLineDetectionResult,
-    MaskedLineDetector,
-)
-from poc_homography.calibration.lens_distortion.survey_automation import (
-    CALIBRATION_SURVEY_PRESETS,
-    CameraInfo,
-    SurveyAutomation,
-    SurveyAutomationError,
-    SurveyAxis,
-    SurveyProgress,
-    SurveySession,
-    SurveyStatus,
-    TenantInfo,
-)
 
 __all__ = [
     # Models
@@ -76,24 +58,8 @@ __all__ = [
     # Calibration table
     "CameraCalibrationTable",
     "ZoomCalibrationEntry",
-    # Survey automation
-    "SurveyAutomation",
-    "SurveyAutomationError",
-    "SurveyAxis",
-    "SurveyStatus",
-    "SurveyProgress",
-    "SurveySession",
-    "TenantInfo",
-    "CameraInfo",
-    "CALIBRATION_SURVEY_PRESETS",
-    # SAM3 masking
-    "SAM3Config",
-    "SAM3Result",
-    "SAM3Segmenter",
-    "apply_mask",
-    "dilate_mask",
-    # Masked line detection
-    "MaskedLineDetectionConfig",
-    "MaskedLineDetectionResult",
-    "MaskedLineDetector",
+    # Undistortion & measurement utilities
+    "undistort_points",
+    "undistort_image",
+    "measure_line_straightness",
 ]

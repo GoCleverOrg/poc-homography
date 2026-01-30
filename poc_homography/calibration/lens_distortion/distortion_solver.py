@@ -326,7 +326,11 @@ class DistortionSolver:
 
             # Radial distortion factor (clamped to prevent division by zero)
             radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
-            radial = np.maximum(np.abs(radial), min_radial_factor) * np.sign(radial + 1e-10)
+            radial = np.where(
+                np.abs(radial) < min_radial_factor,
+                np.where(radial >= 0, min_radial_factor, -min_radial_factor),
+                radial,
+            )
 
             # Tangential distortion
             dx_tangential = 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u)
@@ -402,8 +406,13 @@ class DistortionSolver:
         coeffs = distortion.to_array()
         errors = []
 
+        if not lines:
+            return errors
+
         for line in lines:
             samples = line.sample_points(self.config.num_samples_per_line)
+            if len(samples) == 0:
+                continue
             undistorted = self._undistort_points(samples, coeffs, cx, cy, fx, fy)
             error = self._line_straightness_error(undistorted)
             rmse = np.sqrt(error / len(samples))

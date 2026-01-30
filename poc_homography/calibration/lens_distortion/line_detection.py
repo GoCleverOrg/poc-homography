@@ -207,6 +207,8 @@ class LineDetector:
             return []
 
         # Convert to candidate lines
+        # Reuse a single mask buffer across all lines to avoid per-line allocation
+        mask_buffer = np.zeros_like(edges)
         candidates = []
         for line in lines:
             # HoughLinesP returns shape (N, 1, 4), flatten to get [x1, y1, x2, y2]
@@ -220,7 +222,7 @@ class LineDetector:
             edge_strength = self._calculate_edge_strength(edge_magnitude, (x1, y1), (x2, y2))
 
             # Extract actual edge pixels along this line corridor
-            edge_pixels = self._extract_edge_pixels(edges, (x1, y1), (x2, y2))
+            edge_pixels = self._extract_edge_pixels(edges, (x1, y1), (x2, y2), mask_buffer=mask_buffer)
 
             candidate = CandidateLine(
                 start=(float(x1), float(y1)),
@@ -314,6 +316,7 @@ class LineDetector:
         start: tuple[int, int],
         end: tuple[int, int],
         corridor_width: int = 3,
+        mask_buffer: np.ndarray | None = None,
     ) -> np.ndarray:
         """Extract actual edge pixel coordinates along a line corridor.
 
@@ -325,15 +328,20 @@ class LineDetector:
             start: (x, y) start point.
             end: (x, y) end point.
             corridor_width: Half-width of corridor to search (pixels).
+            mask_buffer: Optional pre-allocated mask array (same shape as *edges*).
+                If provided it is zeroed and reused, avoiding allocation per call.
 
         Returns:
             Array of shape (N, 2) with (x, y) edge pixel coordinates,
             sorted along the line direction.
         """
-        height, width = edges.shape[:2]
+        # Reuse or allocate corridor mask
+        if mask_buffer is not None:
+            mask_buffer.fill(0)
+            mask = mask_buffer
+        else:
+            mask = np.zeros_like(edges)
 
-        # Create a corridor mask along the line
-        mask = np.zeros_like(edges)
         pt1 = (int(start[0]), int(start[1]))
         pt2 = (int(end[0]), int(end[1]))
         cv2.line(mask, pt1, pt2, 255, corridor_width * 2 + 1)

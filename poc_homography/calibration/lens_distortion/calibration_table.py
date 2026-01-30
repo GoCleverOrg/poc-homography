@@ -301,7 +301,10 @@ class CameraCalibrationTable:
         Returns:
             ZoomCalibrationEntry if found, None otherwise.
         """
-        return self.entries.get(zoom_factor)
+        matching_zoom = self._find_matching_zoom(zoom_factor)
+        if matching_zoom is not None:
+            return self.entries[matching_zoom]
+        return None
 
     def get_nearest_entry(self, zoom_factor: float) -> ZoomCalibrationEntry | None:
         """Get the calibration entry nearest to a zoom level.
@@ -329,7 +332,14 @@ class CameraCalibrationTable:
 
     @classmethod
     def from_dict(cls, data: dict) -> CameraCalibrationTable:
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Raises:
+            ValueError: If data is None or not a dict.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict for calibration data, got {type(data).__name__}")
+
         table = cls(
             camera_id=data["camera_id"],
             created_date=data.get("created_date", ""),
@@ -376,6 +386,9 @@ class CameraCalibrationTable:
 
         with open(path) as f:
             data = yaml.safe_load(f)
+
+        if data is None:
+            raise ValueError(f"Calibration file is empty: {path}")
 
         table = cls.from_dict(data)
         logger.info(f"Loaded calibration table from {path} with {len(table.entries)} entries")
@@ -428,3 +441,47 @@ def load_calibration_for_camera(
 
     logger.debug(f"No calibration file found for camera {camera_id}")
     return None
+
+
+def load_lens_distortion_as_table(
+    camera_id: str,
+    calibration_dir: str | Path,
+) -> dict[float, dict[str, float]] | None:
+    """Load lens distortion calibration as a plain dict keyed by zoom factor.
+
+    Converts the YAML-based ``CameraCalibrationTable`` into the lightweight
+    ``dict[float, dict[str, float]]`` format expected by
+    ``IntrinsicExtrinsicHomography.calibration_table``.
+
+    Args:
+        camera_id: Camera identifier.
+        calibration_dir: Directory containing calibration YAML files.
+
+    Returns:
+        Dictionary mapping zoom_factor to ``{k1, k2, k3, p1, p2}`` dicts,
+        or ``None`` if no calibration file exists.
+    """
+    calibration_dir = Path(calibration_dir)
+    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
+
+    if not calibration_file.exists():
+        return None
+
+    try:
+        table = CameraCalibrationTable.load(calibration_file)
+        if not table.entries:
+            return None
+
+        result: dict[float, dict[str, float]] = {}
+        for zoom, entry in table.entries.items():
+            result[zoom] = {
+                "k1": entry.k1,
+                "k2": entry.k2,
+                "k3": entry.k3,
+                "p1": entry.p1,
+                "p2": entry.p2,
+            }
+        return result
+    except Exception:
+        logger.warning(f"Failed to load lens distortion calibration for {camera_id}", exc_info=True)
+        return None

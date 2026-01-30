@@ -15,4 +15,5 @@ urlpatterns = [
     path("api/images/", views.api_images, name="api_images"),
     path("api/undistort/", views.api_undistort, name="api_undistort"),
     path("api/measure-straightness/", views.api_measure_straightness, name="api_measure_straightness"),
+    path("api/result-image/<str:filename>", views.api_serve_result_image, name="api_serve_result_image"),
 ]
