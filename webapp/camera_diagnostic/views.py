@@ -1567,10 +1567,8 @@ def api_stress_video_stream(
             status_code=404,
         )
 
-    camera_name = camera.get("name", camera_id)
-
     response = StreamingHttpResponse(
-        generate_mjpeg_frames(camera_name), content_type="multipart/x-mixed-replace; boundary=frame"
+        generate_mjpeg_frames(camera_id), content_type="multipart/x-mixed-replace; boundary=frame"
     )
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response["Pragma"] = "no-cache"
