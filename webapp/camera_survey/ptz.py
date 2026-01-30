@@ -13,7 +13,9 @@ from abc import ABC, abstractmethod
 
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
-from .models import CameraCapabilities, PTZPosition
+from poc_homography.camera_config import get_tenant_credentials
+
+from .models import CameraCapabilities, DeviceInfo, PTZPosition
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,35 @@ class BasePTZCamera(ABC):
             Final PTZPosition after stabilization, or None if failed.
         """
 
+    @abstractmethod
+    def get_device_info(self) -> DeviceInfo | None:
+        """Get device hardware information (model, serial, MAC, firmware).
+
+        Returns:
+            DeviceInfo with hardware details, or None if failed.
+        """
+
+    @abstractmethod
+    def move_continuous(self, pan: int = 0, tilt: int = 0, zoom: int = 0) -> bool:
+        """Move camera continuously at specified speed.
+
+        Args:
+            pan: Pan speed (-100 to +100, negative=left, positive=right, 0=stop)
+            tilt: Tilt speed (-100 to +100, negative=down, positive=up, 0=stop)
+            zoom: Zoom speed (-100 to +100, negative=out, positive=in, 0=stop)
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+
+    @abstractmethod
+    def stop_movement(self) -> bool:
+        """Stop all PTZ movement.
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+
 
 class HikvisionPTZCamera(BasePTZCamera):
     """Hikvision PTZ camera implementation.
@@ -78,12 +109,20 @@ class HikvisionPTZCamera(BasePTZCamera):
     STABLE_THRESHOLD = 0.5  # Seconds of no change to consider stable
     POSITION_TOLERANCE = 0.1  # Degrees tolerance for position comparison
 
-    def __init__(self, camera_ip: str, camera_name: str = "Camera"):
+    def __init__(
+        self,
+        camera_ip: str,
+        camera_name: str = "Camera",
+        username: str | None = None,
+        password: str | None = None,
+    ):
         """Initialize Hikvision PTZ camera.
 
         Args:
             camera_ip: IP address of the camera.
             camera_name: Display name for logging.
+            username: Camera username. If None, falls back to CAMERA_USERNAME env var.
+            password: Camera password. If None, falls back to CAMERA_PASSWORD env var.
 
         Raises:
             ValueError: If camera credentials are not set.
@@ -91,9 +130,9 @@ class HikvisionPTZCamera(BasePTZCamera):
         self.camera_ip = camera_ip
         self.camera_name = camera_name
 
-        # Get credentials from environment
-        username = os.getenv("CAMERA_USERNAME")
-        password = os.getenv("CAMERA_PASSWORD")
+        # Use provided credentials or fall back to environment variables
+        username = username or os.getenv("CAMERA_USERNAME")
+        password = password or os.getenv("CAMERA_PASSWORD")
 
         if not username or not password:
             raise ValueError(
@@ -159,12 +198,83 @@ class HikvisionPTZCamera(BasePTZCamera):
             return False
 
     def get_capabilities(self) -> CameraCapabilities:
-        """Get Hikvision camera capabilities.
+        """Get Hikvision camera capabilities from camera.
 
-        Currently returns default values for DS-2DF8425IX series.
-        Future enhancement: Query camera capabilities via ISAPI.
+        Queries the camera's ISAPI endpoint for actual capabilities.
+        Falls back to default values if query fails.
         """
+        try:
+            caps = self._ptz.get_capabilities()
+            if caps:
+                return CameraCapabilities(
+                    pan_min=caps["pan"]["min"] if caps["pan"]["min"] is not None else 0.0,
+                    pan_max=caps["pan"]["max"] if caps["pan"]["max"] is not None else 360.0,
+                    tilt_min=caps["tilt"]["min"] if caps["tilt"]["min"] is not None else -90.0,
+                    tilt_max=caps["tilt"]["max"] if caps["tilt"]["max"] is not None else 90.0,
+                    zoom_min=caps["zoom"]["min"] if caps["zoom"]["min"] is not None else 1.0,
+                    zoom_max=caps["zoom"]["max"] if caps["zoom"]["max"] is not None else 25.0,
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to get capabilities for {self.camera_name}, using defaults: {e}"
+            )
+
+        # Return default capabilities if query failed
         return self._capabilities
+
+    def get_device_info(self) -> DeviceInfo | None:
+        """Get device hardware information from Hikvision camera.
+
+        Queries /ISAPI/System/deviceInfo endpoint.
+        """
+        try:
+            info = self._ptz.get_device_info()
+            if info:
+                return DeviceInfo(
+                    model=info.get("model"),
+                    serial_number=info.get("serial_number"),
+                    mac_address=info.get("mac_address"),
+                    firmware_version=info.get("firmware_version"),
+                    device_name=info.get("device_name"),
+                    device_type=info.get("device_type"),
+                )
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get device info for {self.camera_name}: {e}")
+            return None
+
+    def move_continuous(self, pan: int = 0, tilt: int = 0, zoom: int = 0) -> bool:
+        """Move Hikvision camera continuously at specified speed.
+
+        Uses the /ISAPI/PTZCtrl/channels/1/continuous endpoint.
+
+        Args:
+            pan: Pan speed (-100 to +100)
+            tilt: Tilt speed (-100 to +100)
+            zoom: Zoom speed (-100 to +100)
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+        try:
+            return self._ptz.move_continuous(pan=pan, tilt=tilt, zoom=zoom)
+        except Exception as e:
+            logger.error(f"Failed to move_continuous for {self.camera_name}: {e}")
+            return False
+
+    def stop_movement(self) -> bool:
+        """Stop all PTZ movement on Hikvision camera.
+
+        Sends pan=0, tilt=0, zoom=0 to the continuous endpoint.
+
+        Returns:
+            True if command was accepted, False otherwise.
+        """
+        try:
+            return self._ptz.stop_movement()
+        except Exception as e:
+            logger.error(f"Failed to stop_movement for {self.camera_name}: {e}")
+            return False
 
     def wait_for_stabilization(self, max_wait: float = 5.0) -> PTZPosition | None:
         """Wait for Hikvision camera to stabilize.
@@ -214,7 +324,10 @@ class HikvisionPTZCamera(BasePTZCamera):
 
 
 def create_ptz_camera(
-    camera_ip: str, camera_name: str, camera_model: str | None = None
+    camera_ip: str,
+    camera_name: str,
+    camera_model: str | None = None,
+    tenant_id: str | None = None,
 ) -> BasePTZCamera:
     """Factory function to create appropriate PTZ camera instance.
 
@@ -222,6 +335,7 @@ def create_ptz_camera(
         camera_ip: IP address of the camera.
         camera_name: Display name for logging.
         camera_model: Camera model string (used to detect brand).
+        tenant_id: Tenant ID to look up credentials. If None, uses global credentials.
 
     Returns:
         BasePTZCamera instance appropriate for the camera brand.
@@ -229,6 +343,16 @@ def create_ptz_camera(
     Currently only supports Hikvision cameras. Future enhancement:
     detect brand from model string and return appropriate implementation.
     """
+    # Get tenant-specific credentials if tenant_id provided
+    username, password = None, None
+    if tenant_id:
+        username, password = get_tenant_credentials(tenant_id)
+
     # For now, default to Hikvision
     # Future: detect brand from camera_model and return appropriate implementation
-    return HikvisionPTZCamera(camera_ip=camera_ip, camera_name=camera_name)
+    return HikvisionPTZCamera(
+        camera_ip=camera_ip,
+        camera_name=camera_name,
+        username=username,
+        password=password,
+    )

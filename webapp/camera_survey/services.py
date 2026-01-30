@@ -7,7 +7,6 @@ image capture, and session management.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 import uuid
@@ -27,10 +26,10 @@ from poc_homography.camera_config import (
 
 from .models import (
     SURVEY_PRESETS,
-    CameraCapabilities,
     CameraInfo,
     CaptureMetadata,
     CaptureRecord,
+    DeviceInfo,
     PTZPosition,
     SurveyConfig,
     SurveyPreset,
@@ -290,6 +289,10 @@ def _load_manifest(session_path: Path) -> SurveySession | None:
                 codec=data["capture_metadata"].get("codec", "h264"),
             )
 
+        # Load device info
+        if "device_info" in data:
+            session.device_info = DeviceInfo.from_dict(data["device_info"])
+
         # Load survey parameters
         if "survey_parameters" in data:
             from .models import SurveyAxis
@@ -373,6 +376,7 @@ class CameraSurveyService:
                     camera_ip=camera_ip,
                     camera_name=camera.get("name", config.camera_id),
                     camera_model=camera.get("model"),
+                    tenant_id=config.tenant_id,
                 )
             except ValueError as e:
                 _survey_lock.release()
@@ -401,6 +405,9 @@ class CameraSurveyService:
                 _survey_lock.release()
                 return "", error
 
+            # Get device info from camera API
+            device_info = ptz_camera.get_device_info()
+
             # Initialize session
             session = SurveySession(
                 id=session_id,
@@ -413,6 +420,7 @@ class CameraSurveyService:
                     ip=camera_ip,
                     model=camera.get("model"),
                 ),
+                device_info=device_info,
                 survey_parameters=config,
                 initial_ptz=initial_ptz,
                 session_tags=config.session_tags,
@@ -486,17 +494,18 @@ class CameraSurveyService:
                     current_ptz = session.initial_ptz or PTZPosition()
 
                 # Set target position based on axis
+                # Use config's fixed values for non-swept axes, falling back to current_ptz
                 if config.axis.value == "pan":
                     target_pan = axis_value
-                    target_tilt = current_ptz.tilt
-                    target_zoom = current_ptz.zoom
+                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
                 elif config.axis.value == "tilt":
-                    target_pan = current_ptz.pan
+                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
                     target_tilt = axis_value
-                    target_zoom = current_ptz.zoom
+                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
                 else:  # zoom
-                    target_pan = current_ptz.pan
-                    target_tilt = current_ptz.tilt
+                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
                     target_zoom = axis_value
 
                 # Move to target position with retry logic
@@ -884,8 +893,7 @@ class CameraSurveyService:
 
             # Remove from active surveys if present
             with _active_surveys_lock:
-                if session_id in _active_surveys:
-                    del _active_surveys[session_id]
+                _active_surveys.pop(session_id, None)
 
             logger.info("Deleted session %s", session_id)
             return True, None

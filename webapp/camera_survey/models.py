@@ -118,6 +118,9 @@ class SurveyConfig:
     restore_ptz: bool = True
     retry_timeout: int = 60
     session_tags: list[str] = field(default_factory=list)
+    fixed_pan: float | None = None
+    fixed_tilt: float | None = None
+    fixed_zoom: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -131,6 +134,9 @@ class SurveyConfig:
             "restore_ptz": self.restore_ptz,
             "retry_timeout": self.retry_timeout,
             "session_tags": self.session_tags,
+            "fixed_pan": self.fixed_pan,
+            "fixed_tilt": self.fixed_tilt,
+            "fixed_zoom": self.fixed_zoom,
         }
 
     @classmethod
@@ -146,6 +152,9 @@ class SurveyConfig:
             restore_ptz=data.get("restore_ptz", True),
             retry_timeout=int(data.get("retry_timeout", 60)),
             session_tags=data.get("session_tags", []),
+            fixed_pan=data.get("fixed_pan"),
+            fixed_tilt=data.get("fixed_tilt"),
+            fixed_zoom=data.get("fixed_zoom"),
         )
 
     def generate_steps(self) -> list[float]:
@@ -223,6 +232,47 @@ class TenantInfo:
 
 
 @dataclass
+class DeviceInfo:
+    """Device hardware information from camera API.
+
+    Contains identifying information retrieved from the camera's
+    system API (e.g., /ISAPI/System/deviceInfo for Hikvision).
+    """
+
+    model: str | None = None
+    serial_number: str | None = None
+    mac_address: str | None = None
+    firmware_version: str | None = None
+    device_name: str | None = None
+    device_type: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Convert to dictionary."""
+        return {
+            "model": self.model,
+            "serial_number": self.serial_number,
+            "mac_address": self.mac_address,
+            "firmware_version": self.firmware_version,
+            "device_name": self.device_name,
+            "device_type": self.device_type,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> DeviceInfo | None:
+        """Create from dictionary."""
+        if data is None:
+            return None
+        return cls(
+            model=data.get("model"),
+            serial_number=data.get("serial_number"),
+            mac_address=data.get("mac_address"),
+            firmware_version=data.get("firmware_version"),
+            device_name=data.get("device_name"),
+            device_type=data.get("device_type"),
+        )
+
+
+@dataclass
 class CameraInfo:
     """Camera information for manifest."""
 
@@ -261,6 +311,7 @@ class SurveySession:
     # Context info
     tenant: TenantInfo | None = None
     camera: CameraInfo | None = None
+    device_info: DeviceInfo | None = None  # Hardware info from camera API
     capture_metadata: CaptureMetadata | None = None
 
     # Survey configuration
@@ -294,6 +345,9 @@ class SurveySession:
         if self.camera:
             result["camera"] = self.camera.to_dict()
 
+        if self.device_info:
+            result["device_info"] = self.device_info.to_dict()
+
         if self.capture_metadata:
             result["capture_metadata"] = self.capture_metadata.to_dict()
 
@@ -305,6 +359,9 @@ class SurveySession:
                 "step": self.survey_parameters.step,
                 "restore_ptz": self.survey_parameters.restore_ptz,
                 "retry_timeout": self.survey_parameters.retry_timeout,
+                "fixed_pan": self.survey_parameters.fixed_pan,
+                "fixed_tilt": self.survey_parameters.fixed_tilt,
+                "fixed_zoom": self.survey_parameters.fixed_zoom,
             }
 
         if self.initial_ptz:

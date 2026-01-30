@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/cameras/", views.api_cameras, name="api_cameras"),
     # Survey control
     path("api/survey/start/", views.api_start_survey, name="api_start_survey"),
+    path("api/survey/ptz-status/", views.api_ptz_status, name="api_ptz_status"),
     path("api/survey/<str:session_id>/status/", views.api_survey_status, name="api_survey_status"),
     path("api/survey/<str:session_id>/abort/", views.api_abort_survey, name="api_abort_survey"),
     # Session management

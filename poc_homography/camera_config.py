@@ -188,10 +188,40 @@ CAMERAS = [
         "description": "Setram Cam01 - primary camera",
     },
     {
+        "id": "icozee-camptz-01",
+        "tenant_id": "icozee",
+        "name": "Cam01",
+        "ip": "10.247.99.10",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam01 - primary camera",
+    },
+    {
+        "id": "icozee-camptz-02",
+        "tenant_id": "icozee",
+        "name": "Cam02",
+        "ip": "10.247.99.13",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam02 - primary camera",
+    },
+    {
         "id": "icozee-camptz-03",
         "tenant_id": "icozee",
         "name": "Cam03",
-        "ip": "10.247.99.4",
+        "ip": "10.247.99.14",
         "model": "DS-2DF-8425IX-AELW(T5)",
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,

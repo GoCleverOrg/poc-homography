@@ -112,6 +112,52 @@
             transform: none;
         }
 
+        .btn-secondary {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #4a5568;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6878;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary:disabled {
+            background: #333;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-warning {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #d97706;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-warning:hover {
+            background: #f59e0b;
+            transform: translateY(-1px);
+        }
+
+        .btn-warning:disabled {
+            background: #78350f;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         /* Summary Report */
         .summary-report {
             background: #252525;
@@ -408,6 +454,539 @@
             background: #667eea;
             transition: width 0.3s ease;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: #252525;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            color: #888;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #ccc;
+            background: #2a2a2a;
+        }
+
+        .tab.active {
+            background: #333;
+            color: #fff;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Session history */
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .session-item {
+            background: #252525;
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .session-item:hover {
+            background: #2a2a2a;
+        }
+
+        .session-info {
+            flex: 1;
+        }
+
+        .session-info h3 {
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .session-info p {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .session-stats {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .session-stat {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .session-stat.pass {
+            background: #1b4332;
+            color: #4caf50;
+        }
+
+        .session-stat.fail {
+            background: #4a1c1c;
+            color: #f44336;
+        }
+
+        .btn-danger {
+            padding: 8px 16px;
+            font-size: 13px;
+            background: #4a1c1c;
+            color: #f44336;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-danger:hover {
+            background: #5a2222;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state p {
+            margin-bottom: 16px;
+        }
+
+        /* Stress Testing Styles */
+        .stress-panel {
+            background: #252525;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stress-panel h2 {
+            font-size: 18px;
+            color: #fff;
+            margin-bottom: 16px;
+        }
+
+        .stress-panel h3 {
+            font-size: 16px;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+
+        .stress-form-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .stress-form-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .stress-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .stress-form-group label {
+            font-weight: 600;
+            color: #ccc;
+            font-size: 13px;
+        }
+
+        .stress-form-group select,
+        .stress-form-group input {
+            min-width: 200px;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #333;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .stress-form-group input[type="number"] {
+            width: 100px;
+            min-width: 100px;
+        }
+
+        .stress-form-group input[type="checkbox"] {
+            width: auto;
+            min-width: auto;
+            cursor: pointer;
+        }
+
+        .stress-form-group select:hover,
+        .stress-form-group input:hover {
+            border-color: #667eea;
+        }
+
+        .stress-form-group select:focus,
+        .stress-form-group input:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-danger {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #dc3545;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-danger:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+
+        .stress-video-container {
+            background: #111;
+            border-radius: 6px;
+            overflow: hidden;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stress-video-container img {
+            max-width: 100%;
+            max-height: 400px;
+            display: block;
+        }
+
+        .stress-presets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stress-preset-btn {
+            padding: 12px 16px;
+            background: #333;
+            border: 2px solid #444;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+        }
+
+        .stress-preset-btn:hover {
+            border-color: #667eea;
+            background: #3a3a3a;
+        }
+
+        .stress-preset-btn.selected {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.2);
+        }
+
+        .stress-preset-btn .preset-name {
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .stress-preset-btn .preset-desc {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .stress-progress-container {
+            margin-top: 16px;
+        }
+
+        .stress-progress-text {
+            font-size: 13px;
+            color: #888;
+            margin-top: 8px;
+        }
+
+        .stress-ptz-display {
+            display: flex;
+            gap: 24px;
+            padding: 16px;
+            background: #1e1e1e;
+            border-radius: 6px;
+            margin-top: 12px;
+        }
+
+        .stress-ptz-axis {
+            text-align: center;
+        }
+
+        .stress-ptz-axis .label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .stress-ptz-axis .value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #fff;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+
+        .stress-axis-config {
+            background: #1e1e1e;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .stress-axis-config h4 {
+            color: #fff;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .stress-results-panel {
+            background: #1e1e1e;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+
+        .stress-result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .stress-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .stress-result-item .label {
+            color: #888;
+        }
+
+        .stress-result-item .value {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .stress-result-item .value.success {
+            color: #4caf50;
+        }
+
+        .stress-result-item .value.fail {
+            color: #f44336;
+        }
+
+        .stress-evaluation-btns {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .stress-eval-btn {
+            flex: 1;
+            padding: 16px;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .stress-eval-btn.good {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+            border-color: #4caf50;
+        }
+
+        .stress-eval-btn.good:hover,
+        .stress-eval-btn.good.selected {
+            background: rgba(76, 175, 80, 0.4);
+        }
+
+        .stress-eval-btn.needs-improvement {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+            border-color: #ff9800;
+        }
+
+        .stress-eval-btn.needs-improvement:hover,
+        .stress-eval-btn.needs-improvement.selected {
+            background: rgba(255, 152, 0, 0.4);
+        }
+
+        .stress-eval-btn.bad {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+            border-color: #f44336;
+        }
+
+        .stress-eval-btn.bad:hover,
+        .stress-eval-btn.bad.selected {
+            background: rgba(244, 67, 54, 0.4);
+        }
+
+        .stress-eval-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .stress-notes-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 12px;
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+            margin-top: 12px;
+        }
+
+        .stress-notes-textarea:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        .stress-sessions-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .stress-sessions-table th,
+        .stress-sessions-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+
+        .stress-sessions-table th {
+            color: #888;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .stress-sessions-table td {
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .stress-sessions-table tr:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .stress-sessions-table .actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .stress-status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .stress-status-badge.completed {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .stress-status-badge.running {
+            background: rgba(33, 150, 243, 0.2);
+            color: #2196f3;
+        }
+
+        .stress-status-badge.failed {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .stress-status-badge.aborted {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .stress-status-badge.pending {
+            background: rgba(150, 150, 150, 0.2);
+            color: #888;
+        }
+
+        .stress-eval-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .stress-eval-badge.good {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .stress-eval-badge.needs_improvement {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .stress-eval-badge.bad {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .stress-eval-badge.not_evaluated {
+            background: rgba(150, 150, 150, 0.2);
+            color: #888;
+        }
+
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -427,23 +1006,32 @@
             <p style="margin-top: 8px; font-size: 12px;">Then restart the Django server.</p>
         </div>
 
-        <!-- Tenant and Camera selector -->
-        <div class="selector-panel">
-            <label for="tenant-select">Tenant:</label>
-            <select id="tenant-select">
-                <option value="">-- Select a tenant --</option>
-            </select>
-
-            <label for="camera-select">Camera:</label>
-            <select id="camera-select" disabled>
-                <option value="">-- Select tenant first --</option>
-            </select>
-
-            <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="run-tests">Diagnostic Tests</button>
+            <button class="tab" data-tab="history">Diagnostic History</button>
+            <button class="tab" data-tab="stress-testing">Stress Testing</button>
         </div>
 
-        <!-- Summary Report -->
-        <div id="summary-report" class="summary-report">
+        <!-- Run Tests Tab -->
+        <div id="run-tests-tab" class="tab-content active">
+            <!-- Tenant and Camera selector -->
+            <div class="selector-panel">
+                <label for="tenant-select">Tenant:</label>
+                <select id="tenant-select">
+                    <option value="">-- Select a tenant --</option>
+                </select>
+
+                <label for="camera-select">Camera:</label>
+                <select id="camera-select" disabled>
+                    <option value="">-- Select tenant first --</option>
+                </select>
+
+                <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+            </div>
+
+            <!-- Summary Report -->
+            <div id="summary-report" class="summary-report">
             <div class="summary-header">
                 <h2>Test Results Summary</h2>
                 <div class="summary-stats">
@@ -469,17 +1057,275 @@
             </div>
         </div>
 
-        <!-- Video preview for selected camera -->
-        <div id="video-preview" class="video-preview-container">
-            <div class="video-preview-header">
-                <h3 id="video-camera-name">Camera Preview</h3>
-                <button id="snapshot-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;" disabled>
-                    Capture Snapshot
+            <!-- Video preview for selected camera -->
+            <div id="video-preview" class="video-preview-container">
+                <div class="video-preview-header">
+                    <h3 id="video-camera-name">Camera Preview</h3>
+                    <button id="snapshot-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;" disabled>
+                        Capture Snapshot
+                    </button>
+                </div>
+                <div class="video-container">
+                    <span class="video-placeholder" id="video-placeholder">Select a camera to see preview</span>
+                    <img id="video-stream" style="display: none;" alt="RTSP Stream">
+                </div>
+            </div>
+        </div>
+
+        <!-- Session History Tab -->
+        <div id="history-tab" class="tab-content">
+            <div class="selector-panel" style="justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <label for="history-tenant-select">Filter by Tenant:</label>
+                    <select id="history-tenant-select">
+                        <option value="">All tenants</option>
+                    </select>
+                </div>
+                <button id="refresh-history-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;">
+                    Refresh
                 </button>
             </div>
-            <div class="video-container">
-                <span class="video-placeholder" id="video-placeholder">Select a camera to see preview</span>
-                <img id="video-stream" style="display: none;" alt="RTSP Stream">
+
+            <div id="session-list" class="session-list">
+                <div class="empty-state">
+                    <p>No diagnostic sessions found.</p>
+                    <p style="font-size: 13px;">Run tests to create a session.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stress Testing Tab -->
+        <div id="stress-testing-tab" class="tab-content">
+            <!-- Camera Selection -->
+            <div class="stress-panel">
+                <h2>Camera Selection</h2>
+                <div class="stress-form-row">
+                    <div class="stress-form-group">
+                        <label>Tenant</label>
+                        <select id="stress-tenant-select">
+                            <option value="">-- Select tenant --</option>
+                        </select>
+                    </div>
+                    <div class="stress-form-group">
+                        <label>Camera</label>
+                        <select id="stress-camera-select" disabled>
+                            <option value="">-- Select tenant first --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Video Feed -->
+            <div id="stress-video-panel" class="stress-panel hidden">
+                <h3 id="stress-camera-name">Live Video Feed</h3>
+                <div class="stress-video-container">
+                    <span class="video-placeholder" id="stress-video-placeholder">Select a camera</span>
+                    <img id="stress-video-stream" style="display: none;" alt="Camera Stream">
+                </div>
+            </div>
+
+            <!-- Test Control -->
+            <div id="stress-test-control-panel" class="stress-panel hidden">
+                <h2>Test Control</h2>
+                <div class="stress-form-row">
+                    <button id="start-stress-test-btn" class="btn-primary">Start Test</button>
+                    <button id="run-all-stress-tests-btn" class="btn-secondary">Run All Tests</button>
+                    <button id="run-max-speed-tests-btn" class="btn-warning">Run Max Speed Tests</button>
+                    <button id="abort-stress-test-btn" class="btn-danger" disabled>Abort Test</button>
+                </div>
+
+                <div id="stress-test-progress" class="stress-progress-container hidden">
+                    <div class="progress-bar">
+                        <div id="stress-test-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div id="stress-test-progress-text" class="stress-progress-text">Initializing...</div>
+                </div>
+
+                <div id="stress-ptz-display" class="stress-ptz-display hidden">
+                    <div class="stress-ptz-axis">
+                        <div class="label">Pan</div>
+                        <div id="stress-ptz-pan" class="value">--</div>
+                    </div>
+                    <div class="stress-ptz-axis">
+                        <div class="label">Tilt</div>
+                        <div id="stress-ptz-tilt" class="value">--</div>
+                    </div>
+                    <div class="stress-ptz-axis">
+                        <div class="label">Zoom</div>
+                        <div id="stress-ptz-zoom" class="value">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Configuration -->
+            <div id="stress-test-config-panel" class="stress-panel hidden">
+                <h2>Test Configuration</h2>
+
+                <!-- Presets -->
+                <h3>Quick Presets</h3>
+                <div id="stress-presets-grid" class="stress-presets-grid">
+                    <!-- Preset buttons loaded dynamically -->
+                </div>
+
+                <!-- Manual Configuration -->
+                <h3 style="margin-top: 20px;">Manual Configuration</h3>
+                <div class="stress-form-row">
+                    <div class="stress-form-group">
+                        <label>Test Type</label>
+                        <select id="stress-test-type-select">
+                            <option value="oscillation">Oscillation</option>
+                            <option value="random_step_accuracy">Random Step Accuracy</option>
+                            <option value="full_range_sweep">Full Range Sweep</option>
+                            <option value="tilt_stress">Tilt Stress</option>
+                            <option value="combined_axis_load">Combined Axis Load</option>
+                            <option value="position_repeatability">Position Repeatability</option>
+                            <option value="speed_test">Speed Test</option>
+                        </select>
+                    </div>
+                    <div class="stress-form-group">
+                        <label>Repetitions</label>
+                        <input type="number" id="stress-repetitions-input" value="10" min="1" max="100">
+                    </div>
+                </div>
+
+                <!-- Pan Configuration -->
+                <div class="stress-axis-config">
+                    <h4>
+                        <input type="checkbox" id="stress-pan-enabled" checked>
+                        Pan Axis Configuration
+                    </h4>
+                    <div class="stress-form-row">
+                        <div class="stress-form-group">
+                            <label>Start (degrees)</label>
+                            <input type="number" id="stress-pan-start" value="0" step="0.1">
+                        </div>
+                        <div class="stress-form-group">
+                            <label>End (degrees)</label>
+                            <input type="number" id="stress-pan-end" value="10" step="0.1">
+                        </div>
+                        <div class="stress-form-group">
+                            <label>Step (degrees)</label>
+                            <input type="number" id="stress-pan-step" value="10" step="0.1">
+                        </div>
+                    </div>
+                    <div class="stress-form-row">
+                        <div class="stress-form-group">
+                            <label>
+                                <input type="checkbox" id="stress-pan-random-steps">
+                                Use Random Steps
+                            </label>
+                        </div>
+                        <div class="stress-form-group">
+                            <label>Min Step</label>
+                            <input type="number" id="stress-pan-step-min" value="5" step="0.1" disabled>
+                        </div>
+                        <div class="stress-form-group">
+                            <label>Max Step</label>
+                            <input type="number" id="stress-pan-step-max" value="15" step="0.1" disabled>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tilt Configuration -->
+                <div class="stress-axis-config">
+                    <h4>
+                        <input type="checkbox" id="stress-tilt-enabled">
+                        Tilt Axis Configuration
+                    </h4>
+                    <div class="stress-form-row">
+                        <div class="stress-form-group">
+                            <label>Start (degrees)</label>
+                            <input type="number" id="stress-tilt-start" value="0" step="0.1" disabled>
+                        </div>
+                        <div class="stress-form-group">
+                            <label>End (degrees)</label>
+                            <input type="number" id="stress-tilt-end" value="5" step="0.1" disabled>
+                        </div>
+                        <div class="stress-form-group">
+                            <label>Step (degrees)</label>
+                            <input type="number" id="stress-tilt-step" value="5" step="0.1" disabled>
+                        </div>
+                    </div>
+                    <div class="stress-form-row">
+                        <div class="stress-form-group">
+                            <label>
+                                <input type="checkbox" id="stress-tilt-random-steps" disabled>
+                                Use Random Steps
+                            </label>
+                        </div>
+                        <div class="stress-form-group">
+                            <label>Min Step</label>
+                            <input type="number" id="stress-tilt-step-min" value="5" step="0.1" disabled>
+                        </div>
+                        <div class="stress-form-group">
+                            <label>Max Step</label>
+                            <input type="number" id="stress-tilt-step-max" value="15" step="0.1" disabled>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Test Results -->
+            <div id="stress-test-results-panel" class="stress-panel hidden">
+                <h2>Test Results</h2>
+                <div id="stress-test-results" class="stress-results-panel">
+                    <div class="stress-result-item">
+                        <span class="label">Status</span>
+                        <span id="stress-result-status" class="value">--</span>
+                    </div>
+                    <div class="stress-result-item">
+                        <span class="label">Position Match</span>
+                        <span id="stress-result-position-match" class="value">--</span>
+                    </div>
+                    <div class="stress-result-item">
+                        <span class="label">Position Error (Pan/Tilt/Zoom)</span>
+                        <span id="stress-result-position-error" class="value">--</span>
+                    </div>
+                    <div class="stress-result-item">
+                        <span class="label">Total Duration</span>
+                        <span id="stress-result-duration" class="value">--</span>
+                    </div>
+                    <div class="stress-result-item">
+                        <span class="label">Movements Completed</span>
+                        <span id="stress-result-movements" class="value">--</span>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 20px;">User Evaluation</h3>
+                <div class="stress-evaluation-btns">
+                    <button id="stress-eval-good-btn" class="stress-eval-btn good" disabled>Good</button>
+                    <button id="stress-eval-needs-improvement-btn" class="stress-eval-btn needs-improvement" disabled>Needs Improvement</button>
+                    <button id="stress-eval-bad-btn" class="stress-eval-btn bad" disabled>Bad</button>
+                </div>
+                <textarea id="stress-eval-notes" class="stress-notes-textarea" placeholder="Optional notes about the test..." disabled></textarea>
+                <button id="stress-save-eval-btn" class="btn-primary" style="margin-top: 12px; padding: 8px 16px; font-size: 13px;" disabled>Save Evaluation</button>
+            </div>
+
+            <!-- Past Stress Tests -->
+            <div class="stress-panel">
+                <h2>Past Stress Tests</h2>
+                <div id="stress-sessions-loading" style="color: #888; padding: 20px; text-align: center;">
+                    <span class="spinner"></span> Loading sessions...
+                </div>
+                <div id="stress-sessions-empty" class="hidden" style="color: #888; padding: 20px; text-align: center;">
+                    No stress test sessions found. Run a test to see results here.
+                </div>
+                <table id="stress-sessions-table" class="stress-sessions-table hidden">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Tenant</th>
+                            <th>Camera</th>
+                            <th>Test Type</th>
+                            <th>Status</th>
+                            <th>Result</th>
+                            <th>Evaluation</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stress-sessions-tbody">
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -508,6 +1354,26 @@
         const failCount = document.getElementById('fail-count');
         const pendingCount = document.getElementById('pending-count');
         const progressFill = document.getElementById('progress-fill');
+        const historyTenantSelect = document.getElementById('history-tenant-select');
+        const sessionList = document.getElementById('session-list');
+        const refreshHistoryBtn = document.getElementById('refresh-history-btn');
+
+        // Tab handling
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+
+                if (tab.dataset.tab === 'history') {
+                    loadSessionHistory();
+                } else if (tab.dataset.tab === 'stress-testing') {
+                    loadStressPresets();
+                    loadStressSessions();
+                }
+            });
+        });
 
         // Load tenants on page load
         async function loadTenants() {
@@ -608,6 +1474,26 @@
                 const allPass = result.rtsp === 'pass' && result.webui === 'pass' && result.ptz === 'pass';
                 const anyFail = result.rtsp === 'fail' || result.webui === 'fail' || result.ptz === 'fail';
 
+                // Format device info if available
+                let deviceInfoHtml = '';
+                if (result.deviceInfo) {
+                    const di = result.deviceInfo;
+                    const infoLines = [];
+                    if (di.model) infoLines.push(`Model: ${di.model}`);
+                    if (di.serial_number) infoLines.push(`Serial: ${di.serial_number}`);
+                    if (di.mac_address) infoLines.push(`MAC: ${di.mac_address}`);
+                    if (di.firmware_version) infoLines.push(`Firmware: ${di.firmware_version}`);
+                    if (di.device_name) infoLines.push(`Device Name: ${di.device_name}`);
+                    if (infoLines.length > 0) {
+                        deviceInfoHtml = `
+                            <div class="test-section-mini">
+                                <h4>&#128247; Camera Hardware Info</h4>
+                                <div class="log-output">${infoLines.join('\n')}</div>
+                            </div>
+                        `;
+                    }
+                }
+
                 const item = document.createElement('div');
                 item.className = 'camera-result-item';
                 item.innerHTML = `
@@ -623,6 +1509,7 @@
                         <span class="expand-icon">&#9660;</span>
                     </div>
                     <div class="camera-result-details" id="details-${cameraId}">
+                        ${deviceInfoHtml}
                         <div class="test-section-mini">
                             <h4><span class="test-badge ${result.rtsp}">${result.rtsp.toUpperCase()}</span> RTSP Streaming</h4>
                             <div class="log-output">${escapeHtml(result.rtspLogs) || 'No logs yet'}</div>
@@ -757,7 +1644,7 @@
             renderCameraResults();
         }
 
-        // Run all tests on all cameras
+        // Run all tests on all cameras (using new API that saves session)
         async function runAllTests() {
             if (isRunning) return;
 
@@ -771,14 +1658,84 @@
             updateSummaryStats();
             renderCameraResults();
 
-            // Run tests for each camera sequentially
-            for (const camera of tenantCameras) {
-                await runTestsForCamera(camera.id);
+            try {
+                // Use the new API endpoint that runs all tests and saves the session
+                const resp = await fetch('{% url "camera_diagnostic:api_run_diagnostic" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tenant_id: selectedTenant,
+                        camera_ids: tenantCameras.map(c => c.id),
+                    }),
+                });
+
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // Update test results from API response
+                    const cameraResultsData = result.data.camera_results || [];
+                    cameraResultsData.forEach(camResult => {
+                        if (testResults[camResult.camera_id]) {
+                            const r = testResults[camResult.camera_id];
+
+                            // Update device info
+                            if (camResult.device_info) {
+                                r.deviceInfo = camResult.device_info;
+                            }
+
+                            // Update RTSP
+                            if (camResult.rtsp_test) {
+                                r.rtsp = camResult.rtsp_test.status === 'pass' ? 'pass' : 'fail';
+                                r.rtspLogs = formatTestLogs(camResult.rtsp_test);
+                            }
+
+                            // Update WebUI
+                            if (camResult.webui_test) {
+                                r.webui = camResult.webui_test.status === 'pass' ? 'pass' : 'fail';
+                                r.webuiLogs = formatTestLogs(camResult.webui_test);
+                            }
+
+                            // Update PTZ
+                            if (camResult.ptz_test) {
+                                r.ptz = camResult.ptz_test.status === 'pass' ? 'pass' : 'fail';
+                                r.ptzLogs = formatTestLogs(camResult.ptz_test);
+                            }
+                        }
+                    });
+
+                    updateSummaryStats();
+                    renderCameraResults();
+                } else {
+                    alert('Test run failed: ' + (result.message || 'Unknown error'));
+                    checkCredentialsError(result);
+                }
+            } catch (e) {
+                alert('Request failed: ' + e.message);
             }
 
             isRunning = false;
             runAllBtn.disabled = false;
             runAllBtn.textContent = `Run All Tests on ${tenantCameras.length} Camera(s)`;
+        }
+
+        function formatTestLogs(testResult) {
+            let logs = [];
+            if (testResult.response_time_ms) {
+                logs.push(`Response time: ${testResult.response_time_ms}ms`);
+            }
+            if (testResult.error_message) {
+                logs.push(`Error: ${testResult.error_message}`);
+            }
+            if (testResult.details) {
+                Object.entries(testResult.details).forEach(([key, value]) => {
+                    if (typeof value === 'object') {
+                        logs.push(`${key}: ${JSON.stringify(value)}`);
+                    } else {
+                        logs.push(`${key}: ${value}`);
+                    }
+                });
+            }
+            return logs.join('\n') || 'No details available';
         }
 
         // Check for credentials error
@@ -845,6 +1802,123 @@
             }
         }
 
+        // Session history functions
+        async function loadSessionHistory() {
+            const tenantFilter = historyTenantSelect.value;
+            let url = '{% url "camera_diagnostic:api_list_sessions" %}';
+            if (tenantFilter) {
+                url += `?tenant_id=${encodeURIComponent(tenantFilter)}`;
+            }
+
+            try {
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    renderSessionList(result.data.sessions);
+                } else {
+                    sessionList.innerHTML = '<div class="empty-state"><p>Failed to load sessions</p></div>';
+                }
+            } catch (e) {
+                sessionList.innerHTML = '<div class="empty-state"><p>Failed to load sessions: ' + e.message + '</p></div>';
+            }
+        }
+
+        function renderSessionList(sessions) {
+            if (!sessions || sessions.length === 0) {
+                sessionList.innerHTML = `
+                    <div class="empty-state">
+                        <p>No diagnostic sessions found.</p>
+                        <p style="font-size: 13px;">Run tests to create a session.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            sessionList.innerHTML = sessions.map(session => {
+                const summary = session.summary || {};
+                const date = new Date(session.created_at).toLocaleString();
+                return `
+                    <div class="session-item" data-session-id="${session.id}">
+                        <div class="session-info" onclick="viewSession('${session.id}')">
+                            <h3>${session.tenant_name || session.tenant_id}</h3>
+                            <p>${date} &bull; ${summary.total_cameras || 0} cameras</p>
+                        </div>
+                        <div class="session-stats">
+                            <span class="session-stat pass">${summary.tests_passed || 0} passed</span>
+                            <span class="session-stat fail">${summary.tests_failed || 0} failed</span>
+                            <button class="btn-danger" onclick="deleteSession('${session.id}', event)">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function viewSession(sessionId) {
+            try {
+                const url = '{% url "camera_diagnostic:api_get_session" "SESSION_PLACEHOLDER" %}'.replace('SESSION_PLACEHOLDER', sessionId);
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // Switch to run tests tab and display results
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    document.querySelector('.tab[data-tab="run-tests"]').classList.add('active');
+                    document.getElementById('run-tests-tab').classList.add('active');
+
+                    // Populate results from session
+                    const sessionData = result.data;
+                    const cameraResultsData = sessionData.camera_results || [];
+
+                    testResults = {};
+                    cameraResultsData.forEach(camResult => {
+                        testResults[camResult.camera_id] = {
+                            name: camResult.camera_name,
+                            ip: camResult.camera_ip,
+                            deviceInfo: camResult.device_info || null,
+                            rtsp: camResult.rtsp_test?.status === 'pass' ? 'pass' : (camResult.rtsp_test ? 'fail' : 'pending'),
+                            webui: camResult.webui_test?.status === 'pass' ? 'pass' : (camResult.webui_test ? 'fail' : 'pending'),
+                            ptz: camResult.ptz_test?.status === 'pass' ? 'pass' : (camResult.ptz_test ? 'fail' : 'pending'),
+                            rtspLogs: camResult.rtsp_test ? formatTestLogs(camResult.rtsp_test) : '',
+                            webuiLogs: camResult.webui_test ? formatTestLogs(camResult.webui_test) : '',
+                            ptzLogs: camResult.ptz_test ? formatTestLogs(camResult.ptz_test) : '',
+                        };
+                    });
+
+                    summaryReport.classList.add('visible');
+                    updateSummaryStats();
+                    renderCameraResults();
+                } else {
+                    alert('Failed to load session: ' + (result.message || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to load session: ' + e.message);
+            }
+        }
+
+        async function deleteSession(sessionId, event) {
+            event.stopPropagation();
+
+            if (!confirm('Are you sure you want to delete this session?')) {
+                return;
+            }
+
+            try {
+                const url = '{% url "camera_diagnostic:api_delete_session" "SESSION_PLACEHOLDER" %}'.replace('SESSION_PLACEHOLDER', sessionId);
+                const resp = await fetch(url, { method: 'POST' });
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    loadSessionHistory();
+                } else {
+                    alert('Failed to delete session: ' + (result.message || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to delete session: ' + e.message);
+            }
+        }
+
         // Event listeners
         tenantSelect.addEventListener('change', async (e) => {
             selectedTenant = e.target.value || null;
@@ -873,9 +1947,702 @@
 
         runAllBtn.addEventListener('click', runAllTests);
         snapshotBtn.addEventListener('click', captureSnapshot);
+        refreshHistoryBtn.addEventListener('click', loadSessionHistory);
+        historyTenantSelect.addEventListener('change', loadSessionHistory);
 
         // Initialize
-        loadTenants();
+        loadTenants().then(() => {
+            // Populate history tenant dropdown too
+            const options = tenantSelect.innerHTML;
+            historyTenantSelect.innerHTML = '<option value="">All tenants</option>' +
+                Array.from(tenantSelect.options).slice(1).map(o =>
+                    `<option value="${o.value}">${o.textContent}</option>`
+                ).join('');
+
+            // Also populate stress testing tenant dropdown
+            stressTenantSelect.innerHTML = '<option value="">-- Select tenant --</option>' +
+                Array.from(tenantSelect.options).slice(1).map(o =>
+                    `<option value="${o.value}">${o.textContent}</option>`
+                ).join('');
+        });
+
+        // =====================================================================
+        // STRESS TESTING TAB STATE AND ELEMENTS
+        // =====================================================================
+
+        // State - Stress testing tab
+        let stressTenant = null;
+        let stressCamera = null;
+        let stressCameras = [];
+        let stressPresets = [];
+        let stressSelectedPreset = null;
+        let stressCurrentSessionId = null;
+        let stressPollInterval = null;
+        let stressCurrentEvaluation = null;
+        let runAllTestsMode = false;
+        let runMaxSpeedMode = false;  // Track if we're in max speed mode specifically
+        let runAllTestsQueue = [];
+        let runAllTestsResults = [];
+        let runAllTestsTotal = 0;  // Track total test count for progress display
+
+        // Elements - Stress testing tab
+        const stressTenantSelect = document.getElementById('stress-tenant-select');
+        const stressCameraSelect = document.getElementById('stress-camera-select');
+        const stressVideoPanel = document.getElementById('stress-video-panel');
+        const stressCameraNameEl = document.getElementById('stress-camera-name');
+        const stressVideoStream = document.getElementById('stress-video-stream');
+        const stressVideoPlaceholder = document.getElementById('stress-video-placeholder');
+        const stressTestConfigPanel = document.getElementById('stress-test-config-panel');
+        const stressTestControlPanel = document.getElementById('stress-test-control-panel');
+        const stressTestResultsPanel = document.getElementById('stress-test-results-panel');
+        const stressPresetsGrid = document.getElementById('stress-presets-grid');
+        const startStressTestBtn = document.getElementById('start-stress-test-btn');
+        const runAllStressTestsBtn = document.getElementById('run-all-stress-tests-btn');
+        const runMaxSpeedTestsBtn = document.getElementById('run-max-speed-tests-btn');
+        const abortStressTestBtn = document.getElementById('abort-stress-test-btn');
+        const stressTestProgress = document.getElementById('stress-test-progress');
+        const stressTestProgressFill = document.getElementById('stress-test-progress-fill');
+        const stressTestProgressText = document.getElementById('stress-test-progress-text');
+        const stressPtzDisplay = document.getElementById('stress-ptz-display');
+
+        // =====================================================================
+        // STRESS TESTING TAB FUNCTIONS
+        // =====================================================================
+
+        // Load cameras for stress testing tab
+        async function loadStressCameras(tenantId) {
+            try {
+                const resp = await fetch(`{% url "camera_diagnostic:api_cameras" %}?tenant_id=${encodeURIComponent(tenantId)}`);
+                const result = await resp.json();
+                if (result.status !== 'success') throw new Error(result.message);
+
+                stressCameras = result.data.cameras;
+                stressCameraSelect.innerHTML = '<option value="">-- Select camera --</option>' +
+                    stressCameras.map(c => `<option value="${c.id}">${c.name} (${c.ip})</option>`).join('');
+                stressCameraSelect.disabled = false;
+
+                return stressCameras;
+            } catch (e) {
+                console.error('Failed to load cameras:', e);
+                return [];
+            }
+        }
+
+        // Load stress test presets
+        async function loadStressPresets() {
+            try {
+                const resp = await fetch('{% url "camera_diagnostic:api_stress_test_presets" %}');
+                const result = await resp.json();
+                if (result.status !== 'success') throw new Error(result.message);
+
+                stressPresets = result.data.presets;
+                renderStressPresets();
+            } catch (e) {
+                console.error('Failed to load presets:', e);
+            }
+        }
+
+        function renderStressPresets() {
+            stressPresetsGrid.innerHTML = stressPresets.map((p, i) => `
+                <div class="stress-preset-btn ${stressSelectedPreset === i ? 'selected' : ''}" data-index="${i}">
+                    <div class="preset-name">${p.name}</div>
+                    <div class="preset-desc">${p.description}</div>
+                </div>
+            `).join('');
+
+            stressPresetsGrid.querySelectorAll('.stress-preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => selectStressPreset(parseInt(btn.dataset.index)));
+            });
+        }
+
+        function selectStressPreset(index) {
+            stressSelectedPreset = index;
+            const preset = stressPresets[index];
+
+            // Update form with preset values
+            document.getElementById('stress-test-type-select').value = preset.test_type;
+            document.getElementById('stress-repetitions-input').value = preset.repetitions;
+
+            // Pan config
+            const hasPan = preset.pan_config !== null;
+            document.getElementById('stress-pan-enabled').checked = hasPan;
+            toggleStressPanInputs(hasPan);
+            if (hasPan) {
+                document.getElementById('stress-pan-start').value = preset.pan_config.start;
+                document.getElementById('stress-pan-end').value = preset.pan_config.end;
+                document.getElementById('stress-pan-step').value = preset.pan_config.step;
+                document.getElementById('stress-pan-random-steps').checked = preset.pan_config.use_random_steps;
+                document.getElementById('stress-pan-step-min').value = preset.pan_config.step_min;
+                document.getElementById('stress-pan-step-max').value = preset.pan_config.step_max;
+                toggleStressPanRandomSteps(preset.pan_config.use_random_steps);
+            }
+
+            // Tilt config
+            const hasTilt = preset.tilt_config !== null;
+            document.getElementById('stress-tilt-enabled').checked = hasTilt;
+            toggleStressTiltInputs(hasTilt);
+            if (hasTilt) {
+                document.getElementById('stress-tilt-start').value = preset.tilt_config.start;
+                document.getElementById('stress-tilt-end').value = preset.tilt_config.end;
+                document.getElementById('stress-tilt-step').value = preset.tilt_config.step;
+                document.getElementById('stress-tilt-random-steps').checked = preset.tilt_config.use_random_steps;
+                document.getElementById('stress-tilt-step-min').value = preset.tilt_config.step_min;
+                document.getElementById('stress-tilt-step-max').value = preset.tilt_config.step_max;
+                toggleStressTiltRandomSteps(preset.tilt_config.use_random_steps);
+            }
+
+            renderStressPresets();
+        }
+
+        function toggleStressPanInputs(enabled) {
+            ['stress-pan-start', 'stress-pan-end', 'stress-pan-step', 'stress-pan-random-steps'].forEach(id => {
+                document.getElementById(id).disabled = !enabled;
+            });
+            if (!enabled) {
+                document.getElementById('stress-pan-step-min').disabled = true;
+                document.getElementById('stress-pan-step-max').disabled = true;
+            }
+        }
+
+        function toggleStressTiltInputs(enabled) {
+            ['stress-tilt-start', 'stress-tilt-end', 'stress-tilt-step', 'stress-tilt-random-steps'].forEach(id => {
+                document.getElementById(id).disabled = !enabled;
+            });
+            if (!enabled) {
+                document.getElementById('stress-tilt-step-min').disabled = true;
+                document.getElementById('stress-tilt-step-max').disabled = true;
+            }
+        }
+
+        function toggleStressPanRandomSteps(enabled) {
+            document.getElementById('stress-pan-step-min').disabled = !enabled;
+            document.getElementById('stress-pan-step-max').disabled = !enabled;
+            document.getElementById('stress-pan-step').disabled = enabled;
+        }
+
+        function toggleStressTiltRandomSteps(enabled) {
+            document.getElementById('stress-tilt-step-min').disabled = !enabled;
+            document.getElementById('stress-tilt-step-max').disabled = !enabled;
+            document.getElementById('stress-tilt-step').disabled = enabled;
+        }
+
+        // Show video stream for stress testing
+        function showStressVideoStream(cameraId) {
+            if (!cameraId) {
+                stressVideoPanel.classList.add('hidden');
+                stressVideoStream.style.display = 'none';
+                stressVideoPlaceholder.style.display = 'block';
+                return;
+            }
+
+            const camera = stressCameras.find(c => c.id === cameraId);
+            stressCameraNameEl.textContent = camera ? `${camera.name} (${camera.ip})` : cameraId;
+
+            const streamUrl = '{% url "camera_diagnostic:api_stress_video_stream" "PLACEHOLDER" %}'.replace('PLACEHOLDER', encodeURIComponent(cameraId));
+            stressVideoStream.src = streamUrl + '?t=' + Date.now();
+            stressVideoStream.style.display = 'block';
+            stressVideoPlaceholder.style.display = 'none';
+            stressVideoPanel.classList.remove('hidden');
+        }
+
+        // Build config from stress test form
+        function buildStressConfig() {
+            const config = {
+                tenant_id: stressTenant,
+                camera_id: stressCamera,
+                test_type: document.getElementById('stress-test-type-select').value,
+                repetitions: parseInt(document.getElementById('stress-repetitions-input').value),
+            };
+
+            if (document.getElementById('stress-pan-enabled').checked) {
+                config.pan_config = {
+                    axis: 'pan',
+                    start: parseFloat(document.getElementById('stress-pan-start').value),
+                    end: parseFloat(document.getElementById('stress-pan-end').value),
+                    step: parseFloat(document.getElementById('stress-pan-step').value),
+                    use_random_steps: document.getElementById('stress-pan-random-steps').checked,
+                    step_min: parseFloat(document.getElementById('stress-pan-step-min').value),
+                    step_max: parseFloat(document.getElementById('stress-pan-step-max').value),
+                };
+            }
+
+            if (document.getElementById('stress-tilt-enabled').checked) {
+                config.tilt_config = {
+                    axis: 'tilt',
+                    start: parseFloat(document.getElementById('stress-tilt-start').value),
+                    end: parseFloat(document.getElementById('stress-tilt-end').value),
+                    step: parseFloat(document.getElementById('stress-tilt-step').value),
+                    use_random_steps: document.getElementById('stress-tilt-random-steps').checked,
+                    step_min: parseFloat(document.getElementById('stress-tilt-step-min').value),
+                    step_max: parseFloat(document.getElementById('stress-tilt-step-max').value),
+                };
+            }
+
+            return config;
+        }
+
+        // CSRF token helper
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+                if (cookie.startsWith(name + '=')) {
+                    return decodeURIComponent(cookie.substring(name.length + 1));
+                }
+            }
+            return null;
+        }
+
+        // Start stress test
+        async function startStressTest() {
+            const config = buildStressConfig();
+
+            startStressTestBtn.disabled = true;
+            startStressTestBtn.innerHTML = '<span class="spinner"></span> Starting...';
+            stressTestProgress.classList.remove('hidden');
+            stressPtzDisplay.classList.remove('hidden');
+            stressTestResultsPanel.classList.add('hidden');
+
+            try {
+                const resp = await fetch('{% url "camera_diagnostic:api_stress_test_start" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
+                    body: JSON.stringify(config),
+                });
+                const result = await resp.json();
+
+                if (result.status !== 'success') {
+                    throw new Error(result.message);
+                }
+
+                stressCurrentSessionId = result.data.session_id;
+                abortStressTestBtn.disabled = false;
+                startStressTestBtn.textContent = 'Test Running...';
+
+                // Start polling for status
+                stressPollInterval = setInterval(pollStressTestStatus, 500);
+            } catch (e) {
+                console.error('Failed to start test:', e);
+                alert('Failed to start test: ' + e.message);
+                startStressTestBtn.disabled = false;
+                startStressTestBtn.textContent = 'Start Test';
+                stressTestProgress.classList.add('hidden');
+                stressPtzDisplay.classList.add('hidden');
+            }
+        }
+
+        // Poll stress test status
+        async function pollStressTestStatus() {
+            if (!stressCurrentSessionId) return;
+
+            try {
+                const url = '{% url "camera_diagnostic:api_stress_test_status" "PLACEHOLDER" %}'.replace('PLACEHOLDER', stressCurrentSessionId);
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.status !== 'success') {
+                    throw new Error(result.message);
+                }
+
+                const progress = result.data;
+                updateStressProgressUI(progress);
+
+                if (progress.completed || ['completed', 'failed', 'aborted'].includes(progress.status)) {
+                    clearInterval(stressPollInterval);
+                    stressPollInterval = null;
+                    onStressTestComplete();
+                }
+            } catch (e) {
+                console.error('Failed to poll status:', e);
+            }
+        }
+
+        function updateStressProgressUI(progress) {
+            const percent = progress.total_movements > 0
+                ? Math.round((progress.current_movement / progress.total_movements) * 100)
+                : 0;
+
+            stressTestProgressFill.style.width = percent + '%';
+            stressTestProgressText.textContent = `${progress.message} (Rep ${progress.current_repetition}/${progress.total_repetitions}, Move ${progress.current_movement}/${progress.total_movements})`;
+
+            if (progress.current_position) {
+                document.getElementById('stress-ptz-pan').textContent = progress.current_position.pan?.toFixed(1) + '°';
+                document.getElementById('stress-ptz-tilt').textContent = progress.current_position.tilt?.toFixed(1) + '°';
+                document.getElementById('stress-ptz-zoom').textContent = progress.current_position.zoom?.toFixed(1);
+            }
+        }
+
+        async function onStressTestComplete() {
+            startStressTestBtn.disabled = false;
+            startStressTestBtn.textContent = 'Start Test';
+            abortStressTestBtn.disabled = true;
+
+            // Load session details
+            let sessionResult = null;
+            try {
+                const url = '{% url "camera_diagnostic:api_stress_test_session_detail" "PLACEHOLDER" %}'.replace('PLACEHOLDER', stressCurrentSessionId);
+                const resp = await fetch(url);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    sessionResult = result.data.session;
+                    // Only show results panel if not in "run all" mode
+                    if (!runAllTestsMode) {
+                        showStressTestResults(sessionResult);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load session details:', e);
+            }
+
+            // Refresh sessions list
+            loadStressSessions();
+
+            // If in "run all tests" mode, track result and continue
+            if (runAllTestsMode) {
+                if (sessionResult) {
+                    runAllTestsResults.push({
+                        preset: stressPresets[stressSelectedPreset]?.name || 'Unknown',
+                        status: sessionResult.status,
+                        sessionId: stressCurrentSessionId
+                    });
+                }
+
+                if (runAllTestsQueue.length > 0) {
+                    setTimeout(runNextTestInQueue, 1000);
+                } else {
+                    // All tests completed
+                    const testType = runMaxSpeedMode ? 'Max Speed' : 'All';
+                    runAllTestsMode = false;
+                    runMaxSpeedMode = false;
+                    runAllStressTestsBtn.disabled = false;
+                    runAllStressTestsBtn.textContent = 'Run All Tests';
+                    runMaxSpeedTestsBtn.disabled = false;
+                    runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
+                    startStressTestBtn.disabled = false;
+
+                    const passedCount = runAllTestsResults.filter(r => r.status === 'completed').length;
+                    const failedCount = runAllTestsResults.filter(r => r.status === 'failed').length;
+                    alert(`${testType} ${runAllTestsResults.length} tests completed!\n\nPassed: ${passedCount}\nFailed: ${failedCount}`);
+                    runAllTestsResults = [];
+                }
+            }
+        }
+
+        // Run all stress tests sequentially
+        async function startRunAllTests() {
+            if (stressPresets.length === 0) {
+                alert('No presets available');
+                return;
+            }
+
+            runAllTestsMode = true;
+            runMaxSpeedMode = false;
+            runAllTestsQueue = [...Array(stressPresets.length).keys()]; // [0, 1, 2, ...]
+            runAllTestsResults = [];
+            runAllTestsTotal = stressPresets.length;
+
+            runAllStressTestsBtn.disabled = true;
+            runAllStressTestsBtn.textContent = `Running All (0/${runAllTestsTotal})...`;
+            runMaxSpeedTestsBtn.disabled = true;
+            startStressTestBtn.disabled = true;
+
+            runNextTestInQueue();
+        }
+
+        // Run only MAX SPEED stress tests sequentially
+        async function startRunMaxSpeedTests() {
+            // Filter presets that have max_speed = true
+            const maxSpeedIndices = stressPresets
+                .map((preset, index) => preset.max_speed ? index : -1)
+                .filter(index => index !== -1);
+
+            if (maxSpeedIndices.length === 0) {
+                alert('No max speed presets available');
+                return;
+            }
+
+            runAllTestsMode = true;
+            runMaxSpeedMode = true;
+            runAllTestsQueue = maxSpeedIndices;
+            runAllTestsResults = [];
+            runAllTestsTotal = maxSpeedIndices.length;
+
+            runAllStressTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.textContent = `Running Max Speed (0/${runAllTestsTotal})...`;
+            startStressTestBtn.disabled = true;
+
+            runNextTestInQueue();
+        }
+
+        // Unified function to run next test in queue (for both all tests and max speed modes)
+        async function runNextTestInQueue() {
+            if (runAllTestsQueue.length === 0) return;
+
+            const presetIndex = runAllTestsQueue.shift();
+            const completedCount = runAllTestsTotal - runAllTestsQueue.length - 1;
+
+            // Update the appropriate button based on mode
+            if (runMaxSpeedMode) {
+                runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${runAllTestsTotal})...`;
+            } else {
+                runAllStressTestsBtn.textContent = `Running All (${completedCount}/${runAllTestsTotal})...`;
+            }
+
+            // Select the preset and start test
+            selectStressPreset(presetIndex);
+            await startStressTest();
+        }
+
+        function abortRunAllTests() {
+            runAllTestsMode = false;
+            runMaxSpeedMode = false;
+            runAllTestsQueue = [];
+            runAllTestsTotal = 0;
+            runAllStressTestsBtn.disabled = false;
+            runAllStressTestsBtn.textContent = 'Run All Tests';
+            runMaxSpeedTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
+            startStressTestBtn.disabled = false;
+        }
+
+        function showStressTestResults(session) {
+            stressTestResultsPanel.classList.remove('hidden');
+
+            const statusEl = document.getElementById('stress-result-status');
+            statusEl.textContent = session.status;
+            statusEl.className = 'value ' + (session.status === 'completed' ? 'success' : 'fail');
+
+            if (session.result) {
+                const r = session.result;
+                document.getElementById('stress-result-position-match').textContent = r.position_match ? 'Yes' : 'No';
+                document.getElementById('stress-result-position-match').className = 'value ' + (r.position_match ? 'success' : 'fail');
+
+                const err = r.position_error;
+                document.getElementById('stress-result-position-error').textContent =
+                    `${err.pan?.toFixed(2)}° / ${err.tilt?.toFixed(2)}° / ${err.zoom?.toFixed(2)}`;
+
+                document.getElementById('stress-result-duration').textContent = (r.total_duration_ms / 1000).toFixed(1) + 's';
+                document.getElementById('stress-result-movements').textContent = r.movements?.length || 0;
+            }
+
+            // Enable evaluation buttons
+            document.querySelectorAll('.stress-eval-btn').forEach(btn => btn.disabled = false);
+            document.getElementById('stress-eval-notes').disabled = false;
+            document.getElementById('stress-save-eval-btn').disabled = false;
+
+            // Set current evaluation if exists
+            if (session.user_evaluation && session.user_evaluation !== 'not_evaluated') {
+                selectStressEvaluation(session.user_evaluation);
+            }
+            document.getElementById('stress-eval-notes').value = session.user_notes || '';
+        }
+
+        function selectStressEvaluation(value) {
+            stressCurrentEvaluation = value;
+            document.querySelectorAll('.stress-eval-btn').forEach(btn => btn.classList.remove('selected'));
+            if (value === 'good') document.getElementById('stress-eval-good-btn').classList.add('selected');
+            if (value === 'needs_improvement') document.getElementById('stress-eval-needs-improvement-btn').classList.add('selected');
+            if (value === 'bad') document.getElementById('stress-eval-bad-btn').classList.add('selected');
+        }
+
+        async function saveStressEvaluation() {
+            if (!stressCurrentSessionId || !stressCurrentEvaluation) return;
+
+            const notes = document.getElementById('stress-eval-notes').value;
+            const url = '{% url "camera_diagnostic:api_stress_test_evaluate" "PLACEHOLDER" %}'.replace('PLACEHOLDER', stressCurrentSessionId);
+
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
+                    body: JSON.stringify({ evaluation: stressCurrentEvaluation, notes }),
+                });
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    alert('Evaluation saved!');
+                    loadStressSessions();
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (e) {
+                alert('Failed to save evaluation: ' + e.message);
+            }
+        }
+
+        // Abort stress test
+        async function abortStressTest() {
+            if (!stressCurrentSessionId) return;
+
+            const url = '{% url "camera_diagnostic:api_stress_test_abort" "PLACEHOLDER" %}'.replace('PLACEHOLDER', stressCurrentSessionId);
+            try {
+                await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+            } catch (e) {
+                console.error('Failed to abort:', e);
+            }
+        }
+
+        // Load stress test sessions
+        async function loadStressSessions() {
+            const loading = document.getElementById('stress-sessions-loading');
+            const empty = document.getElementById('stress-sessions-empty');
+            const table = document.getElementById('stress-sessions-table');
+            const tbody = document.getElementById('stress-sessions-tbody');
+
+            loading.classList.remove('hidden');
+            empty.classList.add('hidden');
+            table.classList.add('hidden');
+
+            try {
+                const params = new URLSearchParams();
+                if (stressTenant) params.set('tenant_id', stressTenant);
+                if (stressCamera) params.set('camera_id', stressCamera);
+
+                const resp = await fetch(`{% url "camera_diagnostic:api_stress_test_sessions" %}?${params}`);
+                const result = await resp.json();
+
+                loading.classList.add('hidden');
+
+                if (result.status !== 'success') {
+                    throw new Error(result.message);
+                }
+
+                const sessions = result.data.sessions;
+
+                if (sessions.length === 0) {
+                    empty.classList.remove('hidden');
+                    return;
+                }
+
+                tbody.innerHTML = sessions.map(s => `
+                    <tr>
+                        <td>${new Date(s.created_at).toLocaleString()}</td>
+                        <td>${s.tenant_id || '--'}</td>
+                        <td>${s.camera_name}</td>
+                        <td>${s.config?.test_type || '--'}</td>
+                        <td><span class="stress-status-badge ${s.status}">${s.status}</span></td>
+                        <td>${s.result ? (s.result.success ? 'Pass' : 'Fail') : '--'}</td>
+                        <td><span class="stress-eval-badge ${s.user_evaluation}">${formatStressEvaluation(s.user_evaluation)}</span></td>
+                        <td class="actions">
+                            <button class="btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="viewStressSession('${s.id}')">View</button>
+                            <button class="btn-danger" style="padding: 6px 12px; font-size: 12px;" onclick="deleteStressSession('${s.id}')">Delete</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                table.classList.remove('hidden');
+            } catch (e) {
+                console.error('Failed to load sessions:', e);
+                loading.classList.add('hidden');
+                empty.textContent = 'Failed to load sessions: ' + e.message;
+                empty.classList.remove('hidden');
+            }
+        }
+
+        function formatStressEvaluation(value) {
+            const map = {
+                good: 'Good',
+                needs_improvement: 'Needs Work',
+                bad: 'Bad',
+                not_evaluated: 'Not Rated',
+            };
+            return map[value] || value;
+        }
+
+        async function viewStressSession(sessionId) {
+            stressCurrentSessionId = sessionId;
+            const url = '{% url "camera_diagnostic:api_stress_test_session_detail" "PLACEHOLDER" %}'.replace('PLACEHOLDER', sessionId);
+            try {
+                const resp = await fetch(url);
+                const result = await resp.json();
+                if (result.status === 'success') {
+                    showStressTestResults(result.data.session);
+                    stressTestResultsPanel.scrollIntoView({ behavior: 'smooth' });
+                }
+            } catch (e) {
+                alert('Failed to load session: ' + e.message);
+            }
+        }
+
+        async function deleteStressSession(sessionId) {
+            if (!confirm('Are you sure you want to delete this session?')) return;
+
+            const url = '{% url "camera_diagnostic:api_stress_test_delete" "PLACEHOLDER" %}'.replace('PLACEHOLDER', sessionId);
+            try {
+                const resp = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+                const result = await resp.json();
+                if (result.status === 'success') {
+                    loadStressSessions();
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (e) {
+                alert('Failed to delete session: ' + e.message);
+            }
+        }
+
+        // =====================================================================
+        // STRESS TESTING TAB EVENT LISTENERS
+        // =====================================================================
+
+        stressTenantSelect.addEventListener('change', async (e) => {
+            stressTenant = e.target.value;
+            stressCamera = null;
+            stressCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
+            stressCameraSelect.disabled = true;
+            showStressVideoStream(null);
+            stressTestConfigPanel.classList.add('hidden');
+            stressTestControlPanel.classList.add('hidden');
+
+            if (stressTenant) {
+                await loadStressCameras(stressTenant);
+            }
+            loadStressSessions();
+        });
+
+        stressCameraSelect.addEventListener('change', (e) => {
+            stressCamera = e.target.value;
+            showStressVideoStream(stressCamera);
+
+            if (stressCamera) {
+                stressTestConfigPanel.classList.remove('hidden');
+                stressTestControlPanel.classList.remove('hidden');
+            } else {
+                stressTestConfigPanel.classList.add('hidden');
+                stressTestControlPanel.classList.add('hidden');
+            }
+            loadStressSessions();
+        });
+
+        // Axis toggle listeners
+        document.getElementById('stress-pan-enabled').addEventListener('change', (e) => toggleStressPanInputs(e.target.checked));
+        document.getElementById('stress-tilt-enabled').addEventListener('change', (e) => toggleStressTiltInputs(e.target.checked));
+        document.getElementById('stress-pan-random-steps').addEventListener('change', (e) => toggleStressPanRandomSteps(e.target.checked));
+        document.getElementById('stress-tilt-random-steps').addEventListener('change', (e) => toggleStressTiltRandomSteps(e.target.checked));
+
+        // Test control listeners
+        startStressTestBtn.addEventListener('click', startStressTest);
+        runAllStressTestsBtn.addEventListener('click', startRunAllTests);
+        runMaxSpeedTestsBtn.addEventListener('click', startRunMaxSpeedTests);
+        abortStressTestBtn.addEventListener('click', () => {
+            abortStressTest();
+            if (runAllTestsMode) abortRunAllTests();
+        });
+
+        // Evaluation listeners
+        document.getElementById('stress-eval-good-btn').addEventListener('click', () => selectStressEvaluation('good'));
+        document.getElementById('stress-eval-needs-improvement-btn').addEventListener('click', () => selectStressEvaluation('needs_improvement'));
+        document.getElementById('stress-eval-bad-btn').addEventListener('click', () => selectStressEvaluation('bad'));
+        document.getElementById('stress-save-eval-btn').addEventListener('click', saveStressEvaluation);
     </script>
 </body>
 </html>

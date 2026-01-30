@@ -172,6 +172,30 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
         }
 
+        /* Helper text and error styles */
+        .helper-text {
+            color: #888;
+            font-size: 12px;
+            display: block;
+            margin-top: 4px;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            display: none;
+            margin-top: 4px;
+        }
+
+        .form-group input.error {
+            border-color: #e74c3c;
+            background-color: rgba(231, 76, 60, 0.1);
+        }
+
+        .form-group input.error:focus {
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.3);
+        }
+
         /* Buttons */
         .btn {
             padding: 12px 24px;
@@ -755,17 +779,14 @@
 
         <div class="header">
             <h1>Camera Evaluation Tool</h1>
-            <p>Survey camera capabilities and run stress tests on PTZ functionality</p>
+            <p>Survey camera capabilities with systematic PTZ sweeps and screenshot capture</p>
         </div>
 
-        <!-- Tab Navigation -->
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="survey">Survey</button>
-            <button class="tab-btn" data-tab="stress-testing">Stress Testing</button>
-        </div>
+        <!-- Note: Stress testing functionality has been moved to Camera Diagnostic Tool -->
+        <!-- This tool now focuses on survey functionality only -->
 
-        <!-- Survey Tab Content -->
-        <div id="survey-tab" class="tab-content active">
+        <!-- Survey Content -->
+        <div id="survey-content">
             <!-- Camera Selection Panel -->
             <div class="panel">
                 <h2>Camera Selection</h2>
@@ -817,6 +838,23 @@
                     </div>
                 </div>
 
+                <!-- Current Position Display -->
+                <div id="survey-current-position" class="camera-info hidden" style="margin-bottom: 16px;">
+                    <div style="font-weight: 500; margin-bottom: 8px; color: #ccc;">Current Position</div>
+                    <div class="camera-info-row">
+                        <span class="camera-info-label">Pan:</span>
+                        <span class="camera-info-value" id="survey-current-pan">-</span>
+                    </div>
+                    <div class="camera-info-row">
+                        <span class="camera-info-label">Tilt:</span>
+                        <span class="camera-info-value" id="survey-current-tilt">-</span>
+                    </div>
+                    <div class="camera-info-row">
+                        <span class="camera-info-label">Zoom:</span>
+                        <span class="camera-info-value" id="survey-current-zoom">-</span>
+                    </div>
+                </div>
+
                 <div class="form-group" style="margin-bottom: 16px;">
                     <label>Presets</label>
                     <div id="survey-preset-buttons" class="preset-buttons">
@@ -828,14 +866,20 @@
                     <div class="form-group">
                         <label>Start</label>
                         <input type="number" id="survey-start-input" value="0" step="1">
+                        <small id="survey-start-helper" class="helper-text"></small>
+                        <small id="survey-start-error" class="error-message"></small>
                     </div>
                     <div class="form-group">
                         <label>End</label>
                         <input type="number" id="survey-end-input" value="360" step="1">
+                        <small id="survey-end-helper" class="helper-text"></small>
+                        <small id="survey-end-error" class="error-message"></small>
                     </div>
                     <div class="form-group">
                         <label>Step</label>
                         <input type="number" id="survey-step-input" value="10" min="0.1" step="0.1">
+                        <small id="survey-step-helper" class="helper-text"></small>
+                        <small id="survey-step-error" class="error-message"></small>
                     </div>
                 </div>
 
@@ -942,243 +986,11 @@
                 <div id="survey-image-gallery" class="image-gallery"></div>
             </div>
         </div>
-
-        <!-- Stress Testing Tab Content -->
-        <div id="stress-testing-tab" class="tab-content">
-            <!-- Camera Selection -->
-            <div class="panel">
-                <h2>Camera Selection</h2>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Tenant</label>
-                        <select id="stress-tenant-select">
-                            <option value="">-- Select tenant --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Camera</label>
-                        <select id="stress-camera-select" disabled>
-                            <option value="">-- Select tenant first --</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Live Video Feed -->
-            <div id="stress-video-panel" class="panel hidden">
-                <h3 id="stress-camera-name">Live Video Feed</h3>
-                <div class="video-container">
-                    <span class="video-placeholder" id="stress-video-placeholder">Select a camera</span>
-                    <img id="stress-video-stream" style="display: none;" alt="Camera Stream">
-                </div>
-            </div>
-
-            <!-- Test Configuration -->
-            <div id="test-config-panel" class="panel hidden">
-                <h2>Test Configuration</h2>
-
-                <!-- Presets -->
-                <h3>Quick Presets</h3>
-                <div id="presets-grid" class="presets-grid">
-                    <!-- Preset buttons loaded dynamically -->
-                </div>
-
-                <!-- Manual Configuration -->
-                <h3 style="margin-top: 20px;">Manual Configuration</h3>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Test Type</label>
-                        <select id="test-type-select">
-                            <option value="oscillation">Oscillation</option>
-                            <option value="random_step_accuracy">Random Step Accuracy</option>
-                            <option value="full_range_sweep">Full Range Sweep</option>
-                            <option value="tilt_stress">Tilt Stress</option>
-                            <option value="combined_axis_load">Combined Axis Load</option>
-                            <option value="position_repeatability">Position Repeatability</option>
-                            <option value="speed_test">Speed Test</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Repetitions</label>
-                        <input type="number" id="repetitions-input" value="10" min="1" max="100">
-                    </div>
-                </div>
-
-                <!-- Pan Configuration -->
-                <div class="axis-config">
-                    <h4>
-                        <input type="checkbox" id="pan-enabled" checked>
-                        Pan Axis Configuration
-                    </h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Start (degrees)</label>
-                            <input type="number" id="pan-start" value="0" step="0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>End (degrees)</label>
-                            <input type="number" id="pan-end" value="10" step="0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>Step (degrees)</label>
-                            <input type="number" id="pan-step" value="10" step="0.1">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="pan-random-steps">
-                                Use Random Steps
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label>Min Step</label>
-                            <input type="number" id="pan-step-min" value="5" step="0.1" disabled>
-                        </div>
-                        <div class="form-group">
-                            <label>Max Step</label>
-                            <input type="number" id="pan-step-max" value="15" step="0.1" disabled>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tilt Configuration -->
-                <div class="axis-config">
-                    <h4>
-                        <input type="checkbox" id="tilt-enabled">
-                        Tilt Axis Configuration
-                    </h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Start (degrees)</label>
-                            <input type="number" id="tilt-start" value="0" step="0.1" disabled>
-                        </div>
-                        <div class="form-group">
-                            <label>End (degrees)</label>
-                            <input type="number" id="tilt-end" value="5" step="0.1" disabled>
-                        </div>
-                        <div class="form-group">
-                            <label>Step (degrees)</label>
-                            <input type="number" id="tilt-step" value="5" step="0.1" disabled>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="tilt-random-steps" disabled>
-                                Use Random Steps
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label>Min Step</label>
-                            <input type="number" id="tilt-step-min" value="5" step="0.1" disabled>
-                        </div>
-                        <div class="form-group">
-                            <label>Max Step</label>
-                            <input type="number" id="tilt-step-max" value="15" step="0.1" disabled>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Test Control -->
-            <div id="test-control-panel" class="panel hidden">
-                <h2>Test Control</h2>
-                <div class="form-row">
-                    <button id="start-test-btn" class="btn btn-primary">Start Test</button>
-                    <button id="abort-test-btn" class="btn btn-danger" disabled>Abort Test</button>
-                </div>
-
-                <div id="test-progress" class="progress-container hidden">
-                    <div class="progress-bar">
-                        <div id="test-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
-                    </div>
-                    <div id="test-progress-text" class="progress-text">Initializing...</div>
-                </div>
-
-                <div id="ptz-display" class="ptz-display hidden">
-                    <div class="ptz-axis">
-                        <div class="label">Pan</div>
-                        <div id="ptz-pan" class="value">--</div>
-                    </div>
-                    <div class="ptz-axis">
-                        <div class="label">Tilt</div>
-                        <div id="ptz-tilt" class="value">--</div>
-                    </div>
-                    <div class="ptz-axis">
-                        <div class="label">Zoom</div>
-                        <div id="ptz-zoom" class="value">--</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Test Results -->
-            <div id="test-results-panel" class="panel hidden">
-                <h2>Test Results</h2>
-                <div id="test-results" class="results-panel">
-                    <div class="result-item">
-                        <span class="label">Status</span>
-                        <span id="result-status" class="value">--</span>
-                    </div>
-                    <div class="result-item">
-                        <span class="label">Position Match</span>
-                        <span id="result-position-match" class="value">--</span>
-                    </div>
-                    <div class="result-item">
-                        <span class="label">Position Error (Pan/Tilt/Zoom)</span>
-                        <span id="result-position-error" class="value">--</span>
-                    </div>
-                    <div class="result-item">
-                        <span class="label">Total Duration</span>
-                        <span id="result-duration" class="value">--</span>
-                    </div>
-                    <div class="result-item">
-                        <span class="label">Movements Completed</span>
-                        <span id="result-movements" class="value">--</span>
-                    </div>
-                </div>
-
-                <h3 style="margin-top: 20px;">User Evaluation</h3>
-                <div class="evaluation-btns">
-                    <button id="eval-good-btn" class="eval-btn good" disabled>Good</button>
-                    <button id="eval-needs-improvement-btn" class="eval-btn needs-improvement" disabled>Needs Improvement</button>
-                    <button id="eval-bad-btn" class="eval-btn bad" disabled>Bad</button>
-                </div>
-                <textarea id="eval-notes" class="notes-textarea" placeholder="Optional notes about the test..." disabled></textarea>
-                <button id="save-eval-btn" class="btn btn-primary btn-sm" style="margin-top: 12px;" disabled>Save Evaluation</button>
-            </div>
-
-            <!-- Past Stress Tests -->
-            <div class="panel">
-                <h2>Past Stress Tests</h2>
-                <div id="sessions-loading" style="color: #888; padding: 20px; text-align: center;">
-                    <span class="spinner"></span> Loading sessions...
-                </div>
-                <div id="sessions-empty" class="hidden" style="color: #888; padding: 20px; text-align: center;">
-                    No stress test sessions found. Run a test to see results here.
-                </div>
-                <table id="sessions-table" class="sessions-table hidden">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Tenant</th>
-                            <th>Camera</th>
-                            <th>Test Type</th>
-                            <th>Status</th>
-                            <th>Result</th>
-                            <th>Evaluation</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="sessions-tbody">
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <!-- Note: Stress Testing functionality has been moved to Camera Diagnostic Tool -->
     </div>
 
     <script>
-        // State - Survey tab
+        // State - Survey
         let surveyTenant = null;
         let surveyCamera = null;
         let surveyCameraData = null;
@@ -1186,18 +998,10 @@
         let surveyPresets = [];
         let currentSurveySessionId = null;
         let surveyPollInterval = null;
+        let surveyCameraCapabilities = null;  // PTZ limits from camera
+        let surveyCurrentPosition = null;     // Current PTZ position
 
-        // State - Stress testing tab
-        let stressTenant = null;
-        let stressCamera = null;
-        let stressCameras = [];
-        let presets = [];
-        let selectedPreset = null;
-        let currentSessionId = null;
-        let pollInterval = null;
-        let currentEvaluation = null;
-
-        // Elements - Survey tab
+        // Elements - Survey
         const surveyTenantSelect = document.getElementById('survey-tenant-select');
         const surveyCameraSelect = document.getElementById('survey-camera-select');
         const surveyCameraInfo = document.getElementById('survey-camera-info');
@@ -1209,6 +1013,16 @@
         const surveyStartInput = document.getElementById('survey-start-input');
         const surveyEndInput = document.getElementById('survey-end-input');
         const surveyStepInput = document.getElementById('survey-step-input');
+        const surveyStartHelper = document.getElementById('survey-start-helper');
+        const surveyEndHelper = document.getElementById('survey-end-helper');
+        const surveyStepHelper = document.getElementById('survey-step-helper');
+        const surveyStartError = document.getElementById('survey-start-error');
+        const surveyEndError = document.getElementById('survey-end-error');
+        const surveyStepError = document.getElementById('survey-step-error');
+        const surveyCurrentPositionDisplay = document.getElementById('survey-current-position');
+        const surveyCurrentPan = document.getElementById('survey-current-pan');
+        const surveyCurrentTilt = document.getElementById('survey-current-tilt');
+        const surveyCurrentZoom = document.getElementById('survey-current-zoom');
         const surveyTimeoutInput = document.getElementById('survey-timeout-input');
         const surveyTagsInput = document.getElementById('survey-tags-input');
         const surveyRestorePtz = document.getElementById('survey-restore-ptz');
@@ -1235,24 +1049,6 @@
         const surveyImageGallery = document.getElementById('survey-image-gallery');
         const surveyImageCount = document.getElementById('survey-image-count');
 
-        // Elements - Stress testing tab
-        const stressTenantSelect = document.getElementById('stress-tenant-select');
-        const stressCameraSelect = document.getElementById('stress-camera-select');
-        const stressVideoPanel = document.getElementById('stress-video-panel');
-        const stressCameraName = document.getElementById('stress-camera-name');
-        const stressVideoStream = document.getElementById('stress-video-stream');
-        const stressVideoPlaceholder = document.getElementById('stress-video-placeholder');
-        const testConfigPanel = document.getElementById('test-config-panel');
-        const testControlPanel = document.getElementById('test-control-panel');
-        const testResultsPanel = document.getElementById('test-results-panel');
-        const presetsGrid = document.getElementById('presets-grid');
-        const startTestBtn = document.getElementById('start-test-btn');
-        const abortTestBtn = document.getElementById('abort-test-btn');
-        const testProgress = document.getElementById('test-progress');
-        const testProgressFill = document.getElementById('test-progress-fill');
-        const testProgressText = document.getElementById('test-progress-text');
-        const ptzDisplay = document.getElementById('ptz-display');
-
         // CSRF token helper for Django CSRF protection
         function getCsrfToken() {
             const name = 'csrftoken';
@@ -1266,16 +1062,6 @@
             return null;
         }
 
-        // Tab switching
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById(btn.dataset.tab + '-tab').classList.add('active');
-            });
-        });
-
         // Load tenants
         async function loadTenants() {
             try {
@@ -1288,31 +1074,25 @@
                     tenants.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
 
                 surveyTenantSelect.innerHTML = options;
-                stressTenantSelect.innerHTML = options;
             } catch (e) {
                 console.error('Failed to load tenants:', e);
             }
         }
 
         // Load cameras for tenant
-        async function loadCameras(tenantId, target) {
+        async function loadCameras(tenantId) {
             try {
                 const resp = await fetch(`{% url "camera_evaluation:api_cameras" %}?tenant_id=${encodeURIComponent(tenantId)}`);
                 const result = await resp.json();
                 if (result.status !== 'success') throw new Error(result.message);
 
                 const cameras = result.data.cameras;
-                const select = target === 'survey' ? surveyCameraSelect : stressCameraSelect;
 
-                select.innerHTML = '<option value="">-- Select camera --</option>' +
+                surveyCameraSelect.innerHTML = '<option value="">-- Select camera --</option>' +
                     cameras.map(c => `<option value="${c.id}">${c.name} (${c.ip})</option>`).join('');
-                select.disabled = false;
+                surveyCameraSelect.disabled = false;
 
-                if (target === 'survey') {
-                    surveyCameras = cameras;
-                } else if (target === 'stress') {
-                    stressCameras = cameras;
-                }
+                surveyCameras = cameras;
 
                 return cameras;
             } catch (e) {
@@ -1321,447 +1101,10 @@
             }
         }
 
-        // Load presets
-        async function loadPresets() {
-            try {
-                const resp = await fetch('{% url "camera_evaluation:api_stress_test_presets" %}');
-                const result = await resp.json();
-                if (result.status !== 'success') throw new Error(result.message);
-
-                presets = result.data.presets;
-                renderPresets();
-            } catch (e) {
-                console.error('Failed to load presets:', e);
-            }
-        }
-
-        function renderPresets() {
-            presetsGrid.innerHTML = presets.map((p, i) => `
-                <div class="preset-btn ${selectedPreset === i ? 'selected' : ''}" data-index="${i}">
-                    <div class="preset-name">${p.name}</div>
-                    <div class="preset-desc">${p.description}</div>
-                </div>
-            `).join('');
-
-            presetsGrid.querySelectorAll('.preset-btn').forEach(btn => {
-                btn.addEventListener('click', () => selectPreset(parseInt(btn.dataset.index)));
-            });
-        }
-
-        function selectPreset(index) {
-            selectedPreset = index;
-            const preset = presets[index];
-
-            // Update form with preset values
-            document.getElementById('test-type-select').value = preset.test_type;
-            document.getElementById('repetitions-input').value = preset.repetitions;
-
-            // Pan config
-            const hasPan = preset.pan_config !== null;
-            document.getElementById('pan-enabled').checked = hasPan;
-            togglePanInputs(hasPan);
-            if (hasPan) {
-                document.getElementById('pan-start').value = preset.pan_config.start;
-                document.getElementById('pan-end').value = preset.pan_config.end;
-                document.getElementById('pan-step').value = preset.pan_config.step;
-                document.getElementById('pan-random-steps').checked = preset.pan_config.use_random_steps;
-                document.getElementById('pan-step-min').value = preset.pan_config.step_min;
-                document.getElementById('pan-step-max').value = preset.pan_config.step_max;
-                togglePanRandomSteps(preset.pan_config.use_random_steps);
-            }
-
-            // Tilt config
-            const hasTilt = preset.tilt_config !== null;
-            document.getElementById('tilt-enabled').checked = hasTilt;
-            toggleTiltInputs(hasTilt);
-            if (hasTilt) {
-                document.getElementById('tilt-start').value = preset.tilt_config.start;
-                document.getElementById('tilt-end').value = preset.tilt_config.end;
-                document.getElementById('tilt-step').value = preset.tilt_config.step;
-                document.getElementById('tilt-random-steps').checked = preset.tilt_config.use_random_steps;
-                document.getElementById('tilt-step-min').value = preset.tilt_config.step_min;
-                document.getElementById('tilt-step-max').value = preset.tilt_config.step_max;
-                toggleTiltRandomSteps(preset.tilt_config.use_random_steps);
-            }
-
-            renderPresets();
-        }
-
-        function togglePanInputs(enabled) {
-            ['pan-start', 'pan-end', 'pan-step', 'pan-random-steps'].forEach(id => {
-                document.getElementById(id).disabled = !enabled;
-            });
-            if (!enabled) {
-                document.getElementById('pan-step-min').disabled = true;
-                document.getElementById('pan-step-max').disabled = true;
-            }
-        }
-
-        function toggleTiltInputs(enabled) {
-            ['tilt-start', 'tilt-end', 'tilt-step', 'tilt-random-steps'].forEach(id => {
-                document.getElementById(id).disabled = !enabled;
-            });
-            if (!enabled) {
-                document.getElementById('tilt-step-min').disabled = true;
-                document.getElementById('tilt-step-max').disabled = true;
-            }
-        }
-
-        function togglePanRandomSteps(enabled) {
-            document.getElementById('pan-step-min').disabled = !enabled;
-            document.getElementById('pan-step-max').disabled = !enabled;
-            document.getElementById('pan-step').disabled = enabled;
-        }
-
-        function toggleTiltRandomSteps(enabled) {
-            document.getElementById('tilt-step-min').disabled = !enabled;
-            document.getElementById('tilt-step-max').disabled = !enabled;
-            document.getElementById('tilt-step').disabled = enabled;
-        }
-
-        // Show video stream (only for stress testing tab)
-        function showVideoStream(cameraId, target) {
-            // Only stress testing tab has video stream
-            if (target !== 'stress') return;
-
-            if (!cameraId) {
-                stressVideoPanel.classList.add('hidden');
-                stressVideoStream.style.display = 'none';
-                stressVideoPlaceholder.style.display = 'block';
-                return;
-            }
-
-            const camera = stressCameras.find(c => c.id === cameraId);
-            stressCameraName.textContent = camera ? `${camera.name} (${camera.ip})` : cameraId;
-
-            const streamUrl = '{% url "camera_evaluation:api_video_stream" "PLACEHOLDER" %}'.replace('PLACEHOLDER', encodeURIComponent(cameraId));
-            stressVideoStream.src = streamUrl + '?t=' + Date.now();
-            stressVideoStream.style.display = 'block';
-            stressVideoPlaceholder.style.display = 'none';
-            stressVideoPanel.classList.remove('hidden');
-        }
-
-        // Build config from form
-        function buildConfig() {
-            const config = {
-                tenant_id: stressTenant,
-                camera_id: stressCamera,
-                test_type: document.getElementById('test-type-select').value,
-                repetitions: parseInt(document.getElementById('repetitions-input').value),
-            };
-
-            if (document.getElementById('pan-enabled').checked) {
-                config.pan_config = {
-                    axis: 'pan',
-                    start: parseFloat(document.getElementById('pan-start').value),
-                    end: parseFloat(document.getElementById('pan-end').value),
-                    step: parseFloat(document.getElementById('pan-step').value),
-                    use_random_steps: document.getElementById('pan-random-steps').checked,
-                    step_min: parseFloat(document.getElementById('pan-step-min').value),
-                    step_max: parseFloat(document.getElementById('pan-step-max').value),
-                };
-            }
-
-            if (document.getElementById('tilt-enabled').checked) {
-                config.tilt_config = {
-                    axis: 'tilt',
-                    start: parseFloat(document.getElementById('tilt-start').value),
-                    end: parseFloat(document.getElementById('tilt-end').value),
-                    step: parseFloat(document.getElementById('tilt-step').value),
-                    use_random_steps: document.getElementById('tilt-random-steps').checked,
-                    step_min: parseFloat(document.getElementById('tilt-step-min').value),
-                    step_max: parseFloat(document.getElementById('tilt-step-max').value),
-                };
-            }
-
-            return config;
-        }
-
-        // Start stress test
-        async function startStressTest() {
-            const config = buildConfig();
-
-            startTestBtn.disabled = true;
-            startTestBtn.innerHTML = '<span class="spinner"></span> Starting...';
-            testProgress.classList.remove('hidden');
-            ptzDisplay.classList.remove('hidden');
-            testResultsPanel.classList.add('hidden');
-
-            try {
-                const resp = await fetch('{% url "camera_evaluation:api_stress_test_start" %}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCsrfToken(),
-                    },
-                    body: JSON.stringify(config),
-                });
-                const result = await resp.json();
-
-                if (result.status !== 'success') {
-                    throw new Error(result.message);
-                }
-
-                currentSessionId = result.data.session_id;
-                abortTestBtn.disabled = false;
-                startTestBtn.textContent = 'Test Running...';
-
-                // Start polling for status
-                pollInterval = setInterval(pollTestStatus, 500);
-            } catch (e) {
-                console.error('Failed to start test:', e);
-                alert('Failed to start test: ' + e.message);
-                startTestBtn.disabled = false;
-                startTestBtn.textContent = 'Start Test';
-                testProgress.classList.add('hidden');
-                ptzDisplay.classList.add('hidden');
-            }
-        }
-
-        // Poll test status
-        async function pollTestStatus() {
-            if (!currentSessionId) return;
-
-            try {
-                const url = '{% url "camera_evaluation:api_stress_test_status" "PLACEHOLDER" %}'.replace('PLACEHOLDER', currentSessionId);
-                const resp = await fetch(url);
-                const result = await resp.json();
-
-                if (result.status !== 'success') {
-                    throw new Error(result.message);
-                }
-
-                const progress = result.data;
-                updateProgressUI(progress);
-
-                if (progress.completed || ['completed', 'failed', 'aborted'].includes(progress.status)) {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-                    onTestComplete();
-                }
-            } catch (e) {
-                console.error('Failed to poll status:', e);
-            }
-        }
-
-        function updateProgressUI(progress) {
-            const percent = progress.total_movements > 0
-                ? Math.round((progress.current_movement / progress.total_movements) * 100)
-                : 0;
-
-            testProgressFill.style.width = percent + '%';
-            testProgressText.textContent = `${progress.message} (Rep ${progress.current_repetition}/${progress.total_repetitions}, Move ${progress.current_movement}/${progress.total_movements})`;
-
-            if (progress.current_position) {
-                document.getElementById('ptz-pan').textContent = progress.current_position.pan?.toFixed(1) + '°';
-                document.getElementById('ptz-tilt').textContent = progress.current_position.tilt?.toFixed(1) + '°';
-                document.getElementById('ptz-zoom').textContent = progress.current_position.zoom?.toFixed(1);
-            }
-        }
-
-        async function onTestComplete() {
-            startTestBtn.disabled = false;
-            startTestBtn.textContent = 'Start Test';
-            abortTestBtn.disabled = true;
-
-            // Load session details
-            try {
-                const url = '{% url "camera_evaluation:api_stress_test_session_detail" "PLACEHOLDER" %}'.replace('PLACEHOLDER', currentSessionId);
-                const resp = await fetch(url);
-                const result = await resp.json();
-
-                if (result.status === 'success') {
-                    showTestResults(result.data.session);
-                }
-            } catch (e) {
-                console.error('Failed to load session details:', e);
-            }
-
-            // Refresh sessions list
-            loadSessions();
-        }
-
-        function showTestResults(session) {
-            testResultsPanel.classList.remove('hidden');
-
-            const statusEl = document.getElementById('result-status');
-            statusEl.textContent = session.status;
-            statusEl.className = 'value ' + (session.status === 'completed' ? 'success' : 'fail');
-
-            if (session.result) {
-                const r = session.result;
-                document.getElementById('result-position-match').textContent = r.position_match ? 'Yes' : 'No';
-                document.getElementById('result-position-match').className = 'value ' + (r.position_match ? 'success' : 'fail');
-
-                const err = r.position_error;
-                document.getElementById('result-position-error').textContent =
-                    `${err.pan?.toFixed(2)}° / ${err.tilt?.toFixed(2)}° / ${err.zoom?.toFixed(2)}`;
-
-                document.getElementById('result-duration').textContent = (r.total_duration_ms / 1000).toFixed(1) + 's';
-                document.getElementById('result-movements').textContent = r.movements?.length || 0;
-            }
-
-            // Enable evaluation buttons
-            document.querySelectorAll('.eval-btn').forEach(btn => btn.disabled = false);
-            document.getElementById('eval-notes').disabled = false;
-            document.getElementById('save-eval-btn').disabled = false;
-
-            // Set current evaluation if exists
-            if (session.user_evaluation && session.user_evaluation !== 'not_evaluated') {
-                selectEvaluation(session.user_evaluation);
-            }
-            document.getElementById('eval-notes').value = session.user_notes || '';
-        }
-
-        function selectEvaluation(value) {
-            currentEvaluation = value;
-            document.querySelectorAll('.eval-btn').forEach(btn => btn.classList.remove('selected'));
-            if (value === 'good') document.getElementById('eval-good-btn').classList.add('selected');
-            if (value === 'needs_improvement') document.getElementById('eval-needs-improvement-btn').classList.add('selected');
-            if (value === 'bad') document.getElementById('eval-bad-btn').classList.add('selected');
-        }
-
-        async function saveEvaluation() {
-            if (!currentSessionId || !currentEvaluation) return;
-
-            const notes = document.getElementById('eval-notes').value;
-            const url = '{% url "camera_evaluation:api_stress_test_evaluate" "PLACEHOLDER" %}'.replace('PLACEHOLDER', currentSessionId);
-
-            try {
-                const resp = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCsrfToken(),
-                    },
-                    body: JSON.stringify({ evaluation: currentEvaluation, notes }),
-                });
-                const result = await resp.json();
-
-                if (result.status === 'success') {
-                    alert('Evaluation saved!');
-                    loadSessions();
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (e) {
-                alert('Failed to save evaluation: ' + e.message);
-            }
-        }
-
-        // Abort test
-        async function abortTest() {
-            if (!currentSessionId) return;
-
-            const url = '{% url "camera_evaluation:api_stress_test_abort" "PLACEHOLDER" %}'.replace('PLACEHOLDER', currentSessionId);
-            try {
-                await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
-            } catch (e) {
-                console.error('Failed to abort:', e);
-            }
-        }
-
-        // Load sessions
-        async function loadSessions() {
-            const loading = document.getElementById('sessions-loading');
-            const empty = document.getElementById('sessions-empty');
-            const table = document.getElementById('sessions-table');
-            const tbody = document.getElementById('sessions-tbody');
-
-            loading.classList.remove('hidden');
-            empty.classList.add('hidden');
-            table.classList.add('hidden');
-
-            try {
-                const params = new URLSearchParams();
-                if (stressTenant) params.set('tenant_id', stressTenant);
-                if (stressCamera) params.set('camera_id', stressCamera);
-
-                const resp = await fetch(`{% url "camera_evaluation:api_stress_test_sessions" %}?${params}`);
-                const result = await resp.json();
-
-                loading.classList.add('hidden');
-
-                if (result.status !== 'success') {
-                    throw new Error(result.message);
-                }
-
-                const sessions = result.data.sessions;
-
-                if (sessions.length === 0) {
-                    empty.classList.remove('hidden');
-                    return;
-                }
-
-                tbody.innerHTML = sessions.map(s => `
-                    <tr>
-                        <td>${new Date(s.created_at).toLocaleString()}</td>
-                        <td>${s.tenant_id || '--'}</td>
-                        <td>${s.camera_name}</td>
-                        <td>${s.config?.test_type || '--'}</td>
-                        <td><span class="status-badge ${s.status}">${s.status}</span></td>
-                        <td>${s.result ? (s.result.success ? 'Pass' : 'Fail') : '--'}</td>
-                        <td><span class="eval-badge ${s.user_evaluation}">${formatEvaluation(s.user_evaluation)}</span></td>
-                        <td class="actions">
-                            <button class="btn btn-sm btn-primary" onclick="viewSession('${s.id}')">View</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteSession('${s.id}')">Delete</button>
-                        </td>
-                    </tr>
-                `).join('');
-
-                table.classList.remove('hidden');
-            } catch (e) {
-                console.error('Failed to load sessions:', e);
-                loading.classList.add('hidden');
-                empty.textContent = 'Failed to load sessions: ' + e.message;
-                empty.classList.remove('hidden');
-            }
-        }
-
-        function formatEvaluation(value) {
-            const map = {
-                good: 'Good',
-                needs_improvement: 'Needs Work',
-                bad: 'Bad',
-                not_evaluated: 'Not Rated',
-            };
-            return map[value] || value;
-        }
-
-        async function viewSession(sessionId) {
-            currentSessionId = sessionId;
-            const url = '{% url "camera_evaluation:api_stress_test_session_detail" "PLACEHOLDER" %}'.replace('PLACEHOLDER', sessionId);
-            try {
-                const resp = await fetch(url);
-                const result = await resp.json();
-                if (result.status === 'success') {
-                    showTestResults(result.data.session);
-                    testResultsPanel.scrollIntoView({ behavior: 'smooth' });
-                }
-            } catch (e) {
-                alert('Failed to load session: ' + e.message);
-            }
-        }
-
-        async function deleteSession(sessionId) {
-            if (!confirm('Are you sure you want to delete this session?')) return;
-
-            const url = '{% url "camera_evaluation:api_stress_test_delete" "PLACEHOLDER" %}'.replace('PLACEHOLDER', sessionId);
-            try {
-                const resp = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
-                const result = await resp.json();
-                if (result.status === 'success') {
-                    loadSessions();
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (e) {
-                alert('Failed to delete session: ' + e.message);
-            }
-        }
+        // Note: Stress test functions have been moved to camera_diagnostic app
 
         // =====================================================================
-        // SURVEY TAB FUNCTIONS
+        // SURVEY FUNCTIONS
         // =====================================================================
 
         // Load survey presets
@@ -1797,6 +1140,141 @@
             surveyStartInput.value = preset.start;
             surveyEndInput.value = preset.end;
             surveyStepInput.value = preset.step;
+            validateSurveyInputs();
+        }
+
+        // Fetch camera capabilities from API
+        async function fetchCameraCapabilities() {
+            if (!surveyTenant || !surveyCamera) return;
+
+            try {
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_capabilities" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    surveyCameraCapabilities = result.data.capabilities;
+                    updateSurveyHelperText();
+                    validateSurveyInputs();
+                } else {
+                    console.error('Failed to fetch capabilities:', result.message);
+                    surveyCameraCapabilities = null;
+                    updateSurveyHelperText();
+                }
+            } catch (e) {
+                console.error('Failed to fetch camera capabilities:', e);
+                surveyCameraCapabilities = null;
+                updateSurveyHelperText();
+            }
+        }
+
+        // Fetch current camera position from API
+        async function fetchCurrentPosition() {
+            if (!surveyTenant || !surveyCamera) return;
+
+            try {
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    surveyCurrentPosition = result.data;
+                    updateCurrentPositionDisplay();
+                } else {
+                    console.error('Failed to fetch position:', result.message);
+                    surveyCurrentPosition = null;
+                    updateCurrentPositionDisplay();
+                }
+            } catch (e) {
+                console.error('Failed to fetch camera position:', e);
+                surveyCurrentPosition = null;
+                updateCurrentPositionDisplay();
+            }
+        }
+
+        // Update helper text based on selected axis and camera capabilities
+        function updateSurveyHelperText() {
+            const axis = document.querySelector('input[name="survey-axis"]:checked').value;
+            const limits = surveyCameraCapabilities?.[axis];
+
+            if (limits) {
+                const unit = axis === 'zoom' ? 'x' : '\u00B0';
+                surveyStartHelper.textContent = `Min: ${limits.min}${unit} / Max: ${limits.max}${unit}`;
+                surveyEndHelper.textContent = `Min: ${limits.min}${unit} / Max: ${limits.max}${unit}`;
+            } else {
+                surveyStartHelper.textContent = '';
+                surveyEndHelper.textContent = '';
+            }
+
+            const minStep = surveyCameraCapabilities?.min_step || 0.1;
+            surveyStepHelper.textContent = `Minimum step: ${minStep}\u00B0`;
+        }
+
+        // Update current position display
+        function updateCurrentPositionDisplay() {
+            if (surveyCurrentPosition) {
+                surveyCurrentPositionDisplay.classList.remove('hidden');
+                surveyCurrentPan.textContent = surveyCurrentPosition.pan != null ? surveyCurrentPosition.pan.toFixed(1) + '\u00B0' : '-';
+                surveyCurrentTilt.textContent = surveyCurrentPosition.tilt != null ? surveyCurrentPosition.tilt.toFixed(1) + '\u00B0' : '-';
+                surveyCurrentZoom.textContent = surveyCurrentPosition.zoom != null ? surveyCurrentPosition.zoom.toFixed(1) + 'x' : '-';
+            } else {
+                surveyCurrentPositionDisplay.classList.add('hidden');
+            }
+        }
+
+        // Validate survey input fields
+        function validateSurveyInputs() {
+            const axis = document.querySelector('input[name="survey-axis"]:checked').value;
+            const limits = surveyCameraCapabilities?.[axis];
+            const minStep = surveyCameraCapabilities?.min_step || 0.1;
+
+            const startValue = parseFloat(surveyStartInput.value);
+            const endValue = parseFloat(surveyEndInput.value);
+            const stepValue = parseFloat(surveyStepInput.value);
+
+            let isValid = true;
+            const unit = axis === 'zoom' ? 'x' : '\u00B0';
+
+            // Validate Start
+            if (limits && (startValue < limits.min || startValue > limits.max)) {
+                surveyStartInput.classList.add('error');
+                surveyStartError.textContent = `Start must be between ${limits.min}${unit} and ${limits.max}${unit}`;
+                surveyStartError.style.display = 'block';
+                isValid = false;
+            } else {
+                surveyStartInput.classList.remove('error');
+                surveyStartError.style.display = 'none';
+            }
+
+            // Validate End
+            if (limits && (endValue < limits.min || endValue > limits.max)) {
+                surveyEndInput.classList.add('error');
+                surveyEndError.textContent = `End must be between ${limits.min}${unit} and ${limits.max}${unit}`;
+                surveyEndError.style.display = 'block';
+                isValid = false;
+            } else {
+                surveyEndInput.classList.remove('error');
+                surveyEndError.style.display = 'none';
+            }
+
+            // Validate Step
+            if (stepValue < minStep) {
+                surveyStepInput.classList.add('error');
+                surveyStepError.textContent = `Step must be at least ${minStep}\u00B0`;
+                surveyStepError.style.display = 'block';
+                isValid = false;
+            } else if (stepValue <= 0) {
+                surveyStepInput.classList.add('error');
+                surveyStepError.textContent = 'Step must be greater than 0';
+                surveyStepError.style.display = 'block';
+                isValid = false;
+            } else {
+                surveyStepInput.classList.remove('error');
+                surveyStepError.style.display = 'none';
+            }
+
+            // Control submit button
+            surveyStartBtn.disabled = !isValid || !surveyCamera;
+
+            return isValid;
         }
 
         // Load survey sessions list
@@ -1919,6 +1397,12 @@
                 return;
             }
 
+            // Run validation before starting
+            if (!validateSurveyInputs()) {
+                alert('Please correct input errors before starting survey');
+                return;
+            }
+
             const axis = document.querySelector('input[name="survey-axis"]:checked').value;
             const start = parseFloat(surveyStartInput.value);
             const end = parseFloat(surveyEndInput.value);
@@ -1926,6 +1410,7 @@
             const retryTimeout = parseInt(surveyTimeoutInput.value);
             const tags = surveyTagsInput.value.split(',').map(t => t.trim()).filter(t => t);
 
+            // Fallback validation (in case capabilities weren't fetched)
             if (step <= 0) {
                 alert('Step must be greater than 0');
                 return;
@@ -2068,18 +1553,21 @@
             surveyCamera = null;
             surveyCameraData = null;
             surveyCameras = [];
+            surveyCameraCapabilities = null;
+            surveyCurrentPosition = null;
             surveyCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
             surveyCameraSelect.disabled = true;
             surveyCameraInfo.classList.add('hidden');
             surveyConfigPanel.classList.add('hidden');
             surveyControlPanel.classList.add('hidden');
+            updateCurrentPositionDisplay();
 
             if (surveyTenant) {
-                await loadCameras(surveyTenant, 'survey');
+                await loadCameras(surveyTenant);
             }
         });
 
-        surveyCameraSelect.addEventListener('change', (e) => {
+        surveyCameraSelect.addEventListener('change', async (e) => {
             surveyCamera = e.target.value;
             surveyCameraData = surveyCameras.find(c => c.id === surveyCamera);
 
@@ -2089,16 +1577,29 @@
                 surveyCameraModel.textContent = surveyCameraData.model || 'Unknown';
                 surveyConfigPanel.classList.remove('hidden');
                 surveyControlPanel.classList.remove('hidden');
+
+                // Fetch camera capabilities and current position
+                await Promise.all([
+                    fetchCameraCapabilities(),
+                    fetchCurrentPosition()
+                ]);
             } else {
                 surveyCameraInfo.classList.add('hidden');
                 surveyConfigPanel.classList.add('hidden');
                 surveyControlPanel.classList.add('hidden');
+                surveyCameraCapabilities = null;
+                surveyCurrentPosition = null;
+                updateCurrentPositionDisplay();
             }
         });
 
-        // Survey axis change listener
+        // Survey axis change listener - update helper text and validate
         document.querySelectorAll('input[name="survey-axis"]').forEach(radio => {
-            radio.addEventListener('change', renderSurveyPresetButtons);
+            radio.addEventListener('change', () => {
+                renderSurveyPresetButtons();
+                updateSurveyHelperText();
+                validateSurveyInputs();
+            });
         });
 
         // Survey control listeners
@@ -2106,56 +1607,18 @@
         surveyAbortBtn.addEventListener('click', abortSurvey);
         surveyCloseDetailBtn.addEventListener('click', () => surveySessionDetail.classList.add('hidden'));
 
-        // Event listeners - Stress testing tab
-        stressTenantSelect.addEventListener('change', async (e) => {
-            stressTenant = e.target.value;
-            stressCamera = null;
-            stressCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
-            stressCameraSelect.disabled = true;
-            showVideoStream(null, 'stress');
-            testConfigPanel.classList.add('hidden');
-            testControlPanel.classList.add('hidden');
+// Input validation on blur and input events
+        surveyStartInput.addEventListener('blur', validateSurveyInputs);
+        surveyEndInput.addEventListener('blur', validateSurveyInputs);
+        surveyStepInput.addEventListener('blur', validateSurveyInputs);
+        surveyStartInput.addEventListener('input', validateSurveyInputs);
+        surveyEndInput.addEventListener('input', validateSurveyInputs);
+        surveyStepInput.addEventListener('input', validateSurveyInputs);
 
-            if (stressTenant) {
-                await loadCameras(stressTenant, 'stress');
-            }
-            loadSessions();
-        });
-
-        stressCameraSelect.addEventListener('change', (e) => {
-            stressCamera = e.target.value;
-            showVideoStream(stressCamera, 'stress');
-
-            if (stressCamera) {
-                testConfigPanel.classList.remove('hidden');
-                testControlPanel.classList.remove('hidden');
-            } else {
-                testConfigPanel.classList.add('hidden');
-                testControlPanel.classList.add('hidden');
-            }
-            loadSessions();
-        });
-
-        // Axis toggle listeners
-        document.getElementById('pan-enabled').addEventListener('change', (e) => togglePanInputs(e.target.checked));
-        document.getElementById('tilt-enabled').addEventListener('change', (e) => toggleTiltInputs(e.target.checked));
-        document.getElementById('pan-random-steps').addEventListener('change', (e) => togglePanRandomSteps(e.target.checked));
-        document.getElementById('tilt-random-steps').addEventListener('change', (e) => toggleTiltRandomSteps(e.target.checked));
-
-        // Test control listeners
-        startTestBtn.addEventListener('click', startStressTest);
-        abortTestBtn.addEventListener('click', abortTest);
-
-        // Evaluation listeners
-        document.getElementById('eval-good-btn').addEventListener('click', () => selectEvaluation('good'));
-        document.getElementById('eval-needs-improvement-btn').addEventListener('click', () => selectEvaluation('needs_improvement'));
-        document.getElementById('eval-bad-btn').addEventListener('click', () => selectEvaluation('bad'));
-        document.getElementById('save-eval-btn').addEventListener('click', saveEvaluation);
+        // Note: Stress testing functionality has been moved to Camera Diagnostic Tool
 
         // Initialize
         loadTenants();
-        loadPresets();
-        loadSessions();
         loadSurveyPresets();
         loadSurveySessions();
     </script>

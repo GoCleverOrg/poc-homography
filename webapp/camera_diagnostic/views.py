@@ -5,16 +5,21 @@ This module contains thin HTTP request handlers that delegate business logic to 
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
+import uuid
+from datetime import datetime, timezone
 
 import cv2
 import requests
+from camera_survey.ptz import create_ptz_camera
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_GET
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
 from poc_homography.camera_config import (
@@ -23,14 +28,29 @@ from poc_homography.camera_config import (
     get_camera_configs,
     get_cameras_for_tenant,
     get_rtsp_url,
+    get_tenant_by_id,
+    get_tenant_credentials,
     get_tenants,
 )
 
+from .models import (
+    STRESS_TEST_PRESETS,
+    AxisMovementConfig,
+    CameraDiagnosticResult,
+    DiagnosticSession,
+    DiagnosticSessionStatus,
+    DiagnosticTestResult,
+    DiagnosticTestStatus,
+    StressTestConfig,
+    StressTestType,
+    UserEvaluation,
+)
 from .services import (
     PTZ_MOVEMENT_DURATION,
     PTZ_MOVEMENT_SPEED,
     WEBUI_CONNECTION_TIMEOUT_SEC,
     CameraErrorCategory,
+    CameraStressTestService,
     _sanitize_camera_name,
     attempt_login,
     check_login_success,
@@ -38,11 +58,15 @@ from .services import (
     classify_rtsp_error,
     classify_webui_error,
     create_rtsp_capture,
+    delete_diagnostic_session,
     detect_ptz_controls,
     execute_movement_test,
     generate_mjpeg_frames,
     get_presets_list,
     get_screenshot_path,
+    list_diagnostic_sessions,
+    load_diagnostic_session,
+    save_diagnostic_session,
     wait_for_stabilization,
 )
 
@@ -104,13 +128,16 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
             f"No IP address configured for camera: {camera_name}",
         )
 
-    username = os.getenv("CAMERA_USERNAME")
-    password = os.getenv("CAMERA_PASSWORD")
+    # Get tenant-specific credentials (falls back to global)
+    tenant_id = camera.get("tenant_id")
+    username, password = get_tenant_credentials(tenant_id)
 
     if not username or not password:
         return _error_response(
             CameraErrorCategory.CREDENTIALS_NOT_SET,
-            "Camera credentials not set. Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
+            f"Camera credentials not set for tenant '{tenant_id}'. "
+            f"Set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD, "
+            "or global CAMERA_USERNAME/CAMERA_PASSWORD as fallback.",
         )
 
     return (camera, camera_ip, username, password)
@@ -625,3 +652,824 @@ def api_test_ptz(request: HttpRequest, camera_name: str) -> JsonResponse:
                 response_data["restore_error"] = str(e)
 
     return _success_response(response_data)
+
+
+# =============================================================================
+# Diagnostic Session API Endpoints
+# =============================================================================
+
+
+@csrf_exempt
+@require_POST
+def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
+    """Run diagnostic tests on all cameras for a tenant and save results.
+
+    POST body:
+        tenant_id: Tenant ID to run diagnostics for
+        camera_ids: Optional list of specific camera IDs (if not provided, all cameras)
+
+    Returns:
+        JsonResponse with session info and results
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "Invalid JSON request body",
+            status_code=400,
+        )
+
+    tenant_id = data.get("tenant_id")
+    if not tenant_id:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "tenant_id is required",
+            status_code=400,
+        )
+
+    tenant = get_tenant_by_id(tenant_id)
+    if not tenant:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Tenant not found: {tenant_id}",
+            status_code=404,
+        )
+
+    # Get cameras to test
+    camera_ids = data.get("camera_ids")
+    if camera_ids:
+        cameras = [get_camera_by_id(cid) for cid in camera_ids]
+        cameras = [c for c in cameras if c is not None]
+    else:
+        cameras = get_cameras_for_tenant(tenant_id)
+
+    if not cameras:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            "No cameras found for tenant",
+            status_code=404,
+        )
+
+    # Get tenant-specific credentials (falls back to global)
+    username, password = get_tenant_credentials(tenant_id)
+
+    if not username or not password:
+        return _error_response(
+            CameraErrorCategory.CREDENTIALS_NOT_SET,
+            f"Camera credentials not set for tenant '{tenant_id}'. "
+            f"Set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD, "
+            "or global CAMERA_USERNAME/CAMERA_PASSWORD as fallback.",
+        )
+
+    # Create session
+    session = DiagnosticSession(
+        id=str(uuid.uuid4()),
+        created_at=datetime.now(timezone.utc),
+        status=DiagnosticSessionStatus.RUNNING,
+        tenant_id=tenant_id,
+        tenant_name=tenant.get("name", tenant_id),
+    )
+
+    # Run tests for each camera
+    for camera in cameras:
+        camera_id = camera.get("id")
+        camera_name = camera.get("name", camera_id)
+        camera_ip = camera.get("ip")
+
+        camera_result = CameraDiagnosticResult(
+            camera_id=camera_id,
+            camera_name=camera_name,
+            camera_ip=camera_ip or "",
+        )
+
+        # Get device info if possible
+        if camera_ip:
+            try:
+                ptz_camera = create_ptz_camera(camera_ip, camera_name, tenant_id=tenant_id)
+                camera_result.device_info = ptz_camera.get_device_info()
+            except Exception as e:
+                logger.warning(f"Could not get device info for {camera_name}: {e}")
+
+        # Run RTSP test
+        camera_result.rtsp_test = _run_rtsp_test(camera_id)
+
+        # Run WebUI test
+        camera_result.webui_test = _run_webui_test(camera_name, camera_ip, username, password)
+
+        # Run PTZ test
+        camera_result.ptz_test = _run_ptz_test(camera_name, camera_ip, username, password)
+
+        session.camera_results.append(camera_result)
+
+    # Complete session
+    session.status = DiagnosticSessionStatus.COMPLETED
+    session.completed_at = datetime.now(timezone.utc)
+
+    # Save session
+    save_diagnostic_session(session)
+
+    return _success_response({
+        "session_id": session.id,
+        "status": session.status.value,
+        "summary": session.get_summary(),
+        "camera_results": [r.to_dict() for r in session.camera_results],
+    })
+
+
+def _run_rtsp_test(camera_id: str) -> DiagnosticTestResult:
+    """Run RTSP test for a camera."""
+    result = DiagnosticTestResult(test_type="rtsp")
+
+    try:
+        rtsp_url = get_rtsp_url(camera_id)
+        if not rtsp_url:
+            result.status = DiagnosticTestStatus.FAIL
+            result.error_message = f"No RTSP URL for camera: {camera_id}"
+            result.error_category = CameraErrorCategory.CAMERA_NOT_FOUND.value
+            return result
+
+        start_time = time.time()
+        cap = create_rtsp_capture(rtsp_url)
+
+        try:
+            if not cap.isOpened():
+                result.status = DiagnosticTestStatus.FAIL
+                result.error_message = "Failed to connect to RTSP stream"
+                result.error_category = CameraErrorCategory.CAMERA_OFFLINE.value
+                return result
+
+            latency_ms = (time.time() - start_time) * 1000
+            result.response_time_ms = round(latency_ms, 2)
+
+            # Get stream properties
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+
+            # Try to read a frame
+            ret, _ = cap.read()
+            if not ret:
+                result.status = DiagnosticTestStatus.FAIL
+                result.error_message = "Connected but failed to read frame"
+                result.error_category = CameraErrorCategory.INVALID_RESPONSE.value
+                return result
+
+            result.status = DiagnosticTestStatus.PASS
+            result.details = {
+                "resolution": {"width": width, "height": height},
+                "fps": fps if fps > 0 else None,
+            }
+
+        finally:
+            cap.release()
+
+    except Exception as e:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = str(e)
+        result.error_category = classify_rtsp_error(e).value
+
+    return result
+
+
+def _run_webui_test(
+    camera_name: str,
+    camera_ip: str | None,
+    username: str,
+    password: str,
+) -> DiagnosticTestResult:
+    """Run WebUI test for a camera."""
+    result = DiagnosticTestResult(test_type="webui")
+
+    if not camera_ip:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = "No IP address for camera"
+        result.error_category = CameraErrorCategory.INVALID_RESPONSE.value
+        return result
+
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = "Playwright not installed"
+        result.error_category = CameraErrorCategory.INVALID_RESPONSE.value
+        return result
+
+    browser = None
+    try:
+        with sync_playwright() as p:
+            headless = getattr(settings, "CAMERA_DIAGNOSTIC_BROWSER_HEADLESS", False)
+            browser = p.chromium.launch(headless=headless)
+            context = browser.new_context(
+                ignore_https_errors=True,
+                viewport={"width": 1280, "height": 720},
+            )
+            page = context.new_page()
+            page.set_default_timeout(WEBUI_CONNECTION_TIMEOUT_SEC * 1000)
+
+            start_time = time.time()
+
+            try:
+                page.goto(
+                    f"http://{camera_ip}",
+                    timeout=WEBUI_CONNECTION_TIMEOUT_SEC * 1000,
+                    wait_until="networkidle",
+                )
+            except PlaywrightTimeout:
+                result.status = DiagnosticTestStatus.FAIL
+                result.error_message = "Connection timeout"
+                result.error_category = CameraErrorCategory.TIMEOUT.value
+                return result
+
+            result.response_time_ms = round((time.time() - start_time) * 1000, 2)
+
+            # Attempt login
+            login_attempted = attempt_login(page, username, password)
+
+            if login_attempted:
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except PlaywrightTimeout:
+                    pass
+
+                from .services import dismiss_hikvision_warning_dialog
+                try:
+                    dismiss_hikvision_warning_dialog(page)
+                except Exception:
+                    pass
+
+            login_success = check_login_success(page) if login_attempted else False
+
+            # Detect PTZ controls
+            ptz_controls = detect_ptz_controls(page)
+
+            result.status = DiagnosticTestStatus.PASS if login_success else DiagnosticTestStatus.FAIL
+            result.details = {
+                "login_attempted": login_attempted,
+                "login_success": login_success,
+                "ptz_controls_found": len(ptz_controls),
+            }
+
+            if not login_success and login_attempted:
+                from .services import get_login_error_message
+                login_error = get_login_error_message(page)
+                if login_error:
+                    result.error_message = login_error
+
+            browser.close()
+            browser = None
+
+    except Exception as e:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = str(e)
+        result.error_category = classify_webui_error(e).value
+
+    finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
+
+    return result
+
+
+def _run_ptz_test(
+    camera_name: str,
+    camera_ip: str | None,
+    username: str,
+    password: str,
+) -> DiagnosticTestResult:
+    """Run PTZ API test for a camera."""
+    result = DiagnosticTestResult(test_type="ptz")
+
+    if not camera_ip:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = "No IP address for camera"
+        result.error_category = CameraErrorCategory.INVALID_RESPONSE.value
+        return result
+
+    ptz = HikvisionPTZ(ip=camera_ip, username=username, password=password, name=camera_name)
+    initial_status = None
+
+    try:
+        start_time = time.time()
+        initial_status = ptz.get_status()
+        result.response_time_ms = round((time.time() - start_time) * 1000, 2)
+
+        if not initial_status:
+            result.status = DiagnosticTestStatus.FAIL
+            result.error_message = "Failed to get PTZ status"
+            result.error_category = CameraErrorCategory.API_ERROR.value
+            return result
+
+        # Run movement tests
+        tests_passed = 0
+        tests_failed = 0
+        movement_tests = [
+            ("pan_left", -PTZ_MOVEMENT_SPEED, 0, 0),
+            ("pan_right", PTZ_MOVEMENT_SPEED, 0, 0),
+            ("tilt_up", 0, PTZ_MOVEMENT_SPEED, 0),
+            ("tilt_down", 0, -PTZ_MOVEMENT_SPEED, 0),
+        ]
+
+        for test_name, pan, tilt, zoom in movement_tests:
+            test_result = execute_movement_test(
+                ptz, pan=pan, tilt=tilt, zoom=zoom, duration=PTZ_MOVEMENT_DURATION
+            )
+            if test_result.get("success"):
+                tests_passed += 1
+            else:
+                tests_failed += 1
+
+        # Get presets
+        presets_result = get_presets_list(camera_ip, username, password)
+
+        result.status = DiagnosticTestStatus.PASS if tests_failed == 0 else DiagnosticTestStatus.FAIL
+        result.details = {
+            "initial_position": {
+                "pan": initial_status.get("pan"),
+                "tilt": initial_status.get("tilt"),
+                "zoom": initial_status.get("zoom"),
+            },
+            "movement_tests_passed": tests_passed,
+            "movement_tests_failed": tests_failed,
+            "presets_count": presets_result.get("count", 0),
+        }
+
+    except requests.exceptions.Timeout:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = "Network timeout"
+        result.error_category = CameraErrorCategory.TIMEOUT.value
+    except Exception as e:
+        result.status = DiagnosticTestStatus.FAIL
+        result.error_message = str(e)
+        result.error_category = classify_ptz_error(e).value
+
+    finally:
+        # Restore original position
+        if initial_status:
+            try:
+                ptz.send_ptz_return(initial_status)
+                wait_for_stabilization(ptz)
+            except Exception as e:
+                logger.warning(f"Failed to restore PTZ position: {e}")
+
+    return result
+
+
+@require_GET
+def api_list_sessions(request: HttpRequest) -> JsonResponse:
+    """List diagnostic sessions.
+
+    Query params:
+        tenant_id: Optional tenant filter
+        limit: Max results (default 50)
+        offset: Pagination offset (default 0)
+
+    Returns:
+        JsonResponse with session list
+    """
+    tenant_id = request.GET.get("tenant_id")
+    limit = int(request.GET.get("limit", 50))
+    offset = int(request.GET.get("offset", 0))
+
+    sessions, total = list_diagnostic_sessions(
+        tenant_id=tenant_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return _success_response({
+        "sessions": [
+            {
+                "id": s.id,
+                "created_at": s.created_at.isoformat(),
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "status": s.status.value,
+                "tenant_id": s.tenant_id,
+                "tenant_name": s.tenant_name,
+                "summary": s.get_summary(),
+            }
+            for s in sessions
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
+@require_GET
+def api_get_session(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Get diagnostic session details.
+
+    Args:
+        session_id: Session UUID
+
+    Returns:
+        JsonResponse with full session data
+    """
+    session = load_diagnostic_session(session_id)
+    if not session:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Session not found: {session_id}",
+            status_code=404,
+        )
+
+    return _success_response(session.to_dict())
+
+
+@csrf_exempt
+@require_POST
+def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Delete a diagnostic session.
+
+    Args:
+        session_id: Session UUID to delete
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    success, error = delete_diagnostic_session(session_id)
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to delete session",
+            status_code=404 if "not found" in (error or "").lower() else 500,
+        )
+
+    return _success_response({"message": f"Session {session_id} deleted"})
+
+
+# =============================================================================
+# Stress Test API Endpoints
+# =============================================================================
+
+
+@require_GET
+def api_stress_test_presets(request: HttpRequest) -> JsonResponse:
+    """Get available stress test presets.
+
+    Returns:
+        JsonResponse with list of presets
+    """
+    return _success_response({
+        "presets": [preset.to_dict() for preset in STRESS_TEST_PRESETS]
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_start(request: HttpRequest) -> JsonResponse:
+    """Start a new stress test session.
+
+    POST body:
+        tenant_id: Tenant ID
+        camera_id: Camera ID
+        preset_name: Name of preset to use, OR
+        test_type: Custom test type with axis configs
+
+    Returns:
+        JsonResponse with session_id
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "Invalid JSON request body",
+            status_code=400,
+        )
+
+    tenant_id = data.get("tenant_id")
+    camera_id = data.get("camera_id")
+    preset_name = data.get("preset_name")
+
+    if not tenant_id or not camera_id:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "tenant_id and camera_id are required",
+            status_code=400,
+        )
+
+    # Build config from preset or custom settings
+    if preset_name:
+        # Find preset by name
+        preset = next(
+            (p for p in STRESS_TEST_PRESETS if p.name == preset_name),
+            None,
+        )
+        if not preset:
+            return _error_response(
+                CameraErrorCategory.INVALID_RESPONSE,
+                f"Preset not found: {preset_name}",
+                status_code=404,
+            )
+
+        config = StressTestConfig(
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            test_type=preset.test_type,
+            pan_config=preset.pan_config,
+            tilt_config=preset.tilt_config,
+            zoom_config=preset.zoom_config,
+            repetitions=preset.repetitions,
+            max_speed=preset.max_speed,
+        )
+    else:
+        # Custom config
+        test_type_str = data.get("test_type")
+        if not test_type_str:
+            return _error_response(
+                CameraErrorCategory.INVALID_RESPONSE,
+                "preset_name or test_type is required",
+                status_code=400,
+            )
+
+        try:
+            test_type = StressTestType(test_type_str)
+        except ValueError:
+            return _error_response(
+                CameraErrorCategory.INVALID_RESPONSE,
+                f"Invalid test_type: {test_type_str}",
+                status_code=400,
+            )
+
+        # Parse axis configs
+        pan_config = None
+        tilt_config = None
+        zoom_config = None
+
+        if data.get("pan_config"):
+            pan_config = AxisMovementConfig.from_dict(data["pan_config"])
+        if data.get("tilt_config"):
+            tilt_config = AxisMovementConfig.from_dict(data["tilt_config"])
+        if data.get("zoom_config"):
+            zoom_config = AxisMovementConfig.from_dict(data["zoom_config"])
+
+        config = StressTestConfig(
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            test_type=test_type,
+            pan_config=pan_config,
+            tilt_config=tilt_config,
+            zoom_config=zoom_config,
+            repetitions=data.get("repetitions", 1),
+            max_speed=data.get("max_speed", False),
+        )
+
+    # Start the stress test
+    session_id, error = CameraStressTestService.start_stress_test(config)
+
+    if error:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error,
+            status_code=500,
+        )
+
+    return _success_response({
+        "session_id": session_id,
+        "message": "Stress test started",
+    })
+
+
+@require_GET
+def api_stress_test_status(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Get current status/progress of a stress test.
+
+    Args:
+        session_id: Session UUID
+
+    Returns:
+        JsonResponse with progress info
+    """
+    progress = CameraStressTestService.get_stress_test_status(session_id)
+
+    if not progress:
+        # Try to get from completed session
+        session = CameraStressTestService.get_session(session_id)
+        if session:
+            return _success_response({
+                "session_id": session.id,
+                "status": session.status.value,
+                "current_repetition": session.config.repetitions if session.config else 0,
+                "total_repetitions": session.config.repetitions if session.config else 0,
+                "message": "Test completed" if session.status.value == "completed" else session.status.value,
+            })
+
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Session not found: {session_id}",
+            status_code=404,
+        )
+
+    return _success_response(progress.to_dict())
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_abort(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Abort a running stress test.
+
+    Args:
+        session_id: Session UUID to abort
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    success, error = CameraStressTestService.abort_stress_test(session_id)
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to abort test",
+            status_code=404 if "not found" in (error or "").lower() else 400,
+        )
+
+    return _success_response({"message": f"Stress test {session_id} abort requested"})
+
+
+@require_GET
+def api_stress_test_sessions(request: HttpRequest) -> JsonResponse:
+    """List stress test sessions.
+
+    Query params:
+        tenant_id: Optional tenant filter
+        camera_id: Optional camera filter
+        limit: Max results (default 50)
+        offset: Pagination offset (default 0)
+
+    Returns:
+        JsonResponse with session list
+    """
+    tenant_id = request.GET.get("tenant_id")
+    camera_id = request.GET.get("camera_id")
+    limit = int(request.GET.get("limit", 50))
+    offset = int(request.GET.get("offset", 0))
+
+    sessions, total = CameraStressTestService.list_stress_test_sessions(
+        tenant_id=tenant_id,
+        camera_id=camera_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return _success_response({
+        "sessions": [
+            {
+                "id": s.id,
+                "created_at": s.created_at.isoformat(),
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "status": s.status.value,
+                "tenant_id": s.tenant_id,
+                "camera_id": s.camera_id,
+                "camera_name": s.camera_name,
+                "test_type": s.config.test_type.value if s.config else None,
+                "user_evaluation": s.user_evaluation.value,
+                "result_success": s.result.success if s.result else None,
+            }
+            for s in sessions
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
+@require_GET
+def api_stress_test_session_detail(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Get detailed stress test session info.
+
+    Args:
+        session_id: Session UUID
+
+    Returns:
+        JsonResponse with full session data
+    """
+    session = CameraStressTestService.get_session(session_id)
+    if not session:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Session not found: {session_id}",
+            status_code=404,
+        )
+
+    return _success_response(session.to_dict())
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Submit user evaluation for a stress test session.
+
+    POST body:
+        evaluation: "good" | "needs_improvement" | "bad"
+        notes: Optional user notes
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "Invalid JSON request body",
+            status_code=400,
+        )
+
+    evaluation_str = data.get("evaluation")
+    notes = data.get("notes", "")
+
+    if not evaluation_str:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "evaluation is required",
+            status_code=400,
+        )
+
+    try:
+        evaluation = UserEvaluation(evaluation_str)
+    except ValueError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            f"Invalid evaluation value: {evaluation_str}",
+            status_code=400,
+        )
+
+    success, error = CameraStressTestService.update_user_evaluation(
+        session_id, evaluation, notes
+    )
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to update evaluation",
+            status_code=404 if "not found" in (error or "").lower() else 500,
+        )
+
+    return _success_response({
+        "message": "Evaluation saved",
+        "session_id": session_id,
+        "evaluation": evaluation.value,
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_stress_test_delete(request: HttpRequest, session_id: str) -> JsonResponse:
+    """Delete a stress test session.
+
+    Args:
+        session_id: Session UUID to delete
+
+    Returns:
+        JsonResponse with success/error status
+    """
+    success, error = CameraStressTestService.delete_stress_test_session(session_id)
+
+    if not success:
+        return _error_response(
+            CameraErrorCategory.API_ERROR,
+            error or "Failed to delete session",
+            status_code=404 if "not found" in (error or "").lower() else 500,
+        )
+
+    return _success_response({"message": f"Stress test session {session_id} deleted"})
+
+
+@require_GET
+def api_stress_video_stream(
+    request: HttpRequest, camera_id: str
+) -> StreamingHttpResponse | JsonResponse:
+    """Stream MJPEG video from a camera during stress testing.
+
+    Args:
+        request: HTTP request
+        camera_id: Camera ID to stream
+
+    Returns:
+        StreamingHttpResponse with MJPEG content type
+    """
+    # For stress testing, we use camera_id directly (not camera_name)
+    camera = get_camera_by_id(camera_id)
+    if not camera:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Camera not found: {camera_id}",
+            status_code=404,
+        )
+
+    camera_name = camera.get("name", camera_id)
+
+    response = StreamingHttpResponse(
+        generate_mjpeg_frames(camera_name), content_type="multipart/x-mixed-replace; boundary=frame"
+    )
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response

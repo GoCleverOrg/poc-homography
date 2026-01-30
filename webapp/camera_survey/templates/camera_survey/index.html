@@ -612,6 +612,28 @@
                 </label>
             </div>
 
+            <!-- Fixed axis values (for non-swept axes) -->
+            <div id="fixed-axis-container" style="margin-top: 12px;">
+                <div class="form-row" id="fixed-pan-group" style="display: none;">
+                    <div class="form-group">
+                        <label for="fixed-pan-input">Pan (fixed)</label>
+                        <input type="number" id="fixed-pan-input" step="0.1" placeholder="Current position">
+                    </div>
+                </div>
+                <div class="form-row" id="fixed-tilt-group" style="display: none;">
+                    <div class="form-group">
+                        <label for="fixed-tilt-input">Tilt (fixed)</label>
+                        <input type="number" id="fixed-tilt-input" step="0.1" placeholder="Current position">
+                    </div>
+                </div>
+                <div class="form-row" id="fixed-zoom-group" style="display: none;">
+                    <div class="form-group">
+                        <label for="fixed-zoom-input">Zoom (fixed)</label>
+                        <input type="number" id="fixed-zoom-input" step="1" placeholder="Current position">
+                    </div>
+                </div>
+            </div>
+
             <label>Presets</label>
             <div id="preset-buttons" class="preset-buttons">
                 <!-- Presets will be loaded here -->
@@ -779,6 +801,12 @@
         const timeoutInput = document.getElementById('timeout-input');
         const tagsInput = document.getElementById('tags-input');
         const restorePtz = document.getElementById('restore-ptz');
+        const fixedPanInput = document.getElementById('fixed-pan-input');
+        const fixedTiltInput = document.getElementById('fixed-tilt-input');
+        const fixedZoomInput = document.getElementById('fixed-zoom-input');
+        const fixedPanGroup = document.getElementById('fixed-pan-group');
+        const fixedTiltGroup = document.getElementById('fixed-tilt-group');
+        const fixedZoomGroup = document.getElementById('fixed-zoom-group');
         const startBtn = document.getElementById('start-btn');
         const abortBtn = document.getElementById('abort-btn');
         const progressContainer = document.getElementById('progress-container');
@@ -811,6 +839,7 @@
         const API_START = '{% url "camera_survey:api_start_survey" %}';
         const API_PRESETS = '{% url "camera_survey:api_presets" %}';
         const API_SESSIONS = '{% url "camera_survey:api_sessions_list" %}';
+        const API_PTZ_STATUS = '{% url "camera_survey:api_ptz_status" %}';
 
         // CSRF token helper for Django CSRF protection
         function getCsrfToken() {
@@ -876,6 +905,41 @@
                 renderPresetButtons();
             } catch (e) {
                 console.error('Failed to load presets:', e);
+            }
+        }
+
+        // Update fixed axis input visibility based on selected axis
+        function updateFixedAxisVisibility() {
+            const selectedAxis = document.querySelector('input[name="axis"]:checked').value;
+
+            // Show/hide based on which axis is being swept
+            // When sweeping Pan: show Tilt (fixed) and Zoom (fixed)
+            // When sweeping Tilt: show Pan (fixed) and Zoom (fixed)
+            // When sweeping Zoom: show Pan (fixed) and Tilt (fixed)
+            fixedPanGroup.style.display = (selectedAxis === 'pan') ? 'none' : 'block';
+            fixedTiltGroup.style.display = (selectedAxis === 'tilt') ? 'none' : 'block';
+            fixedZoomGroup.style.display = (selectedAxis === 'zoom') ? 'none' : 'block';
+        }
+
+        // Fetch current PTZ position and populate fixed axis inputs
+        async function fetchAndPopulatePtzPosition() {
+            if (!selectedTenant || !selectedCamera) return;
+
+            try {
+                const resp = await fetch(`${API_PTZ_STATUS}?camera_id=${encodeURIComponent(selectedCamera)}&tenant_id=${encodeURIComponent(selectedTenant)}`);
+                const result = await resp.json();
+
+                if (result.status !== 'success') {
+                    console.warn('Failed to fetch PTZ position:', result.message);
+                    return;
+                }
+
+                const ptz = result.data.ptz;
+                fixedPanInput.value = ptz.pan?.toFixed(1) || '';
+                fixedTiltInput.value = ptz.tilt?.toFixed(1) || '';
+                fixedZoomInput.value = ptz.zoom?.toFixed(1) || '';
+            } catch (e) {
+                console.warn('Error fetching PTZ position:', e);
             }
         }
 
@@ -1010,6 +1074,9 @@
                         restore_ptz: restorePtz.checked,
                         retry_timeout: retryTimeout,
                         session_tags: tags,
+                        fixed_pan: fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
+                        fixed_tilt: fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
+                        fixed_zoom: fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
                     }),
                 });
 
@@ -1198,6 +1265,8 @@
                 cameraIp.textContent = selectedCameraData.ip;
                 cameraModel.textContent = selectedCameraData.model || 'Unknown';
                 startBtn.disabled = false;
+                // Fetch current PTZ position for fixed axis defaults
+                fetchAndPopulatePtzPosition();
             } else {
                 cameraInfo.style.display = 'none';
                 startBtn.disabled = true;
@@ -1205,7 +1274,10 @@
         });
 
         document.querySelectorAll('input[name="axis"]').forEach(radio => {
-            radio.addEventListener('change', renderPresetButtons);
+            radio.addEventListener('change', () => {
+                renderPresetButtons();
+                updateFixedAxisVisibility();
+            });
         });
 
         startBtn.addEventListener('click', startSurvey);
@@ -1222,6 +1294,7 @@
         loadTenants();
         loadPresets();
         loadSessions();
+        updateFixedAxisVisibility();
     </script>
 </body>
 </html>

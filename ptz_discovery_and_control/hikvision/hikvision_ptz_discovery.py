@@ -103,6 +103,130 @@ class HikvisionPTZ:
             print(f"Response: {response}")
             return None
 
+    def get_device_info(self) -> dict[str, str | None] | None:
+        """Get device information (model, serial, MAC, firmware).
+
+        Returns:
+            Dictionary with device info, or None if failed:
+            {
+                "model": "DS-2DF8425IX-AEL",
+                "serial_number": "DS-2DF8425IX-AEL20190101AAWRG12345678",
+                "mac_address": "44:19:B6:XX:XX:XX",
+                "firmware_version": "V5.7.2",
+                "device_name": "Camera 1",
+                "device_type": "IPDome",
+                "raw_xml": "<DeviceInfo>...</DeviceInfo>"
+            }
+        """
+        endpoint = "/ISAPI/System/deviceInfo"
+        status_code, response = self._make_request("GET", endpoint)
+
+        if status_code == 200:
+            try:
+                root = ET.fromstring(response)
+                # Handle namespace - Hikvision uses xmlns
+                ns = {"h": "http://www.hikvision.com/ver20/XMLSchema"}
+
+                def get_text(xpath: str) -> str | None:
+                    """Get text from element, trying with and without namespace."""
+                    elem = root.find(f".//h:{xpath}", ns)
+                    if elem is None:
+                        elem = root.find(f".//{xpath}")
+                    return elem.text if elem is not None else None
+
+                return {
+                    "model": get_text("model"),
+                    "serial_number": get_text("serialNumber"),
+                    "mac_address": get_text("macAddress"),
+                    "firmware_version": get_text("firmwareVersion"),
+                    "device_name": get_text("deviceName"),
+                    "device_type": get_text("deviceType"),
+                    "raw_xml": response,
+                }
+            except Exception as e:
+                print(f"Error parsing device info: {e}")
+                print(f"Response: {response}")
+                return None
+        else:
+            print(f"Failed to get device info. Status code: {status_code}")
+            print(f"Response: {response}")
+            return None
+
+    def get_capabilities(self) -> dict[str, dict[str, float | None]] | None:
+        """Get PTZ capabilities (axis ranges) from camera.
+
+        Queries /ISAPI/PTZCtrl/channels/1/capabilities endpoint to get
+        the supported pan, tilt, and zoom ranges.
+
+        Returns:
+            Dictionary with axis ranges, or None if failed:
+            {
+                "pan": {"min": 0.0, "max": 360.0},
+                "tilt": {"min": -15.0, "max": 90.0},
+                "zoom": {"min": 1.0, "max": 25.0},
+            }
+
+            Values are in degrees for pan/tilt and zoom factor for zoom.
+            Raw camera values are divided by 10.
+        """
+        endpoint = "/ISAPI/PTZCtrl/channels/1/capabilities"
+        status_code, response = self._make_request("GET", endpoint)
+
+        if status_code == 200:
+            try:
+                root = ET.fromstring(response)
+                # Handle namespace - Hikvision uses xmlns
+                ns = {"h": "http://www.hikvision.com/ver20/XMLSchema"}
+
+                def find_range(element_name: str) -> tuple[float | None, float | None]:
+                    """Find Min/Max values for a range element."""
+                    # Try with namespace first
+                    elem = root.find(f".//h:{element_name}", ns)
+                    if elem is None:
+                        elem = root.find(f".//{element_name}")
+                    if elem is None:
+                        return None, None
+
+                    min_elem = elem.find("h:Min", ns)
+                    if min_elem is None:
+                        min_elem = elem.find("Min")
+
+                    max_elem = elem.find("h:Max", ns)
+                    if max_elem is None:
+                        max_elem = elem.find("Max")
+
+                    min_val = (
+                        float(min_elem.text) / 10
+                        if min_elem is not None and min_elem.text
+                        else None
+                    )
+                    max_val = (
+                        float(max_elem.text) / 10
+                        if max_elem is not None and max_elem.text
+                        else None
+                    )
+
+                    return min_val, max_val
+
+                # Extract ranges (XRange=pan, YRange=tilt, ZRange=zoom)
+                pan_min, pan_max = find_range("XRange")
+                tilt_min, tilt_max = find_range("YRange")
+                zoom_min, zoom_max = find_range("ZRange")
+
+                return {
+                    "pan": {"min": pan_min, "max": pan_max},
+                    "tilt": {"min": tilt_min, "max": tilt_max},
+                    "zoom": {"min": zoom_min, "max": zoom_max},
+                }
+            except Exception as e:
+                print(f"Error parsing capabilities: {e}")
+                print(f"Response: {response}")
+                return None
+        else:
+            print(f"Failed to get capabilities. Status code: {status_code}")
+            print(f"Response: {response}")
+            return None
+
     def discover_endpoints(self) -> dict[str, tuple[int, str]]:
         """Discover available PTZ endpoints"""
         endpoints_to_test = [

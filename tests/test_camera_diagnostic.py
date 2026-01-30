@@ -746,3 +746,612 @@ class TestCameraErrorCategory:
         """All category values should be unique."""
         values = [c.value for c in CameraErrorCategory]
         assert len(values) == len(set(values))
+
+
+# =============================================================================
+# Tests for Stress Test Models
+# =============================================================================
+
+from datetime import datetime, timezone
+
+from webapp.camera_diagnostic.models import (
+    AxisMovementConfig,
+    MovementTiming,
+    StressTestConfig,
+    StressTestPreset,
+    StressTestProgress,
+    StressTestResult,
+    StressTestSession,
+    StressTestStatus,
+    StressTestType,
+    UserEvaluation,
+    STRESS_TEST_PRESETS,
+)
+
+
+class TestStressTestType:
+    """Tests for the StressTestType enum."""
+
+    def test_all_types_exist(self):
+        """All expected test types should exist."""
+        expected = [
+            "OSCILLATION",
+            "RANDOM_STEP_ACCURACY",
+            "FULL_RANGE_SWEEP",
+            "TILT_STRESS",
+            "COMBINED_AXIS_LOAD",
+            "POSITION_REPEATABILITY",
+            "SPEED_TEST",
+        ]
+        for name in expected:
+            assert hasattr(StressTestType, name)
+
+    def test_type_values_are_strings(self):
+        """All type values should be lowercase strings."""
+        for test_type in StressTestType:
+            assert isinstance(test_type.value, str)
+            assert test_type.value.islower() or "_" in test_type.value
+
+
+class TestStressTestStatus:
+    """Tests for the StressTestStatus enum."""
+
+    def test_all_statuses_exist(self):
+        """All expected statuses should exist."""
+        expected = ["PENDING", "RUNNING", "COMPLETED", "ABORTED", "FAILED"]
+        for name in expected:
+            assert hasattr(StressTestStatus, name)
+
+    def test_status_values_are_strings(self):
+        """All status values should be lowercase strings."""
+        for status in StressTestStatus:
+            assert isinstance(status.value, str)
+
+
+class TestUserEvaluation:
+    """Tests for the UserEvaluation enum."""
+
+    def test_all_evaluations_exist(self):
+        """All expected evaluations should exist."""
+        expected = ["GOOD", "NEEDS_IMPROVEMENT", "BAD", "NOT_EVALUATED"]
+        for name in expected:
+            assert hasattr(UserEvaluation, name)
+
+
+class TestAxisMovementConfig:
+    """Tests for the AxisMovementConfig dataclass."""
+
+    def test_to_dict(self):
+        """to_dict should serialize all fields."""
+        config = AxisMovementConfig(
+            axis="pan",
+            start=0.0,
+            end=90.0,
+            step=10.0,
+            step_min=5.0,
+            step_max=15.0,
+            use_random_steps=True,
+        )
+        data = config.to_dict()
+
+        assert data["axis"] == "pan"
+        assert data["start"] == 0.0
+        assert data["end"] == 90.0
+        assert data["step"] == 10.0
+        assert data["step_min"] == 5.0
+        assert data["step_max"] == 15.0
+        assert data["use_random_steps"] is True
+
+    def test_from_dict(self):
+        """from_dict should deserialize all fields."""
+        data = {
+            "axis": "tilt",
+            "start": -15.0,
+            "end": 90.0,
+            "step": 20.0,
+            "step_min": 10.0,
+            "step_max": 25.0,
+            "use_random_steps": False,
+        }
+        config = AxisMovementConfig.from_dict(data)
+
+        assert config.axis == "tilt"
+        assert config.start == -15.0
+        assert config.end == 90.0
+        assert config.step == 20.0
+        assert config.step_min == 10.0
+        assert config.step_max == 25.0
+        assert config.use_random_steps is False
+
+    def test_from_dict_with_defaults(self):
+        """from_dict should use defaults for missing optional fields."""
+        data = {"axis": "pan", "start": 0.0, "end": 45.0}
+        config = AxisMovementConfig.from_dict(data)
+
+        assert config.step == 10.0
+        assert config.step_min == 5.0
+        assert config.step_max == 15.0
+        assert config.use_random_steps is False
+
+    def test_roundtrip(self):
+        """to_dict -> from_dict should preserve all values."""
+        original = AxisMovementConfig(
+            axis="zoom",
+            start=1.0,
+            end=10.0,
+            step=1.0,
+            step_min=0.5,
+            step_max=2.0,
+            use_random_steps=True,
+        )
+        restored = AxisMovementConfig.from_dict(original.to_dict())
+
+        assert restored.axis == original.axis
+        assert restored.start == original.start
+        assert restored.end == original.end
+        assert restored.step == original.step
+        assert restored.step_min == original.step_min
+        assert restored.step_max == original.step_max
+        assert restored.use_random_steps == original.use_random_steps
+
+
+class TestMovementTiming:
+    """Tests for the MovementTiming dataclass."""
+
+    def test_to_dict(self):
+        """to_dict should serialize all fields including datetime."""
+        now = datetime.now(timezone.utc)
+        later = datetime.now(timezone.utc)
+        timing = MovementTiming(
+            command_sent=now,
+            stabilized=later,
+            duration_ms=1500.5,
+            start_position={"pan": 0.0, "tilt": 0.0, "zoom": 1.0},
+            end_position={"pan": 45.0, "tilt": 30.0, "zoom": 1.0},
+            target_position={"pan": 45.0, "tilt": 30.0, "zoom": 1.0},
+            position_error={"pan": 0.1, "tilt": 0.2, "zoom": 0.0},
+        )
+        data = timing.to_dict()
+
+        assert data["command_sent"] == now.isoformat()
+        assert data["stabilized"] == later.isoformat()
+        assert data["duration_ms"] == 1500.5
+        assert data["start_position"]["pan"] == 0.0
+        assert data["end_position"]["pan"] == 45.0
+        assert data["position_error"]["pan"] == 0.1
+
+    def test_from_dict(self):
+        """from_dict should deserialize including datetime parsing."""
+        now = datetime.now(timezone.utc)
+        data = {
+            "command_sent": now.isoformat(),
+            "stabilized": now.isoformat(),
+            "duration_ms": 2000.0,
+            "start_position": {"pan": 10.0, "tilt": 20.0, "zoom": 2.0},
+            "end_position": {"pan": 50.0, "tilt": 60.0, "zoom": 2.0},
+            "target_position": {"pan": 50.0, "tilt": 60.0, "zoom": 2.0},
+            "position_error": {"pan": 0.0, "tilt": 0.0, "zoom": 0.0},
+        }
+        timing = MovementTiming.from_dict(data)
+
+        assert isinstance(timing.command_sent, datetime)
+        assert isinstance(timing.stabilized, datetime)
+        assert timing.duration_ms == 2000.0
+        assert timing.start_position["pan"] == 10.0
+
+
+class TestStressTestConfig:
+    """Tests for the StressTestConfig dataclass."""
+
+    def test_to_dict(self):
+        """to_dict should serialize config with nested objects."""
+        config = StressTestConfig(
+            tenant_id="tenant1",
+            camera_id="cam1",
+            test_type=StressTestType.OSCILLATION,
+            pan_config=AxisMovementConfig(axis="pan", start=0.0, end=10.0),
+            repetitions=5,
+        )
+        data = config.to_dict()
+
+        assert data["tenant_id"] == "tenant1"
+        assert data["camera_id"] == "cam1"
+        assert data["test_type"] == "oscillation"
+        assert data["pan_config"]["axis"] == "pan"
+        assert data["tilt_config"] is None
+        assert data["repetitions"] == 5
+
+    def test_from_dict(self):
+        """from_dict should deserialize with nested objects."""
+        data = {
+            "tenant_id": "t2",
+            "camera_id": "c2",
+            "test_type": "full_range_sweep",
+            "pan_config": {"axis": "pan", "start": 0.0, "end": 360.0},
+            "tilt_config": None,
+            "zoom_config": None,
+            "repetitions": 3,
+        }
+        config = StressTestConfig.from_dict(data)
+
+        assert config.tenant_id == "t2"
+        assert config.test_type == StressTestType.FULL_RANGE_SWEEP
+        assert config.pan_config is not None
+        assert config.pan_config.end == 360.0
+        assert config.tilt_config is None
+
+
+class TestStressTestResult:
+    """Tests for the StressTestResult dataclass."""
+
+    def test_to_dict(self):
+        """to_dict should serialize result including movements list."""
+        result = StressTestResult(
+            success=True,
+            position_match=True,
+            position_error={"pan": 0.1, "tilt": 0.2, "zoom": 0.0},
+            total_duration_ms=5000.0,
+            movements=[],
+        )
+        data = result.to_dict()
+
+        assert data["success"] is True
+        assert data["position_match"] is True
+        assert data["position_error"]["pan"] == 0.1
+        assert data["total_duration_ms"] == 5000.0
+        assert data["movements"] == []
+
+    def test_from_dict_with_error(self):
+        """from_dict should handle error message."""
+        data = {
+            "success": False,
+            "position_match": False,
+            "position_error": {"pan": 0, "tilt": 0, "zoom": 0},
+            "total_duration_ms": 1000.0,
+            "movements": [],
+            "error_message": "Connection timeout",
+        }
+        result = StressTestResult.from_dict(data)
+
+        assert result.success is False
+        assert result.error_message == "Connection timeout"
+
+
+class TestStressTestSession:
+    """Tests for the StressTestSession dataclass."""
+
+    def test_to_dict(self):
+        """to_dict should serialize complete session."""
+        now = datetime.now(timezone.utc)
+        session = StressTestSession(
+            id="test-uuid",
+            created_at=now,
+            status=StressTestStatus.COMPLETED,
+            tenant_id="tenant1",
+            camera_id="cam1",
+            camera_name="Camera 1",
+            user_evaluation=UserEvaluation.GOOD,
+            user_notes="Test notes",
+        )
+        data = session.to_dict()
+
+        assert data["id"] == "test-uuid"
+        assert data["created_at"] == now.isoformat()
+        assert data["status"] == "completed"
+        assert data["user_evaluation"] == "good"
+        assert data["user_notes"] == "Test notes"
+
+    def test_from_dict(self):
+        """from_dict should deserialize complete session."""
+        now = datetime.now(timezone.utc)
+        data = {
+            "id": "session-123",
+            "created_at": now.isoformat(),
+            "started_at": now.isoformat(),
+            "completed_at": now.isoformat(),
+            "status": "completed",
+            "tenant_id": "t1",
+            "camera_id": "c1",
+            "camera_name": "Test Camera",
+            "config": {
+                "tenant_id": "t1",
+                "camera_id": "c1",
+                "test_type": "oscillation",
+            },
+            "result": {
+                "success": True,
+                "position_match": True,
+                "position_error": {"pan": 0, "tilt": 0, "zoom": 0},
+                "total_duration_ms": 10000.0,
+            },
+            "user_evaluation": "needs_improvement",
+            "user_notes": "Some drift observed",
+        }
+        session = StressTestSession.from_dict(data)
+
+        assert session.id == "session-123"
+        assert session.status == StressTestStatus.COMPLETED
+        assert session.config is not None
+        assert session.result is not None
+        assert session.user_evaluation == UserEvaluation.NEEDS_IMPROVEMENT
+
+    def test_roundtrip(self):
+        """to_dict -> from_dict should preserve all values."""
+        now = datetime.now(timezone.utc)
+        original = StressTestSession(
+            id="test-roundtrip",
+            created_at=now,
+            started_at=now,
+            completed_at=now,
+            status=StressTestStatus.COMPLETED,
+            tenant_id="tenant",
+            camera_id="camera",
+            camera_name="Test",
+            config=StressTestConfig(
+                tenant_id="tenant",
+                camera_id="camera",
+                test_type=StressTestType.OSCILLATION,
+            ),
+            result=StressTestResult(
+                success=True,
+                position_match=True,
+                position_error={"pan": 0.1, "tilt": 0.1, "zoom": 0.0},
+                total_duration_ms=5000.0,
+            ),
+            user_evaluation=UserEvaluation.GOOD,
+        )
+        restored = StressTestSession.from_dict(original.to_dict())
+
+        assert restored.id == original.id
+        assert restored.status == original.status
+        assert restored.config.test_type == original.config.test_type
+        assert restored.result.success == original.result.success
+        assert restored.user_evaluation == original.user_evaluation
+
+
+class TestStressTestProgress:
+    """Tests for the StressTestProgress dataclass."""
+
+    def test_to_dict(self):
+        """to_dict should serialize progress state."""
+        progress = StressTestProgress(
+            session_id="progress-123",
+            status=StressTestStatus.RUNNING,
+            current_repetition=3,
+            total_repetitions=10,
+            current_movement=5,
+            total_movements=20,
+            current_position={"pan": 45.0, "tilt": 30.0, "zoom": 1.0},
+            message="Repetition 3/10",
+        )
+        data = progress.to_dict()
+
+        assert data["session_id"] == "progress-123"
+        assert data["status"] == "running"
+        assert data["current_repetition"] == 3
+        assert data["total_repetitions"] == 10
+        assert data["current_position"]["pan"] == 45.0
+        assert data["message"] == "Repetition 3/10"
+
+
+class TestStressTestPresets:
+    """Tests for the built-in stress test presets."""
+
+    def test_presets_list_not_empty(self):
+        """Should have at least one preset."""
+        assert len(STRESS_TEST_PRESETS) > 0
+
+    def test_all_presets_have_required_fields(self):
+        """All presets should have name, description, and test_type."""
+        for preset in STRESS_TEST_PRESETS:
+            assert preset.name
+            assert preset.description
+            assert isinstance(preset.test_type, StressTestType)
+
+    def test_all_presets_serializable(self):
+        """All presets should be serializable to dict."""
+        for preset in STRESS_TEST_PRESETS:
+            data = preset.to_dict()
+            assert "name" in data
+            assert "description" in data
+            assert "test_type" in data
+            assert "repetitions" in data
+
+    def test_preset_oscillation_pan_exists(self):
+        """Oscillation Pan preset should exist with correct config."""
+        preset = next(
+            (p for p in STRESS_TEST_PRESETS if "Oscillation" in p.name and "Pan" in p.name),
+            None,
+        )
+        assert preset is not None
+        assert preset.test_type == StressTestType.OSCILLATION
+        assert preset.pan_config is not None
+        assert preset.repetitions > 0
+
+    def test_preset_full_range_sweep_exists(self):
+        """Full Range Sweep preset should exist."""
+        preset = next(
+            (p for p in STRESS_TEST_PRESETS if "Full Range" in p.name),
+            None,
+        )
+        assert preset is not None
+        assert preset.test_type == StressTestType.FULL_RANGE_SWEEP
+
+    def test_preset_combined_axis_has_both_configs(self):
+        """Combined Axis preset should have both pan and tilt configs."""
+        preset = next(
+            (p for p in STRESS_TEST_PRESETS if "Combined" in p.name),
+            None,
+        )
+        assert preset is not None
+        assert preset.pan_config is not None
+        assert preset.tilt_config is not None
+
+
+# =============================================================================
+# Tests for CameraStressTestService
+# =============================================================================
+
+from webapp.camera_diagnostic.services import (
+    CameraStressTestService,
+    get_stress_test_storage_dir,
+)
+
+
+class TestCameraStressTestService:
+    """Tests for the CameraStressTestService class."""
+
+    def test_start_stress_test_camera_not_found(self, monkeypatch):
+        """Should return error when camera not found."""
+        monkeypatch.setattr(
+            "webapp.camera_diagnostic.services.get_camera_by_id",
+            lambda x: None,
+        )
+
+        config = StressTestConfig(
+            tenant_id="t1",
+            camera_id="nonexistent",
+            test_type=StressTestType.OSCILLATION,
+        )
+        session_id, error = CameraStressTestService.start_stress_test(config)
+
+        assert session_id is None
+        assert "not found" in error.lower()
+
+    def test_start_stress_test_no_ip(self, monkeypatch):
+        """Should return error when camera has no IP."""
+        monkeypatch.setattr(
+            "webapp.camera_diagnostic.services.get_camera_by_id",
+            lambda x: {"name": "test"},  # No IP
+        )
+
+        config = StressTestConfig(
+            tenant_id="t1",
+            camera_id="no_ip_cam",
+            test_type=StressTestType.OSCILLATION,
+        )
+        session_id, error = CameraStressTestService.start_stress_test(config)
+
+        assert session_id is None
+        assert "ip" in error.lower()
+
+    def test_start_stress_test_no_credentials(self, monkeypatch):
+        """Should return error when credentials not set."""
+        monkeypatch.setattr(
+            "webapp.camera_diagnostic.services.get_camera_by_id",
+            lambda x: {"name": "test", "ip": "192.168.1.100"},
+        )
+        monkeypatch.setenv("CAMERA_USERNAME", "")
+        monkeypatch.setenv("CAMERA_PASSWORD", "")
+
+        config = StressTestConfig(
+            tenant_id="t1",
+            camera_id="cam1",
+            test_type=StressTestType.OSCILLATION,
+        )
+        session_id, error = CameraStressTestService.start_stress_test(config)
+
+        assert session_id is None
+        assert "credentials" in error.lower()
+
+    def test_positions_match_within_tolerance(self):
+        """Should return True when positions are within tolerance."""
+        pos1 = {"pan": 45.0, "tilt": 30.0, "zoom": 1.0}
+        pos2 = {"pan": 45.3, "tilt": 30.2, "zoom": 1.1}
+
+        # Default tolerance is 0.5
+        assert CameraStressTestService._positions_match(pos1, pos2) is True
+
+    def test_positions_match_outside_tolerance(self):
+        """Should return False when positions differ more than tolerance."""
+        pos1 = {"pan": 45.0, "tilt": 30.0, "zoom": 1.0}
+        pos2 = {"pan": 46.0, "tilt": 30.0, "zoom": 1.0}
+
+        # Difference of 1.0 exceeds default 0.5 tolerance
+        assert CameraStressTestService._positions_match(pos1, pos2) is False
+
+    def test_generate_random_steps_sum_equals_total(self):
+        """Generated steps should sum to approximately the total."""
+        total = 90.0
+        steps = CameraStressTestService._generate_random_steps(total, 5.0, 15.0)
+
+        assert len(steps) > 0
+        assert abs(sum(steps) - total) < 0.01  # Within floating point tolerance
+
+    def test_generate_random_steps_negative_total(self):
+        """Should handle negative total (reverse direction)."""
+        total = -45.0
+        steps = CameraStressTestService._generate_random_steps(total, 5.0, 15.0)
+
+        assert len(steps) > 0
+        assert all(s < 0 for s in steps)  # All steps should be negative
+        assert abs(sum(steps) - total) < 0.01
+
+    def test_generate_sweep_waypoints_small_range(self):
+        """Small range should return single waypoint."""
+        waypoints = CameraStressTestService._generate_sweep_waypoints(0.0, 45.0, 90.0)
+
+        assert len(waypoints) == 1
+        assert waypoints[0] == 45.0
+
+    def test_generate_sweep_waypoints_large_range(self):
+        """Large range should be broken into multiple waypoints."""
+        waypoints = CameraStressTestService._generate_sweep_waypoints(0.0, 360.0, 90.0)
+
+        assert len(waypoints) == 4  # 360 / 90 = 4 waypoints
+        assert waypoints[-1] == 360.0
+
+    def test_abort_nonexistent_session(self):
+        """Should return error when aborting nonexistent session."""
+        success, error = CameraStressTestService.abort_stress_test("nonexistent-id")
+
+        assert success is False
+        assert "not found" in error.lower()
+
+    def test_get_status_nonexistent_session(self):
+        """Should return None for nonexistent session."""
+        progress = CameraStressTestService.get_stress_test_status("nonexistent-id")
+
+        assert progress is None
+
+    def test_delete_invalid_session_id(self):
+        """Should return error for invalid session ID format."""
+        success, error = CameraStressTestService.delete_stress_test_session("not-a-uuid")
+
+        assert success is False
+        assert "invalid" in error.lower()
+
+    def test_delete_nonexistent_session(self):
+        """Should return error when deleting nonexistent session."""
+        import uuid
+
+        valid_uuid = str(uuid.uuid4())
+        success, error = CameraStressTestService.delete_stress_test_session(valid_uuid)
+
+        assert success is False
+        assert "not found" in error.lower()
+
+
+class TestStressTestStorageDir:
+    """Tests for stress test storage directory function."""
+
+    def test_get_stress_test_storage_dir_returns_path(self, monkeypatch):
+        """Should return a Path object."""
+        mock_settings = MagicMock()
+        mock_settings.BASE_DIR = Path("/tmp/test_project")
+        monkeypatch.setattr("webapp.camera_diagnostic.services.settings", mock_settings)
+
+        result = get_stress_test_storage_dir()
+
+        assert isinstance(result, Path)
+        assert "stress_test" in str(result)
+
+    def test_storage_dir_in_data_directory(self, monkeypatch):
+        """Storage dir should be in data/stress_test."""
+        mock_settings = MagicMock()
+        mock_settings.BASE_DIR = Path("/app/webapp")
+        monkeypatch.setattr("webapp.camera_diagnostic.services.settings", mock_settings)
+
+        result = get_stress_test_storage_dir()
+
+        assert str(result).endswith("data/stress_test")

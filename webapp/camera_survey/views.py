@@ -10,13 +10,16 @@ import logging
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
 from poc_homography.camera_config import (
+    get_camera_by_id,
     get_cameras_for_tenant,
     get_tenants,
 )
+
+from .ptz import create_ptz_camera
 
 from .models import SurveyAxis, SurveyConfig
 from .services import CameraSurveyService, get_survey_presets
@@ -53,6 +56,7 @@ def _error_response(message: str, status_code: int = 400) -> JsonResponse:
 
 
 @require_GET
+@ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main camera survey HTML page."""
     return render(request, "camera_survey/index.html")
@@ -108,7 +112,6 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
         return _error_response("Failed to load cameras. Check server logs for details.", 500)
 
 
-@csrf_exempt
 @require_POST
 def api_start_survey(request: HttpRequest) -> JsonResponse:
     """Start a new survey.
@@ -123,6 +126,9 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
         restore_ptz: Boolean (optional, default True)
         retry_timeout: Seconds (optional, default 60)
         session_tags: List of strings (optional)
+        fixed_pan: Fixed pan value (optional, float)
+        fixed_tilt: Fixed tilt value (optional, float)
+        fixed_zoom: Fixed zoom value (optional, float)
 
     Returns:
         JSON response with session_id and session_path.
@@ -155,6 +161,78 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
     if step <= 0:
         return _error_response("step must be greater than 0")
 
+    # Parse optional fixed axis values
+    fixed_pan: float | None = None
+    fixed_tilt: float | None = None
+    fixed_zoom: float | None = None
+
+    if "fixed_pan" in data and data["fixed_pan"] is not None:
+        try:
+            fixed_pan = float(data["fixed_pan"])
+        except (ValueError, TypeError):
+            return _error_response("fixed_pan must be numeric")
+
+    if "fixed_tilt" in data and data["fixed_tilt"] is not None:
+        try:
+            fixed_tilt = float(data["fixed_tilt"])
+        except (ValueError, TypeError):
+            return _error_response("fixed_tilt must be numeric")
+
+    if "fixed_zoom" in data and data["fixed_zoom"] is not None:
+        try:
+            fixed_zoom = float(data["fixed_zoom"])
+        except (ValueError, TypeError):
+            return _error_response("fixed_zoom must be numeric")
+
+    # Validate fixed axis values against camera capabilities
+    if fixed_pan is not None or fixed_tilt is not None or fixed_zoom is not None:
+        # Get camera to create PTZ instance for capabilities
+        camera = get_camera_by_id(data["camera_id"])
+        if not camera:
+            return _error_response(f"Camera not found: {data['camera_id']}")
+
+        camera_ip = camera.get("ip")
+        if not camera_ip:
+            return _error_response(f"Camera {data['camera_id']} has no IP address")
+
+        try:
+            ptz_camera = create_ptz_camera(
+                camera_ip=camera_ip,
+                camera_name=camera.get("name", data["camera_id"]),
+                camera_model=camera.get("model"),
+                tenant_id=data["tenant_id"],
+            )
+            capabilities = ptz_camera.get_capabilities()
+        except ValueError as e:
+            return _error_response(str(e))
+        except Exception as e:
+            logger.exception(f"Failed to get camera capabilities for {data['camera_id']}")
+            return _error_response(f"Failed to get camera capabilities: {e}", 500)
+
+        # Validate fixed pan against camera limits
+        if fixed_pan is not None:
+            if not (capabilities.pan_min <= fixed_pan <= capabilities.pan_max):
+                return _error_response(
+                    f"Fixed pan value {fixed_pan} is outside valid range "
+                    f"[{capabilities.pan_min}, {capabilities.pan_max}]"
+                )
+
+        # Validate fixed tilt against camera limits
+        if fixed_tilt is not None:
+            if not (capabilities.tilt_min <= fixed_tilt <= capabilities.tilt_max):
+                return _error_response(
+                    f"Fixed tilt value {fixed_tilt} is outside valid range "
+                    f"[{capabilities.tilt_min}, {capabilities.tilt_max}]"
+                )
+
+        # Validate fixed zoom against camera limits
+        if fixed_zoom is not None:
+            if not (capabilities.zoom_min <= fixed_zoom <= capabilities.zoom_max):
+                return _error_response(
+                    f"Fixed zoom value {fixed_zoom} is outside valid range "
+                    f"[{capabilities.zoom_min}, {capabilities.zoom_max}]"
+                )
+
     # Parse session tags
     session_tags = data.get("session_tags", [])
     if isinstance(session_tags, str):
@@ -172,6 +250,9 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
         restore_ptz=data.get("restore_ptz", True),
         retry_timeout=int(data.get("retry_timeout", 60)),
         session_tags=session_tags,
+        fixed_pan=fixed_pan,
+        fixed_tilt=fixed_tilt,
+        fixed_zoom=fixed_zoom,
     )
 
     # Start survey
@@ -180,12 +261,10 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
     if error:
         return _error_response(error, 500)
 
-    return _success_response(
-        {
-            "session_id": session_id,
-            "message": "Survey started successfully",
-        }
-    )
+    return _success_response({
+        "session_id": session_id,
+        "message": "Survey started successfully",
+    })
 
 
 @require_GET
@@ -204,22 +283,19 @@ def api_survey_status(request: HttpRequest, session_id: str) -> JsonResponse:
         # Check if it's a completed session
         session = _survey_service.get_session(session_id)
         if session:
-            return _success_response(
-                {
-                    "session_id": session_id,
-                    "status": session.status.value,
-                    "step_count": len(session.captures),
-                    "total_steps": len(session.captures),
-                    "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
-                    "last_capture_path": None,
-                }
-            )
+            return _success_response({
+                "session_id": session_id,
+                "status": session.status.value,
+                "step_count": len(session.captures),
+                "total_steps": len(session.captures),
+                "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
+                "last_capture_path": None,
+            })
         return _error_response("Survey not found", 404)
 
     return _success_response(progress.to_dict())
 
 
-@csrf_exempt
 @require_POST
 def api_abort_survey(request: HttpRequest, session_id: str) -> JsonResponse:
     """Abort a running survey.
@@ -235,12 +311,10 @@ def api_abort_survey(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to abort survey", 400)
 
-    return _success_response(
-        {
-            "session_id": session_id,
-            "message": "Survey abort requested",
-        }
-    )
+    return _success_response({
+        "session_id": session_id,
+        "message": "Survey abort requested",
+    })
 
 
 @require_GET
@@ -262,14 +336,12 @@ def api_sessions_list(request: HttpRequest) -> JsonResponse:
 
     sessions, total = _survey_service.list_sessions(limit=limit, offset=offset)
 
-    return _success_response(
-        {
-            "sessions": sessions,
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        }
-    )
+    return _success_response({
+        "sessions": sessions,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
 
 
 @require_GET
@@ -344,14 +416,11 @@ def api_presets(request: HttpRequest) -> JsonResponse:
     """
     presets = get_survey_presets()
 
-    return _success_response(
-        {
-            "presets": [p.to_dict() for p in presets],
-        }
-    )
+    return _success_response({
+        "presets": [p.to_dict() for p in presets],
+    })
 
 
-@csrf_exempt
 @require_POST
 def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     """Delete a survey session.
@@ -367,9 +436,64 @@ def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to delete session", 400)
 
-    return _success_response(
-        {
-            "session_id": session_id,
-            "message": "Session deleted successfully",
-        }
-    )
+    return _success_response({
+        "session_id": session_id,
+        "message": "Session deleted successfully",
+    })
+
+
+@require_GET
+def api_ptz_status(request: HttpRequest) -> JsonResponse:
+    """Get current PTZ position for a camera.
+
+    Query params:
+        camera_id: Camera ID (required)
+        tenant_id: Tenant ID (required)
+
+    Returns:
+        JSON response with current pan, tilt, zoom values.
+    """
+    camera_id = request.GET.get("camera_id")
+    tenant_id = request.GET.get("tenant_id")
+
+    if not camera_id:
+        return _error_response("camera_id is required", 400)
+    if not tenant_id:
+        return _error_response("tenant_id is required", 400)
+
+    # Get camera configuration
+    camera = get_camera_by_id(camera_id)
+    if not camera:
+        return _error_response(f"Camera not found: {camera_id}", 404)
+
+    camera_ip = camera.get("ip")
+    camera_name = camera.get("name", camera_id)
+
+    if not camera_ip:
+        return _error_response(f"Camera IP not configured: {camera_id}", 500)
+
+    try:
+        # Create PTZ camera instance
+        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
+
+        # Get current position
+        position = ptz_camera.get_status()
+
+        if position is None:
+            return _error_response("Failed to get camera position", 500)
+
+        return _success_response({
+            "ptz": {
+                "pan": position.pan,
+                "tilt": position.tilt,
+                "zoom": position.zoom,
+            }
+        })
+
+    except ValueError as e:
+        # Raised by create_ptz_camera if credentials not set
+        logger.exception(f"Credentials error for {camera_id}")
+        return _error_response(str(e), 500)
+    except Exception as e:
+        logger.exception(f"Error getting PTZ status for {camera_id}")
+        return _error_response(f"Failed to get camera position: {e}", 500)
