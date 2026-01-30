@@ -150,6 +150,22 @@
                 Two tabs: Survey (PTZ sweep with screenshots) and Stress Testing (PTZ reliability tests).
             </div>
         </a>
+
+        <a href="{% url 'lens_calibration:index' %}" class="tool-card">
+            <div class="tool-title">Lens Calibration Tool <span class="badge">Calibration</span></div>
+            <div class="tool-description">
+                Calculate lens distortion coefficients (k1, k2, k3, p1, p2) using detected parking lines.
+                Optimizes for line straightness and saves calibration for homography correction.
+            </div>
+        </a>
+
+        <a href="{% url 'distortion_validator:index' %}" class="tool-card">
+            <div class="tool-title">Distortion Validator <span class="badge">Validation</span></div>
+            <div class="tool-description">
+                Validate lens distortion calibration by viewing undistorted images side-by-side.
+                Draw lines on undistorted images to verify straightness and calibration quality.
+            </div>
+        </a>
     </div>
 
     <div class="footer">

@@ -354,7 +354,9 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     coord_fields = ["start_x", "start_y", "end_x", "end_y"]
     if not any(f in data for f in coord_fields):
         return JsonResponse(
-            {"error": "Must provide at least one coordinate field (start_x, start_y, end_x, end_y)"},
+            {
+                "error": "Must provide at least one coordinate field (start_x, start_y, end_x, end_y)"
+            },
             status=422,
         )
 

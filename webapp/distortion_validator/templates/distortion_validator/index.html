@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distortion Validator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        header {
+            background: #263238;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #37474f;
+        }
+
+        header h1 {
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .back-link {
+            background: #607d8b;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .back-link:hover {
+            background: #546e7a;
+        }
+
+        /* Controls bar */
+        .controls-bar {
+            background: #37474f;
+            padding: 12px 20px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            color: #b0bec5;
+        }
+
+        .control-group select, .control-group input {
+            padding: 6px 10px;
+            border: 1px solid #546e7a;
+            border-radius: 4px;
+            background: #263238;
+            color: #fff;
+            font-size: 13px;
+        }
+
+        .control-group select:focus, .control-group input:focus {
+            border-color: #2196f3;
+            outline: none;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #2196f3;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1976d2;
+        }
+
+        .btn-primary:disabled {
+            background: #546e7a;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+
+        /* Main content */
+        .main-content {
+            display: flex;
+            height: calc(100vh - 110px);
+        }
+
+        /* Images container */
+        .images-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .image-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #37474f;
+            overflow: hidden;
+        }
+
+        .image-panel:last-child {
+            border-right: none;
+        }
+
+        .image-panel-header {
+            background: #263238;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #37474f;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .image-panel-header.original {
+            color: #ff9800;
+        }
+
+        .image-panel-header.undistorted {
+            color: #4caf50;
+        }
+
+        .panel-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .zoom-controls button {
+            padding: 2px 6px;
+            background: #37474f;
+            border: 1px solid #546e7a;
+            color: #fff;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .zoom-controls button:hover {
+            background: #455a64;
+        }
+
+        .zoom-controls span {
+            font-size: 11px;
+            min-width: 40px;
+            text-align: center;
+            color: #b0bec5;
+        }
+
+        .image-wrapper {
+            flex: 1;
+            overflow: scroll;
+            position: relative;
+            background: #0d0d0d;
+        }
+
+        .image-scroller {
+            min-width: 100%;
+            min-height: 100%;
+            display: inline-block;
+        }
+
+        .image-container {
+            position: relative;
+            display: inline-block;
+            transform-origin: top left;
+            cursor: grab;
+        }
+
+        .image-container:active {
+            cursor: grabbing;
+        }
+
+        .image-container img {
+            display: block;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .image-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: crosshair;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 350px;
+            background: #263238;
+            border-left: 1px solid #37474f;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            padding: 16px;
+            border-bottom: 1px solid #37474f;
+        }
+
+        .sidebar-section h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #b0bec5;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Coefficients display */
+        .coefficients-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+        }
+
+        .coef-item {
+            background: #37474f;
+            padding: 6px 4px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .coef-item .name {
+            font-size: 10px;
+            color: #78909c;
+        }
+
+        .coef-item .value {
+            font-size: 11px;
+            font-family: monospace;
+            color: #fff;
+            margin-top: 2px;
+        }
+
+        .coef-item.radial {
+            border-top: 2px solid #2196f3;
+        }
+
+        .coef-item.tangential {
+            border-top: 2px solid #9c27b0;
+        }
+
+        /* Lines comparison */
+        .lines-comparison {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .line-comparison-item {
+            background: #37474f;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+
+        .line-comparison-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            background: #455a64;
+        }
+
+        .line-comparison-header .line-name {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .line-comparison-header .delete-btn {
+            background: none;
+            border: none;
+            color: #f44336;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 6px;
+        }
+
+        .line-comparison-body {
+            padding: 8px 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .rmse-box {
+            text-align: center;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .rmse-box.original {
+            background: rgba(255, 152, 0, 0.2);
+            border: 1px solid #ff9800;
+        }
+
+        .rmse-box.undistorted {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4caf50;
+        }
+
+        .rmse-box .label {
+            font-size: 9px;
+            color: #b0bec5;
+            text-transform: uppercase;
+        }
+
+        .rmse-box .value {
+            font-size: 16px;
+            font-weight: 600;
+            font-family: monospace;
+            margin-top: 2px;
+        }
+
+        .rmse-box .quality {
+            font-size: 9px;
+            margin-top: 2px;
+        }
+
+        .improvement-indicator {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .improvement-indicator.improved {
+            background: rgba(76, 175, 80, 0.3);
+            color: #81c784;
+        }
+
+        .improvement-indicator.worse {
+            background: rgba(244, 67, 54, 0.3);
+            color: #e57373;
+        }
+
+        .improvement-indicator.same {
+            background: rgba(158, 158, 158, 0.3);
+            color: #bdbdbd;
+        }
+
+        /* Instructions */
+        .instructions {
+            background: #37474f;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #b0bec5;
+            line-height: 1.5;
+        }
+
+        .instructions strong {
+            color: #fff;
+        }
+
+        .instructions .key {
+            display: inline-block;
+            background: #546e7a;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 10px;
+        }
+
+        /* Status */
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+
+        .status.info {
+            background: rgba(33, 150, 243, 0.2);
+            color: #64b5f6;
+        }
+
+        .status.success {
+            background: rgba(76, 175, 80, 0.2);
+            color: #81c784;
+        }
+
+        .status.error {
+            background: rgba(244, 67, 54, 0.2);
+            color: #e57373;
+        }
+
+        /* Empty state */
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #546e7a;
+            font-size: 14px;
+            text-align: center;
+            padding: 40px;
+        }
+
+        /* Summary stats */
+        .summary-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .stat-item {
+            background: #37474f;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .stat-item .label {
+            font-size: 9px;
+            color: #78909c;
+            text-transform: uppercase;
+        }
+
+        .stat-item .value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .stat-item .value.good {
+            color: #4caf50;
+        }
+
+        .stat-item .value.warning {
+            color: #ff9800;
+        }
+
+        .stat-item .value.bad {
+            color: #f44336;
+        }
+
+        /* Sync indicator */
+        .sync-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #b0bec5;
+        }
+
+        .sync-indicator input {
+            width: 14px;
+            height: 14px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Distortion Validator</h1>
+        <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+    </header>
+
+    <div class="controls-bar">
+        <div class="control-group">
+            <label>Calibration:</label>
+            <select id="calibration-select">
+                <option value="">-- Select calibration file --</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Zoom Entry:</label>
+            <select id="zoom-entry-select" disabled>
+                <option value="">-- Select zoom --</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Image:</label>
+            <select id="image-select">
+                <option value="">-- Select image --</option>
+            </select>
+        </div>
+        <button id="apply-btn" class="btn btn-primary" disabled>Apply Undistortion</button>
+        <div class="sync-indicator">
+            <input type="checkbox" id="sync-zoom" checked>
+            <label for="sync-zoom">Sync zoom</label>
+        </div>
+        <div class="sync-indicator">
+            <input type="checkbox" id="sync-scroll" checked>
+            <label for="sync-scroll">Sync scroll</label>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="images-container">
+            <!-- Original Image Panel -->
+            <div class="image-panel" id="panel-original">
+                <div class="image-panel-header original">
+                    <span>Original (Distorted) - Click to draw</span>
+                    <div class="panel-controls">
+                        <div class="zoom-controls">
+                            <button class="zoom-out" data-panel="original">-</button>
+                            <span id="zoom-original">100%</span>
+                            <button class="zoom-in" data-panel="original">+</button>
+                            <button class="zoom-fit" data-panel="original">Fit</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="image-wrapper" id="wrapper-original">
+                    <div class="empty-state" id="empty-original">Select a calibration file and image to begin</div>
+                    <div class="image-scroller" id="scroller-original" style="display: none;">
+                        <div class="image-container" id="container-original">
+                            <img id="img-original">
+                            <canvas id="canvas-original"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Undistorted Image Panel -->
+            <div class="image-panel" id="panel-undistorted">
+                <div class="image-panel-header undistorted">
+                    <span>Undistorted - Click to draw</span>
+                    <div class="panel-controls">
+                        <div class="zoom-controls">
+                            <button class="zoom-out" data-panel="undistorted">-</button>
+                            <span id="zoom-undistorted">100%</span>
+                            <button class="zoom-in" data-panel="undistorted">+</button>
+                            <button class="zoom-fit" data-panel="undistorted">Fit</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="image-wrapper" id="wrapper-undistorted">
+                    <div class="empty-state" id="empty-undistorted">Apply undistortion to see result</div>
+                    <div class="image-scroller" id="scroller-undistorted" style="display: none;">
+                        <div class="image-container" id="container-undistorted">
+                            <img id="img-undistorted">
+                            <canvas id="canvas-undistorted"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <h3>Coefficients</h3>
+                <div class="coefficients-grid">
+                    <div class="coef-item radial">
+                        <div class="name">k1</div>
+                        <div class="value" id="coef-k1">-</div>
+                    </div>
+                    <div class="coef-item radial">
+                        <div class="name">k2</div>
+                        <div class="value" id="coef-k2">-</div>
+                    </div>
+                    <div class="coef-item radial">
+                        <div class="name">k3</div>
+                        <div class="value" id="coef-k3">-</div>
+                    </div>
+                    <div class="coef-item tangential">
+                        <div class="name">p1</div>
+                        <div class="value" id="coef-p1">-</div>
+                    </div>
+                    <div class="coef-item tangential">
+                        <div class="name">p2</div>
+                        <div class="value" id="coef-p2">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Intrinsics (Camera Matrix)</h3>
+                <div style="font-size: 11px; color: #ff9800; margin-bottom: 8px;">
+                    ⚠️ Must match calibration intrinsics!
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div class="control-group" style="flex-direction: column; align-items: stretch;">
+                        <label style="font-size: 10px;">fx (focal X)</label>
+                        <input type="number" id="intrinsic-fx" value="1000" step="100" style="width: 100%;">
+                    </div>
+                    <div class="control-group" style="flex-direction: column; align-items: stretch;">
+                        <label style="font-size: 10px;">fy (focal Y)</label>
+                        <input type="number" id="intrinsic-fy" value="1000" step="100" style="width: 100%;">
+                    </div>
+                    <div class="control-group" style="flex-direction: column; align-items: stretch;">
+                        <label style="font-size: 10px;">cx (center X)</label>
+                        <input type="number" id="intrinsic-cx" value="960" step="10" style="width: 100%;">
+                    </div>
+                    <div class="control-group" style="flex-direction: column; align-items: stretch;">
+                        <label style="font-size: 10px;">cy (center Y)</label>
+                        <input type="number" id="intrinsic-cy" value="540" step="10" style="width: 100%;">
+                    </div>
+                </div>
+                <button id="set-intrinsics-btn" class="btn btn-small" style="margin-top: 8px; background: #455a64;">Update Intrinsics</button>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Instructions</h3>
+                <div class="instructions">
+                    <strong>1.</strong> Load calibration and select image<br>
+                    <strong>2.</strong> Set intrinsics to match calibration<br>
+                    <strong>3.</strong> Click "Apply Undistortion"<br>
+                    <strong>4.</strong> Draw lines on the <strong>ORIGINAL</strong> image<br>
+                    <strong>5.</strong> Press <span class="key">ESC</span> to finish a line<br>
+                    <strong>6.</strong> Compare Original vs Undistorted RMSE<br><br>
+                    <strong>Important:</strong> Draw on the original (distorted) image to see the true before/after comparison.<br><br>
+                    <strong>Navigation:</strong><br>
+                    <span class="key">Wheel</span> Zoom<br>
+                    <span class="key">Shift+Drag</span> or <span class="key">Middle-Click</span> Pan
+                </div>
+            </div>
+
+            <div class="sidebar-section" style="flex: 1; display: flex; flex-direction: column;">
+                <h3>Line Comparisons</h3>
+                <div id="status-message" class="status info" style="display: none;"></div>
+                <button id="clear-lines-btn" class="btn btn-danger btn-small" style="margin-bottom: 12px;">Clear All Lines</button>
+
+                <div class="lines-comparison" id="lines-list">
+                    <div style="color: #546e7a; font-size: 12px; text-align: center; padding: 20px;">
+                        Draw lines on either image to compare straightness
+                    </div>
+                </div>
+
+                <div class="summary-stats" id="summary-stats" style="display: none;">
+                    <div class="stat-item">
+                        <div class="label">Avg Original</div>
+                        <div class="value" id="avg-original">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="label">Avg Undistorted</div>
+                        <div class="value" id="avg-undistorted">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="label">Improvement</div>
+                        <div class="value" id="avg-improvement">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Elements
+        const calibrationSelect = document.getElementById('calibration-select');
+        const zoomEntrySelect = document.getElementById('zoom-entry-select');
+        const imageSelect = document.getElementById('image-select');
+        const applyBtn = document.getElementById('apply-btn');
+        const syncZoomCheckbox = document.getElementById('sync-zoom');
+        const syncScrollCheckbox = document.getElementById('sync-scroll');
+        const linesList = document.getElementById('lines-list');
+        const clearLinesBtn = document.getElementById('clear-lines-btn');
+        const statusMessage = document.getElementById('status-message');
+        const summaryStats = document.getElementById('summary-stats');
+
+        // Panel elements
+        const panels = {
+            original: {
+                wrapper: document.getElementById('wrapper-original'),
+                scroller: document.getElementById('scroller-original'),
+                container: document.getElementById('container-original'),
+                img: document.getElementById('img-original'),
+                canvas: document.getElementById('canvas-original'),
+                empty: document.getElementById('empty-original'),
+                zoomDisplay: document.getElementById('zoom-original'),
+                zoom: 1,
+                isPanning: false,
+                panStart: { x: 0, y: 0 },
+                scrollStart: { x: 0, y: 0 }
+            },
+            undistorted: {
+                wrapper: document.getElementById('wrapper-undistorted'),
+                scroller: document.getElementById('scroller-undistorted'),
+                container: document.getElementById('container-undistorted'),
+                img: document.getElementById('img-undistorted'),
+                canvas: document.getElementById('canvas-undistorted'),
+                empty: document.getElementById('empty-undistorted'),
+                zoomDisplay: document.getElementById('zoom-undistorted'),
+                zoom: 1,
+                isPanning: false,
+                panStart: { x: 0, y: 0 },
+                scrollStart: { x: 0, y: 0 }
+            }
+        };
+
+        // State
+        let currentCalibration = null;
+        let currentCoefficients = null;
+        // CRITICAL: These intrinsics MUST match what was used during calibration!
+        // Default values - will be updated if calibration provides them
+        let currentIntrinsics = { fx: 1000, fy: 1000, cx: 960, cy: 540 };
+        let comparisonLines = [];  // Array of {points: [[x,y], ...], originalRmse, undistortedRmse, ...}
+        let currentLine = null;  // {panel: 'original'|'undistorted', points: [[x,y], ...]}
+        let imageWidth = 0;
+        let imageHeight = 0;
+        let undistortionMethod = 'solver';  // 'solver' to match calibration, 'opencv' for comparison
+
+        // Load calibration files
+        async function loadCalibrationFiles() {
+            try {
+                const resp = await fetch('{% url "distortion_validator:api_calibration_files" %}');
+                const data = await resp.json();
+
+                calibrationSelect.innerHTML = '<option value="">-- Select calibration file --</option>';
+                (data.files || []).forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file.path;
+                    option.textContent = file.name;
+                    calibrationSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load calibration files:', e);
+            }
+        }
+
+        // Load images
+        async function loadImages() {
+            try {
+                const resp = await fetch('{% url "distortion_validator:api_images" %}');
+                const data = await resp.json();
+
+                imageSelect.innerHTML = '<option value="">-- Select image --</option>';
+                (data.images || []).forEach(img => {
+                    const option = document.createElement('option');
+                    option.value = img.path;
+                    option.textContent = img.name;
+                    imageSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load images:', e);
+            }
+        }
+
+        // Load calibration file
+        async function loadCalibration(filename) {
+            try {
+                const resp = await fetch('{% url "distortion_validator:api_load_calibration" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+
+                const data = await resp.json();
+                if (data.error) {
+                    showStatus(`Error: ${data.error}`, 'error');
+                    return;
+                }
+
+                currentCalibration = data;
+
+                zoomEntrySelect.innerHTML = '<option value="">-- Select zoom --</option>';
+                (data.entries || []).forEach((entry, i) => {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = `Zoom ${entry.zoom_factor}x (RMSE: ${entry.validation_rmse?.toFixed(3) || 'N/A'})`;
+                    option.dataset.entry = JSON.stringify(entry);
+                    zoomEntrySelect.appendChild(option);
+                });
+
+                zoomEntrySelect.disabled = false;
+
+                if (data.entries.length === 1) {
+                    zoomEntrySelect.selectedIndex = 1;
+                    selectZoomEntry(0);
+                }
+
+                updateApplyButton();
+
+            } catch (e) {
+                showStatus(`Error loading calibration: ${e.message}`, 'error');
+            }
+        }
+
+        // Select zoom entry
+        function selectZoomEntry(index) {
+            if (!currentCalibration || !currentCalibration.entries[index]) return;
+
+            const entry = currentCalibration.entries[index];
+            currentCoefficients = entry.coefficients;
+
+            document.getElementById('coef-k1').textContent = currentCoefficients.k1.toFixed(6);
+            document.getElementById('coef-k2').textContent = currentCoefficients.k2.toFixed(6);
+            document.getElementById('coef-k3').textContent = currentCoefficients.k3.toFixed(6);
+            document.getElementById('coef-p1').textContent = currentCoefficients.p1.toFixed(6);
+            document.getElementById('coef-p2').textContent = currentCoefficients.p2.toFixed(6);
+
+            updateApplyButton();
+        }
+
+        function updateApplyButton() {
+            applyBtn.disabled = !currentCoefficients || !imageSelect.value;
+        }
+
+        // Apply undistortion
+        async function applyUndistortion() {
+            if (!currentCoefficients || !imageSelect.value) return;
+
+            applyBtn.disabled = true;
+            showStatus('Applying undistortion...', 'info');
+
+            try {
+                const resp = await fetch('{% url "distortion_validator:api_undistort" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_path: imageSelect.value,
+                        coefficients: currentCoefficients,
+                        intrinsics: currentIntrinsics
+                    })
+                });
+
+                const data = await resp.json();
+                if (data.error) {
+                    showStatus(`Error: ${data.error}`, 'error');
+                    applyBtn.disabled = false;
+                    return;
+                }
+
+                imageWidth = data.width;
+                imageHeight = data.height;
+
+                // Update default intrinsics based on image size
+                updateDefaultIntrinsics(imageWidth, imageHeight);
+
+                // Log the method and intrinsics used
+                console.log('Undistortion applied with:', {
+                    method: data.method_used,
+                    intrinsics: data.intrinsics_used,
+                    coefficients: data.coefficients_used
+                });
+
+                // Setup original panel
+                panels.original.img.src = 'data:image/jpeg;base64,' + data.original;
+                panels.original.img.onload = () => {
+                    panels.original.empty.style.display = 'none';
+                    panels.original.scroller.style.display = 'inline-block';
+                    setupCanvas('original');
+                };
+
+                // Setup undistorted panel
+                panels.undistorted.img.src = 'data:image/jpeg;base64,' + data.undistorted;
+                panels.undistorted.img.onload = () => {
+                    panels.undistorted.empty.style.display = 'none';
+                    panels.undistorted.scroller.style.display = 'inline-block';
+                    setupCanvas('undistorted');
+                };
+
+                // Clear existing lines
+                comparisonLines = [];
+                currentLine = null;
+                updateLinesList();
+
+                showStatus('Ready! Click on either image to draw lines.', 'success');
+
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+
+            applyBtn.disabled = false;
+        }
+
+        // Setup canvas for a panel
+        function setupCanvas(panelName) {
+            const panel = panels[panelName];
+            panel.canvas.width = panel.img.naturalWidth;
+            panel.canvas.height = panel.img.naturalHeight;
+            updateZoom(panelName, panel.zoom);
+            renderLines(panelName);
+        }
+
+        // Update zoom for a panel
+        function updateZoom(panelName, newZoom, syncOther = true) {
+            const panel = panels[panelName];
+            panel.zoom = Math.max(0.25, Math.min(5, newZoom));
+            panel.container.style.transform = `scale(${panel.zoom})`;
+            panel.zoomDisplay.textContent = Math.round(panel.zoom * 100) + '%';
+
+            // Update scroller size to enable proper scrolling
+            const scaledWidth = panel.img.naturalWidth * panel.zoom;
+            const scaledHeight = panel.img.naturalHeight * panel.zoom;
+            panel.scroller.style.width = scaledWidth + 'px';
+            panel.scroller.style.height = scaledHeight + 'px';
+
+            if (syncOther && syncZoomCheckbox.checked) {
+                const otherPanel = panelName === 'original' ? 'undistorted' : 'original';
+                if (panels[otherPanel].scroller.style.display !== 'none') {
+                    updateZoom(otherPanel, panel.zoom, false);
+                }
+            }
+        }
+
+        // Get canvas coordinates from mouse event
+        function getCanvasCoords(e, panelName) {
+            const panel = panels[panelName];
+            const rect = panel.canvas.getBoundingClientRect();
+            const scaleX = panel.canvas.width / rect.width;
+            const scaleY = panel.canvas.height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        // Setup canvas event handlers
+        function setupCanvasEvents(panelName) {
+            const panel = panels[panelName];
+            const ctx = panel.canvas.getContext('2d');
+
+            panel.canvas.addEventListener('click', (e) => {
+                const coords = getCanvasCoords(e, panelName);
+
+                if (!currentLine) {
+                    currentLine = { panel: panelName, points: [[coords.x, coords.y]] };
+                    showStatus(`Drawing on ${panelName}. Click more points, press ESC to finish.`, 'info');
+                } else if (currentLine.panel === panelName) {
+                    currentLine.points.push([coords.x, coords.y]);
+                    showStatus(`${currentLine.points.length} points. Click more or press ESC to finish.`, 'info');
+                } else {
+                    showStatus(`Finish current line first (ESC) or continue on ${currentLine.panel} panel.`, 'error');
+                }
+
+                renderLines('original');
+                renderLines('undistorted');
+            });
+
+            panel.canvas.addEventListener('mousemove', (e) => {
+                if (!currentLine || currentLine.panel !== panelName) return;
+                const coords = getCanvasCoords(e, panelName);
+                renderLines('original');
+                renderLines('undistorted');
+                // Draw preview line on current panel
+                if (currentLine.points.length > 0) {
+                    const lastPt = currentLine.points[currentLine.points.length - 1];
+                    ctx.beginPath();
+                    ctx.moveTo(lastPt[0], lastPt[1]);
+                    ctx.lineTo(coords.x, coords.y);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+
+            // Mouse wheel zoom
+            panel.wrapper.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                updateZoom(panelName, panel.zoom * delta);
+            });
+
+            // Middle mouse button or Shift+Left click to pan
+            panel.wrapper.addEventListener('mousedown', (e) => {
+                if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+                    e.preventDefault();
+                    panel.isPanning = true;
+                    panel.panStart = { x: e.clientX, y: e.clientY };
+                    panel.scrollStart = { x: panel.wrapper.scrollLeft, y: panel.wrapper.scrollTop };
+                    panel.wrapper.style.cursor = 'grabbing';
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!panel.isPanning) return;
+                const dx = e.clientX - panel.panStart.x;
+                const dy = e.clientY - panel.panStart.y;
+                panel.wrapper.scrollLeft = panel.scrollStart.x - dx;
+                panel.wrapper.scrollTop = panel.scrollStart.y - dy;
+            });
+
+            document.addEventListener('mouseup', (e) => {
+                if (panel.isPanning) {
+                    panel.isPanning = false;
+                    panel.wrapper.style.cursor = '';
+                }
+            });
+        }
+
+        // Setup scroll sync
+        let isSyncing = false;
+        function setupScrollSync() {
+            ['original', 'undistorted'].forEach(panelName => {
+                panels[panelName].wrapper.addEventListener('scroll', (e) => {
+                    if (!syncScrollCheckbox.checked || isSyncing) return;
+                    const otherPanel = panelName === 'original' ? 'undistorted' : 'original';
+                    if (panels[otherPanel].scroller.style.display === 'none') return;
+
+                    isSyncing = true;
+                    const source = panels[panelName].wrapper;
+                    const target = panels[otherPanel].wrapper;
+                    target.scrollLeft = source.scrollLeft;
+                    target.scrollTop = source.scrollTop;
+                    setTimeout(() => { isSyncing = false; }, 10);
+                });
+            });
+        }
+
+        // ESC to finish line
+        document.addEventListener('keydown', async (e) => {
+            if (e.key === 'Escape' && currentLine) {
+                e.preventDefault();
+
+                if (currentLine.points.length >= 2) {
+                    showStatus('Measuring line straightness...', 'info');
+
+                    try {
+                        // When drawing on the ORIGINAL image:
+                        //   - originalRmse = measure those points directly (they're distorted)
+                        //   - undistortedRmse = undistort those points first, then measure
+                        //
+                        // When drawing on the UNDISTORTED image:
+                        //   - The points are already in undistorted space
+                        //   - So undistortedRmse = measure directly
+                        //   - originalRmse would need to "re-distort" (not typically useful)
+                        //
+                        // For proper comparison, we always draw on the ORIGINAL image
+                        // and compare before/after undistortion.
+
+                        let originalResult, undistortedResult;
+
+                        if (currentLine.panel === 'original') {
+                            // Points drawn on original (distorted) image
+                            // Measure raw points = original RMSE
+                            // Undistort points, then measure = undistorted RMSE
+                            [originalResult, undistortedResult] = await Promise.all([
+                                measureStraightness(currentLine.points, false),
+                                measureStraightness(currentLine.points, true)  // Undistort points first!
+                            ]);
+                        } else {
+                            // Points drawn on undistorted image
+                            // These points are already in undistorted space
+                            // Measuring them directly gives the undistorted RMSE
+                            // For "original", we'd need to re-distort (not implemented)
+                            undistortedResult = await measureStraightness(currentLine.points, false);
+                            originalResult = { rmse_pixels: undistortedResult.rmse_pixels, quality: undistortedResult.quality };
+                            showStatus('Note: Drawing on undistorted image - comparing same points', 'info');
+                        }
+
+                        comparisonLines.push({
+                            points: currentLine.points,
+                            sourcePanel: currentLine.panel,
+                            originalRmse: originalResult.rmse_pixels,
+                            originalQuality: originalResult.quality,
+                            undistortedRmse: undistortedResult.rmse_pixels,
+                            undistortedQuality: undistortedResult.quality
+                        });
+
+                        updateLinesList();
+
+                        if (currentLine.panel === 'original') {
+                            const improvement = ((originalResult.rmse_pixels - undistortedResult.rmse_pixels) / originalResult.rmse_pixels * 100).toFixed(1);
+                            showStatus(`Line added! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
+                        } else {
+                            showStatus(`Line added! RMSE: ${undistortedResult.rmse_pixels.toFixed(3)}px (drawn on undistorted image)`, 'success');
+                        }
+
+                    } catch (err) {
+                        showStatus(`Error: ${err.message}`, 'error');
+                    }
+                }
+
+                currentLine = null;
+                renderLines('original');
+                renderLines('undistorted');
+            }
+        });
+
+        // Measure straightness via API
+        // If undistort=true, the backend will undistort the points using the same
+        // method as the calibration solver before measuring straightness.
+        async function measureStraightness(points, undistort = false) {
+            const payload = { points };
+
+            if (undistort) {
+                // Pass coefficients and intrinsics so backend can undistort points
+                payload.undistort = true;
+                payload.coefficients = currentCoefficients;
+                payload.intrinsics = currentIntrinsics;
+            }
+
+            const resp = await fetch('{% url "distortion_validator:api_measure_straightness" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            return await resp.json();
+        }
+
+        // Render lines on a panel
+        function renderLines(panelName) {
+            const panel = panels[panelName];
+            const ctx = panel.canvas.getContext('2d');
+            ctx.clearRect(0, 0, panel.canvas.width, panel.canvas.height);
+
+            const isOriginal = panelName === 'original';
+
+            // Draw completed lines
+            comparisonLines.forEach((line, i) => {
+                const rmse = isOriginal ? line.originalRmse : line.undistortedRmse;
+                const quality = isOriginal ? line.originalQuality : line.undistortedQuality;
+                const color = getQualityColor(quality);
+                drawLine(ctx, line.points, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+            });
+
+            // Draw current line being drawn
+            if (currentLine && currentLine.points.length > 0) {
+                const showOnThis = currentLine.panel === panelName;
+                if (showOnThis) {
+                    drawLine(ctx, currentLine.points, '#ffffff', null, true);
+                }
+            }
+        }
+
+        // Get color based on quality
+        function getQualityColor(quality) {
+            switch (quality) {
+                case 'excellent': return '#4caf50';
+                case 'good': return '#8bc34a';
+                case 'acceptable': return '#ff9800';
+                case 'poor': return '#f44336';
+                default: return '#2196f3';
+            }
+        }
+
+        // Draw a line with points
+        function drawLine(ctx, points, color, label, isPreview = false) {
+            if (points.length === 0) return;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isPreview ? 2 : 3;
+            if (isPreview) {
+                ctx.setLineDash([5, 5]);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw points
+            points.forEach((pt, i) => {
+                ctx.beginPath();
+                ctx.arc(pt[0], pt[1], i === 0 ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = i === 0 ? '#4caf50' : color;
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Draw label
+            if (label && points.length >= 2) {
+                const midIdx = Math.floor(points.length / 2);
+                ctx.font = 'bold 12px system-ui';
+                const metrics = ctx.measureText(label);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(points[midIdx][0] - metrics.width / 2 - 4, points[midIdx][1] - 20, metrics.width + 8, 18);
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, points[midIdx][0], points[midIdx][1] - 11);
+            }
+        }
+
+        // Update lines list
+        function updateLinesList() {
+            if (comparisonLines.length === 0) {
+                linesList.innerHTML = '<div style="color: #546e7a; font-size: 12px; text-align: center; padding: 20px;">Draw lines on either image to compare straightness</div>';
+                summaryStats.style.display = 'none';
+                return;
+            }
+
+            linesList.innerHTML = '';
+            comparisonLines.forEach((line, i) => {
+                const improvement = line.originalRmse > 0
+                    ? ((line.originalRmse - line.undistortedRmse) / line.originalRmse * 100)
+                    : 0;
+
+                const improvementClass = improvement > 5 ? 'improved' : improvement < -5 ? 'worse' : 'same';
+                const improvementText = improvement > 0
+                    ? `${improvement.toFixed(1)}% better`
+                    : improvement < 0
+                        ? `${Math.abs(improvement).toFixed(1)}% worse`
+                        : 'No change';
+
+                const div = document.createElement('div');
+                div.className = 'line-comparison-item';
+                div.innerHTML = `
+                    <div class="line-comparison-header">
+                        <span class="line-name">Line ${i + 1} (${line.points.length} pts)</span>
+                        <button class="delete-btn" data-index="${i}">&times;</button>
+                    </div>
+                    <div class="line-comparison-body">
+                        <div class="rmse-box original">
+                            <div class="label">Original</div>
+                            <div class="value">${line.originalRmse.toFixed(3)}</div>
+                            <div class="quality">${line.originalQuality}</div>
+                        </div>
+                        <div class="rmse-box undistorted">
+                            <div class="label">Undistorted</div>
+                            <div class="value">${line.undistortedRmse.toFixed(3)}</div>
+                            <div class="quality">${line.undistortedQuality}</div>
+                        </div>
+                        <div class="improvement-indicator ${improvementClass}">${improvementText}</div>
+                    </div>
+                `;
+                linesList.appendChild(div);
+            });
+
+            // Delete handlers
+            linesList.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    comparisonLines.splice(idx, 1);
+                    renderLines('original');
+                    renderLines('undistorted');
+                    updateLinesList();
+                });
+            });
+
+            // Update summary
+            summaryStats.style.display = 'grid';
+            const avgOriginal = comparisonLines.reduce((s, l) => s + l.originalRmse, 0) / comparisonLines.length;
+            const avgUndistorted = comparisonLines.reduce((s, l) => s + l.undistortedRmse, 0) / comparisonLines.length;
+            const avgImprovement = avgOriginal > 0 ? ((avgOriginal - avgUndistorted) / avgOriginal * 100) : 0;
+
+            document.getElementById('avg-original').textContent = avgOriginal.toFixed(3);
+            document.getElementById('avg-original').className = 'value ' + (avgOriginal < 1 ? 'good' : avgOriginal < 3 ? 'warning' : 'bad');
+
+            document.getElementById('avg-undistorted').textContent = avgUndistorted.toFixed(3);
+            document.getElementById('avg-undistorted').className = 'value ' + (avgUndistorted < 1 ? 'good' : avgUndistorted < 3 ? 'warning' : 'bad');
+
+            document.getElementById('avg-improvement').textContent = avgImprovement.toFixed(1) + '%';
+            document.getElementById('avg-improvement').className = 'value ' + (avgImprovement > 10 ? 'good' : avgImprovement > 0 ? 'warning' : 'bad');
+        }
+
+        // Show status message
+        function showStatus(message, type = 'info') {
+            statusMessage.textContent = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.style.display = 'block';
+        }
+
+        // Clear all lines
+        clearLinesBtn.addEventListener('click', () => {
+            comparisonLines = [];
+            currentLine = null;
+            renderLines('original');
+            renderLines('undistorted');
+            updateLinesList();
+            showStatus('All lines cleared', 'info');
+        });
+
+        // Event listeners
+        calibrationSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                loadCalibration(e.target.value);
+            } else {
+                currentCalibration = null;
+                currentCoefficients = null;
+                zoomEntrySelect.innerHTML = '<option value="">-- Select zoom --</option>';
+                zoomEntrySelect.disabled = true;
+                updateApplyButton();
+            }
+        });
+
+        zoomEntrySelect.addEventListener('change', (e) => {
+            if (e.target.value !== '') {
+                selectZoomEntry(parseInt(e.target.value));
+            }
+        });
+
+        imageSelect.addEventListener('change', updateApplyButton);
+        applyBtn.addEventListener('click', applyUndistortion);
+
+        // Zoom button handlers
+        document.querySelectorAll('.zoom-in').forEach(btn => {
+            btn.addEventListener('click', () => updateZoom(btn.dataset.panel, panels[btn.dataset.panel].zoom * 1.25));
+        });
+        document.querySelectorAll('.zoom-out').forEach(btn => {
+            btn.addEventListener('click', () => updateZoom(btn.dataset.panel, panels[btn.dataset.panel].zoom / 1.25));
+        });
+        document.querySelectorAll('.zoom-fit').forEach(btn => {
+            btn.addEventListener('click', () => updateZoom(btn.dataset.panel, 1));
+        });
+
+        // Intrinsics input handlers
+        const intrinsicFx = document.getElementById('intrinsic-fx');
+        const intrinsicFy = document.getElementById('intrinsic-fy');
+        const intrinsicCx = document.getElementById('intrinsic-cx');
+        const intrinsicCy = document.getElementById('intrinsic-cy');
+        const setIntrinsicsBtn = document.getElementById('set-intrinsics-btn');
+
+        function updateIntrinsicsFromInputs() {
+            currentIntrinsics = {
+                fx: parseFloat(intrinsicFx.value) || 1000,
+                fy: parseFloat(intrinsicFy.value) || 1000,
+                cx: parseFloat(intrinsicCx.value) || 960,
+                cy: parseFloat(intrinsicCy.value) || 540
+            };
+            showStatus(`Intrinsics updated: fx=${currentIntrinsics.fx}, fy=${currentIntrinsics.fy}, cx=${currentIntrinsics.cx}, cy=${currentIntrinsics.cy}`, 'info');
+        }
+
+        setIntrinsicsBtn.addEventListener('click', updateIntrinsicsFromInputs);
+
+        // Update intrinsics inputs when image is loaded (center point)
+        function updateDefaultIntrinsics(width, height) {
+            // Only update cx/cy to image center if they haven't been manually changed
+            if (intrinsicCx.value === '960') {
+                intrinsicCx.value = Math.round(width / 2);
+            }
+            if (intrinsicCy.value === '540') {
+                intrinsicCy.value = Math.round(height / 2);
+            }
+            updateIntrinsicsFromInputs();
+        }
+
+        // Initialize
+        loadCalibrationFiles();
+        loadImages();
+        setupCanvasEvents('original');
+        setupCanvasEvents('undistorted');
+        setupScrollSync();
+        updateIntrinsicsFromInputs(); // Set initial intrinsics
+    </script>
+</body>
+</html>

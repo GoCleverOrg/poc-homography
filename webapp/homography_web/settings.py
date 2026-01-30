@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     "camera_diagnostic",
     "camera_survey",
     "camera_evaluation",
+    "lens_calibration",
+    "distortion_validator",
 ]
 
 MIDDLEWARE = [

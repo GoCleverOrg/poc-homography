@@ -33,13 +33,15 @@ def index(request: HttpRequest) -> HttpResponse:
 def api_image_info(request: HttpRequest) -> JsonResponse:
     """Get image metadata."""
     state = get_state()
-    return JsonResponse({
-        "width": state.width,
-        "height": state.height,
-        "geotransform": state.geotransform,
-        "crs": state.crs,
-        "filename": state.geotiff_path.name,
-    })
+    return JsonResponse(
+        {
+            "width": state.width,
+            "height": state.height,
+            "geotransform": state.geotransform,
+            "crs": state.crs,
+            "filename": state.geotiff_path.name,
+        }
+    )
 
 
 @require_GET
@@ -200,18 +202,20 @@ def api_points(request: HttpRequest) -> JsonResponse:
     state = get_state()
 
     if request.method == "GET":
-        return JsonResponse({
-            "map_id": state.registry.map_id,
-            "points": [
-                {
-                    "id": pid,
-                    "pixel_x": p.pixel_x,
-                    "pixel_y": p.pixel_y,
-                    "tag": get_tag_from_id(pid),
-                }
-                for pid, p in state.registry.points.items()
-            ],
-        })
+        return JsonResponse(
+            {
+                "map_id": state.registry.map_id,
+                "points": [
+                    {
+                        "id": pid,
+                        "pixel_x": p.pixel_x,
+                        "pixel_y": p.pixel_y,
+                        "tag": get_tag_from_id(pid),
+                    }
+                    for pid, p in state.registry.points.items()
+                ],
+            }
+        )
 
     # POST - add a new point
     try:
@@ -231,12 +235,14 @@ def api_points(request: HttpRequest) -> JsonResponse:
     point_id = state.add_point(tag, pixel_x, pixel_y, point_id=point_id)
     point = state.registry.points[point_id]
 
-    return JsonResponse({
-        "id": point_id,
-        "pixel_x": point.pixel_x,
-        "pixel_y": point.pixel_y,
-        "tag": get_tag_from_id(point_id),
-    })
+    return JsonResponse(
+        {
+            "id": point_id,
+            "pixel_x": point.pixel_x,
+            "pixel_y": point.pixel_y,
+            "tag": get_tag_from_id(point_id),
+        }
+    )
 
 
 @csrf_exempt
@@ -265,12 +271,14 @@ def api_point_detail(request: HttpRequest, point_id: str) -> JsonResponse:
     try:
         state.update_point(point_id, float(data["pixel_x"]), float(data["pixel_y"]))
         point = state.registry.points[point_id]
-        return JsonResponse({
-            "id": point_id,
-            "pixel_x": point.pixel_x,
-            "pixel_y": point.pixel_y,
-            "tag": get_tag_from_id(point_id),
-        })
+        return JsonResponse(
+            {
+                "id": point_id,
+                "pixel_x": point.pixel_x,
+                "pixel_y": point.pixel_y,
+                "tag": get_tag_from_id(point_id),
+            }
+        )
     except KeyError:
         return JsonResponse({"error": f"Point not found: {point_id}"}, status=404)
 
@@ -302,20 +310,24 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     state = get_state()
     coords = state.get_geo_coords(pixel_x, pixel_y)
     if coords:
-        return JsonResponse({
+        return JsonResponse(
+            {
+                "pixel_x": pixel_x,
+                "pixel_y": pixel_y,
+                "easting": coords[0],
+                "northing": coords[1],
+                "crs": state.crs,
+            }
+        )
+    return JsonResponse(
+        {
             "pixel_x": pixel_x,
             "pixel_y": pixel_y,
-            "easting": coords[0],
-            "northing": coords[1],
-            "crs": state.crs,
-        })
-    return JsonResponse({
-        "pixel_x": pixel_x,
-        "pixel_y": pixel_y,
-        "easting": None,
-        "northing": None,
-        "crs": None,
-    })
+            "easting": None,
+            "northing": None,
+            "crs": None,
+        }
+    )
 
 
 @csrf_exempt
@@ -356,8 +368,10 @@ def api_import(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": f"File not found: {path}"}, status=404)
 
     state.load_registry(path)
-    return JsonResponse({
-        "imported": str(path),
-        "count": len(state.registry.points),
-        "map_id": state.registry.map_id,
-    })
+    return JsonResponse(
+        {
+            "imported": str(path),
+            "count": len(state.registry.points),
+            "map_id": state.registry.map_id,
+        }
+    )
