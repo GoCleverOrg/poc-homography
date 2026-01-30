@@ -344,7 +344,7 @@ class LineDetector:
 
         pt1 = (int(start[0]), int(start[1]))
         pt2 = (int(end[0]), int(end[1]))
-        cv2.line(mask, pt1, pt2, 255, corridor_width * 2 + 1)
+        cv2.line(mask, pt1, pt2, (255,), corridor_width * 2 + 1)
 
         # Find edge pixels within the corridor
         edge_coords = np.column_stack(np.where((edges > 0) & (mask > 0)))
