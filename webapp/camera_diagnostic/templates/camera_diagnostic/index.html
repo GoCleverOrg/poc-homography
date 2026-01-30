@@ -1644,7 +1644,88 @@
             renderCameraResults();
         }
 
-        // Run all tests on all cameras (using new API that saves session)
+        // Run a single test type for a camera and update UI in real-time
+        async function runSingleTest(cameraId, testType) {
+            const result = testResults[cameraId];
+            const urlTemplates = {
+                rtsp: '{% url "camera_diagnostic:api_test_rtsp" "CAMERA_PLACEHOLDER" %}',
+                webui: '{% url "camera_diagnostic:api_test_webui" "CAMERA_PLACEHOLDER" %}',
+                ptz: '{% url "camera_diagnostic:api_test_ptz" "CAMERA_PLACEHOLDER" %}',
+            };
+
+            result[testType] = 'running';
+            renderCameraResults();
+            updateSummaryStats();
+
+            try {
+                const url = urlTemplates[testType].replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
+                const resp = await fetch(url);
+                const testResult = await resp.json();
+
+                if (testResult.status === 'success') {
+                    if (testType === 'rtsp') {
+                        result.rtsp = 'pass';
+                        const metrics = testResult.data?.metrics;
+                        result.rtspLogs = `${testResult.data?.message || 'Connected successfully'}\n`;
+                        if (metrics) {
+                            result.rtspLogs += `Latency: ${metrics.latency_ms}ms\n`;
+                            result.rtspLogs += `Resolution: ${metrics.resolution?.width}x${metrics.resolution?.height}`;
+                        }
+                    } else if (testType === 'webui') {
+                        const data = testResult.data;
+                        result.webui = data.login_success ? 'pass' : 'fail';
+                        result.webuiLogs = `${data.message || 'Test completed'}\n`;
+                        if (data.login_attempted && !data.login_success) {
+                            result.webuiLogs += data.login_error ? `Error: ${data.login_error}\n` : 'Login failed silently\n';
+                        }
+                        if (data.ptz_controls_found?.length > 0) {
+                            result.webuiLogs += `PTZ controls found: ${data.ptz_controls_found.length}\n`;
+                        }
+                        if (data.screenshot_path) {
+                            result.webuiLogs += `Screenshot: ${data.screenshot_path}`;
+                        }
+                    } else if (testType === 'ptz') {
+                        const data = testResult.data;
+                        const tests = data.tests || {};
+                        const allPassed = Object.values(tests).every(t => t.success !== false);
+                        result.ptz = allPassed ? 'pass' : 'fail';
+
+                        const logs = [];
+                        if (data.initial_position) {
+                            logs.push(`Initial: Pan=${data.initial_position.pan?.toFixed(1)}° Tilt=${data.initial_position.tilt?.toFixed(1)}° Zoom=${data.initial_position.zoom?.toFixed(1)}`);
+                        }
+                        Object.entries(tests).forEach(([name, test]) => {
+                            const status = test.success ? '✓' : '✗';
+                            logs.push(`${status} ${name}: ${test.success ? 'OK' : (test.error || 'Failed')}`);
+                        });
+                        if (data.position_restored) {
+                            logs.push('✓ Position restored');
+                        }
+                        result.ptzLogs = logs.join('\n');
+                    }
+                } else {
+                    result[testType] = 'fail';
+                    const logsKey = testType + 'Logs';
+                    result[logsKey] = `Error: ${testResult.message || 'Unknown error'}`;
+                    checkCredentialsError(testResult);
+                }
+            } catch (e) {
+                result[testType] = 'fail';
+                result[testType + 'Logs'] = `Request failed: ${e.message}`;
+            }
+
+            updateSummaryStats();
+            renderCameraResults();
+
+            // Return collected result data for session saving
+            return {
+                test_type: testType,
+                status: result[testType],
+                logs: result[testType + 'Logs'],
+            };
+        }
+
+        // Run all tests on all cameras with frontend orchestration
         async function runAllTests() {
             if (isRunning) return;
 
@@ -1658,59 +1739,63 @@
             updateSummaryStats();
             renderCameraResults();
 
+            // Show RTSP preview panel
+            videoPreview.classList.add('visible');
+
+            // Iterate cameras sequentially
+            for (const camera of tenantCameras) {
+                const cameraId = camera.id;
+
+                // Switch RTSP preview to current camera
+                showVideoPreview(cameraId);
+
+                // Run RTSP, WebUI, and PTZ tests concurrently for this camera
+                await Promise.all([
+                    runSingleTest(cameraId, 'rtsp'),
+                    runSingleTest(cameraId, 'webui'),
+                    runSingleTest(cameraId, 'ptz'),
+                ]);
+            }
+
+            // Stop RTSP preview after all tests complete
+            showVideoPreview(null);
+
+            // Save diagnostic session with collected results
             try {
-                // Use the new API endpoint that runs all tests and saves the session
-                const resp = await fetch('{% url "camera_diagnostic:api_run_diagnostic" %}', {
+                const cameraResults = tenantCameras.map(cam => {
+                    const r = testResults[cam.id];
+                    return {
+                        camera_id: cam.id,
+                        camera_name: r.name || cam.name,
+                        camera_ip: r.ip || cam.ip || '',
+                        rtsp_test: {
+                            test_type: 'rtsp',
+                            status: r.rtsp === 'pass' ? 'pass' : (r.rtsp === 'fail' ? 'fail' : 'pending'),
+                            details: { logs: r.rtspLogs || '' },
+                        },
+                        webui_test: {
+                            test_type: 'webui',
+                            status: r.webui === 'pass' ? 'pass' : (r.webui === 'fail' ? 'fail' : 'pending'),
+                            details: { logs: r.webuiLogs || '' },
+                        },
+                        ptz_test: {
+                            test_type: 'ptz',
+                            status: r.ptz === 'pass' ? 'pass' : (r.ptz === 'fail' ? 'fail' : 'pending'),
+                            details: { logs: r.ptzLogs || '' },
+                        },
+                    };
+                });
+
+                await fetch('{% url "camera_diagnostic:api_save_diagnostic_session" %}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         tenant_id: selectedTenant,
-                        camera_ids: tenantCameras.map(c => c.id),
+                        camera_results: cameraResults,
                     }),
                 });
-
-                const result = await resp.json();
-
-                if (result.status === 'success') {
-                    // Update test results from API response
-                    const cameraResultsData = result.data.camera_results || [];
-                    cameraResultsData.forEach(camResult => {
-                        if (testResults[camResult.camera_id]) {
-                            const r = testResults[camResult.camera_id];
-
-                            // Update device info
-                            if (camResult.device_info) {
-                                r.deviceInfo = camResult.device_info;
-                            }
-
-                            // Update RTSP
-                            if (camResult.rtsp_test) {
-                                r.rtsp = camResult.rtsp_test.status === 'pass' ? 'pass' : 'fail';
-                                r.rtspLogs = formatTestLogs(camResult.rtsp_test);
-                            }
-
-                            // Update WebUI
-                            if (camResult.webui_test) {
-                                r.webui = camResult.webui_test.status === 'pass' ? 'pass' : 'fail';
-                                r.webuiLogs = formatTestLogs(camResult.webui_test);
-                            }
-
-                            // Update PTZ
-                            if (camResult.ptz_test) {
-                                r.ptz = camResult.ptz_test.status === 'pass' ? 'pass' : 'fail';
-                                r.ptzLogs = formatTestLogs(camResult.ptz_test);
-                            }
-                        }
-                    });
-
-                    updateSummaryStats();
-                    renderCameraResults();
-                } else {
-                    alert('Test run failed: ' + (result.message || 'Unknown error'));
-                    checkCredentialsError(result);
-                }
             } catch (e) {
-                alert('Request failed: ' + e.message);
+                console.error('Failed to save diagnostic session:', e);
             }
 
             isRunning = false;
