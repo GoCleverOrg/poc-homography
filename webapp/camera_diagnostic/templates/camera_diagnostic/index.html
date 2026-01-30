@@ -2149,6 +2149,8 @@
         // Show video stream for stress testing
         function showStressVideoStream(cameraId) {
             if (!cameraId) {
+                // Clear src to close any active MJPEG stream connection
+                stressVideoStream.src = '';
                 stressVideoPanel.classList.add('hidden');
                 stressVideoStream.style.display = 'none';
                 stressVideoPlaceholder.style.display = 'block';
