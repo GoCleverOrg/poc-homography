@@ -12,6 +12,8 @@ The tool will:
 3. Compare against current parameters to identify the error
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 

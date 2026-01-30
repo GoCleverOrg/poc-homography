@@ -7,11 +7,14 @@ easier testing/debugging of the camera geometry pipeline.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,25 @@ class DistortionCoefficients:
             p2=Unitless(float(coeffs[3])),
             k3=Unitless(float(coeffs[4])),
         )
+
+    @classmethod
+    def load_calibration(
+        cls,
+        camera_id: str,
+        zoom_factor: float,
+        calibration_dir: str,
+    ) -> DistortionCoefficients | None:
+        """Load calibrated distortion coefficients for a camera.
+
+        .. deprecated::
+            Use ``poc_homography.calibration.lens_distortion.apply_calibration.load_distortion_coefficients``
+            instead.  This class method will be removed in a future release.
+        """
+        from poc_homography.calibration.lens_distortion.apply_calibration import (
+            load_distortion_coefficients,
+        )
+
+        return load_distortion_coefficients(camera_id, zoom_factor, calibration_dir)
 
 
 @dataclass(frozen=True)

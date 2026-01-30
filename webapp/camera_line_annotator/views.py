@@ -127,11 +127,24 @@ def save_session_annotations(
 def extract_camera_status(filename: str) -> dict[str, Any]:
     """Extract pan/tilt/zoom from filename pattern.
 
-    Pattern: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
-    Example: valte_56.7_20.7_1_20260114_182208.jpg
+    Supports two patterns:
+    - Legacy: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
+      Example: valte_56.7_20.7_1_20260114_182208.jpg
+    - Survey: {tenant}_{camera}_{date}_{time}_{pan}_{tilt}_{zoom}.{ext}
+      Example: valte_valte_cam01_20260126_095620_30.0_15.3_1.0.jpg
     """
-    pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
-    match = re.match(pattern, filename)
+    # Try survey pattern: _YYYYMMDD_HHMMSS_pan_tilt_zoom.ext
+    survey_pattern = r"_\d{8}_\d{6}_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)\.\w+$"
+    match = re.search(survey_pattern, filename)
+    if match:
+        return {
+            "pan": float(match.group(1)),
+            "tilt": float(match.group(2)),
+            "zoom": float(match.group(3)),
+        }
+    # Try legacy pattern: valte_pan_tilt_zoom_timestamp.ext
+    legacy_pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
+    match = re.match(legacy_pattern, filename)
     if match:
         return {
             "pan": float(match.group(1)),
@@ -314,6 +327,12 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid coordinate values"}, status=422)
 
+    # Preserve N-point data if provided
+    if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
+        annotation["points"] = [
+            [float(p[0]), float(p[1])] for p in data["points"]
+        ]
+
     # Store annotation
     all_annotations = get_session_annotations(request)
     if current_image not in all_annotations:
@@ -454,4 +473,112 @@ def api_export(request: HttpRequest) -> JsonResponse:
         "path": str(resolved_path),
         "test_case_name": test_case_name,
         "annotation_count": len(image_annotations),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_import(request: HttpRequest) -> JsonResponse:
+    """Import annotations from YAML file or YAML content."""
+    current_image = get_current_image(request)
+    if not current_image:
+        return JsonResponse({"error": "No image selected"}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    # Get YAML content - either from filename or direct content
+    yaml_content = None
+    filename = data.get("filename")
+    yaml_text = data.get("yaml_content")
+
+    if yaml_text:
+        # Direct YAML content provided
+        try:
+            yaml_content = yaml.safe_load(yaml_text)
+        except yaml.YAMLError as e:
+            return JsonResponse({"error": f"Invalid YAML: {e}"}, status=400)
+    elif filename:
+        # Load from file
+        if not validate_image_filename(filename):
+            return JsonResponse({"error": "Invalid filename"}, status=400)
+
+        file_path = TEST_DATA_DIR / filename
+        try:
+            resolved_path = file_path.resolve()
+            if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
+                return JsonResponse({"error": "Invalid filename"}, status=400)
+        except (ValueError, RuntimeError):
+            return JsonResponse({"error": "Invalid filename"}, status=400)
+
+        if not resolved_path.exists():
+            return JsonResponse({"error": f"File not found: {filename}"}, status=404)
+
+        try:
+            with open(resolved_path) as f:
+                yaml_content = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            return JsonResponse({"error": f"Invalid YAML in file: {e}"}, status=400)
+    else:
+        return JsonResponse(
+            {"error": "Either 'filename' or 'yaml_content' is required"}, status=400
+        )
+
+    # Find test case matching current image
+    test_cases = yaml_content.get("test_cases", [])
+    matching_case = None
+    for tc in test_cases:
+        if tc.get("image") == current_image:
+            matching_case = tc
+            break
+
+    if not matching_case:
+        available_images = [tc.get("image") for tc in test_cases]
+        return JsonResponse({
+            "error": f"No test case found for current image '{current_image}'",
+            "available_images": available_images,
+        }, status=404)
+
+    # Extract annotations - support both formats
+    line_annotations = matching_case.get("line_annotations", [])
+    imported_annotations = []
+
+    for ann in line_annotations:
+        # Check for N-point format (points array)
+        if "points" in ann:
+            points = ann["points"]
+            if len(points) >= 2:
+                imported_annotations.append({
+                    "line_id": ann.get("line_id", ""),
+                    "start_pixel_x": float(points[0][0]),
+                    "start_pixel_y": float(points[0][1]),
+                    "end_pixel_x": float(points[-1][0]),
+                    "end_pixel_y": float(points[-1][1]),
+                    "points": points,  # Keep full points for N-point mode
+                })
+        # Standard 2-point format
+        elif all(k in ann for k in ["start_pixel_x", "start_pixel_y", "end_pixel_x", "end_pixel_y"]):
+            imported_annotations.append({
+                "line_id": ann.get("line_id", ""),
+                "start_pixel_x": float(ann["start_pixel_x"]),
+                "start_pixel_y": float(ann["start_pixel_y"]),
+                "end_pixel_x": float(ann["end_pixel_x"]),
+                "end_pixel_y": float(ann["end_pixel_y"]),
+            })
+
+    # Store imported annotations
+    all_annotations = get_session_annotations(request)
+    all_annotations[current_image] = imported_annotations
+    save_session_annotations(request, all_annotations)
+
+    # Extract camera status if available
+    camera_status = matching_case.get("camera_status", {})
+
+    return JsonResponse({
+        "success": True,
+        "annotation_count": len(imported_annotations),
+        "annotations": imported_annotations,
+        "camera_status": camera_status,
     })

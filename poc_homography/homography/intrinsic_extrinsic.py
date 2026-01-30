@@ -809,3 +809,68 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
             confidence=result.confidence,
             metadata=result.to_metadata_dict(),
         )
+
+    @classmethod
+    def load_lens_distortion_calibration(
+        cls,
+        camera_id: str,
+        calibration_dir: str,
+    ) -> dict[float, dict[str, float]] | None:
+        """Load lens distortion calibration as a calibration_table dict.
+
+        Delegates to
+        ``poc_homography.calibration.lens_distortion.calibration_table.load_lens_distortion_as_table``.
+
+        Args:
+            camera_id: Identifier for the camera.
+            calibration_dir: Directory containing calibration YAML files.
+
+        Returns:
+            Dictionary mapping zoom_factor to calibration params with
+            k1, k2, k3, p1, p2 keys, suitable for use as calibration_table.
+            Returns None if no calibration file exists.
+        """
+        from poc_homography.calibration.lens_distortion.calibration_table import (
+            load_lens_distortion_as_table,
+        )
+
+        return load_lens_distortion_as_table(camera_id, calibration_dir)
+
+    def merge_calibration_tables(
+        self,
+        lens_distortion_table: dict[float, dict[str, float]] | None,
+    ) -> dict[float, dict[str, float]] | None:
+        """Merge lens distortion calibration with existing calibration table.
+
+        Combines distortion coefficients from lens calibration with
+        intrinsic parameters from the existing calibration table.
+
+        Args:
+            lens_distortion_table: Table with k1, k2, k3, p1, p2 per zoom.
+
+        Returns:
+            Merged calibration table with both intrinsics and distortion,
+            or the existing table if no distortion data provided.
+        """
+        if lens_distortion_table is None:
+            return self.calibration_table
+
+        if self.calibration_table is None:
+            return lens_distortion_table
+
+        merged: dict[float, dict[str, float]] = {}
+
+        # Start with existing intrinsic calibrations
+        for zoom, params in self.calibration_table.items():
+            merged[zoom] = dict(params)
+
+        # Merge distortion coefficients
+        for zoom, distortion in lens_distortion_table.items():
+            if zoom in merged:
+                # Add distortion to existing entry
+                merged[zoom].update(distortion)
+            else:
+                # Create new entry with just distortion
+                merged[zoom] = dict(distortion)
+
+        return merged

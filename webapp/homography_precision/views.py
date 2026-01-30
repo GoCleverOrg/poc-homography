@@ -536,63 +536,78 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         map_dx = projected_map.pixel_x - map_x
         map_dy = projected_map.pixel_y - map_y
 
-        per_point_errors.append({
-            "gcp_id": gcp_id,
-            "error_px": round(error_px, 2),
-            "camera_dx": round(camera_dx, 2),
-            "camera_dy": round(camera_dy, 2),
-            "map_dx": round(map_dx, 2),
-            "map_dy": round(map_dy, 2),
-            "camera_original": [round(camera_x, 2), round(camera_y, 2)],
-            "camera_reprojected": [round(reprojected_camera.x, 2), round(reprojected_camera.y, 2)],
-            "map_original": [round(map_x, 2), round(map_y, 2)],
-            "map_projected": [round(projected_map.pixel_x, 2), round(projected_map.pixel_y, 2)],
-        })
+        per_point_errors.append(
+            {
+                "gcp_id": gcp_id,
+                "error_px": round(error_px, 2),
+                "camera_dx": round(camera_dx, 2),
+                "camera_dy": round(camera_dy, 2),
+                "map_dx": round(map_dx, 2),
+                "map_dy": round(map_dy, 2),
+                "camera_original": [round(camera_x, 2), round(camera_y, 2)],
+                "camera_reprojected": [
+                    round(reprojected_camera.x, 2),
+                    round(reprojected_camera.y, 2),
+                ],
+                "map_original": [round(map_x, 2), round(map_y, 2)],
+                "map_projected": [round(projected_map.pixel_x, 2), round(projected_map.pixel_y, 2)],
+            }
+        )
 
         # Collect overlay data
-        camera_annotations.append({
-            "gcp_id": gcp_id,
-            "x": round(camera_x, 2),
-            "y": round(camera_y, 2),
-        })
-        camera_reprojected.append({
-            "gcp_id": gcp_id,
-            "x": round(reprojected_camera.x, 2),
-            "y": round(reprojected_camera.y, 2),
-        })
-        map_gcps.append({
-            "gcp_id": gcp_id,
-            "x": round(map_x, 2),
-            "y": round(map_y, 2),
-        })
-        map_projected.append({
-            "gcp_id": gcp_id,
-            "x": round(projected_map.pixel_x, 2),
-            "y": round(projected_map.pixel_y, 2),
-        })
+        camera_annotations.append(
+            {
+                "gcp_id": gcp_id,
+                "x": round(camera_x, 2),
+                "y": round(camera_y, 2),
+            }
+        )
+        camera_reprojected.append(
+            {
+                "gcp_id": gcp_id,
+                "x": round(reprojected_camera.x, 2),
+                "y": round(reprojected_camera.y, 2),
+            }
+        )
+        map_gcps.append(
+            {
+                "gcp_id": gcp_id,
+                "x": round(map_x, 2),
+                "y": round(map_y, 2),
+            }
+        )
+        map_projected.append(
+            {
+                "gcp_id": gcp_id,
+                "x": round(projected_map.pixel_x, 2),
+                "y": round(projected_map.pixel_y, 2),
+            }
+        )
 
-    return JsonResponse({
-        "success": True,
-        "metrics": {
-            "num_gcps": result.num_gcps,
-            "num_inliers": result.num_inliers,
-            "inlier_ratio": round(result.inlier_ratio, 2),
-            "mean_reproj_error": round(result.mean_reproj_error, 2),
-            "max_reproj_error": round(result.max_reproj_error, 2),
-            "rmse": round(result.rmse, 2),
-        },
-        "per_point_errors": per_point_errors,
-        "overlays": {
-            "camera": {
-                "annotations": camera_annotations,
-                "reprojected_gcps": camera_reprojected,
+    return JsonResponse(
+        {
+            "success": True,
+            "metrics": {
+                "num_gcps": result.num_gcps,
+                "num_inliers": result.num_inliers,
+                "inlier_ratio": round(result.inlier_ratio, 2),
+                "mean_reproj_error": round(result.mean_reproj_error, 2),
+                "max_reproj_error": round(result.max_reproj_error, 2),
+                "rmse": round(result.rmse, 2),
             },
-            "map": {
-                "gcps": map_gcps,
-                "projected_annotations": map_projected,
+            "per_point_errors": per_point_errors,
+            "overlays": {
+                "camera": {
+                    "annotations": camera_annotations,
+                    "reprojected_gcps": camera_reprojected,
+                },
+                "map": {
+                    "gcps": map_gcps,
+                    "projected_annotations": map_projected,
+                },
             },
-        },
-    })
+        }
+    )
 
 
 @require_GET
@@ -759,10 +774,12 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
             status=404,
         )
 
-    return JsonResponse({
-        "map_id": data.get("map_id", ""),
-        "lines": data["lines"],
-    })
+    return JsonResponse(
+        {
+            "map_id": data.get("map_id", ""),
+            "lines": data["lines"],
+        }
+    )
 
 
 @csrf_exempt
@@ -805,13 +822,19 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
         line_annotations = line_test_case.get("line_annotations", [])
     elif not line_annotations:
         return JsonResponse(
-            {"success": False, "error": "Missing required field: test_case_name or line_annotations"},
+            {
+                "success": False,
+                "error": "Missing required field: test_case_name or line_annotations",
+            },
             status=400,
         )
 
     if len(line_annotations) < 2:
         return JsonResponse(
-            {"success": False, "error": f"Need at least 2 line annotations, got {len(line_annotations)}"},
+            {
+                "success": False,
+                "error": f"Need at least 2 line annotations, got {len(line_annotations)}",
+            },
             status=400,
         )
 
@@ -855,19 +878,21 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
             status=500,
         )
 
-    return JsonResponse({
-        "success": True,
-        "homography_source": "lines",
-        "metrics": {
-            "num_lines": result.num_lines,
-            "num_inliers": result.num_inliers,
-            "inlier_ratio": round(result.inlier_ratio, 2),
-            "mean_perp_error": round(result.mean_perp_error, 2),
-            "max_perp_error": round(result.max_perp_error, 2),
-            "rmse": round(result.rmse, 2),
-        },
-        "homography_matrix": result.homography_matrix.tolist(),
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "homography_source": "lines",
+            "metrics": {
+                "num_lines": result.num_lines,
+                "num_inliers": result.num_inliers,
+                "inlier_ratio": round(result.inlier_ratio, 2),
+                "mean_perp_error": round(result.mean_perp_error, 2),
+                "max_perp_error": round(result.max_perp_error, 2),
+                "rmse": round(result.rmse, 2),
+            },
+            "homography_matrix": result.homography_matrix.tolist(),
+        }
+    )
 
 
 @csrf_exempt
@@ -954,7 +979,10 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         # Compute homography from line annotations
         if len(line_annotations) < 2:
             return JsonResponse(
-                {"success": False, "error": f"Need at least 2 line annotations for line-based homography, got {len(line_annotations)}"},
+                {
+                    "success": False,
+                    "error": f"Need at least 2 line annotations for line-based homography, got {len(line_annotations)}",
+                },
                 status=400,
             )
 
@@ -976,7 +1004,10 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         point_annotations_ref = line_test_case.get("point_annotations_ref")
         if not point_annotations_ref:
             return JsonResponse(
-                {"success": False, "error": "No point_annotations_ref found in line test case. Use use_line_homography=true for line-based homography."},
+                {
+                    "success": False,
+                    "error": "No point_annotations_ref found in line test case. Use use_line_homography=true for line-based homography.",
+                },
                 status=400,
             )
 
@@ -984,14 +1015,20 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         point_test_case = _load_test_case_by_name(point_annotations_ref)
         if point_test_case is None:
             return JsonResponse(
-                {"success": False, "error": f"Referenced point test case not found: {point_annotations_ref}"},
+                {
+                    "success": False,
+                    "error": f"Referenced point test case not found: {point_annotations_ref}",
+                },
                 status=404,
             )
 
         annotations = point_test_case.get("annotations", [])
         if len(annotations) < 4:
             return JsonResponse(
-                {"success": False, "error": f"Need at least 4 point annotations, got {len(annotations)}"},
+                {
+                    "success": False,
+                    "error": f"Need at least 4 point annotations, got {len(annotations)}",
+                },
                 status=400,
             )
 
@@ -1077,7 +1114,9 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         map_end = np.array([line_def["end_x"], line_def["end_y"]])
 
         # Annotated line in camera coordinates
-        camera_start = np.array([line_annotation["start_pixel_x"], line_annotation["start_pixel_y"]])
+        camera_start = np.array(
+            [line_annotation["start_pixel_x"], line_annotation["start_pixel_y"]]
+        )
         camera_end = np.array([line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]])
 
         # Project camera line endpoints to map
@@ -1097,8 +1136,12 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         reprojected_end_camera = np.array([reprojected_end.x, reprojected_end.y])
 
         # Compute errors in camera space
-        camera_start_error = _perpendicular_distance(camera_start, reprojected_start_camera, reprojected_end_camera)
-        camera_end_error = _perpendicular_distance(camera_end, reprojected_start_camera, reprojected_end_camera)
+        camera_start_error = _perpendicular_distance(
+            camera_start, reprojected_start_camera, reprojected_end_camera
+        )
+        camera_end_error = _perpendicular_distance(
+            camera_end, reprojected_start_camera, reprojected_end_camera
+        )
 
         # Average error for this line (using camera space errors as primary metric)
         line_error = (camera_start_error + camera_end_error) / 2.0
@@ -1106,61 +1149,76 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         total_error += line_error
         max_error = max(max_error, line_error)
 
-        per_line_errors.append({
-            "line_id": line_id,
-            "error_px": round(line_error, 2),
-            "start_error": round(camera_start_error, 2),
-            "end_error": round(camera_end_error, 2),
-            "map_start_error": round(start_error, 2),
-            "map_end_error": round(end_error, 2),
-        })
+        per_line_errors.append(
+            {
+                "line_id": line_id,
+                "error_px": round(line_error, 2),
+                "start_error": round(camera_start_error, 2),
+                "end_error": round(camera_end_error, 2),
+                "map_start_error": round(start_error, 2),
+                "map_end_error": round(end_error, 2),
+            }
+        )
 
         # Collect overlay data for camera frame
-        camera_annotations.append({
-            "line_id": line_id,
-            "start": [round(camera_start[0], 2), round(camera_start[1], 2)],
-            "end": [round(camera_end[0], 2), round(camera_end[1], 2)],
-        })
-        camera_reprojected_lines.append({
-            "line_id": line_id,
-            "start": [round(reprojected_start_camera[0], 2), round(reprojected_start_camera[1], 2)],
-            "end": [round(reprojected_end_camera[0], 2), round(reprojected_end_camera[1], 2)],
-        })
+        camera_annotations.append(
+            {
+                "line_id": line_id,
+                "start": [round(camera_start[0], 2), round(camera_start[1], 2)],
+                "end": [round(camera_end[0], 2), round(camera_end[1], 2)],
+            }
+        )
+        camera_reprojected_lines.append(
+            {
+                "line_id": line_id,
+                "start": [
+                    round(reprojected_start_camera[0], 2),
+                    round(reprojected_start_camera[1], 2),
+                ],
+                "end": [round(reprojected_end_camera[0], 2), round(reprojected_end_camera[1], 2)],
+            }
+        )
 
         # Collect overlay data for map frame
-        map_gcp_lines.append({
-            "line_id": line_id,
-            "start": [round(map_start[0], 2), round(map_start[1], 2)],
-            "end": [round(map_end[0], 2), round(map_end[1], 2)],
-        })
-        map_projected_lines.append({
-            "line_id": line_id,
-            "start": [round(projected_start_map[0], 2), round(projected_start_map[1], 2)],
-            "end": [round(projected_end_map[0], 2), round(projected_end_map[1], 2)],
-        })
+        map_gcp_lines.append(
+            {
+                "line_id": line_id,
+                "start": [round(map_start[0], 2), round(map_start[1], 2)],
+                "end": [round(map_end[0], 2), round(map_end[1], 2)],
+            }
+        )
+        map_projected_lines.append(
+            {
+                "line_id": line_id,
+                "start": [round(projected_start_map[0], 2), round(projected_start_map[1], 2)],
+                "end": [round(projected_end_map[0], 2), round(projected_end_map[1], 2)],
+            }
+        )
 
     num_lines = len(line_annotations)
     mean_line_error = total_error / num_lines if num_lines > 0 else 0.0
 
-    return JsonResponse({
-        "success": True,
-        "metrics": {
-            "num_lines": num_lines,
-            "mean_line_error": round(mean_line_error, 2),
-            "max_line_error": round(max_error, 2),
-        },
-        "per_line_errors": per_line_errors,
-        "line_overlays": {
-            "camera": {
-                "annotations": camera_annotations,
-                "reprojected_lines": camera_reprojected_lines,
+    return JsonResponse(
+        {
+            "success": True,
+            "metrics": {
+                "num_lines": num_lines,
+                "mean_line_error": round(mean_line_error, 2),
+                "max_line_error": round(max_error, 2),
             },
-            "map": {
-                "gcp_lines": map_gcp_lines,
-                "projected_lines": map_projected_lines,
+            "per_line_errors": per_line_errors,
+            "line_overlays": {
+                "camera": {
+                    "annotations": camera_annotations,
+                    "reprojected_lines": camera_reprojected_lines,
+                },
+                "map": {
+                    "gcp_lines": map_gcp_lines,
+                    "projected_lines": map_projected_lines,
+                },
             },
-        },
-    })
+        }
+    )
 
 
 @require_GET
@@ -1190,11 +1248,13 @@ def api_camera_info(request: HttpRequest) -> JsonResponse:
             status=404,
         )
 
-    return JsonResponse({
-        "width": info["width"],
-        "height": info["height"],
-        "filename": info["filename"],
-    })
+    return JsonResponse(
+        {
+            "width": info["width"],
+            "height": info["height"],
+            "filename": info["filename"],
+        }
+    )
 
 
 @require_GET
@@ -1214,13 +1274,15 @@ def api_map_info(request: HttpRequest) -> JsonResponse:
             status=404,
         )
 
-    return JsonResponse({
-        "width": info["width"],
-        "height": info["height"],
-        "filename": info["filename"],
-        "geotransform": info["geotransform"],
-        "crs": info["crs"],
-    })
+    return JsonResponse(
+        {
+            "width": info["width"],
+            "height": info["height"],
+            "filename": info["filename"],
+            "geotransform": info["geotransform"],
+            "crs": info["crs"],
+        }
+    )
 
 
 @require_GET

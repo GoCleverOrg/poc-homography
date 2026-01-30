@@ -230,6 +230,22 @@
             color: #1976d2;
         }
 
+        .annotation-item .line-id-select {
+            font-weight: 600;
+            color: #1976d2;
+            font-size: 13px;
+            padding: 2px 4px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background: #fff;
+            cursor: pointer;
+            max-width: 180px;
+        }
+
+        .annotation-item .line-id-select:hover {
+            border-color: #2196f3;
+        }
+
         .annotation-item .coords {
             color: #666;
             font-size: 10px;
@@ -401,6 +417,98 @@
         #mode-indicator.active {
             display: block;
         }
+
+        /* Mode selector */
+        .mode-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #ddd;
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .mode-btn:hover {
+            border-color: #2196f3;
+        }
+
+        .mode-btn.active {
+            border-color: #2196f3;
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        /* Quality indicator */
+        .quality-indicator {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .quality-indicator.active {
+            display: block;
+        }
+
+        .quality-indicator.good {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .quality-indicator.marginal {
+            background: #fff3e0;
+            color: #e65100;
+            border: 1px solid #ffcc80;
+        }
+
+        .quality-indicator.insufficient {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+        }
+
+        /* Import button */
+        #import-btn {
+            width: 100%;
+            padding: 10px;
+            background: #2196f3;
+            color: #fff;
+            border: none;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        #import-btn:hover {
+            background: #1976d2;
+        }
+
+        #import-file {
+            display: none;
+        }
+
+        /* Canvas draggable state */
+        #annotation-canvas.draggable {
+            pointer-events: auto;
+            cursor: grab;
+        }
+
+        #annotation-canvas.dragging {
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body>
@@ -428,7 +536,12 @@
             <h2>Camera Frame</h2>
             <div id="filename">{{ image_filename }}</div>
             <div id="registry-info">Registry: {{ registry_filename }} ({{ map_id }})</div>
+            <div class="mode-selector">
+                <button class="mode-btn active" data-mode="2point">2-Point</button>
+                <button class="mode-btn" data-mode="npoint">N-Point</button>
+            </div>
             <div id="instructions">Click twice on the image to create a line annotation. First click = start, second click = end.</div>
+            <div id="quality-indicator" class="quality-indicator"></div>
         </div>
 
         <div id="line-input-section" class="panel-section">
@@ -461,6 +574,8 @@
         </div>
 
         <div id="export-section">
+            <input type="file" id="import-file" accept=".yaml,.yml">
+            <button id="import-btn">Import YAML</button>
             <button id="export-btn" disabled>Export to YAML</button>
             <div id="export-status"></div>
         </div>
@@ -486,6 +601,22 @@
         let filteredLines = [];
         let currentFilename = '{{ image_filename }}';
 
+        // Mode state
+        let annotationMode = '2point';  // '2point' or 'npoint'
+
+        // N-point state
+        let npointState = 'idle';  // 'idle', 'start_placed', 'adjusting'
+        let npointStart = null;
+        let npointEnd = null;
+        let npointMidpoints = [];
+        let npointMinEdgePixels = 20;
+        let npointRecommendedPixels = 30;
+
+        // Drag state
+        let isDragging = false;
+        let dragPointIndex = -1;
+        let dragPointType = 'midpoint';  // 'midpoint', 'start', 'end'
+
         // Elements
         const img = document.getElementById('frame-image');
         const wrapper = document.getElementById('image-wrapper');
@@ -507,6 +638,11 @@
         const zoomInput = document.getElementById('zoom-input');
         const exportBtn = document.getElementById('export-btn');
         const exportStatus = document.getElementById('export-status');
+        const importBtn = document.getElementById('import-btn');
+        const importFile = document.getElementById('import-file');
+        const qualityIndicator = document.getElementById('quality-indicator');
+        const modeBtns = document.querySelectorAll('.mode-btn');
+        const instructions = document.getElementById('instructions');
 
         // Load line IDs from registry
         async function loadLineIds() {
@@ -514,6 +650,99 @@
             const data = await resp.json();
             lineIds = data.line_ids || [];
             filteredLines = [...lineIds];
+        }
+
+        // Distance helper
+        function distance(p1, p2) {
+            return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+        }
+
+        // Generate evenly-spaced midpoints along line
+        function generateMidpoints(start, end, maxSegmentLength) {
+            const lineLength = distance(start, end);
+            const numSegments = Math.ceil(lineLength / maxSegmentLength);
+            const numMidpoints = numSegments - 1;
+
+            if (numMidpoints <= 0) return [];
+
+            const midpoints = [];
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+
+            for (let i = 1; i <= numMidpoints; i++) {
+                const t = i / numSegments;
+                midpoints.push({ x: start.x + dx * t, y: start.y + dy * t });
+            }
+            return midpoints;
+        }
+
+        // Calculate quality based on point count
+        function getQuality(totalPoints) {
+            if (totalPoints >= npointRecommendedPixels) {
+                return { status: 'good', label: 'Good' };
+            } else if (totalPoints >= npointMinEdgePixels) {
+                return { status: 'marginal', label: 'Marginal' };
+            } else {
+                return { status: 'insufficient', label: 'Insufficient' };
+            }
+        }
+
+        // Update quality indicator display
+        function updateQualityIndicator() {
+            if (annotationMode !== 'npoint' || npointState !== 'adjusting') {
+                qualityIndicator.classList.remove('active');
+                return;
+            }
+
+            // Count total points (start + midpoints + end)
+            const totalPoints = 2 + npointMidpoints.length;
+            const quality = getQuality(totalPoints);
+
+            qualityIndicator.className = 'quality-indicator active ' + quality.status;
+            qualityIndicator.textContent = `${quality.label}: ${totalPoints}/${npointMinEdgePixels} points`;
+        }
+
+        // Calculate adaptive midpoint radius based on spacing
+        function getMidpointRadius() {
+            if (npointMidpoints.length >= 2) {
+                const spacing = distance(npointMidpoints[0], npointMidpoints[1]);
+                return Math.max(3, Math.min(7, spacing / 3));
+            }
+            return 7;
+        }
+
+        // Find point at mouse position (for dragging)
+        function findPointAtPosition(x, y) {
+            const endpointThreshold = 12;
+            // Check start/end points first (larger targets)
+            if (npointStart && distance({x, y}, npointStart) <= endpointThreshold) {
+                return { type: 'start', index: -1 };
+            }
+            if (npointEnd && distance({x, y}, npointEnd) <= endpointThreshold) {
+                return { type: 'end', index: -1 };
+            }
+            // Check midpoints
+            const threshold = getMidpointRadius() + 4;
+            for (let i = 0; i < npointMidpoints.length; i++) {
+                const p = npointMidpoints[i];
+                if (distance({x, y}, p) <= threshold) {
+                    return { type: 'midpoint', index: i };
+                }
+            }
+            return null;
+        }
+
+        // Reset N-point state
+        function resetNpointState() {
+            npointState = 'idle';
+            npointStart = null;
+            npointEnd = null;
+            npointMidpoints = [];
+            isDragging = false;
+            dragPointIndex = -1;
+            dragPointType = 'midpoint';
+            canvas.classList.remove('draggable', 'dragging');
+            updateQualityIndicator();
         }
 
         // Setup canvas size
@@ -529,12 +758,134 @@
 
             // Draw completed annotations
             annotations.forEach((ann, i) => {
-                drawLine(ann.start_pixel_x, ann.start_pixel_y, ann.end_pixel_x, ann.end_pixel_y, '#2196f3', ann.line_id);
+                // Check if annotation has points array (N-point format)
+                if (ann.points && ann.points.length > 1) {
+                    drawPolyline(ann.points, '#2196f3', ann.line_id);
+                } else {
+                    drawLine(ann.start_pixel_x, ann.start_pixel_y, ann.end_pixel_x, ann.end_pixel_y, '#2196f3', ann.line_id);
+                }
             });
 
-            // Draw pending line preview
-            if (pendingLine && pendingLine.endX !== undefined) {
+            // Draw pending line preview (2-point mode)
+            if (annotationMode === '2point' && pendingLine && pendingLine.endX !== undefined) {
                 drawLine(pendingLine.startX, pendingLine.startY, pendingLine.endX, pendingLine.endY, '#ff9800', null, true);
+            }
+
+            // Draw N-point mode elements
+            if (annotationMode === 'npoint') {
+                if (npointState === 'start_placed' && npointStart) {
+                    // Draw start point with pending animation
+                    ctx.beginPath();
+                    ctx.arc(npointStart.x, npointStart.y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#4caf50';
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                if (npointState === 'adjusting' && npointStart && npointEnd) {
+                    // Draw ghost line (original straight line)
+                    ctx.setLineDash([4, 4]);
+                    ctx.strokeStyle = 'rgba(150, 150, 150, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(npointStart.x, npointStart.y);
+                    ctx.lineTo(npointEnd.x, npointEnd.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Build all points for polyline
+                    const allPoints = [
+                        [npointStart.x, npointStart.y],
+                        ...npointMidpoints.map(p => [p.x, p.y]),
+                        [npointEnd.x, npointEnd.y]
+                    ];
+
+                    // Draw polyline
+                    ctx.beginPath();
+                    ctx.moveTo(allPoints[0][0], allPoints[0][1]);
+                    for (let i = 1; i < allPoints.length; i++) {
+                        ctx.lineTo(allPoints[i][0], allPoints[i][1]);
+                    }
+                    ctx.strokeStyle = '#ff9800';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Draw start point (green)
+                    ctx.beginPath();
+                    ctx.arc(npointStart.x, npointStart.y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#4caf50';
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Draw midpoints (draggable, semi-transparent)
+                    const midpointRadius = getMidpointRadius();
+                    npointMidpoints.forEach((p, i) => {
+                        const isBeingDragged = isDragging && dragPointIndex === i;
+                        const r = isBeingDragged ? midpointRadius + 3 : midpointRadius;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                        ctx.fillStyle = isBeingDragged ? 'rgba(255, 193, 7, 0.25)' : 'rgba(255, 235, 59, 0.25)';
+                        ctx.fill();
+                        ctx.strokeStyle = isBeingDragged ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = isBeingDragged ? 2 : 1;
+                        ctx.stroke();
+                    });
+
+                    // Draw end point (red)
+                    ctx.beginPath();
+                    ctx.arc(npointEnd.x, npointEnd.y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#f44336';
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Draw a polyline with multiple points
+        function drawPolyline(points, color, label) {
+            if (points.length < 2) return;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([]);
+            ctx.stroke();
+
+            // Draw all points
+            points.forEach((p, i) => {
+                ctx.beginPath();
+                ctx.arc(p[0], p[1], i === 0 ? 6 : (i === points.length - 1 ? 6 : 4), 0, Math.PI * 2);
+                ctx.fillStyle = i === 0 ? '#4caf50' : (i === points.length - 1 ? '#f44336' : '#ffeb3b');
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Draw label at midpoint
+            if (label) {
+                const midIdx = Math.floor(points.length / 2);
+                const midX = points[midIdx][0];
+                const midY = points[midIdx][1];
+                ctx.font = 'bold 12px system-ui';
+                const metrics = ctx.measureText(label);
+                const padding = 4;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(midX - metrics.width/2 - padding, midY - 8 - padding, metrics.width + padding*2, 16 + padding);
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, midX, midY);
             }
         }
 
@@ -642,27 +993,57 @@
 
         // Select line ID for pending line
         async function selectLineId(lineId) {
-            if (!pendingLine || pendingLine.endX === undefined) return;
+            let annotationData;
 
-            // Create annotation via API
-            const resp = await fetch('{% url "camera_line_annotator:api_annotations_create" %}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            if (annotationMode === 'npoint' && npointState === 'adjusting') {
+                // N-point mode - build points array
+                const allPoints = [
+                    [npointStart.x, npointStart.y],
+                    ...npointMidpoints.map(p => [p.x, p.y]),
+                    [npointEnd.x, npointEnd.y]
+                ];
+
+                annotationData = {
+                    line_id: lineId,
+                    start_pixel_x: npointStart.x,
+                    start_pixel_y: npointStart.y,
+                    end_pixel_x: npointEnd.x,
+                    end_pixel_y: npointEnd.y,
+                    points: allPoints
+                };
+            } else if (pendingLine && pendingLine.endX !== undefined) {
+                // 2-point mode
+                annotationData = {
                     line_id: lineId,
                     start_pixel_x: pendingLine.startX,
                     start_pixel_y: pendingLine.startY,
                     end_pixel_x: pendingLine.endX,
                     end_pixel_y: pendingLine.endY
-                })
+                };
+            } else {
+                return;
+            }
+
+            // Create annotation via API
+            const resp = await fetch('{% url "camera_line_annotator:api_annotations_create" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(annotationData)
             });
 
             const data = await resp.json();
             if (data.success) {
-                annotations.push(data.annotation);
+                // Preserve points array if present
+                const savedAnnotation = data.annotation;
+                if (annotationData.points) {
+                    savedAnnotation.points = annotationData.points;
+                }
+                annotations.push(savedAnnotation);
             }
 
+            // Reset state
             pendingLine = null;
+            resetNpointState();
             lineSection.classList.remove('active');
             lineSearch.value = '';
             modeIndicator.classList.remove('active');
@@ -681,14 +1062,31 @@
             annotations.forEach((ann, i) => {
                 const div = document.createElement('div');
                 div.className = 'annotation-item';
+
+                // Build line ID options
+                const options = lineIds.map(id =>
+                    `<option value="${id}"${id === ann.line_id ? ' selected' : ''}>${id}</option>`
+                ).join('');
+
                 div.innerHTML = `
                     <div class="info">
-                        <span class="line-id">${ann.line_id}</span>
+                        <select class="line-id-select" data-index="${i}">${options}</select>
                         <span class="coords">Start: (${ann.start_pixel_x.toFixed(1)}, ${ann.start_pixel_y.toFixed(1)}) End: (${ann.end_pixel_x.toFixed(1)}, ${ann.end_pixel_y.toFixed(1)})</span>
                     </div>
                     <button class="delete-btn" data-index="${i}">Delete</button>
                 `;
                 annotationsList.appendChild(div);
+            });
+
+            // Add line ID change handlers
+            annotationsList.querySelectorAll('.line-id-select').forEach(select => {
+                select.addEventListener('change', async (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    const newLineId = e.target.value;
+                    annotations[idx].line_id = newLineId;
+                    renderLines();
+                    updateYamlPreview();
+                });
             });
 
             // Add delete handlers
@@ -735,10 +1133,18 @@
 
             annotations.forEach(ann => {
                 yaml += `      - line_id: ${ann.line_id}\n`;
-                yaml += `        start_pixel_x: ${ann.start_pixel_x.toFixed(1)}\n`;
-                yaml += `        start_pixel_y: ${ann.start_pixel_y.toFixed(1)}\n`;
-                yaml += `        end_pixel_x: ${ann.end_pixel_x.toFixed(1)}\n`;
-                yaml += `        end_pixel_y: ${ann.end_pixel_y.toFixed(1)}\n`;
+                // Include points array for N-point annotations
+                if (ann.points && ann.points.length > 2) {
+                    yaml += `        points:\n`;
+                    ann.points.forEach(p => {
+                        yaml += `          - [${p[0].toFixed(1)}, ${p[1].toFixed(1)}]\n`;
+                    });
+                } else {
+                    yaml += `        start_pixel_x: ${ann.start_pixel_x.toFixed(1)}\n`;
+                    yaml += `        start_pixel_y: ${ann.start_pixel_y.toFixed(1)}\n`;
+                    yaml += `        end_pixel_x: ${ann.end_pixel_x.toFixed(1)}\n`;
+                    yaml += `        end_pixel_y: ${ann.end_pixel_y.toFixed(1)}\n`;
+                }
             });
 
             yamlPreview.value = yaml;
@@ -757,27 +1163,128 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
 
-            if (!pendingLine) {
-                // First click - set start point
-                pendingLine = { startX: x, startY: y };
-                modeIndicator.textContent = 'Click second point to complete line';
-                modeIndicator.classList.add('active');
-                renderLines();
-                drawPendingStart();
-            } else if (pendingLine.endX === undefined) {
-                // Second click - set end point
-                pendingLine.endX = x;
-                pendingLine.endY = y;
-                renderLines();
+            if (annotationMode === '2point') {
+                // 2-Point mode
+                if (!pendingLine) {
+                    // First click - set start point
+                    pendingLine = { startX: x, startY: y };
+                    modeIndicator.textContent = 'Click second point to complete line';
+                    modeIndicator.classList.add('active');
+                    renderLines();
+                    drawPendingStart();
+                } else if (pendingLine.endX === undefined) {
+                    // Second click - set end point
+                    pendingLine.endX = x;
+                    pendingLine.endY = y;
+                    renderLines();
 
-                // Update mode indicator
-                modeIndicator.textContent = 'Select a line ID from dropdown';
+                    // Update mode indicator
+                    modeIndicator.textContent = 'Select a line ID from dropdown';
 
-                // Show line ID selection
-                lineSection.classList.add('active');
-                lineSearch.value = '';
-                filterLines('');
-                lineSearch.focus();
+                    // Show line ID selection
+                    lineSection.classList.add('active');
+                    lineSearch.value = '';
+                    filterLines('');
+                    lineSearch.focus();
+                }
+            } else if (annotationMode === 'npoint') {
+                // N-Point mode
+                if (npointState === 'idle') {
+                    // First click - set start point
+                    npointStart = { x, y };
+                    npointState = 'start_placed';
+                    modeIndicator.textContent = 'Click end point to place midpoints';
+                    modeIndicator.classList.add('active');
+                    renderLines();
+                } else if (npointState === 'start_placed') {
+                    // Second click - set end point and generate midpoints
+                    npointEnd = { x, y };
+                    npointState = 'adjusting';
+
+                    // Calculate max segment length based on line length
+                    const lineLength = distance(npointStart, npointEnd);
+                    const maxSegmentLength = lineLength / npointRecommendedPixels;
+
+                    // Generate midpoints
+                    npointMidpoints = generateMidpoints(npointStart, npointEnd, maxSegmentLength);
+
+                    // Enable canvas interactions for dragging
+                    canvas.classList.add('draggable');
+
+                    modeIndicator.textContent = 'Drag points to adjust, press Escape when done';
+                    updateQualityIndicator();
+                    renderLines();
+                }
+            }
+        });
+
+        // Canvas drag handlers for N-point mode
+        canvas.addEventListener('mousedown', (e) => {
+            if (annotationMode !== 'npoint' || npointState !== 'adjusting') return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            const hit = findPointAtPosition(x, y);
+            if (hit) {
+                e.preventDefault();
+                e.stopPropagation();
+                isDragging = true;
+                dragPointType = hit.type;
+                dragPointIndex = hit.index;
+                canvas.classList.add('dragging');
+                renderLines();
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            if (dragPointType === 'start') {
+                npointStart = { x, y };
+                // Regenerate midpoints to redistribute evenly along new line
+                const lineLenS = distance(npointStart, npointEnd);
+                const maxSegS = lineLenS / npointRecommendedPixels;
+                npointMidpoints = generateMidpoints(npointStart, npointEnd, maxSegS);
+            } else if (dragPointType === 'end') {
+                npointEnd = { x, y };
+                // Regenerate midpoints to redistribute evenly along new line
+                const lineLenE = distance(npointStart, npointEnd);
+                const maxSegE = lineLenE / npointRecommendedPixels;
+                npointMidpoints = generateMidpoints(npointStart, npointEnd, maxSegE);
+            } else if (dragPointIndex >= 0) {
+                npointMidpoints[dragPointIndex] = { x: npointMidpoints[dragPointIndex].x, y };
+            }
+            renderLines();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                dragPointType = 'midpoint';
+                dragPointIndex = -1;
+                canvas.classList.remove('dragging');
+                renderLines();
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            if (isDragging) {
+                isDragging = false;
+                dragPointType = 'midpoint';
+                dragPointIndex = -1;
+                canvas.classList.remove('dragging');
+                renderLines();
             }
         });
 
@@ -832,6 +1339,108 @@
                 modeIndicator.classList.remove('active');
                 renderLines();
             }
+        });
+
+        // Global Escape handler for N-point mode
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && annotationMode === 'npoint') {
+                if (npointState === 'adjusting') {
+                    // Finish N-point line - show line ID selection
+                    modeIndicator.textContent = 'Select a line ID from dropdown';
+                    lineSection.classList.add('active');
+                    lineSearch.value = '';
+                    filterLines('');
+                    lineSearch.focus();
+                } else if (npointState === 'start_placed') {
+                    // Cancel start placement
+                    resetNpointState();
+                    modeIndicator.classList.remove('active');
+                    renderLines();
+                }
+            }
+        });
+
+        // Mode selector handlers
+        modeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                if (mode === annotationMode) return;
+
+                // Update active state
+                modeBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // Reset any pending state
+                pendingLine = null;
+                resetNpointState();
+                modeIndicator.classList.remove('active');
+                lineSection.classList.remove('active');
+
+                annotationMode = mode;
+
+                // Update instructions
+                if (mode === '2point') {
+                    instructions.textContent = 'Click twice on the image to create a line annotation. First click = start, second click = end.';
+                } else {
+                    instructions.textContent = 'Click start and end points, then drag midpoints to match line curvature. Press Escape when done.';
+                }
+
+                renderLines();
+            });
+        });
+
+        // Import button handler
+        importBtn.addEventListener('click', () => {
+            importFile.click();
+        });
+
+        importFile.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const resp = await fetch('{% url "camera_line_annotator:api_import" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ yaml_content: text })
+                });
+
+                const data = await resp.json();
+                if (data.success) {
+                    annotations = data.annotations || [];
+
+                    // Update camera status if available
+                    if (data.camera_status) {
+                        if (data.camera_status.pan !== null && data.camera_status.pan !== undefined) {
+                            panInput.value = data.camera_status.pan;
+                        }
+                        if (data.camera_status.tilt !== null && data.camera_status.tilt !== undefined) {
+                            tiltInput.value = data.camera_status.tilt;
+                        }
+                        if (data.camera_status.zoom !== null && data.camera_status.zoom !== undefined) {
+                            zoomInput.value = data.camera_status.zoom;
+                        }
+                    }
+
+                    renderLines();
+                    renderAnnotationsList();
+                    updateYamlPreview();
+                    updateExportButton();
+
+                    exportStatus.textContent = `Imported ${data.annotation_count} annotations`;
+                    exportStatus.style.color = '#2e7d32';
+                } else {
+                    exportStatus.textContent = `Import error: ${data.error}`;
+                    exportStatus.style.color = '#c62828';
+                }
+            } catch (err) {
+                exportStatus.textContent = `Import error: ${err.message}`;
+                exportStatus.style.color = '#c62828';
+            }
+
+            // Reset file input so same file can be selected again
+            importFile.value = '';
         });
 
         // Event: Copy button
