@@ -130,9 +130,7 @@ class CandidateLine:
         # Convert edge_pixels array to tuple of tuples for frozen dataclass
         edge_pixels_tuple = None
         if self.edge_pixels is not None and len(self.edge_pixels) > 0:
-            edge_pixels_tuple = tuple(
-                (float(p[0]), float(p[1])) for p in self.edge_pixels
-            )
+            edge_pixels_tuple = tuple((float(p[0]), float(p[1])) for p in self.edge_pixels)
 
         return CameraLine(
             line_id=line_id,
@@ -222,7 +220,9 @@ class LineDetector:
             edge_strength = self._calculate_edge_strength(edge_magnitude, (x1, y1), (x2, y2))
 
             # Extract actual edge pixels along this line corridor
-            edge_pixels = self._extract_edge_pixels(edges, (x1, y1), (x2, y2), mask_buffer=mask_buffer)
+            edge_pixels = self._extract_edge_pixels(
+                edges, (x1, y1), (x2, y2), mask_buffer=mask_buffer
+            )
 
             candidate = CandidateLine(
                 start=(float(x1), float(y1)),

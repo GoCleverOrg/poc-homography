@@ -169,10 +169,10 @@ def measure_line_straightness(pts: np.ndarray) -> dict:
 
     distances = np.abs(centered @ line_normal)
 
-    rmse = float(np.sqrt(np.mean(distances ** 2)))
+    rmse = float(np.sqrt(np.mean(distances**2)))
     max_deviation = float(np.max(distances))
 
-    total_variance = np.sum(s ** 2)
+    total_variance = np.sum(s**2)
     explained_variance = s[0] ** 2
     r_squared = explained_variance / total_variance if total_variance > 0 else 1.0
 

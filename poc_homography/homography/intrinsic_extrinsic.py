@@ -833,6 +833,7 @@ class IntrinsicExtrinsicHomography(HomographyProvider):
         from poc_homography.calibration.lens_distortion.calibration_table import (
             load_lens_distortion_as_table,
         )
+
         return load_lens_distortion_as_table(camera_id, calibration_dir)
 
     def merge_calibration_tables(

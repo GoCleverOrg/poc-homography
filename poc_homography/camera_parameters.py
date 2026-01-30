@@ -90,6 +90,7 @@ class DistortionCoefficients:
         from poc_homography.calibration.lens_distortion.apply_calibration import (
             load_distortion_coefficients,
         )
+
         return load_distortion_coefficients(camera_id, zoom_factor, calibration_dir)
 
 
