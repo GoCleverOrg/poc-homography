@@ -21,13 +21,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import numpy.typing as npt
 
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters
-from poc_homography.map_points import MapPointRegistry
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
+
+if TYPE_CHECKING:
+    from poc_homography.map_points import MapPointRegistry
 
 # OpenCV is optional - not all environments have GUI support
 CV2_AVAILABLE = False
