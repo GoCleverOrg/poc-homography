@@ -1028,6 +1028,16 @@
                 </select>
 
                 <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+                <button id="abort-btn" class="btn-warning" style="display: none;">Abort</button>
+            </div>
+
+            <!-- Single Camera Actions (shown when a specific camera is selected) -->
+            <div id="single-camera-panel" class="selector-panel" style="display: none;">
+                <span id="single-camera-label" style="font-weight: 600; color: #ccc;"></span>
+                <button id="btn-test-rtsp" class="btn-secondary" style="padding: 10px 18px; font-size: 13px;">Test RTSP</button>
+                <button id="btn-test-webui" class="btn-secondary" style="padding: 10px 18px; font-size: 13px;">Test WebUI</button>
+                <button id="btn-test-ptz" class="btn-secondary" style="padding: 10px 18px; font-size: 13px;">Test PTZ</button>
+                <button id="btn-test-all-single" class="btn-primary" style="padding: 10px 18px; font-size: 13px;">Run All Tests</button>
             </div>
 
             <!-- Summary Report -->
@@ -1336,6 +1346,7 @@
         let selectedCamera = null;
         let tenantCameras = [];
         let isRunning = false;
+        let abortRequested = false;
         let testResults = {}; // camera_id -> {rtsp: status, webui: status, ptz: status}
 
         // Elements
@@ -1350,6 +1361,13 @@
         const videoCameraName = document.getElementById('video-camera-name');
         const snapshotBtn = document.getElementById('snapshot-btn');
         const credentialsWarning = document.getElementById('credentials-warning');
+        const abortBtn = document.getElementById('abort-btn');
+        const singleCameraPanel = document.getElementById('single-camera-panel');
+        const singleCameraLabel = document.getElementById('single-camera-label');
+        const btnTestRtsp = document.getElementById('btn-test-rtsp');
+        const btnTestWebui = document.getElementById('btn-test-webui');
+        const btnTestPtz = document.getElementById('btn-test-ptz');
+        const btnTestAllSingle = document.getElementById('btn-test-all-single');
         const passCount = document.getElementById('pass-count');
         const failCount = document.getElementById('fail-count');
         const pendingCount = document.getElementById('pending-count');
@@ -1659,7 +1677,15 @@
 
             try {
                 const url = urlTemplates[testType].replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
-                const resp = await fetch(url);
+                const fetchOpts = {};
+                let timeout;
+                if (testType === 'rtsp') {
+                    const controller = new AbortController();
+                    timeout = setTimeout(() => controller.abort(), 30000);
+                    fetchOpts.signal = controller.signal;
+                }
+                const resp = await fetch(url, fetchOpts);
+                if (timeout) clearTimeout(timeout);
                 const testResult = await resp.json();
 
                 if (testResult.status === 'success') {
@@ -1711,7 +1737,9 @@
                 }
             } catch (e) {
                 result[testType] = 'fail';
-                result[testType + 'Logs'] = `Request failed: ${e.message}`;
+                result[testType + 'Logs'] = e.name === 'AbortError'
+                    ? 'Request timed out after 30s'
+                    : `Request failed: ${e.message}`;
             }
 
             updateSummaryStats();
@@ -1730,8 +1758,10 @@
             if (isRunning) return;
 
             isRunning = true;
+            abortRequested = false;
             runAllBtn.disabled = true;
             runAllBtn.innerHTML = '<span class="spinner"></span> Running...';
+            abortBtn.style.display = '';
 
             // Initialize and show summary
             initializeResults();
@@ -1744,6 +1774,8 @@
 
             // Iterate cameras sequentially
             for (const camera of tenantCameras) {
+                if (abortRequested) break;
+
                 const cameraId = camera.id;
 
                 // Switch RTSP preview to current camera
@@ -1759,6 +1791,7 @@
 
             // Stop RTSP preview after all tests complete
             showVideoPreview(null);
+            abortBtn.style.display = 'none';
 
             // Save diagnostic session with collected results
             try {
@@ -1804,8 +1837,74 @@
             }
 
             isRunning = false;
+            abortRequested = false;
             runAllBtn.disabled = false;
             runAllBtn.textContent = `Run All Tests on ${tenantCameras.length} Camera(s)`;
+            abortBtn.style.display = 'none';
+            abortBtn.disabled = false;
+            abortBtn.textContent = 'Abort';
+        }
+
+        // Run a single test type on the selected camera
+        async function runSingleCameraTest(testType) {
+            if (isRunning || !selectedCamera) return;
+
+            isRunning = true;
+            setSingleCameraButtonsDisabled(true);
+
+            // Initialize results for just this camera
+            if (!testResults[selectedCamera]) {
+                const cam = tenantCameras.find(c => c.id === selectedCamera);
+                testResults[selectedCamera] = {
+                    name: cam?.name || selectedCamera,
+                    ip: cam?.ip || '',
+                    rtsp: 'pending', webui: 'pending', ptz: 'pending',
+                    rtspLogs: '', webuiLogs: '', ptzLogs: '',
+                };
+            }
+
+            summaryReport.classList.add('visible');
+            await runSingleTest(selectedCamera, testType);
+
+            isRunning = false;
+            setSingleCameraButtonsDisabled(false);
+        }
+
+        // Run all tests on the selected camera (concurrent)
+        async function runAllTestsSingleCamera() {
+            if (isRunning || !selectedCamera) return;
+
+            isRunning = true;
+            setSingleCameraButtonsDisabled(true);
+
+            const cam = tenantCameras.find(c => c.id === selectedCamera);
+            testResults = {};
+            testResults[selectedCamera] = {
+                name: cam?.name || selectedCamera,
+                ip: cam?.ip || '',
+                rtsp: 'pending', webui: 'pending', ptz: 'pending',
+                rtspLogs: '', webuiLogs: '', ptzLogs: '',
+            };
+
+            summaryReport.classList.add('visible');
+            updateSummaryStats();
+            renderCameraResults();
+
+            await Promise.all([
+                runSingleTest(selectedCamera, 'rtsp'),
+                runSingleTest(selectedCamera, 'webui'),
+                runSingleTest(selectedCamera, 'ptz'),
+            ]);
+
+            isRunning = false;
+            setSingleCameraButtonsDisabled(false);
+        }
+
+        function setSingleCameraButtonsDisabled(disabled) {
+            btnTestRtsp.disabled = disabled;
+            btnTestWebui.disabled = disabled;
+            btnTestPtz.disabled = disabled;
+            btnTestAllSingle.disabled = disabled;
         }
 
         function formatTestLogs(testResult) {
@@ -2033,9 +2132,25 @@
         cameraSelect.addEventListener('change', (e) => {
             selectedCamera = e.target.value || null;
             showVideoPreview(selectedCamera);
+
+            if (selectedCamera) {
+                // Specific camera selected: show single-camera panel, hide summary
+                const cam = tenantCameras.find(c => c.id === selectedCamera);
+                singleCameraLabel.textContent = cam ? `${cam.name} (${cam.ip})` : selectedCamera;
+                singleCameraPanel.style.display = '';
+                summaryReport.classList.remove('visible');
+            } else {
+                // "All cameras" selected: hide single-camera panel
+                singleCameraPanel.style.display = 'none';
+            }
         });
 
         runAllBtn.addEventListener('click', runAllTests);
+        abortBtn.addEventListener('click', () => { abortRequested = true; abortBtn.disabled = true; abortBtn.textContent = 'Aborting...'; });
+        btnTestRtsp.addEventListener('click', () => runSingleCameraTest('rtsp'));
+        btnTestWebui.addEventListener('click', () => runSingleCameraTest('webui'));
+        btnTestPtz.addEventListener('click', () => runSingleCameraTest('ptz'));
+        btnTestAllSingle.addEventListener('click', runAllTestsSingleCamera);
         snapshotBtn.addEventListener('click', captureSnapshot);
         refreshHistoryBtn.addEventListener('click', loadSessionHistory);
         historyTenantSelect.addEventListener('change', loadSessionHistory);
