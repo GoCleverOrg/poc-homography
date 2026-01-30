@@ -2248,10 +2248,17 @@
             } catch (e) {
                 console.error('Failed to start test:', e);
                 alert('Failed to start test: ' + e.message);
-                startStressTestBtn.disabled = false;
-                startStressTestBtn.textContent = 'Start Test';
                 stressTestProgress.classList.add('hidden');
                 stressPtzDisplay.classList.add('hidden');
+
+                if (runAllCamerasMode) {
+                    abortRunAllCameras();
+                } else if (runAllTestsMode) {
+                    abortRunAllTests();
+                } else {
+                    startStressTestBtn.disabled = false;
+                    startStressTestBtn.textContent = 'Start Test';
+                }
             }
         }
 
@@ -2451,42 +2458,23 @@
             startStressTestBtn.disabled = false;
         }
 
-        // Start multi-camera run: all presets for each camera
-        async function startRunAllCamerasAllPresets() {
+        // Start multi-camera run for all cameras in the tenant
+        async function startRunAllCameras(maxSpeedOnly) {
             if (stressCameras.length === 0) {
                 alert('No cameras available');
                 return;
             }
 
             runAllCamerasMode = true;
-            runAllCamerasMaxSpeedMode = false;
+            runAllCamerasMaxSpeedMode = maxSpeedOnly;
             allCamerasQueue = stressCameras.map(c => c.id);
             currentCameraIndex = 0;
             totalCamerasCount = allCamerasQueue.length;
             allCamerasResults = [];
 
             disableAllStressButtons();
-            runAllCamerasAllBtn.textContent = `Running Camera 1/${totalCamerasCount}...`;
-
-            runNextCameraInQueue();
-        }
-
-        // Start multi-camera run: max speed presets only for each camera
-        async function startRunAllCamerasMaxSpeed() {
-            if (stressCameras.length === 0) {
-                alert('No cameras available');
-                return;
-            }
-
-            runAllCamerasMode = true;
-            runAllCamerasMaxSpeedMode = true;
-            allCamerasQueue = stressCameras.map(c => c.id);
-            currentCameraIndex = 0;
-            totalCamerasCount = allCamerasQueue.length;
-            allCamerasResults = [];
-
-            disableAllStressButtons();
-            runAllCamerasMaxBtn.textContent = `Running Camera 1/${totalCamerasCount}...`;
+            const btn = maxSpeedOnly ? runAllCamerasMaxBtn : runAllCamerasAllBtn;
+            btn.textContent = `Running Camera 1/${totalCamerasCount}...`;
 
             runNextCameraInQueue();
         }
@@ -2558,13 +2546,18 @@
             }
         }
 
-        // Called when all cameras have completed
-        function onAllCamerasComplete() {
-            runAllCamerasMode = false;
-
+        // Aggregate pass/fail counts from multi-camera results
+        function aggregateMultiCameraResults() {
             const totalPresets = allCamerasResults.reduce((sum, r) => sum + r.presets.length, 0);
             const totalPassed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status === 'completed').length, 0);
             const totalFailed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status !== 'completed').length, 0);
+            return { totalPresets, totalPassed, totalFailed };
+        }
+
+        // Called when all cameras have completed
+        function onAllCamerasComplete() {
+            runAllCamerasMode = false;
+            const { totalPresets, totalPassed, totalFailed } = aggregateMultiCameraResults();
 
             resetAllStressButtons();
 
@@ -2574,8 +2567,7 @@
 
         // Abort multi-camera execution
         function abortRunAllCameras() {
-            const completedCameras = currentCameraIndex - 1;
-            const partialResults = allCamerasResults.length > 0;
+            const completedCameras = allCamerasResults.length;
 
             runAllCamerasMode = false;
             runAllCamerasMaxSpeedMode = false;
@@ -2590,12 +2582,9 @@
             // Clear RTSP stream
             showStressVideoStream(null);
 
-            if (partialResults) {
-                const totalPresets = allCamerasResults.reduce((sum, r) => sum + r.presets.length, 0);
-                const totalPassed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status === 'completed').length, 0);
-                const totalFailed = totalPresets - totalPassed;
-
-                alert(`Multi-Camera Test Aborted after ${completedCameras} cameras.\n${totalPresets} presets executed\n${totalPassed} passed, ${totalFailed} failed`);
+            if (completedCameras > 0) {
+                const { totalPresets, totalPassed, totalFailed } = aggregateMultiCameraResults();
+                alert(`Multi-Camera Test Aborted after ${completedCameras} camera(s).\n${totalPresets} presets executed\n${totalPassed} passed, ${totalFailed} failed`);
             }
             allCamerasResults = [];
         }
@@ -2808,6 +2797,15 @@
         // =====================================================================
 
         stressTenantSelect.addEventListener('change', async (e) => {
+            // Abort any active multi-camera or single-camera execution
+            if (runAllCamerasMode) {
+                abortStressTest();
+                abortRunAllCameras();
+            } else if (runAllTestsMode) {
+                abortStressTest();
+                abortRunAllTests();
+            }
+
             stressTenant = e.target.value;
             stressCamera = null;
             stressCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
@@ -2850,8 +2848,8 @@
         startStressTestBtn.addEventListener('click', startStressTest);
         runAllStressTestsBtn.addEventListener('click', startRunAllTests);
         runMaxSpeedTestsBtn.addEventListener('click', startRunMaxSpeedTests);
-        runAllCamerasAllBtn.addEventListener('click', startRunAllCamerasAllPresets);
-        runAllCamerasMaxBtn.addEventListener('click', startRunAllCamerasMaxSpeed);
+        runAllCamerasAllBtn.addEventListener('click', () => startRunAllCameras(false));
+        runAllCamerasMaxBtn.addEventListener('click', () => startRunAllCameras(true));
         abortStressTestBtn.addEventListener('click', () => {
             abortStressTest();
             if (runAllCamerasMode) {
