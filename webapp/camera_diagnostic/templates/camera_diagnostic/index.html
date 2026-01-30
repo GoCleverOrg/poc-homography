@@ -2254,7 +2254,16 @@
                 stressPtzDisplay.classList.add('hidden');
 
                 if (runAllCamerasMode) {
-                    abortRunAllCameras();
+                    // Record failure for current camera and skip to next
+                    const camera = stressCameras.find(c => c.id === stressCamera);
+                    allCamerasResults.push({
+                        camera: { id: stressCamera, name: camera?.name || stressCamera },
+                        presets: [{ preset: 'N/A', status: 'failed', error: e.message }]
+                    });
+                    runAllTestsMode = false;
+                    runMaxSpeedMode = false;
+                    runAllTestsResults = [];
+                    setTimeout(runNextCameraInQueue, 1000);
                 } else if (runAllTestsMode) {
                     abortRunAllTests();
                 } else {
@@ -2306,9 +2315,12 @@
         }
 
         async function onStressTestComplete() {
-            startStressTestBtn.disabled = false;
-            startStressTestBtn.textContent = 'Start Test';
-            abortStressTestBtn.disabled = true;
+            // Only reset single-test buttons when not in a batch mode
+            if (!runAllTestsMode && !runAllCamerasMode) {
+                startStressTestBtn.disabled = false;
+                startStressTestBtn.textContent = 'Start Test';
+                abortStressTestBtn.disabled = true;
+            }
 
             // Load session details
             let sessionResult = null;
@@ -2462,6 +2474,7 @@
 
         // Start multi-camera run for all cameras in the tenant
         async function startRunAllCameras(maxSpeedOnly) {
+            if (runAllCamerasMode) return;  // Prevent double-click re-entrancy
             if (stressCameras.length === 0) {
                 alert('No cameras available');
                 return;
@@ -2483,57 +2496,68 @@
 
         // Process next camera in multi-camera queue
         async function runNextCameraInQueue() {
-            if (allCamerasQueue.length === 0) {
-                onAllCamerasComplete();
-                return;
+            try {
+                if (allCamerasQueue.length === 0) {
+                    onAllCamerasComplete();
+                    return;
+                }
+
+                const cameraId = allCamerasQueue.shift();
+                currentCameraIndex = totalCamerasCount - allCamerasQueue.length;
+
+                // Switch to this camera
+                stressCamera = cameraId;
+                stressCameraSelect.value = cameraId;
+
+                // Clear stream between cameras and switch RTSP preview
+                showStressVideoStream(null);
+                await new Promise(r => setTimeout(r, 500));
+                showStressVideoStream(cameraId);
+
+                // Load presets (they are global, not per-camera, so just ensure loaded)
+                if (stressPresets.length === 0) {
+                    await loadStressPresets();
+                    if (stressPresets.length === 0) {
+                        console.error('Failed to load stress presets, aborting multi-camera run');
+                        alert('Failed to load stress test presets. Aborting multi-camera run.');
+                        abortRunAllCameras();
+                        return;
+                    }
+                }
+
+                // Build preset queue based on mode
+                let presetQueue;
+                if (runAllCamerasMaxSpeedMode) {
+                    presetQueue = stressPresets
+                        .map((preset, index) => preset.max_speed ? index : -1)
+                        .filter(index => index !== -1);
+                } else {
+                    presetQueue = [...Array(stressPresets.length).keys()];
+                }
+
+                if (presetQueue.length === 0) {
+                    // No presets for this camera, skip to next
+                    allCamerasResults.push({
+                        camera: { id: cameraId, name: stressCameras.find(c => c.id === cameraId)?.name || cameraId },
+                        presets: []
+                    });
+                    setTimeout(runNextCameraInQueue, 500);
+                    return;
+                }
+
+                // Use the existing run-all-tests mechanism for this camera's presets
+                runAllTestsMode = true;
+                runMaxSpeedMode = runAllCamerasMaxSpeedMode;
+                runAllTestsQueue = presetQueue;
+                runAllTestsResults = [];
+                runAllTestsTotal = presetQueue.length;
+
+                updateMultiCameraProgress();
+                runNextTestInQueue();
+            } catch (e) {
+                console.error('Error in multi-camera queue processing:', e);
+                abortRunAllCameras();
             }
-
-            const cameraId = allCamerasQueue.shift();
-            currentCameraIndex = totalCamerasCount - allCamerasQueue.length;
-
-            // Switch to this camera
-            stressCamera = cameraId;
-            stressCameraSelect.value = cameraId;
-
-            // Clear stream between cameras and switch RTSP preview
-            showStressVideoStream(null);
-            await new Promise(r => setTimeout(r, 500));
-            showStressVideoStream(cameraId);
-
-            // Load presets (they are global, not per-camera, so just ensure loaded)
-            if (stressPresets.length === 0) {
-                await loadStressPresets();
-            }
-
-            // Build preset queue based on mode
-            let presetQueue;
-            if (runAllCamerasMaxSpeedMode) {
-                presetQueue = stressPresets
-                    .map((preset, index) => preset.max_speed ? index : -1)
-                    .filter(index => index !== -1);
-            } else {
-                presetQueue = [...Array(stressPresets.length).keys()];
-            }
-
-            if (presetQueue.length === 0) {
-                // No presets for this camera, skip to next
-                allCamerasResults.push({
-                    camera: { id: cameraId, name: stressCameras.find(c => c.id === cameraId)?.name || cameraId },
-                    presets: []
-                });
-                setTimeout(runNextCameraInQueue, 500);
-                return;
-            }
-
-            // Use the existing run-all-tests mechanism for this camera's presets
-            runAllTestsMode = true;
-            runMaxSpeedMode = runAllCamerasMaxSpeedMode;
-            runAllTestsQueue = presetQueue;
-            runAllTestsResults = [];
-            runAllTestsTotal = presetQueue.length;
-
-            updateMultiCameraProgress();
-            runNextTestInQueue();
         }
 
         // Update button text for multi-camera progress
@@ -2569,6 +2593,18 @@
 
         // Abort multi-camera execution
         function abortRunAllCameras() {
+            // Capture partial results from current camera before clearing state
+            if (runAllTestsResults.length > 0 && stressCamera) {
+                const camera = stressCameras.find(c => c.id === stressCamera);
+                allCamerasResults.push({
+                    camera: { id: stressCamera, name: camera?.name || stressCamera },
+                    presets: runAllTestsResults.map(r => ({
+                        preset: r.preset,
+                        status: r.status,
+                        error: r.status !== 'completed' ? 'Test failed' : null
+                    }))
+                });
+            }
             const completedCameras = allCamerasResults.length;
 
             runAllCamerasMode = false;
