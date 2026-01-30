@@ -1115,6 +1115,15 @@
                 </div>
             </div>
 
+            <!-- Multi-Camera Controls -->
+            <div id="stress-multi-camera-panel" class="stress-panel hidden">
+                <h2>Multi-Camera Testing</h2>
+                <div class="stress-form-row">
+                    <button id="run-all-cameras-all-btn" class="btn-secondary">Run All Cameras (All Presets)</button>
+                    <button id="run-all-cameras-max-btn" class="btn-warning">Run All Cameras (Max Speed)</button>
+                </div>
+            </div>
+
             <!-- Live Video Feed -->
             <div id="stress-video-panel" class="stress-panel hidden">
                 <h3 id="stress-camera-name">Live Video Feed</h3>
@@ -1985,6 +1994,14 @@
         let runAllTestsResults = [];
         let runAllTestsTotal = 0;  // Track total test count for progress display
 
+        // Multi-camera mode state
+        let runAllCamerasMode = false;
+        let runAllCamerasMaxSpeedMode = false;
+        let allCamerasQueue = [];
+        let currentCameraIndex = 0;
+        let totalCamerasCount = 0;
+        let allCamerasResults = [];
+
         // Elements - Stress testing tab
         const stressTenantSelect = document.getElementById('stress-tenant-select');
         const stressCameraSelect = document.getElementById('stress-camera-select');
@@ -1999,6 +2016,9 @@
         const startStressTestBtn = document.getElementById('start-stress-test-btn');
         const runAllStressTestsBtn = document.getElementById('run-all-stress-tests-btn');
         const runMaxSpeedTestsBtn = document.getElementById('run-max-speed-tests-btn');
+        const stressMultiCameraPanel = document.getElementById('stress-multi-camera-panel');
+        const runAllCamerasAllBtn = document.getElementById('run-all-cameras-all-btn');
+        const runAllCamerasMaxBtn = document.getElementById('run-all-cameras-max-btn');
         const abortStressTestBtn = document.getElementById('abort-stress-test-btn');
         const stressTestProgress = document.getElementById('stress-test-progress');
         const stressTestProgressFill = document.getElementById('stress-test-progress-fill');
@@ -2313,9 +2333,27 @@
                 }
 
                 if (runAllTestsQueue.length > 0) {
+                    if (runAllCamerasMode) updateMultiCameraProgress();
                     setTimeout(runNextTestInQueue, 1000);
+                } else if (runAllCamerasMode) {
+                    // Current camera's presets are done; collect results and advance
+                    const camera = stressCameras.find(c => c.id === stressCamera);
+                    allCamerasResults.push({
+                        camera: { id: stressCamera, name: camera?.name || stressCamera },
+                        presets: runAllTestsResults.map(r => ({
+                            preset: r.preset,
+                            status: r.status,
+                            error: r.status !== 'completed' ? 'Test failed' : null
+                        }))
+                    });
+                    runAllTestsMode = false;
+                    runMaxSpeedMode = false;
+                    runAllTestsResults = [];
+
+                    // Advance to next camera after a brief delay for stream cleanup
+                    setTimeout(runNextCameraInQueue, 1000);
                 } else {
-                    // All tests completed
+                    // Single-camera run-all completed
                     const testType = runMaxSpeedMode ? 'Max Speed' : 'All';
                     runAllTestsMode = false;
                     runMaxSpeedMode = false;
@@ -2388,7 +2426,9 @@
             const completedCount = runAllTestsTotal - runAllTestsQueue.length - 1;
 
             // Update the appropriate button based on mode
-            if (runMaxSpeedMode) {
+            if (runAllCamerasMode) {
+                updateMultiCameraProgress();
+            } else if (runMaxSpeedMode) {
                 runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${runAllTestsTotal})...`;
             } else {
                 runAllStressTestsBtn.textContent = `Running All (${completedCount}/${runAllTestsTotal})...`;
@@ -2409,6 +2449,179 @@
             runMaxSpeedTestsBtn.disabled = false;
             runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
             startStressTestBtn.disabled = false;
+        }
+
+        // Start multi-camera run: all presets for each camera
+        async function startRunAllCamerasAllPresets() {
+            if (stressCameras.length === 0) {
+                alert('No cameras available');
+                return;
+            }
+
+            runAllCamerasMode = true;
+            runAllCamerasMaxSpeedMode = false;
+            allCamerasQueue = stressCameras.map(c => c.id);
+            currentCameraIndex = 0;
+            totalCamerasCount = allCamerasQueue.length;
+            allCamerasResults = [];
+
+            disableAllStressButtons();
+            runAllCamerasAllBtn.textContent = `Running Camera 1/${totalCamerasCount}...`;
+
+            runNextCameraInQueue();
+        }
+
+        // Start multi-camera run: max speed presets only for each camera
+        async function startRunAllCamerasMaxSpeed() {
+            if (stressCameras.length === 0) {
+                alert('No cameras available');
+                return;
+            }
+
+            runAllCamerasMode = true;
+            runAllCamerasMaxSpeedMode = true;
+            allCamerasQueue = stressCameras.map(c => c.id);
+            currentCameraIndex = 0;
+            totalCamerasCount = allCamerasQueue.length;
+            allCamerasResults = [];
+
+            disableAllStressButtons();
+            runAllCamerasMaxBtn.textContent = `Running Camera 1/${totalCamerasCount}...`;
+
+            runNextCameraInQueue();
+        }
+
+        // Process next camera in multi-camera queue
+        async function runNextCameraInQueue() {
+            if (allCamerasQueue.length === 0) {
+                onAllCamerasComplete();
+                return;
+            }
+
+            const cameraId = allCamerasQueue.shift();
+            currentCameraIndex = totalCamerasCount - allCamerasQueue.length;
+
+            // Switch to this camera
+            stressCamera = cameraId;
+            stressCameraSelect.value = cameraId;
+
+            // Clear stream between cameras and switch RTSP preview
+            showStressVideoStream(null);
+            await new Promise(r => setTimeout(r, 500));
+            showStressVideoStream(cameraId);
+
+            // Load presets (they are global, not per-camera, so just ensure loaded)
+            if (stressPresets.length === 0) {
+                await loadStressPresets();
+            }
+
+            // Build preset queue based on mode
+            let presetQueue;
+            if (runAllCamerasMaxSpeedMode) {
+                presetQueue = stressPresets
+                    .map((preset, index) => preset.max_speed ? index : -1)
+                    .filter(index => index !== -1);
+            } else {
+                presetQueue = [...Array(stressPresets.length).keys()];
+            }
+
+            if (presetQueue.length === 0) {
+                // No presets for this camera, skip to next
+                allCamerasResults.push({
+                    camera: { id: cameraId, name: stressCameras.find(c => c.id === cameraId)?.name || cameraId },
+                    presets: []
+                });
+                setTimeout(runNextCameraInQueue, 500);
+                return;
+            }
+
+            // Use the existing run-all-tests mechanism for this camera's presets
+            runAllTestsMode = true;
+            runMaxSpeedMode = runAllCamerasMaxSpeedMode;
+            runAllTestsQueue = presetQueue;
+            runAllTestsResults = [];
+            runAllTestsTotal = presetQueue.length;
+
+            updateMultiCameraProgress();
+            runNextTestInQueue();
+        }
+
+        // Update button text for multi-camera progress
+        function updateMultiCameraProgress() {
+            const currentPreset = runAllTestsTotal - runAllTestsQueue.length;
+            const progressText = `Running Camera ${currentCameraIndex}/${totalCamerasCount}: Preset ${currentPreset}/${runAllTestsTotal}`;
+
+            if (runAllCamerasMaxSpeedMode) {
+                runAllCamerasMaxBtn.textContent = progressText;
+            } else {
+                runAllCamerasAllBtn.textContent = progressText;
+            }
+        }
+
+        // Called when all cameras have completed
+        function onAllCamerasComplete() {
+            runAllCamerasMode = false;
+
+            const totalPresets = allCamerasResults.reduce((sum, r) => sum + r.presets.length, 0);
+            const totalPassed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status === 'completed').length, 0);
+            const totalFailed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status !== 'completed').length, 0);
+
+            resetAllStressButtons();
+
+            alert(`Multi-Camera Test Complete:\n${totalCamerasCount}/${totalCamerasCount} cameras tested\n${totalPresets} total presets executed\n${totalPassed} passed, ${totalFailed} failed`);
+            allCamerasResults = [];
+        }
+
+        // Abort multi-camera execution
+        function abortRunAllCameras() {
+            const completedCameras = currentCameraIndex - 1;
+            const partialResults = allCamerasResults.length > 0;
+
+            runAllCamerasMode = false;
+            runAllCamerasMaxSpeedMode = false;
+            allCamerasQueue = [];
+            currentCameraIndex = 0;
+            totalCamerasCount = 0;
+
+            // Also abort the current single-camera run-all
+            abortRunAllTests();
+            resetAllStressButtons();
+
+            // Clear RTSP stream
+            showStressVideoStream(null);
+
+            if (partialResults) {
+                const totalPresets = allCamerasResults.reduce((sum, r) => sum + r.presets.length, 0);
+                const totalPassed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status === 'completed').length, 0);
+                const totalFailed = totalPresets - totalPassed;
+
+                alert(`Multi-Camera Test Aborted after ${completedCameras} cameras.\n${totalPresets} presets executed\n${totalPassed} passed, ${totalFailed} failed`);
+            }
+            allCamerasResults = [];
+        }
+
+        // Helper: disable all stress test buttons during multi-camera run
+        function disableAllStressButtons() {
+            startStressTestBtn.disabled = true;
+            runAllStressTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.disabled = true;
+            runAllCamerasAllBtn.disabled = true;
+            runAllCamerasMaxBtn.disabled = true;
+            abortStressTestBtn.disabled = false;
+            // Show control panel for progress/abort visibility
+            stressTestControlPanel.classList.remove('hidden');
+        }
+
+        // Helper: reset all stress test buttons to default state
+        function resetAllStressButtons() {
+            startStressTestBtn.disabled = false;
+            runAllStressTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.disabled = false;
+            runAllCamerasAllBtn.disabled = false;
+            runAllCamerasAllBtn.textContent = 'Run All Cameras (All Presets)';
+            runAllCamerasMaxBtn.disabled = false;
+            runAllCamerasMaxBtn.textContent = 'Run All Cameras (Max Speed)';
+            abortStressTestBtn.disabled = true;
         }
 
         function showStressTestResults(session) {
@@ -2602,9 +2815,13 @@
             showStressVideoStream(null);
             stressTestConfigPanel.classList.add('hidden');
             stressTestControlPanel.classList.add('hidden');
+            stressMultiCameraPanel.classList.add('hidden');
 
             if (stressTenant) {
-                await loadStressCameras(stressTenant);
+                const cameras = await loadStressCameras(stressTenant);
+                if (cameras && cameras.length > 0) {
+                    stressMultiCameraPanel.classList.remove('hidden');
+                }
             }
             loadStressSessions();
         });
@@ -2633,9 +2850,15 @@
         startStressTestBtn.addEventListener('click', startStressTest);
         runAllStressTestsBtn.addEventListener('click', startRunAllTests);
         runMaxSpeedTestsBtn.addEventListener('click', startRunMaxSpeedTests);
+        runAllCamerasAllBtn.addEventListener('click', startRunAllCamerasAllPresets);
+        runAllCamerasMaxBtn.addEventListener('click', startRunAllCamerasMaxSpeed);
         abortStressTestBtn.addEventListener('click', () => {
             abortStressTest();
-            if (runAllTestsMode) abortRunAllTests();
+            if (runAllCamerasMode) {
+                abortRunAllCameras();
+            } else if (runAllTestsMode) {
+                abortRunAllTests();
+            }
         });
 
         // Evaluation listeners
