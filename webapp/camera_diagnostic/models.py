@@ -147,6 +147,7 @@ class DiagnosticSession:
     tenant_id: str = ""
     tenant_name: str = ""
     camera_results: list[CameraDiagnosticResult] = field(default_factory=list)
+    origin: str = "server_executed"  # "server_executed" or "client_orchestrated"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for YAML manifest."""
@@ -156,6 +157,7 @@ class DiagnosticSession:
                 "created_at": self.created_at.isoformat(),
                 "completed_at": self.completed_at.isoformat() if self.completed_at else None,
                 "status": self.status.value,
+                "origin": self.origin,
             },
             "tenant": {
                 "id": self.tenant_id,
@@ -185,6 +187,7 @@ class DiagnosticSession:
             camera_results=[
                 CameraDiagnosticResult.from_dict(r) for r in data.get("camera_results", [])
             ],
+            origin=session_data.get("origin", "server_executed"),
         )
 
     def get_summary(self) -> dict[str, int]:

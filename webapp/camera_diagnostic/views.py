@@ -829,7 +829,7 @@ def api_save_diagnostic_session(request: HttpRequest) -> JsonResponse:
             status_code=400,
         )
 
-    # Build session from pre-collected results
+    # Build session from pre-collected results (client-orchestrated)
     session = DiagnosticSession(
         id=str(uuid.uuid4()),
         created_at=datetime.now(timezone.utc),
@@ -837,6 +837,7 @@ def api_save_diagnostic_session(request: HttpRequest) -> JsonResponse:
         status=DiagnosticSessionStatus.COMPLETED,
         tenant_id=tenant_id,
         tenant_name=tenant.get("name", tenant_id),
+        origin="client_orchestrated",
     )
 
     for cam_data in camera_results_data:
