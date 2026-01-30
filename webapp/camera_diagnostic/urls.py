@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/test-ptz/<str:camera_name>/", views.api_test_ptz, name="api_test_ptz"),
     # Diagnostic session endpoints
     path("api/diagnostic/run/", views.api_run_diagnostic, name="api_run_diagnostic"),
+    path("api/diagnostic/save/", views.api_save_diagnostic_session, name="api_save_diagnostic_session"),
     path("api/diagnostic/sessions/", views.api_list_sessions, name="api_list_sessions"),
     path(
         "api/diagnostic/sessions/<str:session_id>/",
