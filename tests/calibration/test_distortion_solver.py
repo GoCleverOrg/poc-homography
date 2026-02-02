@@ -459,3 +459,95 @@ class TestStraightnessRmse:
 
         # Straight lines with no distortion should have near-zero RMSE
         assert rmse < 0.01  # Less than 0.01 pixels
+
+
+class TestRoundTripDistortionRecovery:
+    """Test that the solver can recover known distortion coefficients.
+
+    Apply a known barrel distortion to straight lines, then run the solver
+    and verify it recovers approximately correct k1.
+    """
+
+    @pytest.fixture
+    def intrinsic_matrix(self):
+        return np.array([
+            [1000.0, 0.0, 960.0],
+            [0.0, 1000.0, 540.0],
+            [0.0, 0.0, 1.0],
+        ])
+
+    @pytest.fixture
+    def ptz_position(self):
+        return PTZPosition(pan_deg=0.0, tilt_deg=30.0, zoom_factor=1.0)
+
+    @staticmethod
+    def _apply_forward_distortion(
+        points: np.ndarray, k1: float, fx: float, fy: float, cx: float, cy: float
+    ) -> np.ndarray:
+        """Apply forward barrel distortion to undistorted points."""
+        x = (points[:, 0] - cx) / fx
+        y = (points[:, 1] - cy) / fy
+        r2 = x * x + y * y
+        radial = 1 + k1 * r2
+        x_d = x * radial
+        y_d = y * radial
+        return np.column_stack([x_d * fx + cx, y_d * fy + cy])
+
+    def test_recover_barrel_distortion_k1(self, intrinsic_matrix, ptz_position):
+        """Solver should recover k1 from synthetically distorted lines."""
+        true_k1 = -0.15
+        fx, fy, cx, cy = 1000.0, 1000.0, 960.0, 540.0
+
+        # Create straight lines across the image, then distort them
+        lines = []
+        for y_pos in [200, 400, 600, 800]:
+            # Horizontal line
+            undistorted_pts = np.column_stack([
+                np.linspace(200, 1700, 30),
+                np.full(30, float(y_pos)),
+            ])
+            distorted_pts = self._apply_forward_distortion(
+                undistorted_pts, true_k1, fx, fy, cx, cy
+            )
+            edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted_pts)
+            line = CameraLine(
+                line_id=f"h_line_{y_pos}",
+                image_path="synthetic",
+                start_pixel=edge_pixels[0],
+                end_pixel=edge_pixels[-1],
+                ptz_position=ptz_position,
+                edge_pixels=edge_pixels,
+            )
+            lines.append(line)
+
+        for x_pos in [200, 600, 1400, 1700]:
+            # Vertical line
+            undistorted_pts = np.column_stack([
+                np.full(30, float(x_pos)),
+                np.linspace(100, 900, 30),
+            ])
+            distorted_pts = self._apply_forward_distortion(
+                undistorted_pts, true_k1, fx, fy, cx, cy
+            )
+            edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted_pts)
+            line = CameraLine(
+                line_id=f"v_line_{x_pos}",
+                image_path="synthetic",
+                start_pixel=edge_pixels[0],
+                end_pixel=edge_pixels[-1],
+                ptz_position=ptz_position,
+                edge_pixels=edge_pixels,
+            )
+            lines.append(line)
+
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=30)
+        solver = DistortionSolver(config=config)
+        result = solver.solve(lines, intrinsic_matrix)
+
+        # The solver should recover k1 approximately
+        recovered_k1 = float(result.distortion.k1)
+        assert abs(recovered_k1 - true_k1) < 0.05, (
+            f"Expected k1 ~{true_k1}, got {recovered_k1}"
+        )
+        # RMSE should be very low after correction
+        assert result.overall_rmse < 1.0

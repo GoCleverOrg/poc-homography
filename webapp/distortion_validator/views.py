@@ -8,13 +8,11 @@ measures line straightness to provide quantitative feedback.
 Distinct from ``lens_calibration``, which *performs* the calibration, this app
 is purely for validation / QA of existing calibrations.
 
-CSRF exemption rationale
-------------------------
-All ``@csrf_exempt`` endpoints in this module are internal development / lab
-tools.  The Django server is bound to ``localhost`` only, there is no user
-authentication, and all data is non-sensitive calibration imagery.  CSRF
-protection is therefore unnecessary and would complicate programmatic API
-access from the companion JavaScript frontend.
+CSRF protection
+---------------
+POST endpoints use Django's default CSRF protection.  The ``index`` view is
+decorated with ``@ensure_csrf_cookie`` so the JavaScript frontend receives
+the CSRF token cookie on initial page load.
 """
 
 from __future__ import annotations
@@ -29,8 +27,14 @@ import cv2
 import numpy as np
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.calibration_utils import (
+    get_cached_calibration_table as _get_cached_calibration_table,
+)
+from homography_web.calibration_utils import (
+    resolve_safe_path as _resolve_safe_path,
+)
 
 # Paths
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
@@ -44,59 +48,10 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Filename validation helpers
-# ---------------------------------------------------------------------------
-
-def _validate_filename(filename: str) -> bool:
-    """Validate filename to prevent path traversal attacks."""
-    if not filename:
-        return False
-    if "/" in filename or ".." in filename or "\\" in filename:
-        return False
-    return True
-
-
-def _resolve_safe_path(filename: str, base_dir: Path) -> Path | None:
-    """Resolve *filename* under *base_dir*, returning ``None`` on traversal."""
-    if not _validate_filename(filename):
-        return None
-    try:
-        resolved = (base_dir / filename).resolve()
-        if not resolved.is_relative_to(base_dir.resolve()):
-            return None
-        return resolved
-    except (ValueError, RuntimeError):
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Calibration file cache
-# ---------------------------------------------------------------------------
-
-_calibration_cache: dict[tuple[str, float], Any] = {}
-
-
-def _get_cached_calibration_table(filepath: Path):
-    """Return a cached CameraCalibrationTable, invalidated by mtime."""
-    from poc_homography.calibration.lens_distortion.calibration_table import (
-        CameraCalibrationTable,
-    )
-    key_path = str(filepath)
-    mtime = filepath.stat().st_mtime
-    cache_key = (key_path, mtime)
-    if cache_key not in _calibration_cache:
-        _calibration_cache.pop(
-            next((k for k in _calibration_cache if k[0] == key_path), None),  # type: ignore[arg-type]
-            None,
-        )
-        _calibration_cache[cache_key] = CameraCalibrationTable.load(filepath)
-    return _calibration_cache[cache_key]
-
-
-# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
 
+@ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
     return render(request, "distortion_validator/index.html")
@@ -122,7 +77,6 @@ def api_calibration_files(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Failed to list calibration files"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_load_calibration(request: HttpRequest) -> JsonResponse:
     """Load a calibration file and return its contents."""
@@ -218,7 +172,6 @@ def _resolve_image_path(image_path: str) -> Path | None:
     return None
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_undistort(request: HttpRequest) -> JsonResponse:
     """Undistort an image using provided coefficients.
@@ -331,7 +284,6 @@ def api_serve_result_image(request: HttpRequest, filename: str) -> HttpResponse:
         return HttpResponse(f.read(), content_type="image/jpeg")
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_measure_straightness(request: HttpRequest) -> JsonResponse:
     """Measure the straightness of a set of points."""

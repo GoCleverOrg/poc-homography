@@ -56,15 +56,19 @@ class SolverConfig:
     use_radial_only: bool = False
 
     def get_bounds(self) -> list[tuple[float, float]]:
-        """Get bounds list for scipy optimizer."""
+        """Get bounds list for scipy optimizer.
+
+        Returns bounds in OpenCV order [k1, k2, p1, p2, k3] to match
+        DistortionCoefficients.to_array() / from_array().
+        """
         if self.use_radial_only:
             return [self.k1_bounds, self.k2_bounds, self.k3_bounds]
         return [
             self.k1_bounds,
             self.k2_bounds,
-            self.k3_bounds,
             self.p1_bounds,
             self.p2_bounds,
+            self.k3_bounds,
         ]
 
 
@@ -255,7 +259,7 @@ class DistortionSolver:
         """Calculate total straightness error for all lines.
 
         Args:
-            coeffs: Distortion coefficients [k1, k2, k3, p1, p2] or [k1, k2, k3].
+            coeffs: Distortion coefficients [k1, k2, p1, p2, k3] (OpenCV order) or [k1, k2, k3].
             line_samples: List of point arrays, one per line.
             cx, cy: Principal point coordinates.
             fx, fy: Focal lengths.
@@ -298,11 +302,13 @@ class DistortionSolver:
         Returns:
             Nx2 array of undistorted (u, v) coordinates.
         """
-        # Extract coefficients
-        k1, k2, k3 = coeffs[0], coeffs[1], coeffs[2]
+        # Extract coefficients in OpenCV order [k1, k2, p1, p2, k3]
+        k1, k2 = coeffs[0], coeffs[1]
         if len(coeffs) >= 5:
-            p1, p2 = coeffs[3], coeffs[4]
+            p1, p2, k3 = coeffs[2], coeffs[3], coeffs[4]
         else:
+            # Radial-only mode: coeffs = [k1, k2, k3]
+            k3 = coeffs[2]
             p1, p2 = 0.0, 0.0
 
         # Convert to normalized coordinates
@@ -319,6 +325,7 @@ class DistortionSolver:
         # Minimum radial factor to prevent division by zero
         min_radial_factor = 1e-6
 
+        convergence_tol = 1e-10
         for _ in range(max_undistort_iterations):
             r2 = x_u * x_u + y_u * y_u
             r4 = r2 * r2
@@ -337,8 +344,20 @@ class DistortionSolver:
             dy_tangential = p1 * (r2 + 2 * y_u * y_u) + 2 * p2 * x_u * y_u
 
             # Update estimate
-            x_u = (x - dx_tangential) / radial
-            y_u = (y - dy_tangential) / radial
+            x_u_new = (x - dx_tangential) / radial
+            y_u_new = (y - dy_tangential) / radial
+
+            # Early termination on convergence
+            delta = np.max(np.abs(x_u_new - x_u)) + np.max(np.abs(y_u_new - y_u))
+            x_u = x_u_new
+            y_u = y_u_new
+            if delta < convergence_tol:
+                break
+
+        # Guard against NaN/Inf from numerical instability
+        nan_mask = np.isfinite(x_u) & np.isfinite(y_u)
+        x_u = np.where(nan_mask, x_u, x)
+        y_u = np.where(nan_mask, y_u, y)
 
         # Convert back to pixel coordinates
         undistorted = np.column_stack(
@@ -359,7 +378,9 @@ class DistortionSolver:
         Returns:
             Sum of squared perpendicular distances from points to fitted line.
         """
-        if len(points) < 2:
+        if len(points) < 3:
+            # 2 points always fit a perfect line (zero residual), providing
+            # no constraint to the optimizer while diluting RMSE.
             return 0.0
 
         # Fit line using SVD (total least squares)

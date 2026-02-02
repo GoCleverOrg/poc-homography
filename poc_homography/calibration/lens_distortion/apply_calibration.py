@@ -70,6 +70,7 @@ def undistort_points(
     x_u = x.copy()
     y_u = y.copy()
 
+    convergence_tol = 1e-10
     for _ in range(max_iterations):
         r2 = x_u * x_u + y_u * y_u
         r4 = r2 * r2
@@ -85,8 +86,20 @@ def undistort_points(
         dx_tangential = 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u)
         dy_tangential = p1 * (r2 + 2 * y_u * y_u) + 2 * p2 * x_u * y_u
 
-        x_u = (x - dx_tangential) / radial
-        y_u = (y - dy_tangential) / radial
+        x_u_new = (x - dx_tangential) / radial
+        y_u_new = (y - dy_tangential) / radial
+
+        # Early termination on convergence
+        delta = np.max(np.abs(x_u_new - x_u)) + np.max(np.abs(y_u_new - y_u))
+        x_u = x_u_new
+        y_u = y_u_new
+        if delta < convergence_tol:
+            break
+
+    # Guard against NaN/Inf from numerical instability
+    nan_mask = np.isfinite(x_u) & np.isfinite(y_u)
+    x_u = np.where(nan_mask, x_u, x)
+    y_u = np.where(nan_mask, y_u, y)
 
     return np.column_stack([x_u * fx + cx, y_u * fy + cy])
 

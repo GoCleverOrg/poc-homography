@@ -8,13 +8,11 @@ to YAML files for later use.
 Distinct from ``distortion_validator``, which only *evaluates* existing
 calibrations, this app runs the actual optimisation and persists results.
 
-CSRF exemption rationale
-------------------------
-All ``@csrf_exempt`` endpoints in this module are internal development / lab
-tools.  The Django server is bound to ``localhost`` only, there is no user
-authentication, and all data is non-sensitive calibration imagery.  CSRF
-protection is therefore unnecessary and would complicate programmatic API
-access from the companion JavaScript frontend.
+CSRF protection
+---------------
+POST endpoints use Django's default CSRF protection.  The ``index`` view is
+decorated with ``@ensure_csrf_cookie`` so the JavaScript frontend receives
+the CSRF token cookie on initial page load.
 """
 
 from __future__ import annotations
@@ -27,8 +25,14 @@ from typing import Any
 import yaml
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.calibration_utils import (
+    get_cached_calibration_table as _get_cached_calibration_table,
+)
+from homography_web.calibration_utils import (
+    resolve_safe_path as _resolve_safe_path,
+)
 
 # Paths
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
@@ -40,65 +44,10 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Filename validation helpers
-# ---------------------------------------------------------------------------
-
-def _validate_filename(filename: str) -> bool:
-    """Validate filename to prevent path traversal attacks."""
-    if not filename:
-        return False
-    if "/" in filename or ".." in filename or "\\" in filename:
-        return False
-    return True
-
-
-def _resolve_safe_path(filename: str, base_dir: Path) -> Path | None:
-    """Resolve *filename* under *base_dir*, returning ``None`` on traversal."""
-    if not _validate_filename(filename):
-        return None
-    try:
-        resolved = (base_dir / filename).resolve()
-        if not resolved.is_relative_to(base_dir.resolve()):
-            return None
-        return resolved
-    except (ValueError, RuntimeError):
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Calibration file cache
-# ---------------------------------------------------------------------------
-
-def _load_calibration_table_cached(filepath: Path):
-    """Load a calibration table with mtime-based caching."""
-    from poc_homography.calibration.lens_distortion.calibration_table import (
-        CameraCalibrationTable,
-    )
-    return CameraCalibrationTable.load(filepath)
-
-
-_calibration_cache: dict[tuple[str, float], Any] = {}
-
-
-def _get_cached_calibration_table(filepath: Path):
-    """Return a cached CameraCalibrationTable, invalidated by mtime."""
-    key_path = str(filepath)
-    mtime = filepath.stat().st_mtime
-    cache_key = (key_path, mtime)
-    if cache_key not in _calibration_cache:
-        # Evict stale entries for this path
-        _calibration_cache.pop(
-            next((k for k in _calibration_cache if k[0] == key_path), None),  # type: ignore[arg-type]
-            None,
-        )
-        _calibration_cache[cache_key] = _load_calibration_table_cached(filepath)
-    return _calibration_cache[cache_key]
-
-
-# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
 
+@ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
     return render(request, "lens_calibration/index.html")
@@ -142,7 +91,6 @@ def api_survey_sessions(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Failed to list survey sessions"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_calibrate(request: HttpRequest) -> JsonResponse:
     # TODO: Move to background task (Celery/Django-Q) for production use
@@ -183,10 +131,11 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
             ]
         )
 
+        MAX_ITERATIONS_CAP = 10000
         config_data = data.get("config", {})
         solver_config = SolverConfig(
             use_radial_only=config_data.get("radial_only", False),
-            max_iterations=config_data.get("max_iterations", 1000),
+            max_iterations=min(config_data.get("max_iterations", 1000), MAX_ITERATIONS_CAP),
         )
 
         camera_lines: list[CameraLine] = []
@@ -199,6 +148,11 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
                     tilt_deg=Degrees(line.get("tilt", 30.0)),
                     zoom_factor=line.get("zoom", 1.0),
                 )
+                # Pass through edge_pixels if provided by the client
+                edge_pixels = None
+                points = line.get("points")
+                if points and len(points) >= 2:
+                    edge_pixels = tuple(tuple(pt) for pt in points)
                 camera_line = CameraLine(
                     line_id=line.get("line_id", f"line_{i:04d}"),
                     image_path=line.get("image_path", ""),
@@ -206,6 +160,7 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
                     end_pixel=(line["end_x"], line["end_y"]),
                     ptz_position=ptz,
                     confidence=line.get("confidence", 1.0),
+                    edge_pixels=edge_pixels,
                 )
                 camera_lines.append(camera_line)
 
@@ -302,7 +257,6 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Calibration failed"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
     # TODO: Move to background task (Celery/Django-Q) for production use
@@ -340,10 +294,11 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
             ]
         )
 
+        MAX_ITERATIONS_CAP = 10000
         config_data = data.get("config", {})
         solver_config = SolverConfig(
             use_radial_only=config_data.get("radial_only", False),
-            max_iterations=config_data.get("max_iterations", 1000),
+            max_iterations=min(config_data.get("max_iterations", 1000), MAX_ITERATIONS_CAP),
         )
 
         camera_lines: list[CameraLine] = []
@@ -368,7 +323,7 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
 
             for cal_line in calibration_lines:
                 points = cal_line.get("points", [])
-                if len(points) < 2:
+                if len(points) < 3:
                     continue
 
                 line_id = cal_line.get("line_id") or f"line_{cal_line.get('index', 0):04d}"
@@ -428,7 +383,6 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Calibration failed"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_validate(request: HttpRequest) -> JsonResponse:
     """Validate calibration by computing straightness RMSE on test lines."""
@@ -467,12 +421,18 @@ def api_validate(request: HttpRequest) -> JsonResponse:
                 tilt_deg=Degrees(line.get("tilt", 30.0)),
                 zoom_factor=line.get("zoom", 1.0),
             )
+            # Pass through edge_pixels if provided by the client
+            edge_pixels = None
+            points = line.get("points")
+            if points and len(points) >= 2:
+                edge_pixels = tuple(tuple(pt) for pt in points)
             camera_line = CameraLine(
                 line_id=line.get("line_id", f"line_{i:04d}"),
                 image_path=line.get("image_path", ""),
                 start_pixel=(line["start_x"], line["start_y"]),
                 end_pixel=(line["end_x"], line["end_y"]),
                 ptz_position=ptz,
+                edge_pixels=edge_pixels,
             )
             camera_lines.append(camera_line)
 
@@ -510,7 +470,6 @@ def api_validate(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Validation failed"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_save(request: HttpRequest) -> JsonResponse:
     """Save calibration results to YAML file."""
@@ -574,7 +533,6 @@ def api_save(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Save failed"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_load(request: HttpRequest) -> JsonResponse:
     """Load calibration from YAML file."""

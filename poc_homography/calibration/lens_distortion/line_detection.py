@@ -92,8 +92,8 @@ class CandidateLine:
     end: tuple[float, float]
     confidence: float = 1.0
     edge_strength: float = 0.0
-    angle_deg: float = 0.0
-    length: float = 0.0
+    angle_deg: float | None = None
+    length: float | None = None
     cluster_id: int = -1
     metadata: dict = field(default_factory=dict)
     edge_pixels: np.ndarray | None = None
@@ -102,9 +102,9 @@ class CandidateLine:
         """Calculate derived properties if not set."""
         dx = self.end[0] - self.start[0]
         dy = self.end[1] - self.start[1]
-        if self.length == 0.0:
+        if self.length is None:
             object.__setattr__(self, "length", float(np.sqrt(dx * dx + dy * dy)))
-        if self.angle_deg == 0.0 and (dx != 0 or dy != 0):
+        if self.angle_deg is None:
             object.__setattr__(self, "angle_deg", float(np.degrees(np.arctan2(dy, dx))))
 
     def to_camera_line(

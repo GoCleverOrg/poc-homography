@@ -648,6 +648,19 @@
     </div>
 
     <script>
+        // CSRF token helper
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+                if (cookie.startsWith(name + '=')) {
+                    return decodeURIComponent(cookie.substring(name.length + 1));
+                }
+            }
+            return null;
+        }
+
         // Elements
         const fxInput = document.getElementById('fx');
         const fyInput = document.getElementById('fy');
@@ -850,7 +863,7 @@
 
                 const resp = await fetch('{% url "lens_calibration:api_calibrate" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify(requestBody)
                 });
 
@@ -891,7 +904,7 @@
             try {
                 const resp = await fetch('{% url "lens_calibration:api_save" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify({
                         camera_id: cameraIdInput.value || 'unknown_camera',
                         zoom: parseFloat(zoomInput.value) || 1.0,
@@ -1031,7 +1044,7 @@ p2: ${currentResults.coefficients.p2}`;
 
                 const resp = await fetch('{% url "lens_calibration:api_calibrate_from_files" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify(requestBody)
                 });
 
