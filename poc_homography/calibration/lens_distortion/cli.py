@@ -131,8 +131,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
                         "start": list(c.start),
                         "end": list(c.end),
                         "confidence": round(c.confidence, 3),
-                        "length": round(c.length, 1),
-                        "angle_deg": round(c.angle_deg, 1),
+                        "length": round(c.length or 0.0, 1),
+                        "angle_deg": round(c.angle_deg or 0.0, 1),
                     }
                     for c in candidates[: args.max_lines]
                 ],
