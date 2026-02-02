@@ -766,7 +766,7 @@
                 calibrationSelect.innerHTML = '<option value="">-- Select calibration file --</option>';
                 (data.files || []).forEach(file => {
                     const option = document.createElement('option');
-                    option.value = file.path;
+                    option.value = file.name;
                     option.textContent = file.name;
                     calibrationSelect.appendChild(option);
                 });
@@ -784,7 +784,7 @@
                 imageSelect.innerHTML = '<option value="">-- Select image --</option>';
                 (data.images || []).forEach(img => {
                     const option = document.createElement('option');
-                    option.value = img.path;
+                    option.value = img.name;
                     option.textContent = img.name;
                     imageSelect.appendChild(option);
                 });
@@ -900,7 +900,11 @@
                 };
 
                 // Setup undistorted panel
-                panels.undistorted.img.src = 'data:image/jpeg;base64,' + data.undistorted;
+                if (data.undistorted_url) {
+                    panels.undistorted.img.src = data.undistorted_url;
+                } else {
+                    panels.undistorted.img.src = 'data:image/jpeg;base64,' + data.undistorted;
+                }
                 panels.undistorted.img.onload = () => {
                     panels.undistorted.empty.style.display = 'none';
                     panels.undistorted.scroller.style.display = 'inline-block';
