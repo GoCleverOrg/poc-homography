@@ -36,10 +36,6 @@ class ZoomCalibrationEntry:
         source_images: List of image paths or session IDs used.
         validation_rmse: Line straightness RMSE from validation.
         num_lines_used: Number of lines used for calibration.
-        fx: Focal length in x (pixels). None if not stored (backward compatibility).
-        fy: Focal length in y (pixels). None if not stored (backward compatibility).
-        cx: Principal point x coordinate (pixels). None if not stored (backward compatibility).
-        cy: Principal point y coordinate (pixels). None if not stored (backward compatibility).
     """
 
     zoom_factor: float
@@ -52,10 +48,6 @@ class ZoomCalibrationEntry:
     source_images: tuple[str, ...] = field(default_factory=tuple)
     validation_rmse: float = 0.0
     num_lines_used: int = 0
-    fx: float | None = None
-    fy: float | None = None
-    cx: float | None = None
-    cy: float | None = None
 
     def __post_init__(self) -> None:
         """Validate entry data."""
@@ -72,33 +64,9 @@ class ZoomCalibrationEntry:
             k3=Unitless(self.k3),
         )
 
-    def has_intrinsics(self) -> bool:
-        """Check if intrinsics are stored in this entry."""
-        return all(v is not None for v in [self.fx, self.fy, self.cx, self.cy])
-
-    def get_intrinsics(self) -> dict[str, float] | None:
-        """Get intrinsics as a dictionary, or None if not stored.
-
-        Returns:
-            Dictionary with fx, fy, cx, cy if all are stored, None otherwise.
-        """
-        if not self.has_intrinsics():
-            return None
-        # Type narrowing: has_intrinsics() ensures all values are not None
-        assert self.fx is not None
-        assert self.fy is not None
-        assert self.cx is not None
-        assert self.cy is not None
-        return {
-            "fx": self.fx,
-            "fy": self.fy,
-            "cx": self.cx,
-            "cy": self.cy,
-        }
-
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
-        result = {
+        return {
             "zoom_factor": self.zoom_factor,
             "k1": self.k1,
             "k2": self.k2,
@@ -110,41 +78,15 @@ class ZoomCalibrationEntry:
             "validation_rmse": self.validation_rmse,
             "num_lines_used": self.num_lines_used,
         }
-        # Only include intrinsics if they are stored
-        if self.has_intrinsics():
-            result["intrinsics"] = {
-                "fx": self.fx,
-                "fy": self.fy,
-                "cx": self.cx,
-                "cy": self.cy,
-            }
-        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> ZoomCalibrationEntry:
-        """Create from dictionary.
-
-        Handles backward compatibility - old files without intrinsics
-        will have None values for fx, fy, cx, cy.
-        """
+        """Create from dictionary."""
         source_images = data.get("source_images", [])
         if isinstance(source_images, list):
             source_images = tuple(source_images)
         elif isinstance(source_images, str):
             source_images = (source_images,)
-
-        # Handle intrinsics - may be None for backward compatibility
-        intrinsics = data.get("intrinsics", {})
-        fx = intrinsics.get("fx") if intrinsics else None
-        fy = intrinsics.get("fy") if intrinsics else None
-        cx = intrinsics.get("cx") if intrinsics else None
-        cy = intrinsics.get("cy") if intrinsics else None
-
-        # Convert to float if not None
-        fx = float(fx) if fx is not None else None
-        fy = float(fy) if fy is not None else None
-        cx = float(cx) if cx is not None else None
-        cy = float(cy) if cy is not None else None
 
         return cls(
             zoom_factor=float(data["zoom_factor"]),
@@ -157,10 +99,6 @@ class ZoomCalibrationEntry:
             source_images=source_images,
             validation_rmse=float(data.get("validation_rmse", 0.0)),
             num_lines_used=int(data.get("num_lines_used", 0)),
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
         )
 
     @classmethod
@@ -171,7 +109,6 @@ class ZoomCalibrationEntry:
         validation_rmse: float = 0.0,
         source_images: list[str] | None = None,
         num_lines_used: int = 0,
-        intrinsics: dict[str, float] | None = None,
     ) -> ZoomCalibrationEntry:
         """Create from distortion solver result.
 
@@ -181,17 +118,10 @@ class ZoomCalibrationEntry:
             validation_rmse: RMSE from validation.
             source_images: Images used for calibration.
             num_lines_used: Number of lines used.
-            intrinsics: Camera intrinsics used during calibration.
-                        Should contain fx, fy, cx, cy.
 
         Returns:
             New ZoomCalibrationEntry.
         """
-        fx = intrinsics.get("fx") if intrinsics else None
-        fy = intrinsics.get("fy") if intrinsics else None
-        cx = intrinsics.get("cx") if intrinsics else None
-        cy = intrinsics.get("cy") if intrinsics else None
-
         return cls(
             zoom_factor=zoom_factor,
             k1=float(distortion.k1),
@@ -203,10 +133,6 @@ class ZoomCalibrationEntry:
             source_images=tuple(source_images or []),
             validation_rmse=validation_rmse,
             num_lines_used=num_lines_used,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
         )
 
 
@@ -375,7 +301,10 @@ class CameraCalibrationTable:
         Returns:
             ZoomCalibrationEntry if found, None otherwise.
         """
-        return self.entries.get(zoom_factor)
+        matching_zoom = self._find_matching_zoom(zoom_factor)
+        if matching_zoom is not None:
+            return self.entries[matching_zoom]
+        return None
 
     def get_nearest_entry(self, zoom_factor: float) -> ZoomCalibrationEntry | None:
         """Get the calibration entry nearest to a zoom level.
@@ -403,7 +332,14 @@ class CameraCalibrationTable:
 
     @classmethod
     def from_dict(cls, data: dict) -> CameraCalibrationTable:
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Raises:
+            ValueError: If data is None or not a dict.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict for calibration data, got {type(data).__name__}")
+
         table = cls(
             camera_id=data["camera_id"],
             created_date=data.get("created_date", ""),
@@ -450,6 +386,9 @@ class CameraCalibrationTable:
 
         with open(path) as f:
             data = yaml.safe_load(f)
+
+        if data is None:
+            raise ValueError(f"Calibration file is empty: {path}")
 
         table = cls.from_dict(data)
         logger.info(f"Loaded calibration table from {path} with {len(table.entries)} entries")
@@ -502,3 +441,47 @@ def load_calibration_for_camera(
 
     logger.debug(f"No calibration file found for camera {camera_id}")
     return None
+
+
+def load_lens_distortion_as_table(
+    camera_id: str,
+    calibration_dir: str | Path,
+) -> dict[float, dict[str, float]] | None:
+    """Load lens distortion calibration as a plain dict keyed by zoom factor.
+
+    Converts the YAML-based ``CameraCalibrationTable`` into the lightweight
+    ``dict[float, dict[str, float]]`` format expected by
+    ``IntrinsicExtrinsicHomography.calibration_table``.
+
+    Args:
+        camera_id: Camera identifier.
+        calibration_dir: Directory containing calibration YAML files.
+
+    Returns:
+        Dictionary mapping zoom_factor to ``{k1, k2, k3, p1, p2}`` dicts,
+        or ``None`` if no calibration file exists.
+    """
+    calibration_dir = Path(calibration_dir)
+    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
+
+    if not calibration_file.exists():
+        return None
+
+    try:
+        table = CameraCalibrationTable.load(calibration_file)
+        if not table.entries:
+            return None
+
+        result: dict[float, dict[str, float]] = {}
+        for zoom, entry in table.entries.items():
+            result[zoom] = {
+                "k1": entry.k1,
+                "k2": entry.k2,
+                "k3": entry.k3,
+                "p1": entry.p1,
+                "p2": entry.p2,
+            }
+        return result
+    except Exception:
+        logger.warning(f"Failed to load lens distortion calibration for {camera_id}", exc_info=True)
+        return None

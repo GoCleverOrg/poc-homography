@@ -16,5 +16,4 @@ urlpatterns = [
     path("api/save/", views.api_save, name="api_save"),
     path("api/load/", views.api_load, name="api_load"),
     path("api/survey-sessions/", views.api_survey_sessions, name="api_survey_sessions"),
-    path("api/debug-data/", views.api_debug_data, name="api_debug_data"),
 ]

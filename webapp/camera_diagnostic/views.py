@@ -777,6 +777,109 @@ def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
     })
 
 
+@csrf_exempt
+@require_POST
+def api_save_diagnostic_session(request: HttpRequest) -> JsonResponse:
+    """Save a diagnostic session with pre-collected test results from frontend orchestration.
+
+    POST body:
+        tenant_id: Tenant ID
+        camera_results: List of camera result objects, each containing:
+            - camera_id: Camera identifier
+            - camera_name: Camera display name
+            - camera_ip: Camera IP address
+            - device_info: Optional device info dict
+            - rtsp_test: {status, response_time_ms, error_message, error_category, details}
+            - webui_test: {status, response_time_ms, error_message, error_category, details}
+            - ptz_test: {status, response_time_ms, error_message, error_category, details}
+
+    Returns:
+        JsonResponse with session_id and status
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "Invalid JSON request body",
+            status_code=400,
+        )
+
+    tenant_id = data.get("tenant_id")
+    if not tenant_id:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "tenant_id is required",
+            status_code=400,
+        )
+
+    tenant = get_tenant_by_id(tenant_id)
+    if not tenant:
+        return _error_response(
+            CameraErrorCategory.CAMERA_NOT_FOUND,
+            f"Tenant not found: {tenant_id}",
+            status_code=404,
+        )
+
+    camera_results_data = data.get("camera_results", [])
+    if not camera_results_data:
+        return _error_response(
+            CameraErrorCategory.INVALID_RESPONSE,
+            "camera_results is required and must not be empty",
+            status_code=400,
+        )
+
+    # Build session from pre-collected results (client-orchestrated)
+    session = DiagnosticSession(
+        id=str(uuid.uuid4()),
+        created_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
+        status=DiagnosticSessionStatus.COMPLETED,
+        tenant_id=tenant_id,
+        tenant_name=tenant.get("name", tenant_id),
+        origin="client_orchestrated",
+    )
+
+    for cam_data in camera_results_data:
+        camera_result = CameraDiagnosticResult(
+            camera_id=cam_data.get("camera_id", ""),
+            camera_name=cam_data.get("camera_name", ""),
+            camera_ip=cam_data.get("camera_ip", ""),
+        )
+
+        if cam_data.get("device_info"):
+            from .models import DeviceInfo
+
+            camera_result.device_info = DeviceInfo.from_dict(cam_data["device_info"])
+
+        for test_key in ("rtsp_test", "webui_test", "ptz_test"):
+            test_data = cam_data.get(test_key)
+            if test_data:
+                try:
+                    status = DiagnosticTestStatus(test_data.get("status", "pending"))
+                except ValueError:
+                    status = DiagnosticTestStatus.PENDING
+                test_result = DiagnosticTestResult(
+                    test_type=test_key.replace("_test", ""),
+                    status=status,
+                    response_time_ms=test_data.get("response_time_ms"),
+                    error_message=test_data.get("error_message"),
+                    error_category=test_data.get("error_category"),
+                    details=test_data.get("details", {}),
+                )
+                setattr(camera_result, test_key, test_result)
+
+        session.camera_results.append(camera_result)
+
+    save_diagnostic_session(session)
+
+    return _success_response({
+        "session_id": session.id,
+        "status": session.status.value,
+        "summary": session.get_summary(),
+    })
+
+
 def _run_rtsp_test(camera_id: str) -> DiagnosticTestResult:
     """Run RTSP test for a camera."""
     result = DiagnosticTestResult(test_type="rtsp")
@@ -1177,6 +1280,7 @@ def api_stress_test_start(request: HttpRequest) -> JsonResponse:
             tilt_config=preset.tilt_config,
             zoom_config=preset.zoom_config,
             repetitions=preset.repetitions,
+            max_speed=preset.max_speed,
         )
     else:
         # Custom config
@@ -1217,6 +1321,7 @@ def api_stress_test_start(request: HttpRequest) -> JsonResponse:
             tilt_config=tilt_config,
             zoom_config=zoom_config,
             repetitions=data.get("repetitions", 1),
+            max_speed=data.get("max_speed", False),
         )
 
     # Start the stress test
@@ -1462,10 +1567,8 @@ def api_stress_video_stream(
             status_code=404,
         )
 
-    camera_name = camera.get("name", camera_id)
-
     response = StreamingHttpResponse(
-        generate_mjpeg_frames(camera_name), content_type="multipart/x-mixed-replace; boundary=frame"
+        generate_mjpeg_frames(camera_id), content_type="multipart/x-mixed-replace; boundary=frame"
     )
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response["Pragma"] = "no-cache"

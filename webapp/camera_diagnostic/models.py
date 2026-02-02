@@ -147,6 +147,7 @@ class DiagnosticSession:
     tenant_id: str = ""
     tenant_name: str = ""
     camera_results: list[CameraDiagnosticResult] = field(default_factory=list)
+    origin: str = "server_executed"  # "server_executed" or "client_orchestrated"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for YAML manifest."""
@@ -156,6 +157,7 @@ class DiagnosticSession:
                 "created_at": self.created_at.isoformat(),
                 "completed_at": self.completed_at.isoformat() if self.completed_at else None,
                 "status": self.status.value,
+                "origin": self.origin,
             },
             "tenant": {
                 "id": self.tenant_id,
@@ -185,6 +187,7 @@ class DiagnosticSession:
             camera_results=[
                 CameraDiagnosticResult.from_dict(r) for r in data.get("camera_results", [])
             ],
+            origin=session_data.get("origin", "server_executed"),
         )
 
     def get_summary(self) -> dict[str, int]:
@@ -335,6 +338,7 @@ class StressTestConfig:
     tilt_config: AxisMovementConfig | None = None
     zoom_config: AxisMovementConfig | None = None
     repetitions: int = 1
+    max_speed: bool = False  # Use continuous movement at max speed (±100)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -346,6 +350,7 @@ class StressTestConfig:
             "tilt_config": self.tilt_config.to_dict() if self.tilt_config else None,
             "zoom_config": self.zoom_config.to_dict() if self.zoom_config else None,
             "repetitions": self.repetitions,
+            "max_speed": self.max_speed,
         }
 
     @classmethod
@@ -365,6 +370,7 @@ class StressTestConfig:
             if data.get("zoom_config")
             else None,
             repetitions=data.get("repetitions", 1),
+            max_speed=data.get("max_speed", False),
         )
 
 
@@ -503,6 +509,7 @@ class StressTestPreset:
     tilt_config: AxisMovementConfig | None = None
     zoom_config: AxisMovementConfig | None = None
     repetitions: int = 1
+    max_speed: bool = False  # Use continuous movement at max speed (±100)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -514,6 +521,7 @@ class StressTestPreset:
             "tilt_config": self.tilt_config.to_dict() if self.tilt_config else None,
             "zoom_config": self.zoom_config.to_dict() if self.zoom_config else None,
             "repetitions": self.repetitions,
+            "max_speed": self.max_speed,
         }
 
 
@@ -525,7 +533,7 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
     # 1. Oscillation Test (Pan 10 degrees)
     StressTestPreset(
         name="Oscillation Test (Pan 10°)",
-        description="Back-and-forth pan movement of 10 degrees, 20 repetitions",
+        description="Back-and-forth pan movement of 10 degrees, 10 repetitions",
         test_type=StressTestType.OSCILLATION,
         pan_config=AxisMovementConfig(
             axis="pan",
@@ -533,12 +541,12 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
             end=10.0,
             step=10.0,
         ),
-        repetitions=20,
+        repetitions=10,
     ),
     # 2. Oscillation Test (Tilt 5 degrees)
     StressTestPreset(
         name="Oscillation Test (Tilt 5°)",
-        description="Back-and-forth tilt movement of 5 degrees, 20 repetitions",
+        description="Back-and-forth tilt movement of 5 degrees, 10 repetitions",
         test_type=StressTestType.OSCILLATION,
         tilt_config=AxisMovementConfig(
             axis="tilt",
@@ -546,7 +554,7 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
             end=5.0,
             step=5.0,
         ),
-        repetitions=20,
+        repetitions=10,
     ),
     # 3. Random Step Accuracy (Pan)
     StressTestPreset(
@@ -566,7 +574,7 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
     # 4. Full Range Sweep (Pan 360 degrees)
     StressTestPreset(
         name="Full Range Sweep (Pan 360°)",
-        description="Single continuous pan movement across full 360 degree range, 3 repetitions",
+        description="Single pan movement across full 360 degree range, 2 repetitions",
         test_type=StressTestType.FULL_RANGE_SWEEP,
         pan_config=AxisMovementConfig(
             axis="pan",
@@ -574,12 +582,12 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
             end=360.0,
             step=360.0,  # Single movement
         ),
-        repetitions=3,
+        repetitions=2,
     ),
     # 5. Tilt Stress (Full Range)
     StressTestPreset(
         name="Tilt Stress (Full Range)",
-        description="Rapid tilt movement from -15 to 90 degrees, 10 repetitions",
+        description="Rapid tilt movement from -15 to 90 degrees, 5 repetitions",
         test_type=StressTestType.TILT_STRESS,
         tilt_config=AxisMovementConfig(
             axis="tilt",
@@ -587,7 +595,7 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
             end=90.0,
             step=105.0,  # Full range in one movement
         ),
-        repetitions=10,
+        repetitions=5,
     ),
     # 6. Combined Axis Load
     StressTestPreset(
@@ -606,12 +614,12 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
             end=30.0,
             step=10.0,
         ),
-        repetitions=5,
+        repetitions=3,
     ),
     # 7. Position Repeatability
     StressTestPreset(
         name="Position Repeatability",
-        description="Move to same position 10 times and measure variance",
+        description="Move to same position 5 times and measure variance",
         test_type=StressTestType.POSITION_REPEATABILITY,
         pan_config=AxisMovementConfig(
             axis="pan",
@@ -625,6 +633,69 @@ STRESS_TEST_PRESETS: list[StressTestPreset] = [
             end=20.0,
             step=20.0,
         ),
+        repetitions=5,
+    ),
+    # === MAX SPEED PRESETS (for installation stress testing) ===
+    # 8. Max Speed Oscillation (Pan)
+    StressTestPreset(
+        name="MAX SPEED: Oscillation (Pan 30°)",
+        description="Aggressive back-and-forth pan at maximum motor speed, 10 reps",
+        test_type=StressTestType.OSCILLATION,
+        pan_config=AxisMovementConfig(
+            axis="pan",
+            start=0.0,
+            end=30.0,
+            step=30.0,
+        ),
         repetitions=10,
+        max_speed=True,
+    ),
+    # 9. Max Speed Oscillation (Tilt)
+    StressTestPreset(
+        name="MAX SPEED: Oscillation (Tilt 20°)",
+        description="Aggressive back-and-forth tilt at maximum motor speed, 10 reps",
+        test_type=StressTestType.OSCILLATION,
+        tilt_config=AxisMovementConfig(
+            axis="tilt",
+            start=0.0,
+            end=20.0,
+            step=20.0,
+        ),
+        repetitions=10,
+        max_speed=True,
+    ),
+    # 10. Max Speed Combined Axis
+    StressTestPreset(
+        name="MAX SPEED: Combined Axis",
+        description="Diagonal movement at maximum speed - maximum torque stress",
+        test_type=StressTestType.COMBINED_AXIS_LOAD,
+        pan_config=AxisMovementConfig(
+            axis="pan",
+            start=0.0,
+            end=60.0,
+            step=60.0,
+        ),
+        tilt_config=AxisMovementConfig(
+            axis="tilt",
+            start=0.0,
+            end=40.0,
+            step=40.0,
+        ),
+        repetitions=5,
+        max_speed=True,
+    ),
+    # 11. Max Speed Full Range
+    StressTestPreset(
+        name="MAX SPEED: Full Range Sweep",
+        description="Full 360° pan sweep at maximum speed, 3 reps",
+        test_type=StressTestType.FULL_RANGE_SWEEP,
+        pan_config=AxisMovementConfig(
+            axis="pan",
+            start=0.0,
+            end=360.0,
+            step=360.0,
+        ),
+        repetitions=3,
+        max_speed=True,
     ),
 ]

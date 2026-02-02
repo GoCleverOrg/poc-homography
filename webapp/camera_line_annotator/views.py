@@ -13,7 +13,7 @@ import yaml
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_http_methods
 
 # Paths relative to webapp directory
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
@@ -116,7 +116,9 @@ def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:
     return annotations
 
 
-def save_session_annotations(request: HttpRequest, annotations: dict[str, list[dict]]) -> None:
+def save_session_annotations(
+    request: HttpRequest, annotations: dict[str, list[dict]]
+) -> None:
     """Save annotations to session storage."""
     request.session[SESSION_ANNOTATIONS_KEY] = annotations
     request.session.modified = True
@@ -126,24 +128,23 @@ def extract_camera_status(filename: str) -> dict[str, Any]:
     """Extract pan/tilt/zoom from filename pattern.
 
     Supports two patterns:
-    1. Old: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
-       Example: valte_56.7_20.7_1_20260114_182208.jpg
-    2. New: valte_valte_cam01_{date}_{time}_{pan}_{tilt}_{zoom}.{ext}
-       Example: valte_valte_cam01_20260123_120715_30.0_20.6_1.0.jpg
+    - Legacy: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
+      Example: valte_56.7_20.7_1_20260114_182208.jpg
+    - Survey: {tenant}_{camera}_{date}_{time}_{pan}_{tilt}_{zoom}.{ext}
+      Example: valte_valte_cam01_20260126_095620_30.0_15.3_1.0.jpg
     """
-    # Try new format first (PTZ at the end before extension)
-    new_pattern = r".*_([0-9.]+)_([0-9.]+)_([0-9.]+)\.[a-zA-Z]+$"
-    match = re.match(new_pattern, filename)
+    # Try survey pattern: _YYYYMMDD_HHMMSS_pan_tilt_zoom.ext
+    survey_pattern = r"_\d{8}_\d{6}_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)\.\w+$"
+    match = re.search(survey_pattern, filename)
     if match:
         return {
             "pan": float(match.group(1)),
             "tilt": float(match.group(2)),
-            "zoom": int(float(match.group(3))),
+            "zoom": float(match.group(3)),
         }
-
-    # Try old format (PTZ at the beginning after valte_)
-    old_pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
-    match = re.match(old_pattern, filename)
+    # Try legacy pattern: valte_pan_tilt_zoom_timestamp.ext
+    legacy_pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
+    match = re.match(legacy_pattern, filename)
     if match:
         return {
             "pan": float(match.group(1)),
@@ -227,14 +228,12 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     # Extract camera status from filename
     camera_status = extract_camera_status(filename)
 
-    return JsonResponse(
-        {
-            "success": True,
-            "filename": filename,
-            "annotations": image_annotations,
-            "camera_status": camera_status,
-        }
-    )
+    return JsonResponse({
+        "success": True,
+        "filename": filename,
+        "annotations": image_annotations,
+        "camera_status": camera_status,
+    })
 
 
 @require_GET
@@ -277,12 +276,10 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
         registry = load_lines_registry()
         lines = registry.get("lines", [])
         line_ids = [line.get("line_id") for line in lines if line.get("line_id")]
-        return JsonResponse(
-            {
-                "map_id": registry.get("map_id", ""),
-                "line_ids": line_ids,
-            }
-        )
+        return JsonResponse({
+            "map_id": registry.get("map_id", ""),
+            "line_ids": line_ids,
+        })
     except Exception as e:
         return JsonResponse({"error": f"Failed to load line IDs: {e}"}, status=500)
 
@@ -330,6 +327,12 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid coordinate values"}, status=422)
 
+    # Preserve N-point data if provided
+    if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
+        annotation["points"] = [
+            [float(p[0]), float(p[1])] for p in data["points"]
+        ]
+
     # Store annotation
     all_annotations = get_session_annotations(request)
     if current_image not in all_annotations:
@@ -337,13 +340,11 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     all_annotations[current_image].append(annotation)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse(
-        {
-            "success": True,
-            "annotation": annotation,
-            "index": len(all_annotations[current_image]) - 1,
-        }
-    )
+    return JsonResponse({
+        "success": True,
+        "annotation": annotation,
+        "index": len(all_annotations[current_image]) - 1,
+    })
 
 
 @csrf_exempt
@@ -363,12 +364,10 @@ def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
     deleted = image_annotations.pop(index)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse(
-        {
-            "success": True,
-            "deleted": deleted,
-        }
-    )
+    return JsonResponse({
+        "success": True,
+        "deleted": deleted,
+    })
 
 
 @require_GET
@@ -468,312 +467,118 @@ def api_export(request: HttpRequest) -> JsonResponse:
     with open(resolved_path, "w") as f:
         yaml.dump(export_data, f, default_flow_style=False, sort_keys=False)
 
-    return JsonResponse(
-        {
-            "success": True,
-            "filename": output_filename,
-            "path": str(resolved_path),
-            "test_case_name": test_case_name,
-            "annotation_count": len(image_annotations),
-        }
-    )
+    return JsonResponse({
+        "success": True,
+        "filename": output_filename,
+        "path": str(resolved_path),
+        "test_case_name": test_case_name,
+        "annotation_count": len(image_annotations),
+    })
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def api_detect_lines(request: HttpRequest) -> JsonResponse:
-    """Run automatic line detection on the current image.
-
-    Uses the Hough-based line detector from the lens distortion calibration
-    module to find candidate parking spot lines in the image.
-
-    Request body (optional):
-    {
-        "min_line_length": 100,  // Minimum line length in pixels
-        "min_confidence": 0.3,   // Minimum confidence threshold
-        "canny_low": 50,         // Canny edge detection lower threshold
-        "canny_high": 150        // Canny edge detection upper threshold
-    }
-
-    Response:
-    {
-        "success": true,
-        "filename": "image.jpg",
-        "detected_lines": [
-            {
-                "start_x": 100.0,
-                "start_y": 200.0,
-                "end_x": 500.0,
-                "end_y": 210.0,
-                "confidence": 0.85,
-                "angle_deg": 1.2,
-                "length": 400.5,
-                "cluster_id": 0
-            },
-            ...
-        ],
-        "total_detected": 15
-    }
-    """
+def api_import(request: HttpRequest) -> JsonResponse:
+    """Import annotations from YAML file or YAML content."""
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
-    image_path = TEST_DATA_DIR / current_image
-
     try:
-        resolved_path = image_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return JsonResponse({"error": "Invalid image path"}, status=400)
-    except (ValueError, RuntimeError):
-        return JsonResponse({"error": "Invalid image path"}, status=400)
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    if not resolved_path.exists():
-        return JsonResponse({"error": f"Image not found: {current_image}"}, status=404)
+    # Get YAML content - either from filename or direct content
+    yaml_content = None
+    filename = data.get("filename")
+    yaml_text = data.get("yaml_content")
 
-    # Parse optional configuration from request
-    config_overrides = {}
-    if request.body:
+    if yaml_text:
+        # Direct YAML content provided
         try:
-            data = json.loads(request.body)
-            if "min_line_length" in data:
-                config_overrides["min_line_length"] = int(data["min_line_length"])
-            if "min_confidence" in data:
-                config_overrides["min_confidence"] = float(data["min_confidence"])
-            if "canny_low" in data:
-                config_overrides["canny_low"] = int(data["canny_low"])
-            if "canny_high" in data:
-                config_overrides["canny_high"] = int(data["canny_high"])
-        except json.JSONDecodeError:
-            pass  # Use default config
+            yaml_content = yaml.safe_load(yaml_text)
+        except yaml.YAMLError as e:
+            return JsonResponse({"error": f"Invalid YAML: {e}"}, status=400)
+    elif filename:
+        # Load from file
+        if not validate_image_filename(filename):
+            return JsonResponse({"error": "Invalid filename"}, status=400)
 
-    try:
-        from PIL import Image
-
-        from poc_homography.calibration.lens_distortion.line_detection import (
-            LineDetectionConfig,
-            LineDetector,
-        )
-
-        # Get image dimensions for filtering
-        with Image.open(resolved_path) as img:
-            img_width = img.width
-            img_height = img.height
-
-        # Create config with any overrides
-        config = LineDetectionConfig(**config_overrides)
-        detector = LineDetector(config)
-
-        # Run detection
-        candidates = detector.detect_from_file(resolved_path)
-
-        # Filter: only keep lines where both endpoints are within image bounds
-        detected_lines = []
-        for c in candidates:
-            # Check all coordinates are within image bounds
-            if (
-                0 <= c.start[0] <= img_width
-                and 0 <= c.start[1] <= img_height
-                and 0 <= c.end[0] <= img_width
-                and 0 <= c.end[1] <= img_height
-            ):
-                detected_lines.append(
-                    {
-                        "start_x": c.start[0],
-                        "start_y": c.start[1],
-                        "end_x": c.end[0],
-                        "end_y": c.end[1],
-                        "confidence": c.confidence,
-                        "angle_deg": c.angle_deg,
-                        "length": c.length,
-                        "cluster_id": c.cluster_id,
-                    }
-                )
-
-        # Sort by confidence (highest first)
-        detected_lines.sort(key=lambda x: x["confidence"], reverse=True)
-
-        return JsonResponse(
-            {
-                "success": True,
-                "filename": current_image,
-                "detected_lines": detected_lines,
-                "total_detected": len(detected_lines),
-            }
-        )
-
-    except ImportError as e:
-        return JsonResponse(
-            {
-                "error": f"Line detection module not available: {e}",
-                "details": "Ensure opencv-python is installed",
-            },
-            status=500,
-        )
-    except Exception as e:
-        return JsonResponse(
-            {
-                "error": f"Line detection failed: {e}",
-            },
-            status=500,
-        )
-
-
-@csrf_exempt
-@require_POST
-def api_detect_lines_masked(request: HttpRequest) -> JsonResponse:
-    """Detect lines using SAM3 masking to filter to ground markings only.
-
-    POST /api/detect-lines-masked/
-    Optional JSON body:
-        - min_line_length: Minimum line length in pixels
-        - min_confidence: Minimum confidence score (0.0-1.0)
-        - sam3_prompt: SAM3 segmentation prompt (default: "white lines on ground")
-        - include_comparison: If true, also return count of unmasked detection
-
-    Returns JSON with detected lines, SAM3 mask info, and comparison stats.
-    """
-    current_image = get_current_image(request)
-    if not current_image:
-        return JsonResponse({"error": "No image selected"}, status=400)
-
-    image_path = TEST_DATA_DIR / current_image
-
-    try:
-        resolved_path = image_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return JsonResponse({"error": "Invalid image path"}, status=400)
-    except (ValueError, RuntimeError):
-        return JsonResponse({"error": "Invalid image path"}, status=400)
-
-    if not resolved_path.exists():
-        return JsonResponse({"error": f"Image not found: {current_image}"}, status=404)
-
-    # Parse configuration from request
-    line_config_overrides = {}
-    sam3_prompt = "white lines on ground"
-    include_comparison = False
-
-    if request.body:
+        file_path = TEST_DATA_DIR / filename
         try:
-            data = json.loads(request.body)
-            if "min_line_length" in data:
-                line_config_overrides["min_line_length"] = int(data["min_line_length"])
-            if "min_confidence" in data:
-                line_config_overrides["min_confidence"] = float(data["min_confidence"])
-            if "sam3_prompt" in data:
-                sam3_prompt = str(data["sam3_prompt"])
-            if "include_comparison" in data:
-                include_comparison = bool(data["include_comparison"])
-        except json.JSONDecodeError:
-            pass  # Use default config
+            resolved_path = file_path.resolve()
+            if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
+                return JsonResponse({"error": "Invalid filename"}, status=400)
+        except (ValueError, RuntimeError):
+            return JsonResponse({"error": "Invalid filename"}, status=400)
 
-    try:
-        import os
+        if not resolved_path.exists():
+            return JsonResponse({"error": f"File not found: {filename}"}, status=404)
 
-        from PIL import Image
-
-        from poc_homography.calibration.lens_distortion.line_detection import (
-            LineDetectionConfig,
-        )
-        from poc_homography.calibration.lens_distortion.masked_line_detection import (
-            MaskedLineDetectionConfig,
-            MaskedLineDetector,
-        )
-        from poc_homography.calibration.lens_distortion.sam3_masking import SAM3Config
-
-        # Get image dimensions
-        with Image.open(resolved_path) as img:
-            img_width = img.width
-            img_height = img.height
-
-        # Check for API key
-        api_key = os.environ.get("ROBOFLOW_API_KEY")
-        if not api_key:
-            return JsonResponse(
-                {
-                    "error": "ROBOFLOW_API_KEY environment variable not set",
-                    "details": "Set ROBOFLOW_API_KEY to use SAM3 masked detection",
-                },
-                status=500,
-            )
-
-        # Create configs
-        sam3_config = SAM3Config(api_key=api_key, prompt=sam3_prompt)
-        line_config = LineDetectionConfig(**line_config_overrides) if line_config_overrides else None
-        config = MaskedLineDetectionConfig(
-            sam3_config=sam3_config,
-            line_config=line_config,
-        )
-
-        # Run masked detection
-        detector = MaskedLineDetector(config)
-        result = detector.detect_from_file(resolved_path, include_original_count=include_comparison)
-
-        # Filter and convert lines
-        detected_lines = []
-        for c in result.lines:
-            if (
-                0 <= c.start[0] <= img_width
-                and 0 <= c.start[1] <= img_height
-                and 0 <= c.end[0] <= img_width
-                and 0 <= c.end[1] <= img_height
-            ):
-                detected_lines.append(
-                    {
-                        "start_x": c.start[0],
-                        "start_y": c.start[1],
-                        "end_x": c.end[0],
-                        "end_y": c.end[1],
-                        "confidence": c.confidence,
-                        "angle_deg": c.angle_deg,
-                        "length": c.length,
-                        "cluster_id": c.cluster_id,
-                    }
-                )
-
-        detected_lines.sort(key=lambda x: x["confidence"], reverse=True)
-
-        response_data = {
-            "success": True,
-            "filename": current_image,
-            "detected_lines": detected_lines,
-            "total_detected": len(detected_lines),
-            "sam3": {
-                "prompt": result.sam3_result.prompt,
-                "coverage_percent": result.sam3_result.coverage_percent,
-                "polygon_count": len(result.sam3_result.polygons),
-                "error": result.sam3_result.error,
-            },
-        }
-
-        if include_comparison and result.original_line_count > 0:
-            reduction = (1 - len(detected_lines) / result.original_line_count) * 100
-            response_data["comparison"] = {
-                "original_line_count": result.original_line_count,
-                "masked_line_count": len(detected_lines),
-                "reduction_percent": round(reduction, 1),
-            }
-
-        return JsonResponse(response_data)
-
-    except ImportError as e:
+        try:
+            with open(resolved_path) as f:
+                yaml_content = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            return JsonResponse({"error": f"Invalid YAML in file: {e}"}, status=400)
+    else:
         return JsonResponse(
-            {
-                "error": f"Masked line detection module not available: {e}",
-                "details": "Ensure opencv-python and requests are installed",
-            },
-            status=500,
-        )
-    except Exception as e:
-        import traceback
-
-        return JsonResponse(
-            {
-                "error": f"Masked line detection failed: {e}",
-                "traceback": traceback.format_exc(),
-            },
-            status=500,
+            {"error": "Either 'filename' or 'yaml_content' is required"}, status=400
         )
 
+    # Find test case matching current image
+    test_cases = yaml_content.get("test_cases", [])
+    matching_case = None
+    for tc in test_cases:
+        if tc.get("image") == current_image:
+            matching_case = tc
+            break
 
+    if not matching_case:
+        available_images = [tc.get("image") for tc in test_cases]
+        return JsonResponse({
+            "error": f"No test case found for current image '{current_image}'",
+            "available_images": available_images,
+        }, status=404)
+
+    # Extract annotations - support both formats
+    line_annotations = matching_case.get("line_annotations", [])
+    imported_annotations = []
+
+    for ann in line_annotations:
+        # Check for N-point format (points array)
+        if "points" in ann:
+            points = ann["points"]
+            if len(points) >= 2:
+                imported_annotations.append({
+                    "line_id": ann.get("line_id", ""),
+                    "start_pixel_x": float(points[0][0]),
+                    "start_pixel_y": float(points[0][1]),
+                    "end_pixel_x": float(points[-1][0]),
+                    "end_pixel_y": float(points[-1][1]),
+                    "points": points,  # Keep full points for N-point mode
+                })
+        # Standard 2-point format
+        elif all(k in ann for k in ["start_pixel_x", "start_pixel_y", "end_pixel_x", "end_pixel_y"]):
+            imported_annotations.append({
+                "line_id": ann.get("line_id", ""),
+                "start_pixel_x": float(ann["start_pixel_x"]),
+                "start_pixel_y": float(ann["start_pixel_y"]),
+                "end_pixel_x": float(ann["end_pixel_x"]),
+                "end_pixel_y": float(ann["end_pixel_y"]),
+            })
+
+    # Store imported annotations
+    all_annotations = get_session_annotations(request)
+    all_annotations[current_image] = imported_annotations
+    save_session_annotations(request, all_annotations)
+
+    # Extract camera status if available
+    camera_status = matching_case.get("camera_status", {})
+
+    return JsonResponse({
+        "success": True,
+        "annotation_count": len(imported_annotations),
+        "annotations": imported_annotations,
+        "camera_status": camera_status,
+    })

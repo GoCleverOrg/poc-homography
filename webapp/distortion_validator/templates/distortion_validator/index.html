@@ -690,6 +690,19 @@
     </div>
 
     <script>
+        // CSRF token helper
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+                if (cookie.startsWith(name + '=')) {
+                    return decodeURIComponent(cookie.substring(name.length + 1));
+                }
+            }
+            return null;
+        }
+
         // Elements
         const calibrationSelect = document.getElementById('calibration-select');
         const zoomEntrySelect = document.getElementById('zoom-entry-select');
@@ -785,7 +798,7 @@
             try {
                 const resp = await fetch('{% url "distortion_validator:api_load_calibration" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify({ filename })
                 });
 
@@ -850,7 +863,7 @@
             try {
                 const resp = await fetch('{% url "distortion_validator:api_undistort" %}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify({
                         image_path: imageSelect.value,
                         coefficients: currentCoefficients,
@@ -1129,7 +1142,7 @@
 
             const resp = await fetch('{% url "distortion_validator:api_measure_straightness" %}', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                 body: JSON.stringify(payload)
             });
             return await resp.json();

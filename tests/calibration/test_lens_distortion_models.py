@@ -193,7 +193,7 @@ class TestCameraLine:
         assert line.angle_degrees == 45.0
 
     def test_sample_points_returns_correct_count(self, ptz_position):
-        """Should return requested number of sample points with mode='linear'."""
+        """Should return requested number of sample points."""
         line = CameraLine(
             line_id="line_1",
             image_path="/path/to/image.jpg",
@@ -202,13 +202,12 @@ class TestCameraLine:
             ptz_position=ptz_position,
         )
 
-        # Use mode="linear" for testing linear interpolation
-        samples = line.sample_points(num_samples=10, mode="linear")
+        samples = line.sample_points(num_samples=10)
 
         assert samples.shape == (10, 2)
 
     def test_sample_points_includes_endpoints(self, ptz_position):
-        """Should include start and end points in samples with mode='linear'."""
+        """Should include start and end points in samples."""
         line = CameraLine(
             line_id="line_1",
             image_path="/path/to/image.jpg",
@@ -217,11 +216,79 @@ class TestCameraLine:
             ptz_position=ptz_position,
         )
 
-        # Use mode="linear" for testing linear interpolation
-        samples = line.sample_points(num_samples=5, mode="linear")
+        samples = line.sample_points(num_samples=5)
 
         np.testing.assert_array_almost_equal(samples[0], [0.0, 0.0])
         np.testing.assert_array_almost_equal(samples[-1], [100.0, 50.0])
+
+    def test_sample_points_uses_edge_pixels_when_available(self, ptz_position):
+        """Should return edge_pixels data when available, not interpolated points."""
+        edge_pixels = (
+            (10.0, 20.0), (15.0, 22.0), (20.0, 25.0),
+            (25.0, 27.0), (30.0, 30.0), (35.0, 32.0),
+        )
+        line = CameraLine(
+            line_id="line_1",
+            image_path="/path/to/image.jpg",
+            start_pixel=(10.0, 20.0),
+            end_pixel=(35.0, 32.0),
+            ptz_position=ptz_position,
+            edge_pixels=edge_pixels,
+        )
+
+        samples = line.sample_points(num_samples=100)
+
+        # Should return all 6 edge_pixels since 6 < 100
+        assert samples.shape == (6, 2)
+        np.testing.assert_array_almost_equal(samples[0], [10.0, 20.0])
+
+    def test_sample_points_subsamples_edge_pixels(self, ptz_position):
+        """Should subsample edge_pixels when more than num_samples available."""
+        edge_pixels = tuple((float(i), float(i * 2)) for i in range(50))
+        line = CameraLine(
+            line_id="line_1",
+            image_path="/path/to/image.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(49.0, 98.0),
+            ptz_position=ptz_position,
+            edge_pixels=edge_pixels,
+        )
+
+        samples = line.sample_points(num_samples=10)
+
+        assert samples.shape == (10, 2)
+        # First and last should match edge_pixels endpoints
+        np.testing.assert_array_almost_equal(samples[0], [0.0, 0.0])
+        np.testing.assert_array_almost_equal(samples[-1], [49.0, 98.0])
+
+    def test_sample_points_edge_pixels_with_one_point(self, ptz_position):
+        """Should fall back to linear interpolation when edge_pixels has < 2 points."""
+        line = CameraLine(
+            line_id="line_1",
+            image_path="/path/to/image.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(100.0, 0.0),
+            ptz_position=ptz_position,
+            edge_pixels=((50.0, 0.0),),
+        )
+
+        # Only 1 edge pixel (< 2), should fall back to interpolation
+        samples = line.sample_points(num_samples=5)
+        assert samples.shape == (5, 2)
+
+    def test_sample_points_empty_edge_pixels(self, ptz_position):
+        """Should fall back to linear interpolation when edge_pixels is empty."""
+        line = CameraLine(
+            line_id="line_1",
+            image_path="/path/to/image.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(100.0, 0.0),
+            ptz_position=ptz_position,
+            edge_pixels=(),
+        )
+
+        samples = line.sample_points(num_samples=5)
+        assert samples.shape == (5, 2)
 
     def test_to_dict_and_from_dict_roundtrip(self, ptz_position):
         """Should serialize and deserialize without data loss."""

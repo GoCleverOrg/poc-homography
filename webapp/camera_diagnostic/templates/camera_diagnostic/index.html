@@ -135,6 +135,29 @@
             transform: none;
         }
 
+        .btn-warning {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #d97706;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-warning:hover {
+            background: #f59e0b;
+            transform: translateY(-1px);
+        }
+
+        .btn-warning:disabled {
+            background: #78350f;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         /* Summary Report */
         .summary-report {
             background: #252525;
@@ -1005,6 +1028,16 @@
                 </select>
 
                 <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
+                <button id="abort-btn" class="btn-warning" style="display: none;">Abort</button>
+            </div>
+
+            <!-- Single Camera Actions (shown when a specific camera is selected) -->
+            <div id="single-camera-panel" class="selector-panel" style="display: none;">
+                <span id="single-camera-label" style="font-weight: 600; color: #ccc;"></span>
+                <button id="btn-test-rtsp" class="btn-secondary" style="padding: 10px 18px; font-size: 13px;">Test RTSP</button>
+                <button id="btn-test-webui" class="btn-secondary" style="padding: 10px 18px; font-size: 13px;">Test WebUI</button>
+                <button id="btn-test-ptz" class="btn-secondary" style="padding: 10px 18px; font-size: 13px;">Test PTZ</button>
+                <button id="btn-test-all-single" class="btn-primary" style="padding: 10px 18px; font-size: 13px;">Run All Tests</button>
             </div>
 
             <!-- Summary Report -->
@@ -1092,6 +1125,15 @@
                 </div>
             </div>
 
+            <!-- Multi-Camera Controls -->
+            <div id="stress-multi-camera-panel" class="stress-panel hidden">
+                <h2>Multi-Camera Testing</h2>
+                <div class="stress-form-row">
+                    <button id="run-all-cameras-all-btn" class="btn-secondary">Run All Cameras (All Presets)</button>
+                    <button id="run-all-cameras-max-btn" class="btn-warning">Run All Cameras (Max Speed)</button>
+                </div>
+            </div>
+
             <!-- Live Video Feed -->
             <div id="stress-video-panel" class="stress-panel hidden">
                 <h3 id="stress-camera-name">Live Video Feed</h3>
@@ -1107,6 +1149,7 @@
                 <div class="stress-form-row">
                     <button id="start-stress-test-btn" class="btn-primary">Start Test</button>
                     <button id="run-all-stress-tests-btn" class="btn-secondary">Run All Tests</button>
+                    <button id="run-max-speed-tests-btn" class="btn-warning">Run Max Speed Tests</button>
                     <button id="abort-stress-test-btn" class="btn-danger" disabled>Abort Test</button>
                 </div>
 
@@ -1312,7 +1355,12 @@
         let selectedCamera = null;
         let tenantCameras = [];
         let isRunning = false;
+        let abortRequested = false;
+        let abortController = null; // Shared AbortController for cancelling in-flight requests
         let testResults = {}; // camera_id -> {rtsp: status, webui: status, ptz: status}
+
+        // Client-side timeout per test type (ms)
+        const TEST_TIMEOUTS = { rtsp: 30000, webui: 60000, ptz: 120000 };
 
         // Elements
         const tenantSelect = document.getElementById('tenant-select');
@@ -1326,6 +1374,13 @@
         const videoCameraName = document.getElementById('video-camera-name');
         const snapshotBtn = document.getElementById('snapshot-btn');
         const credentialsWarning = document.getElementById('credentials-warning');
+        const abortBtn = document.getElementById('abort-btn');
+        const singleCameraPanel = document.getElementById('single-camera-panel');
+        const singleCameraLabel = document.getElementById('single-camera-label');
+        const btnTestRtsp = document.getElementById('btn-test-rtsp');
+        const btnTestWebui = document.getElementById('btn-test-webui');
+        const btnTestPtz = document.getElementById('btn-test-ptz');
+        const btnTestAllSingle = document.getElementById('btn-test-all-single');
         const passCount = document.getElementById('pass-count');
         const failCount = document.getElementById('fail-count');
         const pendingCount = document.getElementById('pending-count');
@@ -1442,6 +1497,17 @@
             progressFill.style.width = total > 0 ? `${(completed / total) * 100}%` : '0%';
         }
 
+        // Debounced render to avoid excessive DOM rebuilds during concurrent tests
+        let renderScheduled = false;
+        function scheduleRender() {
+            if (renderScheduled) return;
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+                renderScheduled = false;
+                renderCameraResults();
+            });
+        }
+
         // Render camera results
         function renderCameraResults() {
             cameraResults.innerHTML = '';
@@ -1516,117 +1582,127 @@
             return div.innerHTML;
         }
 
-        // Run tests for a single camera
+        // Run tests for a single camera (sequential: RTSP → WebUI → PTZ)
         async function runTestsForCamera(cameraId) {
-            const result = testResults[cameraId];
-
-            // Run RTSP test
-            result.rtsp = 'running';
-            renderCameraResults();
-            try {
-                const rtspUrl = '{% url "camera_diagnostic:api_test_rtsp" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
-                const rtspResp = await fetch(rtspUrl);
-                const rtspResult = await rtspResp.json();
-
-                if (rtspResult.status === 'success') {
-                    result.rtsp = 'pass';
-                    const metrics = rtspResult.data?.metrics;
-                    result.rtspLogs = `${rtspResult.data?.message || 'Connected successfully'}\n`;
-                    if (metrics) {
-                        result.rtspLogs += `Latency: ${metrics.latency_ms}ms\n`;
-                        result.rtspLogs += `Resolution: ${metrics.resolution?.width}x${metrics.resolution?.height}`;
-                    }
-                } else {
-                    result.rtsp = 'fail';
-                    result.rtspLogs = `Error: ${rtspResult.message || 'Unknown error'}`;
-                    checkCredentialsError(rtspResult);
-                }
-            } catch (e) {
-                result.rtsp = 'fail';
-                result.rtspLogs = `Request failed: ${e.message}`;
-            }
-            updateSummaryStats();
-            renderCameraResults();
-
-            // Run WebUI test
-            result.webui = 'running';
-            renderCameraResults();
-            try {
-                const webuiUrl = '{% url "camera_diagnostic:api_test_webui" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
-                const webuiResp = await fetch(webuiUrl);
-                const webuiResult = await webuiResp.json();
-
-                if (webuiResult.status === 'success') {
-                    const data = webuiResult.data;
-                    result.webui = data.login_success ? 'pass' : 'fail';
-                    result.webuiLogs = `${data.message || 'Test completed'}\n`;
-                    if (data.login_attempted && !data.login_success) {
-                        result.webuiLogs += data.login_error ? `Error: ${data.login_error}\n` : 'Login failed silently\n';
-                    }
-                    if (data.ptz_controls_found?.length > 0) {
-                        result.webuiLogs += `PTZ controls found: ${data.ptz_controls_found.length}\n`;
-                    }
-                    if (data.screenshot_path) {
-                        result.webuiLogs += `Screenshot: ${data.screenshot_path}`;
-                    }
-                } else {
-                    result.webui = 'fail';
-                    result.webuiLogs = `Error: ${webuiResult.message || 'Unknown error'}`;
-                    checkCredentialsError(webuiResult);
-                }
-            } catch (e) {
-                result.webui = 'fail';
-                result.webuiLogs = `Request failed: ${e.message}`;
-            }
-            updateSummaryStats();
-            renderCameraResults();
-
-            // Run PTZ test
-            result.ptz = 'running';
-            renderCameraResults();
-            try {
-                const ptzUrl = '{% url "camera_diagnostic:api_test_ptz" "CAMERA_PLACEHOLDER" %}'.replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
-                const ptzResp = await fetch(ptzUrl);
-                const ptzResult = await ptzResp.json();
-
-                if (ptzResult.status === 'success') {
-                    const data = ptzResult.data;
-                    const tests = data.tests || {};
-                    const allPassed = Object.values(tests).every(t => t.success !== false);
-                    result.ptz = allPassed ? 'pass' : 'fail';
-
-                    const logs = [];
-                    if (data.initial_position) {
-                        logs.push(`Initial: Pan=${data.initial_position.pan?.toFixed(1)}° Tilt=${data.initial_position.tilt?.toFixed(1)}° Zoom=${data.initial_position.zoom?.toFixed(1)}`);
-                    }
-                    Object.entries(tests).forEach(([name, test]) => {
-                        const status = test.success ? '✓' : '✗';
-                        logs.push(`${status} ${name}: ${test.success ? 'OK' : (test.error || 'Failed')}`);
-                    });
-                    if (data.position_restored) {
-                        logs.push('✓ Position restored');
-                    }
-                    result.ptzLogs = logs.join('\n');
-                } else {
-                    result.ptz = 'fail';
-                    result.ptzLogs = `Error: ${ptzResult.message || 'Unknown error'}`;
-                    checkCredentialsError(ptzResult);
-                }
-            } catch (e) {
-                result.ptz = 'fail';
-                result.ptzLogs = `Request failed: ${e.message}`;
-            }
-            updateSummaryStats();
-            renderCameraResults();
+            await runSingleTest(cameraId, 'rtsp');
+            await runSingleTest(cameraId, 'webui');
+            await runSingleTest(cameraId, 'ptz');
         }
 
-        // Run all tests on all cameras (using new API that saves session)
+        // Run a single test type for a camera and update UI in real-time
+        // parentSignal: optional AbortSignal from a shared AbortController (for abort button)
+        async function runSingleTest(cameraId, testType, parentSignal) {
+            const result = testResults[cameraId];
+            const urlTemplates = {
+                rtsp: '{% url "camera_diagnostic:api_test_rtsp" "CAMERA_PLACEHOLDER" %}',
+                webui: '{% url "camera_diagnostic:api_test_webui" "CAMERA_PLACEHOLDER" %}',
+                ptz: '{% url "camera_diagnostic:api_test_ptz" "CAMERA_PLACEHOLDER" %}',
+            };
+
+            result[testType] = 'running';
+            scheduleRender();
+            updateSummaryStats();
+
+            try {
+                const url = urlTemplates[testType].replace('CAMERA_PLACEHOLDER', encodeURIComponent(cameraId));
+                // Create a per-request AbortController for timeout
+                const timeoutController = new AbortController();
+                const timeoutMs = TEST_TIMEOUTS[testType] || 60000;
+                const timeout = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+                // If a parent signal exists, abort this request when parent aborts
+                if (parentSignal) {
+                    if (parentSignal.aborted) {
+                        clearTimeout(timeout);
+                        timeoutController.abort();
+                    } else {
+                        parentSignal.addEventListener('abort', () => {
+                            clearTimeout(timeout);
+                            timeoutController.abort();
+                        }, { once: true });
+                    }
+                }
+
+                const resp = await fetch(url, { signal: timeoutController.signal });
+                clearTimeout(timeout);
+                const testResult = await resp.json();
+
+                if (testResult.status === 'success') {
+                    if (testType === 'rtsp') {
+                        result.rtsp = 'pass';
+                        const metrics = testResult.data?.metrics;
+                        result.rtspLogs = `${testResult.data?.message || 'Connected successfully'}\n`;
+                        if (metrics) {
+                            result.rtspLogs += `Latency: ${metrics.latency_ms}ms\n`;
+                            result.rtspLogs += `Resolution: ${metrics.resolution?.width}x${metrics.resolution?.height}`;
+                        }
+                    } else if (testType === 'webui') {
+                        const data = testResult.data;
+                        result.webui = data.login_success ? 'pass' : 'fail';
+                        result.webuiLogs = `${data.message || 'Test completed'}\n`;
+                        if (data.login_attempted && !data.login_success) {
+                            result.webuiLogs += data.login_error ? `Error: ${data.login_error}\n` : 'Login failed silently\n';
+                        }
+                        if (data.ptz_controls_found?.length > 0) {
+                            result.webuiLogs += `PTZ controls found: ${data.ptz_controls_found.length}\n`;
+                        }
+                        if (data.screenshot_path) {
+                            result.webuiLogs += `Screenshot: ${data.screenshot_path}`;
+                        }
+                    } else if (testType === 'ptz') {
+                        const data = testResult.data;
+                        const tests = data.tests || {};
+                        const allPassed = Object.values(tests).every(t => t.success !== false);
+                        result.ptz = allPassed ? 'pass' : 'fail';
+
+                        const logs = [];
+                        if (data.initial_position) {
+                            logs.push(`Initial: Pan=${data.initial_position.pan?.toFixed(1)}° Tilt=${data.initial_position.tilt?.toFixed(1)}° Zoom=${data.initial_position.zoom?.toFixed(1)}`);
+                        }
+                        Object.entries(tests).forEach(([name, test]) => {
+                            const status = test.success ? '✓' : '✗';
+                            logs.push(`${status} ${name}: ${test.success ? 'OK' : (test.error || 'Failed')}`);
+                        });
+                        if (data.position_restored) {
+                            logs.push('✓ Position restored');
+                        }
+                        result.ptzLogs = logs.join('\n');
+                    }
+                } else {
+                    result[testType] = 'fail';
+                    const logsKey = testType + 'Logs';
+                    result[logsKey] = `Error: ${testResult.message || 'Unknown error'}`;
+                    checkCredentialsError(testResult);
+                }
+            } catch (e) {
+                result[testType] = 'fail';
+                const timeoutMs = TEST_TIMEOUTS[testType] || 60000;
+                result[testType + 'Logs'] = e.name === 'AbortError'
+                    ? (parentSignal?.aborted ? 'Aborted by user' : `Request timed out after ${timeoutMs / 1000}s`)
+                    : `Request failed: ${e.message}`;
+            }
+
+            updateSummaryStats();
+            scheduleRender();
+
+            // Return collected result data for session saving
+            return {
+                test_type: testType,
+                status: result[testType],
+                logs: result[testType + 'Logs'],
+            };
+        }
+
+        // Run all tests on all cameras with frontend orchestration
         async function runAllTests() {
             if (isRunning) return;
 
             isRunning = true;
+            abortRequested = false;
+            abortController = new AbortController();
             runAllBtn.disabled = true;
             runAllBtn.innerHTML = '<span class="spinner"></span> Running...';
+            abortBtn.style.display = '';
 
             // Initialize and show summary
             initializeResults();
@@ -1634,64 +1710,150 @@
             updateSummaryStats();
             renderCameraResults();
 
+            // Show RTSP preview panel
+            videoPreview.classList.add('visible');
+
+            const signal = abortController.signal;
+
+            // Iterate cameras sequentially
+            for (const camera of tenantCameras) {
+                if (signal.aborted) break;
+
+                const cameraId = camera.id;
+
+                // Run RTSP and WebUI concurrently (non-destructive reads)
+                await Promise.all([
+                    runSingleTest(cameraId, 'rtsp', signal),
+                    runSingleTest(cameraId, 'webui', signal),
+                ]);
+
+                if (signal.aborted) break;
+
+                // Show RTSP preview after RTSP/WebUI tests free their connections
+                showVideoPreview(cameraId);
+
+                // Run PTZ separately to avoid hardware conflicts with concurrent connections
+                await runSingleTest(cameraId, 'ptz', signal);
+            }
+
+            // Stop RTSP preview after all tests complete
+            showVideoPreview(null);
+            abortBtn.style.display = 'none';
+            abortController = null;
+
+            // Save diagnostic session with collected results
             try {
-                // Use the new API endpoint that runs all tests and saves the session
-                const resp = await fetch('{% url "camera_diagnostic:api_run_diagnostic" %}', {
+                const cameraResults = tenantCameras.map(cam => {
+                    const r = testResults[cam.id];
+                    const buildTest = (type) => {
+                        const status = r[type] === 'pass' ? 'pass' : (r[type] === 'fail' ? 'fail' : 'pending');
+                        const logsKey = type + 'Logs';
+                        const result = {
+                            test_type: type,
+                            status: status,
+                            details: { logs: r[logsKey] || '' },
+                        };
+                        if (status === 'fail') {
+                            result.error_message = r[logsKey] || 'Test failed';
+                        }
+                        return result;
+                    };
+                    return {
+                        camera_id: cam.id,
+                        camera_name: r.name || cam.name,
+                        camera_ip: r.ip || cam.ip || '',
+                        rtsp_test: buildTest('rtsp'),
+                        webui_test: buildTest('webui'),
+                        ptz_test: buildTest('ptz'),
+                    };
+                });
+
+                const saveResp = await fetch('{% url "camera_diagnostic:api_save_diagnostic_session" %}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         tenant_id: selectedTenant,
-                        camera_ids: tenantCameras.map(c => c.id),
+                        camera_results: cameraResults,
                     }),
                 });
-
-                const result = await resp.json();
-
-                if (result.status === 'success') {
-                    // Update test results from API response
-                    const cameraResultsData = result.data.camera_results || [];
-                    cameraResultsData.forEach(camResult => {
-                        if (testResults[camResult.camera_id]) {
-                            const r = testResults[camResult.camera_id];
-
-                            // Update device info
-                            if (camResult.device_info) {
-                                r.deviceInfo = camResult.device_info;
-                            }
-
-                            // Update RTSP
-                            if (camResult.rtsp_test) {
-                                r.rtsp = camResult.rtsp_test.status === 'pass' ? 'pass' : 'fail';
-                                r.rtspLogs = formatTestLogs(camResult.rtsp_test);
-                            }
-
-                            // Update WebUI
-                            if (camResult.webui_test) {
-                                r.webui = camResult.webui_test.status === 'pass' ? 'pass' : 'fail';
-                                r.webuiLogs = formatTestLogs(camResult.webui_test);
-                            }
-
-                            // Update PTZ
-                            if (camResult.ptz_test) {
-                                r.ptz = camResult.ptz_test.status === 'pass' ? 'pass' : 'fail';
-                                r.ptzLogs = formatTestLogs(camResult.ptz_test);
-                            }
-                        }
-                    });
-
-                    updateSummaryStats();
-                    renderCameraResults();
-                } else {
-                    alert('Test run failed: ' + (result.message || 'Unknown error'));
-                    checkCredentialsError(result);
+                const saveResult = await saveResp.json();
+                if (saveResult.status !== 'success') {
+                    alert('Warning: Failed to save diagnostic session: ' + (saveResult.message || 'Unknown error'));
                 }
             } catch (e) {
-                alert('Request failed: ' + e.message);
+                alert('Warning: Failed to save diagnostic session: ' + e.message);
             }
 
             isRunning = false;
+            abortRequested = false;
             runAllBtn.disabled = false;
             runAllBtn.textContent = `Run All Tests on ${tenantCameras.length} Camera(s)`;
+            abortBtn.style.display = 'none';
+            abortBtn.disabled = false;
+            abortBtn.textContent = 'Abort';
+        }
+
+        // Run a single test type on the selected camera
+        async function runSingleCameraTest(testType) {
+            if (isRunning || !selectedCamera) return;
+
+            isRunning = true;
+            setSingleCameraButtonsDisabled(true);
+
+            // Initialize results for just this camera
+            if (!testResults[selectedCamera]) {
+                const cam = tenantCameras.find(c => c.id === selectedCamera);
+                testResults[selectedCamera] = {
+                    name: cam?.name || selectedCamera,
+                    ip: cam?.ip || '',
+                    rtsp: 'pending', webui: 'pending', ptz: 'pending',
+                    rtspLogs: '', webuiLogs: '', ptzLogs: '',
+                };
+            }
+
+            summaryReport.classList.add('visible');
+            await runSingleTest(selectedCamera, testType);
+
+            isRunning = false;
+            setSingleCameraButtonsDisabled(false);
+        }
+
+        // Run all tests on the selected camera (RTSP+WebUI concurrent, then PTZ)
+        async function runAllTestsSingleCamera() {
+            if (isRunning || !selectedCamera) return;
+
+            isRunning = true;
+            setSingleCameraButtonsDisabled(true);
+
+            const cam = tenantCameras.find(c => c.id === selectedCamera);
+            testResults = {};
+            testResults[selectedCamera] = {
+                name: cam?.name || selectedCamera,
+                ip: cam?.ip || '',
+                rtsp: 'pending', webui: 'pending', ptz: 'pending',
+                rtspLogs: '', webuiLogs: '', ptzLogs: '',
+            };
+
+            summaryReport.classList.add('visible');
+            updateSummaryStats();
+            renderCameraResults();
+
+            // Run RTSP and WebUI concurrently, then PTZ to avoid hardware conflicts
+            await Promise.all([
+                runSingleTest(selectedCamera, 'rtsp'),
+                runSingleTest(selectedCamera, 'webui'),
+            ]);
+            await runSingleTest(selectedCamera, 'ptz');
+
+            isRunning = false;
+            setSingleCameraButtonsDisabled(false);
+        }
+
+        function setSingleCameraButtonsDisabled(disabled) {
+            btnTestRtsp.disabled = disabled;
+            btnTestWebui.disabled = disabled;
+            btnTestPtz.disabled = disabled;
+            btnTestAllSingle.disabled = disabled;
         }
 
         function formatTestLogs(testResult) {
@@ -1919,9 +2081,25 @@
         cameraSelect.addEventListener('change', (e) => {
             selectedCamera = e.target.value || null;
             showVideoPreview(selectedCamera);
+
+            if (selectedCamera) {
+                // Specific camera selected: show single-camera panel, hide summary
+                const cam = tenantCameras.find(c => c.id === selectedCamera);
+                singleCameraLabel.textContent = cam ? `${cam.name} (${cam.ip})` : selectedCamera;
+                singleCameraPanel.style.display = '';
+                summaryReport.classList.remove('visible');
+            } else {
+                // "All cameras" selected: hide single-camera panel
+                singleCameraPanel.style.display = 'none';
+            }
         });
 
         runAllBtn.addEventListener('click', runAllTests);
+        abortBtn.addEventListener('click', () => { abortRequested = true; if (abortController) abortController.abort(); abortBtn.disabled = true; abortBtn.textContent = 'Aborting...'; });
+        btnTestRtsp.addEventListener('click', () => runSingleCameraTest('rtsp'));
+        btnTestWebui.addEventListener('click', () => runSingleCameraTest('webui'));
+        btnTestPtz.addEventListener('click', () => runSingleCameraTest('ptz'));
+        btnTestAllSingle.addEventListener('click', runAllTestsSingleCamera);
         snapshotBtn.addEventListener('click', captureSnapshot);
         refreshHistoryBtn.addEventListener('click', loadSessionHistory);
         historyTenantSelect.addEventListener('change', loadSessionHistory);
@@ -1956,8 +2134,18 @@
         let stressPollInterval = null;
         let stressCurrentEvaluation = null;
         let runAllTestsMode = false;
+        let runMaxSpeedMode = false;  // Track if we're in max speed mode specifically
         let runAllTestsQueue = [];
         let runAllTestsResults = [];
+        let runAllTestsTotal = 0;  // Track total test count for progress display
+
+        // Multi-camera mode state
+        let runAllCamerasMode = false;
+        let runAllCamerasMaxSpeedMode = false;
+        let allCamerasQueue = [];
+        let currentCameraIndex = 0;
+        let totalCamerasCount = 0;
+        let allCamerasResults = [];
 
         // Elements - Stress testing tab
         const stressTenantSelect = document.getElementById('stress-tenant-select');
@@ -1972,6 +2160,10 @@
         const stressPresetsGrid = document.getElementById('stress-presets-grid');
         const startStressTestBtn = document.getElementById('start-stress-test-btn');
         const runAllStressTestsBtn = document.getElementById('run-all-stress-tests-btn');
+        const runMaxSpeedTestsBtn = document.getElementById('run-max-speed-tests-btn');
+        const stressMultiCameraPanel = document.getElementById('stress-multi-camera-panel');
+        const runAllCamerasAllBtn = document.getElementById('run-all-cameras-all-btn');
+        const runAllCamerasMaxBtn = document.getElementById('run-all-cameras-max-btn');
         const abortStressTestBtn = document.getElementById('abort-stress-test-btn');
         const stressTestProgress = document.getElementById('stress-test-progress');
         const stressTestProgressFill = document.getElementById('stress-test-progress-fill');
@@ -2102,6 +2294,8 @@
         // Show video stream for stress testing
         function showStressVideoStream(cameraId) {
             if (!cameraId) {
+                // Clear src to close any active MJPEG stream connection
+                stressVideoStream.src = '';
                 stressVideoPanel.classList.add('hidden');
                 stressVideoStream.style.display = 'none';
                 stressVideoPlaceholder.style.display = 'block';
@@ -2201,10 +2395,26 @@
             } catch (e) {
                 console.error('Failed to start test:', e);
                 alert('Failed to start test: ' + e.message);
-                startStressTestBtn.disabled = false;
-                startStressTestBtn.textContent = 'Start Test';
                 stressTestProgress.classList.add('hidden');
                 stressPtzDisplay.classList.add('hidden');
+
+                if (runAllCamerasMode) {
+                    // Record failure for current camera and skip to next
+                    const camera = stressCameras.find(c => c.id === stressCamera);
+                    allCamerasResults.push({
+                        camera: { id: stressCamera, name: camera?.name || stressCamera },
+                        presets: [{ preset: 'N/A', status: 'failed', error: e.message }]
+                    });
+                    runAllTestsMode = false;
+                    runMaxSpeedMode = false;
+                    runAllTestsResults = [];
+                    setTimeout(runNextCameraInQueue, 1000);
+                } else if (runAllTestsMode) {
+                    abortRunAllTests();
+                } else {
+                    startStressTestBtn.disabled = false;
+                    startStressTestBtn.textContent = 'Start Test';
+                }
             }
         }
 
@@ -2250,9 +2460,12 @@
         }
 
         async function onStressTestComplete() {
-            startStressTestBtn.disabled = false;
-            startStressTestBtn.textContent = 'Start Test';
-            abortStressTestBtn.disabled = true;
+            // Only reset single-test buttons when not in a batch mode
+            if (!runAllTestsMode && !runAllCamerasMode) {
+                startStressTestBtn.disabled = false;
+                startStressTestBtn.textContent = 'Start Test';
+                abortStressTestBtn.disabled = true;
+            }
 
             // Load session details
             let sessionResult = null;
@@ -2286,17 +2499,39 @@
                 }
 
                 if (runAllTestsQueue.length > 0) {
+                    if (runAllCamerasMode) updateMultiCameraProgress();
                     setTimeout(runNextTestInQueue, 1000);
-                } else {
-                    // All tests completed
+                } else if (runAllCamerasMode) {
+                    // Current camera's presets are done; collect results and advance
+                    const camera = stressCameras.find(c => c.id === stressCamera);
+                    allCamerasResults.push({
+                        camera: { id: stressCamera, name: camera?.name || stressCamera },
+                        presets: runAllTestsResults.map(r => ({
+                            preset: r.preset,
+                            status: r.status,
+                            error: r.status !== 'completed' ? 'Test failed' : null
+                        }))
+                    });
                     runAllTestsMode = false;
+                    runMaxSpeedMode = false;
+                    runAllTestsResults = [];
+
+                    // Advance to next camera after a brief delay for stream cleanup
+                    setTimeout(runNextCameraInQueue, 1000);
+                } else {
+                    // Single-camera run-all completed
+                    const testType = runMaxSpeedMode ? 'Max Speed' : 'All';
+                    runAllTestsMode = false;
+                    runMaxSpeedMode = false;
                     runAllStressTestsBtn.disabled = false;
                     runAllStressTestsBtn.textContent = 'Run All Tests';
+                    runMaxSpeedTestsBtn.disabled = false;
+                    runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
                     startStressTestBtn.disabled = false;
 
                     const passedCount = runAllTestsResults.filter(r => r.status === 'completed').length;
                     const failedCount = runAllTestsResults.filter(r => r.status === 'failed').length;
-                    alert(`All ${runAllTestsResults.length} tests completed!\n\nPassed: ${passedCount}\nFailed: ${failedCount}`);
+                    alert(`${testType} ${runAllTestsResults.length} tests completed!\n\nPassed: ${passedCount}\nFailed: ${failedCount}`);
                     runAllTestsResults = [];
                 }
             }
@@ -2310,22 +2545,60 @@
             }
 
             runAllTestsMode = true;
+            runMaxSpeedMode = false;
             runAllTestsQueue = [...Array(stressPresets.length).keys()]; // [0, 1, 2, ...]
             runAllTestsResults = [];
+            runAllTestsTotal = stressPresets.length;
 
             runAllStressTestsBtn.disabled = true;
-            runAllStressTestsBtn.textContent = `Running All (0/${stressPresets.length})...`;
+            runAllStressTestsBtn.textContent = `Running All (0/${runAllTestsTotal})...`;
+            runMaxSpeedTestsBtn.disabled = true;
             startStressTestBtn.disabled = true;
 
             runNextTestInQueue();
         }
 
+        // Run only MAX SPEED stress tests sequentially
+        async function startRunMaxSpeedTests() {
+            // Filter presets that have max_speed = true
+            const maxSpeedIndices = stressPresets
+                .map((preset, index) => preset.max_speed ? index : -1)
+                .filter(index => index !== -1);
+
+            if (maxSpeedIndices.length === 0) {
+                alert('No max speed presets available');
+                return;
+            }
+
+            runAllTestsMode = true;
+            runMaxSpeedMode = true;
+            runAllTestsQueue = maxSpeedIndices;
+            runAllTestsResults = [];
+            runAllTestsTotal = maxSpeedIndices.length;
+
+            runAllStressTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.textContent = `Running Max Speed (0/${runAllTestsTotal})...`;
+            startStressTestBtn.disabled = true;
+
+            runNextTestInQueue();
+        }
+
+        // Unified function to run next test in queue (for both all tests and max speed modes)
         async function runNextTestInQueue() {
             if (runAllTestsQueue.length === 0) return;
 
             const presetIndex = runAllTestsQueue.shift();
-            const completedCount = stressPresets.length - runAllTestsQueue.length - 1;
-            runAllStressTestsBtn.textContent = `Running All (${completedCount}/${stressPresets.length})...`;
+            const completedCount = runAllTestsTotal - runAllTestsQueue.length - 1;
+
+            // Update the appropriate button based on mode
+            if (runAllCamerasMode) {
+                updateMultiCameraProgress();
+            } else if (runMaxSpeedMode) {
+                runMaxSpeedTestsBtn.textContent = `Running Max Speed (${completedCount}/${runAllTestsTotal})...`;
+            } else {
+                runAllStressTestsBtn.textContent = `Running All (${completedCount}/${runAllTestsTotal})...`;
+            }
 
             // Select the preset and start test
             selectStressPreset(presetIndex);
@@ -2334,10 +2607,193 @@
 
         function abortRunAllTests() {
             runAllTestsMode = false;
+            runMaxSpeedMode = false;
             runAllTestsQueue = [];
+            runAllTestsTotal = 0;
             runAllStressTestsBtn.disabled = false;
             runAllStressTestsBtn.textContent = 'Run All Tests';
+            runMaxSpeedTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.textContent = 'Run Max Speed Tests';
             startStressTestBtn.disabled = false;
+        }
+
+        // Start multi-camera run for all cameras in the tenant
+        async function startRunAllCameras(maxSpeedOnly) {
+            if (runAllCamerasMode) return;  // Prevent double-click re-entrancy
+            if (stressCameras.length === 0) {
+                alert('No cameras available');
+                return;
+            }
+
+            runAllCamerasMode = true;
+            runAllCamerasMaxSpeedMode = maxSpeedOnly;
+            allCamerasQueue = stressCameras.map(c => c.id);
+            currentCameraIndex = 0;
+            totalCamerasCount = allCamerasQueue.length;
+            allCamerasResults = [];
+
+            disableAllStressButtons();
+            const btn = maxSpeedOnly ? runAllCamerasMaxBtn : runAllCamerasAllBtn;
+            btn.textContent = `Running Camera 1/${totalCamerasCount}...`;
+
+            runNextCameraInQueue();
+        }
+
+        // Process next camera in multi-camera queue
+        async function runNextCameraInQueue() {
+            try {
+                if (allCamerasQueue.length === 0) {
+                    onAllCamerasComplete();
+                    return;
+                }
+
+                const cameraId = allCamerasQueue.shift();
+                currentCameraIndex = totalCamerasCount - allCamerasQueue.length;
+
+                // Switch to this camera
+                stressCamera = cameraId;
+                stressCameraSelect.value = cameraId;
+
+                // Clear stream between cameras and switch RTSP preview
+                showStressVideoStream(null);
+                await new Promise(r => setTimeout(r, 500));
+                showStressVideoStream(cameraId);
+
+                // Load presets (they are global, not per-camera, so just ensure loaded)
+                if (stressPresets.length === 0) {
+                    await loadStressPresets();
+                    if (stressPresets.length === 0) {
+                        console.error('Failed to load stress presets, aborting multi-camera run');
+                        alert('Failed to load stress test presets. Aborting multi-camera run.');
+                        abortRunAllCameras();
+                        return;
+                    }
+                }
+
+                // Build preset queue based on mode
+                let presetQueue;
+                if (runAllCamerasMaxSpeedMode) {
+                    presetQueue = stressPresets
+                        .map((preset, index) => preset.max_speed ? index : -1)
+                        .filter(index => index !== -1);
+                } else {
+                    presetQueue = [...Array(stressPresets.length).keys()];
+                }
+
+                if (presetQueue.length === 0) {
+                    // No presets for this camera, skip to next
+                    allCamerasResults.push({
+                        camera: { id: cameraId, name: stressCameras.find(c => c.id === cameraId)?.name || cameraId },
+                        presets: []
+                    });
+                    setTimeout(runNextCameraInQueue, 500);
+                    return;
+                }
+
+                // Use the existing run-all-tests mechanism for this camera's presets
+                runAllTestsMode = true;
+                runMaxSpeedMode = runAllCamerasMaxSpeedMode;
+                runAllTestsQueue = presetQueue;
+                runAllTestsResults = [];
+                runAllTestsTotal = presetQueue.length;
+
+                updateMultiCameraProgress();
+                runNextTestInQueue();
+            } catch (e) {
+                console.error('Error in multi-camera queue processing:', e);
+                abortRunAllCameras();
+            }
+        }
+
+        // Update button text for multi-camera progress
+        function updateMultiCameraProgress() {
+            const currentPreset = runAllTestsTotal - runAllTestsQueue.length;
+            const progressText = `Running Camera ${currentCameraIndex}/${totalCamerasCount}: Preset ${currentPreset}/${runAllTestsTotal}`;
+
+            if (runAllCamerasMaxSpeedMode) {
+                runAllCamerasMaxBtn.textContent = progressText;
+            } else {
+                runAllCamerasAllBtn.textContent = progressText;
+            }
+        }
+
+        // Aggregate pass/fail counts from multi-camera results
+        function aggregateMultiCameraResults() {
+            const totalPresets = allCamerasResults.reduce((sum, r) => sum + r.presets.length, 0);
+            const totalPassed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status === 'completed').length, 0);
+            const totalFailed = allCamerasResults.reduce((sum, r) => sum + r.presets.filter(p => p.status !== 'completed').length, 0);
+            return { totalPresets, totalPassed, totalFailed };
+        }
+
+        // Called when all cameras have completed
+        function onAllCamerasComplete() {
+            runAllCamerasMode = false;
+            const { totalPresets, totalPassed, totalFailed } = aggregateMultiCameraResults();
+
+            resetAllStressButtons();
+
+            alert(`Multi-Camera Test Complete:\n${totalCamerasCount}/${totalCamerasCount} cameras tested\n${totalPresets} total presets executed\n${totalPassed} passed, ${totalFailed} failed`);
+            allCamerasResults = [];
+        }
+
+        // Abort multi-camera execution
+        function abortRunAllCameras() {
+            // Capture partial results from current camera before clearing state
+            if (runAllTestsResults.length > 0 && stressCamera) {
+                const camera = stressCameras.find(c => c.id === stressCamera);
+                allCamerasResults.push({
+                    camera: { id: stressCamera, name: camera?.name || stressCamera },
+                    presets: runAllTestsResults.map(r => ({
+                        preset: r.preset,
+                        status: r.status,
+                        error: r.status !== 'completed' ? 'Test failed' : null
+                    }))
+                });
+            }
+            const completedCameras = allCamerasResults.length;
+
+            runAllCamerasMode = false;
+            runAllCamerasMaxSpeedMode = false;
+            allCamerasQueue = [];
+            currentCameraIndex = 0;
+            totalCamerasCount = 0;
+
+            // Also abort the current single-camera run-all
+            abortRunAllTests();
+            resetAllStressButtons();
+
+            // Clear RTSP stream
+            showStressVideoStream(null);
+
+            if (completedCameras > 0) {
+                const { totalPresets, totalPassed, totalFailed } = aggregateMultiCameraResults();
+                alert(`Multi-Camera Test Aborted after ${completedCameras} camera(s).\n${totalPresets} presets executed\n${totalPassed} passed, ${totalFailed} failed`);
+            }
+            allCamerasResults = [];
+        }
+
+        // Helper: disable all stress test buttons during multi-camera run
+        function disableAllStressButtons() {
+            startStressTestBtn.disabled = true;
+            runAllStressTestsBtn.disabled = true;
+            runMaxSpeedTestsBtn.disabled = true;
+            runAllCamerasAllBtn.disabled = true;
+            runAllCamerasMaxBtn.disabled = true;
+            abortStressTestBtn.disabled = false;
+            // Show control panel for progress/abort visibility
+            stressTestControlPanel.classList.remove('hidden');
+        }
+
+        // Helper: reset all stress test buttons to default state
+        function resetAllStressButtons() {
+            startStressTestBtn.disabled = false;
+            runAllStressTestsBtn.disabled = false;
+            runMaxSpeedTestsBtn.disabled = false;
+            runAllCamerasAllBtn.disabled = false;
+            runAllCamerasAllBtn.textContent = 'Run All Cameras (All Presets)';
+            runAllCamerasMaxBtn.disabled = false;
+            runAllCamerasMaxBtn.textContent = 'Run All Cameras (Max Speed)';
+            abortStressTestBtn.disabled = true;
         }
 
         function showStressTestResults(session) {
@@ -2524,6 +2980,15 @@
         // =====================================================================
 
         stressTenantSelect.addEventListener('change', async (e) => {
+            // Abort any active multi-camera or single-camera execution
+            if (runAllCamerasMode) {
+                abortStressTest();
+                abortRunAllCameras();
+            } else if (runAllTestsMode) {
+                abortStressTest();
+                abortRunAllTests();
+            }
+
             stressTenant = e.target.value;
             stressCamera = null;
             stressCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
@@ -2531,9 +2996,13 @@
             showStressVideoStream(null);
             stressTestConfigPanel.classList.add('hidden');
             stressTestControlPanel.classList.add('hidden');
+            stressMultiCameraPanel.classList.add('hidden');
 
             if (stressTenant) {
-                await loadStressCameras(stressTenant);
+                const cameras = await loadStressCameras(stressTenant);
+                if (cameras && cameras.length > 0) {
+                    stressMultiCameraPanel.classList.remove('hidden');
+                }
             }
             loadStressSessions();
         });
@@ -2561,9 +3030,16 @@
         // Test control listeners
         startStressTestBtn.addEventListener('click', startStressTest);
         runAllStressTestsBtn.addEventListener('click', startRunAllTests);
+        runMaxSpeedTestsBtn.addEventListener('click', startRunMaxSpeedTests);
+        runAllCamerasAllBtn.addEventListener('click', () => startRunAllCameras(false));
+        runAllCamerasMaxBtn.addEventListener('click', () => startRunAllCameras(true));
         abortStressTestBtn.addEventListener('click', () => {
             abortStressTest();
-            if (runAllTestsMode) abortRunAllTests();
+            if (runAllCamerasMode) {
+                abortRunAllCameras();
+            } else if (runAllTestsMode) {
+                abortRunAllTests();
+            }
         });
 
         // Evaluation listeners

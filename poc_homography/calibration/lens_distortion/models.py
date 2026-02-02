@@ -6,14 +6,10 @@ distortion calibration pipeline.
 
 from __future__ import annotations
 
-import logging
-import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from poc_homography.types import Degrees, Meters, Pixels
@@ -91,94 +87,33 @@ class CameraLine:
         dy = self.end_pixel[1] - self.start_pixel[1]
         return float(np.degrees(np.arctan2(dy, dx)))
 
-    @property
-    def has_edge_pixels(self) -> bool:
-        """Check if this line has valid edge pixel data.
-
-        Returns:
-            True if edge_pixels is not None and has at least 2 points,
-            False otherwise.
-        """
-        return self.edge_pixels is not None and len(self.edge_pixels) >= 2
-
     def to_points_array(self) -> np.ndarray:
         """Convert to numpy array of shape (2, 2) with start and end points."""
         return np.array([self.start_pixel, self.end_pixel], dtype=np.float64)
 
-    def sample_points(
-        self,
-        num_samples: int = 20,
-        mode: Literal["edge_pixels", "linear", "auto"] = "edge_pixels",
-    ) -> np.ndarray:
+    def sample_points(self, num_samples: int = 20) -> np.ndarray:
         """Sample points along the line.
+
+        If edge_pixels are available, returns a subsampled version of those
+        actual edge coordinates (which contain the distortion information).
+        Otherwise, falls back to linear interpolation between endpoints.
 
         Args:
             num_samples: Number of points to sample.
-            mode: Sampling mode, one of:
-                - "edge_pixels" (default): Returns actual edge pixel coordinates
-                  which contain the distortion signal needed for calibration.
-                  Raises ValueError if edge_pixels is None or has fewer than 2
-                  points. Use this mode for calibration.
-                - "linear": Returns linearly interpolated points between start
-                  and end pixels. Use this mode for visualization only, as it
-                  does not contain distortion information.
-                - "auto": DEPRECATED. Uses edge_pixels if available, otherwise
-                  falls back to linear interpolation. Provided for backwards
-                  compatibility only; new code should explicitly choose a mode.
 
         Returns:
             Array of shape (N, 2) with (u, v) coordinates.
-
-        Raises:
-            ValueError: If mode="edge_pixels" and edge_pixels is None or has
-                fewer than 2 points.
-            ValueError: If mode is not one of "edge_pixels", "linear", or "auto".
         """
-        valid_modes = ("edge_pixels", "linear", "auto")
-        if mode not in valid_modes:
-            raise ValueError(f"Invalid mode '{mode}'. Must be one of {valid_modes}.")
+        if self.edge_pixels is not None and len(self.edge_pixels) >= 2:
+            # Use actual edge pixels - these contain the distortion signal
+            edge_arr = np.array(self.edge_pixels, dtype=np.float64)
+            if len(edge_arr) <= num_samples:
+                return edge_arr
+            # Subsample evenly
+            indices = np.linspace(0, len(edge_arr) - 1, num_samples, dtype=int)
+            return edge_arr[indices]
 
-        if mode == "edge_pixels":
-            if not self.has_edge_pixels:
-                raise ValueError(
-                    f"Line {self.line_id} has no edge_pixels data. "
-                    "Cannot use mode='edge_pixels' for calibration."
-                )
-            return self._sample_edge_pixels(num_samples)
-
-        if mode == "linear":
-            return self._sample_linear(num_samples)
-
-        # mode == "auto" (deprecated)
-        warnings.warn(
-            "mode='auto' is deprecated. Explicitly use 'edge_pixels' for calibration "
-            "or 'linear' for visualization.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if self.has_edge_pixels:
-            return self._sample_edge_pixels(num_samples)
-
-        logger.debug(
-            "Line %s: edge_pixels not available, falling back to linear interpolation",
-            self.line_id,
-        )
-        return self._sample_linear(num_samples)
-
-    def _sample_edge_pixels(self, num_samples: int) -> np.ndarray:
-        """Sample from actual edge pixels (internal helper).
-
-        Assumes has_edge_pixels is True.
-        """
-        edge_arr = np.array(self.edge_pixels, dtype=np.float64)
-        if len(edge_arr) <= num_samples:
-            return edge_arr
-        # Subsample evenly
-        indices = np.linspace(0, len(edge_arr) - 1, num_samples, dtype=int)
-        return edge_arr[indices]
-
-    def _sample_linear(self, num_samples: int) -> np.ndarray:
-        """Sample via linear interpolation between endpoints (internal helper)."""
+        # Fallback to linear interpolation (only useful for visualization)
         t = np.linspace(0, 1, num_samples)
         start = np.array(self.start_pixel)
         end = np.array(self.end_pixel)

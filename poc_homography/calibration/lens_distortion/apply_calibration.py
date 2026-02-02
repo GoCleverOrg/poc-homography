@@ -1,7 +1,9 @@
 """Apply calibration results to camera configuration.
 
-This module provides utilities to update camera configurations with
-calibrated distortion coefficients and verify the updates.
+This module provides utilities to:
+- Apply (save) calibrated distortion coefficients to YAML files.
+- Undistort points and images using the Brown-Conrady distortion model.
+- Measure line straightness for calibration quality assessment.
 """
 
 from __future__ import annotations
@@ -10,6 +12,9 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import cv2
+import numpy as np
 
 from poc_homography.calibration.lens_distortion.calibration_table import (
     CameraCalibrationTable,
@@ -21,6 +26,175 @@ if TYPE_CHECKING:
     from poc_homography.calibration.lens_distortion.distortion_solver import SolverResult
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Public undistortion and measurement utilities
+# ---------------------------------------------------------------------------
+
+
+def undistort_points(
+    points: np.ndarray,
+    k1: float,
+    k2: float,
+    k3: float,
+    p1: float,
+    p2: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+    *,
+    max_iterations: int = 10,
+    min_radial_factor: float = 1e-6,
+) -> np.ndarray:
+    """Apply inverse distortion model to pixel points (Brown-Conrady).
+
+    Uses iterative Newton-Raphson to invert the forward distortion model.
+
+    Args:
+        points: Nx2 array of (u, v) pixel coordinates.
+        k1, k2, k3: Radial distortion coefficients.
+        p1, p2: Tangential distortion coefficients.
+        fx, fy: Focal lengths.
+        cx, cy: Principal point coordinates.
+        max_iterations: Newton-Raphson iterations.
+        min_radial_factor: Floor for radial factor to prevent division by zero.
+
+    Returns:
+        Nx2 array of undistorted (u, v) coordinates.
+    """
+    x = (points[:, 0] - cx) / fx
+    y = (points[:, 1] - cy) / fy
+
+    x_u = x.copy()
+    y_u = y.copy()
+
+    convergence_tol = 1e-10
+    for _ in range(max_iterations):
+        r2 = x_u * x_u + y_u * y_u
+        r4 = r2 * r2
+        r6 = r4 * r2
+
+        radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
+        radial = np.where(
+            np.abs(radial) < min_radial_factor,
+            np.where(radial >= 0, min_radial_factor, -min_radial_factor),
+            radial,
+        )
+
+        dx_tangential = 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u)
+        dy_tangential = p1 * (r2 + 2 * y_u * y_u) + 2 * p2 * x_u * y_u
+
+        x_u_new = (x - dx_tangential) / radial
+        y_u_new = (y - dy_tangential) / radial
+
+        # Early termination on convergence
+        delta = np.max(np.abs(x_u_new - x_u)) + np.max(np.abs(y_u_new - y_u))
+        x_u = x_u_new
+        y_u = y_u_new
+        if delta < convergence_tol:
+            break
+
+    # Guard against NaN/Inf from numerical instability
+    nan_mask = np.isfinite(x_u) & np.isfinite(y_u)
+    x_u = np.where(nan_mask, x_u, x)
+    y_u = np.where(nan_mask, y_u, y)
+
+    return np.column_stack([x_u * fx + cx, y_u * fy + cy])
+
+
+def undistort_image(
+    image: np.ndarray,
+    k1: float,
+    k2: float,
+    k3: float,
+    p1: float,
+    p2: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+) -> np.ndarray:
+    """Undistort an image using the solver's Brown-Conrady forward model.
+
+    For each pixel in the output (undistorted) image, applies the forward
+    distortion model to find the source location in the input (distorted)
+    image, then uses ``cv2.remap`` to interpolate.
+
+    Uses float32 coordinate maps for reduced memory usage.
+    """
+    h, w = image.shape[:2]
+
+    # Build coordinate grids directly as float32 for memory efficiency
+    y_coords, x_coords = np.mgrid[0:h, 0:w].astype(np.float32)
+
+    x_norm = (x_coords - cx) / fx
+    y_norm = (y_coords - cy) / fy
+
+    r2 = x_norm * x_norm + y_norm * y_norm
+    r4 = r2 * r2
+    r6 = r4 * r2
+
+    radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
+
+    x_tangential = 2 * p1 * x_norm * y_norm + p2 * (r2 + 2 * x_norm * x_norm)
+    y_tangential = p1 * (r2 + 2 * y_norm * y_norm) + 2 * p2 * x_norm * y_norm
+
+    map_x = (x_norm * radial + x_tangential) * fx + cx
+    map_y = (y_norm * radial + y_tangential) * fy + cy
+
+    return cv2.remap(
+        image,
+        map_x.astype(np.float32),
+        map_y.astype(np.float32),
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0),
+    )
+
+
+def measure_line_straightness(pts: np.ndarray) -> dict:
+    """Measure straightness of a set of 2-D points using total-least-squares.
+
+    Args:
+        pts: Nx2 array of (x, y) coordinates.
+
+    Returns:
+        Dictionary with ``rmse_pixels``, ``max_deviation_pixels``,
+        ``r_squared``, and ``num_points``.
+    """
+    if len(pts) < 2:
+        return {
+            "rmse_pixels": 0.0,
+            "max_deviation_pixels": 0.0,
+            "r_squared": 1.0,
+            "num_points": len(pts),
+        }
+
+    centroid = np.mean(pts, axis=0)
+    centered = pts - centroid
+
+    _, s, Vt = np.linalg.svd(centered)
+
+    line_direction = Vt[0]
+    line_normal = np.array([-line_direction[1], line_direction[0]])
+
+    distances = np.abs(centered @ line_normal)
+
+    rmse = float(np.sqrt(np.mean(distances**2)))
+    max_deviation = float(np.max(distances))
+
+    total_variance = np.sum(s**2)
+    explained_variance = s[0] ** 2
+    r_squared = explained_variance / total_variance if total_variance > 0 else 1.0
+
+    return {
+        "rmse_pixels": rmse,
+        "max_deviation_pixels": max_deviation,
+        "r_squared": float(r_squared),
+        "num_points": len(pts),
+    }
 
 
 @dataclass
@@ -73,6 +247,57 @@ class CalibrationApplicationResult:
         return "\n".join(lines)
 
 
+def _apply_undistortion(
+    distortion: DistortionCoefficients,
+    camera_id: str,
+    zoom_factor: float,
+    calibration_dir: str | Path,
+    validation_rmse: float = 0.0,
+    source_images: list[str] | None = None,
+    num_lines_used: int = 0,
+    message: str = "Successfully applied calibration coefficients",
+) -> CalibrationApplicationResult:
+    """Shared implementation for applying distortion coefficients to a calibration file.
+
+    Creates or updates the calibration table for the specified camera.
+    """
+    calibration_dir = Path(calibration_dir)
+    calibration_dir.mkdir(parents=True, exist_ok=True)
+
+    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
+
+    if calibration_file.exists():
+        table = CameraCalibrationTable.load(calibration_file)
+        previous_entry = table.get_entry(zoom_factor)
+        previous_coeffs = previous_entry.to_distortion_coefficients() if previous_entry else None
+    else:
+        table = CameraCalibrationTable(camera_id=camera_id)
+        previous_coeffs = None
+
+    entry = ZoomCalibrationEntry.from_solver_result(
+        zoom_factor=zoom_factor,
+        distortion=distortion,
+        validation_rmse=validation_rmse,
+        source_images=source_images,
+        num_lines_used=num_lines_used,
+    )
+
+    table.add_entry(entry)
+    table.save(calibration_file)
+
+    logger.info(f"Applied calibration for {camera_id} at zoom {zoom_factor}x")
+
+    return CalibrationApplicationResult(
+        camera_id=camera_id,
+        zoom_factor=zoom_factor,
+        previous_coefficients=previous_coeffs,
+        new_coefficients=distortion,
+        calibration_file=str(calibration_file),
+        success=True,
+        message=message,
+    )
+
+
 def apply_solver_result(
     solver_result: SolverResult,
     camera_id: str,
@@ -94,42 +319,14 @@ def apply_solver_result(
     Returns:
         CalibrationApplicationResult with status and details.
     """
-    calibration_dir = Path(calibration_dir)
-    calibration_dir.mkdir(parents=True, exist_ok=True)
-
-    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
-
-    # Load existing table or create new one
-    if calibration_file.exists():
-        table = CameraCalibrationTable.load(calibration_file)
-        previous_entry = table.get_entry(zoom_factor)
-        previous_coeffs = previous_entry.to_distortion_coefficients() if previous_entry else None
-    else:
-        table = CameraCalibrationTable(camera_id=camera_id)
-        previous_coeffs = None
-
-    # Create new entry
-    entry = ZoomCalibrationEntry.from_solver_result(
-        zoom_factor=zoom_factor,
+    return _apply_undistortion(
         distortion=solver_result.distortion,
+        camera_id=camera_id,
+        zoom_factor=zoom_factor,
+        calibration_dir=calibration_dir,
         validation_rmse=solver_result.overall_rmse,
         source_images=source_images,
         num_lines_used=len(solver_result.line_errors),
-    )
-
-    # Add entry and save
-    table.add_entry(entry)
-    table.save(calibration_file)
-
-    logger.info(f"Applied calibration for {camera_id} at zoom {zoom_factor}x")
-
-    return CalibrationApplicationResult(
-        camera_id=camera_id,
-        zoom_factor=zoom_factor,
-        previous_coefficients=previous_coeffs,
-        new_coefficients=solver_result.distortion,
-        calibration_file=str(calibration_file),
-        success=True,
         message=f"Successfully applied calibration with RMSE={solver_result.overall_rmse:.4f}px",
     )
 
@@ -157,42 +354,56 @@ def apply_distortion_coefficients(
     Returns:
         CalibrationApplicationResult with status and details.
     """
-    calibration_dir = Path(calibration_dir)
-    calibration_dir.mkdir(parents=True, exist_ok=True)
-
-    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
-
-    # Load existing table or create new one
-    if calibration_file.exists():
-        table = CameraCalibrationTable.load(calibration_file)
-        previous_entry = table.get_entry(zoom_factor)
-        previous_coeffs = previous_entry.to_distortion_coefficients() if previous_entry else None
-    else:
-        table = CameraCalibrationTable(camera_id=camera_id)
-        previous_coeffs = None
-
-    # Create new entry
-    entry = ZoomCalibrationEntry.from_solver_result(
-        zoom_factor=zoom_factor,
+    return _apply_undistortion(
         distortion=distortion,
+        camera_id=camera_id,
+        zoom_factor=zoom_factor,
+        calibration_dir=calibration_dir,
         validation_rmse=validation_rmse,
         source_images=source_images,
         num_lines_used=num_lines_used,
     )
 
-    # Add entry and save
-    table.add_entry(entry)
-    table.save(calibration_file)
 
-    return CalibrationApplicationResult(
-        camera_id=camera_id,
-        zoom_factor=zoom_factor,
-        previous_coefficients=previous_coeffs,
-        new_coefficients=distortion,
-        calibration_file=str(calibration_file),
-        success=True,
-        message="Successfully applied calibration coefficients",
-    )
+def load_distortion_coefficients(
+    camera_id: str,
+    zoom_factor: float,
+    calibration_dir: str | Path,
+) -> DistortionCoefficients | None:
+    """Load calibrated distortion coefficients for a camera.
+
+    This is the preferred way to load calibration coefficients.  It replaces
+    ``DistortionCoefficients.load_calibration`` to avoid a circular dependency
+    from the data-model module back into the calibration subsystem.
+
+    Loads from a calibration table file and interpolates for the
+    requested zoom level if needed.
+
+    Args:
+        camera_id: Identifier for the camera.
+        zoom_factor: Current zoom level.
+        calibration_dir: Directory containing calibration YAML files.
+
+    Returns:
+        DistortionCoefficients if calibration exists, None otherwise.
+    """
+    calibration_dir_path = Path(calibration_dir)
+    calibration_file = calibration_dir_path / f"{camera_id}_calibration.yaml"
+
+    if not calibration_file.exists():
+        return None
+
+    try:
+        table = CameraCalibrationTable.load(calibration_file)
+        if not table.entries:
+            return None
+        return table.get_coefficients(zoom_factor)
+    except FileNotFoundError:
+        logger.debug(f"Calibration file not found: {calibration_file}")
+        return None
+    except Exception:
+        logger.warning(f"Failed to load calibration from {calibration_file}", exc_info=True)
+        return None
 
 
 def get_camera_calibration(
