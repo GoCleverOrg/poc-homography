@@ -386,7 +386,7 @@ class LineDetector:
         # Normalize angles to [0, 180) range (direction-independent)
         angles = []
         for c in candidates:
-            angle = c.angle_deg % 180
+            angle = (c.angle_deg or 0.0) % 180
             angles.append(angle)
 
         # Simple clustering by angle proximity
@@ -454,7 +454,7 @@ class LineDetector:
 
         # Get max values for normalization
         max_edge = max(c.edge_strength for c in candidates) or 1.0
-        max_length = max(c.length for c in candidates) or 1.0
+        max_length = max((c.length or 0.0) for c in candidates) or 1.0
 
         # Count cluster sizes
         cluster_sizes: dict[int, int] = {}
@@ -468,7 +468,7 @@ class LineDetector:
         for c in candidates:
             # Normalize factors to [0, 1]
             edge_score = c.edge_strength / max_edge
-            length_score = c.length / max_length
+            length_score = (c.length or 0.0) / max_length
 
             cluster_score = 0.5  # Default for unclustered
             if c.cluster_id >= 0 and c.cluster_id in cluster_sizes:
