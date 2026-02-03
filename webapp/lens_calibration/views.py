@@ -91,6 +91,63 @@ def api_survey_sessions(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Failed to list survey sessions"}, status=500)
 
 
+from homography_web.calibration_utils import (
+    api_compute_intrinsics,  # noqa: F401 - re-exported for URL routing
+    serialize_calibration_entry,
+)
+api_compute_intrinsics = api_compute_intrinsics  # make linter happy
+
+
+def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
+    """Build intrinsic matrix from request data, computing from specs if requested.
+
+    Returns (intrinsic_matrix, intrinsics_dict).
+    """
+    import numpy as np
+
+    intrinsics = data["intrinsics"]
+
+    # If auto_intrinsics is explicitly requested, compute from specs
+    if data.get("auto_intrinsics"):
+        from poc_homography.camera.intrinsics import compute_intrinsics
+        from poc_homography.camera_config import (
+            DEFAULT_BASE_FOCAL_LENGTH_MM,
+            DEFAULT_SENSOR_WIDTH_MM,
+        )
+
+        zoom = float(data.get("zoom", intrinsics.get("zoom", 1.0)))
+        result = compute_intrinsics(
+            zoom=zoom,
+            image_width=int(intrinsics.get("image_width", 1920)),
+            image_height=int(intrinsics.get("image_height", 1080)),
+            sensor_width_mm=float(
+                intrinsics.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM)
+            ),
+            base_focal_length_mm=float(
+                intrinsics.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM)
+            ),
+        )
+        intrinsics = {
+            "fx": float(result.focal_length_px),
+            "fy": float(result.focal_length_px),
+            "cx": float(result.cx),
+            "cy": float(result.cy),
+        }
+
+    fx = intrinsics.get("fx", 1000.0)
+    fy = intrinsics.get("fy", 1000.0)
+    cx = intrinsics.get("cx", 960.0)
+    cy = intrinsics.get("cy", 540.0)
+
+    intrinsic_matrix = np.array([
+        [fx, 0.0, cx],
+        [0.0, fy, cy],
+        [0.0, 0.0, 1.0],
+    ])
+
+    return intrinsic_matrix, {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
+
+
 @require_http_methods(["POST"])
 def api_calibrate(request: HttpRequest) -> JsonResponse:
     # TODO: Move to background task (Celery/Django-Q) for production use
@@ -122,20 +179,14 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
         )
         from poc_homography.types import Degrees
 
-        intrinsics = data["intrinsics"]
-        intrinsic_matrix = np.array(
-            [
-                [intrinsics.get("fx", 1000.0), 0.0, intrinsics.get("cx", 960.0)],
-                [0.0, intrinsics.get("fy", 1000.0), intrinsics.get("cy", 540.0)],
-                [0.0, 0.0, 1.0],
-            ]
-        )
+        intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(data)
 
         MAX_ITERATIONS_CAP = 10000
         config_data = data.get("config", {})
         solver_config = SolverConfig(
             use_radial_only=config_data.get("radial_only", False),
             max_iterations=min(config_data.get("max_iterations", 1000), MAX_ITERATIONS_CAP),
+            optimize_intrinsics=config_data.get("optimize_intrinsics", False),
         )
 
         camera_lines: list[CameraLine] = []
@@ -240,9 +291,13 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
                 "p1": float(result.distortion.p1),
                 "p2": float(result.distortion.p2),
             },
+            "intrinsics_used": intrinsics_used,
             "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
             "line_errors": result.line_errors[:20],
         }
+
+        if result.intrinsics:
+            response_data["optimized_intrinsics"] = result.intrinsics
 
         return JsonResponse(response_data)
 
@@ -285,20 +340,14 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
         )
         from poc_homography.types import Degrees
 
-        intrinsics = data["intrinsics"]
-        intrinsic_matrix = np.array(
-            [
-                [intrinsics.get("fx", 1000.0), 0.0, intrinsics.get("cx", 960.0)],
-                [0.0, intrinsics.get("fy", 1000.0), intrinsics.get("cy", 540.0)],
-                [0.0, 0.0, 1.0],
-            ]
-        )
+        intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(data)
 
         MAX_ITERATIONS_CAP = 10000
         config_data = data.get("config", {})
         solver_config = SolverConfig(
             use_radial_only=config_data.get("radial_only", False),
             max_iterations=min(config_data.get("max_iterations", 1000), MAX_ITERATIONS_CAP),
+            optimize_intrinsics=config_data.get("optimize_intrinsics", False),
         )
 
         camera_lines: list[CameraLine] = []
@@ -366,9 +415,13 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
                 "p1": float(result.distortion.p1),
                 "p2": float(result.distortion.p2),
             },
+            "intrinsics_used": intrinsics_used,
             "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
             "line_errors": result.line_errors[:20],
         }
+
+        if result.intrinsics:
+            response_data["optimized_intrinsics"] = result.intrinsics
 
         return JsonResponse(response_data)
 
@@ -490,6 +543,7 @@ def api_save(request: HttpRequest) -> JsonResponse:
         zoom = data.get("zoom", 1.0)
         coeffs = data.get("coefficients", {})
         validation_rmse = data.get("validation_rmse", 0.0)
+        intrinsics = data.get("intrinsics", {})
 
         # Validate output filename
         filename = data.get("filename", f"{camera_id}_calibration.yaml")
@@ -512,6 +566,10 @@ def api_save(request: HttpRequest) -> JsonResponse:
             validation_rmse=validation_rmse,
             source_images=[],
             num_lines_used=data.get("num_lines", 0),
+            fx=float(intrinsics.get("fx", 0.0)),
+            fy=float(intrinsics.get("fy", 0.0)),
+            cx=float(intrinsics.get("cx", 0.0)),
+            cy=float(intrinsics.get("cy", 0.0)),
         )
         table.add_entry(entry)
 
@@ -550,30 +608,15 @@ def api_load(request: HttpRequest) -> JsonResponse:
 
         table = _get_cached_calibration_table(resolved)
 
-        entries = []
-        for zoom, entry in table.entries.items():
-            entries.append(
-                {
-                    "zoom_factor": entry.zoom_factor,
-                    "coefficients": {
-                        "k1": float(entry.k1),
-                        "k2": float(entry.k2),
-                        "k3": float(entry.k3),
-                        "p1": float(entry.p1),
-                        "p2": float(entry.p2),
-                    },
-                    "calibration_date": entry.calibration_date,
-                    "validation_rmse": entry.validation_rmse,
-                    "num_lines_used": entry.num_lines_used,
-                }
-            )
+        entries = [
+            serialize_calibration_entry(entry)
+            for entry in table.entries.values()
+        ]
 
-        return JsonResponse(
-            {
-                "camera_id": table.camera_id,
-                "entries": entries,
-            }
-        )
+        return JsonResponse({
+            "camera_id": table.camera_id,
+            "entries": entries,
+        })
 
     except ImportError:
         logger.exception("Calibration module not available")

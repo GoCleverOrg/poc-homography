@@ -191,7 +191,7 @@ CAMERAS = [
         "id": "icozee-camptz-01",
         "tenant_id": "icozee",
         "name": "Cam01",
-        "ip": "10.247.99.10",
+        "ip": "192.168.7.2",
         "model": "DS-2DF-8425IX-AELW(T5)",
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
@@ -200,13 +200,13 @@ CAMERAS = [
         # If None, uses linear focal length approximation
         # See CALIBRATION TABLE FORMAT documentation above for details
         "calibration_table": None,
-        "description": "Icozee Cam01 - primary camera",
+        "description": "Icozee Cam01",
     },
     {
         "id": "icozee-camptz-02",
         "tenant_id": "icozee",
         "name": "Cam02",
-        "ip": "10.247.99.13",
+        "ip": "192.168.7.3",
         "model": "DS-2DF-8425IX-AELW(T5)",
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
@@ -215,13 +215,13 @@ CAMERAS = [
         # If None, uses linear focal length approximation
         # See CALIBRATION TABLE FORMAT documentation above for details
         "calibration_table": None,
-        "description": "Icozee Cam02 - primary camera",
+        "description": "Icozee Cam02",
     },
     {
         "id": "icozee-camptz-03",
         "tenant_id": "icozee",
         "name": "Cam03",
-        "ip": "10.247.99.14",
+        "ip": "192.168.7.4",
         "model": "DS-2DF-8425IX-AELW(T5)",
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
@@ -230,7 +230,162 @@ CAMERAS = [
         # If None, uses linear focal length approximation
         # See CALIBRATION TABLE FORMAT documentation above for details
         "calibration_table": None,
-        "description": "Icozee Cam03 - primary camera",
+        "description": "Icozee Cam03",
+    },
+    {
+        "id": "icozee-camptz-04",
+        "tenant_id": "icozee",
+        "name": "Cam04",
+        "ip": "192.168.7.5",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam04",
+    },
+    {
+        "id": "icozee-camptz-05",
+        "tenant_id": "icozee",
+        "name": "Cam05",
+        "ip": "192.168.7.6",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam05",
+    },
+    {
+        "id": "icozee-camptz-06",
+        "tenant_id": "icozee",
+        "name": "Cam06",
+        "ip": "192.168.7.7",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        # Sensor/lens parameters (use defaults if not specified)
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        # Zoom-dependent intrinsic calibration table (optional)
+        # If None, uses linear focal length approximation
+        # See CALIBRATION TABLE FORMAT documentation above for details
+        "calibration_table": None,
+        "description": "Icozee Cam06",
+    },
+    {
+        "id": "icozee-camptz-07",
+        "tenant_id": "icozee",
+        "name": "Cam07",
+        "ip": "192.168.7.8",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam07",
+    },
+    {
+        "id": "icozee-camptz-08",
+        "tenant_id": "icozee",
+        "name": "Cam08",
+        "ip": "192.168.7.9",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam08",
+    },
+    {
+        "id": "icozee-camptz-09",
+        "tenant_id": "icozee",
+        "name": "Cam09",
+        "ip": "192.168.7.10",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam09",
+    },
+    {
+        "id": "icozee-camptz-10",
+        "tenant_id": "icozee",
+        "name": "Cam10",
+        "ip": "192.168.7.11",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam10",
+    },
+    {
+        "id": "icozee-camptz-11",
+        "tenant_id": "icozee",
+        "name": "Cam11",
+        "ip": "192.168.7.12",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam11",
+    },
+    {
+        "id": "icozee-camptz-12",
+        "tenant_id": "icozee",
+        "name": "Cam12",
+        "ip": "192.168.7.13",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam12",
+    },
+    {
+        "id": "icozee-camptz-13",
+        "tenant_id": "icozee",
+        "name": "Cam13",
+        "ip": "192.168.7.14",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam13",
+    },
+    {
+        "id": "icozee-camptz-14",
+        "tenant_id": "icozee",
+        "name": "Cam14",
+        "ip": "192.168.7.15",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam14",
+    },
+    {
+        "id": "icozee-camptz-15",
+        "tenant_id": "icozee",
+        "name": "Cam15",
+        "ip": "192.168.7.16",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam15",
+    },
+    {
+        "id": "icozee-camptz-16",
+        "tenant_id": "icozee",
+        "name": "Cam16",
+        "ip": "192.168.7.17",
+        "model": "DS-2DF-8425IX-AELW(T5)",
+        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
+        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
+        "calibration_table": None,
+        "description": "Icozee Cam16",
     },
 ]
 

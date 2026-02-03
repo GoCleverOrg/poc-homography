@@ -440,6 +440,12 @@
                             <input type="number" id="zoom" value="1" step="0.1" min="0.1">
                         </div>
                     </div>
+                    <div style="margin-top: 12px; display: flex; gap: 12px; align-items: center;">
+                        <button id="compute-intrinsics-btn" class="btn btn-secondary" type="button">
+                            Compute from Camera Specs
+                        </button>
+                        <span id="intrinsics-info" style="font-size: 12px; color: #666;"></span>
+                    </div>
                 </div>
             </div>
 
@@ -469,6 +475,12 @@
                         <label>
                             <input type="checkbox" id="radial-only">
                             Radial distortion only (k1, k2, k3) - ignore tangential (p1, p2)
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-top: 8px;">
+                        <label>
+                            <input type="checkbox" id="optimize-intrinsics">
+                            Also optimize intrinsics (fx, fy, cx, cy) jointly with distortion
                         </label>
                     </div>
                 </div>
@@ -673,6 +685,9 @@
         const maxLinesInput = document.getElementById('max-lines');
         const maxIterationsInput = document.getElementById('max-iterations');
         const radialOnlyInput = document.getElementById('radial-only');
+        const optimizeIntrinsicsInput = document.getElementById('optimize-intrinsics');
+        const computeIntrinsicsBtn = document.getElementById('compute-intrinsics-btn');
+        const intrinsicsInfo = document.getElementById('intrinsics-info');
         const linesInput = document.getElementById('lines-input');
         const surveySelect = document.getElementById('survey-select');
         const loadSurveyBtn = document.getElementById('load-survey-btn');
@@ -759,7 +774,8 @@
                 min_confidence: parseFloat(minConfidenceInput.value) || 0.3,
                 max_lines_per_image: parseInt(maxLinesInput.value) || 10,
                 max_iterations: parseInt(maxIterationsInput.value) || 1000,
-                radial_only: radialOnlyInput.checked
+                radial_only: radialOnlyInput.checked,
+                optimize_intrinsics: optimizeIntrinsicsInput.checked
             };
         }
 
@@ -803,20 +819,88 @@
             document.getElementById('final-error').textContent = data.final_error.toFixed(4);
             document.getElementById('improvement').textContent = `${data.improvement_percent.toFixed(1)}%`;
 
+            // Show intrinsics used
+            if (data.intrinsics_used) {
+                const iu = data.intrinsics_used;
+                intrinsicsInfo.textContent = `Used: fx=${iu.fx.toFixed(1)}, fy=${iu.fy.toFixed(1)}, cx=${iu.cx.toFixed(1)}, cy=${iu.cy.toFixed(1)}`;
+            }
+
+            // Show optimized intrinsics if available
+            const existingOptDiv = document.getElementById('optimized-intrinsics-info');
+            if (existingOptDiv) existingOptDiv.remove();
+
+            if (data.optimized_intrinsics) {
+                const oi = data.optimized_intrinsics;
+                const div = document.createElement('div');
+                div.id = 'optimized-intrinsics-info';
+                div.className = 'status success';
+                div.style.marginTop = '12px';
+                div.innerHTML = `<strong>Optimized Intrinsics:</strong> fx=${oi.fx.toFixed(1)}, fy=${oi.fy.toFixed(1)}, cx=${oi.cx.toFixed(1)}, cy=${oi.cy.toFixed(1)}
+                    <button class="btn btn-secondary" style="margin-left: 12px; padding: 4px 8px; font-size: 12px;" onclick="applyOptimizedIntrinsics()">Apply to fields</button>`;
+                resultsCard.querySelector('.card-body').appendChild(div);
+            }
+
             // Line errors table
             const tbody = document.querySelector('#errors-table tbody');
             tbody.innerHTML = '';
             (data.line_errors || []).forEach(err => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${err.line_id}</td>
-                    <td class="mono">${err.rmse_pixels.toFixed(3)}</td>
-                    <td>${err.num_samples}</td>
-                `;
+                const tdId = document.createElement('td');
+                tdId.textContent = err.line_id;
+                const tdRmse = document.createElement('td');
+                tdRmse.className = 'mono';
+                tdRmse.textContent = err.rmse_pixels.toFixed(3);
+                const tdSamples = document.createElement('td');
+                tdSamples.textContent = err.num_samples;
+                tr.appendChild(tdId);
+                tr.appendChild(tdRmse);
+                tr.appendChild(tdSamples);
                 tbody.appendChild(tr);
             });
 
             validateBtn.disabled = false;
+        }
+
+        // Apply optimized intrinsics to input fields
+        function applyOptimizedIntrinsics() {
+            if (currentResults && currentResults.optimized_intrinsics) {
+                const oi = currentResults.optimized_intrinsics;
+                fxInput.value = oi.fx.toFixed(1);
+                fyInput.value = oi.fy.toFixed(1);
+                cxInput.value = oi.cx.toFixed(1);
+                cyInput.value = oi.cy.toFixed(1);
+                showStatus('Optimized intrinsics applied to input fields', 'success');
+            }
+        }
+
+        // Compute intrinsics from camera specs
+        async function computeIntrinsics() {
+            computeIntrinsicsBtn.disabled = true;
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_compute_intrinsics" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({
+                        zoom: parseFloat(zoomInput.value) || 1.0,
+                        image_width: Math.round((parseFloat(cxInput.value) || 960) * 2),
+                        image_height: Math.round((parseFloat(cyInput.value) || 540) * 2)
+                    })
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    showStatus(`Error: ${data.error}`, 'error');
+                    return;
+                }
+                fxInput.value = data.fx.toFixed(1);
+                fyInput.value = data.fy.toFixed(1);
+                cxInput.value = data.cx.toFixed(1);
+                cyInput.value = data.cy.toFixed(1);
+                intrinsicsInfo.textContent = `Computed: f=${data.focal_length_mm.toFixed(1)}mm @ zoom ${data.zoom}x (sensor ${data.sensor_width_mm}mm, base f=${data.base_focal_length_mm}mm)`;
+                showStatus(`Intrinsics computed from camera specs: fx=${data.fx.toFixed(1)}`, 'success');
+            } catch (e) {
+                showStatus(`Failed to compute intrinsics: ${e.message}`, 'error');
+            }
+            computeIntrinsicsBtn.disabled = false;
         }
 
         // Run calibration
@@ -996,13 +1080,19 @@ p2: ${currentResults.coefficients.p2}`;
                     // Add to list
                     const div = document.createElement('div');
                     div.style.cssText = 'padding: 8px; background: #e8f5e9; border-radius: 4px; margin-bottom: 4px; font-size: 12px;';
-                    div.innerHTML = `<strong>${data.image || file.name}</strong> - ${fileLines.length} lines, PTZ: (${data.camera_status?.pan || 0}, ${data.camera_status?.tilt || 0}, ${data.camera_status?.zoom || 1})`;
+                    const strong = document.createElement('strong');
+                    strong.textContent = data.image || file.name;
+                    div.appendChild(strong);
+                    div.appendChild(document.createTextNode(` - ${fileLines.length} lines, PTZ: (${data.camera_status?.pan || 0}, ${data.camera_status?.tilt || 0}, ${data.camera_status?.zoom || 1})`));
                     calibrationFilesList.appendChild(div);
 
                 } catch (err) {
                     const div = document.createElement('div');
                     div.style.cssText = 'padding: 8px; background: #ffebee; border-radius: 4px; margin-bottom: 4px; font-size: 12px;';
-                    div.innerHTML = `<strong>${file.name}</strong> - Error: ${err.message}`;
+                    const strong = document.createElement('strong');
+                    strong.textContent = file.name;
+                    div.appendChild(strong);
+                    div.appendChild(document.createTextNode(` - Error: ${err.message}`));
                     calibrationFilesList.appendChild(div);
                 }
             }
@@ -1077,9 +1167,19 @@ p2: ${currentResults.coefficients.p2}`;
         }
 
         runCalibrationFilesBtn.addEventListener('click', runCalibrationFromFiles);
+        computeIntrinsicsBtn.addEventListener('click', computeIntrinsics);
+
+        // Re-compute intrinsics when zoom changes
+        zoomInput.addEventListener('change', () => {
+            if (intrinsicsInfo.textContent.startsWith('Computed:')) {
+                computeIntrinsics();
+            }
+        });
 
         // Initialize
         loadSurveySessions();
+        // Auto-compute intrinsics from camera specs on page load
+        computeIntrinsics();
     </script>
 </body>
 </html>

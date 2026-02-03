@@ -45,6 +45,54 @@ class TestSolverConfig:
 
         assert len(bounds) == 3  # k1, k2, k3 only
 
+    def test_get_bounds_with_optimize_intrinsics(self):
+        """Should append 4 intrinsic bounds when optimize_intrinsics=True."""
+        config = SolverConfig(optimize_intrinsics=True)
+
+        bounds = config.get_bounds(image_cx=960.0, image_cy=540.0)
+
+        assert len(bounds) == 9  # 5 distortion + 4 intrinsics (fx, fy, cx, cy)
+
+    def test_get_bounds_radial_only_with_intrinsics(self):
+        """Should return 7 bounds when radial_only + optimize_intrinsics."""
+        config = SolverConfig(use_radial_only=True, optimize_intrinsics=True)
+
+        bounds = config.get_bounds(image_cx=960.0, image_cy=540.0)
+
+        assert len(bounds) == 7  # 3 radial + 4 intrinsics
+
+    def test_default_intrinsic_bounds(self):
+        """Should have sensible default bounds for intrinsics."""
+        config = SolverConfig()
+
+        assert config.fx_bounds[0] > 0
+        assert config.fx_bounds[1] > config.fx_bounds[0]
+        assert config.fy_bounds[0] > 0
+        # cx/cy bounds are None by default (auto-derived from image dimensions)
+        assert config.cx_bounds is None
+        assert config.cy_bounds is None
+
+    def test_auto_derived_cx_cy_bounds(self):
+        """Should auto-derive cx/cy bounds from image dimensions."""
+        config = SolverConfig(optimize_intrinsics=True)
+
+        bounds = config.get_bounds(image_cx=960.0, image_cy=540.0)
+        # Last two bounds are cx and cy, auto-derived as (0, 2*cx) and (0, 2*cy)
+        assert bounds[-2] == (0.0, 1920.0)
+        assert bounds[-1] == (0.0, 1080.0)
+
+    def test_explicit_cx_cy_bounds_override(self):
+        """Explicit cx/cy bounds should override auto-derived ones."""
+        config = SolverConfig(
+            optimize_intrinsics=True,
+            cx_bounds=(800.0, 1200.0),
+            cy_bounds=(400.0, 700.0),
+        )
+
+        bounds = config.get_bounds(image_cx=960.0, image_cy=540.0)
+        assert bounds[-2] == (800.0, 1200.0)
+        assert bounds[-1] == (400.0, 700.0)
+
 
 class TestSolverResult:
     """Tests for SolverResult dataclass."""

@@ -48,6 +48,10 @@ class ZoomCalibrationEntry:
     source_images: tuple[str, ...] = field(default_factory=tuple)
     validation_rmse: float = 0.0
     num_lines_used: int = 0
+    fx: float = 0.0
+    fy: float = 0.0
+    cx: float = 0.0
+    cy: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate entry data."""
@@ -66,7 +70,7 @@ class ZoomCalibrationEntry:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
-        return {
+        d = {
             "zoom_factor": self.zoom_factor,
             "k1": self.k1,
             "k2": self.k2,
@@ -78,6 +82,12 @@ class ZoomCalibrationEntry:
             "validation_rmse": self.validation_rmse,
             "num_lines_used": self.num_lines_used,
         }
+        if self.fx != 0.0 or self.fy != 0.0:
+            d["fx"] = self.fx
+            d["fy"] = self.fy
+            d["cx"] = self.cx
+            d["cy"] = self.cy
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> ZoomCalibrationEntry:
@@ -99,6 +109,10 @@ class ZoomCalibrationEntry:
             source_images=source_images,
             validation_rmse=float(data.get("validation_rmse", 0.0)),
             num_lines_used=int(data.get("num_lines_used", 0)),
+            fx=float(data.get("fx", 0.0)),
+            fy=float(data.get("fy", 0.0)),
+            cx=float(data.get("cx", 0.0)),
+            cy=float(data.get("cy", 0.0)),
         )
 
     @classmethod
@@ -109,6 +123,10 @@ class ZoomCalibrationEntry:
         validation_rmse: float = 0.0,
         source_images: list[str] | None = None,
         num_lines_used: int = 0,
+        fx: float = 0.0,
+        fy: float = 0.0,
+        cx: float = 0.0,
+        cy: float = 0.0,
     ) -> ZoomCalibrationEntry:
         """Create from distortion solver result.
 
@@ -118,6 +136,10 @@ class ZoomCalibrationEntry:
             validation_rmse: RMSE from validation.
             source_images: Images used for calibration.
             num_lines_used: Number of lines used.
+            fx: Focal length X used during calibration.
+            fy: Focal length Y used during calibration.
+            cx: Principal point X used during calibration.
+            cy: Principal point Y used during calibration.
 
         Returns:
             New ZoomCalibrationEntry.
@@ -133,6 +155,10 @@ class ZoomCalibrationEntry:
             source_images=tuple(source_images or []),
             validation_rmse=validation_rmse,
             num_lines_used=num_lines_used,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
         )
 
 
@@ -286,6 +312,56 @@ class CameraCalibrationTable:
             k3=Unitless(k3),
         )
 
+    def get_intrinsics(self, zoom_factor: float) -> dict[str, float] | None:
+        """Get interpolated intrinsics for a zoom level.
+
+        Returns dict with fx, fy, cx, cy if any entry stores intrinsics,
+        otherwise None.
+
+        Args:
+            zoom_factor: The desired zoom level.
+
+        Returns:
+            Dict with intrinsic values, or None if no intrinsics stored.
+        """
+        if not self.entries:
+            return None
+
+        # Check if any entry has intrinsics
+        if not any(e.fx != 0.0 or e.fy != 0.0 for e in self.entries.values()):
+            return None
+
+        # Check for exact match
+        matching_zoom = self._find_matching_zoom(zoom_factor)
+        if matching_zoom is not None:
+            e = self.entries[matching_zoom]
+            return {"fx": e.fx, "fy": e.fy, "cx": e.cx, "cy": e.cy}
+
+        zoom_levels = sorted(self.entries.keys())
+
+        # Edge cases: clamp to bounds
+        if zoom_factor <= zoom_levels[0]:
+            e = self.entries[zoom_levels[0]]
+            return {"fx": e.fx, "fy": e.fy, "cx": e.cx, "cy": e.cy}
+        if zoom_factor >= zoom_levels[-1]:
+            e = self.entries[zoom_levels[-1]]
+            return {"fx": e.fx, "fy": e.fy, "cx": e.cx, "cy": e.cy}
+
+        # Find bracketing zoom levels and interpolate
+        for i in range(len(zoom_levels) - 1):
+            if zoom_levels[i] <= zoom_factor <= zoom_levels[i + 1]:
+                lower = self.entries[zoom_levels[i]]
+                upper = self.entries[zoom_levels[i + 1]]
+                t = (zoom_factor - zoom_levels[i]) / (zoom_levels[i + 1] - zoom_levels[i])
+                return {
+                    "fx": lower.fx + t * (upper.fx - lower.fx),
+                    "fy": lower.fy + t * (upper.fy - lower.fy),
+                    "cx": lower.cx + t * (upper.cx - lower.cx),
+                    "cy": lower.cy + t * (upper.cy - lower.cy),
+                }
+
+        return None
+
     def get_zoom_levels(self) -> list[float]:
         """Get list of calibrated zoom levels."""
         return sorted(self.entries.keys())
@@ -406,14 +482,25 @@ class CameraCalibrationTable:
         ]
 
         if self.entries:
-            lines.append("Zoom Level | k1        | k2        | RMSE")
-            lines.append("-" * 50)
+            # Check if any entry has intrinsics stored
+            has_intrinsics = any(e.fx != 0.0 for e in self.entries.values())
+            if has_intrinsics:
+                lines.append("Zoom Level | k1        | k2        | RMSE   | fx       | fy")
+                lines.append("-" * 70)
+            else:
+                lines.append("Zoom Level | k1        | k2        | RMSE")
+                lines.append("-" * 50)
 
             for zoom in sorted(self.entries.keys()):
                 entry = self.entries[zoom]
-                lines.append(
-                    f"{zoom:10.1f} | {entry.k1:9.6f} | {entry.k2:9.6f} | {entry.validation_rmse:.4f}"
-                )
+                if has_intrinsics:
+                    lines.append(
+                        f"{zoom:10.1f} | {entry.k1:9.6f} | {entry.k2:9.6f} | {entry.validation_rmse:.4f} | {entry.fx:8.1f} | {entry.fy:.1f}"
+                    )
+                else:
+                    lines.append(
+                        f"{zoom:10.1f} | {entry.k1:9.6f} | {entry.k2:9.6f} | {entry.validation_rmse:.4f}"
+                    )
 
         return "\n".join(lines)
 

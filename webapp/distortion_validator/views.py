@@ -77,6 +77,13 @@ def api_calibration_files(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Failed to list calibration files"}, status=500)
 
 
+from homography_web.calibration_utils import (
+    api_compute_intrinsics,  # noqa: F401 - re-exported for URL routing
+    serialize_calibration_entry,
+)
+api_compute_intrinsics = api_compute_intrinsics  # make linter happy
+
+
 @require_http_methods(["POST"])
 def api_load_calibration(request: HttpRequest) -> JsonResponse:
     """Load a calibration file and return its contents."""
@@ -90,21 +97,10 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
 
         table = _get_cached_calibration_table(resolved)
 
-        entries = []
-        for zoom, entry in table.entries.items():
-            entries.append({
-                "zoom_factor": entry.zoom_factor,
-                "coefficients": {
-                    "k1": float(entry.k1),
-                    "k2": float(entry.k2),
-                    "k3": float(entry.k3),
-                    "p1": float(entry.p1),
-                    "p2": float(entry.p2),
-                },
-                "calibration_date": entry.calibration_date,
-                "validation_rmse": entry.validation_rmse,
-                "num_lines_used": entry.num_lines_used,
-            })
+        entries = [
+            serialize_calibration_entry(entry)
+            for entry in table.entries.values()
+        ]
 
         return JsonResponse({
             "camera_id": table.camera_id,
