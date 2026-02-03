@@ -94,12 +94,14 @@ class SolverConfig:
             cy = image_cy or 540.0
             cx_bounds = self.cx_bounds or (0.0, cx * 2)
             cy_bounds = self.cy_bounds or (0.0, cy * 2)
-            bounds.extend([
-                self.fx_bounds,
-                self.fy_bounds,
-                cx_bounds,
-                cy_bounds,
-            ])
+            bounds.extend(
+                [
+                    self.fx_bounds,
+                    self.fy_bounds,
+                    cx_bounds,
+                    cy_bounds,
+                ]
+            )
         return bounds
 
 
@@ -342,7 +344,9 @@ class DistortionSolver:
         total_error = 0.0
 
         for samples in line_samples:
-            undistorted = self._undistort_points(samples, dist_coeffs, cx_opt, cy_opt, fx_opt, fy_opt)
+            undistorted = self._undistort_points(
+                samples, dist_coeffs, cx_opt, cy_opt, fx_opt, fy_opt
+            )
             error = self._line_straightness_error(undistorted)
             total_error += error
 
