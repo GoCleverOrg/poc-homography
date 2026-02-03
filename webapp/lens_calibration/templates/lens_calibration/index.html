@@ -453,35 +453,62 @@
             <div class="card">
                 <div class="card-header">Calibration Configuration</div>
                 <div class="card-body">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="min-length">Min Line Length (px)</label>
-                            <input type="number" id="min-length" value="100" min="10">
+                    <div class="form-group">
+                        <label for="calibration-method">Calibration Method</label>
+                        <select id="calibration-method">
+                            <option value="line_straightness">Line Straightness (Default)</option>
+                            <option value="opencv_gcp">OpenCV GCP+Lines (Experimental)</option>
+                        </select>
+                    </div>
+                    <div id="line-straightness-config">
+                        <div class="form-row" style="margin-top: 12px;">
+                            <div class="form-group">
+                                <label for="min-length">Min Line Length (px)</label>
+                                <input type="number" id="min-length" value="100" min="10">
+                            </div>
+                            <div class="form-group">
+                                <label for="min-confidence">Min Confidence</label>
+                                <input type="number" id="min-confidence" value="0.3" step="0.1" min="0" max="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="max-lines">Max Lines/Image</label>
+                                <input type="number" id="max-lines" value="10" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="max-iterations">Max Iterations</label>
+                                <input type="number" id="max-iterations" value="1000" min="100">
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="min-confidence">Min Confidence</label>
-                            <input type="number" id="min-confidence" value="0.3" step="0.1" min="0" max="1">
+                        <div class="form-group" style="margin-top: 12px;">
+                            <label>
+                                <input type="checkbox" id="radial-only">
+                                Radial distortion only (k1, k2, k3) - ignore tangential (p1, p2)
+                            </label>
                         </div>
-                        <div class="form-group">
-                            <label for="max-lines">Max Lines/Image</label>
-                            <input type="number" id="max-lines" value="10" min="1">
-                        </div>
-                        <div class="form-group">
-                            <label for="max-iterations">Max Iterations</label>
-                            <input type="number" id="max-iterations" value="1000" min="100">
+                        <div class="form-group" style="margin-top: 8px;">
+                            <label>
+                                <input type="checkbox" id="optimize-intrinsics">
+                                Also optimize intrinsics (fx, fy, cx, cy) jointly with distortion
+                            </label>
                         </div>
                     </div>
-                    <div class="form-group" style="margin-top: 12px;">
-                        <label>
-                            <input type="checkbox" id="radial-only">
-                            Radial distortion only (k1, k2, k3) - ignore tangential (p1, p2)
-                        </label>
-                    </div>
-                    <div class="form-group" style="margin-top: 8px;">
-                        <label>
-                            <input type="checkbox" id="optimize-intrinsics">
-                            Also optimize intrinsics (fx, fy, cx, cy) jointly with distortion
-                        </label>
+                    <div id="opencv-config" style="display: none;">
+                        <div class="form-row-2" style="margin-top: 12px;">
+                            <div class="form-group">
+                                <label for="train-split-ratio">Training Line Ratio</label>
+                                <input type="range" id="train-split-ratio" min="0.5" max="0.9" step="0.05" value="0.7"
+                                    oninput="document.getElementById('split-ratio-value').textContent = this.value">
+                                <span id="split-ratio-value" style="font-size: 12px; color: #666;">0.7</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="num-samples-per-line">Samples per Line</label>
+                                <input type="number" id="num-samples-per-line" value="20" min="5" max="100">
+                            </div>
+                        </div>
+                        <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                            OpenCV method uses GCPs and line correspondences from YAML files.
+                            Upload GCP registry, camera annotations, line registry, and line annotations below.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -494,6 +521,7 @@
                         <button class="tab active" data-tab="calibration-files">From Calibration Files</button>
                         <button class="tab" data-tab="manual">Manual Input</button>
                         <button class="tab" data-tab="survey">From Survey Session</button>
+                        <button class="tab" data-tab="opencv-yaml" style="display: none;" id="opencv-yaml-tab">OpenCV YAML Data</button>
                     </div>
 
                     <div id="tab-calibration-files" class="tab-content active">
@@ -542,6 +570,28 @@
                         </div>
                         <button id="load-survey-btn" class="btn btn-secondary" style="margin-top: 12px;" disabled>
                             Load & Detect Lines from Survey
+                        </button>
+                    </div>
+
+                    <div id="tab-opencv-yaml" class="tab-content">
+                        <div class="form-group">
+                            <label for="gcp-registry-input">GCP Registry (JSON array: [{id, pixel_x, pixel_y}, ...])</label>
+                            <textarea id="gcp-registry-input" style="min-height: 80px; font-family: 'Monaco', monospace; font-size: 12px;" placeholder='[{"id": "PS1", "pixel_x": 1044.66, "pixel_y": 334.31}, ...]'></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="camera-annotations-input">Camera Annotations (JSON: [{gcp_id, pixel_x, pixel_y}, ...])</label>
+                            <textarea id="camera-annotations-input" style="min-height: 80px; font-family: 'Monaco', monospace; font-size: 12px;" placeholder='[{"gcp_id": "PS1", "pixel_x": 386.8, "pixel_y": 263.2}, ...]'></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="line-registry-input">Line Registry (JSON: [{line_id, start_x, start_y, end_x, end_y}, ...])</label>
+                            <textarea id="line-registry-input" style="min-height: 80px; font-family: 'Monaco', monospace; font-size: 12px;" placeholder='[{"line_id": "L1", "start_x": 100, "start_y": 200, "end_x": 500, "end_y": 600}, ...]'></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="camera-line-annotations-input">Camera Line Annotations (JSON: [{line_id, start_pixel_x, start_pixel_y, end_pixel_x, end_pixel_y}, ...])</label>
+                            <textarea id="camera-line-annotations-input" style="min-height: 80px; font-family: 'Monaco', monospace; font-size: 12px;" placeholder='[{"line_id": "L1", "start_pixel_x": 608, "start_pixel_y": 169, "end_pixel_x": 1724, "end_pixel_y": 580}, ...]'></textarea>
+                        </div>
+                        <button id="run-opencv-calibration-btn" class="btn btn-primary" style="margin-top: 12px;">
+                            Run OpenCV Calibration
                         </button>
                     </div>
                 </div>
@@ -601,6 +651,21 @@
                         <div class="coef-item tangential">
                             <div class="name">p2</div>
                             <div class="value" id="coef-p2">0.000000</div>
+                        </div>
+                    </div>
+
+                    <div id="reprojection-error-display" style="display: none; margin-bottom: 16px;">
+                        <div style="display: flex; gap: 20px; align-items: center;">
+                            <div style="padding: 12px; background: #e3f2fd; border-radius: 4px; flex: 1; text-align: center;">
+                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Reprojection Error</div>
+                                <div style="font-size: 18px; font-weight: 600; color: #1565c0; font-family: 'Monaco', monospace;" id="reprojection-error-value">0.00</div>
+                                <div style="font-size: 10px; color: #999;">pixels</div>
+                            </div>
+                            <div style="padding: 12px; background: #f5f5f5; border-radius: 4px; flex: 1; text-align: center;">
+                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Validation RMSE</div>
+                                <div style="font-size: 18px; font-weight: 600; color: #333; font-family: 'Monaco', monospace;" id="validation-rmse-value">0.00</div>
+                                <div style="font-size: 10px; color: #999;">pixels (line straightness)</div>
+                            </div>
                         </div>
                     </div>
 
@@ -674,6 +739,10 @@
         }
 
         // Elements
+        const calibrationMethodSelect = document.getElementById('calibration-method');
+        const lineStraightnessConfig = document.getElementById('line-straightness-config');
+        const opencvConfig = document.getElementById('opencv-config');
+        const opencvYamlTab = document.getElementById('opencv-yaml-tab');
         const fxInput = document.getElementById('fx');
         const fyInput = document.getElementById('fy');
         const cxInput = document.getElementById('cx');
@@ -812,8 +881,18 @@
             document.getElementById('coef-p1').textContent = data.coefficients.p1.toFixed(6);
             document.getElementById('coef-p2').textContent = data.coefficients.p2.toFixed(6);
 
+            // Reprojection error (OpenCV method)
+            const reprojDisplay = document.getElementById('reprojection-error-display');
+            if (data.reprojection_error !== undefined && data.reprojection_error > 0) {
+                reprojDisplay.style.display = 'block';
+                document.getElementById('reprojection-error-value').textContent = data.reprojection_error.toFixed(3);
+                document.getElementById('validation-rmse-value').textContent = data.overall_rmse.toFixed(3);
+            } else {
+                reprojDisplay.style.display = 'none';
+            }
+
             // Stats
-            document.getElementById('num-lines').textContent = data.num_lines;
+            document.getElementById('num-lines').textContent = data.num_lines || data.num_gcps || 0;
             document.getElementById('iterations').textContent = data.iterations;
             document.getElementById('initial-error').textContent = data.initial_error.toFixed(4);
             document.getElementById('final-error').textContent = data.final_error.toFixed(4);
@@ -995,7 +1074,8 @@
                         coefficients: currentResults.coefficients,
                         intrinsics: getIntrinsics(),
                         validation_rmse: currentResults.overall_rmse,
-                        num_lines: currentResults.num_lines
+                        num_lines: currentResults.num_lines || currentResults.num_gcps || 0,
+                        reprojection_error: currentResults.reprojection_error || 0
                     })
                 });
 
@@ -1168,6 +1248,94 @@ p2: ${currentResults.coefficients.p2}`;
 
         runCalibrationFilesBtn.addEventListener('click', runCalibrationFromFiles);
         computeIntrinsicsBtn.addEventListener('click', computeIntrinsics);
+
+        // Method selector toggle
+        calibrationMethodSelect.addEventListener('change', () => {
+            const method = calibrationMethodSelect.value;
+            if (method === 'opencv_gcp') {
+                lineStraightnessConfig.style.display = 'none';
+                opencvConfig.style.display = 'block';
+                opencvYamlTab.style.display = '';
+                // Auto-switch to OpenCV YAML tab
+                opencvYamlTab.click();
+            } else {
+                lineStraightnessConfig.style.display = '';
+                opencvConfig.style.display = 'none';
+                opencvYamlTab.style.display = 'none';
+                // Switch back to calibration files tab
+                document.querySelector('.tab[data-tab="calibration-files"]').click();
+            }
+        });
+
+        // Run OpenCV calibration
+        async function runOpenCVCalibration() {
+            const runBtn = document.getElementById('run-opencv-calibration-btn');
+            runBtn.disabled = true;
+            showStatus('Running OpenCV calibration...', 'info');
+            progressBar.style.display = 'block';
+            progressBar.querySelector('.fill').style.width = '30%';
+
+            try {
+                const gcpRegistry = JSON.parse(document.getElementById('gcp-registry-input').value || '[]');
+                const cameraAnnotations = JSON.parse(document.getElementById('camera-annotations-input').value || '[]');
+                const lineRegistry = JSON.parse(document.getElementById('line-registry-input').value || '[]');
+                const cameraLineAnnotations = JSON.parse(document.getElementById('camera-line-annotations-input').value || '[]');
+
+                if (!gcpRegistry.length || !cameraAnnotations.length) {
+                    throw new Error('GCP registry and camera annotations are required');
+                }
+
+                const requestBody = {
+                    gcp_registry: gcpRegistry,
+                    camera_annotations: cameraAnnotations,
+                    line_registry: lineRegistry,
+                    camera_line_annotations: cameraLineAnnotations,
+                    intrinsics: getIntrinsics(),
+                    config: {
+                        train_split_ratio: parseFloat(document.getElementById('train-split-ratio').value) || 0.7,
+                        num_samples_per_line: parseInt(document.getElementById('num-samples-per-line').value) || 20,
+                    }
+                };
+
+                progressBar.querySelector('.fill').style.width = '60%';
+
+                const resp = await fetch('{% url "lens_calibration:api_calibrate_opencv" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await resp.json();
+                progressBar.querySelector('.fill').style.width = '100%';
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                if (data.success) {
+                    let msg = `OpenCV calibration complete! ${data.num_gcps} GCPs`;
+                    if (data.reprojection_error !== undefined) {
+                        msg += `, reprojection error: ${data.reprojection_error.toFixed(3)} px`;
+                    }
+                    msg += `, validation RMSE: ${data.overall_rmse.toFixed(3)} px`;
+                    showStatus(msg, 'success');
+                    updateResults(data);
+                } else {
+                    showStatus(`Calibration failed: ${data.message}`, 'error');
+                }
+
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+
+            runBtn.disabled = false;
+            setTimeout(() => {
+                progressBar.style.display = 'none';
+                progressBar.querySelector('.fill').style.width = '0%';
+            }, 1000);
+        }
+
+        document.getElementById('run-opencv-calibration-btn').addEventListener('click', runOpenCVCalibration);
 
         // Re-compute intrinsics when zoom changes
         zoomInput.addEventListener('change', () => {

@@ -667,6 +667,24 @@
         </div>
 
         <div class="sidebar">
+            <div class="sidebar-section" id="calibration-info-section" style="display: none;">
+                <h3>Calibration Info</h3>
+                <div id="calibration-method-info" style="font-size: 11px; margin-bottom: 8px;">
+                    <span style="color: #78909c;">Method:</span>
+                    <span id="cal-method-label" style="font-weight: 600;"></span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="background: #37474f; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 9px; color: #78909c; text-transform: uppercase;">Validation RMSE</div>
+                        <div style="font-size: 14px; font-weight: 600; font-family: monospace;" id="cal-validation-rmse">-</div>
+                    </div>
+                    <div style="background: #37474f; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 9px; color: #78909c; text-transform: uppercase;">Reproj. Error</div>
+                        <div style="font-size: 14px; font-weight: 600; font-family: monospace;" id="cal-reprojection-error">N/A</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="sidebar-section">
                 <h3>Coefficients</h3>
                 <div class="coefficients-grid">
@@ -721,6 +739,23 @@
                     <button id="compute-intrinsics-btn" class="btn btn-small" style="background: #1565c0;">Compute from Specs</button>
                 </div>
                 <div id="intrinsics-source" style="font-size: 10px; color: #78909c; margin-top: 4px;"></div>
+            </div>
+
+            <div class="sidebar-section" id="comparison-table-section" style="display: none;">
+                <h3>Method Comparison</h3>
+                <div style="overflow-x: auto;">
+                    <table id="method-comparison-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                        <thead>
+                            <tr style="background: #37474f;">
+                                <th style="padding: 6px; text-align: left; color: #b0bec5;">Zoom</th>
+                                <th style="padding: 6px; text-align: left; color: #b0bec5;">Method</th>
+                                <th style="padding: 6px; text-align: right; color: #b0bec5;">Reproj. (px)</th>
+                                <th style="padding: 6px; text-align: right; color: #b0bec5;">RMSE (px)</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -974,10 +1009,15 @@
                 (data.entries || []).forEach((entry, i) => {
                     const option = document.createElement('option');
                     option.value = i;
-                    option.textContent = `Zoom ${entry.zoom_factor}x (RMSE: ${entry.validation_rmse?.toFixed(3) || 'N/A'})`;
+                    const hasReproj = entry.reprojection_error_px && entry.reprojection_error_px > 0;
+                    const methodTag = hasReproj ? ' [OpenCV]' : '';
+                    option.textContent = `Zoom ${entry.zoom_factor}x (RMSE: ${entry.validation_rmse?.toFixed(3) || 'N/A'})${methodTag}`;
                     option.dataset.entry = JSON.stringify(entry);
                     zoomEntrySelect.appendChild(option);
                 });
+
+                // Build comparison table
+                buildComparisonTable(data.entries || []);
 
                 zoomEntrySelect.disabled = false;
 
@@ -1005,6 +1045,31 @@
             document.getElementById('coef-k3').textContent = currentCoefficients.k3.toFixed(6);
             document.getElementById('coef-p1').textContent = currentCoefficients.p1.toFixed(6);
             document.getElementById('coef-p2').textContent = currentCoefficients.p2.toFixed(6);
+
+            // Show calibration info section
+            const calInfoSection = document.getElementById('calibration-info-section');
+            calInfoSection.style.display = '';
+
+            // Determine method from reprojection error presence
+            const hasReproj = entry.reprojection_error_px && entry.reprojection_error_px > 0;
+            const methodLabel = hasReproj ? 'OpenCV GCP+Lines' : 'Line Straightness';
+            const methodColor = hasReproj ? '#2196f3' : '#4caf50';
+            document.getElementById('cal-method-label').textContent = methodLabel;
+            document.getElementById('cal-method-label').style.color = methodColor;
+
+            // Validation RMSE
+            const rmseEl = document.getElementById('cal-validation-rmse');
+            rmseEl.textContent = entry.validation_rmse !== undefined ? entry.validation_rmse.toFixed(3) + ' px' : '-';
+
+            // Reprojection error
+            const reprojEl = document.getElementById('cal-reprojection-error');
+            if (hasReproj) {
+                reprojEl.textContent = entry.reprojection_error_px.toFixed(3) + ' px';
+                reprojEl.style.color = '#2196f3';
+            } else {
+                reprojEl.textContent = 'N/A';
+                reprojEl.style.color = '#78909c';
+            }
 
             if (entry.intrinsics) {
                 intrinsicFx.value = entry.intrinsics.fx;
@@ -1598,6 +1663,53 @@
                 intrinsicCy.value = Math.round(height / 2);
             }
             updateIntrinsicsFromInputs();
+        }
+
+        // Build comparison table from all entries
+        function buildComparisonTable(entries) {
+            const section = document.getElementById('comparison-table-section');
+            const tbody = document.querySelector('#method-comparison-table tbody');
+            tbody.innerHTML = '';
+
+            if (!entries || entries.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            // Only show if there are multiple entries or any entry has reprojection error
+            const hasMultiple = entries.length > 1;
+            const hasAnyReproj = entries.some(e => e.reprojection_error_px && e.reprojection_error_px > 0);
+
+            if (!hasMultiple && !hasAnyReproj) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = '';
+
+            // Group by zoom level for highlighting
+            const zoomCounts = {};
+            entries.forEach(e => {
+                const z = e.zoom_factor;
+                zoomCounts[z] = (zoomCounts[z] || 0) + 1;
+            });
+
+            entries.forEach(entry => {
+                const hasReproj = entry.reprojection_error_px && entry.reprojection_error_px > 0;
+                const method = hasReproj ? 'OpenCV GCP+Lines' : 'Line Straightness';
+                const methodColor = hasReproj ? '#2196f3' : '#4caf50';
+                const highlight = zoomCounts[entry.zoom_factor] > 1 ? 'background: rgba(33, 150, 243, 0.1);' : '';
+
+                const tr = document.createElement('tr');
+                tr.style.cssText = `border-bottom: 1px solid #37474f; ${highlight}`;
+                tr.innerHTML = `
+                    <td style="padding: 6px; color: #fff;">${entry.zoom_factor}x</td>
+                    <td style="padding: 6px; color: ${methodColor}; font-size: 10px;">${method}</td>
+                    <td style="padding: 6px; text-align: right; font-family: monospace; color: ${hasReproj ? '#2196f3' : '#78909c'};">${hasReproj ? entry.reprojection_error_px.toFixed(3) : 'N/A'}</td>
+                    <td style="padding: 6px; text-align: right; font-family: monospace; color: #fff;">${entry.validation_rmse !== undefined ? entry.validation_rmse.toFixed(3) : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
         // Initialize

@@ -13,6 +13,7 @@ Public API modules:
     models: Data structures for lines, calibration entries, and results
     line_detection: Automatic parking line detection using Hough transforms
     distortion_solver: Optimization-based distortion coefficient solver
+    opencv_solver: OpenCV calibrateCamera-based solver using GCPs and lines
     calibration_table: Zoom-dependent calibration storage with interpolation
     apply_calibration: Undistortion utilities and calibration file management
 """
@@ -41,6 +42,14 @@ from poc_homography.calibration.lens_distortion.models import (
     GroundTruthLine,
     LineCorrespondence,
 )
+from poc_homography.calibration.lens_distortion.opencv_solver import (
+    OpenCVDistortionSolver,
+    OpenCVSolverConfig,
+    build_gcp_correspondences,
+    build_line_correspondences,
+    sample_line_correspondences,
+    split_lines,
+)
 
 __all__ = [
     # Models
@@ -58,6 +67,13 @@ __all__ = [
     # Calibration table
     "CameraCalibrationTable",
     "ZoomCalibrationEntry",
+    # OpenCV solver
+    "OpenCVDistortionSolver",
+    "OpenCVSolverConfig",
+    "build_gcp_correspondences",
+    "build_line_correspondences",
+    "sample_line_correspondences",
+    "split_lines",
     # Undistortion & measurement utilities
     "undistort_points",
     "undistort_image",

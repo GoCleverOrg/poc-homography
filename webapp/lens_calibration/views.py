@@ -437,6 +437,105 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
 
 
 @require_http_methods(["POST"])
+def api_calibrate_opencv(request: HttpRequest) -> JsonResponse:
+    """Run OpenCV-based distortion calibration using GCPs and line correspondences."""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if "intrinsics" not in data:
+        return JsonResponse({"error": "Missing intrinsics"}, status=400)
+
+    try:
+        from poc_homography.calibration.lens_distortion.opencv_solver import (
+            OpenCVDistortionSolver,
+            OpenCVSolverConfig,
+            build_gcp_correspondences,
+            build_line_correspondences,
+        )
+
+        intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(data)
+
+        gcp_registry = data.get("gcp_registry", [])
+        camera_annotations = data.get("camera_annotations", [])
+        line_registry = data.get("line_registry", [])
+        camera_line_annotations = data.get("camera_line_annotations", [])
+
+        if not gcp_registry or not camera_annotations:
+            return JsonResponse(
+                {"error": "GCP registry and camera annotations are required"}, status=400
+            )
+
+        gcp_correspondences = build_gcp_correspondences(gcp_registry, camera_annotations)
+        line_correspondences = build_line_correspondences(
+            line_registry, camera_line_annotations
+        )
+
+        if len(gcp_correspondences) < 4:
+            return JsonResponse(
+                {"error": f"Need at least 4 GCP correspondences, got {len(gcp_correspondences)}"},
+                status=400,
+            )
+
+        config_data = data.get("config", {})
+        solver_config = OpenCVSolverConfig(
+            num_samples_per_line=config_data.get("num_samples_per_line", 20),
+            train_split_ratio=config_data.get("train_split_ratio", 0.7),
+        )
+
+        solver = OpenCVDistortionSolver(config=solver_config)
+        result = solver.solve(
+            gcp_correspondences=gcp_correspondences,
+            line_correspondences=line_correspondences,
+            intrinsic_matrix=intrinsic_matrix,
+        )
+
+        response_data: dict[str, Any] = {
+            "success": result.success,
+            "message": result.message,
+            "method": "opencv_gcp",
+            "iterations": result.iterations,
+            "num_gcps": len(gcp_correspondences),
+            "num_training_lines": len(line_correspondences),
+            "reprojection_error": result.initial_error,
+            "initial_error": result.initial_error,
+            "final_error": result.final_error,
+            "improvement_percent": 0.0,
+            "overall_rmse": result.overall_rmse,
+            "coefficients": {
+                "k1": float(result.distortion.k1),
+                "k2": float(result.distortion.k2),
+                "k3": float(result.distortion.k3),
+                "p1": float(result.distortion.p1),
+                "p2": float(result.distortion.p2),
+            },
+            "intrinsics_used": intrinsics_used,
+            "quality": (
+                "good" if result.overall_rmse < 2.0
+                else "acceptable" if result.overall_rmse < 5.0
+                else "poor"
+            ),
+            "line_errors": result.line_errors[:20],
+        }
+
+        if result.intrinsics:
+            response_data["optimized_intrinsics"] = result.intrinsics
+
+        return JsonResponse(response_data)
+
+    except ImportError:
+        logger.exception("OpenCV calibration module not available")
+        return JsonResponse({"error": "OpenCV calibration module not available"}, status=500)
+    except ValueError:
+        logger.exception("Calibration validation error")
+        return JsonResponse({"error": "Calibration validation error"}, status=400)
+    except Exception:
+        logger.exception("OpenCV calibration failed")
+        return JsonResponse({"error": "OpenCV calibration failed"}, status=500)
+
+
+@require_http_methods(["POST"])
 def api_validate(request: HttpRequest) -> JsonResponse:
     """Validate calibration by computing straightness RMSE on test lines."""
     try:
@@ -570,6 +669,7 @@ def api_save(request: HttpRequest) -> JsonResponse:
             fy=float(intrinsics.get("fy", 0.0)),
             cx=float(intrinsics.get("cx", 0.0)),
             cy=float(intrinsics.get("cy", 0.0)),
+            reprojection_error_px=float(data.get("reprojection_error", 0.0)),
         )
         table.add_entry(entry)
 
