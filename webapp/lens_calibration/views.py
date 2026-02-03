@@ -91,56 +91,14 @@ def api_survey_sessions(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Failed to list survey sessions"}, status=500)
 
 
-@require_http_methods(["POST"])
-def api_compute_intrinsics(request: HttpRequest) -> JsonResponse:
-    """Compute camera intrinsics from sensor specs and zoom level."""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    try:
-        from poc_homography.camera.intrinsics import compute_intrinsics
-        from poc_homography.camera_config import (
-            DEFAULT_BASE_FOCAL_LENGTH_MM,
-            DEFAULT_SENSOR_WIDTH_MM,
-        )
-
-        zoom = float(data.get("zoom", 1.0))
-        image_width = int(data.get("image_width", 1920))
-        image_height = int(data.get("image_height", 1080))
-        sensor_width_mm = float(data.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM))
-        base_focal_length_mm = float(
-            data.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM)
-        )
-
-        result = compute_intrinsics(
-            zoom=zoom,
-            image_width=image_width,
-            image_height=image_height,
-            sensor_width_mm=sensor_width_mm,
-            base_focal_length_mm=base_focal_length_mm,
-        )
-
-        return JsonResponse({
-            "fx": float(result.focal_length_px),
-            "fy": float(result.focal_length_px),
-            "cx": float(result.cx),
-            "cy": float(result.cy),
-            "focal_length_mm": float(result.focal_length_mm),
-            "sensor_width_mm": sensor_width_mm,
-            "base_focal_length_mm": base_focal_length_mm,
-            "zoom": zoom,
-            "image_width": image_width,
-            "image_height": image_height,
-        })
-
-    except Exception:
-        logger.exception("Failed to compute intrinsics")
-        return JsonResponse({"error": "Failed to compute intrinsics"}, status=500)
+from homography_web.calibration_utils import (
+    api_compute_intrinsics,  # noqa: F401 - re-exported for URL routing
+    serialize_calibration_entry,
+)
+api_compute_intrinsics = api_compute_intrinsics  # make linter happy
 
 
-def _build_intrinsic_matrix(data: dict) -> "tuple[Any, dict]":
+def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
     """Build intrinsic matrix from request data, computing from specs if requested.
 
     Returns (intrinsic_matrix, intrinsics_dict).
@@ -149,8 +107,8 @@ def _build_intrinsic_matrix(data: dict) -> "tuple[Any, dict]":
 
     intrinsics = data["intrinsics"]
 
-    # If auto_intrinsics is requested and fx is at the default, compute from specs
-    if data.get("auto_intrinsics") and intrinsics.get("fx", 1000.0) == 1000.0:
+    # If auto_intrinsics is explicitly requested, compute from specs
+    if data.get("auto_intrinsics"):
         from poc_homography.camera.intrinsics import compute_intrinsics
         from poc_homography.camera_config import (
             DEFAULT_BASE_FOCAL_LENGTH_MM,
@@ -650,36 +608,15 @@ def api_load(request: HttpRequest) -> JsonResponse:
 
         table = _get_cached_calibration_table(resolved)
 
-        entries = []
-        for zoom, entry in table.entries.items():
-            entry_data: dict[str, Any] = {
-                "zoom_factor": entry.zoom_factor,
-                "coefficients": {
-                    "k1": float(entry.k1),
-                    "k2": float(entry.k2),
-                    "k3": float(entry.k3),
-                    "p1": float(entry.p1),
-                    "p2": float(entry.p2),
-                },
-                "calibration_date": entry.calibration_date,
-                "validation_rmse": entry.validation_rmse,
-                "num_lines_used": entry.num_lines_used,
-            }
-            if entry.fx != 0.0 or entry.fy != 0.0:
-                entry_data["intrinsics"] = {
-                    "fx": entry.fx,
-                    "fy": entry.fy,
-                    "cx": entry.cx,
-                    "cy": entry.cy,
-                }
-            entries.append(entry_data)
+        entries = [
+            serialize_calibration_entry(entry)
+            for entry in table.entries.values()
+        ]
 
-        return JsonResponse(
-            {
-                "camera_id": table.camera_id,
-                "entries": entries,
-            }
-        )
+        return JsonResponse({
+            "camera_id": table.camera_id,
+            "entries": entries,
+        })
 
     except ImportError:
         logger.exception("Calibration module not available")

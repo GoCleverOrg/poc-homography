@@ -57,15 +57,27 @@ class SolverConfig:
     optimize_intrinsics: bool = False
     fx_bounds: tuple[float, float] = (500.0, 5000.0)
     fy_bounds: tuple[float, float] = (500.0, 5000.0)
-    cx_bounds: tuple[float, float] = (0.0, 3840.0)
-    cy_bounds: tuple[float, float] = (0.0, 2160.0)
+    # Principal point bounds default to None (auto-derived from intrinsic_matrix
+    # in solve()). Set explicitly to override.
+    cx_bounds: tuple[float, float] | None = None
+    cy_bounds: tuple[float, float] | None = None
 
-    def get_bounds(self) -> list[tuple[float, float]]:
+    def get_bounds(
+        self,
+        image_cx: float | None = None,
+        image_cy: float | None = None,
+    ) -> list[tuple[float, float]]:
         """Get bounds list for scipy optimizer.
 
         Returns bounds in OpenCV order [k1, k2, p1, p2, k3] to match
         DistortionCoefficients.to_array() / from_array().
         When optimize_intrinsics is True, appends [fx, fy, cx, cy] bounds.
+
+        Args:
+            image_cx: Principal point X from intrinsic matrix, used to auto-derive
+                cx_bounds when not explicitly set. Defaults to 960.0.
+            image_cy: Principal point Y from intrinsic matrix, used to auto-derive
+                cy_bounds when not explicitly set. Defaults to 540.0.
         """
         if self.use_radial_only:
             bounds = [self.k1_bounds, self.k2_bounds, self.k3_bounds]
@@ -78,11 +90,15 @@ class SolverConfig:
                 self.k3_bounds,
             ]
         if self.optimize_intrinsics:
+            cx = image_cx or 960.0
+            cy = image_cy or 540.0
+            cx_bounds = self.cx_bounds or (0.0, cx * 2)
+            cy_bounds = self.cy_bounds or (0.0, cy * 2)
             bounds.extend([
                 self.fx_bounds,
                 self.fy_bounds,
-                self.cx_bounds,
-                self.cy_bounds,
+                cx_bounds,
+                cy_bounds,
             ])
         return bounds
 
@@ -210,7 +226,7 @@ class DistortionSolver:
             x0,
             args=(line_samples, cx, cy, fx, fy, optimize_intrinsics),
             method="L-BFGS-B",
-            bounds=self.config.get_bounds(),
+            bounds=self.config.get_bounds(image_cx=cx, image_cy=cy),
             options={
                 "maxiter": self.config.max_iterations,
                 "ftol": self.config.tolerance,

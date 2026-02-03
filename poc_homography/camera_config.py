@@ -266,7 +266,7 @@ CAMERAS = [
         "id": "icozee-camptz-06",
         "tenant_id": "icozee",
         "name": "Cam06",
-        "ip": "192.168.7.8",
+        "ip": "192.168.7.7",
         "model": "DS-2DF-8425IX-AELW(T5)",
         # Sensor/lens parameters (use defaults if not specified)
         "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,

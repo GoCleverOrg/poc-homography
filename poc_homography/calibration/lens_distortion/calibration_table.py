@@ -312,6 +312,56 @@ class CameraCalibrationTable:
             k3=Unitless(k3),
         )
 
+    def get_intrinsics(self, zoom_factor: float) -> dict[str, float] | None:
+        """Get interpolated intrinsics for a zoom level.
+
+        Returns dict with fx, fy, cx, cy if any entry stores intrinsics,
+        otherwise None.
+
+        Args:
+            zoom_factor: The desired zoom level.
+
+        Returns:
+            Dict with intrinsic values, or None if no intrinsics stored.
+        """
+        if not self.entries:
+            return None
+
+        # Check if any entry has intrinsics
+        if not any(e.fx != 0.0 or e.fy != 0.0 for e in self.entries.values()):
+            return None
+
+        # Check for exact match
+        matching_zoom = self._find_matching_zoom(zoom_factor)
+        if matching_zoom is not None:
+            e = self.entries[matching_zoom]
+            return {"fx": e.fx, "fy": e.fy, "cx": e.cx, "cy": e.cy}
+
+        zoom_levels = sorted(self.entries.keys())
+
+        # Edge cases: clamp to bounds
+        if zoom_factor <= zoom_levels[0]:
+            e = self.entries[zoom_levels[0]]
+            return {"fx": e.fx, "fy": e.fy, "cx": e.cx, "cy": e.cy}
+        if zoom_factor >= zoom_levels[-1]:
+            e = self.entries[zoom_levels[-1]]
+            return {"fx": e.fx, "fy": e.fy, "cx": e.cx, "cy": e.cy}
+
+        # Find bracketing zoom levels and interpolate
+        for i in range(len(zoom_levels) - 1):
+            if zoom_levels[i] <= zoom_factor <= zoom_levels[i + 1]:
+                lower = self.entries[zoom_levels[i]]
+                upper = self.entries[zoom_levels[i + 1]]
+                t = (zoom_factor - zoom_levels[i]) / (zoom_levels[i + 1] - zoom_levels[i])
+                return {
+                    "fx": lower.fx + t * (upper.fx - lower.fx),
+                    "fy": lower.fy + t * (upper.fy - lower.fy),
+                    "cx": lower.cx + t * (upper.cx - lower.cx),
+                    "cy": lower.cy + t * (upper.cy - lower.cy),
+                }
+
+        return None
+
     def get_zoom_levels(self) -> list[float]:
         """Get list of calibrated zoom levels."""
         return sorted(self.entries.keys())

@@ -845,11 +845,16 @@
             tbody.innerHTML = '';
             (data.line_errors || []).forEach(err => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${err.line_id}</td>
-                    <td class="mono">${err.rmse_pixels.toFixed(3)}</td>
-                    <td>${err.num_samples}</td>
-                `;
+                const tdId = document.createElement('td');
+                tdId.textContent = err.line_id;
+                const tdRmse = document.createElement('td');
+                tdRmse.className = 'mono';
+                tdRmse.textContent = err.rmse_pixels.toFixed(3);
+                const tdSamples = document.createElement('td');
+                tdSamples.textContent = err.num_samples;
+                tr.appendChild(tdId);
+                tr.appendChild(tdRmse);
+                tr.appendChild(tdSamples);
                 tbody.appendChild(tr);
             });
 
@@ -877,8 +882,8 @@
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify({
                         zoom: parseFloat(zoomInput.value) || 1.0,
-                        image_width: 1920,
-                        image_height: 1080
+                        image_width: Math.round((parseFloat(cxInput.value) || 960) * 2),
+                        image_height: Math.round((parseFloat(cyInput.value) || 540) * 2)
                     })
                 });
                 const data = await resp.json();
@@ -1075,13 +1080,19 @@ p2: ${currentResults.coefficients.p2}`;
                     // Add to list
                     const div = document.createElement('div');
                     div.style.cssText = 'padding: 8px; background: #e8f5e9; border-radius: 4px; margin-bottom: 4px; font-size: 12px;';
-                    div.innerHTML = `<strong>${data.image || file.name}</strong> - ${fileLines.length} lines, PTZ: (${data.camera_status?.pan || 0}, ${data.camera_status?.tilt || 0}, ${data.camera_status?.zoom || 1})`;
+                    const strong = document.createElement('strong');
+                    strong.textContent = data.image || file.name;
+                    div.appendChild(strong);
+                    div.appendChild(document.createTextNode(` - ${fileLines.length} lines, PTZ: (${data.camera_status?.pan || 0}, ${data.camera_status?.tilt || 0}, ${data.camera_status?.zoom || 1})`));
                     calibrationFilesList.appendChild(div);
 
                 } catch (err) {
                     const div = document.createElement('div');
                     div.style.cssText = 'padding: 8px; background: #ffebee; border-radius: 4px; margin-bottom: 4px; font-size: 12px;';
-                    div.innerHTML = `<strong>${file.name}</strong> - Error: ${err.message}`;
+                    const strong = document.createElement('strong');
+                    strong.textContent = file.name;
+                    div.appendChild(strong);
+                    div.appendChild(document.createTextNode(` - Error: ${err.message}`));
                     calibrationFilesList.appendChild(div);
                 }
             }

@@ -531,6 +531,131 @@ class TestCameraCalibrationTable:
         assert "Entries: 1" in summary
 
 
+class TestGetIntrinsics:
+    """Tests for CameraCalibrationTable.get_intrinsics()."""
+
+    def test_returns_none_when_empty(self):
+        """Should return None when table has no entries."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+
+        assert table.get_intrinsics(1.0) is None
+
+    def test_returns_none_when_no_intrinsics_stored(self):
+        """Should return None when no entry has intrinsics (fx/fy == 0)."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=1.0,
+                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+            )
+        )
+
+        assert table.get_intrinsics(1.0) is None
+
+    def test_returns_intrinsics_for_exact_zoom(self):
+        """Should return exact intrinsics when zoom level matches."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=2.0,
+                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+                fx=1500.0, fy=1500.0, cx=960.0, cy=540.0,
+            )
+        )
+
+        result = table.get_intrinsics(2.0)
+
+        assert result is not None
+        assert result["fx"] == 1500.0
+        assert result["fy"] == 1500.0
+        assert result["cx"] == 960.0
+        assert result["cy"] == 540.0
+
+    def test_clamps_below_minimum_zoom(self):
+        """Should return lowest entry intrinsics when zoom is below minimum."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=2.0,
+                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+                fx=1500.0, fy=1500.0, cx=960.0, cy=540.0,
+            )
+        )
+
+        result = table.get_intrinsics(1.0)
+
+        assert result is not None
+        assert result["fx"] == 1500.0
+
+    def test_clamps_above_maximum_zoom(self):
+        """Should return highest entry intrinsics when zoom is above maximum."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=2.0,
+                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+                fx=1500.0, fy=1500.0, cx=960.0, cy=540.0,
+            )
+        )
+
+        result = table.get_intrinsics(10.0)
+
+        assert result is not None
+        assert result["fx"] == 1500.0
+
+    def test_interpolates_between_zoom_levels(self):
+        """Should linearly interpolate intrinsics between bracketing zooms."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=2.0,
+                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+                fx=1000.0, fy=1000.0, cx=960.0, cy=540.0,
+            )
+        )
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=4.0,
+                k1=-0.2, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+                fx=2000.0, fy=2000.0, cx=960.0, cy=540.0,
+            )
+        )
+
+        result = table.get_intrinsics(3.0)
+
+        assert result is not None
+        assert result["fx"] == pytest.approx(1500.0, abs=1e-6)
+        assert result["fy"] == pytest.approx(1500.0, abs=1e-6)
+
+    def test_save_load_roundtrip_preserves_intrinsics(self):
+        """Intrinsics should survive YAML save/load roundtrip."""
+        table = CameraCalibrationTable(camera_id="cam_001")
+        table.add_entry(
+            ZoomCalibrationEntry(
+                zoom_factor=1.0,
+                k1=-0.1, k2=0.05, k3=0.0, p1=0.0, p2=0.0,
+                calibration_date="2024-01-15",
+                fx=1200.0, fy=1200.0, cx=960.0, cy=540.0,
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "cal.yaml"
+            table.save(filepath)
+            loaded = CameraCalibrationTable.load(filepath)
+
+        result = loaded.get_intrinsics(1.0)
+        assert result is not None
+        assert result["fx"] == pytest.approx(1200.0, abs=1e-6)
+        assert result["cx"] == pytest.approx(960.0, abs=1e-6)
+
+
 class TestLoadCalibrationForCamera:
     """Tests for load_calibration_for_camera utility function."""
 
