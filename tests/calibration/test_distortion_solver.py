@@ -45,6 +45,32 @@ class TestSolverConfig:
 
         assert len(bounds) == 3  # k1, k2, k3 only
 
+    def test_get_bounds_with_optimize_intrinsics(self):
+        """Should append 4 intrinsic bounds when optimize_intrinsics=True."""
+        config = SolverConfig(optimize_intrinsics=True)
+
+        bounds = config.get_bounds()
+
+        assert len(bounds) == 9  # 5 distortion + 4 intrinsics (fx, fy, cx, cy)
+
+    def test_get_bounds_radial_only_with_intrinsics(self):
+        """Should return 7 bounds when radial_only + optimize_intrinsics."""
+        config = SolverConfig(use_radial_only=True, optimize_intrinsics=True)
+
+        bounds = config.get_bounds()
+
+        assert len(bounds) == 7  # 3 radial + 4 intrinsics
+
+    def test_default_intrinsic_bounds(self):
+        """Should have sensible default bounds for intrinsics."""
+        config = SolverConfig()
+
+        assert config.fx_bounds[0] > 0
+        assert config.fx_bounds[1] > config.fx_bounds[0]
+        assert config.fy_bounds[0] > 0
+        assert config.cx_bounds[0] >= 0
+        assert config.cy_bounds[0] >= 0
+
 
 class TestSolverResult:
     """Tests for SolverResult dataclass."""

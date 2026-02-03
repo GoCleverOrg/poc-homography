@@ -78,6 +78,53 @@ def api_calibration_files(request: HttpRequest) -> JsonResponse:
 
 
 @require_http_methods(["POST"])
+def api_compute_intrinsics(request: HttpRequest) -> JsonResponse:
+    """Compute camera intrinsics from sensor specs and zoom level."""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    try:
+        from poc_homography.camera.intrinsics import compute_intrinsics
+        from poc_homography.camera_config import (
+            DEFAULT_BASE_FOCAL_LENGTH_MM,
+            DEFAULT_SENSOR_WIDTH_MM,
+        )
+
+        zoom = float(data.get("zoom", 1.0))
+        image_width = int(data.get("image_width", 1920))
+        image_height = int(data.get("image_height", 1080))
+        sensor_width_mm = float(data.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM))
+        base_focal_length_mm = float(
+            data.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM)
+        )
+
+        result = compute_intrinsics(
+            zoom=zoom,
+            image_width=image_width,
+            image_height=image_height,
+            sensor_width_mm=sensor_width_mm,
+            base_focal_length_mm=base_focal_length_mm,
+        )
+
+        return JsonResponse({
+            "fx": float(result.focal_length_px),
+            "fy": float(result.focal_length_px),
+            "cx": float(result.cx),
+            "cy": float(result.cy),
+            "focal_length_mm": float(result.focal_length_mm),
+            "sensor_width_mm": sensor_width_mm,
+            "base_focal_length_mm": base_focal_length_mm,
+            "zoom": zoom,
+        })
+
+    except Exception:
+        logger.exception("Failed to compute intrinsics")
+        return JsonResponse({"error": "Failed to compute intrinsics"}, status=500)
+
+
+@require_http_methods(["POST"])
 def api_load_calibration(request: HttpRequest) -> JsonResponse:
     """Load a calibration file and return its contents."""
     try:
@@ -92,7 +139,7 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
 
         entries = []
         for zoom, entry in table.entries.items():
-            entries.append({
+            entry_data: dict[str, Any] = {
                 "zoom_factor": entry.zoom_factor,
                 "coefficients": {
                     "k1": float(entry.k1),
@@ -104,7 +151,15 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
                 "calibration_date": entry.calibration_date,
                 "validation_rmse": entry.validation_rmse,
                 "num_lines_used": entry.num_lines_used,
-            })
+            }
+            if entry.fx != 0.0 or entry.fy != 0.0:
+                entry_data["intrinsics"] = {
+                    "fx": entry.fx,
+                    "fy": entry.fy,
+                    "cx": entry.cx,
+                    "cy": entry.cy,
+                }
+            entries.append(entry_data)
 
         return JsonResponse({
             "camera_id": table.camera_id,

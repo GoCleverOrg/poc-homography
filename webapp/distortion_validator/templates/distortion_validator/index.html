@@ -113,6 +113,15 @@
             color: white;
         }
 
+        .btn-success:hover {
+            background: #388e3c;
+        }
+
+        .btn-success:disabled {
+            background: #546e7a;
+            cursor: not-allowed;
+        }
+
         .btn-small {
             padding: 4px 8px;
             font-size: 11px;
@@ -124,23 +133,12 @@
             height: calc(100vh - 110px);
         }
 
-        /* Images container */
-        .images-container {
-            flex: 1;
-            display: flex;
-            overflow: hidden;
-        }
-
-        .image-panel {
+        /* Unified image panel */
+        .image-panel-unified {
             flex: 1;
             display: flex;
             flex-direction: column;
-            border-right: 1px solid #37474f;
             overflow: hidden;
-        }
-
-        .image-panel:last-child {
-            border-right: none;
         }
 
         .image-panel-header {
@@ -148,7 +146,6 @@
             padding: 8px 12px;
             font-size: 12px;
             font-weight: 600;
-            text-transform: uppercase;
             letter-spacing: 0.5px;
             border-bottom: 1px solid #37474f;
             display: flex;
@@ -156,18 +153,53 @@
             align-items: center;
         }
 
-        .image-panel-header.original {
-            color: #ff9800;
-        }
-
-        .image-panel-header.undistorted {
-            color: #4caf50;
-        }
-
         .panel-controls {
             display: flex;
-            gap: 8px;
+            gap: 12px;
             align-items: center;
+        }
+
+        /* View mode buttons */
+        .view-mode-group {
+            display: flex;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #546e7a;
+        }
+
+        .view-mode-btn {
+            padding: 4px 12px;
+            background: #37474f;
+            border: none;
+            color: #b0bec5;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            border-right: 1px solid #546e7a;
+        }
+
+        .view-mode-btn:last-child {
+            border-right: none;
+        }
+
+        .view-mode-btn:hover {
+            background: #455a64;
+            color: #fff;
+        }
+
+        .view-mode-btn.active {
+            background: #2196f3;
+            color: #fff;
+        }
+
+        .view-mode-btn.active-original {
+            background: #ff9800;
+            color: #fff;
+        }
+
+        .view-mode-btn.active-undistorted {
+            background: #4caf50;
+            color: #fff;
         }
 
         .zoom-controls {
@@ -227,11 +259,89 @@
             -webkit-user-drag: none;
         }
 
+        .image-container img.stacked {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
         .image-container canvas {
             position: absolute;
             top: 0;
             left: 0;
+            z-index: 3;
             cursor: crosshair;
+        }
+
+        /* Overlay slider bar */
+        .overlay-slider-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(38, 50, 56, 0.92);
+            border: 1px solid #546e7a;
+            border-radius: 8px;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+
+        .overlay-slider-bar.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .overlay-slider-bar label {
+            font-size: 11px;
+            color: #ff9800;
+            white-space: nowrap;
+        }
+
+        .overlay-slider-bar .slider-value {
+            font-size: 11px;
+            color: #4caf50;
+            white-space: nowrap;
+            min-width: 65px;
+            text-align: right;
+        }
+
+        #overlay-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 300px;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(to right, #ff9800, #4caf50);
+            outline: none;
+            cursor: pointer;
+        }
+
+        #overlay-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #2196f3;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+        }
+
+        #overlay-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #2196f3;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
         }
 
         /* Sidebar */
@@ -488,20 +598,6 @@
         .stat-item .value.bad {
             color: #f44336;
         }
-
-        /* Sync indicator */
-        .sync-indicator {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 11px;
-            color: #b0bec5;
-        }
-
-        .sync-indicator input {
-            width: 14px;
-            height: 14px;
-        }
     </style>
 </head>
 <body>
@@ -530,65 +626,44 @@
             </select>
         </div>
         <button id="apply-btn" class="btn btn-primary" disabled>Apply Undistortion</button>
-        <div class="sync-indicator">
-            <input type="checkbox" id="sync-zoom" checked>
-            <label for="sync-zoom">Sync zoom</label>
-        </div>
-        <div class="sync-indicator">
-            <input type="checkbox" id="sync-scroll" checked>
-            <label for="sync-scroll">Sync scroll</label>
-        </div>
     </div>
 
     <div class="main-content">
-        <div class="images-container">
-            <!-- Original Image Panel -->
-            <div class="image-panel" id="panel-original">
-                <div class="image-panel-header original">
-                    <span>Original (Distorted) - Click to draw</span>
-                    <div class="panel-controls">
-                        <div class="zoom-controls">
-                            <button class="zoom-out" data-panel="original">-</button>
-                            <span id="zoom-original">100%</span>
-                            <button class="zoom-in" data-panel="original">+</button>
-                            <button class="zoom-fit" data-panel="original">Fit</button>
-                        </div>
-                    </div>
+        <!-- Unified Image Panel -->
+        <div class="image-panel-unified">
+            <div class="image-panel-header">
+                <div class="view-mode-group">
+                    <button class="view-mode-btn active-original" data-mode="original">Original</button>
+                    <button class="view-mode-btn" data-mode="overlay">Overlay</button>
+                    <button class="view-mode-btn" data-mode="undistorted">Undistorted</button>
                 </div>
-                <div class="image-wrapper" id="wrapper-original">
-                    <div class="empty-state" id="empty-original">Select a calibration file and image to begin</div>
-                    <div class="image-scroller" id="scroller-original" style="display: none;">
-                        <div class="image-container" id="container-original">
-                            <img id="img-original">
-                            <canvas id="canvas-original"></canvas>
-                        </div>
+                <div class="panel-controls">
+                    <div class="zoom-controls">
+                        <button id="zoom-out-btn">-</button>
+                        <span id="zoom-display">100%</span>
+                        <button id="zoom-in-btn">+</button>
+                        <button id="zoom-fit-btn">Fit</button>
+                    </div>
+                    <button id="export-btn" class="btn btn-success btn-small" disabled>Export</button>
+                </div>
+            </div>
+            <div class="image-wrapper" id="image-wrapper">
+                <div class="empty-state" id="empty-state">Select a calibration file and image to begin</div>
+                <div class="image-scroller" id="image-scroller" style="display: none;">
+                    <div class="image-container" id="image-container">
+                        <img id="img-original">
+                        <img id="img-undistorted" class="stacked">
+                        <canvas id="draw-canvas"></canvas>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Undistorted Image Panel -->
-            <div class="image-panel" id="panel-undistorted">
-                <div class="image-panel-header undistorted">
-                    <span>Undistorted - Click to draw</span>
-                    <div class="panel-controls">
-                        <div class="zoom-controls">
-                            <button class="zoom-out" data-panel="undistorted">-</button>
-                            <span id="zoom-undistorted">100%</span>
-                            <button class="zoom-in" data-panel="undistorted">+</button>
-                            <button class="zoom-fit" data-panel="undistorted">Fit</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="image-wrapper" id="wrapper-undistorted">
-                    <div class="empty-state" id="empty-undistorted">Apply undistortion to see result</div>
-                    <div class="image-scroller" id="scroller-undistorted" style="display: none;">
-                        <div class="image-container" id="container-undistorted">
-                            <img id="img-undistorted">
-                            <canvas id="canvas-undistorted"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <!-- Overlay slider -->
+        <div class="overlay-slider-bar hidden" id="overlay-slider-bar">
+            <label>Original</label>
+            <input type="range" id="overlay-slider" min="0" max="100" value="50">
+            <span class="slider-value" id="slider-value">Undistorted</span>
         </div>
 
         <div class="sidebar">
@@ -641,7 +716,11 @@
                         <input type="number" id="intrinsic-cy" value="540" step="10" style="width: 100%;">
                     </div>
                 </div>
-                <button id="set-intrinsics-btn" class="btn btn-small" style="margin-top: 8px; background: #455a64;">Update Intrinsics</button>
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <button id="set-intrinsics-btn" class="btn btn-small" style="background: #455a64;">Update Intrinsics</button>
+                    <button id="compute-intrinsics-btn" class="btn btn-small" style="background: #1565c0;">Compute from Specs</button>
+                </div>
+                <div id="intrinsics-source" style="font-size: 10px; color: #78909c; margin-top: 4px;"></div>
             </div>
 
             <div class="sidebar-section">
@@ -650,11 +729,13 @@
                     <strong>1.</strong> Load calibration and select image<br>
                     <strong>2.</strong> Set intrinsics to match calibration<br>
                     <strong>3.</strong> Click "Apply Undistortion"<br>
-                    <strong>4.</strong> Draw lines on the <strong>ORIGINAL</strong> image<br>
-                    <strong>5.</strong> Press <span class="key">ESC</span> to finish a line<br>
+                    <strong>4.</strong> Use view modes to compare images<br>
+                    <strong>5.</strong> Draw lines, press <span class="key">ESC</span> to finish<br>
                     <strong>6.</strong> Compare Original vs Undistorted RMSE<br><br>
-                    <strong>Important:</strong> Draw on the original (distorted) image to see the true before/after comparison.<br><br>
-                    <strong>Navigation:</strong><br>
+                    <strong>Shortcuts:</strong><br>
+                    <span class="key">1</span> <span class="key">2</span> <span class="key">3</span> View modes<br>
+                    <span class="key">&larr;</span> <span class="key">&rarr;</span> Nudge overlay slider<br>
+                    <span class="key">Ctrl+E</span> Export images<br>
                     <span class="key">Wheel</span> Zoom<br>
                     <span class="key">Shift+Drag</span> or <span class="key">Middle-Click</span> Pan
                 </div>
@@ -667,7 +748,7 @@
 
                 <div class="lines-comparison" id="lines-list">
                     <div style="color: #546e7a; font-size: 12px; text-align: center; padding: 20px;">
-                        Draw lines on either image to compare straightness
+                        Draw lines on the image to measure straightness
                     </div>
                 </div>
 
@@ -708,56 +789,135 @@
         const zoomEntrySelect = document.getElementById('zoom-entry-select');
         const imageSelect = document.getElementById('image-select');
         const applyBtn = document.getElementById('apply-btn');
-        const syncZoomCheckbox = document.getElementById('sync-zoom');
-        const syncScrollCheckbox = document.getElementById('sync-scroll');
+        const exportBtn = document.getElementById('export-btn');
         const linesList = document.getElementById('lines-list');
         const clearLinesBtn = document.getElementById('clear-lines-btn');
         const statusMessage = document.getElementById('status-message');
         const summaryStats = document.getElementById('summary-stats');
 
-        // Panel elements
-        const panels = {
-            original: {
-                wrapper: document.getElementById('wrapper-original'),
-                scroller: document.getElementById('scroller-original'),
-                container: document.getElementById('container-original'),
-                img: document.getElementById('img-original'),
-                canvas: document.getElementById('canvas-original'),
-                empty: document.getElementById('empty-original'),
-                zoomDisplay: document.getElementById('zoom-original'),
-                zoom: 1,
-                isPanning: false,
-                panStart: { x: 0, y: 0 },
-                scrollStart: { x: 0, y: 0 }
-            },
-            undistorted: {
-                wrapper: document.getElementById('wrapper-undistorted'),
-                scroller: document.getElementById('scroller-undistorted'),
-                container: document.getElementById('container-undistorted'),
-                img: document.getElementById('img-undistorted'),
-                canvas: document.getElementById('canvas-undistorted'),
-                empty: document.getElementById('empty-undistorted'),
-                zoomDisplay: document.getElementById('zoom-undistorted'),
-                zoom: 1,
-                isPanning: false,
-                panStart: { x: 0, y: 0 },
-                scrollStart: { x: 0, y: 0 }
-            }
+        // Unified panel elements
+        const panel = {
+            wrapper: document.getElementById('image-wrapper'),
+            scroller: document.getElementById('image-scroller'),
+            container: document.getElementById('image-container'),
+            imgOriginal: document.getElementById('img-original'),
+            imgUndistorted: document.getElementById('img-undistorted'),
+            canvas: document.getElementById('draw-canvas'),
+            empty: document.getElementById('empty-state'),
+            zoomDisplay: document.getElementById('zoom-display'),
+            zoom: 1,
+            isPanning: false,
+            panStart: { x: 0, y: 0 },
+            scrollStart: { x: 0, y: 0 }
         };
 
+        // View mode
+        const viewModeButtons = document.querySelectorAll('.view-mode-btn');
+        const overlaySliderBar = document.getElementById('overlay-slider-bar');
+        const overlaySlider = document.getElementById('overlay-slider');
+        const sliderValueLabel = document.getElementById('slider-value');
+
         // State
+        let viewMode = 'original'; // 'original' | 'overlay' | 'undistorted'
+        let overlayOpacity = 0.5;  // 0 = fully original, 1 = fully undistorted
         let currentCalibration = null;
         let currentCoefficients = null;
-        // CRITICAL: These intrinsics MUST match what was used during calibration!
-        // Default values - will be updated if calibration provides them
         let currentIntrinsics = { fx: 1000, fy: 1000, cx: 960, cy: 540 };
-        let comparisonLines = [];  // Array of {points: [[x,y], ...], originalRmse, undistortedRmse, ...}
-        let currentLine = null;  // {panel: 'original'|'undistorted', points: [[x,y], ...]}
+        let comparisonLines = [];
+        let currentLine = null;  // { points: [[x,y], ...] }
         let imageWidth = 0;
         let imageHeight = 0;
-        let undistortionMethod = 'solver';  // 'solver' to match calibration, 'opencv' for comparison
+        let hasUndistortion = false;
+        let originalDataUrl = null;
+        let undistortedDataUrl = null;
 
-        // Load calibration files
+        // --- View mode ---
+
+        function setViewMode(mode) {
+            viewMode = mode;
+            viewModeButtons.forEach(btn => {
+                const btnMode = btn.dataset.mode;
+                btn.classList.remove('active', 'active-original', 'active-undistorted');
+                if (btnMode === mode) {
+                    if (mode === 'original') btn.classList.add('active-original');
+                    else if (mode === 'undistorted') btn.classList.add('active-undistorted');
+                    else btn.classList.add('active');
+                }
+            });
+            if (mode === 'overlay') {
+                overlaySliderBar.classList.remove('hidden');
+            } else {
+                overlaySliderBar.classList.add('hidden');
+            }
+            updateImageVisibility();
+            renderLines();
+        }
+
+        function updateImageVisibility() {
+            if (!hasUndistortion) {
+                panel.imgOriginal.style.opacity = '1';
+                panel.imgUndistorted.style.opacity = '0';
+                return;
+            }
+            switch (viewMode) {
+                case 'original':
+                    panel.imgOriginal.style.opacity = '1';
+                    panel.imgUndistorted.style.opacity = '0';
+                    break;
+                case 'undistorted':
+                    panel.imgOriginal.style.opacity = '0';
+                    panel.imgUndistorted.style.opacity = '1';
+                    break;
+                case 'overlay':
+                    panel.imgOriginal.style.opacity = String(1 - overlayOpacity);
+                    panel.imgUndistorted.style.opacity = String(overlayOpacity);
+                    break;
+            }
+        }
+
+        function handleOverlaySlider(e) {
+            overlayOpacity = parseInt(e.target.value) / 100;
+            const pctUndistorted = Math.round(overlayOpacity * 100);
+            sliderValueLabel.textContent = `Undistorted ${pctUndistorted}%`;
+            updateImageVisibility();
+        }
+
+        overlaySlider.addEventListener('input', handleOverlaySlider);
+
+        viewModeButtons.forEach(btn => {
+            btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
+        });
+
+        // --- Export ---
+
+        function exportImages() {
+            if (!originalDataUrl) return;
+
+            function downloadDataUrl(dataUrl, filename) {
+                const a = document.createElement('a');
+                a.href = dataUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            const baseName = imageSelect.value ? imageSelect.value.replace(/\.[^/.]+$/, '') : 'image';
+            downloadDataUrl(originalDataUrl, baseName + '_original.jpg');
+
+            if (undistortedDataUrl) {
+                setTimeout(() => {
+                    downloadDataUrl(undistortedDataUrl, baseName + '_undistorted.jpg');
+                }, 500);
+            }
+
+            showStatus('Exporting images...', 'info');
+        }
+
+        exportBtn.addEventListener('click', exportImages);
+
+        // --- Load calibration files ---
+
         async function loadCalibrationFiles() {
             try {
                 const resp = await fetch('{% url "distortion_validator:api_calibration_files" %}');
@@ -846,6 +1006,19 @@
             document.getElementById('coef-p1').textContent = currentCoefficients.p1.toFixed(6);
             document.getElementById('coef-p2').textContent = currentCoefficients.p2.toFixed(6);
 
+            if (entry.intrinsics) {
+                intrinsicFx.value = entry.intrinsics.fx;
+                intrinsicFy.value = entry.intrinsics.fy;
+                intrinsicCx.value = entry.intrinsics.cx;
+                intrinsicCy.value = entry.intrinsics.cy;
+                updateIntrinsicsFromInputs();
+                intrinsicsSource.textContent = 'Loaded from calibration file';
+                intrinsicsSource.style.color = '#4caf50';
+            } else {
+                intrinsicsSource.textContent = 'Not stored in calibration — using manual values';
+                intrinsicsSource.style.color = '#ff9800';
+            }
+
             updateApplyButton();
         }
 
@@ -881,42 +1054,51 @@
                 imageWidth = data.width;
                 imageHeight = data.height;
 
-                // Update default intrinsics based on image size
                 updateDefaultIntrinsics(imageWidth, imageHeight);
 
-                // Log the method and intrinsics used
                 console.log('Undistortion applied with:', {
                     method: data.method_used,
                     intrinsics: data.intrinsics_used,
                     coefficients: data.coefficients_used
                 });
 
-                // Setup original panel
-                panels.original.img.src = 'data:image/jpeg;base64,' + data.original;
-                panels.original.img.onload = () => {
-                    panels.original.empty.style.display = 'none';
-                    panels.original.scroller.style.display = 'inline-block';
-                    setupCanvas('original');
+                // Store data URLs for export
+                originalDataUrl = 'data:image/jpeg;base64,' + data.original;
+                undistortedDataUrl = data.undistorted_url || ('data:image/jpeg;base64,' + data.undistorted);
+
+                // Load both images into stacked container
+                let loadCount = 0;
+                const onBothLoaded = () => {
+                    loadCount++;
+                    if (loadCount < 2) return;
+
+                    // Set container explicit dimensions from the image
+                    const w = panel.imgOriginal.naturalWidth;
+                    const h = panel.imgOriginal.naturalHeight;
+                    panel.container.style.width = w + 'px';
+                    panel.container.style.height = h + 'px';
+
+                    panel.empty.style.display = 'none';
+                    panel.scroller.style.display = 'inline-block';
+                    hasUndistortion = true;
+                    exportBtn.disabled = false;
+
+                    setupCanvas();
+                    setViewMode('overlay');
+
+                    comparisonLines = [];
+                    currentLine = null;
+                    updateLinesList();
+                    renderLines();
+
+                    showStatus('Ready! Click on the image to draw lines. Use view modes to compare.', 'success');
                 };
 
-                // Setup undistorted panel
-                if (data.undistorted_url) {
-                    panels.undistorted.img.src = data.undistorted_url;
-                } else {
-                    panels.undistorted.img.src = 'data:image/jpeg;base64,' + data.undistorted;
-                }
-                panels.undistorted.img.onload = () => {
-                    panels.undistorted.empty.style.display = 'none';
-                    panels.undistorted.scroller.style.display = 'inline-block';
-                    setupCanvas('undistorted');
-                };
+                panel.imgOriginal.onload = onBothLoaded;
+                panel.imgUndistorted.onload = onBothLoaded;
 
-                // Clear existing lines
-                comparisonLines = [];
-                currentLine = null;
-                updateLinesList();
-
-                showStatus('Ready! Click on either image to draw lines.', 'success');
+                panel.imgOriginal.src = originalDataUrl;
+                panel.imgUndistorted.src = undistortedDataUrl;
 
             } catch (e) {
                 showStatus(`Error: ${e.message}`, 'error');
@@ -925,39 +1107,28 @@
             applyBtn.disabled = false;
         }
 
-        // Setup canvas for a panel
-        function setupCanvas(panelName) {
-            const panel = panels[panelName];
-            panel.canvas.width = panel.img.naturalWidth;
-            panel.canvas.height = panel.img.naturalHeight;
-            updateZoom(panelName, panel.zoom);
-            renderLines(panelName);
+        // Setup canvas
+        function setupCanvas() {
+            panel.canvas.width = panel.imgOriginal.naturalWidth;
+            panel.canvas.height = panel.imgOriginal.naturalHeight;
+            updateZoom(panel.zoom);
+            renderLines();
         }
 
-        // Update zoom for a panel
-        function updateZoom(panelName, newZoom, syncOther = true) {
-            const panel = panels[panelName];
+        // Update zoom
+        function updateZoom(newZoom) {
             panel.zoom = Math.max(0.25, Math.min(5, newZoom));
             panel.container.style.transform = `scale(${panel.zoom})`;
             panel.zoomDisplay.textContent = Math.round(panel.zoom * 100) + '%';
 
-            // Update scroller size to enable proper scrolling
-            const scaledWidth = panel.img.naturalWidth * panel.zoom;
-            const scaledHeight = panel.img.naturalHeight * panel.zoom;
+            const scaledWidth = panel.imgOriginal.naturalWidth * panel.zoom;
+            const scaledHeight = panel.imgOriginal.naturalHeight * panel.zoom;
             panel.scroller.style.width = scaledWidth + 'px';
             panel.scroller.style.height = scaledHeight + 'px';
-
-            if (syncOther && syncZoomCheckbox.checked) {
-                const otherPanel = panelName === 'original' ? 'undistorted' : 'original';
-                if (panels[otherPanel].scroller.style.display !== 'none') {
-                    updateZoom(otherPanel, panel.zoom, false);
-                }
-            }
         }
 
         // Get canvas coordinates from mouse event
-        function getCanvasCoords(e, panelName) {
-            const panel = panels[panelName];
+        function getCanvasCoords(e) {
             const rect = panel.canvas.getBoundingClientRect();
             const scaleX = panel.canvas.width / rect.width;
             const scaleY = panel.canvas.height / rect.height;
@@ -968,33 +1139,28 @@
         }
 
         // Setup canvas event handlers
-        function setupCanvasEvents(panelName) {
-            const panel = panels[panelName];
+        function setupCanvasEvents() {
             const ctx = panel.canvas.getContext('2d');
 
             panel.canvas.addEventListener('click', (e) => {
-                const coords = getCanvasCoords(e, panelName);
+                const coords = getCanvasCoords(e);
 
                 if (!currentLine) {
-                    currentLine = { panel: panelName, points: [[coords.x, coords.y]] };
-                    showStatus(`Drawing on ${panelName}. Click more points, press ESC to finish.`, 'info');
-                } else if (currentLine.panel === panelName) {
+                    currentLine = { points: [[coords.x, coords.y]] };
+                    showStatus(`Drawing line. Click more points, press ESC to finish.`, 'info');
+                } else {
                     currentLine.points.push([coords.x, coords.y]);
                     showStatus(`${currentLine.points.length} points. Click more or press ESC to finish.`, 'info');
-                } else {
-                    showStatus(`Finish current line first (ESC) or continue on ${currentLine.panel} panel.`, 'error');
                 }
 
-                renderLines('original');
-                renderLines('undistorted');
+                renderLines();
             });
 
             panel.canvas.addEventListener('mousemove', (e) => {
-                if (!currentLine || currentLine.panel !== panelName) return;
-                const coords = getCanvasCoords(e, panelName);
-                renderLines('original');
-                renderLines('undistorted');
-                // Draw preview line on current panel
+                if (!currentLine) return;
+                const coords = getCanvasCoords(e);
+                renderLines();
+                // Draw preview line
                 if (currentLine.points.length > 0) {
                     const lastPt = currentLine.points[currentLine.points.length - 1];
                     ctx.beginPath();
@@ -1012,7 +1178,7 @@
             panel.wrapper.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? 0.9 : 1.1;
-                updateZoom(panelName, panel.zoom * delta);
+                updateZoom(panel.zoom * delta);
             });
 
             // Middle mouse button or Shift+Left click to pan
@@ -1042,27 +1208,9 @@
             });
         }
 
-        // Setup scroll sync
-        let isSyncing = false;
-        function setupScrollSync() {
-            ['original', 'undistorted'].forEach(panelName => {
-                panels[panelName].wrapper.addEventListener('scroll', (e) => {
-                    if (!syncScrollCheckbox.checked || isSyncing) return;
-                    const otherPanel = panelName === 'original' ? 'undistorted' : 'original';
-                    if (panels[otherPanel].scroller.style.display === 'none') return;
-
-                    isSyncing = true;
-                    const source = panels[panelName].wrapper;
-                    const target = panels[otherPanel].wrapper;
-                    target.scrollLeft = source.scrollLeft;
-                    target.scrollTop = source.scrollTop;
-                    setTimeout(() => { isSyncing = false; }, 10);
-                });
-            });
-        }
-
-        // ESC to finish line
+        // Keyboard shortcuts
         document.addEventListener('keydown', async (e) => {
+            // ESC to finish line
             if (e.key === 'Escape' && currentLine) {
                 e.preventDefault();
 
@@ -1070,41 +1218,16 @@
                     showStatus('Measuring line straightness...', 'info');
 
                     try {
-                        // When drawing on the ORIGINAL image:
-                        //   - originalRmse = measure those points directly (they're distorted)
-                        //   - undistortedRmse = undistort those points first, then measure
-                        //
-                        // When drawing on the UNDISTORTED image:
-                        //   - The points are already in undistorted space
-                        //   - So undistortedRmse = measure directly
-                        //   - originalRmse would need to "re-distort" (not typically useful)
-                        //
-                        // For proper comparison, we always draw on the ORIGINAL image
-                        // and compare before/after undistortion.
-
-                        let originalResult, undistortedResult;
-
-                        if (currentLine.panel === 'original') {
-                            // Points drawn on original (distorted) image
-                            // Measure raw points = original RMSE
-                            // Undistort points, then measure = undistorted RMSE
-                            [originalResult, undistortedResult] = await Promise.all([
-                                measureStraightness(currentLine.points, false),
-                                measureStraightness(currentLine.points, true)  // Undistort points first!
-                            ]);
-                        } else {
-                            // Points drawn on undistorted image
-                            // These points are already in undistorted space
-                            // Measuring them directly gives the undistorted RMSE
-                            // For "original", we'd need to re-distort (not implemented)
-                            undistortedResult = await measureStraightness(currentLine.points, false);
-                            originalResult = { rmse_pixels: undistortedResult.rmse_pixels, quality: undistortedResult.quality };
-                            showStatus('Note: Drawing on undistorted image - comparing same points', 'info');
-                        }
+                        // Points are always drawn on the unified canvas at original image coordinates.
+                        // - originalRmse = measure raw points
+                        // - undistortedRmse = undistort points first, then measure
+                        const [originalResult, undistortedResult] = await Promise.all([
+                            measureStraightness(currentLine.points, false),
+                            measureStraightness(currentLine.points, true)
+                        ]);
 
                         comparisonLines.push({
                             points: currentLine.points,
-                            sourcePanel: currentLine.panel,
                             originalRmse: originalResult.rmse_pixels,
                             originalQuality: originalResult.quality,
                             undistortedRmse: undistortedResult.rmse_pixels,
@@ -1113,12 +1236,8 @@
 
                         updateLinesList();
 
-                        if (currentLine.panel === 'original') {
-                            const improvement = ((originalResult.rmse_pixels - undistortedResult.rmse_pixels) / originalResult.rmse_pixels * 100).toFixed(1);
-                            showStatus(`Line added! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
-                        } else {
-                            showStatus(`Line added! RMSE: ${undistortedResult.rmse_pixels.toFixed(3)}px (drawn on undistorted image)`, 'success');
-                        }
+                        const improvement = ((originalResult.rmse_pixels - undistortedResult.rmse_pixels) / originalResult.rmse_pixels * 100).toFixed(1);
+                        showStatus(`Line added! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
 
                     } catch (err) {
                         showStatus(`Error: ${err.message}`, 'error');
@@ -1126,19 +1245,45 @@
                 }
 
                 currentLine = null;
-                renderLines('original');
-                renderLines('undistorted');
+                renderLines();
+                return;
+            }
+
+            // View mode shortcuts: 1, 2, 3
+            if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+                if (e.key === '1') { setViewMode('original'); return; }
+                if (e.key === '2') { setViewMode('overlay'); return; }
+                if (e.key === '3') { setViewMode('undistorted'); return; }
+            }
+
+            // Arrow keys nudge overlay slider
+            if (viewMode === 'overlay') {
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    overlaySlider.value = Math.max(0, parseInt(overlaySlider.value) - 5);
+                    overlaySlider.dispatchEvent(new Event('input'));
+                    return;
+                }
+                if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    overlaySlider.value = Math.min(100, parseInt(overlaySlider.value) + 5);
+                    overlaySlider.dispatchEvent(new Event('input'));
+                    return;
+                }
+            }
+
+            // Ctrl+E export
+            if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+                e.preventDefault();
+                exportImages();
             }
         });
 
         // Measure straightness via API
-        // If undistort=true, the backend will undistort the points using the same
-        // method as the calibration solver before measuring straightness.
         async function measureStraightness(points, undistort = false) {
             const payload = { points };
 
             if (undistort) {
-                // Pass coefficients and intrinsics so backend can undistort points
                 payload.undistort = true;
                 payload.coefficients = currentCoefficients;
                 payload.intrinsics = currentIntrinsics;
@@ -1152,28 +1297,35 @@
             return await resp.json();
         }
 
-        // Render lines on a panel
-        function renderLines(panelName) {
-            const panel = panels[panelName];
+        // Render lines on the single canvas
+        // - Original / Overlay: full n-point polyline showing all annotation points
+        // - Undistorted: straight line from first to last point only (visual reference
+        //   to check whether the feature is now straight after undistortion)
+        function renderLines() {
             const ctx = panel.canvas.getContext('2d');
             ctx.clearRect(0, 0, panel.canvas.width, panel.canvas.height);
 
-            const isOriginal = panelName === 'original';
+            const showOriginalRmse = (viewMode === 'original');
+            const straightOnly = (viewMode === 'undistorted');
 
-            // Draw completed lines
             comparisonLines.forEach((line, i) => {
-                const rmse = isOriginal ? line.originalRmse : line.undistortedRmse;
-                const quality = isOriginal ? line.originalQuality : line.undistortedQuality;
+                const rmse = showOriginalRmse ? line.originalRmse : line.undistortedRmse;
+                const quality = showOriginalRmse ? line.originalQuality : line.undistortedQuality;
                 const color = getQualityColor(quality);
-                drawLine(ctx, line.points, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+
+                if (straightOnly && line.points.length >= 2) {
+                    // Undistorted view: draw only start→end straight reference line
+                    const startEnd = [line.points[0], line.points[line.points.length - 1]];
+                    drawLine(ctx, startEnd, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+                } else {
+                    // Original / Overlay: full n-point polyline
+                    drawLine(ctx, line.points, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+                }
             });
 
-            // Draw current line being drawn
+            // Draw current line being drawn (always show all points)
             if (currentLine && currentLine.points.length > 0) {
-                const showOnThis = currentLine.panel === panelName;
-                if (showOnThis) {
-                    drawLine(ctx, currentLine.points, '#ffffff', null, true);
-                }
+                drawLine(ctx, currentLine.points, '#ffffff', null, true);
             }
         }
 
@@ -1233,7 +1385,7 @@
         // Update lines list
         function updateLinesList() {
             if (comparisonLines.length === 0) {
-                linesList.innerHTML = '<div style="color: #546e7a; font-size: 12px; text-align: center; padding: 20px;">Draw lines on either image to compare straightness</div>';
+                linesList.innerHTML = '<div style="color: #546e7a; font-size: 12px; text-align: center; padding: 20px;">Draw lines on the image to measure straightness</div>';
                 summaryStats.style.display = 'none';
                 return;
             }
@@ -1280,8 +1432,7 @@
                 btn.addEventListener('click', (e) => {
                     const idx = parseInt(e.target.dataset.index);
                     comparisonLines.splice(idx, 1);
-                    renderLines('original');
-                    renderLines('undistorted');
+                    renderLines();
                     updateLinesList();
                 });
             });
@@ -1313,8 +1464,7 @@
         clearLinesBtn.addEventListener('click', () => {
             comparisonLines = [];
             currentLine = null;
-            renderLines('original');
-            renderLines('undistorted');
+            renderLines();
             updateLinesList();
             showStatus('All lines cleared', 'info');
         });
@@ -1342,14 +1492,16 @@
         applyBtn.addEventListener('click', applyUndistortion);
 
         // Zoom button handlers
-        document.querySelectorAll('.zoom-in').forEach(btn => {
-            btn.addEventListener('click', () => updateZoom(btn.dataset.panel, panels[btn.dataset.panel].zoom * 1.25));
-        });
-        document.querySelectorAll('.zoom-out').forEach(btn => {
-            btn.addEventListener('click', () => updateZoom(btn.dataset.panel, panels[btn.dataset.panel].zoom / 1.25));
-        });
-        document.querySelectorAll('.zoom-fit').forEach(btn => {
-            btn.addEventListener('click', () => updateZoom(btn.dataset.panel, 1));
+        document.getElementById('zoom-in-btn').addEventListener('click', () => updateZoom(panel.zoom * 1.25));
+        document.getElementById('zoom-out-btn').addEventListener('click', () => updateZoom(panel.zoom / 1.25));
+        document.getElementById('zoom-fit-btn').addEventListener('click', () => {
+            const natW = panel.imgOriginal.naturalWidth;
+            const natH = panel.imgOriginal.naturalHeight;
+            if (!natW || !natH) return updateZoom(1);
+            const wrapperW = panel.wrapper.clientWidth;
+            const wrapperH = panel.wrapper.clientHeight;
+            const fitZoom = Math.min(wrapperW / natW, wrapperH / natH);
+            updateZoom(fitZoom);
         });
 
         // Intrinsics input handlers
@@ -1358,6 +1510,8 @@
         const intrinsicCx = document.getElementById('intrinsic-cx');
         const intrinsicCy = document.getElementById('intrinsic-cy');
         const setIntrinsicsBtn = document.getElementById('set-intrinsics-btn');
+        const computeIntrinsicsBtn = document.getElementById('compute-intrinsics-btn');
+        const intrinsicsSource = document.getElementById('intrinsics-source');
 
         function updateIntrinsicsFromInputs() {
             currentIntrinsics = {
@@ -1371,9 +1525,38 @@
 
         setIntrinsicsBtn.addEventListener('click', updateIntrinsicsFromInputs);
 
-        // Update intrinsics inputs when image is loaded (center point)
+        computeIntrinsicsBtn.addEventListener('click', async () => {
+            computeIntrinsicsBtn.disabled = true;
+            try {
+                const resp = await fetch('{% url "distortion_validator:api_compute_intrinsics" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({
+                        zoom: 1.0,
+                        image_width: imageWidth || 1920,
+                        image_height: imageHeight || 1080
+                    })
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    showStatus(`Error: ${data.error}`, 'error');
+                    return;
+                }
+                intrinsicFx.value = data.fx.toFixed(1);
+                intrinsicFy.value = data.fy.toFixed(1);
+                intrinsicCx.value = data.cx.toFixed(1);
+                intrinsicCy.value = data.cy.toFixed(1);
+                updateIntrinsicsFromInputs();
+                intrinsicsSource.textContent = `Computed: f=${data.focal_length_mm.toFixed(1)}mm @ zoom ${data.zoom}x`;
+                intrinsicsSource.style.color = '#4caf50';
+                showStatus(`Intrinsics computed from camera specs: fx=${data.fx.toFixed(1)}`, 'success');
+            } catch (e) {
+                showStatus(`Failed to compute intrinsics: ${e.message}`, 'error');
+            }
+            computeIntrinsicsBtn.disabled = false;
+        });
+
         function updateDefaultIntrinsics(width, height) {
-            // Only update cx/cy to image center if they haven't been manually changed
             if (intrinsicCx.value === '960') {
                 intrinsicCx.value = Math.round(width / 2);
             }
@@ -1386,10 +1569,8 @@
         // Initialize
         loadCalibrationFiles();
         loadImages();
-        setupCanvasEvents('original');
-        setupCanvasEvents('undistorted');
-        setupScrollSync();
-        updateIntrinsicsFromInputs(); // Set initial intrinsics
+        setupCanvasEvents();
+        updateIntrinsicsFromInputs();
     </script>
 </body>
 </html>

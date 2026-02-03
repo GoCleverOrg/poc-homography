@@ -54,22 +54,37 @@ class SolverConfig:
     max_iterations: int = 1000
     tolerance: float = 1e-8
     use_radial_only: bool = False
+    optimize_intrinsics: bool = False
+    fx_bounds: tuple[float, float] = (500.0, 5000.0)
+    fy_bounds: tuple[float, float] = (500.0, 5000.0)
+    cx_bounds: tuple[float, float] = (0.0, 3840.0)
+    cy_bounds: tuple[float, float] = (0.0, 2160.0)
 
     def get_bounds(self) -> list[tuple[float, float]]:
         """Get bounds list for scipy optimizer.
 
         Returns bounds in OpenCV order [k1, k2, p1, p2, k3] to match
         DistortionCoefficients.to_array() / from_array().
+        When optimize_intrinsics is True, appends [fx, fy, cx, cy] bounds.
         """
         if self.use_radial_only:
-            return [self.k1_bounds, self.k2_bounds, self.k3_bounds]
-        return [
-            self.k1_bounds,
-            self.k2_bounds,
-            self.p1_bounds,
-            self.p2_bounds,
-            self.k3_bounds,
-        ]
+            bounds = [self.k1_bounds, self.k2_bounds, self.k3_bounds]
+        else:
+            bounds = [
+                self.k1_bounds,
+                self.k2_bounds,
+                self.p1_bounds,
+                self.p2_bounds,
+                self.k3_bounds,
+            ]
+        if self.optimize_intrinsics:
+            bounds.extend([
+                self.fx_bounds,
+                self.fy_bounds,
+                self.cx_bounds,
+                self.cy_bounds,
+            ])
+        return bounds
 
 
 @dataclass
@@ -97,6 +112,7 @@ class SolverResult:
     success: bool
     message: str
     line_errors: list[dict] = field(default_factory=list)
+    intrinsics: dict[str, float] | None = None
 
     def is_improved(self) -> bool:
         """Check if optimization improved the error."""
@@ -177,15 +193,22 @@ class DistortionSolver:
         else:
             x0 = initial_guess.to_array()
 
+        # When optimizing intrinsics, append [fx, fy, cx, cy] to the parameter vector
+        optimize_intrinsics = self.config.optimize_intrinsics
+        if optimize_intrinsics:
+            x0 = np.append(x0, [fx, fy, cx, cy])
+
         # Calculate initial error
-        initial_error = self._total_straightness_error(x0, line_samples, cx, cy, fx, fy)
+        initial_error = self._total_straightness_error(
+            x0, line_samples, cx, cy, fx, fy, optimize_intrinsics
+        )
         logger.info(f"Initial straightness error: {initial_error:.6f}")
 
         # Optimize
         result = minimize(
             self._total_straightness_error,
             x0,
-            args=(line_samples, cx, cy, fx, fy),
+            args=(line_samples, cx, cy, fx, fy, optimize_intrinsics),
             method="L-BFGS-B",
             bounds=self.config.get_bounds(),
             options={
@@ -194,25 +217,40 @@ class DistortionSolver:
             },
         )
 
-        # Extract optimized coefficients
+        # Extract optimized coefficients and intrinsics
+        optimized_intrinsics = None
+        if optimize_intrinsics:
+            # Last 4 elements are [fx, fy, cx, cy]
+            opt_fx, opt_fy, opt_cx, opt_cy = result.x[-4], result.x[-3], result.x[-2], result.x[-1]
+            optimized_intrinsics = {
+                "fx": float(opt_fx),
+                "fy": float(opt_fy),
+                "cx": float(opt_cx),
+                "cy": float(opt_cy),
+            }
+            distortion_coeffs = result.x[:-4]
+            # Use optimized intrinsics for error evaluation
+            fx, fy, cx, cy = opt_fx, opt_fy, opt_cx, opt_cy
+        else:
+            distortion_coeffs = result.x
+
         if self.config.use_radial_only:
             optimized = DistortionCoefficients(
-                k1=Unitless(float(result.x[0])),
-                k2=Unitless(float(result.x[1])),
-                k3=Unitless(float(result.x[2])),
+                k1=Unitless(float(distortion_coeffs[0])),
+                k2=Unitless(float(distortion_coeffs[1])),
+                k3=Unitless(float(distortion_coeffs[2])),
                 p1=Unitless(0.0),
                 p2=Unitless(0.0),
             )
         else:
-            optimized = DistortionCoefficients.from_array(result.x)
+            optimized = DistortionCoefficients.from_array(distortion_coeffs)
 
         # Calculate per-line errors with optimized coefficients
-        final_coeffs = result.x
         rmse_per_line = []
         line_errors = []
 
         for i, samples in enumerate(line_samples):
-            undistorted = self._undistort_points(samples, final_coeffs, cx, cy, fx, fy)
+            undistorted = self._undistort_points(samples, distortion_coeffs, cx, cy, fx, fy)
             error = self._line_straightness_error(undistorted)
             num_samples = len(samples)
             rmse = np.sqrt(error / num_samples) if num_samples > 0 else 0.0
@@ -234,6 +272,13 @@ class DistortionSolver:
         logger.info(
             f"Optimized k1={optimized.k1:.6f}, k2={optimized.k2:.6f}, k3={optimized.k3:.6f}"
         )
+        if optimized_intrinsics:
+            logger.info(
+                f"Optimized intrinsics: fx={optimized_intrinsics['fx']:.1f}, "
+                f"fy={optimized_intrinsics['fy']:.1f}, "
+                f"cx={optimized_intrinsics['cx']:.1f}, "
+                f"cy={optimized_intrinsics['cy']:.1f}"
+            )
 
         return SolverResult(
             distortion=optimized,
@@ -245,6 +290,7 @@ class DistortionSolver:
             success=result.success,
             message=result.message,
             line_errors=line_errors,
+            intrinsics=optimized_intrinsics,
         )
 
     def _total_straightness_error(
@@ -255,22 +301,32 @@ class DistortionSolver:
         cy: float,
         fx: float,
         fy: float,
+        optimize_intrinsics: bool = False,
     ) -> float:
         """Calculate total straightness error for all lines.
 
         Args:
             coeffs: Distortion coefficients [k1, k2, p1, p2, k3] (OpenCV order) or [k1, k2, k3].
+                When optimize_intrinsics is True, the last 4 elements are [fx, fy, cx, cy].
             line_samples: List of point arrays, one per line.
-            cx, cy: Principal point coordinates.
-            fx, fy: Focal lengths.
+            cx, cy: Principal point coordinates (used when not optimizing intrinsics).
+            fx, fy: Focal lengths (used when not optimizing intrinsics).
+            optimize_intrinsics: If True, extract fx/fy/cx/cy from coeffs vector.
 
         Returns:
             Total sum of squared perpendicular distances.
         """
+        if optimize_intrinsics:
+            fx_opt, fy_opt, cx_opt, cy_opt = coeffs[-4], coeffs[-3], coeffs[-2], coeffs[-1]
+            dist_coeffs = coeffs[:-4]
+        else:
+            fx_opt, fy_opt, cx_opt, cy_opt = fx, fy, cx, cy
+            dist_coeffs = coeffs
+
         total_error = 0.0
 
         for samples in line_samples:
-            undistorted = self._undistort_points(samples, coeffs, cx, cy, fx, fy)
+            undistorted = self._undistort_points(samples, dist_coeffs, cx_opt, cy_opt, fx_opt, fy_opt)
             error = self._line_straightness_error(undistorted)
             total_error += error
 
