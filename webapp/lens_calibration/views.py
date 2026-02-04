@@ -25,7 +25,7 @@ from typing import Any
 import yaml
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.calibration_utils import (
     get_cached_calibration_table as _get_cached_calibration_table,
@@ -39,6 +39,7 @@ WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 SURVEY_DIR = WEBAPP_DIR / "survey"
 CALIBRATION_DIR = PROJECT_ROOT / "calibration_results"
+TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 
 logger = logging.getLogger(__name__)
 
@@ -436,9 +437,22 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Calibration failed"}, status=500)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
-def api_calibrate_opencv(request: HttpRequest) -> JsonResponse:
-    """Run OpenCV-based distortion calibration using GCPs and line correspondences."""
+def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
+    """Run distortion calibration using manually annotated N-point line traces.
+
+    Request body::
+
+        {
+            "camera_line_annotations": [
+                {"line_id": "L1", "points": [[x1,y1], [x2,y2], ...]},
+                ...
+            ],
+            "intrinsics": {"fx": ..., "fy": ..., "cx": ..., "cy": ...},
+            "config": {"train_split_ratio": 0.7}  // optional
+        }
+    """
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -449,59 +463,32 @@ def api_calibrate_opencv(request: HttpRequest) -> JsonResponse:
 
     try:
         from poc_homography.calibration.lens_distortion.opencv_solver import (
-            OpenCVDistortionSolver,
-            OpenCVSolverConfig,
-            build_gcp_correspondences,
-            build_line_correspondences,
+            AnnotatedLineSolver,
+            AnnotatedLineSolverConfig,
+            build_camera_line_annotations,
         )
 
         intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(data)
 
-        gcp_registry = data.get("gcp_registry", [])
-        camera_annotations = data.get("camera_annotations", [])
-        line_registry = data.get("line_registry", [])
-        camera_line_annotations = data.get("camera_line_annotations", [])
-
-        if not gcp_registry or not camera_annotations:
-            return JsonResponse(
-                {"error": "GCP registry and camera annotations are required"}, status=400
-            )
-
-        gcp_correspondences = build_gcp_correspondences(gcp_registry, camera_annotations)
-        line_correspondences = build_line_correspondences(
-            line_registry, camera_line_annotations
+        lines = build_camera_line_annotations(
+            data.get("camera_line_annotations", []),
         )
-
-        if len(gcp_correspondences) < 4:
-            return JsonResponse(
-                {"error": f"Need at least 4 GCP correspondences, got {len(gcp_correspondences)}"},
-                status=400,
-            )
 
         config_data = data.get("config", {})
-        solver_config = OpenCVSolverConfig(
-            num_samples_per_line=config_data.get("num_samples_per_line", 20),
+        solver_config = AnnotatedLineSolverConfig(
             train_split_ratio=config_data.get("train_split_ratio", 0.7),
+            use_radial_only=config_data.get("use_radial_only", False),
         )
+        solver = AnnotatedLineSolver(config=solver_config)
 
-        solver = OpenCVDistortionSolver(config=solver_config)
-        result = solver.solve(
-            gcp_correspondences=gcp_correspondences,
-            line_correspondences=line_correspondences,
-            intrinsic_matrix=intrinsic_matrix,
-        )
+        result = solver.solve(lines, intrinsic_matrix)
 
         response_data: dict[str, Any] = {
             "success": result.success,
             "message": result.message,
-            "method": "opencv_gcp",
             "iterations": result.iterations,
-            "num_gcps": len(gcp_correspondences),
-            "num_training_lines": len(line_correspondences),
-            "reprojection_error": result.initial_error,
             "initial_error": result.initial_error,
             "final_error": result.final_error,
-            "improvement_percent": 0.0,
             "overall_rmse": result.overall_rmse,
             "coefficients": {
                 "k1": float(result.distortion.k1),
@@ -519,20 +506,28 @@ def api_calibrate_opencv(request: HttpRequest) -> JsonResponse:
             "line_errors": result.line_errors[:20],
         }
 
+        if result.success:
+            response_data["improvement_percent"] = (
+                (1 - result.improvement_ratio()) * 100
+            )
+        else:
+            response_data["improvement_percent"] = 0.0
+
         if result.intrinsics:
-            response_data["optimized_intrinsics"] = result.intrinsics
+            response_data["intrinsics"] = result.intrinsics
 
         return JsonResponse(response_data)
 
     except ImportError:
-        logger.exception("OpenCV calibration module not available")
-        return JsonResponse({"error": "OpenCV calibration module not available"}, status=500)
-    except ValueError:
-        logger.exception("Calibration validation error")
-        return JsonResponse({"error": "Calibration validation error"}, status=400)
+        logger.exception("Annotated line solver module not available")
+        return JsonResponse(
+            {"error": "Annotated line solver module not available"}, status=500,
+        )
     except Exception:
-        logger.exception("OpenCV calibration failed")
-        return JsonResponse({"error": "OpenCV calibration failed"}, status=500)
+        logger.exception("Annotated line calibration failed")
+        return JsonResponse(
+            {"error": "Annotated line calibration failed"}, status=500,
+        )
 
 
 @require_http_methods(["POST"])
@@ -669,7 +664,6 @@ def api_save(request: HttpRequest) -> JsonResponse:
             fy=float(intrinsics.get("fy", 0.0)),
             cx=float(intrinsics.get("cx", 0.0)),
             cy=float(intrinsics.get("cy", 0.0)),
-            reprojection_error_px=float(data.get("reprojection_error", 0.0)),
         )
         table.add_entry(entry)
 
@@ -724,3 +718,38 @@ def api_load(request: HttpRequest) -> JsonResponse:
     except Exception:
         logger.exception("Load failed")
         return JsonResponse({"error": "Load failed"}, status=500)
+
+
+# ---------------------------------------------------------------------------
+# Test data files API
+# ---------------------------------------------------------------------------
+
+@require_GET
+def api_test_data_files(request: HttpRequest) -> JsonResponse:
+    """List YAML files in the test data directory."""
+    if not TEST_DATA_DIR.exists():
+        return JsonResponse({"files": []})
+
+    files = sorted(f.name for f in TEST_DATA_DIR.glob("*.yaml"))
+    return JsonResponse({"files": files})
+
+
+@require_GET
+def api_test_data_file_content(request: HttpRequest) -> JsonResponse:
+    """Read and return parsed YAML content of a test data file."""
+    filename = request.GET.get("filename", "")
+    if not filename:
+        return JsonResponse({"error": "Missing filename"}, status=400)
+
+    # Prevent path traversal
+    filepath = (TEST_DATA_DIR / filename).resolve()
+    if not filepath.is_relative_to(TEST_DATA_DIR.resolve()) or not filepath.exists():
+        return JsonResponse({"error": "File not found"}, status=404)
+
+    try:
+        with open(filepath) as f:
+            data = yaml.safe_load(f)
+        return JsonResponse({"filename": filename, "data": data})
+    except Exception:
+        logger.exception("Failed to read test data file %s", filename)
+        return JsonResponse({"error": "Failed to read file"}, status=500)

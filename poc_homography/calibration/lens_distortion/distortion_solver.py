@@ -190,6 +190,24 @@ class DistortionSolver:
         if intrinsic_matrix.shape != (3, 3):
             raise ValueError(f"Intrinsic matrix must be 3x3, got {intrinsic_matrix.shape}")
 
+        # Filter out lines that are straight by construction (linearly
+        # interpolated between endpoints).  These carry no distortion signal
+        # and dilute the RMSE, leading to weak calibration results.
+        original_count = len(lines)
+        lines = [l for l in lines if l.has_edge_curvature()]
+        filtered = original_count - len(lines)
+        if filtered:
+            logger.info(
+                f"Filtered {filtered}/{original_count} lines with no edge "
+                f"curvature (interpolated); {len(lines)} lines remain"
+            )
+        if not lines:
+            raise ValueError(
+                "No lines with edge curvature remain after filtering. "
+                "All provided lines appear to be linearly interpolated "
+                "between endpoints and carry no distortion signal."
+            )
+
         # Extract principal point from intrinsic matrix
         cx = intrinsic_matrix[0, 2]
         cy = intrinsic_matrix[1, 2]

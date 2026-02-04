@@ -208,6 +208,92 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     )
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_save_annotations(request: HttpRequest) -> JsonResponse:
+    """Save annotations for the current image to the annotations YAML file.
+
+    Adds or updates the test_case entry for the current image.
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    current_image = get_current_image(request)
+    if not current_image:
+        return JsonResponse({"error": "No image selected"}, status=400)
+
+    new_annotations = data.get("annotations", [])
+    if not new_annotations:
+        return JsonResponse({"error": "No annotations to save"}, status=400)
+
+    # Validate annotation format
+    for ann in new_annotations:
+        if not all(k in ann for k in ("gcp_id", "pixel_x", "pixel_y")):
+            return JsonResponse(
+                {"error": "Each annotation must have gcp_id, pixel_x, pixel_y"},
+                status=400,
+            )
+
+    # Load existing YAML
+    if DEFAULT_ANNOTATIONS_FILE.exists():
+        with open(DEFAULT_ANNOTATIONS_FILE) as f:
+            yaml_data = yaml.safe_load(f) or {}
+    else:
+        yaml_data = {}
+
+    test_cases = yaml_data.setdefault("test_cases", [])
+
+    # Find existing entry for this image
+    existing_tc = None
+    for tc in test_cases:
+        if tc.get("image") == current_image:
+            existing_tc = tc
+            break
+
+    # Build clean annotation list (round to 1 decimal)
+    clean_annotations = [
+        {
+            "pixel_x": round(float(a["pixel_x"]), 1),
+            "pixel_y": round(float(a["pixel_y"]), 1),
+            "gcp_id": a["gcp_id"],
+        }
+        for a in new_annotations
+    ]
+
+    if existing_tc:
+        existing_tc["annotations"] = clean_annotations
+    else:
+        # Parse camera status from filename if possible (e.g. valte_102.5_20.7_1_...)
+        parts = current_image.replace(".png", "").replace(".jpg", "").split("_")
+        camera_status = {}
+        if len(parts) >= 4:
+            try:
+                camera_status = {
+                    "pan": float(parts[1]),
+                    "tilt": float(parts[2]),
+                    "zoom": int(parts[3]),
+                }
+            except (ValueError, IndexError):
+                pass
+
+        new_tc: dict = {
+            "name": current_image.rsplit(".", 1)[0],
+            "image": current_image,
+        }
+        if camera_status:
+            new_tc["camera_status"] = camera_status
+        new_tc["annotations"] = clean_annotations
+        test_cases.append(new_tc)
+
+    # Write back
+    with open(DEFAULT_ANNOTATIONS_FILE, "w") as f:
+        yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    return JsonResponse({"success": True, "saved": len(clean_annotations)})
+
+
 @require_GET
 def serve_image(request: HttpRequest) -> HttpResponse:
     """Serve the current image file."""

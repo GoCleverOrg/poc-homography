@@ -124,6 +124,77 @@ def save_session_annotations(
     request.session.modified = True
 
 
+def load_existing_line_annotations(image_filename: str) -> list[dict]:
+    """Load existing line annotations for a specific image from exported YAML files.
+
+    Searches for ``*_line_annotations.yaml`` files in TEST_DATA_DIR whose
+    ``test_cases`` contain a matching ``image`` field.  The per-image file
+    (``{base}_line_annotations.yaml``) is tried first for a fast match, then
+    all other ``*_line_annotations.yaml`` files are scanned as fallback.
+
+    Returns the ``line_annotations`` list from the first matching test case,
+    normalised to the internal annotation format.
+    """
+    if not TEST_DATA_DIR.exists():
+        return []
+
+    base_name = image_filename.rsplit(".", 1)[0]
+    per_image_file = TEST_DATA_DIR / f"{base_name}_line_annotations.yaml"
+
+    # Ordered candidates: per-image file first, then everything else
+    candidates: list[Path] = []
+    if per_image_file.exists():
+        candidates.append(per_image_file)
+    for p in sorted(TEST_DATA_DIR.glob("*_line_annotations.yaml")):
+        if p not in candidates:
+            candidates.append(p)
+
+    for yaml_path in candidates:
+        try:
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f)
+        except (yaml.YAMLError, OSError):
+            continue
+
+        if not data or not isinstance(data, dict):
+            continue
+
+        for tc in data.get("test_cases", []):
+            if tc.get("image") != image_filename:
+                continue
+
+            raw = tc.get("line_annotations", [])
+            annotations: list[dict] = []
+            for ann in raw:
+                if "points" in ann:
+                    points = ann["points"]
+                    if len(points) >= 2:
+                        annotations.append({
+                            "line_id": ann.get("line_id", ""),
+                            "start_pixel_x": float(points[0][0]),
+                            "start_pixel_y": float(points[0][1]),
+                            "end_pixel_x": float(points[-1][0]),
+                            "end_pixel_y": float(points[-1][1]),
+                            "points": points,
+                        })
+                elif all(
+                    k in ann
+                    for k in ("start_pixel_x", "start_pixel_y", "end_pixel_x", "end_pixel_y")
+                ):
+                    entry: dict[str, Any] = {
+                        "line_id": ann.get("line_id", ""),
+                        "start_pixel_x": float(ann["start_pixel_x"]),
+                        "start_pixel_y": float(ann["start_pixel_y"]),
+                        "end_pixel_x": float(ann["end_pixel_x"]),
+                        "end_pixel_y": float(ann["end_pixel_y"]),
+                    }
+                    annotations.append(entry)
+
+            return annotations
+
+    return []
+
+
 def extract_camera_status(filename: str) -> dict[str, Any]:
     """Extract pan/tilt/zoom from filename pattern.
 
@@ -221,9 +292,15 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
     request.session[SESSION_IMAGE_KEY] = filename
 
-    # Load annotations for the new image
+    # Load annotations for the new image (session first, then files)
     all_annotations = get_session_annotations(request)
     image_annotations = all_annotations.get(filename, [])
+
+    if not image_annotations:
+        image_annotations = load_existing_line_annotations(filename)
+        if image_annotations:
+            all_annotations[filename] = image_annotations
+            save_session_annotations(request, all_annotations)
 
     # Extract camera status from filename
     camera_status = extract_camera_status(filename)
@@ -286,13 +363,26 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_annotations(request: HttpRequest) -> JsonResponse:
-    """Get line annotations for current image."""
+    """Get line annotations for current image.
+
+    Returns session-stored annotations if available, otherwise falls back
+    to loading from exported ``*_line_annotations.yaml`` files.
+    """
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse([], safe=False)
 
     all_annotations = get_session_annotations(request)
     image_annotations = all_annotations.get(current_image, [])
+
+    # Fall back to file-based annotations when session is empty
+    if not image_annotations:
+        image_annotations = load_existing_line_annotations(current_image)
+        if image_annotations:
+            # Cache into session so subsequent edits persist
+            all_annotations[current_image] = image_annotations
+            save_session_annotations(request, all_annotations)
+
     return JsonResponse(image_annotations, safe=False)
 
 
@@ -344,6 +434,46 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
         "success": True,
         "annotation": annotation,
         "index": len(all_annotations[current_image]) - 1,
+    })
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def api_annotations_update(request: HttpRequest, index: int) -> JsonResponse:
+    """Update an existing line annotation by index."""
+    current_image = get_current_image(request)
+    if not current_image:
+        return JsonResponse({"error": "No image selected"}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    all_annotations = get_session_annotations(request)
+    image_annotations = all_annotations.get(current_image, [])
+
+    if index < 0 or index >= len(image_annotations):
+        return JsonResponse({"error": f"Invalid annotation index: {index}"}, status=404)
+
+    # Build updated annotation
+    updated: dict[str, Any] = {
+        "line_id": str(data.get("line_id", image_annotations[index].get("line_id", ""))),
+        "start_pixel_x": float(data["start_pixel_x"]),
+        "start_pixel_y": float(data["start_pixel_y"]),
+        "end_pixel_x": float(data["end_pixel_x"]),
+        "end_pixel_y": float(data["end_pixel_y"]),
+    }
+
+    if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
+        updated["points"] = [[float(p[0]), float(p[1])] for p in data["points"]]
+
+    image_annotations[index] = updated
+    save_session_annotations(request, all_annotations)
+
+    return JsonResponse({
+        "success": True,
+        "annotation": updated,
     })
 
 

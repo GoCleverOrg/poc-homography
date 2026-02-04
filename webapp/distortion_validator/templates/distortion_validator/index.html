@@ -1148,6 +1148,12 @@
                     hasUndistortion = true;
                     exportBtn.disabled = false;
 
+                    // Fit image to wrapper width
+                    const wrapperW = panel.wrapper.clientWidth;
+                    if (w > 0 && wrapperW > 0) {
+                        panel.zoom = wrapperW / w;
+                    }
+
                     setupCanvas();
                     setViewMode('overlay');
 
@@ -1239,11 +1245,30 @@
                 }
             });
 
-            // Mouse wheel zoom
+            // Pinch-to-zoom — on Mac trackpads, pinch sets ctrlKey=true.
+            // Two-finger scroll (pan) does not, so we let it scroll normally.
             panel.wrapper.addEventListener('wheel', (e) => {
+                if (!e.ctrlKey) return;
                 e.preventDefault();
+                const oldZoom = panel.zoom;
                 const delta = e.deltaY > 0 ? 0.9 : 1.1;
-                updateZoom(panel.zoom * delta);
+                const newZoom = Math.max(0.25, Math.min(5, oldZoom * delta));
+                if (newZoom === oldZoom) return;
+
+                // Mouse position relative to the wrapper (viewport)
+                const rect = panel.wrapper.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                // Image-space coordinate under the cursor before zoom
+                const imgX = (panel.wrapper.scrollLeft + mouseX) / oldZoom;
+                const imgY = (panel.wrapper.scrollTop + mouseY) / oldZoom;
+
+                updateZoom(newZoom);
+
+                // Adjust scroll so the same image point stays under the cursor
+                panel.wrapper.scrollLeft = imgX * newZoom - mouseX;
+                panel.wrapper.scrollTop = imgY * newZoom - mouseY;
             });
 
             // Middle mouse button or Shift+Left click to pan
@@ -1595,12 +1620,9 @@
         document.getElementById('zoom-out-btn').addEventListener('click', () => updateZoom(panel.zoom / 1.25));
         document.getElementById('zoom-fit-btn').addEventListener('click', () => {
             const natW = panel.imgOriginal.naturalWidth;
-            const natH = panel.imgOriginal.naturalHeight;
-            if (!natW || !natH) return updateZoom(1);
+            if (!natW) return updateZoom(1);
             const wrapperW = panel.wrapper.clientWidth;
-            const wrapperH = panel.wrapper.clientHeight;
-            const fitZoom = Math.min(wrapperW / natW, wrapperH / natH);
-            updateZoom(fitZoom);
+            updateZoom(wrapperW / natW);
         });
 
         // Intrinsics input handlers

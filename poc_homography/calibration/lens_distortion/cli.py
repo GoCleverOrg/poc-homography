@@ -4,10 +4,9 @@ Usage:
     # Detect lines in images
     python -m poc_homography.calibration.lens_distortion.cli detect --images /path/to/images/
 
-    # Run full calibration
+    # Run full calibration (fx/fy default to factory-derived 1670.8 px at zoom=1)
     python -m poc_homography.calibration.lens_distortion.cli calibrate \
-        --images /path/to/images/ \
-        --fx 1000 --fy 1000 --cx 960 --cy 540
+        --images /path/to/images/
 
     # Calibrate from survey session
     python -m poc_homography.calibration.lens_distortion.cli calibrate \
@@ -16,7 +15,6 @@ Usage:
     # Save calibration results
     python -m poc_homography.calibration.lens_distortion.cli calibrate \
         --images /path/to/images/ \
-        --fx 1000 --fy 1000 --cx 960 --cy 540 \
         --output calibration.yaml \
         --camera-id my_camera
 """
@@ -44,7 +42,16 @@ from poc_homography.calibration.lens_distortion.line_detection import (
     LineDetector,
 )
 from poc_homography.calibration.lens_distortion.models import CameraLine, PTZPosition
+from poc_homography.camera_config import (
+    DEFAULT_BASE_FOCAL_LENGTH_MM,
+    DEFAULT_SENSOR_WIDTH_MM,
+)
 from poc_homography.types import Degrees
+
+# Factory-derived focal length in pixels at zoom=1 for 1920x1080
+# f_px = base_focal_length_mm * (image_width / sensor_width_mm)
+_DEFAULT_FX = DEFAULT_BASE_FOCAL_LENGTH_MM * (1920 / DEFAULT_SENSOR_WIDTH_MM)
+_DEFAULT_FY = _DEFAULT_FX
 
 logging.basicConfig(
     level=logging.INFO,
@@ -388,8 +395,14 @@ def main() -> int:
     cal_parser = subparsers.add_parser("calibrate", help="Run full calibration")
     cal_parser.add_argument("--images", "-i", help="Image or directory path")
     cal_parser.add_argument("--survey-session", "-s", help="Survey session directory")
-    cal_parser.add_argument("--fx", type=float, default=1000.0, help="Focal length X")
-    cal_parser.add_argument("--fy", type=float, default=1000.0, help="Focal length Y")
+    cal_parser.add_argument(
+        "--fx", type=float, default=_DEFAULT_FX,
+        help=f"Focal length X in pixels (default: {_DEFAULT_FX:.1f} from factory specs)",
+    )
+    cal_parser.add_argument(
+        "--fy", type=float, default=_DEFAULT_FY,
+        help=f"Focal length Y in pixels (default: {_DEFAULT_FY:.1f} from factory specs)",
+    )
     cal_parser.add_argument("--cx", type=float, default=960.0, help="Principal point X")
     cal_parser.add_argument("--cy", type=float, default=540.0, help="Principal point Y")
     cal_parser.add_argument("--output", "-o", help="Output YAML calibration file")
