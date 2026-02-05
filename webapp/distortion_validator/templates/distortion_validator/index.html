@@ -549,6 +549,100 @@
             color: #e57373;
         }
 
+        /* Multi-zoom comparison mode */
+        .compare-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .compare-toggle input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .compare-toggle label {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .zoom-comparison-grid {
+            display: grid;
+            gap: 16px;
+            padding: 16px;
+            background: #0d0d0d;
+            min-height: 100%;
+        }
+
+        .zoom-comparison-grid.cols-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .zoom-comparison-grid.cols-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .zoom-comparison-cell {
+            background: #1a1a1a;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #37474f;
+        }
+
+        .zoom-comparison-cell.loading {
+            opacity: 0.6;
+        }
+
+        .zoom-comparison-cell-header {
+            background: #263238;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .zoom-comparison-cell-header .zoom-label {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .zoom-comparison-cell-header .rmse-label {
+            color: #b0bec5;
+        }
+
+        .zoom-comparison-cell-header .rmse-label.good {
+            color: #4caf50;
+        }
+
+        .zoom-comparison-cell-header .rmse-label.acceptable {
+            color: #ff9800;
+        }
+
+        .zoom-comparison-cell-header .rmse-label.poor {
+            color: #f44336;
+        }
+
+        .zoom-comparison-cell-image {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: contain;
+            background: #0d0d0d;
+            display: block;
+        }
+
+        .zoom-comparison-cell-loading {
+            width: 100%;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0d0d0d;
+            color: #546e7a;
+            font-size: 12px;
+        }
+
         /* Empty state */
         .empty-state {
             display: flex;
@@ -627,6 +721,10 @@
             </select>
         </div>
         <button id="apply-btn" class="btn btn-primary" disabled>Apply Undistortion</button>
+        <div class="compare-toggle">
+            <input type="checkbox" id="compare-mode-toggle">
+            <label for="compare-mode-toggle">Compare Zoom Levels</label>
+        </div>
     </div>
 
     <div class="main-content">
@@ -657,6 +755,8 @@
                         <canvas id="draw-canvas"></canvas>
                     </div>
                 </div>
+                <!-- Multi-zoom comparison grid -->
+                <div class="zoom-comparison-grid cols-3" id="zoom-comparison-grid" style="display: none;"></div>
             </div>
             <!-- Overlay slider -->
             <div class="overlay-slider-bar hidden" id="overlay-slider-bar">
@@ -1784,6 +1884,168 @@
                 tbody.appendChild(tr);
             });
         }
+
+        // =====================================================================
+        // Multi-Zoom Comparison Mode
+        // =====================================================================
+
+        const compareModeToggle = document.getElementById('compare-mode-toggle');
+        const zoomComparisonGrid = document.getElementById('zoom-comparison-grid');
+        let isCompareMode = false;
+        let comparisonImages = {};  // zoom_factor -> { dataUrl, entry }
+
+        // Toggle comparison mode
+        function toggleCompareMode() {
+            isCompareMode = compareModeToggle.checked;
+
+            if (isCompareMode) {
+                // Hide normal view, show comparison grid
+                panel.scroller.style.display = 'none';
+                panel.empty.style.display = 'none';
+                overlaySliderBar.classList.add('hidden');
+                zoomComparisonGrid.style.display = 'grid';
+
+                // Check if we have multiple zoom entries
+                if (!currentCalibration || !currentCalibration.entries || currentCalibration.entries.length < 2) {
+                    showStatus('Comparison mode requires a calibration file with multiple zoom levels', 'error');
+                    compareModeToggle.checked = false;
+                    isCompareMode = false;
+                    return;
+                }
+
+                // Check if image is selected
+                if (!imageSelect.value) {
+                    showStatus('Please select an image first', 'error');
+                    compareModeToggle.checked = false;
+                    isCompareMode = false;
+                    return;
+                }
+
+                loadComparisonImages();
+            } else {
+                // Hide comparison grid, show normal view
+                zoomComparisonGrid.style.display = 'none';
+                if (originalDataUrl) {
+                    panel.scroller.style.display = 'inline-block';
+                } else {
+                    panel.empty.style.display = 'block';
+                }
+            }
+        }
+
+        compareModeToggle.addEventListener('change', toggleCompareMode);
+
+        // Load undistorted images for all zoom levels
+        async function loadComparisonImages() {
+            if (!currentCalibration || !imageSelect.value) return;
+
+            const entries = currentCalibration.entries;
+            const imageName = imageSelect.value;
+
+            // Determine grid layout
+            const count = entries.length;
+            if (count <= 4) {
+                zoomComparisonGrid.className = 'zoom-comparison-grid cols-2';
+            } else {
+                zoomComparisonGrid.className = 'zoom-comparison-grid cols-3';
+            }
+
+            // Clear and build grid
+            zoomComparisonGrid.innerHTML = '';
+            comparisonImages = {};
+
+            for (const entry of entries) {
+                const cell = document.createElement('div');
+                cell.className = 'zoom-comparison-cell loading';
+                cell.id = `compare-cell-${entry.zoom_factor}`;
+
+                const rmseQuality = entry.validation_rmse < 2 ? 'good' :
+                                   entry.validation_rmse < 5 ? 'acceptable' : 'poor';
+
+                cell.innerHTML = `
+                    <div class="zoom-comparison-cell-header">
+                        <span class="zoom-label">${entry.zoom_factor}x</span>
+                        <span class="rmse-label ${rmseQuality}">
+                            RMSE: ${entry.validation_rmse?.toFixed(2) || 'N/A'} px
+                        </span>
+                    </div>
+                    <div class="zoom-comparison-cell-loading">Loading...</div>
+                `;
+                zoomComparisonGrid.appendChild(cell);
+
+                // Start loading undistorted image
+                loadComparisonImage(entry, imageName);
+            }
+        }
+
+        // Load single comparison image
+        async function loadComparisonImage(entry, imageName) {
+            const cellId = `compare-cell-${entry.zoom_factor}`;
+            const cell = document.getElementById(cellId);
+
+            try {
+                const coefficients = entry.coefficients;
+                const intrinsics = {
+                    fx: entry.fx || currentIntrinsics.fx,
+                    fy: entry.fy || currentIntrinsics.fy,
+                    cx: entry.cx || currentIntrinsics.cx,
+                    cy: entry.cy || currentIntrinsics.cy
+                };
+
+                const resp = await fetch('{% url "distortion_validator:api_undistort" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({
+                        image: imageName,
+                        coefficients: coefficients,
+                        intrinsics: intrinsics
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Get the undistorted image
+                const imgUrl = data.undistorted_url || data.url;
+                comparisonImages[entry.zoom_factor] = {
+                    dataUrl: imgUrl,
+                    entry: entry
+                };
+
+                // Update cell
+                cell.classList.remove('loading');
+                const loadingDiv = cell.querySelector('.zoom-comparison-cell-loading');
+                if (loadingDiv) {
+                    const img = document.createElement('img');
+                    img.className = 'zoom-comparison-cell-image';
+                    img.src = imgUrl;
+                    img.alt = `Undistorted at ${entry.zoom_factor}x`;
+                    loadingDiv.replaceWith(img);
+                }
+
+            } catch (e) {
+                cell.classList.remove('loading');
+                const loadingDiv = cell.querySelector('.zoom-comparison-cell-loading');
+                if (loadingDiv) {
+                    loadingDiv.textContent = `Error: ${e.message}`;
+                    loadingDiv.style.color = '#f44336';
+                }
+            }
+        }
+
+        // Update comparison when image changes
+        imageSelect.addEventListener('change', () => {
+            if (isCompareMode && imageSelect.value) {
+                loadComparisonImages();
+            }
+        });
+
+        // Update comparison when calibration file changes (already handled by loadCalibration)
+        // The existing calibrationSelect change handler calls loadCalibration which
+        // will reset the zoom entries. We need to handle that.
 
         // Initialize
         loadCalibrationFiles();

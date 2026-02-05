@@ -398,9 +398,316 @@
             font-size: 48px;
             margin-bottom: 16px;
         }
+
+        /* Multi-zoom styles */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background: #ccc;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #2196f3;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(24px);
+        }
+
+        .zoom-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .zoom-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .zoom-chip .remove-btn {
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            opacity: 0.7;
+        }
+
+        .zoom-chip .remove-btn:hover {
+            opacity: 1;
+        }
+
+        .zoom-chip.completed {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .zoom-chip.calibrating {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .zoom-chip.failed {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .preset-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-small {
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        /* Progress table for multi-zoom */
+        .zoom-progress-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        .zoom-progress-table th,
+        .zoom-progress-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .zoom-progress-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .zoom-progress-table tr:hover {
+            background: #fafafa;
+        }
+
+        .zoom-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .zoom-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .zoom-status-pending .zoom-status-dot { background: #9e9e9e; }
+        .zoom-status-calibrating .zoom-status-dot { background: #2196f3; animation: pulse 1s infinite; }
+        .zoom-status-success .zoom-status-dot { background: #4caf50; }
+        .zoom-status-failed .zoom-status-dot { background: #f44336; }
+        .zoom-status-skipped .zoom-status-dot { background: #ff9800; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .zoom-status-pending { color: #666; }
+        .zoom-status-calibrating { color: #1976d2; }
+        .zoom-status-success { color: #2e7d32; }
+        .zoom-status-failed { color: #c62828; }
+        .zoom-status-skipped { color: #e65100; }
+
+        .zoom-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .zoom-actions button {
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .zoom-actions button:hover {
+            background: #f5f5f5;
+        }
+
+        .zoom-actions button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Wizard phases */
+        .wizard-phase {
+            display: none;
+            padding: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .wizard-phase.active {
+            display: block;
+        }
+
+        .wizard-phase.current {
+            border-color: #2196f3;
+            background: #f8fbff;
+        }
+
+        .wizard-phase-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .wizard-phase-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .wizard-phase-badge {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .wizard-phase-badge.config { background: #e3f2fd; color: #1565c0; }
+        .wizard-phase-badge.calibrating { background: #fff3e0; color: #e65100; }
+        .wizard-phase-badge.review { background: #e8f5e9; color: #2e7d32; }
+
+        /* Session resume modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .modal-body {
+            margin-bottom: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        /* Overwrite confirmation */
+        .overwrite-warning {
+            background: #fff3e0;
+            border: 1px solid #ffb74d;
+            border-radius: 4px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+
+        .overwrite-warning strong {
+            color: #e65100;
+        }
     </style>
 </head>
 <body>
+    <!-- Session Resume Modal -->
+    <div class="modal-overlay" id="session-resume-modal">
+        <div class="modal-content">
+            <div class="modal-title">Resume Previous Session?</div>
+            <div class="modal-body">
+                <p>A previous calibration session was found:</p>
+                <div id="session-resume-info" style="background: #f5f5f5; padding: 12px; border-radius: 4px; margin: 12px 0; font-size: 13px;"></div>
+                <p>Would you like to resume this session or start fresh?</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="clearSavedSession()">Start Fresh</button>
+                <button class="btn btn-primary" onclick="resumeSavedSession()">Resume Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overwrite Confirmation Modal -->
+    <div class="modal-overlay" id="overwrite-confirm-modal">
+        <div class="modal-content">
+            <div class="modal-title">Overwrite Existing Entry?</div>
+            <div class="modal-body">
+                <div class="overwrite-warning">
+                    <strong>Warning:</strong> A calibration entry already exists for this zoom level.
+                </div>
+                <div id="overwrite-comparison" style="margin-top: 12px;"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="cancelOverwrite()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmOverwrite()">Overwrite</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <h1>Lens Distortion Calibration Tool</h1>
@@ -435,7 +742,7 @@
                             <label for="camera-id">Camera ID</label>
                             <input type="text" id="camera-id" value="my_camera" placeholder="Camera identifier">
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="single-zoom-group">
                             <label for="zoom">Zoom Factor</label>
                             <input type="number" id="zoom" value="1" step="0.1" min="0.1">
                         </div>
@@ -445,6 +752,70 @@
                             Compute from Camera Specs
                         </button>
                         <span id="intrinsics-info" style="font-size: 12px; color: #666;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-Zoom Configuration -->
+            <div class="card">
+                <div class="card-header">Multi-Zoom Calibration Mode</div>
+                <div class="card-body">
+                    <div class="toggle-container">
+                        <div id="multi-zoom-toggle" class="toggle-switch active" onclick="toggleMultiZoomMode()"></div>
+                        <label style="cursor: pointer; user-select: none;" onclick="toggleMultiZoomMode()">
+                            <strong>Multi-Zoom Mode</strong>
+                            <span style="color: #666; font-size: 12px;">(calibrate multiple zoom levels in one session)</span>
+                        </label>
+                    </div>
+
+                    <div id="multi-zoom-not-available-notice" class="status warning" style="display: none; margin-top: 8px;">
+                        Multi-zoom mode is not available for manual line input (no zoom metadata).
+                        Use JSON files, survey sessions, or annotated lines for multi-zoom calibration.
+                    </div>
+
+                    <div id="multi-zoom-config" class="multi-zoom-config">
+                        <div class="form-group">
+                            <label for="zoom-levels-input">Zoom Levels (comma-separated)</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="zoom-levels-input" value="1, 5, 10, 15, 20, 25"
+                                       placeholder="e.g., 1, 5, 10, 15, 20, 25"
+                                       style="flex: 1;">
+                                <button class="btn btn-secondary btn-small" onclick="parseAndAddZoomLevels()">Apply</button>
+                            </div>
+                        </div>
+
+                        <div class="preset-buttons">
+                            <button class="btn btn-secondary btn-small" onclick="setZoomPreset('standard')">
+                                1-25x Standard
+                            </button>
+                            <button class="btn btn-secondary btn-small" onclick="setZoomPreset('extended')">
+                                1-40x Extended
+                            </button>
+                            <button class="btn btn-secondary btn-small" onclick="setZoomPreset('fine')">
+                                Fine (2x steps)
+                            </button>
+                        </div>
+
+                        <div class="zoom-chips" id="zoom-level-chips"></div>
+
+                        <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+                            <input type="number" id="add-zoom-input" placeholder="Add zoom" step="0.1" min="0.1"
+                                   style="width: 100px; padding: 6px 10px; font-size: 13px;">
+                            <button class="btn btn-secondary btn-small" onclick="addSingleZoomLevel()">+ Add</button>
+                        </div>
+
+                        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;">
+                            <div class="form-group">
+                                <label for="load-calibration-select">Load Existing Calibration (append new zoom levels)</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <select id="load-calibration-select" style="flex: 1;">
+                                        <option value="">-- Create new calibration --</option>
+                                    </select>
+                                    <button class="btn btn-secondary btn-small" onclick="loadExistingCalibration()">Load</button>
+                                </div>
+                            </div>
+                            <div id="loaded-calibration-info" class="status info" style="display: none; margin-top: 8px;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -573,12 +944,60 @@
                     <div class="progress-bar" id="progress-bar" style="display: none;">
                         <div class="fill" style="width: 0%;"></div>
                     </div>
-                    <div class="actions">
+                    <div class="actions" id="single-zoom-actions">
                         <button id="calibrate-btn" class="btn btn-primary">
                             Run Calibration
                         </button>
                         <button id="validate-btn" class="btn btn-secondary" disabled>
                             Validate Results
+                        </button>
+                    </div>
+                    <div class="actions" id="multi-zoom-actions" style="display: none;">
+                        <button id="start-multi-calibration-btn" class="btn btn-primary">
+                            Start Multi-Zoom Calibration
+                        </button>
+                        <button id="pause-multi-calibration-btn" class="btn btn-secondary" style="display: none;">
+                            Pause
+                        </button>
+                        <button id="clear-session-btn" class="btn btn-secondary">
+                            Clear Session
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-Zoom Progress -->
+            <div class="card card-fullwidth" id="multi-zoom-progress-card" style="display: none;">
+                <div class="card-header">
+                    Multi-Zoom Calibration Progress
+                    <span id="multi-zoom-progress-summary" style="float: right; font-weight: normal; font-size: 12px;"></span>
+                </div>
+                <div class="card-body">
+                    <table class="zoom-progress-table" id="zoom-progress-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">Zoom</th>
+                                <th style="width: 120px;">Status</th>
+                                <th style="width: 100px;">RMSE (px)</th>
+                                <th style="width: 80px;">Lines</th>
+                                <th style="width: 100px;">Quality</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="zoom-progress-tbody"></tbody>
+                    </table>
+
+                    <div id="multi-zoom-summary" class="status success" style="display: none; margin-top: 16px;">
+                        <strong>All zoom levels calibrated!</strong>
+                        Click "Save All Calibrations" to save the complete multi-zoom calibration file.
+                    </div>
+
+                    <div class="actions" style="margin-top: 16px;">
+                        <button id="save-all-btn" class="btn btn-success" disabled>
+                            Save All Calibrations
+                        </button>
+                        <button id="add-zoom-entry-btn" class="btn btn-secondary">
+                            + Add Zoom Entry
                         </button>
                     </div>
                 </div>
@@ -728,15 +1147,57 @@
         let surveyPath = null;
         let loadedCalibrationFiles = [];  // Array of parsed JSON file contents
 
-        // Tab handling
+        // Tab handling with multi-zoom mode compatibility
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+
+                // Handle multi-zoom mode availability based on input method
+                const tabName = tab.dataset.tab;
+                handleMultiZoomModeAvailability(tabName);
             });
         });
+
+        // Check if multi-zoom mode should be enabled/disabled based on input method
+        function handleMultiZoomModeAvailability(tabName) {
+            const toggle = document.getElementById('multi-zoom-toggle');
+            const config = document.getElementById('multi-zoom-config');
+            const notice = document.getElementById('multi-zoom-not-available-notice');
+
+            if (tabName === 'manual') {
+                // Manual input has no zoom metadata - disable multi-zoom
+                if (multiZoomMode) {
+                    // Force disable
+                    multiZoomMode = false;
+                    updateMultiZoomUI();
+                }
+                toggle.style.opacity = '0.5';
+                toggle.style.pointerEvents = 'none';
+                config.style.display = 'none';
+
+                // Show notice if it exists
+                if (notice) {
+                    notice.style.display = 'block';
+                }
+            } else {
+                // Other input methods support multi-zoom
+                toggle.style.opacity = '1';
+                toggle.style.pointerEvents = 'auto';
+
+                // Restore multi-zoom config visibility based on mode
+                if (multiZoomMode) {
+                    config.style.display = 'block';
+                }
+
+                // Hide notice if it exists
+                if (notice) {
+                    notice.style.display = 'none';
+                }
+            }
+        }
 
         // Load survey sessions
         async function loadSurveySessions() {
@@ -1420,6 +1881,780 @@ p2: ${currentResults.coefficients.p2}`;
 
         runOpencvMultiBtn.addEventListener('click', runOpencvMultiCalibration);
 
+        // =====================================================================
+        // Multi-Zoom Calibration Mode
+        // =====================================================================
+
+        // Multi-zoom state
+        let multiZoomMode = true;
+        let zoomLevels = [1, 5, 10, 15, 20, 25];
+        let multiZoomResults = {};  // keyed by zoom factor: { success, coefficients, intrinsics, rmse, numLines, quality }
+        let currentZoomIndex = -1;
+        let isCalibrating = false;
+        let loadedCalibrationPath = null;
+        let loadedCalibrationEntries = {};  // entries loaded from existing file
+        let pendingOverwrite = null;
+
+        // DOM elements for multi-zoom
+        const multiZoomToggle = document.getElementById('multi-zoom-toggle');
+        const multiZoomConfig = document.getElementById('multi-zoom-config');
+        const singleZoomGroup = document.getElementById('single-zoom-group');
+        const singleZoomActions = document.getElementById('single-zoom-actions');
+        const multiZoomActions = document.getElementById('multi-zoom-actions');
+        const multiZoomProgressCard = document.getElementById('multi-zoom-progress-card');
+        const zoomProgressTbody = document.getElementById('zoom-progress-tbody');
+        const zoomLevelChips = document.getElementById('zoom-level-chips');
+        const zoomLevelsInput = document.getElementById('zoom-levels-input');
+        const loadCalibrationSelect = document.getElementById('load-calibration-select');
+        const loadedCalibrationInfo = document.getElementById('loaded-calibration-info');
+        const startMultiCalibrationBtn = document.getElementById('start-multi-calibration-btn');
+        const pauseMultiCalibrationBtn = document.getElementById('pause-multi-calibration-btn');
+        const clearSessionBtn = document.getElementById('clear-session-btn');
+        const saveAllBtn = document.getElementById('save-all-btn');
+        const addZoomEntryBtn = document.getElementById('add-zoom-entry-btn');
+
+        // Toggle multi-zoom mode
+        function toggleMultiZoomMode() {
+            multiZoomMode = !multiZoomMode;
+            updateMultiZoomUI();
+            saveSessionState();
+        }
+
+        function updateMultiZoomUI() {
+            multiZoomToggle.classList.toggle('active', multiZoomMode);
+            multiZoomConfig.style.display = multiZoomMode ? 'block' : 'none';
+            singleZoomGroup.style.display = multiZoomMode ? 'none' : 'block';
+            singleZoomActions.style.display = multiZoomMode ? 'none' : 'flex';
+            multiZoomActions.style.display = multiZoomMode ? 'flex' : 'none';
+            multiZoomProgressCard.style.display = multiZoomMode && zoomLevels.length > 0 ? 'block' : 'none';
+            renderZoomChips();
+            renderProgressTable();
+        }
+
+        // Parse zoom levels from input
+        function parseAndAddZoomLevels() {
+            const input = zoomLevelsInput.value;
+            const parsed = input.split(',')
+                .map(s => parseFloat(s.trim()))
+                .filter(n => !isNaN(n) && n > 0)
+                .sort((a, b) => a - b);
+
+            if (parsed.length === 0) {
+                showStatus('Please enter valid zoom levels (positive numbers)', 'error');
+                return;
+            }
+
+            // Merge with existing zoom levels, avoiding duplicates
+            const newLevels = [...new Set([...zoomLevels, ...parsed])].sort((a, b) => a - b);
+            zoomLevels = newLevels;
+            zoomLevelsInput.value = zoomLevels.join(', ');
+            renderZoomChips();
+            renderProgressTable();
+            saveSessionState();
+        }
+
+        // Set zoom preset
+        function setZoomPreset(preset) {
+            switch (preset) {
+                case 'standard':
+                    zoomLevels = [1, 5, 10, 15, 20, 25];
+                    break;
+                case 'extended':
+                    zoomLevels = [1, 5, 10, 15, 20, 25, 30, 35, 40];
+                    break;
+                case 'fine':
+                    zoomLevels = [1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26];
+                    break;
+            }
+            zoomLevelsInput.value = zoomLevels.join(', ');
+            renderZoomChips();
+            renderProgressTable();
+            saveSessionState();
+        }
+
+        // Add single zoom level
+        function addSingleZoomLevel() {
+            const input = document.getElementById('add-zoom-input');
+            const zoom = parseFloat(input.value);
+            if (isNaN(zoom) || zoom <= 0) {
+                showStatus('Please enter a valid positive zoom value', 'error');
+                return;
+            }
+
+            if (zoomLevels.includes(zoom)) {
+                showStatus(`Zoom level ${zoom}x already exists`, 'warning');
+                return;
+            }
+
+            zoomLevels.push(zoom);
+            zoomLevels.sort((a, b) => a - b);
+            zoomLevelsInput.value = zoomLevels.join(', ');
+            input.value = '';
+            renderZoomChips();
+            renderProgressTable();
+            saveSessionState();
+        }
+
+        // Remove zoom level
+        function removeZoomLevel(zoom) {
+            zoomLevels = zoomLevels.filter(z => z !== zoom);
+            delete multiZoomResults[zoom];
+            zoomLevelsInput.value = zoomLevels.join(', ');
+            renderZoomChips();
+            renderProgressTable();
+            saveSessionState();
+        }
+
+        // Render zoom level chips
+        function renderZoomChips() {
+            zoomLevelChips.innerHTML = '';
+            zoomLevels.forEach(zoom => {
+                const chip = document.createElement('span');
+                chip.className = 'zoom-chip';
+
+                // Add status class
+                const result = multiZoomResults[zoom] || loadedCalibrationEntries[zoom];
+                if (result) {
+                    chip.classList.add(result.success ? 'completed' : 'failed');
+                }
+                if (currentZoomIndex >= 0 && zoomLevels[currentZoomIndex] === zoom && isCalibrating) {
+                    chip.classList.add('calibrating');
+                }
+
+                chip.innerHTML = `
+                    ${zoom}x
+                    <span class="remove-btn" onclick="removeZoomLevel(${zoom})">&times;</span>
+                `;
+                zoomLevelChips.appendChild(chip);
+            });
+        }
+
+        // Render progress table
+        function renderProgressTable() {
+            zoomProgressTbody.innerHTML = '';
+
+            zoomLevels.forEach((zoom, index) => {
+                const result = multiZoomResults[zoom];
+                const loaded = loadedCalibrationEntries[zoom];
+                const isCurrentZoom = currentZoomIndex === index && isCalibrating;
+
+                let status = 'pending';
+                let statusText = 'Pending';
+                let rmse = '-';
+                let numLines = '-';
+                let quality = '-';
+
+                if (result) {
+                    status = result.success ? 'success' : 'failed';
+                    statusText = result.success ? 'Success' : 'Failed';
+                    rmse = result.rmse ? result.rmse.toFixed(3) : '-';
+                    numLines = result.numLines || '-';
+                    quality = result.quality || '-';
+                } else if (loaded) {
+                    status = 'success';
+                    statusText = 'Loaded';
+                    rmse = loaded.validation_rmse ? loaded.validation_rmse.toFixed(3) : '-';
+                    numLines = loaded.num_lines_used || '-';
+                    quality = loaded.validation_rmse < 2 ? 'good' : loaded.validation_rmse < 5 ? 'acceptable' : 'poor';
+                }
+
+                if (isCurrentZoom) {
+                    status = 'calibrating';
+                    statusText = 'Calibrating...';
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${zoom}x</strong></td>
+                    <td>
+                        <span class="zoom-status zoom-status-${status}">
+                            <span class="zoom-status-dot"></span>
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td style="font-family: Monaco, monospace;">${rmse}</td>
+                    <td>${numLines}</td>
+                    <td><span class="quality-badge quality-${quality}">${quality}</span></td>
+                    <td class="zoom-actions">
+                        <button onclick="runSingleZoomCalibration(${zoom})" ${isCalibrating ? 'disabled' : ''}>
+                            ${result || loaded ? 'Re-run' : 'Calibrate'}
+                        </button>
+                        <button onclick="skipZoomLevel(${zoom})" ${isCalibrating || result || loaded ? 'disabled' : ''}>
+                            Skip
+                        </button>
+                    </td>
+                `;
+                zoomProgressTbody.appendChild(tr);
+            });
+
+            // Update summary
+            const completedCount = zoomLevels.filter(z =>
+                (multiZoomResults[z] && multiZoomResults[z].success) ||
+                loadedCalibrationEntries[z]
+            ).length;
+            const totalCount = zoomLevels.length;
+            document.getElementById('multi-zoom-progress-summary').textContent =
+                `${completedCount} / ${totalCount} completed`;
+
+            // Show/hide summary and enable save button
+            const allComplete = completedCount === totalCount && totalCount > 0;
+            document.getElementById('multi-zoom-summary').style.display = allComplete ? 'block' : 'none';
+            saveAllBtn.disabled = completedCount === 0;
+        }
+
+        // Start multi-zoom calibration
+        async function startMultiZoomCalibration() {
+            if (zoomLevels.length === 0) {
+                showStatus('Please configure zoom levels first', 'error');
+                return;
+            }
+
+            isCalibrating = true;
+            startMultiCalibrationBtn.disabled = true;
+            pauseMultiCalibrationBtn.style.display = 'inline-block';
+
+            // Find first uncalibrated zoom level
+            currentZoomIndex = zoomLevels.findIndex(z =>
+                !multiZoomResults[z] && !loadedCalibrationEntries[z]
+            );
+
+            if (currentZoomIndex === -1) {
+                showStatus('All zoom levels are already calibrated', 'success');
+                isCalibrating = false;
+                startMultiCalibrationBtn.disabled = false;
+                pauseMultiCalibrationBtn.style.display = 'none';
+                return;
+            }
+
+            await runMultiZoomSequence();
+        }
+
+        // Run multi-zoom calibration sequence
+        async function runMultiZoomSequence() {
+            while (currentZoomIndex < zoomLevels.length && isCalibrating) {
+                const zoom = zoomLevels[currentZoomIndex];
+
+                // Skip already calibrated or loaded
+                if (multiZoomResults[zoom] || loadedCalibrationEntries[zoom]) {
+                    currentZoomIndex++;
+                    continue;
+                }
+
+                renderProgressTable();
+                showStatus(`Calibrating zoom ${zoom}x (${currentZoomIndex + 1} of ${zoomLevels.length})...`, 'info');
+
+                try {
+                    await runSingleZoomCalibration(zoom, true);
+                } catch (e) {
+                    console.error(`Calibration failed for zoom ${zoom}x:`, e);
+                }
+
+                currentZoomIndex++;
+                saveSessionState();
+            }
+
+            isCalibrating = false;
+            currentZoomIndex = -1;
+            startMultiCalibrationBtn.disabled = false;
+            pauseMultiCalibrationBtn.style.display = 'none';
+            renderProgressTable();
+
+            const allComplete = zoomLevels.every(z =>
+                (multiZoomResults[z] && multiZoomResults[z].success) ||
+                loadedCalibrationEntries[z]
+            );
+
+            if (allComplete) {
+                showStatus('Multi-zoom calibration complete! Review results and save.', 'success');
+            } else {
+                showStatus('Multi-zoom calibration paused. Some zoom levels need attention.', 'warning');
+            }
+        }
+
+        // Run calibration for single zoom level
+        async function runSingleZoomCalibration(zoom, isSequential = false) {
+            if (!isSequential) {
+                renderProgressTable();
+            }
+
+            // Auto-compute intrinsics for this zoom level
+            try {
+                const intrinsicsResp = await fetch('{% url "lens_calibration:api_compute_intrinsics" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({
+                        zoom: zoom,
+                        image_width: Math.round((parseFloat(cxInput.value) || 960) * 2),
+                        image_height: Math.round((parseFloat(cyInput.value) || 540) * 2)
+                    })
+                });
+                const intrinsicsData = await intrinsicsResp.json();
+
+                if (!intrinsicsData.error) {
+                    // Use computed intrinsics for this zoom level
+                    const intrinsics = {
+                        fx: intrinsicsData.fx,
+                        fy: intrinsicsData.fy,
+                        cx: intrinsicsData.cx,
+                        cy: intrinsicsData.cy
+                    };
+
+                    // Run calibration based on active tab
+                    const activeTab = document.querySelector('.tab.active').dataset.tab;
+                    let requestBody;
+                    let endpoint;
+
+                    if (activeTab === 'calibration-files' && loadedCalibrationFiles.length > 0) {
+                        requestBody = {
+                            files: loadedCalibrationFiles,
+                            intrinsics: intrinsics,
+                            config: getConfig()
+                        };
+                        endpoint = '{% url "lens_calibration:api_calibrate_from_files" %}';
+                    } else if (activeTab === 'opencv-multi') {
+                        const allLineAnnotations = [];
+                        for (const row of opencvImageRows) {
+                            allLineAnnotations.push(...row.lineData);
+                        }
+                        if (allLineAnnotations.length === 0) {
+                            throw new Error('No line annotations loaded');
+                        }
+                        requestBody = {
+                            camera_line_annotations: allLineAnnotations,
+                            intrinsics: intrinsics,
+                            config: getConfig()
+                        };
+                        endpoint = '{% url "lens_calibration:api_calibrate_annotated_lines" %}';
+                    } else if (activeTab === 'survey' && surveyPath) {
+                        requestBody = {
+                            source: 'images',
+                            images_path: surveyPath,
+                            intrinsics: intrinsics,
+                            config: getConfig()
+                        };
+                        endpoint = '{% url "lens_calibration:api_calibrate" %}';
+                    } else {
+                        // Manual input
+                        let lines;
+                        try {
+                            lines = JSON.parse(linesInput.value || '[]');
+                        } catch (e) {
+                            throw new Error('Invalid JSON in lines input');
+                        }
+                        if (!Array.isArray(lines) || lines.length === 0) {
+                            throw new Error('Please provide at least one line');
+                        }
+                        requestBody = {
+                            source: 'lines',
+                            lines: lines,
+                            intrinsics: intrinsics,
+                            config: getConfig()
+                        };
+                        endpoint = '{% url "lens_calibration:api_calibrate" %}';
+                    }
+
+                    const resp = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    const data = await resp.json();
+
+                    if (data.error) {
+                        multiZoomResults[zoom] = {
+                            success: false,
+                            message: data.error
+                        };
+                    } else {
+                        multiZoomResults[zoom] = {
+                            success: data.success,
+                            coefficients: data.coefficients,
+                            intrinsics: intrinsics,
+                            rmse: data.overall_rmse,
+                            numLines: data.num_lines,
+                            quality: data.quality,
+                            iterations: data.iterations,
+                            improvement: data.improvement_percent
+                        };
+                    }
+                } else {
+                    multiZoomResults[zoom] = {
+                        success: false,
+                        message: `Failed to compute intrinsics: ${intrinsicsData.error}`
+                    };
+                }
+            } catch (e) {
+                multiZoomResults[zoom] = {
+                    success: false,
+                    message: e.message
+                };
+            }
+
+            renderProgressTable();
+            saveSessionState();
+        }
+
+        // Skip zoom level
+        function skipZoomLevel(zoom) {
+            multiZoomResults[zoom] = {
+                success: false,
+                skipped: true,
+                message: 'Skipped by user'
+            };
+            renderProgressTable();
+            saveSessionState();
+        }
+
+        // Pause multi-zoom calibration
+        function pauseMultiCalibration() {
+            isCalibrating = false;
+            showStatus('Multi-zoom calibration paused', 'warning');
+        }
+
+        // Clear session
+        function clearSession() {
+            multiZoomResults = {};
+            loadedCalibrationEntries = {};
+            loadedCalibrationPath = null;
+            currentZoomIndex = -1;
+            isCalibrating = false;
+            loadedCalibrationInfo.style.display = 'none';
+            loadCalibrationSelect.value = '';
+            clearSavedSessionStorage();
+            renderZoomChips();
+            renderProgressTable();
+            hideStatus();
+        }
+
+        // Load existing calibration file
+        async function loadExistingCalibration() {
+            const filename = loadCalibrationSelect.value;
+            if (!filename) {
+                loadedCalibrationPath = null;
+                loadedCalibrationEntries = {};
+                loadedCalibrationInfo.style.display = 'none';
+                renderProgressTable();
+                return;
+            }
+
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_load" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({ filename: filename })
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    showStatus(`Failed to load: ${data.error}`, 'error');
+                    return;
+                }
+
+                loadedCalibrationPath = filename;
+                loadedCalibrationEntries = {};
+
+                // Index entries by zoom factor
+                (data.entries || []).forEach(entry => {
+                    loadedCalibrationEntries[entry.zoom_factor] = entry;
+                });
+
+                // Update camera ID
+                if (data.camera_id) {
+                    cameraIdInput.value = data.camera_id;
+                }
+
+                // Add loaded zoom levels to the list (if not already present)
+                const loadedZooms = Object.keys(loadedCalibrationEntries).map(z => parseFloat(z));
+                const mergedZooms = [...new Set([...zoomLevels, ...loadedZooms])].sort((a, b) => a - b);
+                zoomLevels = mergedZooms;
+                zoomLevelsInput.value = zoomLevels.join(', ');
+
+                loadedCalibrationInfo.style.display = 'block';
+                loadedCalibrationInfo.innerHTML = `
+                    <strong>Loaded:</strong> ${filename}<br>
+                    <strong>Camera:</strong> ${data.camera_id}<br>
+                    <strong>Existing zoom levels:</strong> ${loadedZooms.map(z => z + 'x').join(', ')}
+                `;
+
+                showStatus(`Loaded calibration with ${loadedZooms.length} zoom level(s). Add new zoom levels to append.`, 'success');
+                renderZoomChips();
+                renderProgressTable();
+                saveSessionState();
+
+            } catch (e) {
+                showStatus(`Failed to load: ${e.message}`, 'error');
+            }
+        }
+
+        // Load available calibration files
+        async function loadCalibrationFilesList() {
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_calibration_files" %}');
+                const data = await resp.json();
+
+                loadCalibrationSelect.innerHTML = '<option value="">-- Create new calibration --</option>';
+                (data.files || []).forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file;
+                    option.textContent = file;
+                    loadCalibrationSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load calibration files list:', e);
+            }
+        }
+
+        // Session state persistence (localStorage)
+        const SESSION_STORAGE_KEY = 'lens_calibration_session';
+
+        function getSessionStorageKey() {
+            const cameraId = cameraIdInput.value || 'unknown';
+            return `${SESSION_STORAGE_KEY}_${cameraId}`;
+        }
+
+        function saveSessionState() {
+            try {
+                const state = {
+                    timestamp: Date.now(),
+                    cameraId: cameraIdInput.value,
+                    multiZoomMode: multiZoomMode,
+                    zoomLevels: zoomLevels,
+                    multiZoomResults: multiZoomResults,
+                    loadedCalibrationPath: loadedCalibrationPath,
+                    loadedCalibrationEntries: loadedCalibrationEntries
+                };
+                localStorage.setItem(getSessionStorageKey(), JSON.stringify(state));
+            } catch (e) {
+                console.error('Failed to save session state:', e);
+            }
+        }
+
+        function loadSavedSession() {
+            try {
+                const stored = localStorage.getItem(getSessionStorageKey());
+                if (!stored) return null;
+                return JSON.parse(stored);
+            } catch (e) {
+                console.error('Failed to load session state:', e);
+                return null;
+            }
+        }
+
+        function clearSavedSessionStorage() {
+            try {
+                localStorage.removeItem(getSessionStorageKey());
+            } catch (e) {
+                console.error('Failed to clear session storage:', e);
+            }
+        }
+
+        function checkForSavedSession() {
+            const saved = loadSavedSession();
+            if (!saved) return;
+
+            // Only prompt if there are actual results
+            const hasResults = Object.keys(saved.multiZoomResults || {}).length > 0 ||
+                              Object.keys(saved.loadedCalibrationEntries || {}).length > 0;
+
+            if (!hasResults) return;
+
+            // Show resume modal
+            const modal = document.getElementById('session-resume-modal');
+            const info = document.getElementById('session-resume-info');
+
+            const completedCount = Object.values(saved.multiZoomResults || {}).filter(r => r.success).length;
+            const loadedCount = Object.keys(saved.loadedCalibrationEntries || {}).length;
+            const date = new Date(saved.timestamp).toLocaleString();
+
+            info.innerHTML = `
+                <strong>Camera:</strong> ${saved.cameraId || 'Unknown'}<br>
+                <strong>Saved:</strong> ${date}<br>
+                <strong>Zoom levels:</strong> ${(saved.zoomLevels || []).map(z => z + 'x').join(', ')}<br>
+                <strong>Completed:</strong> ${completedCount} calibrated, ${loadedCount} loaded
+            `;
+
+            modal.classList.add('active');
+        }
+
+        function resumeSavedSession() {
+            const saved = loadSavedSession();
+            if (saved) {
+                multiZoomMode = saved.multiZoomMode !== false;
+                zoomLevels = saved.zoomLevels || [];
+                multiZoomResults = saved.multiZoomResults || {};
+                loadedCalibrationPath = saved.loadedCalibrationPath;
+                loadedCalibrationEntries = saved.loadedCalibrationEntries || {};
+                zoomLevelsInput.value = zoomLevels.join(', ');
+
+                if (loadedCalibrationPath) {
+                    loadCalibrationSelect.value = loadedCalibrationPath;
+                    loadedCalibrationInfo.style.display = 'block';
+                    const loadedZooms = Object.keys(loadedCalibrationEntries);
+                    loadedCalibrationInfo.innerHTML = `
+                        <strong>Loaded:</strong> ${loadedCalibrationPath}<br>
+                        <strong>Existing zoom levels:</strong> ${loadedZooms.map(z => z + 'x').join(', ')}
+                    `;
+                }
+
+                updateMultiZoomUI();
+            }
+
+            document.getElementById('session-resume-modal').classList.remove('active');
+        }
+
+        function clearSavedSession() {
+            clearSavedSessionStorage();
+            document.getElementById('session-resume-modal').classList.remove('active');
+        }
+
+        // Overwrite confirmation
+        function showOverwriteConfirmation(zoom, existingEntry, newResult) {
+            pendingOverwrite = { zoom, existingEntry, newResult };
+
+            const comparison = document.getElementById('overwrite-comparison');
+            comparison.innerHTML = `
+                <table style="width: 100%; font-size: 13px;">
+                    <tr>
+                        <th></th>
+                        <th>Existing</th>
+                        <th>New</th>
+                    </tr>
+                    <tr>
+                        <td><strong>RMSE</strong></td>
+                        <td>${existingEntry.validation_rmse ? existingEntry.validation_rmse.toFixed(3) : '-'} px</td>
+                        <td>${newResult.rmse ? newResult.rmse.toFixed(3) : '-'} px</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Lines</strong></td>
+                        <td>${existingEntry.num_lines_used || '-'}</td>
+                        <td>${newResult.numLines || '-'}</td>
+                    </tr>
+                </table>
+            `;
+
+            document.getElementById('overwrite-confirm-modal').classList.add('active');
+        }
+
+        function confirmOverwrite() {
+            if (pendingOverwrite) {
+                // Remove from loaded entries, keep in results
+                delete loadedCalibrationEntries[pendingOverwrite.zoom];
+                renderProgressTable();
+                saveSessionState();
+            }
+            pendingOverwrite = null;
+            document.getElementById('overwrite-confirm-modal').classList.remove('active');
+        }
+
+        function cancelOverwrite() {
+            if (pendingOverwrite) {
+                // Revert: remove from results, keep loaded
+                delete multiZoomResults[pendingOverwrite.zoom];
+                renderProgressTable();
+            }
+            pendingOverwrite = null;
+            document.getElementById('overwrite-confirm-modal').classList.remove('active');
+        }
+
+        // Save all calibrations (multi-zoom)
+        async function saveAllCalibrations() {
+            // Collect all successful results
+            const zoomEntries = [];
+
+            for (const zoom of zoomLevels) {
+                const result = multiZoomResults[zoom];
+                const loaded = loadedCalibrationEntries[zoom];
+
+                if (result && result.success) {
+                    zoomEntries.push({
+                        zoom: zoom,
+                        coefficients: result.coefficients,
+                        intrinsics: result.intrinsics,
+                        validation_rmse: result.rmse,
+                        num_lines: result.numLines
+                    });
+                } else if (loaded) {
+                    // Include loaded entries too
+                    zoomEntries.push({
+                        zoom: parseFloat(loaded.zoom_factor),
+                        coefficients: {
+                            k1: loaded.k1,
+                            k2: loaded.k2,
+                            k3: loaded.k3,
+                            p1: loaded.p1,
+                            p2: loaded.p2
+                        },
+                        intrinsics: {
+                            fx: loaded.fx,
+                            fy: loaded.fy,
+                            cx: loaded.cx,
+                            cy: loaded.cy
+                        },
+                        validation_rmse: loaded.validation_rmse,
+                        num_lines: loaded.num_lines_used
+                    });
+                }
+            }
+
+            if (zoomEntries.length === 0) {
+                showStatus('No successful calibrations to save', 'error');
+                return;
+            }
+
+            saveAllBtn.disabled = true;
+            showStatus('Saving multi-zoom calibration...', 'info');
+
+            try {
+                const cameraId = cameraIdInput.value || 'unknown_camera';
+                const filename = loadedCalibrationPath || `${cameraId}_calibration.yaml`;
+
+                const resp = await fetch('{% url "lens_calibration:api_save" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({
+                        camera_id: cameraId,
+                        filename: filename,
+                        zoom_entries: zoomEntries,
+                        merge_existing: !!loadedCalibrationPath
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                showStatus(
+                    `Saved ${data.zoom_levels_saved.length} zoom level(s) to ${data.filename}. ` +
+                    `Total entries in file: ${data.total_entries}`,
+                    'success'
+                );
+
+                // Reload calibration files list
+                loadCalibrationFilesList();
+
+                // Clear session after successful save
+                clearSavedSessionStorage();
+
+            } catch (e) {
+                showStatus(`Save failed: ${e.message}`, 'error');
+            }
+
+            saveAllBtn.disabled = false;
+        }
+
+        // Event listeners for multi-zoom
+        startMultiCalibrationBtn.addEventListener('click', startMultiZoomCalibration);
+        pauseMultiCalibrationBtn.addEventListener('click', pauseMultiCalibration);
+        clearSessionBtn.addEventListener('click', clearSession);
+        saveAllBtn.addEventListener('click', saveAllCalibrations);
+        addZoomEntryBtn.addEventListener('click', () => {
+            document.getElementById('add-zoom-input').focus();
+        });
+
         // Load test data files, then add one row by default
         loadTestDataFiles().then(() => {
             addOpencvImageRow();
@@ -1427,8 +2662,13 @@ p2: ${currentResults.coefficients.p2}`;
 
         // Initialize
         loadSurveySessions();
+        loadCalibrationFilesList();
         // Auto-compute intrinsics from camera specs on page load
         computeIntrinsics();
+        // Initialize multi-zoom UI
+        updateMultiZoomUI();
+        // Check for saved session after a short delay
+        setTimeout(checkForSavedSession, 500);
     </script>
 </body>
 </html>
