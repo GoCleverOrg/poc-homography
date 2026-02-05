@@ -480,6 +480,19 @@ test_cases:
 - name: valte_valte_cam01_20260126_095632_75.0_15.3_1.0
   image: valte_valte_cam01_20260126_095632_75.0_15.3_1.0.jpg
   annotations:
+  # First 4 points have diverse Y-spread (223-532) for stable homography computation
+  - pixel_x: 1848.0
+    pixel_y: 532.5
+    gcp_id: CW12
+  - pixel_x: 757.0
+    pixel_y: 223.0
+    gcp_id: PS30
+  - pixel_x: 1754.0
+    pixel_y: 486.0
+    gcp_id: CW13
+  - pixel_x: 153.0
+    pixel_y: 226.0
+    gcp_id: PS26
   - pixel_x: 231.0
     pixel_y: 331.0
     gcp_id: PS27
@@ -528,12 +541,6 @@ test_cases:
   - pixel_x: 1883.0
     pixel_y: 476.0
     gcp_id: CW14
-  - pixel_x: 1754.0
-    pixel_y: 486.0
-    gcp_id: CW13
-  - pixel_x: 1848.0
-    pixel_y: 532.5
-    gcp_id: CW12
   - pixel_x: 1819.0
     pixel_y: 268.0
     gcp_id: AR9
@@ -549,15 +556,9 @@ test_cases:
   - pixel_x: 903.0
     pixel_y: 225.0
     gcp_id: PS14
-  - pixel_x: 757.0
-    pixel_y: 223.0
-    gcp_id: PS30
   - pixel_x: 602.0
     pixel_y: 224.0
     gcp_id: PS12
-  - pixel_x: 153.0
-    pixel_y: 226.0
-    gcp_id: PS26
   - pixel_x: 2.0
     pixel_y: 228.0
     gcp_id: PS8
