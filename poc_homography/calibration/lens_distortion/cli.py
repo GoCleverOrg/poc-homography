@@ -396,11 +396,15 @@ def main() -> int:
     cal_parser.add_argument("--images", "-i", help="Image or directory path")
     cal_parser.add_argument("--survey-session", "-s", help="Survey session directory")
     cal_parser.add_argument(
-        "--fx", type=float, default=_DEFAULT_FX,
+        "--fx",
+        type=float,
+        default=_DEFAULT_FX,
         help=f"Focal length X in pixels (default: {_DEFAULT_FX:.1f} from factory specs)",
     )
     cal_parser.add_argument(
-        "--fy", type=float, default=_DEFAULT_FY,
+        "--fy",
+        type=float,
+        default=_DEFAULT_FY,
         help=f"Focal length Y in pixels (default: {_DEFAULT_FY:.1f} from factory specs)",
     )
     cal_parser.add_argument("--cx", type=float, default=960.0, help="Principal point X")
