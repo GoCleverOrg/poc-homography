@@ -204,6 +204,49 @@ def undistort_image(
     )
 
 
+def line_straightness_error(points: np.ndarray) -> float:
+    """Calculate sum of squared perpendicular distances to best-fit line.
+
+    Uses SVD to find the best-fit line through the points and computes the
+    sum of squared perpendicular distances from each point to that line.
+
+    This function is used by distortion solvers as the optimisation objective.
+
+    Args:
+        points: Nx2 array of (x, y) coordinates.
+
+    Returns:
+        Sum of squared perpendicular distances. Returns 0.0 for <3 points
+        (since 2 points define a perfect line). Returns 1e12 for degenerate
+        or non-finite inputs to penalise invalid configurations.
+    """
+    if len(points) < 3:
+        # 2 points always fit a perfect line (zero residual)
+        return 0.0
+
+    # Guard against non-finite values from degenerate undistortion
+    if not np.all(np.isfinite(points)):
+        return 1e12
+
+    # Fit line using SVD (total least squares)
+    centroid = np.mean(points, axis=0)
+    centered = points - centroid
+
+    try:
+        _, _, Vt = np.linalg.svd(centered)
+    except np.linalg.LinAlgError:
+        return 1e12
+
+    # Direction of the line is the first principal component
+    # Normal to the line
+    line_normal = np.array([-Vt[0, 1], Vt[0, 0]])
+
+    # Perpendicular distances
+    distances = np.abs(centered @ line_normal)
+
+    return float(np.sum(distances**2))
+
+
 def measure_line_straightness(pts: np.ndarray) -> dict:
     """Measure straightness of a set of 2-D points using total-least-squares.
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from poc_homography.calibration.lens_distortion.opencv_solver import (
+from poc_homography.calibration.lens_distortion.annotated_line_solver import (
     AnnotatedLineSolver,
     AnnotatedLineSolverConfig,
     CameraLineAnnotation,

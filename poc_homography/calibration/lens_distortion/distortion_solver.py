@@ -20,6 +20,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.optimize import minimize
 
+from poc_homography.calibration.lens_distortion.apply_calibration import (
+    line_straightness_error as _line_straightness_error_impl,
+    undistort_points as _undistort_points_impl,
+)
 from poc_homography.camera_parameters import DistortionCoefficients
 from poc_homography.types import Unitless
 
@@ -381,15 +385,12 @@ class DistortionSolver:
     ) -> np.ndarray:
         """Apply inverse distortion model to points.
 
-        Uses the Brown-Conrady distortion model:
-        x_distorted = x(1 + k1*r² + k2*r⁴ + k3*r⁶) + 2*p1*x*y + p2*(r² + 2*x²)
-        y_distorted = y(1 + k1*r² + k2*r⁴ + k3*r⁶) + p1*(r² + 2*y²) + 2*p2*x*y
-
-        This method computes the inverse (undistortion).
+        Uses the Brown-Conrady distortion model via the shared utility function.
 
         Args:
             points: Nx2 array of (u, v) pixel coordinates.
-            coeffs: Distortion coefficients.
+            coeffs: Distortion coefficients in OpenCV order [k1, k2, p1, p2, k3]
+                or radial-only [k1, k2, k3].
             cx, cy: Principal point coordinates.
             fx, fy: Focal lengths.
 
@@ -405,66 +406,12 @@ class DistortionSolver:
             k3 = coeffs[2]
             p1, p2 = 0.0, 0.0
 
-        # Convert to normalized coordinates
-        x = (points[:, 0] - cx) / fx
-        y = (points[:, 1] - cy) / fy
-
-        # Apply undistortion iteratively (Newton-Raphson approximation)
-        # Start with distorted coordinates as initial guess
-        x_u = x.copy()
-        y_u = y.copy()
-
-        # Newton-Raphson typically converges in 3-5 iterations for reasonable distortion
-        max_undistort_iterations = 10
-        # Minimum radial factor to prevent division by zero
-        min_radial_factor = 1e-6
-
-        convergence_tol = 1e-10
-        for _ in range(max_undistort_iterations):
-            r2 = x_u * x_u + y_u * y_u
-            r4 = r2 * r2
-            r6 = r4 * r2
-
-            # Radial distortion factor (clamped to prevent division by zero)
-            radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
-            radial = np.where(
-                np.abs(radial) < min_radial_factor,
-                np.where(radial >= 0, min_radial_factor, -min_radial_factor),
-                radial,
-            )
-
-            # Tangential distortion
-            dx_tangential = 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u)
-            dy_tangential = p1 * (r2 + 2 * y_u * y_u) + 2 * p2 * x_u * y_u
-
-            # Update estimate
-            x_u_new = (x - dx_tangential) / radial
-            y_u_new = (y - dy_tangential) / radial
-
-            # Early termination on convergence
-            delta = np.max(np.abs(x_u_new - x_u)) + np.max(np.abs(y_u_new - y_u))
-            x_u = x_u_new
-            y_u = y_u_new
-            if delta < convergence_tol:
-                break
-
-        # Guard against NaN/Inf from numerical instability
-        nan_mask = np.isfinite(x_u) & np.isfinite(y_u)
-        x_u = np.where(nan_mask, x_u, x)
-        y_u = np.where(nan_mask, y_u, y)
-
-        # Convert back to pixel coordinates
-        undistorted = np.column_stack(
-            [
-                x_u * fx + cx,
-                y_u * fy + cy,
-            ]
-        )
-
-        return undistorted
+        return _undistort_points_impl(points, k1, k2, k3, p1, p2, fx, fy, cx, cy)
 
     def _line_straightness_error(self, points: np.ndarray) -> float:
         """Calculate sum of squared perpendicular distances to best-fit line.
+
+        Uses the shared utility function for consistency.
 
         Args:
             points: Nx2 array of (x, y) coordinates.
@@ -472,28 +419,7 @@ class DistortionSolver:
         Returns:
             Sum of squared perpendicular distances from points to fitted line.
         """
-        if len(points) < 3:
-            # 2 points always fit a perfect line (zero residual), providing
-            # no constraint to the optimizer while diluting RMSE.
-            return 0.0
-
-        # Fit line using SVD (total least squares)
-        centroid = np.mean(points, axis=0)
-        centered = points - centroid
-
-        # SVD of centered points
-        _, _, Vt = np.linalg.svd(centered)
-
-        # Direction of the line is the first principal component
-        line_direction = Vt[0]
-
-        # Normal to the line
-        line_normal = np.array([-line_direction[1], line_direction[0]])
-
-        # Perpendicular distances
-        distances = np.abs(centered @ line_normal)
-
-        return float(np.sum(distances**2))
+        return _line_straightness_error_impl(points)
 
     def calculate_line_errors(
         self,

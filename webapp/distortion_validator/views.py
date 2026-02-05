@@ -293,13 +293,20 @@ def api_transform_points(request: HttpRequest) -> JsonResponse:
     Returns:
         JSON with transformed points array
     """
+    MAX_POINTS = 10000  # Prevent DoS via excessive input
+
     try:
         data = json.loads(request.body)
         points = data.get("points", [])
         direction = data.get("direction", "undistort")
 
-        if len(points) < 1:
+        if not points:
             return JsonResponse({"error": "Need at least 1 point"}, status=400)
+
+        if len(points) > MAX_POINTS:
+            return JsonResponse(
+                {"error": f"Too many points (max {MAX_POINTS})"}, status=400
+            )
 
         if direction not in ("distort", "undistort"):
             return JsonResponse(

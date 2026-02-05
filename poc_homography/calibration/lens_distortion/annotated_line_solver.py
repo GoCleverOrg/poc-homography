@@ -23,13 +23,16 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 from scipy.optimize import minimize
 
+from poc_homography.calibration.lens_distortion.apply_calibration import (
+    line_straightness_error,
+    undistort_points,
+)
 from poc_homography.calibration.lens_distortion.distortion_solver import (
-    SolverConfig,
     SolverResult,
 )
 from poc_homography.camera_parameters import DistortionCoefficients
@@ -78,14 +81,12 @@ class AnnotatedLineSolverConfig:
         max_iterations: Maximum L-BFGS-B iterations.
         tolerance: Convergence tolerance (ftol).
         use_radial_only: If True, only optimise k1, k2, k3 (p1=p2=0).
-        solver_config: Base solver config for compatibility.
     """
 
     train_split_ratio: float = 0.7
     max_iterations: int = 1000
     tolerance: float = 1e-10
     use_radial_only: bool = False
-    solver_config: SolverConfig = field(default_factory=SolverConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -370,10 +371,10 @@ class AnnotatedLineSolver:
 
         total = 0.0
         for pts in line_arrays:
-            undistorted = self._undistort_points_fast(
+            undistorted = undistort_points(
                 pts, k1, k2, k3, p1, p2, fx, fy, cx, cy,
             )
-            total += self._line_straightness_error(undistorted)
+            total += line_straightness_error(undistorted)
 
         return total
 
@@ -392,67 +393,6 @@ class AnnotatedLineSolver:
             message=message,
             line_errors=[],
         )
-
-    @staticmethod
-    def _undistort_points_fast(
-        points: np.ndarray,
-        k1: float, k2: float, k3: float,
-        p1: float, p2: float,
-        fx: float, fy: float, cx: float, cy: float,
-    ) -> np.ndarray:
-        """Undistort points using iterative Newton-Raphson."""
-        x = (points[:, 0] - cx) / fx
-        y = (points[:, 1] - cy) / fy
-
-        x_u = x.copy()
-        y_u = y.copy()
-
-        for _ in range(10):
-            r2 = x_u * x_u + y_u * y_u
-            r4 = r2 * r2
-            r6 = r4 * r2
-            radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
-            radial = np.where(np.abs(radial) < 1e-6, 1e-6, radial)
-
-            dx_t = 2 * p1 * x_u * y_u + p2 * (r2 + 2 * x_u * x_u)
-            dy_t = p1 * (r2 + 2 * y_u * y_u) + 2 * p2 * x_u * y_u
-
-            x_u_new = (x - dx_t) / radial
-            y_u_new = (y - dy_t) / radial
-
-            delta = np.max(np.abs(x_u_new - x_u)) + np.max(np.abs(y_u_new - y_u))
-            x_u = x_u_new
-            y_u = y_u_new
-            if delta < 1e-10:
-                break
-
-        nan_mask = np.isfinite(x_u) & np.isfinite(y_u)
-        x_u = np.where(nan_mask, x_u, x)
-        y_u = np.where(nan_mask, y_u, y)
-
-        return np.column_stack([x_u * fx + cx, y_u * fy + cy])
-
-    @staticmethod
-    def _line_straightness_error(points: np.ndarray) -> float:
-        """Sum of squared perpendicular distances to best-fit line."""
-        if len(points) < 3:
-            return 0.0
-
-        # Guard against non-finite values from degenerate undistortion
-        if not np.all(np.isfinite(points)):
-            return 1e12
-
-        centroid = np.mean(points, axis=0)
-        centered = points - centroid
-
-        try:
-            _, _, Vt = np.linalg.svd(centered)
-        except np.linalg.LinAlgError:
-            return 1e12
-
-        line_normal = np.array([-Vt[0, 1], Vt[0, 0]])
-        distances = np.abs(centered @ line_normal)
-        return float(np.sum(distances**2))
 
     def _compute_validation_rmse(
         self,
@@ -481,10 +421,10 @@ class AnnotatedLineSolver:
             if len(pts) < 3:
                 continue
 
-            undistorted = self._undistort_points_fast(
+            undistorted = undistort_points(
                 pts, k1, k2, k3, p1, p2, fx, fy, cx, cy,
             )
-            err = self._line_straightness_error(undistorted)
+            err = line_straightness_error(undistorted)
             rmse = float(np.sqrt(err / len(pts)))
             rmse_per_line.append(rmse)
             line_errors.append({

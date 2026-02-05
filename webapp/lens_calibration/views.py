@@ -25,7 +25,7 @@ from typing import Any
 import yaml
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.calibration_utils import (
     get_cached_calibration_table as _get_cached_calibration_table,
@@ -437,7 +437,6 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Calibration failed"}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
     """Run distortion calibration using manually annotated N-point line traces.
@@ -453,6 +452,8 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
             "config": {"train_split_ratio": 0.7}  // optional
         }
     """
+    MAX_LINE_ANNOTATIONS = 500  # Prevent DoS via excessive input
+
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -461,8 +462,20 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
     if "intrinsics" not in data:
         return JsonResponse({"error": "Missing intrinsics"}, status=400)
 
+    # Validate camera_line_annotations exists and is non-empty
+    annotations = data.get("camera_line_annotations")
+    if not annotations or not isinstance(annotations, list):
+        return JsonResponse(
+            {"error": "Missing or invalid camera_line_annotations"}, status=400
+        )
+
+    if len(annotations) > MAX_LINE_ANNOTATIONS:
+        return JsonResponse(
+            {"error": f"Too many line annotations (max {MAX_LINE_ANNOTATIONS})"}, status=400
+        )
+
     try:
-        from poc_homography.calibration.lens_distortion.opencv_solver import (
+        from poc_homography.calibration.lens_distortion.annotated_line_solver import (
             AnnotatedLineSolver,
             AnnotatedLineSolverConfig,
             build_camera_line_annotations,
@@ -470,9 +483,7 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
 
         intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(data)
 
-        lines = build_camera_line_annotations(
-            data.get("camera_line_annotations", []),
-        )
+        lines = build_camera_line_annotations(annotations)
 
         config_data = data.get("config", {})
         solver_config = AnnotatedLineSolverConfig(
