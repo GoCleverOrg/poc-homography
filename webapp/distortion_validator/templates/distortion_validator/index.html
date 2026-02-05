@@ -859,6 +859,11 @@
         let currentCoefficients = null;
         let currentIntrinsics = { fx: 1000, fy: 1000, cx: 960, cy: 540 };
         let comparisonLines = [];
+        // comparisonLines entries now have:
+        //   - points: original drawing points (in the space where drawn)
+        //   - drawnInMode: 'original' or 'undistorted' - which view mode they were drawn in
+        //   - distortedPoints: points in distorted (original image) coordinate space
+        //   - undistortedPoints: points in undistorted coordinate space
         let currentLine = null;  // { points: [[x,y], ...] }
         let imageWidth = 0;
         let imageHeight = 0;
@@ -1308,16 +1313,37 @@
                     showStatus('Measuring line straightness...', 'info');
 
                     try {
-                        // Points are always drawn on the unified canvas at original image coordinates.
-                        // - originalRmse = measure raw points
-                        // - undistortedRmse = undistort points first, then measure
+                        // Determine which mode the line was drawn in
+                        const drawnInMode = (viewMode === 'undistorted') ? 'undistorted' : 'original';
+
+                        // Compute both coordinate representations
+                        let distortedPoints, undistortedPoints;
+
+                        if (drawnInMode === 'original') {
+                            // Points were drawn on original (distorted) image
+                            distortedPoints = currentLine.points;
+                            // Transform to undistorted space for display in undistorted mode
+                            undistortedPoints = await transformPoints(currentLine.points, 'undistort');
+                        } else {
+                            // Points were drawn on undistorted image
+                            undistortedPoints = currentLine.points;
+                            // Transform to distorted space for display in original mode
+                            distortedPoints = await transformPoints(currentLine.points, 'distort');
+                        }
+
+                        // Measure straightness in both spaces
+                        // distortedPoints measured without undistortion = original RMSE
+                        // distortedPoints measured with undistortion = undistorted RMSE
                         const [originalResult, undistortedResult] = await Promise.all([
-                            measureStraightness(currentLine.points, false),
-                            measureStraightness(currentLine.points, true)
+                            measureStraightness(distortedPoints, false),
+                            measureStraightness(distortedPoints, true)
                         ]);
 
                         comparisonLines.push({
-                            points: currentLine.points,
+                            points: currentLine.points,  // Original drawing points
+                            drawnInMode,
+                            distortedPoints,
+                            undistortedPoints,
                             originalRmse: originalResult.rmse_pixels,
                             originalQuality: originalResult.quality,
                             undistortedRmse: undistortedResult.rmse_pixels,
@@ -1327,7 +1353,7 @@
                         updateLinesList();
 
                         const improvement = ((originalResult.rmse_pixels - undistortedResult.rmse_pixels) / originalResult.rmse_pixels * 100).toFixed(1);
-                        showStatus(`Line added! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
+                        showStatus(`Line added (drawn in ${drawnInMode} mode)! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
 
                     } catch (err) {
                         showStatus(`Error: ${err.message}`, 'error');
@@ -1391,33 +1417,56 @@
             return await resp.json();
         }
 
+        // Transform points between distorted and undistorted spaces
+        async function transformPoints(points, direction) {
+            const resp = await fetch('{% url "distortion_validator:api_transform_points" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({
+                    points,
+                    direction,  // 'distort' or 'undistort'
+                    coefficients: currentCoefficients,
+                    intrinsics: currentIntrinsics
+                })
+            });
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            return data.points;
+        }
+
         // Render lines on the single canvas
-        // - Original / Overlay: full n-point polyline showing all annotation points
-        // - Undistorted: straight line from first to last point only (visual reference
-        //   to check whether the feature is now straight after undistortion)
+        // Lines are now displayed in the appropriate coordinate space for the current view mode:
+        // - Original mode: use distortedPoints (lines appear in distorted image space)
+        // - Undistorted mode: use undistortedPoints (lines appear in undistorted image space)
+        // - Overlay mode: use distortedPoints (overlay blends images, distorted coords match original)
         function renderLines() {
             const ctx = panel.canvas.getContext('2d');
             ctx.clearRect(0, 0, panel.canvas.width, panel.canvas.height);
 
             const showOriginalRmse = (viewMode === 'original');
-            const straightOnly = (viewMode === 'undistorted');
+            const useUndistortedCoords = (viewMode === 'undistorted');
 
             comparisonLines.forEach((line, i) => {
                 const rmse = showOriginalRmse ? line.originalRmse : line.undistortedRmse;
                 const quality = showOriginalRmse ? line.originalQuality : line.undistortedQuality;
                 const color = getQualityColor(quality);
 
-                if (straightOnly && line.points.length >= 2) {
-                    // Undistorted view: draw only start→end straight reference line
-                    const startEnd = [line.points[0], line.points[line.points.length - 1]];
-                    drawLine(ctx, startEnd, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+                // Select appropriate coordinate space for current view
+                // Fallback to original points if transformed points not available (backward compat)
+                let displayPoints;
+                if (useUndistortedCoords && line.undistortedPoints) {
+                    displayPoints = line.undistortedPoints;
+                } else if (!useUndistortedCoords && line.distortedPoints) {
+                    displayPoints = line.distortedPoints;
                 } else {
-                    // Original / Overlay: full n-point polyline
-                    drawLine(ctx, line.points, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+                    displayPoints = line.points;  // Fallback for older lines without transforms
                 }
+
+                // Draw the full polyline in the appropriate coordinate space
+                drawLine(ctx, displayPoints, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
             });
 
-            // Draw current line being drawn (always show all points)
+            // Draw current line being drawn (always show all points in current view space)
             if (currentLine && currentLine.points.length > 0) {
                 drawLine(ctx, currentLine.points, '#ffffff', null, true);
             }
@@ -1504,7 +1553,9 @@
                 header.className = 'line-comparison-header';
                 const lineName = document.createElement('span');
                 lineName.className = 'line-name';
-                lineName.textContent = `Line ${i + 1} (${line.points.length} pts)`;
+                const modeTag = line.drawnInMode === 'undistorted' ? ' [U]' : ' [O]';
+                lineName.textContent = `Line ${i + 1} (${line.points.length} pts)${modeTag}`;
+                lineName.title = `Drawn in ${line.drawnInMode || 'original'} mode`;
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-btn';
                 deleteBtn.dataset.index = i;

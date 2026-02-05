@@ -19,6 +19,7 @@ Public API modules:
 """
 
 from poc_homography.calibration.lens_distortion.apply_calibration import (
+    distort_points,
     measure_line_straightness,
     undistort_image,
     undistort_points,
@@ -72,7 +73,8 @@ __all__ = [
     "CameraLineAnnotation",
     "build_camera_line_annotations",
     "split_lines",
-    # Undistortion & measurement utilities
+    # Distortion & measurement utilities
+    "distort_points",
     "undistort_points",
     "undistort_image",
     "measure_line_straightness",

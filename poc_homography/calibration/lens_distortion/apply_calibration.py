@@ -33,6 +33,56 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def distort_points(
+    points: np.ndarray,
+    k1: float,
+    k2: float,
+    k3: float,
+    p1: float,
+    p2: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+) -> np.ndarray:
+    """Apply forward distortion model to pixel points (Brown-Conrady).
+
+    Takes undistorted pixel coordinates and computes their distorted positions.
+    This is the direct forward model (no iteration needed).
+
+    Args:
+        points: Nx2 array of undistorted (u, v) pixel coordinates.
+        k1, k2, k3: Radial distortion coefficients.
+        p1, p2: Tangential distortion coefficients.
+        fx, fy: Focal lengths.
+        cx, cy: Principal point coordinates.
+
+    Returns:
+        Nx2 array of distorted (u, v) coordinates.
+    """
+    # Normalize to focal plane
+    x = (points[:, 0] - cx) / fx
+    y = (points[:, 1] - cy) / fy
+
+    r2 = x * x + y * y
+    r4 = r2 * r2
+    r6 = r4 * r2
+
+    # Forward radial distortion
+    radial = 1 + k1 * r2 + k2 * r4 + k3 * r6
+
+    # Tangential distortion
+    x_tangential = 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+    y_tangential = p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+
+    # Apply distortion
+    x_dist = x * radial + x_tangential
+    y_dist = y * radial + y_tangential
+
+    # Denormalize back to pixel coordinates
+    return np.column_stack([x_dist * fx + cx, y_dist * fy + cy])
+
+
 def undistort_points(
     points: np.ndarray,
     k1: float,

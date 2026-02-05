@@ -281,6 +281,69 @@ def api_serve_result_image(request: HttpRequest, filename: str) -> HttpResponse:
 
 
 @require_http_methods(["POST"])
+def api_transform_points(request: HttpRequest) -> JsonResponse:
+    """Transform points between distorted and undistorted coordinate spaces.
+
+    Args (JSON body):
+        points: List of [x, y] coordinates
+        direction: 'distort' or 'undistort'
+        coefficients: {k1, k2, k3, p1, p2}
+        intrinsics: {fx, fy, cx, cy}
+
+    Returns:
+        JSON with transformed points array
+    """
+    try:
+        data = json.loads(request.body)
+        points = data.get("points", [])
+        direction = data.get("direction", "undistort")
+
+        if len(points) < 1:
+            return JsonResponse({"error": "Need at least 1 point"}, status=400)
+
+        if direction not in ("distort", "undistort"):
+            return JsonResponse(
+                {"error": "direction must be 'distort' or 'undistort'"}, status=400
+            )
+
+        pts = np.array(points, dtype=np.float64)
+
+        coefficients = data.get("coefficients", {})
+        intrinsics = data.get("intrinsics", {})
+
+        k1 = coefficients.get("k1", 0.0)
+        k2 = coefficients.get("k2", 0.0)
+        k3 = coefficients.get("k3", 0.0)
+        p1 = coefficients.get("p1", 0.0)
+        p2 = coefficients.get("p2", 0.0)
+
+        fx = intrinsics.get("fx", 1000.0)
+        fy = intrinsics.get("fy", 1000.0)
+        cx = intrinsics.get("cx", 960.0)
+        cy = intrinsics.get("cy", 540.0)
+
+        if direction == "undistort":
+            from poc_homography.calibration.lens_distortion.apply_calibration import (
+                undistort_points,
+            )
+            transformed = undistort_points(pts, k1, k2, k3, p1, p2, fx, fy, cx, cy)
+        else:
+            from poc_homography.calibration.lens_distortion.apply_calibration import (
+                distort_points,
+            )
+            transformed = distort_points(pts, k1, k2, k3, p1, p2, fx, fy, cx, cy)
+
+        return JsonResponse({
+            "points": transformed.tolist(),
+            "direction": direction,
+        })
+
+    except Exception:
+        logger.exception("Failed to transform points")
+        return JsonResponse({"error": "Failed to transform points"}, status=500)
+
+
+@require_http_methods(["POST"])
 def api_measure_straightness(request: HttpRequest) -> JsonResponse:
     """Measure the straightness of a set of points."""
     try:
