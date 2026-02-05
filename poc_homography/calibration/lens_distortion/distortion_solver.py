@@ -22,6 +22,8 @@ from scipy.optimize import minimize
 
 from poc_homography.calibration.lens_distortion.apply_calibration import (
     line_straightness_error as _line_straightness_error_impl,
+)
+from poc_homography.calibration.lens_distortion.apply_calibration import (
     undistort_points as _undistort_points_impl,
 )
 from poc_homography.camera_parameters import DistortionCoefficients

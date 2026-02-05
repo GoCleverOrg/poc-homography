@@ -18,6 +18,13 @@ Public API modules:
     apply_calibration: Undistortion utilities and calibration file management
 """
 
+from poc_homography.calibration.lens_distortion.annotated_line_solver import (
+    AnnotatedLineSolver,
+    AnnotatedLineSolverConfig,
+    CameraLineAnnotation,
+    build_camera_line_annotations,
+    split_lines,
+)
 from poc_homography.calibration.lens_distortion.apply_calibration import (
     distort_points,
     line_straightness_error,
@@ -43,13 +50,6 @@ from poc_homography.calibration.lens_distortion.models import (
     CameraLine,
     GroundTruthLine,
     LineCorrespondence,
-)
-from poc_homography.calibration.lens_distortion.annotated_line_solver import (
-    AnnotatedLineSolver,
-    AnnotatedLineSolverConfig,
-    CameraLineAnnotation,
-    build_camera_line_annotations,
-    split_lines,
 )
 
 __all__ = [
