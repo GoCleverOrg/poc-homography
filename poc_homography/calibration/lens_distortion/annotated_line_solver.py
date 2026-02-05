@@ -124,7 +124,12 @@ def build_camera_line_annotations(
             start_y = ann.get("start_pixel_y")
             end_x = ann.get("end_pixel_x")
             end_y = ann.get("end_pixel_y")
-            if start_x is not None and end_x is not None:
+            if (
+                start_x is not None
+                and start_y is not None
+                and end_x is not None
+                and end_y is not None
+            ):
                 points = [
                     (float(start_x), float(start_y)),
                     (float(end_x), float(end_y)),
