@@ -194,7 +194,7 @@ class DistortionSolver:
         # interpolated between endpoints).  These carry no distortion signal
         # and dilute the RMSE, leading to weak calibration results.
         original_count = len(lines)
-        lines = [l for l in lines if l.has_edge_curvature()]
+        lines = [line for line in lines if line.has_edge_curvature()]
         filtered = original_count - len(lines)
         if filtered:
             logger.info(
