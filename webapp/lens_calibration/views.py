@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 # Page
 # ---------------------------------------------------------------------------
 
+
 @ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
@@ -57,6 +58,7 @@ def index(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
+
 
 @require_GET
 def api_survey_sessions(request: HttpRequest) -> JsonResponse:
@@ -93,9 +95,10 @@ def api_survey_sessions(request: HttpRequest) -> JsonResponse:
 
 
 from homography_web.calibration_utils import (
-    api_compute_intrinsics,  # noqa: F401 - re-exported for URL routing
+    api_compute_intrinsics,
     serialize_calibration_entry,
 )
+
 api_compute_intrinsics = api_compute_intrinsics  # make linter happy
 
 
@@ -121,9 +124,7 @@ def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
             zoom=zoom,
             image_width=int(intrinsics.get("image_width", 1920)),
             image_height=int(intrinsics.get("image_height", 1080)),
-            sensor_width_mm=float(
-                intrinsics.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM)
-            ),
+            sensor_width_mm=float(intrinsics.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM)),
             base_focal_length_mm=float(
                 intrinsics.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM)
             ),
@@ -140,11 +141,13 @@ def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
     cx = intrinsics.get("cx", 960.0)
     cy = intrinsics.get("cy", 540.0)
 
-    intrinsic_matrix = np.array([
-        [fx, 0.0, cx],
-        [0.0, fy, cy],
-        [0.0, 0.0, 1.0],
-    ])
+    intrinsic_matrix = np.array(
+        [
+            [fx, 0.0, cx],
+            [0.0, fy, cy],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
     return intrinsic_matrix, {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
 
@@ -293,7 +296,11 @@ def api_calibrate(request: HttpRequest) -> JsonResponse:
                 "p2": float(result.distortion.p2),
             },
             "intrinsics_used": intrinsics_used,
-            "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
+            "quality": "good"
+            if result.overall_rmse < 2.0
+            else "acceptable"
+            if result.overall_rmse < 5.0
+            else "poor",
             "line_errors": result.line_errors[:20],
         }
 
@@ -365,11 +372,17 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
                 zoom_factor=camera_status.get("zoom", 1.0),
             )
 
-            frame_info.append({
-                "image": image_name,
-                "ptz": {"pan": float(ptz.pan_deg), "tilt": float(ptz.tilt_deg), "zoom": ptz.zoom_factor},
-                "num_lines": len(calibration_lines),
-            })
+            frame_info.append(
+                {
+                    "image": image_name,
+                    "ptz": {
+                        "pan": float(ptz.pan_deg),
+                        "tilt": float(ptz.tilt_deg),
+                        "zoom": ptz.zoom_factor,
+                    },
+                    "num_lines": len(calibration_lines),
+                }
+            )
 
             for cal_line in calibration_lines:
                 points = cal_line.get("points", [])
@@ -417,7 +430,11 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
                 "p2": float(result.distortion.p2),
             },
             "intrinsics_used": intrinsics_used,
-            "quality": "good" if result.overall_rmse < 2.0 else "acceptable" if result.overall_rmse < 5.0 else "poor",
+            "quality": "good"
+            if result.overall_rmse < 2.0
+            else "acceptable"
+            if result.overall_rmse < 5.0
+            else "poor",
             "line_errors": result.line_errors[:20],
         }
 
@@ -465,9 +482,7 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
     # Validate camera_line_annotations exists and is non-empty
     annotations = data.get("camera_line_annotations")
     if not annotations or not isinstance(annotations, list):
-        return JsonResponse(
-            {"error": "Missing or invalid camera_line_annotations"}, status=400
-        )
+        return JsonResponse({"error": "Missing or invalid camera_line_annotations"}, status=400)
 
     if len(annotations) > MAX_LINE_ANNOTATIONS:
         return JsonResponse(
@@ -510,17 +525,17 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
             },
             "intrinsics_used": intrinsics_used,
             "quality": (
-                "good" if result.overall_rmse < 2.0
-                else "acceptable" if result.overall_rmse < 5.0
+                "good"
+                if result.overall_rmse < 2.0
+                else "acceptable"
+                if result.overall_rmse < 5.0
                 else "poor"
             ),
             "line_errors": result.line_errors[:20],
         }
 
         if result.success:
-            response_data["improvement_percent"] = (
-                (1 - result.improvement_ratio()) * 100
-            )
+            response_data["improvement_percent"] = (1 - result.improvement_ratio()) * 100
         else:
             response_data["improvement_percent"] = 0.0
 
@@ -532,12 +547,14 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
     except ImportError:
         logger.exception("Annotated line solver module not available")
         return JsonResponse(
-            {"error": "Annotated line solver module not available"}, status=500,
+            {"error": "Annotated line solver module not available"},
+            status=500,
         )
     except Exception:
         logger.exception("Annotated line calibration failed")
         return JsonResponse(
-            {"error": "Annotated line calibration failed"}, status=500,
+            {"error": "Annotated line calibration failed"},
+            status=500,
         )
 
 
@@ -609,7 +626,9 @@ def api_validate(request: HttpRequest) -> JsonResponse:
         )
         corrected_rmse = straightness_rmse(camera_lines, intrinsic_matrix, distortion=distortion)
 
-        improvement = (baseline_rmse - corrected_rmse) / baseline_rmse * 100 if baseline_rmse > 0 else 0
+        improvement = (
+            (baseline_rmse - corrected_rmse) / baseline_rmse * 100 if baseline_rmse > 0 else 0
+        )
 
         return JsonResponse(
             {
@@ -630,7 +649,30 @@ def api_validate(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 def api_save(request: HttpRequest) -> JsonResponse:
-    """Save calibration results to YAML file."""
+    """Save calibration results to YAML file.
+
+    Supports two modes:
+    1. Single-zoom mode (backward compatible): single zoom, coefficients, intrinsics
+    2. Multi-zoom mode: zoom_entries array with multiple calibrations
+
+    Multi-zoom request format::
+
+        {
+            "camera_id": "my_camera",
+            "filename": "my_camera_calibration.yaml",
+            "zoom_entries": [
+                {
+                    "zoom": 1.0,
+                    "coefficients": {"k1": ..., "k2": ..., ...},
+                    "intrinsics": {"fx": ..., "fy": ..., "cx": ..., "cy": ...},
+                    "validation_rmse": 1.23,
+                    "num_lines": 45
+                },
+                ...
+            ],
+            "merge_existing": true  // optional: merge with existing file
+        }
+    """
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -645,10 +687,6 @@ def api_save(request: HttpRequest) -> JsonResponse:
         from poc_homography.types import Unitless
 
         camera_id = data.get("camera_id", "unknown_camera")
-        zoom = data.get("zoom", 1.0)
-        coeffs = data.get("coefficients", {})
-        validation_rmse = data.get("validation_rmse", 0.0)
-        intrinsics = data.get("intrinsics", {})
 
         # Validate output filename
         filename = data.get("filename", f"{camera_id}_calibration.yaml")
@@ -656,37 +694,101 @@ def api_save(request: HttpRequest) -> JsonResponse:
         if resolved is None:
             return JsonResponse({"error": "Invalid filename"}, status=400)
 
-        distortion = DistortionCoefficients(
-            k1=Unitless(coeffs.get("k1", 0.0)),
-            k2=Unitless(coeffs.get("k2", 0.0)),
-            k3=Unitless(coeffs.get("k3", 0.0)),
-            p1=Unitless(coeffs.get("p1", 0.0)),
-            p2=Unitless(coeffs.get("p2", 0.0)),
-        )
-
-        table = CameraCalibrationTable(camera_id=camera_id)
-        entry = ZoomCalibrationEntry.from_solver_result(
-            zoom_factor=zoom,
-            distortion=distortion,
-            validation_rmse=validation_rmse,
-            source_images=[],
-            num_lines_used=data.get("num_lines", 0),
-            fx=float(intrinsics.get("fx", 0.0)),
-            fy=float(intrinsics.get("fy", 0.0)),
-            cx=float(intrinsics.get("cx", 0.0)),
-            cy=float(intrinsics.get("cy", 0.0)),
-        )
-        table.add_entry(entry)
-
         CALIBRATION_DIR.mkdir(parents=True, exist_ok=True)
-        table.save(resolved)
 
-        return JsonResponse(
-            {
-                "success": True,
-                "filename": filename,
-            }
-        )
+        # Check if we should merge with existing file
+        merge_existing = data.get("merge_existing", False)
+        if merge_existing and resolved.exists():
+            table = _get_cached_calibration_table(resolved)
+            # Update camera_id if provided
+            if camera_id != "unknown_camera":
+                table = CameraCalibrationTable(
+                    camera_id=camera_id,
+                    entries=table.entries,
+                    created_date=table.created_date,
+                )
+        else:
+            table = CameraCalibrationTable(camera_id=camera_id)
+
+        # Check for multi-zoom mode
+        zoom_entries = data.get("zoom_entries")
+        if zoom_entries and isinstance(zoom_entries, list):
+            # Multi-zoom mode: process array of entries
+            saved_zooms = []
+            for entry_data in zoom_entries:
+                zoom = entry_data.get("zoom", 1.0)
+                coeffs = entry_data.get("coefficients", {})
+                intrinsics = entry_data.get("intrinsics", {})
+                validation_rmse = entry_data.get("validation_rmse", 0.0)
+                num_lines = entry_data.get("num_lines", 0)
+
+                distortion = DistortionCoefficients(
+                    k1=Unitless(coeffs.get("k1", 0.0)),
+                    k2=Unitless(coeffs.get("k2", 0.0)),
+                    k3=Unitless(coeffs.get("k3", 0.0)),
+                    p1=Unitless(coeffs.get("p1", 0.0)),
+                    p2=Unitless(coeffs.get("p2", 0.0)),
+                )
+
+                entry = ZoomCalibrationEntry.from_solver_result(
+                    zoom_factor=zoom,
+                    distortion=distortion,
+                    validation_rmse=validation_rmse,
+                    source_images=[],
+                    num_lines_used=num_lines,
+                    fx=float(intrinsics.get("fx", 0.0)),
+                    fy=float(intrinsics.get("fy", 0.0)),
+                    cx=float(intrinsics.get("cx", 0.0)),
+                    cy=float(intrinsics.get("cy", 0.0)),
+                )
+                table.add_entry(entry)
+                saved_zooms.append(zoom)
+
+            table.save(resolved)
+
+            return JsonResponse(
+                {
+                    "success": True,
+                    "filename": filename,
+                    "zoom_levels_saved": saved_zooms,
+                    "total_entries": len(table.entries),
+                }
+            )
+        else:
+            # Single-zoom mode (backward compatible)
+            zoom = data.get("zoom", 1.0)
+            coeffs = data.get("coefficients", {})
+            validation_rmse = data.get("validation_rmse", 0.0)
+            intrinsics = data.get("intrinsics", {})
+
+            distortion = DistortionCoefficients(
+                k1=Unitless(coeffs.get("k1", 0.0)),
+                k2=Unitless(coeffs.get("k2", 0.0)),
+                k3=Unitless(coeffs.get("k3", 0.0)),
+                p1=Unitless(coeffs.get("p1", 0.0)),
+                p2=Unitless(coeffs.get("p2", 0.0)),
+            )
+
+            entry = ZoomCalibrationEntry.from_solver_result(
+                zoom_factor=zoom,
+                distortion=distortion,
+                validation_rmse=validation_rmse,
+                source_images=[],
+                num_lines_used=data.get("num_lines", 0),
+                fx=float(intrinsics.get("fx", 0.0)),
+                fy=float(intrinsics.get("fy", 0.0)),
+                cx=float(intrinsics.get("cx", 0.0)),
+                cy=float(intrinsics.get("cy", 0.0)),
+            )
+            table.add_entry(entry)
+            table.save(resolved)
+
+            return JsonResponse(
+                {
+                    "success": True,
+                    "filename": filename,
+                }
+            )
 
     except ImportError:
         logger.exception("Calibration module not available")
@@ -694,6 +796,20 @@ def api_save(request: HttpRequest) -> JsonResponse:
     except Exception:
         logger.exception("Save failed")
         return JsonResponse({"error": "Save failed"}, status=500)
+
+
+@require_GET
+def api_calibration_files(request: HttpRequest) -> JsonResponse:
+    """List available calibration YAML files."""
+    try:
+        if not CALIBRATION_DIR.exists():
+            return JsonResponse({"files": []})
+
+        files = sorted(f.name for f in CALIBRATION_DIR.glob("*.yaml"))
+        return JsonResponse({"files": files})
+    except Exception:
+        logger.exception("Failed to list calibration files")
+        return JsonResponse({"error": "Failed to list calibration files"}, status=500)
 
 
 @require_http_methods(["POST"])
@@ -713,15 +829,14 @@ def api_load(request: HttpRequest) -> JsonResponse:
 
         table = _get_cached_calibration_table(resolved)
 
-        entries = [
-            serialize_calibration_entry(entry)
-            for entry in table.entries.values()
-        ]
+        entries = [serialize_calibration_entry(entry) for entry in table.entries.values()]
 
-        return JsonResponse({
-            "camera_id": table.camera_id,
-            "entries": entries,
-        })
+        return JsonResponse(
+            {
+                "camera_id": table.camera_id,
+                "entries": entries,
+            }
+        )
 
     except ImportError:
         logger.exception("Calibration module not available")
@@ -734,6 +849,7 @@ def api_load(request: HttpRequest) -> JsonResponse:
 # ---------------------------------------------------------------------------
 # Test data files API
 # ---------------------------------------------------------------------------
+
 
 @require_GET
 def api_test_data_files(request: HttpRequest) -> JsonResponse:
