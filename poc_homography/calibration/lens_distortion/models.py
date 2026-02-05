@@ -91,6 +91,36 @@ class CameraLine:
         """Convert to numpy array of shape (2, 2) with start and end points."""
         return np.array([self.start_pixel, self.end_pixel], dtype=np.float64)
 
+    def has_edge_curvature(self, tolerance: float = 0.1) -> bool:
+        """Check whether edge_pixels deviate from a straight line.
+
+        Lines whose points are linearly interpolated between endpoints lie
+        perfectly on a chord and carry no distortion signal.  These should
+        be excluded from optimisation because they dilute the error metric.
+
+        Args:
+            tolerance: Maximum perpendicular deviation (in pixels) from the
+                start→end chord below which the line is considered straight.
+
+        Returns:
+            True if the line has edge_pixels that deviate from the chord by
+            more than *tolerance*, i.e. the line carries a real distortion
+            signal.  Returns False for lines without edge_pixels or whose
+            edge_pixels are collinear.
+        """
+        if self.edge_pixels is None or len(self.edge_pixels) < 3:
+            return False
+
+        pts = np.array(self.edge_pixels, dtype=np.float64)
+        direction = pts[-1] - pts[0]
+        length = np.linalg.norm(direction)
+        if length < 1e-6:
+            return False
+
+        normal = np.array([-direction[1], direction[0]]) / length
+        deviations = np.abs((pts - pts[0]) @ normal)
+        return float(deviations.max()) > tolerance
+
     def sample_points(self, num_samples: int = 20) -> np.ndarray:
         """Sample points along the line.
 

@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/annotations/", views.api_annotations, name="api_annotations"),
     path("api/images/", views.api_images, name="api_images"),
     path("api/switch-image/", views.api_switch_image, name="api_switch_image"),
+    path("api/save-annotations/", views.api_save_annotations, name="api_save_annotations"),
     # Image serving
     path("image/", views.serve_image, name="serve_image"),
 ]

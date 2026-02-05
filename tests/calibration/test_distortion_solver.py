@@ -18,6 +18,45 @@ from poc_homography.camera_parameters import DistortionCoefficients
 from poc_homography.types import Unitless
 
 
+def _make_distorted_line(
+    line_id: str,
+    y_pos: float,
+    ptz_position: PTZPosition,
+    k1: float = -0.15,
+    fx: float = 1000.0,
+    fy: float = 1000.0,
+    cx: float = 960.0,
+    cy: float = 540.0,
+    x_start: float = 200.0,
+    x_end: float = 1700.0,
+    num_points: int = 30,
+) -> CameraLine:
+    """Create a horizontal CameraLine with synthetic barrel distortion.
+
+    The resulting edge_pixels lie on a curve (not a straight chord),
+    so the line will pass the ``has_edge_curvature()`` check used by
+    the solver to filter interpolated lines.
+    """
+    undistorted = np.column_stack([
+        np.linspace(x_start, x_end, num_points),
+        np.full(num_points, y_pos),
+    ])
+    x = (undistorted[:, 0] - cx) / fx
+    y = (undistorted[:, 1] - cy) / fy
+    r2 = x * x + y * y
+    radial = 1 + k1 * r2
+    distorted = np.column_stack([x * radial * fx + cx, y * radial * fy + cy])
+    edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
+    return CameraLine(
+        line_id=line_id,
+        image_path="synthetic",
+        start_pixel=edge_pixels[0],
+        end_pixel=edge_pixels[-1],
+        ptz_position=ptz_position,
+        edge_pixels=edge_pixels,
+    )
+
+
 class TestSolverConfig:
     """Tests for SolverConfig dataclass."""
 
@@ -218,20 +257,8 @@ class TestDistortionSolver:
         """Should return SolverResult with valid structure."""
         solver = DistortionSolver()
         lines = [
-            CameraLine(
-                line_id="line_1",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),  # Horizontal line
-                ptz_position=ptz_position,
-            ),
-            CameraLine(
-                line_id="line_2",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 500.0),
-                end_pixel=(800.0, 500.0),  # Another horizontal line
-                ptz_position=ptz_position,
-            ),
+            _make_distorted_line("line_1", 300.0, ptz_position),
+            _make_distorted_line("line_2", 500.0, ptz_position),
         ]
 
         result = solver.solve(lines, intrinsic_matrix)
@@ -247,27 +274,9 @@ class TestDistortionSolver:
         """Should return RMSE for each input line."""
         solver = DistortionSolver()
         lines = [
-            CameraLine(
-                line_id="line_1",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
-                ptz_position=ptz_position,
-            ),
-            CameraLine(
-                line_id="line_2",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 500.0),
-                end_pixel=(800.0, 500.0),
-                ptz_position=ptz_position,
-            ),
-            CameraLine(
-                line_id="line_3",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 700.0),
-                end_pixel=(800.0, 700.0),
-                ptz_position=ptz_position,
-            ),
+            _make_distorted_line("line_1", 300.0, ptz_position),
+            _make_distorted_line("line_2", 500.0, ptz_position),
+            _make_distorted_line("line_3", 700.0, ptz_position),
         ]
 
         result = solver.solve(lines, intrinsic_matrix)
@@ -279,20 +288,8 @@ class TestDistortionSolver:
         """Should return line errors with line IDs."""
         solver = DistortionSolver()
         lines = [
-            CameraLine(
-                line_id="my_line_1",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
-                ptz_position=ptz_position,
-            ),
-            CameraLine(
-                line_id="my_line_2",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 500.0),
-                end_pixel=(800.0, 500.0),
-                ptz_position=ptz_position,
-            ),
+            _make_distorted_line("my_line_1", 300.0, ptz_position),
+            _make_distorted_line("my_line_2", 500.0, ptz_position),
         ]
 
         result = solver.solve(lines, intrinsic_matrix)
@@ -306,15 +303,7 @@ class TestDistortionSolver:
     def test_solve_with_initial_guess(self, intrinsic_matrix, ptz_position):
         """Should accept initial guess for coefficients."""
         solver = DistortionSolver()
-        lines = [
-            CameraLine(
-                line_id="line_1",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
-                ptz_position=ptz_position,
-            ),
-        ]
+        lines = [_make_distorted_line("line_1", 300.0, ptz_position)]
         initial = DistortionCoefficients(
             k1=Unitless(-0.1),
             k2=Unitless(0.01),
@@ -331,15 +320,7 @@ class TestDistortionSolver:
         """Should optimize only radial coefficients when configured."""
         config = SolverConfig(use_radial_only=True)
         solver = DistortionSolver(config=config)
-        lines = [
-            CameraLine(
-                line_id="line_1",
-                image_path="/path/to/image.jpg",
-                start_pixel=(100.0, 300.0),
-                end_pixel=(800.0, 300.0),
-                ptz_position=ptz_position,
-            ),
-        ]
+        lines = [_make_distorted_line("line_1", 300.0, ptz_position)]
 
         result = solver.solve(lines, intrinsic_matrix)
 
@@ -347,12 +328,11 @@ class TestDistortionSolver:
         assert float(result.distortion.p1) == 0.0
         assert float(result.distortion.p2) == 0.0
 
-    def test_solve_perfectly_straight_lines_have_low_error(
+    def test_solve_rejects_all_interpolated_lines(
         self, intrinsic_matrix, ptz_position
     ):
-        """Perfectly straight lines should have very low straightness error."""
+        """Should raise ValueError when all lines are interpolated (no curvature)."""
         solver = DistortionSolver()
-        # Create perfectly horizontal lines (no distortion)
         lines = [
             CameraLine(
                 line_id="line_1",
@@ -370,11 +350,8 @@ class TestDistortionSolver:
             ),
         ]
 
-        result = solver.solve(lines, intrinsic_matrix)
-
-        # With straight input lines and no distortion to correct,
-        # the error should be very small
-        assert result.overall_rmse < 1.0  # Less than 1 pixel
+        with pytest.raises(ValueError, match="No lines with edge curvature"):
+            solver.solve(lines, intrinsic_matrix)
 
     def test_calculate_line_errors(self, intrinsic_matrix, ptz_position):
         """Should calculate errors for lines with given distortion."""

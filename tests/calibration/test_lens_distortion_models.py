@@ -290,6 +290,53 @@ class TestCameraLine:
         samples = line.sample_points(num_samples=5)
         assert samples.shape == (5, 2)
 
+    def test_has_edge_curvature_true_for_curved_edges(self, ptz_position):
+        """Should return True when edge_pixels deviate from the chord."""
+        line = CameraLine(
+            line_id="curved",
+            image_path="img.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(100.0, 0.0),
+            ptz_position=ptz_position,
+            edge_pixels=((0.0, 0.0), (50.0, 5.0), (100.0, 0.0)),
+        )
+        assert line.has_edge_curvature() is True
+
+    def test_has_edge_curvature_false_for_collinear_edges(self, ptz_position):
+        """Should return False when edge_pixels lie on a straight line."""
+        line = CameraLine(
+            line_id="straight",
+            image_path="img.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(100.0, 0.0),
+            ptz_position=ptz_position,
+            edge_pixels=((0.0, 0.0), (50.0, 0.0), (100.0, 0.0)),
+        )
+        assert line.has_edge_curvature() is False
+
+    def test_has_edge_curvature_false_without_edge_pixels(self, ptz_position):
+        """Should return False when no edge_pixels are provided."""
+        line = CameraLine(
+            line_id="no_edges",
+            image_path="img.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(100.0, 0.0),
+            ptz_position=ptz_position,
+        )
+        assert line.has_edge_curvature() is False
+
+    def test_has_edge_curvature_false_for_two_points(self, ptz_position):
+        """Should return False when edge_pixels has only 2 points."""
+        line = CameraLine(
+            line_id="two_pts",
+            image_path="img.jpg",
+            start_pixel=(0.0, 0.0),
+            end_pixel=(100.0, 0.0),
+            ptz_position=ptz_position,
+            edge_pixels=((0.0, 0.0), (100.0, 0.0)),
+        )
+        assert line.has_edge_curvature() is False
+
     def test_to_dict_and_from_dict_roundtrip(self, ptz_position):
         """Should serialize and deserialize without data loss."""
         original = CameraLine(

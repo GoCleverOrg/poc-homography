@@ -252,6 +252,26 @@
             display: block;
         }
 
+        .annotation-item .edit-btn {
+            background: #ff9800;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-right: 4px;
+        }
+
+        .annotation-item .edit-btn:hover {
+            background: #f57c00;
+        }
+
+        .annotation-item .edit-btn.active {
+            background: #e65100;
+            box-shadow: 0 0 0 2px #ff9800;
+        }
+
         .annotation-item .delete-btn {
             background: #f44336;
             color: #fff;
@@ -540,7 +560,7 @@
                 <button class="mode-btn active" data-mode="2point">2-Point</button>
                 <button class="mode-btn" data-mode="npoint">N-Point</button>
             </div>
-            <div id="instructions">Click twice on the image to create a line annotation. First click = start, second click = end.</div>
+            <div id="instructions">Click twice on the image to create a line annotation. First click = start, second click = end. Use the Edit button to adjust existing lines.</div>
             <div id="quality-indicator" class="quality-indicator"></div>
         </div>
 
@@ -616,6 +636,10 @@
         let isDragging = false;
         let dragPointIndex = -1;
         let dragPointType = 'midpoint';  // 'midpoint', 'start', 'end'
+
+        // Edit mode state (editing an existing annotation)
+        let editingIndex = -1;        // index into annotations[], -1 = not editing
+        let editPoints = [];          // [[x,y], ...] being edited
 
         // Elements
         const img = document.getElementById('frame-image');
@@ -745,6 +769,114 @@
             updateQualityIndicator();
         }
 
+        // Enter edit mode for an existing annotation
+        function enterEditMode(annIndex) {
+            const ann = annotations[annIndex];
+            editingIndex = annIndex;
+
+            if (ann.points && ann.points.length >= 2) {
+                editPoints = ann.points.map(p => [p[0], p[1]]);
+            } else {
+                // 2-point annotation: make a 2-element points array
+                editPoints = [
+                    [ann.start_pixel_x, ann.start_pixel_y],
+                    [ann.end_pixel_x, ann.end_pixel_y],
+                ];
+            }
+
+            // Cancel any creation in progress
+            pendingLine = null;
+            resetNpointState();
+            lineSection.classList.remove('active');
+
+            canvas.classList.add('draggable');
+            modeIndicator.textContent = 'Editing — drag points to adjust, press Escape to finish';
+            modeIndicator.classList.add('active');
+            renderLines();
+        }
+
+        // Exit edit mode and persist changes
+        async function exitEditMode() {
+            if (editingIndex < 0) return;
+
+            const ann = annotations[editingIndex];
+            const startPt = editPoints[0];
+            const endPt = editPoints[editPoints.length - 1];
+
+            // Update local state
+            ann.start_pixel_x = startPt[0];
+            ann.start_pixel_y = startPt[1];
+            ann.end_pixel_x = endPt[0];
+            ann.end_pixel_y = endPt[1];
+            if (editPoints.length > 2) {
+                ann.points = editPoints.map(p => [p[0], p[1]]);
+            } else {
+                ann.points = editPoints.map(p => [p[0], p[1]]);
+            }
+
+            // Persist via API
+            try {
+                await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${editingIndex}/update/`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        line_id: ann.line_id,
+                        start_pixel_x: startPt[0],
+                        start_pixel_y: startPt[1],
+                        end_pixel_x: endPt[0],
+                        end_pixel_y: endPt[1],
+                        points: editPoints,
+                    })
+                });
+            } catch (e) {
+                console.error('Failed to save annotation edit:', e);
+            }
+
+            editingIndex = -1;
+            editPoints = [];
+            isDragging = false;
+            dragPointIndex = -1;
+            canvas.classList.remove('draggable', 'dragging');
+            modeIndicator.classList.remove('active');
+
+            renderLines();
+            renderAnnotationsList();
+            updateYamlPreview();
+        }
+
+        // Find a point in editPoints near (x, y)
+        function findEditPointAtPosition(x, y) {
+            const threshold = 12;
+            for (let i = 0; i < editPoints.length; i++) {
+                const dx = editPoints[i][0] - x;
+                const dy = editPoints[i][1] - y;
+                if (Math.sqrt(dx * dx + dy * dy) <= threshold) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        // Find an existing annotation whose points are near (x, y)
+        function findAnnotationAtPosition(x, y) {
+            const threshold = 14;
+            for (let i = 0; i < annotations.length; i++) {
+                const ann = annotations[i];
+                const pts = (ann.points && ann.points.length >= 2)
+                    ? ann.points
+                    : [[ann.start_pixel_x, ann.start_pixel_y], [ann.end_pixel_x, ann.end_pixel_y]];
+
+                for (const p of pts) {
+                    const dx = p[0] - x;
+                    const dy = p[1] - y;
+                    if (Math.sqrt(dx * dx + dy * dy) <= threshold) {
+                        return i;
+                    }
+                }
+            }
+            return -1;
+        }
+
         // Setup canvas size
         function setupCanvas() {
             canvas.width = img.naturalWidth || img.width;
@@ -758,8 +890,10 @@
 
             // Draw completed annotations
             annotations.forEach((ann, i) => {
-                // Check if annotation has points array (N-point format)
-                if (ann.points && ann.points.length > 1) {
+                if (i === editingIndex) {
+                    // Draw the editing annotation with draggable handles
+                    drawEditablePolyline(editPoints, ann.line_id);
+                } else if (ann.points && ann.points.length > 1) {
                     drawPolyline(ann.points, '#2196f3', ann.line_id);
                 } else {
                     drawLine(ann.start_pixel_x, ann.start_pixel_y, ann.end_pixel_x, ann.end_pixel_y, '#2196f3', ann.line_id);
@@ -882,6 +1016,69 @@
                 const padding = 4;
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
                 ctx.fillRect(midX - metrics.width/2 - padding, midY - 8 - padding, metrics.width + padding*2, 16 + padding);
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, midX, midY);
+            }
+        }
+
+        // Draw an editable polyline with draggable handles
+        function drawEditablePolyline(points, label) {
+            if (points.length < 2) return;
+
+            // Ghost straight line from start to end
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = 'rgba(150, 150, 150, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            ctx.lineTo(points[points.length - 1][0], points[points.length - 1][1]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw polyline
+            ctx.beginPath();
+            ctx.moveTo(points[0][0], points[0][1]);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.strokeStyle = '#ff9800';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw all point handles
+            points.forEach((p, i) => {
+                const isEndpoint = (i === 0 || i === points.length - 1);
+                const isBeingDragged = isDragging && dragPointIndex === i;
+                const r = isEndpoint ? 8 : (isBeingDragged ? 7 : 5);
+
+                ctx.beginPath();
+                ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+
+                if (i === 0) {
+                    ctx.fillStyle = '#4caf50';
+                } else if (i === points.length - 1) {
+                    ctx.fillStyle = '#f44336';
+                } else {
+                    ctx.fillStyle = isBeingDragged ? 'rgba(255, 193, 7, 0.8)' : 'rgba(255, 235, 59, 0.6)';
+                }
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = isBeingDragged ? 3 : 2;
+                ctx.stroke();
+            });
+
+            // Label
+            if (label) {
+                const midIdx = Math.floor(points.length / 2);
+                const midX = points[midIdx][0];
+                const midY = points[midIdx][1] - 16;
+                ctx.font = 'bold 12px system-ui';
+                const metrics = ctx.measureText(label);
+                const padding = 4;
+                ctx.fillStyle = 'rgba(255, 152, 0, 0.9)';
+                ctx.fillRect(midX - metrics.width / 2 - padding, midY - 8 - padding, metrics.width + padding * 2, 16 + padding);
                 ctx.fillStyle = 'white';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
@@ -1068,12 +1265,16 @@
                     `<option value="${id}"${id === ann.line_id ? ' selected' : ''}>${id}</option>`
                 ).join('');
 
+                const isEditing = (i === editingIndex);
                 div.innerHTML = `
                     <div class="info">
                         <select class="line-id-select" data-index="${i}">${options}</select>
                         <span class="coords">Start: (${ann.start_pixel_x.toFixed(1)}, ${ann.start_pixel_y.toFixed(1)}) End: (${ann.end_pixel_x.toFixed(1)}, ${ann.end_pixel_y.toFixed(1)})</span>
                     </div>
-                    <button class="delete-btn" data-index="${i}">Delete</button>
+                    <div>
+                        <button class="edit-btn${isEditing ? ' active' : ''}" data-index="${i}">${isEditing ? 'Editing' : 'Edit'}</button>
+                        <button class="delete-btn" data-index="${i}">Delete</button>
+                    </div>
                 `;
                 annotationsList.appendChild(div);
             });
@@ -1086,6 +1287,19 @@
                     annotations[idx].line_id = newLineId;
                     renderLines();
                     updateYamlPreview();
+                });
+            });
+
+            // Add edit handlers
+            annotationsList.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    if (editingIndex === idx) {
+                        exitEditMode();
+                    } else {
+                        enterEditMode(idx);
+                        renderAnnotationsList();
+                    }
                 });
             });
 
@@ -1163,6 +1377,11 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
 
+            // If currently editing, ignore clicks on the image
+            if (editingIndex >= 0) {
+                return;
+            }
+
             if (annotationMode === '2point') {
                 // 2-Point mode
                 if (!pendingLine) {
@@ -1218,15 +1437,31 @@
             }
         });
 
-        // Canvas drag handlers for N-point mode
+        // Canvas drag handlers for N-point creation AND edit mode
         canvas.addEventListener('mousedown', (e) => {
-            if (annotationMode !== 'npoint' || npointState !== 'adjusting') return;
-
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
+
+            // Edit mode: drag points of existing annotation
+            if (editingIndex >= 0) {
+                const hitIdx = findEditPointAtPosition(x, y);
+                if (hitIdx >= 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    isDragging = true;
+                    dragPointIndex = hitIdx;
+                    dragPointType = 'editpoint';
+                    canvas.classList.add('dragging');
+                    renderLines();
+                }
+                return;
+            }
+
+            // N-point creation mode
+            if (annotationMode !== 'npoint' || npointState !== 'adjusting') return;
 
             const hit = findPointAtPosition(x, y);
             if (hit) {
@@ -1250,15 +1485,21 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
 
+            // Edit mode drag — vertical only (keep original x)
+            if (dragPointType === 'editpoint' && dragPointIndex >= 0) {
+                editPoints[dragPointIndex] = [editPoints[dragPointIndex][0], y];
+                renderLines();
+                return;
+            }
+
+            // N-point creation drag
             if (dragPointType === 'start') {
                 npointStart = { x, y };
-                // Regenerate midpoints to redistribute evenly along new line
                 const lineLenS = distance(npointStart, npointEnd);
                 const maxSegS = lineLenS / npointRecommendedPixels;
                 npointMidpoints = generateMidpoints(npointStart, npointEnd, maxSegS);
             } else if (dragPointType === 'end') {
                 npointEnd = { x, y };
-                // Regenerate midpoints to redistribute evenly along new line
                 const lineLenE = distance(npointStart, npointEnd);
                 const maxSegE = lineLenE / npointRecommendedPixels;
                 npointMidpoints = generateMidpoints(npointStart, npointEnd, maxSegE);
@@ -1341,8 +1582,12 @@
             }
         });
 
-        // Global Escape handler for N-point mode
+        // Global Escape handler for edit mode and N-point mode
         document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && editingIndex >= 0) {
+                exitEditMode();
+                return;
+            }
             if (e.key === 'Escape' && annotationMode === 'npoint') {
                 if (npointState === 'adjusting') {
                     // Finish N-point line - show line ID selection

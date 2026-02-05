@@ -667,6 +667,24 @@
         </div>
 
         <div class="sidebar">
+            <div class="sidebar-section" id="calibration-info-section" style="display: none;">
+                <h3>Calibration Info</h3>
+                <div id="calibration-method-info" style="font-size: 11px; margin-bottom: 8px;">
+                    <span style="color: #78909c;">Method:</span>
+                    <span id="cal-method-label" style="font-weight: 600;"></span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="background: #37474f; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 9px; color: #78909c; text-transform: uppercase;">Validation RMSE</div>
+                        <div style="font-size: 14px; font-weight: 600; font-family: monospace;" id="cal-validation-rmse">-</div>
+                    </div>
+                    <div style="background: #37474f; padding: 8px; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 9px; color: #78909c; text-transform: uppercase;">Reproj. Error</div>
+                        <div style="font-size: 14px; font-weight: 600; font-family: monospace;" id="cal-reprojection-error">N/A</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="sidebar-section">
                 <h3>Coefficients</h3>
                 <div class="coefficients-grid">
@@ -721,6 +739,23 @@
                     <button id="compute-intrinsics-btn" class="btn btn-small" style="background: #1565c0;">Compute from Specs</button>
                 </div>
                 <div id="intrinsics-source" style="font-size: 10px; color: #78909c; margin-top: 4px;"></div>
+            </div>
+
+            <div class="sidebar-section" id="comparison-table-section" style="display: none;">
+                <h3>Method Comparison</h3>
+                <div style="overflow-x: auto;">
+                    <table id="method-comparison-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                        <thead>
+                            <tr style="background: #37474f;">
+                                <th style="padding: 6px; text-align: left; color: #b0bec5;">Zoom</th>
+                                <th style="padding: 6px; text-align: left; color: #b0bec5;">Method</th>
+                                <th style="padding: 6px; text-align: right; color: #b0bec5;">Reproj. (px)</th>
+                                <th style="padding: 6px; text-align: right; color: #b0bec5;">RMSE (px)</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -824,6 +859,11 @@
         let currentCoefficients = null;
         let currentIntrinsics = { fx: 1000, fy: 1000, cx: 960, cy: 540 };
         let comparisonLines = [];
+        // comparisonLines entries now have:
+        //   - points: original drawing points (in the space where drawn)
+        //   - drawnInMode: 'original' or 'undistorted' - which view mode they were drawn in
+        //   - distortedPoints: points in distorted (original image) coordinate space
+        //   - undistortedPoints: points in undistorted coordinate space
         let currentLine = null;  // { points: [[x,y], ...] }
         let imageWidth = 0;
         let imageHeight = 0;
@@ -974,10 +1014,15 @@
                 (data.entries || []).forEach((entry, i) => {
                     const option = document.createElement('option');
                     option.value = i;
-                    option.textContent = `Zoom ${entry.zoom_factor}x (RMSE: ${entry.validation_rmse?.toFixed(3) || 'N/A'})`;
+                    const hasReproj = entry.reprojection_error_px && entry.reprojection_error_px > 0;
+                    const methodTag = hasReproj ? ' [OpenCV]' : '';
+                    option.textContent = `Zoom ${entry.zoom_factor}x (RMSE: ${entry.validation_rmse?.toFixed(3) || 'N/A'})${methodTag}`;
                     option.dataset.entry = JSON.stringify(entry);
                     zoomEntrySelect.appendChild(option);
                 });
+
+                // Build comparison table
+                buildComparisonTable(data.entries || []);
 
                 zoomEntrySelect.disabled = false;
 
@@ -1005,6 +1050,31 @@
             document.getElementById('coef-k3').textContent = currentCoefficients.k3.toFixed(6);
             document.getElementById('coef-p1').textContent = currentCoefficients.p1.toFixed(6);
             document.getElementById('coef-p2').textContent = currentCoefficients.p2.toFixed(6);
+
+            // Show calibration info section
+            const calInfoSection = document.getElementById('calibration-info-section');
+            calInfoSection.style.display = '';
+
+            // Determine method from reprojection error presence
+            const hasReproj = entry.reprojection_error_px && entry.reprojection_error_px > 0;
+            const methodLabel = hasReproj ? 'OpenCV GCP+Lines' : 'Line Straightness';
+            const methodColor = hasReproj ? '#2196f3' : '#4caf50';
+            document.getElementById('cal-method-label').textContent = methodLabel;
+            document.getElementById('cal-method-label').style.color = methodColor;
+
+            // Validation RMSE
+            const rmseEl = document.getElementById('cal-validation-rmse');
+            rmseEl.textContent = entry.validation_rmse !== undefined ? entry.validation_rmse.toFixed(3) + ' px' : '-';
+
+            // Reprojection error
+            const reprojEl = document.getElementById('cal-reprojection-error');
+            if (hasReproj) {
+                reprojEl.textContent = entry.reprojection_error_px.toFixed(3) + ' px';
+                reprojEl.style.color = '#2196f3';
+            } else {
+                reprojEl.textContent = 'N/A';
+                reprojEl.style.color = '#78909c';
+            }
 
             if (entry.intrinsics) {
                 intrinsicFx.value = entry.intrinsics.fx;
@@ -1082,6 +1152,12 @@
                     panel.scroller.style.display = 'inline-block';
                     hasUndistortion = true;
                     exportBtn.disabled = false;
+
+                    // Fit image to wrapper width
+                    const wrapperW = panel.wrapper.clientWidth;
+                    if (w > 0 && wrapperW > 0) {
+                        panel.zoom = wrapperW / w;
+                    }
 
                     setupCanvas();
                     setViewMode('overlay');
@@ -1174,11 +1250,30 @@
                 }
             });
 
-            // Mouse wheel zoom
+            // Pinch-to-zoom — on Mac trackpads, pinch sets ctrlKey=true.
+            // Two-finger scroll (pan) does not, so we let it scroll normally.
             panel.wrapper.addEventListener('wheel', (e) => {
+                if (!e.ctrlKey) return;
                 e.preventDefault();
+                const oldZoom = panel.zoom;
                 const delta = e.deltaY > 0 ? 0.9 : 1.1;
-                updateZoom(panel.zoom * delta);
+                const newZoom = Math.max(0.25, Math.min(5, oldZoom * delta));
+                if (newZoom === oldZoom) return;
+
+                // Mouse position relative to the wrapper (viewport)
+                const rect = panel.wrapper.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                // Image-space coordinate under the cursor before zoom
+                const imgX = (panel.wrapper.scrollLeft + mouseX) / oldZoom;
+                const imgY = (panel.wrapper.scrollTop + mouseY) / oldZoom;
+
+                updateZoom(newZoom);
+
+                // Adjust scroll so the same image point stays under the cursor
+                panel.wrapper.scrollLeft = imgX * newZoom - mouseX;
+                panel.wrapper.scrollTop = imgY * newZoom - mouseY;
             });
 
             // Middle mouse button or Shift+Left click to pan
@@ -1218,16 +1313,37 @@
                     showStatus('Measuring line straightness...', 'info');
 
                     try {
-                        // Points are always drawn on the unified canvas at original image coordinates.
-                        // - originalRmse = measure raw points
-                        // - undistortedRmse = undistort points first, then measure
+                        // Determine which mode the line was drawn in
+                        const drawnInMode = (viewMode === 'undistorted') ? 'undistorted' : 'original';
+
+                        // Compute both coordinate representations
+                        let distortedPoints, undistortedPoints;
+
+                        if (drawnInMode === 'original') {
+                            // Points were drawn on original (distorted) image
+                            distortedPoints = currentLine.points;
+                            // Transform to undistorted space for display in undistorted mode
+                            undistortedPoints = await transformPoints(currentLine.points, 'undistort');
+                        } else {
+                            // Points were drawn on undistorted image
+                            undistortedPoints = currentLine.points;
+                            // Transform to distorted space for display in original mode
+                            distortedPoints = await transformPoints(currentLine.points, 'distort');
+                        }
+
+                        // Measure straightness in both spaces
+                        // distortedPoints measured without undistortion = original RMSE
+                        // distortedPoints measured with undistortion = undistorted RMSE
                         const [originalResult, undistortedResult] = await Promise.all([
-                            measureStraightness(currentLine.points, false),
-                            measureStraightness(currentLine.points, true)
+                            measureStraightness(distortedPoints, false),
+                            measureStraightness(distortedPoints, true)
                         ]);
 
                         comparisonLines.push({
-                            points: currentLine.points,
+                            points: currentLine.points,  // Original drawing points
+                            drawnInMode,
+                            distortedPoints,
+                            undistortedPoints,
                             originalRmse: originalResult.rmse_pixels,
                             originalQuality: originalResult.quality,
                             undistortedRmse: undistortedResult.rmse_pixels,
@@ -1237,7 +1353,7 @@
                         updateLinesList();
 
                         const improvement = ((originalResult.rmse_pixels - undistortedResult.rmse_pixels) / originalResult.rmse_pixels * 100).toFixed(1);
-                        showStatus(`Line added! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
+                        showStatus(`Line added (drawn in ${drawnInMode} mode)! Original: ${originalResult.rmse_pixels.toFixed(3)}px, Undistorted: ${undistortedResult.rmse_pixels.toFixed(3)}px (${improvement}% improvement)`, 'success');
 
                     } catch (err) {
                         showStatus(`Error: ${err.message}`, 'error');
@@ -1301,33 +1417,56 @@
             return await resp.json();
         }
 
+        // Transform points between distorted and undistorted spaces
+        async function transformPoints(points, direction) {
+            const resp = await fetch('{% url "distortion_validator:api_transform_points" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({
+                    points,
+                    direction,  // 'distort' or 'undistort'
+                    coefficients: currentCoefficients,
+                    intrinsics: currentIntrinsics
+                })
+            });
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            return data.points;
+        }
+
         // Render lines on the single canvas
-        // - Original / Overlay: full n-point polyline showing all annotation points
-        // - Undistorted: straight line from first to last point only (visual reference
-        //   to check whether the feature is now straight after undistortion)
+        // Lines are now displayed in the appropriate coordinate space for the current view mode:
+        // - Original mode: use distortedPoints (lines appear in distorted image space)
+        // - Undistorted mode: use undistortedPoints (lines appear in undistorted image space)
+        // - Overlay mode: use distortedPoints (overlay blends images, distorted coords match original)
         function renderLines() {
             const ctx = panel.canvas.getContext('2d');
             ctx.clearRect(0, 0, panel.canvas.width, panel.canvas.height);
 
             const showOriginalRmse = (viewMode === 'original');
-            const straightOnly = (viewMode === 'undistorted');
+            const useUndistortedCoords = (viewMode === 'undistorted');
 
             comparisonLines.forEach((line, i) => {
                 const rmse = showOriginalRmse ? line.originalRmse : line.undistortedRmse;
                 const quality = showOriginalRmse ? line.originalQuality : line.undistortedQuality;
                 const color = getQualityColor(quality);
 
-                if (straightOnly && line.points.length >= 2) {
-                    // Undistorted view: draw only start→end straight reference line
-                    const startEnd = [line.points[0], line.points[line.points.length - 1]];
-                    drawLine(ctx, startEnd, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+                // Select appropriate coordinate space for current view
+                // Fallback to original points if transformed points not available (backward compat)
+                let displayPoints;
+                if (useUndistortedCoords && line.undistortedPoints) {
+                    displayPoints = line.undistortedPoints;
+                } else if (!useUndistortedCoords && line.distortedPoints) {
+                    displayPoints = line.distortedPoints;
                 } else {
-                    // Original / Overlay: full n-point polyline
-                    drawLine(ctx, line.points, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
+                    displayPoints = line.points;  // Fallback for older lines without transforms
                 }
+
+                // Draw the full polyline in the appropriate coordinate space
+                drawLine(ctx, displayPoints, color, `L${i + 1}: ${rmse.toFixed(2)}px`);
             });
 
-            // Draw current line being drawn (always show all points)
+            // Draw current line being drawn (always show all points in current view space)
             if (currentLine && currentLine.points.length > 0) {
                 drawLine(ctx, currentLine.points, '#ffffff', null, true);
             }
@@ -1414,7 +1553,9 @@
                 header.className = 'line-comparison-header';
                 const lineName = document.createElement('span');
                 lineName.className = 'line-name';
-                lineName.textContent = `Line ${i + 1} (${line.points.length} pts)`;
+                const modeTag = line.drawnInMode === 'undistorted' ? ' [U]' : ' [O]';
+                lineName.textContent = `Line ${i + 1} (${line.points.length} pts)${modeTag}`;
+                lineName.title = `Drawn in ${line.drawnInMode || 'original'} mode`;
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-btn';
                 deleteBtn.dataset.index = i;
@@ -1530,12 +1671,9 @@
         document.getElementById('zoom-out-btn').addEventListener('click', () => updateZoom(panel.zoom / 1.25));
         document.getElementById('zoom-fit-btn').addEventListener('click', () => {
             const natW = panel.imgOriginal.naturalWidth;
-            const natH = panel.imgOriginal.naturalHeight;
-            if (!natW || !natH) return updateZoom(1);
+            if (!natW) return updateZoom(1);
             const wrapperW = panel.wrapper.clientWidth;
-            const wrapperH = panel.wrapper.clientHeight;
-            const fitZoom = Math.min(wrapperW / natW, wrapperH / natH);
-            updateZoom(fitZoom);
+            updateZoom(wrapperW / natW);
         });
 
         // Intrinsics input handlers
@@ -1598,6 +1736,53 @@
                 intrinsicCy.value = Math.round(height / 2);
             }
             updateIntrinsicsFromInputs();
+        }
+
+        // Build comparison table from all entries
+        function buildComparisonTable(entries) {
+            const section = document.getElementById('comparison-table-section');
+            const tbody = document.querySelector('#method-comparison-table tbody');
+            tbody.innerHTML = '';
+
+            if (!entries || entries.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            // Only show if there are multiple entries or any entry has reprojection error
+            const hasMultiple = entries.length > 1;
+            const hasAnyReproj = entries.some(e => e.reprojection_error_px && e.reprojection_error_px > 0);
+
+            if (!hasMultiple && !hasAnyReproj) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = '';
+
+            // Group by zoom level for highlighting
+            const zoomCounts = {};
+            entries.forEach(e => {
+                const z = e.zoom_factor;
+                zoomCounts[z] = (zoomCounts[z] || 0) + 1;
+            });
+
+            entries.forEach(entry => {
+                const hasReproj = entry.reprojection_error_px && entry.reprojection_error_px > 0;
+                const method = hasReproj ? 'OpenCV GCP+Lines' : 'Line Straightness';
+                const methodColor = hasReproj ? '#2196f3' : '#4caf50';
+                const highlight = zoomCounts[entry.zoom_factor] > 1 ? 'background: rgba(33, 150, 243, 0.1);' : '';
+
+                const tr = document.createElement('tr');
+                tr.style.cssText = `border-bottom: 1px solid #37474f; ${highlight}`;
+                tr.innerHTML = `
+                    <td style="padding: 6px; color: #fff;">${entry.zoom_factor}x</td>
+                    <td style="padding: 6px; color: ${methodColor}; font-size: 10px;">${method}</td>
+                    <td style="padding: 6px; text-align: right; font-family: monospace; color: ${hasReproj ? '#2196f3' : '#78909c'};">${hasReproj ? entry.reprojection_error_px.toFixed(3) : 'N/A'}</td>
+                    <td style="padding: 6px; text-align: right; font-family: monospace; color: #fff;">${entry.validation_rmse !== undefined ? entry.validation_rmse.toFixed(3) : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
         // Initialize

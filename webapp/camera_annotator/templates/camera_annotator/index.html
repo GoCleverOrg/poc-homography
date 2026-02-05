@@ -51,8 +51,15 @@
             font-size: 9px;
             font-weight: bold;
             color: #fff;
-            pointer-events: none;
+            pointer-events: auto;
+            cursor: grab;
             filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+        }
+
+        .marker.dragging {
+            cursor: grabbing;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
+            z-index: 10;
         }
 
         .marker::before {
@@ -275,23 +282,30 @@
             overflow: auto;
         }
 
-        #copy-btn {
+        .yaml-actions {
+            display: flex;
+            gap: 0;
+        }
+
+        .yaml-actions button {
+            flex: 1;
             padding: 12px;
-            background: #4caf50;
             color: #fff;
             border: none;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
         }
 
-        #copy-btn:hover {
-            background: #43a047;
-        }
+        #copy-btn { background: #4caf50; }
+        #copy-btn:hover { background: #43a047; }
+        #copy-btn.copied { background: #2196f3; }
 
-        #copy-btn.copied {
-            background: #2196f3;
-        }
+        #export-btn { background: #1976d2; }
+        #export-btn:hover { background: #1565c0; }
+
+        #import-btn { background: #7b1fa2; }
+        #import-btn:hover { background: #6a1b9a; }
 
         /* Instructions */
         #instructions {
@@ -355,7 +369,7 @@
         <div class="panel-section">
             <h2>Camera Frame</h2>
             <div id="filename">{{ image_filename }}</div>
-            <div id="instructions">Click on the image to add annotation points. Type to filter GCPs.</div>
+            <div id="instructions">Click on the image to add annotation points. Drag markers to adjust. Type to filter GCPs.</div>
         </div>
 
         <div id="gcp-input-section" class="panel-section">
@@ -372,7 +386,12 @@
         <div id="yaml-section" class="panel-section">
             <h2>YAML Preview</h2>
             <textarea id="yaml-preview" readonly></textarea>
-            <button id="copy-btn">Copy to Clipboard</button>
+            <div class="yaml-actions">
+                <button id="copy-btn">Copy</button>
+                <button id="export-btn">Export</button>
+                <button id="import-btn">Import</button>
+            </div>
+            <input type="file" id="import-file" accept=".json,.yaml,.yml" style="display: none;">
         </div>
     </div>
 
@@ -388,6 +407,7 @@
         let pendingPoint = null;
         let selectedGcpIndex = -1;
         let filteredGcps = [];
+        let dragging = null; // { index, offsetX, offsetY } when dragging a marker
 
         // Elements
         const img = document.getElementById('frame-image');
@@ -424,6 +444,15 @@
                 const label = document.createElement('span');
                 label.textContent = ann.gcp_id;
                 marker.appendChild(label);
+
+                // Drag to adjust
+                marker.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dragging = { index: i };
+                    marker.classList.add('dragging');
+                });
+
                 wrapper.appendChild(marker);
             });
 
@@ -540,8 +569,10 @@
             yamlPreview.value = yaml;
         }
 
-        // Event: Click on image
+        // Event: Click on image (only when not dragging)
         img.addEventListener('click', (e) => {
+            if (dragging) return;
+
             const rect = img.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -555,12 +586,38 @@
             renderMarkers();
         });
 
-        // Event: Mouse move for coordinates
-        img.addEventListener('mousemove', (e) => {
+        // Event: Mouse move — drag marker or show coordinates
+        wrapper.addEventListener('mousemove', (e) => {
             const rect = img.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            coordsDisplay.textContent = `Pixel: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+
+            if (dragging) {
+                e.preventDefault();
+                const ann = annotations[dragging.index];
+                ann.pixel_x = Math.max(0, Math.min(img.naturalWidth, x));
+                ann.pixel_y = Math.max(0, Math.min(img.naturalHeight, y));
+
+                // Live-update the marker position without full re-render
+                const markers = wrapper.querySelectorAll('.marker:not(.pending)');
+                const marker = markers[dragging.index];
+                if (marker) {
+                    marker.style.left = ann.pixel_x + 'px';
+                    marker.style.top = ann.pixel_y + 'px';
+                }
+                coordsDisplay.textContent = `Dragging ${ann.gcp_id}: (${ann.pixel_x.toFixed(1)}, ${ann.pixel_y.toFixed(1)})`;
+            } else {
+                coordsDisplay.textContent = `Pixel: (${x.toFixed(1)}, ${y.toFixed(1)})`;
+            }
+        });
+
+        // Event: Mouse up — finish drag
+        window.addEventListener('mouseup', (e) => {
+            if (!dragging) return;
+            dragging = null;
+            renderMarkers();
+            renderAnnotationsList();
+            updateYamlPreview();
         });
 
         // Event: GCP search input
@@ -601,9 +658,145 @@
             copyBtn.textContent = 'Copied!';
             copyBtn.classList.add('copied');
             setTimeout(() => {
-                copyBtn.textContent = 'Copy to Clipboard';
+                copyBtn.textContent = 'Copy';
                 copyBtn.classList.remove('copied');
             }, 2000);
+        });
+
+        // Event: Export button — save to YAML and download JSON
+        const exportBtn = document.getElementById('export-btn');
+        exportBtn.addEventListener('click', async () => {
+            if (annotations.length === 0) return;
+
+            const cleanAnnotations = annotations.map(a => ({
+                gcp_id: a.gcp_id,
+                pixel_x: parseFloat(a.pixel_x.toFixed(1)),
+                pixel_y: parseFloat(a.pixel_y.toFixed(1)),
+            }));
+
+            // Save to YAML on server
+            try {
+                const resp = await fetch('{% url "camera_annotator:api_save_annotations" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ annotations: cleanAnnotations })
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    exportBtn.textContent = `Saved ${result.saved}!`;
+                    setTimeout(() => { exportBtn.textContent = 'Export'; }, 2000);
+                } else {
+                    alert('Save failed: ' + (result.error || 'Unknown error'));
+                    return;
+                }
+            } catch (err) {
+                alert('Save failed: ' + err.message);
+                return;
+            }
+
+            // Also download JSON file
+            const exportData = {
+                image: filenameDisplay.textContent,
+                annotations: cleanAnnotations,
+            };
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const baseName = filenameDisplay.textContent.replace(/\.[^.]+$/, '');
+            a.download = `${baseName}_annotations.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Event: Import button — load annotations from JSON file
+        const importFileInput = document.getElementById('import-file');
+        document.getElementById('import-btn').addEventListener('click', () => {
+            importFileInput.click();
+        });
+
+        // Parse YAML annotations into array of {gcp_id, pixel_x, pixel_y}
+        function parseYamlAnnotations(text) {
+            const annotations = [];
+            let current = null;
+
+            for (const raw of text.split('\n')) {
+                const line = raw.replace(/\r$/, '');
+                // Skip comments and empty lines
+                if (/^\s*(#|$)/.test(line)) continue;
+
+                const pxMatch = line.match(/^\s*-?\s*pixel_x:\s*([\d.]+)/);
+                const pyMatch = line.match(/^\s*-?\s*pixel_y:\s*([\d.]+)/);
+                const gcpMatch = line.match(/^\s*-?\s*gcp_id:\s*["']?(\S+?)["']?\s*$/);
+
+                // Detect start of new annotation block (line starting with "- ")
+                if (/^\s*-\s+\w/.test(line)) {
+                    if (current && current.gcp_id && current.pixel_x != null && current.pixel_y != null) {
+                        annotations.push(current);
+                    }
+                    current = {};
+                }
+
+                if (!current) current = {};
+                if (pxMatch) current.pixel_x = parseFloat(pxMatch[1]);
+                if (pyMatch) current.pixel_y = parseFloat(pyMatch[1]);
+                if (gcpMatch) current.gcp_id = gcpMatch[1];
+            }
+            // Push last entry
+            if (current && current.gcp_id && current.pixel_x != null && current.pixel_y != null) {
+                annotations.push(current);
+            }
+            return annotations;
+        }
+
+        importFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const text = ev.target.result;
+                    let imported = [];
+
+                    // Try JSON first
+                    try {
+                        const data = JSON.parse(text);
+                        if (Array.isArray(data)) {
+                            imported = data;
+                        } else if (data.annotations && Array.isArray(data.annotations)) {
+                            imported = data.annotations;
+                        } else {
+                            throw new Error('not a recognized JSON format');
+                        }
+                    } catch (jsonErr) {
+                        // Fall back to YAML parsing
+                        imported = parseYamlAnnotations(text);
+                        if (imported.length === 0) {
+                            throw new Error('Could not parse as JSON or YAML. Expected annotations with gcp_id, pixel_x, pixel_y.');
+                        }
+                    }
+
+                    // Validate each annotation has required fields
+                    for (const a of imported) {
+                        if (typeof a.gcp_id !== 'string' || typeof a.pixel_x !== 'number' || typeof a.pixel_y !== 'number') {
+                            throw new Error('Each annotation must have gcp_id (string), pixel_x (number), pixel_y (number)');
+                        }
+                    }
+
+                    annotations = imported;
+                    pendingPoint = null;
+                    gcpSection.classList.remove('active');
+                    renderMarkers();
+                    renderAnnotationsList();
+                    updateYamlPreview();
+                } catch (err) {
+                    alert('Failed to import: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+            // Reset so the same file can be re-imported
+            importFileInput.value = '';
         });
 
         // Load existing annotations

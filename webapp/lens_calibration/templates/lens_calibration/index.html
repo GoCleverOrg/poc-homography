@@ -494,6 +494,7 @@
                         <button class="tab active" data-tab="calibration-files">From Calibration Files</button>
                         <button class="tab" data-tab="manual">Manual Input</button>
                         <button class="tab" data-tab="survey">From Survey Session</button>
+                        <button class="tab" data-tab="opencv-multi">Annotated Lines</button>
                     </div>
 
                     <div id="tab-calibration-files" class="tab-content active">
@@ -543,6 +544,23 @@
                         <button id="load-survey-btn" class="btn btn-secondary" style="margin-top: 12px;" disabled>
                             Load & Detect Lines from Survey
                         </button>
+                    </div>
+
+                    <div id="tab-opencv-multi" class="tab-content">
+                        <h4 style="font-size: 14px; color: #333; margin-bottom: 12px;">Line Annotation Files</h4>
+                        <div id="opencv-images-container"></div>
+                        <button id="opencv-add-image-btn" class="btn btn-secondary" style="margin-top: 8px;" type="button">
+                            + Add Line Annotations
+                        </button>
+
+                        <div id="opencv-multi-summary" class="status info" style="display: none; margin-top: 12px;"></div>
+                        <button id="run-opencv-multi-btn" class="btn btn-primary" style="margin-top: 12px;" disabled>
+                            Run Annotated Lines Calibration
+                        </button>
+                        <p style="font-size: 12px; color: #666; margin-top: 12px;">
+                            Load line annotation files with N-point traces of lines that should be straight.<br>
+                            The solver optimises distortion coefficients to minimise line curvature after undistortion.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -1174,6 +1192,237 @@ p2: ${currentResults.coefficients.p2}`;
             if (intrinsicsInfo.textContent.startsWith('Computed:')) {
                 computeIntrinsics();
             }
+        });
+
+        // =====================================================================
+        // Annotated Lines Tab
+        // =====================================================================
+
+        const opencvImagesContainer = document.getElementById('opencv-images-container');
+        const opencvAddImageBtn = document.getElementById('opencv-add-image-btn');
+        const opencvMultiSummary = document.getElementById('opencv-multi-summary');
+        const runOpencvMultiBtn = document.getElementById('run-opencv-multi-btn');
+
+        // State for annotated lines tab
+        let opencvImageRows = [];          // array of {id, lineRaw, lineData}
+        let testDataFiles = [];            // list of YAML filenames from test_data
+
+        // Load test data file list from backend
+        async function loadTestDataFiles() {
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_test_data_files" %}');
+                const data = await resp.json();
+                testDataFiles = data.files || [];
+            } catch (e) {
+                console.error('Failed to load test data files:', e);
+            }
+        }
+
+        function populateSelect(selectEl, files, placeholder) {
+            selectEl.innerHTML = `<option value="">${placeholder}</option>`;
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                selectEl.appendChild(opt);
+            });
+        }
+
+        // Fetch and parse a YAML file from test_data
+        async function fetchTestDataFile(filename) {
+            const resp = await fetch(`{% url "lens_calibration:api_test_data_file_content" %}?filename=${encodeURIComponent(filename)}`);
+            const result = await resp.json();
+            return result.data;
+        }
+
+        // Line annotation row management
+        let opencvImageCounter = 0;
+
+        function addOpencvImageRow() {
+            const rowId = opencvImageCounter++;
+            const row = document.createElement('div');
+            row.id = `opencv-image-row-${rowId}`;
+            row.style.cssText = 'border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin-bottom: 8px; background: #fafafa;';
+
+            const lineAnnFiles = testDataFiles.filter(f => f.includes('line_annotations'));
+            const lineOptions = lineAnnFiles.map(f => `<option value="${f}">${f}</option>`).join('');
+
+            row.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <strong style="font-size: 13px;">Annotations ${rowId + 1}</strong>
+                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;"
+                            onclick="removeOpencvImageRow(${rowId})">Remove</button>
+                </div>
+                <div class="form-group">
+                    <label>Line Annotations File</label>
+                    <select data-row="${rowId}" data-type="line" onchange="loadOpencvImageFromSelect(this)">
+                        <option value="">-- Select line annotations file --</option>
+                        ${lineOptions}
+                    </select>
+                    <select data-row="${rowId}" data-type="line-tc" style="margin-top: 4px; display: none;" onchange="selectOpencvImageTestcase(this)">
+                        <option value="">-- Select test case --</option>
+                    </select>
+                </div>
+                <div id="opencv-image-info-${rowId}" style="font-size: 12px; color: #666; margin-top: 4px;"></div>
+            `;
+            opencvImagesContainer.appendChild(row);
+            opencvImageRows.push({ id: rowId, lineRaw: null, lineData: [] });
+            updateOpencvMultiState();
+        }
+
+        function removeOpencvImageRow(rowId) {
+            const el = document.getElementById(`opencv-image-row-${rowId}`);
+            if (el) el.remove();
+            opencvImageRows = opencvImageRows.filter(r => r.id !== rowId);
+            updateOpencvMultiState();
+        }
+
+        async function loadOpencvImageFromSelect(selectEl) {
+            const rowId = parseInt(selectEl.dataset.row);
+            const filename = selectEl.value;
+            const row = opencvImageRows.find(r => r.id === rowId);
+            if (!row) return;
+
+            if (!filename) {
+                row.lineRaw = null; row.lineData = [];
+                updateOpencvImageInfo(rowId);
+                updateOpencvMultiState();
+                return;
+            }
+
+            const data = await fetchTestDataFile(filename);
+            const tcSelect = document.querySelector(`select[data-row="${rowId}"][data-type="line-tc"]`);
+
+            if (data && data.test_cases) {
+                const keys = data.test_cases.map((tc, i) => tc.name || `case_${i}`);
+                tcSelect.innerHTML = '<option value="">-- Select test case --</option>';
+                keys.forEach((k, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = k;
+                    tcSelect.appendChild(opt);
+                });
+                tcSelect.style.display = 'block';
+                row.lineRaw = data; row.lineData = [];
+
+                if (data.test_cases.length === 1) {
+                    tcSelect.value = '0';
+                    selectOpencvImageTestcase(tcSelect);
+                }
+            } else if (Array.isArray(data)) {
+                tcSelect.style.display = 'none';
+                row.lineRaw = null; row.lineData = data;
+            }
+            updateOpencvImageInfo(rowId);
+            updateOpencvMultiState();
+        }
+
+        function selectOpencvImageTestcase(select) {
+            const rowId = parseInt(select.dataset.row);
+            const idx = parseInt(select.value);
+            const row = opencvImageRows.find(r => r.id === rowId);
+            if (!row || isNaN(idx)) return;
+
+            if (row.lineRaw && row.lineRaw.test_cases) {
+                const tc = row.lineRaw.test_cases[idx];
+                row.lineData = tc ? (tc.line_annotations || []) : [];
+            }
+            updateOpencvImageInfo(rowId);
+            updateOpencvMultiState();
+        }
+
+        function updateOpencvImageInfo(rowId) {
+            const row = opencvImageRows.find(r => r.id === rowId);
+            const infoEl = document.getElementById(`opencv-image-info-${rowId}`);
+            if (!row || !infoEl) return;
+            infoEl.textContent = `${row.lineData.length} line annotations`;
+        }
+
+        function updateOpencvMultiState() {
+            const hasLines = opencvImageRows.some(r => r.lineData.length > 0);
+            runOpencvMultiBtn.disabled = !hasLines;
+
+            if (hasLines) {
+                const totalLines = opencvImageRows.reduce((sum, r) => sum + r.lineData.length, 0);
+                opencvMultiSummary.style.display = 'block';
+                opencvMultiSummary.innerHTML =
+                    `<strong>Ready:</strong> ${totalLines} line annotation(s) loaded`;
+            } else {
+                opencvMultiSummary.style.display = 'none';
+            }
+        }
+
+        opencvAddImageBtn.addEventListener('click', addOpencvImageRow);
+
+        // Run annotated lines calibration
+        async function runOpencvMultiCalibration() {
+            runOpencvMultiBtn.disabled = true;
+            calibrateBtn.disabled = true;
+            showStatus('Running annotated lines calibration...', 'info');
+            progressBar.style.display = 'block';
+            progressBar.querySelector('.fill').style.width = '30%';
+
+            try {
+                // Collect all line annotations from all rows
+                const allLineAnnotations = [];
+                for (const row of opencvImageRows) {
+                    allLineAnnotations.push(...row.lineData);
+                }
+
+                if (allLineAnnotations.length === 0) {
+                    throw new Error('No line annotations loaded');
+                }
+
+                const requestBody = {
+                    camera_line_annotations: allLineAnnotations,
+                    intrinsics: getIntrinsics(),
+                    config: getConfig(),
+                };
+
+                progressBar.querySelector('.fill').style.width = '60%';
+
+                const resp = await fetch('{% url "lens_calibration:api_calibrate_annotated_lines" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify(requestBody),
+                });
+
+                const data = await resp.json();
+                progressBar.querySelector('.fill').style.width = '100%';
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                if (data.success) {
+                    let msg = `Annotated lines calibration complete!`;
+                    msg += ` | RMSE: ${data.overall_rmse.toFixed(3)} px`;
+                    if (data.improvement_percent !== undefined) {
+                        msg += ` | Improvement: ${data.improvement_percent.toFixed(1)}%`;
+                    }
+                    showStatus(msg, 'success');
+                    updateResults(data);
+                } else {
+                    showStatus(`Calibration failed: ${data.message}`, 'warning');
+                }
+
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+
+            runOpencvMultiBtn.disabled = false;
+            calibrateBtn.disabled = false;
+            setTimeout(() => {
+                progressBar.style.display = 'none';
+                progressBar.querySelector('.fill').style.width = '0%';
+            }, 1000);
+        }
+
+        runOpencvMultiBtn.addEventListener('click', runOpencvMultiCalibration);
+
+        // Load test data files, then add one row by default
+        loadTestDataFiles().then(() => {
+            addOpencvImageRow();
         });
 
         // Initialize

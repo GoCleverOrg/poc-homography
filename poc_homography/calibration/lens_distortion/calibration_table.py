@@ -36,6 +36,7 @@ class ZoomCalibrationEntry:
         source_images: List of image paths or session IDs used.
         validation_rmse: Line straightness RMSE from validation.
         num_lines_used: Number of lines used for calibration.
+        reprojection_error_px: Reprojection error in pixels (OpenCV method only).
     """
 
     zoom_factor: float
@@ -52,6 +53,7 @@ class ZoomCalibrationEntry:
     fy: float = 0.0
     cx: float = 0.0
     cy: float = 0.0
+    reprojection_error_px: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate entry data."""
@@ -87,6 +89,8 @@ class ZoomCalibrationEntry:
             d["fy"] = self.fy
             d["cx"] = self.cx
             d["cy"] = self.cy
+        if self.reprojection_error_px != 0.0:
+            d["reprojection_error_px"] = self.reprojection_error_px
         return d
 
     @classmethod
@@ -113,6 +117,7 @@ class ZoomCalibrationEntry:
             fy=float(data.get("fy", 0.0)),
             cx=float(data.get("cx", 0.0)),
             cy=float(data.get("cy", 0.0)),
+            reprojection_error_px=float(data.get("reprojection_error_px", 0.0)),
         )
 
     @classmethod
@@ -127,6 +132,7 @@ class ZoomCalibrationEntry:
         fy: float = 0.0,
         cx: float = 0.0,
         cy: float = 0.0,
+        reprojection_error_px: float = 0.0,
     ) -> ZoomCalibrationEntry:
         """Create from distortion solver result.
 
@@ -140,6 +146,7 @@ class ZoomCalibrationEntry:
             fy: Focal length Y used during calibration.
             cx: Principal point X used during calibration.
             cy: Principal point Y used during calibration.
+            reprojection_error_px: Reprojection error in pixels (OpenCV method).
 
         Returns:
             New ZoomCalibrationEntry.
@@ -159,6 +166,7 @@ class ZoomCalibrationEntry:
             fy=fy,
             cx=cx,
             cy=cy,
+            reprojection_error_px=reprojection_error_px,
         )
 
 

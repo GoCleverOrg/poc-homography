@@ -39,6 +39,7 @@ WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 SURVEY_DIR = WEBAPP_DIR / "survey"
 CALIBRATION_DIR = PROJECT_ROOT / "calibration_results"
+TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +438,110 @@ def api_calibrate_from_calibration_files(request: HttpRequest) -> JsonResponse:
 
 
 @require_http_methods(["POST"])
+def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
+    """Run distortion calibration using manually annotated N-point line traces.
+
+    Request body::
+
+        {
+            "camera_line_annotations": [
+                {"line_id": "L1", "points": [[x1,y1], [x2,y2], ...]},
+                ...
+            ],
+            "intrinsics": {"fx": ..., "fy": ..., "cx": ..., "cy": ...},
+            "config": {"train_split_ratio": 0.7}  // optional
+        }
+    """
+    MAX_LINE_ANNOTATIONS = 500  # Prevent DoS via excessive input
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if "intrinsics" not in data:
+        return JsonResponse({"error": "Missing intrinsics"}, status=400)
+
+    # Validate camera_line_annotations exists and is non-empty
+    annotations = data.get("camera_line_annotations")
+    if not annotations or not isinstance(annotations, list):
+        return JsonResponse(
+            {"error": "Missing or invalid camera_line_annotations"}, status=400
+        )
+
+    if len(annotations) > MAX_LINE_ANNOTATIONS:
+        return JsonResponse(
+            {"error": f"Too many line annotations (max {MAX_LINE_ANNOTATIONS})"}, status=400
+        )
+
+    try:
+        from poc_homography.calibration.lens_distortion.annotated_line_solver import (
+            AnnotatedLineSolver,
+            AnnotatedLineSolverConfig,
+            build_camera_line_annotations,
+        )
+
+        intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(data)
+
+        lines = build_camera_line_annotations(annotations)
+
+        config_data = data.get("config", {})
+        solver_config = AnnotatedLineSolverConfig(
+            train_split_ratio=config_data.get("train_split_ratio", 0.7),
+            use_radial_only=config_data.get("use_radial_only", False),
+        )
+        solver = AnnotatedLineSolver(config=solver_config)
+
+        result = solver.solve(lines, intrinsic_matrix)
+
+        response_data: dict[str, Any] = {
+            "success": result.success,
+            "message": result.message,
+            "iterations": result.iterations,
+            "initial_error": result.initial_error,
+            "final_error": result.final_error,
+            "overall_rmse": result.overall_rmse,
+            "coefficients": {
+                "k1": float(result.distortion.k1),
+                "k2": float(result.distortion.k2),
+                "k3": float(result.distortion.k3),
+                "p1": float(result.distortion.p1),
+                "p2": float(result.distortion.p2),
+            },
+            "intrinsics_used": intrinsics_used,
+            "quality": (
+                "good" if result.overall_rmse < 2.0
+                else "acceptable" if result.overall_rmse < 5.0
+                else "poor"
+            ),
+            "line_errors": result.line_errors[:20],
+        }
+
+        if result.success:
+            response_data["improvement_percent"] = (
+                (1 - result.improvement_ratio()) * 100
+            )
+        else:
+            response_data["improvement_percent"] = 0.0
+
+        if result.intrinsics:
+            response_data["intrinsics"] = result.intrinsics
+
+        return JsonResponse(response_data)
+
+    except ImportError:
+        logger.exception("Annotated line solver module not available")
+        return JsonResponse(
+            {"error": "Annotated line solver module not available"}, status=500,
+        )
+    except Exception:
+        logger.exception("Annotated line calibration failed")
+        return JsonResponse(
+            {"error": "Annotated line calibration failed"}, status=500,
+        )
+
+
+@require_http_methods(["POST"])
 def api_validate(request: HttpRequest) -> JsonResponse:
     """Validate calibration by computing straightness RMSE on test lines."""
     try:
@@ -624,3 +729,38 @@ def api_load(request: HttpRequest) -> JsonResponse:
     except Exception:
         logger.exception("Load failed")
         return JsonResponse({"error": "Load failed"}, status=500)
+
+
+# ---------------------------------------------------------------------------
+# Test data files API
+# ---------------------------------------------------------------------------
+
+@require_GET
+def api_test_data_files(request: HttpRequest) -> JsonResponse:
+    """List YAML files in the test data directory."""
+    if not TEST_DATA_DIR.exists():
+        return JsonResponse({"files": []})
+
+    files = sorted(f.name for f in TEST_DATA_DIR.glob("*.yaml"))
+    return JsonResponse({"files": files})
+
+
+@require_GET
+def api_test_data_file_content(request: HttpRequest) -> JsonResponse:
+    """Read and return parsed YAML content of a test data file."""
+    filename = request.GET.get("filename", "")
+    if not filename:
+        return JsonResponse({"error": "Missing filename"}, status=400)
+
+    # Prevent path traversal
+    filepath = (TEST_DATA_DIR / filename).resolve()
+    if not filepath.is_relative_to(TEST_DATA_DIR.resolve()) or not filepath.exists():
+        return JsonResponse({"error": "File not found"}, status=404)
+
+    try:
+        with open(filepath) as f:
+            data = yaml.safe_load(f)
+        return JsonResponse({"filename": filename, "data": data})
+    except Exception:
+        logger.exception("Failed to read test data file %s", filename)
+        return JsonResponse({"error": "Failed to read file"}, status=500)

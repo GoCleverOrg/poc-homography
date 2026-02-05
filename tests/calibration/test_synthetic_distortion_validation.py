@@ -343,18 +343,15 @@ class TestPerfectRecovery:
         )
         assert max_err < 2.0, f"Max pixel error {max_err:.2f}px"
 
-    def test_zero_distortion_stays_zero(self, K):
-        """Solver should return near-zero coefficients for undistorted lines."""
+    def test_zero_distortion_lines_are_rejected(self, K):
+        """Solver should reject undistorted lines (no edge curvature signal)."""
         lines = _make_lines(0, 0, 0, 0, 0,
                             self.TRUE_FX, self.TRUE_FY,
                             self.TRUE_CX, self.TRUE_CY)
 
         config = SolverConfig(use_radial_only=True, num_samples_per_line=50)
-        result = DistortionSolver(config).solve(lines, K)
-
-        assert abs(float(result.distortion.k1)) < 0.01
-        assert abs(float(result.distortion.k2)) < 0.01
-        assert result.overall_rmse < 0.01
+        with pytest.raises(ValueError, match="No lines with edge curvature"):
+            DistortionSolver(config).solve(lines, K)
 
 
 # ---------------------------------------------------------------------------

@@ -164,4 +164,6 @@ def serialize_calibration_entry(entry) -> dict[str, Any]:
             "cx": entry.cx,
             "cy": entry.cy,
         }
+    if entry.reprojection_error_px != 0.0:
+        entry_data["reprojection_error_px"] = entry.reprojection_error_px
     return entry_data
