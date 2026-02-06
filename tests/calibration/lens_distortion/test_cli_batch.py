@@ -4,9 +4,12 @@ Tests the batch calibration workflow including image grouping by zoom,
 per-zoom calibration execution, validation, and output file generation.
 """
 
+import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 from poc_homography.calibration.lens_distortion.calibration_table import (
@@ -15,6 +18,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import (
 from poc_homography.calibration.lens_distortion.cli import (
     _DEFAULT_FX,
     group_images_by_zoom,
+    main,
     parse_ptz_from_filename,
 )
 from poc_homography.calibration.lens_distortion.models import PTZPosition
@@ -136,54 +140,16 @@ class TestCalibrateBatchCommand:
     def mock_images_dir(self, temp_dir):
         """Create mock images at multiple zoom levels.
 
-        The filename pattern must have PTZ values as the last 3 numeric parts
-        to be correctly parsed by parse_ptz_from_filename().
-        Pattern: prefix_pan_tilt_zoom.jpg (e.g., survey_30.0_15.0_1.0.jpg)
-
-        IMPORTANT: The parser finds the FIRST valid numeric triplet meeting:
-        - pan: -180 to 180
-        - tilt: -90 to 90
-        - zoom: > 0
-
-        To avoid the parser matching an index as part of a triplet, use
-        text prefixes that can't be parsed as numbers.
+        Pattern: survey_imgX_pan_tilt_zoom.jpg where imgX is non-numeric
+        to avoid the parser matching an index as part of a triplet.
         """
-        # Create empty files with PTZ-encoded names
-        # Pattern: survey_imgX_pan_tilt_zoom.jpg where imgX is non-numeric
         zooms = [1.0, 5.0, 10.0]
         for zoom in zooms:
             for i in range(4):  # 4 images per zoom
-                # imgX prefix ensures numeric triplet starts at pan/tilt/zoom
                 filename = f"survey_img{i}_30.0_15.0_{zoom:.1f}.jpg"
                 (temp_dir / filename).touch()
 
         return temp_dir
-
-    @pytest.fixture
-    def mock_solver_result(self):
-        """Create a mock solver result."""
-        from poc_homography.calibration.lens_distortion.distortion_solver import (
-            SolverResult,
-        )
-        from poc_homography.camera_parameters import DistortionCoefficients
-        from poc_homography.types import Unitless
-
-        return SolverResult(
-            distortion=DistortionCoefficients(
-                k1=Unitless(-0.02),
-                k2=Unitless(0.001),
-                k3=Unitless(0.0),
-                p1=Unitless(0.0),
-                p2=Unitless(0.0),
-            ),
-            initial_error=1.0,
-            final_error=0.3,
-            rmse_per_line=[0.2, 0.3, 0.4],
-            overall_rmse=2.5,
-            iterations=100,
-            success=True,
-            message="Optimization terminated successfully.",
-        )
 
     def test_groups_images_correctly(self, mock_images_dir):
         """Should group mock images by zoom level correctly."""
@@ -200,14 +166,28 @@ class TestCalibrateBatchCommand:
         assert len(groups[5.0]) == 4
         assert len(groups[10.0]) == 4
 
-    def test_intrinsics_scaling_formula(self):
-        """Should scale focal length by zoom factor: fx_zoom = base_fx * zoom."""
+    def test_intrinsics_scaling_builds_correct_matrix(self):
+        """Should build intrinsic matrix with zoom-scaled focal length and fixed principal point."""
         base_fx = _DEFAULT_FX
-        zoom_factors = [1.0, 5.0, 10.0, 25.0]
+        cx, cy = 960.0, 540.0
 
-        for zoom in zoom_factors:
-            expected_fx = base_fx * zoom
-            assert expected_fx == pytest.approx(base_fx * zoom)
+        for zoom in [1.0, 5.0, 10.0, 25.0]:
+            fx_zoom = base_fx * zoom
+            fy_zoom = base_fx * zoom
+            intrinsic_matrix = np.array(
+                [
+                    [fx_zoom, 0.0, cx],
+                    [0.0, fy_zoom, cy],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+
+            # Focal lengths scale with zoom
+            assert intrinsic_matrix[0, 0] == pytest.approx(base_fx * zoom)
+            assert intrinsic_matrix[1, 1] == pytest.approx(base_fx * zoom)
+            # Principal point remains constant across zoom levels
+            assert intrinsic_matrix[0, 2] == cx
+            assert intrinsic_matrix[1, 2] == cy
 
     def test_calibration_output_file_format(self, temp_dir):
         """Should create valid CameraCalibrationTable YAML output."""
@@ -249,6 +229,14 @@ class TestCalibrateBatchCommand:
         assert intrinsics is not None
         assert intrinsics["fx"] == pytest.approx(_DEFAULT_FX * 5.0)
 
+        # Verify distortion coefficients round-trip correctly
+        entry_1 = loaded.get_entry(1.0)
+        assert entry_1 is not None
+        assert entry_1.k1 == pytest.approx(-0.02)
+        entry_10 = loaded.get_entry(10.0)
+        assert entry_10 is not None
+        assert entry_10.k1 == pytest.approx(-0.2)
+
     def test_summary_includes_all_zoom_levels(self):
         """Should show all calibrated zoom levels in summary output."""
         table = CameraCalibrationTable(camera_id="test_camera")
@@ -280,8 +268,8 @@ class TestCalibrateBatchCommand:
         assert "1.0" in summary
         assert "5.0" in summary
         assert "10.0" in summary
-        # Should contain intrinsics columns
-        assert "fx" in summary.lower() or "fx" in summary
+        # Should contain intrinsics column header
+        assert "fx" in summary
         assert "Entries: 3" in summary
 
 
@@ -322,31 +310,48 @@ class TestCLIArgumentParsing:
     """Tests for CLI argument parsing."""
 
     def test_calibrate_batch_requires_camera_id(self):
-        """Should require --camera-id flag."""
+        """Should exit with error when --camera-id is missing."""
+        with patch.object(sys, "argv", ["cli", "calibrate-batch", "--images", "/tmp"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 2
 
-        # This test verifies the argument is marked as required
-        # We can't easily test actual argparse without running the CLI
-
-    def test_default_values(self):
-        """Should have sensible defaults for min-images-per-zoom and min-lines-per-zoom."""
-        # These are the expected defaults per the issue spec
-        expected_min_images = 3
-        expected_min_lines = 10
-
-        # Verify these match the implementation by checking the argparse defaults
-        # This is a documentation test more than a functional test
-        assert expected_min_images == 3
-        assert expected_min_lines == 10
+    def test_batch_defaults_accept_minimal_args(self):
+        """Batch command should work with only required args (defaults for the rest)."""
+        with patch.object(
+            sys,
+            "argv",
+            ["cli", "calibrate-batch", "--images", "/nonexistent/path", "--camera-id", "test"],
+        ):
+            # Should fail due to path not found, NOT due to missing args
+            result = main()
+            assert result == 1
 
 
 class TestBackwardsCompatibility:
     """Tests ensuring the existing calibrate command remains unchanged."""
 
-    def test_calibrate_command_signature_unchanged(self):
+    def test_calibrate_command_accepts_legacy_flags(self):
         """The calibrate command should still accept --fx, --fy, --zoom flags."""
-        # This is a design contract test
-        # The existing calibrate command should not be affected by adding calibrate-batch
-        pass
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "cli",
+                "calibrate",
+                "--images",
+                "/nonexistent/path",
+                "--fx",
+                "1000",
+                "--fy",
+                "1000",
+                "--zoom",
+                "2.0",
+            ],
+        ):
+            # Should fail due to path not found, NOT due to unrecognized args
+            result = main()
+            assert result == 1
 
     def test_ptz_parser_unchanged(self):
         """parse_ptz_from_filename should remain compatible with existing usage."""

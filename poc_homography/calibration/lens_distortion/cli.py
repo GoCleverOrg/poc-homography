@@ -101,6 +101,82 @@ def parse_ptz_from_filename(filename: str) -> PTZPosition:
     return PTZPosition(pan_deg=Degrees(0.0), tilt_deg=Degrees(30.0), zoom_factor=1.0)
 
 
+def _resolve_images(args: argparse.Namespace) -> list[Path] | None:
+    """Resolve and validate image source from CLI arguments.
+
+    Handles --images and --survey-session flags used by calibrate commands.
+
+    Returns:
+        List of image paths, or None if resolution fails (errors are logged).
+    """
+    if getattr(args, "survey_session", None):
+        images_path = Path(args.survey_session)
+    elif getattr(args, "images", None):
+        images_path = Path(args.images)
+    else:
+        logger.error("Must specify --images or --survey-session")
+        return None
+
+    if not images_path.exists():
+        logger.error(f"Path not found: {images_path}")
+        return None
+
+    images = find_images(images_path)
+    if not images:
+        logger.error(f"No images found in {images_path}")
+        return None
+
+    return images
+
+
+def _detect_lines(
+    images: list[Path],
+    detector: LineDetector,
+    max_lines_per_image: int,
+    line_id_prefix: str = "line",
+    verbose: bool = False,
+) -> list[CameraLine]:
+    """Detect and collect lines from a set of images.
+
+    Args:
+        images: Image paths to process.
+        detector: Configured LineDetector instance.
+        max_lines_per_image: Maximum lines to keep per image.
+        line_id_prefix: Prefix for generated line IDs.
+        verbose: Log per-image detection details.
+
+    Returns:
+        List of detected CameraLine objects.
+    """
+    all_lines: list[CameraLine] = []
+    line_counter = 0
+
+    for img_path in images:
+        try:
+            candidates = detector.detect_from_file(img_path)
+            ptz = parse_ptz_from_filename(img_path.name)
+
+            for c in candidates[:max_lines_per_image]:
+                camera_line = c.to_camera_line(
+                    line_id=f"{line_id_prefix}_{line_counter:04d}",
+                    image_path=str(img_path),
+                    ptz_position=ptz,
+                )
+                all_lines.append(camera_line)
+                line_counter += 1
+
+            if verbose:
+                logger.info(
+                    f"  {img_path.name}: {len(candidates)} detected, "
+                    f"using top {min(len(candidates), max_lines_per_image)}"
+                )
+
+        except Exception as e:
+            logger.warning(f"  Failed to process {img_path}: {e}")
+
+    return all_lines
+
+
 def cmd_detect(args: argparse.Namespace) -> int:
     """Run line detection on images."""
     images_path = Path(args.images)
@@ -167,22 +243,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
     """Run full calibration pipeline."""
-    # Determine image source
-    if args.survey_session:
-        images_path = Path(args.survey_session)
-    elif args.images:
-        images_path = Path(args.images)
-    else:
-        logger.error("Must specify --images or --survey-session")
-        return 1
-
-    if not images_path.exists():
-        logger.error(f"Path not found: {images_path}")
-        return 1
-
-    images = find_images(images_path)
-    if not images:
-        logger.error(f"No images found in {images_path}")
+    images = _resolve_images(args)
+    if images is None:
         return 1
 
     logger.info(f"Found {len(images)} images for calibration")
@@ -205,32 +267,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     detector = LineDetector(config=detection_config)
 
     # Detect lines in all images
-    all_lines: list[CameraLine] = []
-    line_counter = 0
-
-    for img_path in images:
-        try:
-            candidates = detector.detect_from_file(img_path)
-            ptz = parse_ptz_from_filename(img_path.name)
-
-            # Take top N candidates per image
-            for c in candidates[: args.max_lines_per_image]:
-                camera_line = c.to_camera_line(
-                    line_id=f"line_{line_counter:04d}",
-                    image_path=str(img_path),
-                    ptz_position=ptz,
-                )
-                all_lines.append(camera_line)
-                line_counter += 1
-
-            if args.verbose:
-                logger.info(
-                    f"{img_path.name}: {len(candidates)} detected, "
-                    f"using top {min(len(candidates), args.max_lines_per_image)}"
-                )
-
-        except Exception as e:
-            logger.warning(f"Failed to process {img_path}: {e}")
+    all_lines = _detect_lines(images, detector, args.max_lines_per_image, verbose=args.verbose)
 
     if len(all_lines) < args.min_total_lines:
         logger.error(f"Only {len(all_lines)} lines detected, need at least {args.min_total_lines}")
@@ -363,22 +400,8 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
     runs calibration independently for each zoom, and outputs a single calibration
     table with all results.
     """
-    # Determine image source
-    if args.survey_session:
-        images_path = Path(args.survey_session)
-    elif args.images:
-        images_path = Path(args.images)
-    else:
-        logger.error("Must specify --images or --survey-session")
-        return 1
-
-    if not images_path.exists():
-        logger.error(f"Path not found: {images_path}")
-        return 1
-
-    images = find_images(images_path)
-    if not images:
-        logger.error(f"No images found in {images_path}")
+    images = _resolve_images(args)
+    if images is None:
         return 1
 
     logger.info(f"Found {len(images)} total images")
@@ -389,14 +412,13 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
 
     # Report zoom groups found
     zoom_summary = ", ".join(
-        f"{zoom:.1f} ({len(zoom_groups[zoom])} images)" for zoom in sorted_zooms
+        f"{zoom:.1f} ({len(imgs)} images)" for zoom, imgs in sorted(zoom_groups.items())
     )
     print(f"\nFound {len(sorted_zooms)} zoom levels: {zoom_summary}")
 
     # Check for default zoom (1.0) which might indicate parsing failures
     default_zoom_count = len(zoom_groups.get(1.0, []))
-    total_images = len(images)
-    if default_zoom_count > 0 and default_zoom_count == total_images:
+    if default_zoom_count > 0 and default_zoom_count == len(images):
         logger.warning(
             "All images have default zoom (1.0). "
             "Check that filenames follow pattern: prefix_pan_tilt_zoom_suffix.jpg"
@@ -404,10 +426,9 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
 
     # Validate zoom groups before calibration
     min_images = args.min_images_per_zoom
-    insufficient_zooms = []
-    for zoom, group_images in zoom_groups.items():
-        if len(group_images) < min_images:
-            insufficient_zooms.append((zoom, len(group_images)))
+    insufficient_zooms = [
+        (zoom, len(imgs)) for zoom, imgs in zoom_groups.items() if len(imgs) < min_images
+    ]
 
     if insufficient_zooms:
         for zoom, count in insufficient_zooms:
@@ -433,7 +454,7 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
     solver = DistortionSolver(config=solver_config)
 
     # Initialize calibration table
-    camera_id = args.camera_id or "unknown_camera"
+    camera_id = args.camera_id
     table = CameraCalibrationTable(camera_id=camera_id)
 
     # Track results for summary
@@ -449,32 +470,13 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
         print(f"\nProcessing zoom {zoom:.1f} ({len(group_images)} images)...")
 
         # Detect lines in all images for this zoom
-        all_lines: list[CameraLine] = []
-        line_counter = 0
-
-        for img_path in group_images:
-            try:
-                candidates = detector.detect_from_file(img_path)
-                ptz = parse_ptz_from_filename(img_path.name)
-
-                # Take top N candidates per image
-                for c in candidates[: args.max_lines_per_image]:
-                    camera_line = c.to_camera_line(
-                        line_id=f"zoom{zoom:.1f}_line_{line_counter:04d}",
-                        image_path=str(img_path),
-                        ptz_position=ptz,
-                    )
-                    all_lines.append(camera_line)
-                    line_counter += 1
-
-                if args.verbose:
-                    logger.info(
-                        f"  {img_path.name}: {len(candidates)} detected, "
-                        f"using top {min(len(candidates), args.max_lines_per_image)}"
-                    )
-
-            except Exception as e:
-                logger.warning(f"  Failed to process {img_path}: {e}")
+        all_lines = _detect_lines(
+            group_images,
+            detector,
+            args.max_lines_per_image,
+            line_id_prefix=f"zoom{zoom:.1f}_line",
+            verbose=args.verbose,
+        )
 
         print(f"  Detected {len(all_lines)} lines")
 
@@ -549,21 +551,19 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
             print(f"  RMSE: {result.overall_rmse:.2f} pixels ✗ (poor quality)")
             logger.warning(f"  RMSE > 5 pixels for zoom {zoom:.1f}, consider more/better lines")
 
-    # Check for failures
+    # Report failures (but save successful results)
     if failed_zooms:
         print("\n" + "=" * 60)
-        print("CALIBRATION FAILED")
+        print("WARNINGS: Some zoom levels failed")
         print("=" * 60)
         for zoom, error in failed_zooms:
             print(f"  Zoom {zoom:.1f}: {error}")
-        print("\nCalibration aborted. No output file written.")
-        return 1
 
     if not table.entries:
         logger.error("No successful calibrations. Check image quality and line detection.")
         return 1
 
-    # Save results
+    # Save results (including partial success)
     if args.output:
         output_path = Path(args.output)
         table.save(output_path)
@@ -584,11 +584,9 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
             "entries": results_summary,
         }
         print("\nJSON output:")
-        import json
-
         print(json.dumps(output, indent=2))
 
-    return 0
+    return 1 if failed_zooms else 0
 
 
 def cmd_visualize(args: argparse.Namespace) -> int:
