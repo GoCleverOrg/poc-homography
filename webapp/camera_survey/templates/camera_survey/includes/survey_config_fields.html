@@ -1,0 +1,109 @@
+{% comment %}
+Shared survey configuration fields partial.
+Used by both camera_survey and camera_evaluation templates.
+
+Required context variables:
+  - id_prefix: Prefix for element IDs (e.g., "" for camera_survey, "survey-" for camera_evaluation)
+  - axis_radio_name: Name attribute for axis radio group (e.g., "axis" or "survey-axis")
+  - show_helpers: Whether to show helper text and error messages on range inputs (true/false)
+  - show_current_position: Whether to show current position display section (true/false)
+{% endcomment %}
+
+<label>Axis</label>
+<div class="radio-group">
+    <label class="radio-label">
+        <input type="radio" name="{{ axis_radio_name }}" value="pan" checked>
+        Pan
+    </label>
+    <label class="radio-label">
+        <input type="radio" name="{{ axis_radio_name }}" value="tilt">
+        Tilt
+    </label>
+    <label class="radio-label">
+        <input type="radio" name="{{ axis_radio_name }}" value="zoom">
+        Zoom
+    </label>
+</div>
+
+<!-- Fixed axis values (for non-swept axes) -->
+<div id="fixed-axis-container" style="margin-top: 12px;">
+    <div class="form-row" id="fixed-pan-group" style="display: none;">
+        <div class="form-group">
+            <label for="fixed-pan-input">Pan (fixed)</label>
+            <input type="number" id="fixed-pan-input" step="0.1" placeholder="Current position">
+        </div>
+    </div>
+    <div class="form-row" id="fixed-tilt-group" style="display: none;">
+        <div class="form-group">
+            <label for="fixed-tilt-input">Tilt (fixed)</label>
+            <input type="number" id="fixed-tilt-input" step="0.1" placeholder="Current position">
+        </div>
+    </div>
+    <div class="form-row" id="fixed-zoom-group" style="display: none;">
+        <div class="form-group">
+            <label for="fixed-zoom-input">Zoom (fixed)</label>
+            <input type="number" id="fixed-zoom-input" step="1" placeholder="Current position">
+        </div>
+    </div>
+</div>
+
+{% if show_current_position %}
+<!-- Current Position Display -->
+<div id="{{ id_prefix }}current-position" class="camera-info hidden" style="margin-bottom: 16px;">
+    <div style="font-weight: 500; margin-bottom: 8px; color: #ccc;">Current Position</div>
+    <div class="camera-info-row">
+        <span class="camera-info-label">Pan:</span>
+        <span class="camera-info-value" id="{{ id_prefix }}current-pan">-</span>
+    </div>
+    <div class="camera-info-row">
+        <span class="camera-info-label">Tilt:</span>
+        <span class="camera-info-value" id="{{ id_prefix }}current-tilt">-</span>
+    </div>
+    <div class="camera-info-row">
+        <span class="camera-info-label">Zoom:</span>
+        <span class="camera-info-value" id="{{ id_prefix }}current-zoom">-</span>
+    </div>
+</div>
+{% endif %}
+
+<label>Presets</label>
+<div id="{{ id_prefix }}preset-buttons" class="preset-buttons">
+    <!-- Presets loaded dynamically -->
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Start</label>
+        <input type="number" id="{{ id_prefix }}start-input" value="0" step="1">
+        {% if show_helpers %}<small id="{{ id_prefix }}start-helper" class="helper-text"></small>{% endif %}
+        {% if show_helpers %}<small id="{{ id_prefix }}start-error" class="error-message"></small>{% endif %}
+    </div>
+    <div class="form-group">
+        <label>End</label>
+        <input type="number" id="{{ id_prefix }}end-input" value="360" step="1">
+        {% if show_helpers %}<small id="{{ id_prefix }}end-helper" class="helper-text"></small>{% endif %}
+        {% if show_helpers %}<small id="{{ id_prefix }}end-error" class="error-message"></small>{% endif %}
+    </div>
+    <div class="form-group">
+        <label>Step</label>
+        <input type="number" id="{{ id_prefix }}step-input" value="10" min="0.1" step="0.1">
+        {% if show_helpers %}<small id="{{ id_prefix }}step-helper" class="helper-text"></small>{% endif %}
+        {% if show_helpers %}<small id="{{ id_prefix }}step-error" class="error-message"></small>{% endif %}
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Retry Timeout (seconds)</label>
+        <input type="number" id="{{ id_prefix }}timeout-input" value="60" min="1">
+    </div>
+    <div class="form-group">
+        <label>Session Tags (comma-separated)</label>
+        <input type="text" id="{{ id_prefix }}tags-input" placeholder="day, sunny, morning">
+    </div>
+</div>
+
+<label class="checkbox-label">
+    <input type="checkbox" id="{{ id_prefix }}restore-ptz" checked>
+    Restore PTZ position after survey
+</label>

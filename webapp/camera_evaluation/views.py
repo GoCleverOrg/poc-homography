@@ -197,6 +197,9 @@ def api_survey_start(request: HttpRequest) -> JsonResponse:
         restore_ptz=data.get("restore_ptz", True),
         retry_timeout=int(data.get("retry_timeout", 60)),
         session_tags=session_tags,
+        fixed_pan=data.get("fixed_pan"),
+        fixed_tilt=data.get("fixed_tilt"),
+        fixed_zoom=data.get("fixed_zoom"),
     )
 
     # Start survey
@@ -370,7 +373,9 @@ def api_camera_capabilities(request: HttpRequest) -> JsonResponse:
 
     try:
         # Create PTZ camera instance and get capabilities via abstraction layer
-        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
+        ptz_camera = create_ptz_camera(
+            camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id
+        )
         capabilities = ptz_camera.get_capabilities()
 
         # Build response from CameraCapabilities model
@@ -433,7 +438,9 @@ def api_camera_position(request: HttpRequest) -> JsonResponse:
 
     try:
         # Create PTZ camera instance using existing abstraction
-        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
+        ptz_camera = create_ptz_camera(
+            camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id
+        )
 
         # Get current position
         position = ptz_camera.get_status()
