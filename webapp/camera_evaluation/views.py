@@ -186,6 +186,29 @@ def api_survey_start(request: HttpRequest) -> JsonResponse:
     if isinstance(session_tags, str):
         session_tags = [t.strip() for t in session_tags.split(",") if t.strip()]
 
+    # Parse optional fixed axis values
+    fixed_pan: float | None = None
+    fixed_tilt: float | None = None
+    fixed_zoom: float | None = None
+
+    if "fixed_pan" in data and data["fixed_pan"] is not None:
+        try:
+            fixed_pan = float(data["fixed_pan"])
+        except (ValueError, TypeError):
+            return _error_response("fixed_pan must be numeric")
+
+    if "fixed_tilt" in data and data["fixed_tilt"] is not None:
+        try:
+            fixed_tilt = float(data["fixed_tilt"])
+        except (ValueError, TypeError):
+            return _error_response("fixed_tilt must be numeric")
+
+    if "fixed_zoom" in data and data["fixed_zoom"] is not None:
+        try:
+            fixed_zoom = float(data["fixed_zoom"])
+        except (ValueError, TypeError):
+            return _error_response("fixed_zoom must be numeric")
+
     # Create config
     config = SurveyConfig(
         tenant_id=data["tenant_id"],
@@ -197,9 +220,9 @@ def api_survey_start(request: HttpRequest) -> JsonResponse:
         restore_ptz=data.get("restore_ptz", True),
         retry_timeout=int(data.get("retry_timeout", 60)),
         session_tags=session_tags,
-        fixed_pan=data.get("fixed_pan"),
-        fixed_tilt=data.get("fixed_tilt"),
-        fixed_zoom=data.get("fixed_zoom"),
+        fixed_pan=fixed_pan,
+        fixed_tilt=fixed_tilt,
+        fixed_zoom=fixed_zoom,
     )
 
     # Start survey
