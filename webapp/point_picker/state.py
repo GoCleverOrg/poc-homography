@@ -11,7 +11,7 @@ from PIL import Image
 
 from poc_homography.geotiff_utils import apply_geotransform
 from poc_homography.map_points.map_point import MapPoint
-from poc_homography.map_points.map_point_registry import MapPointRegistry
+from poc_homography.map_points.gcp_registry import GCPRegistry
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -121,7 +121,7 @@ class PointPickerState:
         """
         self.geotiff_path = image_path  # Keep name for compatibility
         self.map_id = image_path.stem
-        self.registry = MapPointRegistry(map_id=self.map_id, points={})
+        self.registry = GCPRegistry(map_id=self.map_id, points={})
 
         # Detect file type and load accordingly
         suffix = image_path.suffix.lower()
@@ -194,7 +194,7 @@ class PointPickerState:
         # Create new registry with added point (immutable pattern)
         new_points = dict(self.registry.points)
         new_points[point_id] = point
-        self.registry = MapPointRegistry(map_id=self.map_id, points=new_points)
+        self.registry = GCPRegistry(map_id=self.map_id, points=new_points)
 
         return point_id
 
@@ -211,7 +211,7 @@ class PointPickerState:
 
         new_points = dict(self.registry.points)
         new_points[point_id] = MapPoint(pixel_x=pixel_x, pixel_y=pixel_y)
-        self.registry = MapPointRegistry(map_id=self.map_id, points=new_points)
+        self.registry = GCPRegistry(map_id=self.map_id, points=new_points)
 
     def delete_point(self, point_id: str) -> None:
         """Delete a point.
@@ -224,7 +224,7 @@ class PointPickerState:
 
         new_points = dict(self.registry.points)
         del new_points[point_id]
-        self.registry = MapPointRegistry(map_id=self.map_id, points=new_points)
+        self.registry = GCPRegistry(map_id=self.map_id, points=new_points)
 
     def load_registry(self, path: Path) -> None:
         """Load points from YAML/JSON file.
@@ -232,7 +232,7 @@ class PointPickerState:
         Args:
             path: Path to the file.
         """
-        self.registry = MapPointRegistry.load(path)
+        self.registry = GCPRegistry.load(path)
         self.map_id = self.registry.map_id
 
     def save_registry(self, path: Path) -> None:

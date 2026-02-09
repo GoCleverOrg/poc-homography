@@ -172,3 +172,7 @@ ptz_discovery_and_control/hikvision/ptz_test_results_*.json
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Ralph runtime files
+.ralph_cache/
+ralph.json

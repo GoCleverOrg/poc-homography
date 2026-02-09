@@ -1,7 +1,7 @@
 """
 Views for GCP visualization.
 
-Django view wrappers that use MapPointRegistry for persistence.
+Django view wrappers that use GCPRegistry for persistence.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import MapPoint, GCPRegistry
 
 # Project root and data directories
 # Path: views.py -> gcp/ -> webapp/ -> project_root/
@@ -57,11 +57,11 @@ def _resolve_safe_file_path(filename: str) -> Path | None:
     return file_path
 
 
-def _load_registry() -> MapPointRegistry:
-    """Load MapPointRegistry from disk or return empty registry."""
+def _load_registry() -> GCPRegistry:
+    """Load GCPRegistry from disk or return empty registry."""
     if MAP_POINTS_FILE.exists():
-        return MapPointRegistry.load(MAP_POINTS_FILE)
-    return MapPointRegistry(map_id="default", points={})
+        return GCPRegistry.load(MAP_POINTS_FILE)
+    return GCPRegistry(map_id="default", points={})
 
 
 def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
@@ -88,7 +88,7 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     if file_param:
         file_path = _resolve_safe_file_path(file_param)
         if file_path and file_path.exists():
-            registry = MapPointRegistry.load(file_path)
+            registry = GCPRegistry.load(file_path)
         else:
             registry = _load_registry()
     else:

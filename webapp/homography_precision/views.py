@@ -22,7 +22,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from PIL import Image
 
 from poc_homography.homography.map_points import MapPointHomography
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GCPRegistry
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths (relative to project root)
@@ -473,7 +473,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         )
 
     try:
-        registry = MapPointRegistry.load(GCP_REGISTRY_FILE)
+        registry = GCPRegistry.load(GCP_REGISTRY_FILE)
     except (yaml.YAMLError, KeyError, ValueError) as e:
         return JsonResponse(
             {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -628,7 +628,7 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         )
 
     try:
-        registry = MapPointRegistry.load(GCP_REGISTRY_FILE)
+        registry = GCPRegistry.load(GCP_REGISTRY_FILE)
     except (yaml.YAMLError, KeyError, ValueError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
@@ -1040,7 +1040,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         try:
-            gcp_registry = MapPointRegistry.load(GCP_REGISTRY_FILE)
+            gcp_registry = GCPRegistry.load(GCP_REGISTRY_FILE)
         except (yaml.YAMLError, KeyError, ValueError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},

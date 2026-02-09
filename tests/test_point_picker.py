@@ -14,7 +14,7 @@ import pytest
 from PIL import Image
 
 from poc_homography.map_points.map_point import MapPoint
-from poc_homography.map_points.map_point_registry import MapPointRegistry
+from poc_homography.map_points.gcp_registry import GCPRegistry
 
 # Add webapp to path for Django imports
 PROJECT_ROOT = Path(__file__).parent.parent

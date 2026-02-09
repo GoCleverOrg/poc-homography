@@ -17,7 +17,7 @@ from poc_homography.camera_config import (
     get_camera_configs,
 )
 from poc_homography.cli.main import camera_app
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GCPRegistry
 from poc_homography.types import Millimeters, Pixels
 from poc_homography.validation import load_gcps_from_yaml, validate_model
 
@@ -259,7 +259,7 @@ def validate_command(
 
     # Load map point registry
     try:
-        registry = MapPointRegistry.load(registry_file)
+        registry = GCPRegistry.load(registry_file)
     except FileNotFoundError:
         typer.echo(f"Error: Registry file not found: {registry_file}", err=True)
         raise typer.Exit(1)

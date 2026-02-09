@@ -17,7 +17,7 @@ import yaml
 
 from poc_homography.calibration.annotation import Annotation
 from poc_homography.homography import MapPointHomography
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GCPRegistry
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
@@ -29,7 +29,7 @@ ANNOTATIONS_PATH = TEST_DATA_DIR / "valte_annotations.yaml"
 @pytest.fixture
 def map_registry():
     """Load map point registry."""
-    return MapPointRegistry.load(MAP_POINTS_PATH)
+    return GCPRegistry.load(MAP_POINTS_PATH)
 
 
 @pytest.fixture

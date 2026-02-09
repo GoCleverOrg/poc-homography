@@ -32,6 +32,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "PyYAML>=6.0",
     "requests>=2.28",
+    "rasterio>=1.3",
     "scipy>=1.9",
     "tifffile>=2024.1.0",
     "typer>=0.9.0",
@@ -54,6 +55,7 @@ dev = [
     "types-requests",
     "matplotlib>=3.7",
     "vulture>=2.14",
+    "pylint>=3.0",
     "deadcode>=2.4",
     "poethepoet>=0.31",
     "playwright>=1.40",
@@ -189,11 +191,29 @@ exclude_lines = [
 ]
 
 [tool.vulture]
-min_confidence = 80
-paths = ["poc_homography"]
+min_confidence = 60
+paths = ["poc_homography", "webapp"]
 exclude = ["tests/", "examples/", "build/", "dist/"]
 # Ignore interface parameters required by ABC but not used in all implementations
 ignore_names = ["frame", "kwargs"]
+
+[tool.pylint.main]
+py-version = "3.10"
+jobs = 0
+load-plugins = []
+
+[tool.pylint."messages control"]
+disable = [
+    "C0103",  # invalid-name (conflicts with domain modeling conventions)
+    "C0114",  # missing-module-docstring (not all modules need docstrings)
+    "C0115",  # missing-class-docstring (not all classes need docstrings)
+    "C0116",  # missing-function-docstring (not all functions need docstrings)
+    "R0903",  # too-few-public-methods (value objects often have few methods)
+    "R0913",  # too-many-arguments (sometimes necessary for entities)
+]
+enable = [
+    "W0212",  # protected-access (enforce private member access rules)
+]
 
 [tool.deadcode]
 exclude = ["build", "dist"]
@@ -205,6 +225,7 @@ format = "ruff format poc_homography"
 format-check = "ruff format --check poc_homography"
 typecheck = "pyright poc_homography"
 vulture = "vulture poc_homography --min-confidence 80"
+pylint = "pylint poc_homography"
 deadcode = "deadcode . --only poc_homography/"
 deadcode-fix = "deadcode . --only poc_homography/ --fix"
 test = "pytest tests/ -v"
@@ -212,11 +233,11 @@ test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
 
 [tool.poe.tasks.validate]
-sequence = ["lint", "format-check", "typecheck", "vulture"]
+sequence = ["lint", "format-check", "typecheck", "pylint", "vulture"]
 help = "Run all validation checks (no tests)"
 
 [tool.poe.tasks.ci]
-sequence = ["lint", "format-check", "typecheck", "vulture", "test"]
+sequence = ["lint", "format-check", "typecheck", "pylint", "vulture", "test"]
 help = "Run full CI: validation + tests"
 
 [tool.poe.tasks.clean]

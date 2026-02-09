@@ -42,7 +42,7 @@ import pytest
 import yaml
 
 from poc_homography.calibration.annotation import Annotation
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import MapPoint, GCPRegistry
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths
@@ -55,7 +55,7 @@ VALTE_IMAGE_PATH = TEST_DATA_DIR / "valte_30.8_13.1_1_20260112.png"
 @pytest.fixture
 def map_point_registry():
     """Load map point registry from YAML file."""
-    return MapPointRegistry.load(MAP_POINTS_PATH)
+    return GCPRegistry.load(MAP_POINTS_PATH)
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def valte_image():
     return image
 
 
-class TestMapPointRegistryLoading:
+class TestGCPRegistryLoading:
     """Test loading map point registry from YAML."""
 
     def test_map_points_file_exists(self):

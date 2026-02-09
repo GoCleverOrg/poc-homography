@@ -1,4 +1,4 @@
-"""Registry for managing collections of map points."""
+"""Registry for managing collections of GCPs."""
 
 from __future__ import annotations
 
@@ -42,10 +42,10 @@ def _get_fs(fs: FileSystem | None) -> FileSystem:
 
 
 @dataclass(frozen=True)
-class MapPointRegistry:
-    """Immutable registry for managing map points.
+class GCPRegistry:
+    """Immutable registry for managing GCPs.
 
-    This class stores a collection of map points, allowing efficient lookup by ID
+    This class stores a collection of GCPs, allowing efficient lookup by ID
     and providing serialization to/from JSON and YAML formats.
 
     Attributes:
@@ -70,6 +70,14 @@ class MapPointRegistry:
             ],
         }
 
+    def __iter__(self):
+        """Iterate over MapPoint values in the registry."""
+        return iter(self.points.values())
+
+    def __len__(self) -> int:
+        """Return number of points in the registry."""
+        return len(self.points)
+
     def to_json(self, indent: int = 2) -> str:
         """Convert registry to JSON string.
 
@@ -82,7 +90,7 @@ class MapPointRegistry:
         return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MapPointRegistry:
+    def from_dict(cls, data: dict[str, Any]) -> GCPRegistry:
         """Create registry from dictionary.
 
         Args:
@@ -90,7 +98,7 @@ class MapPointRegistry:
                   Each point dict must have an "id" key which becomes the dictionary key.
 
         Returns:
-            New MapPointRegistry instance.
+            New GCPRegistry instance.
 
         Raises:
             KeyError: If required keys are missing.
@@ -111,14 +119,14 @@ class MapPointRegistry:
         return cls(map_id=map_id, points=points)
 
     @classmethod
-    def from_json(cls, json_str: str) -> MapPointRegistry:
+    def from_json(cls, json_str: str) -> GCPRegistry:
         """Create registry from JSON string.
 
         Args:
             json_str: JSON string representation.
 
         Returns:
-            New MapPointRegistry instance.
+            New GCPRegistry instance.
 
         Raises:
             json.JSONDecodeError: If JSON is invalid.
@@ -129,14 +137,14 @@ class MapPointRegistry:
         return cls.from_dict(data)
 
     @classmethod
-    def from_yaml(cls, yaml_str: str) -> MapPointRegistry:
+    def from_yaml(cls, yaml_str: str) -> GCPRegistry:
         """Create registry from YAML string.
 
         Args:
             yaml_str: YAML string representation.
 
         Returns:
-            New MapPointRegistry instance.
+            New GCPRegistry instance.
 
         Raises:
             yaml.YAMLError: If YAML is invalid.
@@ -170,7 +178,7 @@ class MapPointRegistry:
             _get_fs(fs).write_text(path, self.to_json())
 
     @classmethod
-    def load(cls, path: str | Path, fs: FileSystem | None = None) -> MapPointRegistry:
+    def load(cls, path: str | Path, fs: FileSystem | None = None) -> GCPRegistry:
         """Load registry from file (JSON or YAML based on extension).
 
         Args:
@@ -178,7 +186,7 @@ class MapPointRegistry:
             fs: File system implementation (default: DefaultFileSystem).
 
         Returns:
-            New MapPointRegistry instance.
+            New GCPRegistry instance.
 
         Raises:
             FileNotFoundError: If file doesn't exist.

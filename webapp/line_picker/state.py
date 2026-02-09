@@ -9,7 +9,7 @@ import tifffile
 import yaml
 from PIL import Image
 
-from poc_homography.map_points.map_point_registry import MapPointRegistry
+from poc_homography.map_points.gcp_registry import GCPRegistry
 
 
 def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, str | None]:
@@ -131,7 +131,7 @@ class LinePickerState:
     def __init__(
         self,
         image_path: Path,
-        gcp_registry: MapPointRegistry,
+        gcp_registry: GCPRegistry,
         gcp_registry_path: Path | None = None,
         geotransform: list[float] | None = None,
         crs: str | None = None,
@@ -337,7 +337,7 @@ def initialize_state(
     global _state
 
     # Load GCP registry
-    gcp_registry = MapPointRegistry.load(gcp_registry_path)
+    gcp_registry = GCPRegistry.load(gcp_registry_path)
 
     _state = LinePickerState(
         image_path,

@@ -35,7 +35,7 @@ from poc_homography.homography import (
     MapPointHomography,
     get_default_config,
 )
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.pixel_point import PixelPoint
 
 __all__ = [
@@ -60,7 +60,7 @@ __all__ = [
     "IntrinsicExtrinsicResult",
     # Map points
     "MapPoint",
-    "MapPointRegistry",
+    "GCPRegistry",
     "MapPointHomography",
     "MapPointComputationResult",
     # Other

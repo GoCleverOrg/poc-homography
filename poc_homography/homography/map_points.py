@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.pixel_point import PixelPoint
 
 
@@ -118,7 +118,7 @@ class MapPointHomography:
     def compute_from_gcps(
         self,
         gcps: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         ransac_threshold: float = 50.0,
         min_inlier_ratio: float = 0.5,
     ) -> MapPointComputationResult:
