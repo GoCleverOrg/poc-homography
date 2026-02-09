@@ -1488,6 +1488,7 @@ dependencies = [
     { name = "tifffile", version = "2025.5.10", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "tifffile", version = "2025.12.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "typer" },
+    { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
 
@@ -1526,6 +1527,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.9" },
     { name = "tifffile", specifier = ">=2024.1.0" },
     { name = "typer", specifier = ">=0.9.0" },
+    { name = "typing-extensions", specifier = ">=4.0" },
     { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 

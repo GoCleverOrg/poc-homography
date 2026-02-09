@@ -1,5 +1,7 @@
 """Base class for YAML-backed repositories."""
 
+from __future__ import annotations
+
 from abc import ABC
 from pathlib import Path
 from typing import Generic, TypeVar

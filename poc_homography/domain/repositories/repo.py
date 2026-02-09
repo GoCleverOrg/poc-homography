@@ -4,6 +4,8 @@ This module provides a generic repository protocol that defines the
 standard CRUD operations for domain entities.
 """
 
+from __future__ import annotations
+
 from typing import Protocol, TypeVar
 
 from poc_homography.domain.entities.entity import Entity
