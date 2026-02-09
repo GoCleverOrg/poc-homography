@@ -596,79 +596,9 @@
                 <h2>Survey Configuration</h2>
             </div>
 
-            <label>Axis</label>
-            <div class="radio-group">
-                <label class="radio-label">
-                    <input type="radio" name="axis" value="pan" checked>
-                    Pan
-                </label>
-                <label class="radio-label">
-                    <input type="radio" name="axis" value="tilt">
-                    Tilt
-                </label>
-                <label class="radio-label">
-                    <input type="radio" name="axis" value="zoom">
-                    Zoom
-                </label>
-            </div>
-
-            <!-- Fixed axis values (for non-swept axes) -->
-            <div id="fixed-axis-container" style="margin-top: 12px;">
-                <div class="form-row" id="fixed-pan-group" style="display: none;">
-                    <div class="form-group">
-                        <label for="fixed-pan-input">Pan (fixed)</label>
-                        <input type="number" id="fixed-pan-input" step="0.1" placeholder="Current position">
-                    </div>
-                </div>
-                <div class="form-row" id="fixed-tilt-group" style="display: none;">
-                    <div class="form-group">
-                        <label for="fixed-tilt-input">Tilt (fixed)</label>
-                        <input type="number" id="fixed-tilt-input" step="0.1" placeholder="Current position">
-                    </div>
-                </div>
-                <div class="form-row" id="fixed-zoom-group" style="display: none;">
-                    <div class="form-group">
-                        <label for="fixed-zoom-input">Zoom (fixed)</label>
-                        <input type="number" id="fixed-zoom-input" step="1" placeholder="Current position">
-                    </div>
-                </div>
-            </div>
-
-            <label>Presets</label>
-            <div id="preset-buttons" class="preset-buttons">
-                <!-- Presets will be loaded here -->
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="start-input">Start</label>
-                    <input type="number" id="start-input" value="0" step="1">
-                </div>
-                <div class="form-group">
-                    <label for="end-input">End</label>
-                    <input type="number" id="end-input" value="360" step="1">
-                </div>
-                <div class="form-group">
-                    <label for="step-input">Step</label>
-                    <input type="number" id="step-input" value="10" min="0.1" step="0.1">
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="timeout-input">Retry Timeout (seconds)</label>
-                    <input type="number" id="timeout-input" value="60" min="1">
-                </div>
-                <div class="form-group">
-                    <label for="tags-input">Session Tags (comma-separated)</label>
-                    <input type="text" id="tags-input" placeholder="day, sunny, morning">
-                </div>
-            </div>
-
-            <label class="checkbox-label">
-                <input type="checkbox" id="restore-ptz" checked>
-                Restore PTZ position after survey
-            </label>
+            {% with id_prefix="" axis_radio_name="axis" show_helpers=False show_current_position=False %}
+                {% include "camera_survey/includes/survey_config_fields.html" %}
+            {% endwith %}
         </div>
 
         <!-- Survey Control Panel -->
@@ -1074,9 +1004,9 @@
                         restore_ptz: restorePtz.checked,
                         retry_timeout: retryTimeout,
                         session_tags: tags,
-                        fixed_pan: fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
-                        fixed_tilt: fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
-                        fixed_zoom: fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
+                        fixed_pan: axis !== 'pan' && fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
+                        fixed_tilt: axis !== 'tilt' && fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
+                        fixed_zoom: axis !== 'zoom' && fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
                     }),
                 });
 

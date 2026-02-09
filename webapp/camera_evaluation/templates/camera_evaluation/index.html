@@ -820,84 +820,9 @@
             <div id="survey-config-panel" class="panel hidden">
                 <h2>Survey Configuration</h2>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label>Axis</label>
-                    <div class="radio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="survey-axis" value="pan" checked>
-                            Pan
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="survey-axis" value="tilt">
-                            Tilt
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="survey-axis" value="zoom">
-                            Zoom
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Current Position Display -->
-                <div id="survey-current-position" class="camera-info hidden" style="margin-bottom: 16px;">
-                    <div style="font-weight: 500; margin-bottom: 8px; color: #ccc;">Current Position</div>
-                    <div class="camera-info-row">
-                        <span class="camera-info-label">Pan:</span>
-                        <span class="camera-info-value" id="survey-current-pan">-</span>
-                    </div>
-                    <div class="camera-info-row">
-                        <span class="camera-info-label">Tilt:</span>
-                        <span class="camera-info-value" id="survey-current-tilt">-</span>
-                    </div>
-                    <div class="camera-info-row">
-                        <span class="camera-info-label">Zoom:</span>
-                        <span class="camera-info-value" id="survey-current-zoom">-</span>
-                    </div>
-                </div>
-
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label>Presets</label>
-                    <div id="survey-preset-buttons" class="preset-buttons">
-                        <!-- Presets loaded dynamically -->
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Start</label>
-                        <input type="number" id="survey-start-input" value="0" step="1">
-                        <small id="survey-start-helper" class="helper-text"></small>
-                        <small id="survey-start-error" class="error-message"></small>
-                    </div>
-                    <div class="form-group">
-                        <label>End</label>
-                        <input type="number" id="survey-end-input" value="360" step="1">
-                        <small id="survey-end-helper" class="helper-text"></small>
-                        <small id="survey-end-error" class="error-message"></small>
-                    </div>
-                    <div class="form-group">
-                        <label>Step</label>
-                        <input type="number" id="survey-step-input" value="10" min="0.1" step="0.1">
-                        <small id="survey-step-helper" class="helper-text"></small>
-                        <small id="survey-step-error" class="error-message"></small>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Retry Timeout (seconds)</label>
-                        <input type="number" id="survey-timeout-input" value="60" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label>Session Tags (comma-separated)</label>
-                        <input type="text" id="survey-tags-input" placeholder="day, sunny, morning">
-                    </div>
-                </div>
-
-                <label class="checkbox-label">
-                    <input type="checkbox" id="survey-restore-ptz" checked>
-                    Restore PTZ position after survey
-                </label>
+                {% with id_prefix="survey-" axis_radio_name="survey-axis" show_helpers=True show_current_position=True %}
+                    {% include "camera_survey/includes/survey_config_fields.html" %}
+                {% endwith %}
             </div>
 
             <!-- Survey Control Panel -->
@@ -1026,6 +951,12 @@
         const surveyTimeoutInput = document.getElementById('survey-timeout-input');
         const surveyTagsInput = document.getElementById('survey-tags-input');
         const surveyRestorePtz = document.getElementById('survey-restore-ptz');
+        const fixedPanInput = document.getElementById('survey-fixed-pan-input');
+        const fixedTiltInput = document.getElementById('survey-fixed-tilt-input');
+        const fixedZoomInput = document.getElementById('survey-fixed-zoom-input');
+        const fixedPanGroup = document.getElementById('survey-fixed-pan-group');
+        const fixedTiltGroup = document.getElementById('survey-fixed-tilt-group');
+        const fixedZoomGroup = document.getElementById('survey-fixed-zoom-group');
         const surveyStartBtn = document.getElementById('survey-start-btn');
         const surveyAbortBtn = document.getElementById('survey-abort-btn');
         const surveyProgressContainer = document.getElementById('survey-progress-container');
@@ -1167,12 +1098,37 @@
             }
         }
 
+        // Show/hide fixed axis inputs based on selected survey axis
+        function updateFixedAxisVisibility() {
+            const axis = document.querySelector('input[name="survey-axis"]:checked').value;
+            fixedPanGroup.style.display = axis === 'pan' ? 'none' : 'block';
+            fixedTiltGroup.style.display = axis === 'tilt' ? 'none' : 'block';
+            fixedZoomGroup.style.display = axis === 'zoom' ? 'none' : 'block';
+        }
+
+        // Auto-populate fixed axis inputs from camera's current position
+        async function fetchAndPopulateFixedAxisPosition() {
+            if (!surveyTenant || !surveyCamera) return;
+            try {
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${encodeURIComponent(surveyTenant)}&camera_id=${encodeURIComponent(surveyCamera)}`);
+                const result = await resp.json();
+                if (result.status === 'success') {
+                    const ptz = result.data;
+                    fixedPanInput.value = ptz.pan?.toFixed(1) || '';
+                    fixedTiltInput.value = ptz.tilt?.toFixed(1) || '';
+                    fixedZoomInput.value = ptz.zoom?.toFixed(1) || '';
+                }
+            } catch (e) {
+                console.error('Failed to fetch position for fixed axis:', e);
+            }
+        }
+
         // Fetch current camera position from API
         async function fetchCurrentPosition() {
             if (!surveyTenant || !surveyCamera) return;
 
             try {
-                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${encodeURIComponent(surveyTenant)}&camera_id=${encodeURIComponent(surveyCamera)}`);
                 const result = await resp.json();
 
                 if (result.status === 'success') {
@@ -1436,6 +1392,9 @@
                         restore_ptz: surveyRestorePtz.checked,
                         retry_timeout: retryTimeout,
                         session_tags: tags,
+                        fixed_pan: axis !== 'pan' && fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
+                        fixed_tilt: axis !== 'tilt' && fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
+                        fixed_zoom: axis !== 'zoom' && fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
                     }),
                 });
 
@@ -1581,8 +1540,10 @@
                 // Fetch camera capabilities and current position
                 await Promise.all([
                     fetchCameraCapabilities(),
-                    fetchCurrentPosition()
+                    fetchCurrentPosition(),
+                    fetchAndPopulateFixedAxisPosition()
                 ]);
+                updateFixedAxisVisibility();
             } else {
                 surveyCameraInfo.classList.add('hidden');
                 surveyConfigPanel.classList.add('hidden');
@@ -1599,6 +1560,7 @@
                 renderSurveyPresetButtons();
                 updateSurveyHelperText();
                 validateSurveyInputs();
+                updateFixedAxisVisibility();
             });
         });
 

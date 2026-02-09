@@ -19,10 +19,10 @@ from poc_homography.camera_config import (
     get_tenants,
 )
 
-from .ptz import create_ptz_camera
-
 from .models import SurveyAxis, SurveyConfig
+from .ptz import create_ptz_camera
 from .services import CameraSurveyService, get_survey_presets
+from .validation import parse_fixed_axis_values, validate_fixed_axis_ranges
 
 logger = logging.getLogger(__name__)
 
@@ -161,77 +161,16 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
     if step <= 0:
         return _error_response("step must be greater than 0")
 
-    # Parse optional fixed axis values
-    fixed_pan: float | None = None
-    fixed_tilt: float | None = None
-    fixed_zoom: float | None = None
+    # Parse and validate optional fixed axis values
+    fixed_pan, fixed_tilt, fixed_zoom, parse_err = parse_fixed_axis_values(data)
+    if parse_err:
+        return _error_response(parse_err)
 
-    if "fixed_pan" in data and data["fixed_pan"] is not None:
-        try:
-            fixed_pan = float(data["fixed_pan"])
-        except (ValueError, TypeError):
-            return _error_response("fixed_pan must be numeric")
-
-    if "fixed_tilt" in data and data["fixed_tilt"] is not None:
-        try:
-            fixed_tilt = float(data["fixed_tilt"])
-        except (ValueError, TypeError):
-            return _error_response("fixed_tilt must be numeric")
-
-    if "fixed_zoom" in data and data["fixed_zoom"] is not None:
-        try:
-            fixed_zoom = float(data["fixed_zoom"])
-        except (ValueError, TypeError):
-            return _error_response("fixed_zoom must be numeric")
-
-    # Validate fixed axis values against camera capabilities
-    if fixed_pan is not None or fixed_tilt is not None or fixed_zoom is not None:
-        # Get camera to create PTZ instance for capabilities
-        camera = get_camera_by_id(data["camera_id"])
-        if not camera:
-            return _error_response(f"Camera not found: {data['camera_id']}")
-
-        camera_ip = camera.get("ip")
-        if not camera_ip:
-            return _error_response(f"Camera {data['camera_id']} has no IP address")
-
-        try:
-            ptz_camera = create_ptz_camera(
-                camera_ip=camera_ip,
-                camera_name=camera.get("name", data["camera_id"]),
-                camera_model=camera.get("model"),
-                tenant_id=data["tenant_id"],
-            )
-            capabilities = ptz_camera.get_capabilities()
-        except ValueError as e:
-            return _error_response(str(e))
-        except Exception as e:
-            logger.exception(f"Failed to get camera capabilities for {data['camera_id']}")
-            return _error_response(f"Failed to get camera capabilities: {e}", 500)
-
-        # Validate fixed pan against camera limits
-        if fixed_pan is not None:
-            if not (capabilities.pan_min <= fixed_pan <= capabilities.pan_max):
-                return _error_response(
-                    f"Fixed pan value {fixed_pan} is outside valid range "
-                    f"[{capabilities.pan_min}, {capabilities.pan_max}]"
-                )
-
-        # Validate fixed tilt against camera limits
-        if fixed_tilt is not None:
-            if not (capabilities.tilt_min <= fixed_tilt <= capabilities.tilt_max):
-                return _error_response(
-                    f"Fixed tilt value {fixed_tilt} is outside valid range "
-                    f"[{capabilities.tilt_min}, {capabilities.tilt_max}]"
-                )
-
-        # Validate fixed zoom against camera limits
-        if fixed_zoom is not None:
-            if not (capabilities.zoom_min <= fixed_zoom <= capabilities.zoom_max):
-                return _error_response(
-                    f"Fixed zoom value {fixed_zoom} is outside valid range "
-                    f"[{capabilities.zoom_min}, {capabilities.zoom_max}]"
-                )
+    range_err = validate_fixed_axis_ranges(
+        fixed_pan, fixed_tilt, fixed_zoom, data["camera_id"], data["tenant_id"]
+    )
+    if range_err:
+        return _error_response(range_err)
 
     # Parse session tags
     session_tags = data.get("session_tags", [])
@@ -261,10 +200,12 @@ def api_start_survey(request: HttpRequest) -> JsonResponse:
     if error:
         return _error_response(error, 500)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Survey started successfully",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Survey started successfully",
+        }
+    )
 
 
 @require_GET
@@ -283,14 +224,16 @@ def api_survey_status(request: HttpRequest, session_id: str) -> JsonResponse:
         # Check if it's a completed session
         session = _survey_service.get_session(session_id)
         if session:
-            return _success_response({
-                "session_id": session_id,
-                "status": session.status.value,
-                "step_count": len(session.captures),
-                "total_steps": len(session.captures),
-                "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
-                "last_capture_path": None,
-            })
+            return _success_response(
+                {
+                    "session_id": session_id,
+                    "status": session.status.value,
+                    "step_count": len(session.captures),
+                    "total_steps": len(session.captures),
+                    "current_ptz": session.final_ptz.to_dict() if session.final_ptz else None,
+                    "last_capture_path": None,
+                }
+            )
         return _error_response("Survey not found", 404)
 
     return _success_response(progress.to_dict())
@@ -311,10 +254,12 @@ def api_abort_survey(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to abort survey", 400)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Survey abort requested",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Survey abort requested",
+        }
+    )
 
 
 @require_GET
@@ -336,12 +281,14 @@ def api_sessions_list(request: HttpRequest) -> JsonResponse:
 
     sessions, total = _survey_service.list_sessions(limit=limit, offset=offset)
 
-    return _success_response({
-        "sessions": sessions,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    })
+    return _success_response(
+        {
+            "sessions": sessions,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @require_GET
@@ -416,9 +363,11 @@ def api_presets(request: HttpRequest) -> JsonResponse:
     """
     presets = get_survey_presets()
 
-    return _success_response({
-        "presets": [p.to_dict() for p in presets],
-    })
+    return _success_response(
+        {
+            "presets": [p.to_dict() for p in presets],
+        }
+    )
 
 
 @require_POST
@@ -436,10 +385,12 @@ def api_delete_session(request: HttpRequest, session_id: str) -> JsonResponse:
     if not success:
         return _error_response(error or "Failed to delete session", 400)
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Session deleted successfully",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Session deleted successfully",
+        }
+    )
 
 
 @require_GET
@@ -474,7 +425,9 @@ def api_ptz_status(request: HttpRequest) -> JsonResponse:
 
     try:
         # Create PTZ camera instance
-        ptz_camera = create_ptz_camera(camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id)
+        ptz_camera = create_ptz_camera(
+            camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id
+        )
 
         # Get current position
         position = ptz_camera.get_status()
@@ -482,13 +435,15 @@ def api_ptz_status(request: HttpRequest) -> JsonResponse:
         if position is None:
             return _error_response("Failed to get camera position", 500)
 
-        return _success_response({
-            "ptz": {
-                "pan": position.pan,
-                "tilt": position.tilt,
-                "zoom": position.zoom,
+        return _success_response(
+            {
+                "ptz": {
+                    "pan": position.pan,
+                    "tilt": position.tilt,
+                    "zoom": position.zoom,
+                }
             }
-        })
+        )
 
     except ValueError as e:
         # Raised by create_ptz_camera if credentials not set
