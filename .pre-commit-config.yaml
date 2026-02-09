@@ -28,7 +28,7 @@ repos:
 
       - id: pylint
         name: pylint
-        entry: uv run pylint poc_homography
+        entry: uv run pylint poc_homography --fail-under=8.0
         language: system
         types: [python]
         pass_filenames: false
