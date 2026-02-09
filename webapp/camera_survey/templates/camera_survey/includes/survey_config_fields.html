@@ -26,23 +26,23 @@ Required context variables:
 </div>
 
 <!-- Fixed axis values (for non-swept axes) -->
-<div id="fixed-axis-container" style="margin-top: 12px;">
-    <div class="form-row" id="fixed-pan-group" style="display: none;">
+<div id="{{ id_prefix }}fixed-axis-container" style="margin-top: 12px;">
+    <div class="form-row" id="{{ id_prefix }}fixed-pan-group" style="display: none;">
         <div class="form-group">
-            <label for="fixed-pan-input">Pan (fixed)</label>
-            <input type="number" id="fixed-pan-input" step="0.1" placeholder="Current position">
+            <label for="{{ id_prefix }}fixed-pan-input">Pan (fixed)</label>
+            <input type="number" id="{{ id_prefix }}fixed-pan-input" step="0.1" placeholder="Current position">
         </div>
     </div>
-    <div class="form-row" id="fixed-tilt-group" style="display: none;">
+    <div class="form-row" id="{{ id_prefix }}fixed-tilt-group" style="display: none;">
         <div class="form-group">
-            <label for="fixed-tilt-input">Tilt (fixed)</label>
-            <input type="number" id="fixed-tilt-input" step="0.1" placeholder="Current position">
+            <label for="{{ id_prefix }}fixed-tilt-input">Tilt (fixed)</label>
+            <input type="number" id="{{ id_prefix }}fixed-tilt-input" step="0.1" placeholder="Current position">
         </div>
     </div>
-    <div class="form-row" id="fixed-zoom-group" style="display: none;">
+    <div class="form-row" id="{{ id_prefix }}fixed-zoom-group" style="display: none;">
         <div class="form-group">
-            <label for="fixed-zoom-input">Zoom (fixed)</label>
-            <input type="number" id="fixed-zoom-input" step="1" placeholder="Current position">
+            <label for="{{ id_prefix }}fixed-zoom-input">Zoom (fixed)</label>
+            <input type="number" id="{{ id_prefix }}fixed-zoom-input" step="1" placeholder="Current position">
         </div>
     </div>
 </div>

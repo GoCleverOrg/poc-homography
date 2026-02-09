@@ -13,6 +13,7 @@ import logging
 from camera_survey.models import SurveyAxis, SurveyConfig
 from camera_survey.ptz import create_ptz_camera
 from camera_survey.services import get_survey_presets
+from camera_survey.validation import parse_fixed_axis_values, validate_fixed_axis_ranges
 
 # Import the shared survey service instance to avoid duplicate state
 from camera_survey.views import _survey_service
@@ -152,6 +153,9 @@ def api_survey_start(request: HttpRequest) -> JsonResponse:
         restore_ptz: Boolean (optional, default True)
         retry_timeout: Seconds (optional, default 60)
         session_tags: List of strings (optional)
+        fixed_pan: Fixed pan value (optional, float)
+        fixed_tilt: Fixed tilt value (optional, float)
+        fixed_zoom: Fixed zoom value (optional, float)
     """
     try:
         data = json.loads(request.body)
@@ -186,28 +190,16 @@ def api_survey_start(request: HttpRequest) -> JsonResponse:
     if isinstance(session_tags, str):
         session_tags = [t.strip() for t in session_tags.split(",") if t.strip()]
 
-    # Parse optional fixed axis values
-    fixed_pan: float | None = None
-    fixed_tilt: float | None = None
-    fixed_zoom: float | None = None
+    # Parse and validate optional fixed axis values
+    fixed_pan, fixed_tilt, fixed_zoom, parse_err = parse_fixed_axis_values(data)
+    if parse_err:
+        return _error_response(parse_err)
 
-    if "fixed_pan" in data and data["fixed_pan"] is not None:
-        try:
-            fixed_pan = float(data["fixed_pan"])
-        except (ValueError, TypeError):
-            return _error_response("fixed_pan must be numeric")
-
-    if "fixed_tilt" in data and data["fixed_tilt"] is not None:
-        try:
-            fixed_tilt = float(data["fixed_tilt"])
-        except (ValueError, TypeError):
-            return _error_response("fixed_tilt must be numeric")
-
-    if "fixed_zoom" in data and data["fixed_zoom"] is not None:
-        try:
-            fixed_zoom = float(data["fixed_zoom"])
-        except (ValueError, TypeError):
-            return _error_response("fixed_zoom must be numeric")
+    range_err = validate_fixed_axis_ranges(
+        fixed_pan, fixed_tilt, fixed_zoom, data["camera_id"], data["tenant_id"]
+    )
+    if range_err:
+        return _error_response(range_err)
 
     # Create config
     config = SurveyConfig(

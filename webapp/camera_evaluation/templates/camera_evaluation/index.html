@@ -951,12 +951,12 @@
         const surveyTimeoutInput = document.getElementById('survey-timeout-input');
         const surveyTagsInput = document.getElementById('survey-tags-input');
         const surveyRestorePtz = document.getElementById('survey-restore-ptz');
-        const fixedPanInput = document.getElementById('fixed-pan-input');
-        const fixedTiltInput = document.getElementById('fixed-tilt-input');
-        const fixedZoomInput = document.getElementById('fixed-zoom-input');
-        const fixedPanGroup = document.getElementById('fixed-pan-group');
-        const fixedTiltGroup = document.getElementById('fixed-tilt-group');
-        const fixedZoomGroup = document.getElementById('fixed-zoom-group');
+        const fixedPanInput = document.getElementById('survey-fixed-pan-input');
+        const fixedTiltInput = document.getElementById('survey-fixed-tilt-input');
+        const fixedZoomInput = document.getElementById('survey-fixed-zoom-input');
+        const fixedPanGroup = document.getElementById('survey-fixed-pan-group');
+        const fixedTiltGroup = document.getElementById('survey-fixed-tilt-group');
+        const fixedZoomGroup = document.getElementById('survey-fixed-zoom-group');
         const surveyStartBtn = document.getElementById('survey-start-btn');
         const surveyAbortBtn = document.getElementById('survey-abort-btn');
         const surveyProgressContainer = document.getElementById('survey-progress-container');
@@ -1101,16 +1101,16 @@
         // Show/hide fixed axis inputs based on selected survey axis
         function updateFixedAxisVisibility() {
             const axis = document.querySelector('input[name="survey-axis"]:checked').value;
-            fixedPanGroup.style.display = axis === 'pan' ? 'none' : '';
-            fixedTiltGroup.style.display = axis === 'tilt' ? 'none' : '';
-            fixedZoomGroup.style.display = axis === 'zoom' ? 'none' : '';
+            fixedPanGroup.style.display = axis === 'pan' ? 'none' : 'block';
+            fixedTiltGroup.style.display = axis === 'tilt' ? 'none' : 'block';
+            fixedZoomGroup.style.display = axis === 'zoom' ? 'none' : 'block';
         }
 
         // Auto-populate fixed axis inputs from camera's current position
         async function fetchAndPopulateFixedAxisPosition() {
             if (!surveyTenant || !surveyCamera) return;
             try {
-                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${encodeURIComponent(surveyTenant)}&camera_id=${encodeURIComponent(surveyCamera)}`);
                 const result = await resp.json();
                 if (result.status === 'success') {
                     const ptz = result.data;
@@ -1128,7 +1128,7 @@
             if (!surveyTenant || !surveyCamera) return;
 
             try {
-                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${surveyTenant}&camera_id=${surveyCamera}`);
+                const resp = await fetch(`{% url "camera_evaluation:api_camera_position" %}?tenant_id=${encodeURIComponent(surveyTenant)}&camera_id=${encodeURIComponent(surveyCamera)}`);
                 const result = await resp.json();
 
                 if (result.status === 'success') {
@@ -1392,9 +1392,9 @@
                         restore_ptz: surveyRestorePtz.checked,
                         retry_timeout: retryTimeout,
                         session_tags: tags,
-                        fixed_pan: fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
-                        fixed_tilt: fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
-                        fixed_zoom: fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
+                        fixed_pan: axis !== 'pan' && fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
+                        fixed_tilt: axis !== 'tilt' && fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
+                        fixed_zoom: axis !== 'zoom' && fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
                     }),
                 });
 

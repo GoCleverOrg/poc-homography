@@ -1004,9 +1004,9 @@
                         restore_ptz: restorePtz.checked,
                         retry_timeout: retryTimeout,
                         session_tags: tags,
-                        fixed_pan: fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
-                        fixed_tilt: fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
-                        fixed_zoom: fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
+                        fixed_pan: axis !== 'pan' && fixedPanInput.value ? parseFloat(fixedPanInput.value) : null,
+                        fixed_tilt: axis !== 'tilt' && fixedTiltInput.value ? parseFloat(fixedTiltInput.value) : null,
+                        fixed_zoom: axis !== 'zoom' && fixedZoomInput.value ? parseFloat(fixedZoomInput.value) : null,
                     }),
                 });
 
