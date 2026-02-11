@@ -7,7 +7,6 @@ Also includes stress testing service for PTZ cameras.
 from __future__ import annotations
 
 import logging
-import os
 import random
 import re
 import socket

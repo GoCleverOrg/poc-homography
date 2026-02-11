@@ -7,17 +7,16 @@ a Django request/response cycle.
 import sys
 from pathlib import Path
 
-import pytest
-
 # Add webapp/ to path so homography_web can be imported without Django setup
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "webapp"))
 
-from homography_web.calibration_utils import (  # noqa: E402
+from homography_web.calibration_utils import (
+    resolve_safe_path,
     serialize_calibration_entry,
     validate_filename,
-    resolve_safe_path,
 )
-from poc_homography.calibration.lens_distortion.calibration_table import (  # noqa: E402
+
+from poc_homography.calibration.lens_distortion.calibration_table import (
     ZoomCalibrationEntry,
 )
 

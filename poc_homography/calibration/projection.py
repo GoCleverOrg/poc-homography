@@ -50,8 +50,6 @@ class ProjectionAnalysisResult:
 
 
 def analyze_projection_error(
-    camera_lat: Degrees,
-    camera_lon: Degrees,
     height_m: Meters,
     pan_offset_deg: Degrees,
     map_point_x: Meters,
@@ -68,8 +66,6 @@ def analyze_projection_error(
     Analyze the projection error for a known reference point.
 
     Args:
-        camera_lat: Camera latitude in decimal degrees
-        camera_lon: Camera longitude in decimal degrees
         height_m: Camera height in meters
         pan_offset_deg: Pan offset calibration in degrees
         map_point_x: X coordinate from MapPoint (meters, East)
@@ -102,7 +98,6 @@ def analyze_projection_error(
     print(f"  Actual pixel (marked by user): ({actual_u:.1f}, {actual_v:.1f})")
 
     print("\nCamera Parameters:")
-    print(f"  GPS: ({camera_lat:.6f}, {camera_lon:.6f})")
     print(f"  Height: {height_m}m")
     print(f"  Pan raw: {pan_raw}, Offset: {pan_offset_deg}, Applied: {pan_deg}")
     print(f"  Tilt: {tilt_deg}, Zoom: {zoom}x")

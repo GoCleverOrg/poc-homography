@@ -12,7 +12,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
-from poc_homography.map_points import MapPoint, GCPRegistry
+from poc_homography.map_points import GCPRegistry, MapPoint
 
 # Project root and data directories
 # Path: views.py -> gcp/ -> webapp/ -> project_root/

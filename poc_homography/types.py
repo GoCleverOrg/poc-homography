@@ -28,14 +28,14 @@ from typing import NewType
 
 # Angular units
 Degrees = NewType("Degrees", float)
-"""Angle in degrees (e.g., pan, tilt, latitude, longitude, bearing)"""
+"""Angle in degrees (e.g., pan, tilt, bearing)"""
 
 Radians = NewType("Radians", float)
 """Angle in radians (e.g., intermediate trigonometric calculations)"""
 
 # Distance/position units
 Meters = NewType("Meters", float)
-"""Distance or position in meters (e.g., X, Y, Z coordinates, camera height, GPS distances)"""
+"""Distance or position in meters (e.g., X, Y, Z coordinates, camera height)"""
 
 # Geographic/projected coordinate units
 Easting = NewType("Easting", float)

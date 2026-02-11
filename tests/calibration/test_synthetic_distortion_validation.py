@@ -27,8 +27,6 @@ from poc_homography.calibration.lens_distortion.distortion_solver import (
 )
 from poc_homography.calibration.lens_distortion.models import CameraLine, PTZPosition
 from poc_homography.camera_parameters import DistortionCoefficients
-from poc_homography.types import Unitless
-
 
 # ---------------------------------------------------------------------------
 # Helpers

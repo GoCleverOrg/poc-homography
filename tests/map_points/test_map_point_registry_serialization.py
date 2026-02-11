@@ -20,8 +20,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from poc_homography.map_points import MapPoint, GCPRegistry
-
+from poc_homography.map_points import GCPRegistry, MapPoint
 
 # =============================================================================
 # Test Fixtures

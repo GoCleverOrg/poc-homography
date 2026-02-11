@@ -17,12 +17,10 @@ from poc_homography.calibration.lens_distortion.annotated_line_solver import (
     AnnotatedLineSolver,
     AnnotatedLineSolverConfig,
     CameraLineAnnotation,
-    LineSplitResult,
     build_camera_line_annotations,
     split_lines,
 )
 from poc_homography.camera_parameters import DistortionCoefficients
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

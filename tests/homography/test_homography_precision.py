@@ -28,11 +28,10 @@ import numpy as np
 import pytest
 import yaml
 
-from poc_homography.homography.map_points import MapPointHomography, MapPointComputationResult
-from poc_homography.map_points import MapPoint, GCPRegistry
-from poc_homography.pixel_point import PixelPoint
 from poc_homography.camera_config import get_camera_by_name
-
+from poc_homography.homography.map_points import MapPointHomography
+from poc_homography.map_points import GCPRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
@@ -341,7 +340,7 @@ class TestPixelPrecision:
             map_registry=map_registry,
         )
 
-        print(f"\nPixel Precision Metrics:")
+        print("\nPixel Precision Metrics:")
         print(f"  Mean error: {precision['mean_error']:.2f} pixels")
         print(f"  Max error:  {precision['max_error']:.2f} pixels")
         print(f"  RMSE:       {precision['rmse']:.2f} pixels")
@@ -413,11 +412,11 @@ class TestMetricPrecision:
             map_registry=map_registry,
         )
 
-        print(f"\nMetric Precision (in meters):")
+        print("\nMetric Precision (in meters):")
         print(f"  Mean error: {precision['mean_error_m']:.2f} m")
         print(f"  Max error:  {precision['max_error_m']:.2f} m")
         print(f"  RMSE:       {precision['rmse_m']:.2f} m")
-        print(f"\nPer-point errors:")
+        print("\nPer-point errors:")
         for detail in sorted(precision["per_point_details"], key=lambda x: -x["error_meters"]):
             print(f"  {detail['gcp_id']}: {detail['error_meters']:.2f} m ({detail['error_map_px']:.1f} map px)")
 
@@ -498,10 +497,10 @@ class TestMetricPrecision:
         mean_error = np.mean([e["error_m"] for e in holdout_errors])
         max_error = max(e["error_m"] for e in holdout_errors)
 
-        print(f"\nN-1 Holdout Validation (Metric):")
+        print("\nN-1 Holdout Validation (Metric):")
         print(f"  Mean holdout error: {mean_error:.2f} m")
         print(f"  Max holdout error:  {max_error:.2f} m")
-        print(f"\nPer-point holdout errors:")
+        print("\nPer-point holdout errors:")
         for e in holdout_errors:
             print(f"  {e['gcp_id']}: {e['error_m']:.2f} m")
 
@@ -571,7 +570,7 @@ class TestReprojectionMetrics:
         assert result.max_reproj_error >= result.mean_reproj_error
         assert result.rmse >= 0.0
 
-        print(f"\nMapPointHomography Metrics:")
+        print("\nMapPointHomography Metrics:")
         print(f"  Inliers: {result.num_inliers}/{result.num_gcps}")
         print(f"  Mean reproj error: {result.mean_reproj_error:.2f}")
         print(f"  Max reproj error:  {result.max_reproj_error:.2f}")

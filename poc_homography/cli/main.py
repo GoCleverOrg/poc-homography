@@ -10,12 +10,10 @@ app = typer.Typer(
 # Subcommand groups - will be populated as tools are migrated
 calibrate_app = typer.Typer(help="Calibration commands")
 camera_app = typer.Typer(help="Camera intrinsics and validation commands")
-gcp_app = typer.Typer(help="Ground Control Point commands")
 test_app = typer.Typer(help="Testing and data generation commands")
 
 app.add_typer(calibrate_app, name="calibrate")
 app.add_typer(camera_app, name="camera")
-app.add_typer(gcp_app, name="gcp")
 app.add_typer(test_app, name="test")
 
 
@@ -28,10 +26,8 @@ def _register_commands() -> None:
     themselves when the module is imported.
     """
     from poc_homography.cli import (
-        annotate,
         calibrate,
         camera,
-        gcp,
         interactive,
         line_picker,
         point_picker,
@@ -39,10 +35,8 @@ def _register_commands() -> None:
     )
 
     # Avoid "imported but unused" warnings by explicitly using the module
-    _ = annotate
     _ = calibrate
     _ = camera
-    _ = gcp
     _ = interactive
     _ = line_picker
     _ = point_picker

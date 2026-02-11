@@ -10,13 +10,11 @@ Tests cover:
 """
 
 import os
-import socket
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 import requests.exceptions
 
 # Set up Django settings before importing from webapp
@@ -36,7 +34,6 @@ from webapp.camera_diagnostic.services import (
     get_presets_list,
     get_screenshot_path,
 )
-
 
 # =============================================================================
 # Helper Classes for Mocking
@@ -143,22 +140,22 @@ class TestClassifyRtspError:
 
     def test_socket_error_connection_refused(self):
         """Socket error with 'connection refused' should be NETWORK_UNREACHABLE."""
-        exc = socket.error("Connection refused")
+        exc = OSError("Connection refused")
         assert classify_rtsp_error(exc) == CameraErrorCategory.NETWORK_UNREACHABLE
 
     def test_socket_error_no_route_to_host(self):
         """Socket error with 'no route to host' should be NETWORK_UNREACHABLE."""
-        exc = socket.error("No route to host")
+        exc = OSError("No route to host")
         assert classify_rtsp_error(exc) == CameraErrorCategory.NETWORK_UNREACHABLE
 
     def test_socket_error_timed_out(self):
         """Socket error with 'timed out' should be TIMEOUT."""
-        exc = socket.error("Connection timed out")
+        exc = OSError("Connection timed out")
         assert classify_rtsp_error(exc) == CameraErrorCategory.TIMEOUT
 
     def test_socket_error_timeout(self):
         """Socket error with 'timeout' should be TIMEOUT."""
-        exc = socket.error("Socket timeout")
+        exc = OSError("Socket timeout")
         assert classify_rtsp_error(exc) == CameraErrorCategory.TIMEOUT
 
     def test_oserror_connection_refused(self):
@@ -755,17 +752,16 @@ class TestCameraErrorCategory:
 from datetime import datetime, timezone
 
 from webapp.camera_diagnostic.models import (
+    STRESS_TEST_PRESETS,
     AxisMovementConfig,
     MovementTiming,
     StressTestConfig,
-    StressTestPreset,
     StressTestProgress,
     StressTestResult,
     StressTestSession,
     StressTestStatus,
     StressTestType,
     UserEvaluation,
-    STRESS_TEST_PRESETS,
 )
 
 

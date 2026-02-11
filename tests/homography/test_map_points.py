@@ -42,7 +42,7 @@ import pytest
 import yaml
 
 from poc_homography.calibration.annotation import Annotation
-from poc_homography.map_points import MapPoint, GCPRegistry
+from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths

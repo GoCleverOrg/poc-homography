@@ -37,8 +37,8 @@ def api_image_info(request: HttpRequest) -> JsonResponse:
         {
             "width": state.width,
             "height": state.height,
-            "geotransform": state.geotransform,
-            "crs": state.crs,
+            "geotransform": state.geotiff.geotransform.to_dict() if state.geotiff else None,
+            "crs": state.geotiff.crs if state.geotiff else None,
             "filename": state.geotiff_path.name,
         }
     )
@@ -316,7 +316,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
                 "pixel_y": pixel_y,
                 "easting": coords[0],
                 "northing": coords[1],
-                "crs": state.crs,
+                "crs": state.geotiff.crs if state.geotiff else None,
             }
         )
     return JsonResponse(

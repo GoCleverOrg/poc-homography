@@ -5,16 +5,11 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
-from PIL import Image
-
-from poc_homography.map_points.map_point import MapPoint
-from poc_homography.map_points.gcp_registry import GCPRegistry
 
 # Add webapp to path for Django imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -282,15 +277,28 @@ class TestPointPickerStateGeoCoords:
     @pytest.fixture
     def state_with_geotransform(self, tmp_path: Path) -> PointPickerState:
         """Create state with geotransform."""
+        from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
+        from poc_homography.types import Easting, Meters, Northing, Unitless
+
         geotiff_path = tmp_path / "test.tif"
         geotiff_path.touch()
 
         with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile()
-            state = PointPickerState(geotiff_path)
+            # origin at (1000, 2000), 1 unit per pixel
+            geotiff = GeoTiff(
+                geotransform=GeoTransform(
+                    origin_easting=Easting(1000.0),
+                    pixel_width=Meters(1.0),
+                    row_rotation=Unitless(0.0),
+                    origin_northing=Northing(2000.0),
+                    col_rotation=Unitless(0.0),
+                    pixel_height=Meters(-1.0),
+                ),
+                crs="EPSG:25830",
+            )
+            state = PointPickerState(geotiff_path, geotiff=geotiff)
 
-        # Set a simple geotransform: origin at (1000, 2000), 1 unit per pixel
-        state.geotransform = [1000.0, 1.0, 0.0, 2000.0, 0.0, -1.0]
         return state
 
     @pytest.fixture
@@ -303,7 +311,6 @@ class TestPointPickerStateGeoCoords:
             mock_tif.return_value = MockTiffFile()
             state = PointPickerState(geotiff_path)
 
-        state.geotransform = None
         return state
 
     def test_get_geo_coords_with_geotransform(

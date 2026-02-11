@@ -78,9 +78,10 @@ def api_calibration_files(request: HttpRequest) -> JsonResponse:
 
 
 from homography_web.calibration_utils import (
-    api_compute_intrinsics,  # noqa: F401 - re-exported for URL routing
+    api_compute_intrinsics,
     serialize_calibration_entry,
 )
+
 api_compute_intrinsics = api_compute_intrinsics  # make linter happy
 
 
