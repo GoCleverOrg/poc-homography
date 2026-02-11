@@ -156,5 +156,3 @@ def _save_results_json(results: list[PromptTestResult], output_path: Path) -> No
     with output_path.open("w") as f:
         json.dump(output, f, indent=2)
     print(f"\nResults saved to: {output_path}")
-
-
