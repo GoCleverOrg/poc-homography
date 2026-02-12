@@ -16,7 +16,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
-DEFAULT_GCP_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 DEFAULT_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 
 # Supported image extensions
@@ -62,27 +62,19 @@ def get_current_image(request: HttpRequest) -> str | None:
     return None
 
 
-def load_gcps(gcps_file: Path = DEFAULT_GCP_FILE) -> list[dict]:
-    """Load GCP IDs from the registry file."""
-    if not gcps_file.exists():
+def load_gcps() -> list[dict]:
+    """Load GCPs from the repository."""
+    from poc_homography.map_points.gcp_registry import from_gcp_repo
+
+    try:
+        registry = from_gcp_repo(GCPS_DIR, "valte")
+    except (KeyError, ValueError, OSError):
         return []
 
-    with open(gcps_file) as f:
-        data = yaml.safe_load(f)
-
-    # Handle empty or malformed YAML files
-    if not data or not isinstance(data, dict):
-        return []
-
-    points = data.get("points", [])
-    gcps = []
-    for p in points:
-        # Validate required keys exist
-        if not all(k in p for k in ("id", "pixel_x", "pixel_y")):
-            continue
-        gcps.append({"id": p["id"], "pixel_x": p["pixel_x"], "pixel_y": p["pixel_y"]})
-
-    return gcps
+    return [
+        {"id": pid, "pixel_x": p.pixel_x, "pixel_y": p.pixel_y}
+        for pid, p in registry.points.items()
+    ]
 
 
 def load_existing_annotations(

@@ -22,14 +22,14 @@ from django.views.decorators.http import require_GET, require_http_methods
 from PIL import Image
 
 from poc_homography.homography.map_points import MapPointHomography
-from poc_homography.map_points import GCPRegistry
+from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
 # Test data paths (relative to project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
-GCP_REGISTRY_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 LINE_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_line_annotations.yaml"
 LINE_REGISTRY_FILE = TEST_DATA_DIR / "Cartografia_valencia_lines.yaml"
 MAP_GEOTIFF_FILE = PROJECT_ROOT / "Cartografia_valencia.tif"
@@ -465,16 +465,10 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    # Load GCP registry
-    if not GCP_REGISTRY_FILE.exists():
-        return JsonResponse(
-            {"success": False, "error": f"GCP registry file not found: {GCP_REGISTRY_FILE}"},
-            status=500,
-        )
-
+    # Load GCP registry from repository
     try:
-        registry = GCPRegistry.load(GCP_REGISTRY_FILE)
-    except (yaml.YAMLError, KeyError, ValueError) as e:
+        registry = from_gcp_repo(GCPS_DIR, "valte")
+    except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"success": False, "error": f"Failed to load GCP registry: {e}"},
             status=500,
@@ -621,15 +615,9 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         JSON with registry data:
         {"map_id": "...", "points": {"PS1": {"pixel_x": ..., "pixel_y": ...}, ...}}
     """
-    if not GCP_REGISTRY_FILE.exists():
-        return JsonResponse(
-            {"error": f"GCP registry file not found: {GCP_REGISTRY_FILE}"},
-            status=404,
-        )
-
     try:
-        registry = GCPRegistry.load(GCP_REGISTRY_FILE)
-    except (yaml.YAMLError, KeyError, ValueError) as e:
+        registry = from_gcp_repo(GCPS_DIR, "valte")
+    except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
             status=500,
@@ -1032,16 +1020,10 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
 
-        # Load GCP registry
-        if not GCP_REGISTRY_FILE.exists():
-            return JsonResponse(
-                {"success": False, "error": f"GCP registry file not found: {GCP_REGISTRY_FILE}"},
-                status=500,
-            )
-
+        # Load GCP registry from repository
         try:
-            gcp_registry = GCPRegistry.load(GCP_REGISTRY_FILE)
-        except (yaml.YAMLError, KeyError, ValueError) as e:
+            gcp_registry = from_gcp_repo(GCPS_DIR, "valte")
+        except (KeyError, ValueError, OSError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},
                 status=500,
