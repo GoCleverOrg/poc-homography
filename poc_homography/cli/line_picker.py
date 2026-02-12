@@ -22,17 +22,11 @@ def serve(
         exists=True,
         readable=True,
     ),
-    gcps_dir: Path | None = typer.Option(
-        None,
-        "--gcps-dir",
-        "-g",
-        help="Directory containing per-GCP YAML files (defaults to data/gcps/)",
-    ),
-    map_id: str | None = typer.Option(
-        None,
+    map_id: str = typer.Option(
+        "valte",
         "--map-id",
         "-m",
-        help="Map identifier to load GCPs for (defaults to first available)",
+        help="Map identifier for tagging saved line files",
     ),
     camera: str | None = typer.Option(
         None,
@@ -56,42 +50,15 @@ def serve(
     """Launch the line picker web application.
 
     Opens a web browser to create lines on a map using pixel coordinate endpoints.
-    GCPs from the repository are displayed as clickable markers on the map.
 
     Example:
         hom line-picker serve path/to/Cartografia_valencia.tif
-        hom line-picker serve map.tif --gcps-dir data/gcps --map-id valte --port 8001
+        hom line-picker serve map.tif --map-id valte --port 8001
     """
-    from poc_homography.map_points.gcp_registry import list_map_ids
-
     # Resolve to absolute path
     image_path = image_path.resolve()
 
-    # Determine GCPs directory
     project_root = Path(__file__).parent.parent.parent
-    if gcps_dir is None:
-        gcps_dir = project_root / "data" / "gcps"
-    else:
-        gcps_dir = gcps_dir.resolve()
-
-    if not gcps_dir.exists():
-        typer.echo(f"Error: GCPs directory not found at {gcps_dir}", err=True)
-        typer.echo("Please specify with --gcps-dir option", err=True)
-        raise typer.Exit(1)
-
-    # Determine map_id
-    available = list_map_ids(gcps_dir)
-    if not available:
-        typer.echo(f"Error: No GCPs found in {gcps_dir}", err=True)
-        raise typer.Exit(1)
-
-    if map_id is None:
-        map_id = available[0]
-    elif map_id not in available:
-        typer.echo(f"Error: Map '{map_id}' not found. Available: {available}", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"Loading GCPs for map '{map_id}' from: {gcps_dir}")
 
     geotransform = None
     crs = None
@@ -140,7 +107,6 @@ def serve(
 
     initialize_state(
         image_path,
-        gcps_dir=gcps_dir,
         map_id=map_id,
         geotransform=geotransform,
         crs=crs,

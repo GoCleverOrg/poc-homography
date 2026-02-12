@@ -47,22 +47,6 @@ def normalize_array(arr: np.ndarray) -> np.ndarray:
     return arr.astype(np.uint8)
 
 
-def get_tag_from_id(point_id: str) -> str:
-    """Extract tag from point ID prefix.
-
-    Args:
-        point_id: Point ID (e.g., "PS1", "AR2").
-
-    Returns:
-        Tag abbreviation (e.g., "PS", "AR").
-    """
-    # Extract prefix by finding where the digits start
-    for i, char in enumerate(point_id):
-        if char.isdigit():
-            return point_id[:i]
-    return point_id
-
-
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
     return render(request, "line_picker/index.html")
@@ -232,30 +216,6 @@ def api_image_full(request: HttpRequest) -> HttpResponse:
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     return HttpResponse(buffer.getvalue(), content_type="image/png")
-
-
-@require_GET
-def api_gcps(request: HttpRequest) -> JsonResponse:
-    """Get all GCPs from the loaded registry (read-only).
-
-    Returns GCP data with pixel coordinates for displaying as clickable markers.
-    """
-    state = get_state()
-
-    return JsonResponse(
-        {
-            "map_id": state.gcp_registry.map_id,
-            "points": [
-                {
-                    "id": pid,
-                    "pixel_x": p.pixel_x,
-                    "pixel_y": p.pixel_y,
-                    "tag": get_tag_from_id(pid),
-                }
-                for pid, p in state.gcp_registry.points.items()
-            ],
-        }
-    )
 
 
 @csrf_exempt

@@ -29,11 +29,6 @@ class LinePickerConfig(AppConfig):
 
         # Use the Cartografia valencia map
         map_file = project_root / "Cartografia_valencia.tif"
-        gcps_dir = project_root / "data" / "gcps"
 
-        if map_file.exists() and gcps_dir.exists():
-            from poc_homography.map_points.gcp_registry import list_map_ids
-
-            available = list_map_ids(gcps_dir)
-            if available:
-                initialize_state(map_file, gcps_dir, available[0])
+        if map_file.exists():
+            initialize_state(map_file, "valte")

@@ -13,8 +13,6 @@ urlpatterns = [
     path("api/image/info/", views.api_image_info, name="api_image_info"),
     path("api/image/tile/", views.api_image_tile, name="api_image_tile"),
     path("api/image/full/", views.api_image_full, name="api_image_full"),
-    # GCP API (read-only - these are loaded from existing registry)
-    path("api/gcps/", views.api_gcps, name="api_gcps"),
     # Lines API
     path("api/lines/", views.api_lines, name="api_lines"),
     path("api/lines/next-id/", views.api_next_line_id, name="api_next_line_id"),

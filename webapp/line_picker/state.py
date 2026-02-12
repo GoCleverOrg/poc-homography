@@ -9,8 +9,6 @@ import tifffile
 import yaml
 from PIL import Image
 
-from poc_homography.map_points.gcp_registry import GCPRegistry
-
 
 def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, str | None]:
     """Extract GeoTIFF geotransform and CRS info from TIFF tags.
@@ -131,21 +129,20 @@ class LinePickerState:
     def __init__(
         self,
         image_path: Path,
-        gcp_registry: GCPRegistry,
+        map_id: str,
         geotransform: list[float] | None = None,
         crs: str | None = None,
     ) -> None:
-        """Initialize state with image file and GCP registry.
+        """Initialize state with image file and map identifier.
 
         Args:
             image_path: Path to the map image file (PNG, TIFF, etc.).
-            gcp_registry: Registry of GCPs that can be used as line endpoints.
+            map_id: Map identifier for tagging saved line files.
             geotransform: Optional 6-parameter geotransform [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height].
             crs: Optional CRS string (e.g., "EPSG:25830").
         """
         self.geotiff_path = image_path  # Keep name for compatibility
-        self.map_id = gcp_registry.map_id
-        self.gcp_registry = gcp_registry
+        self.map_id = map_id
         self.lines: list[Line] = []
 
         # Detect file type and load accordingly
@@ -319,7 +316,6 @@ _state: LinePickerState | None = None
 
 def initialize_state(
     image_path: Path,
-    gcps_dir: Path,
     map_id: str,
     geotransform: list[float] | None = None,
     crs: str | None = None,
@@ -328,20 +324,15 @@ def initialize_state(
 
     Args:
         image_path: Path to the map image file (PNG, TIFF, etc.).
-        gcps_dir: Directory containing per-GCP YAML files.
-        map_id: Map identifier to load GCPs for.
+        map_id: Map identifier for tagging saved line files.
         geotransform: Optional 6-parameter geotransform.
         crs: Optional CRS string (e.g., "EPSG:25830").
     """
     global _state
 
-    from poc_homography.map_points.gcp_registry import from_gcp_repo
-
-    gcp_registry = from_gcp_repo(gcps_dir, map_id)
-
     _state = LinePickerState(
         image_path,
-        gcp_registry,
+        map_id,
         geotransform=geotransform,
         crs=crs,
     )
