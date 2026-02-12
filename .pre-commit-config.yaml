@@ -35,7 +35,7 @@ repos:
 
       - id: vulture
         name: vulture (dead code)
-        entry: uv run vulture poc_homography --min-confidence 80
+        entry: uv run vulture poc_homography webapp vulture_whitelist.py --min-confidence 60
         language: system
         types: [python]
         pass_filenames: false
