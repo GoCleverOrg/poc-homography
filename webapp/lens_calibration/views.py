@@ -560,7 +560,7 @@ def api_validate(request: HttpRequest) -> JsonResponse:
             CameraLine,
             PTZPosition,
         )
-        from poc_homography.camera_parameters import DistortionCoefficients
+        from poc_homography.domain.vo import LensDistortion
         from poc_homography.types import Degrees, Unitless
 
         intrinsics = data["intrinsics"]
@@ -601,7 +601,7 @@ def api_validate(request: HttpRequest) -> JsonResponse:
         baseline_rmse = straightness_rmse(camera_lines, intrinsic_matrix)
 
         coeffs = data.get("coefficients", {})
-        distortion = DistortionCoefficients(
+        distortion = LensDistortion(
             k1=Unitless(coeffs.get("k1", 0.0)),
             k2=Unitless(coeffs.get("k2", 0.0)),
             k3=Unitless(coeffs.get("k3", 0.0)),
@@ -642,7 +642,7 @@ def api_save(request: HttpRequest) -> JsonResponse:
             CameraCalibrationTable,
             ZoomCalibrationEntry,
         )
-        from poc_homography.camera_parameters import DistortionCoefficients
+        from poc_homography.domain.vo import LensDistortion
         from poc_homography.types import Unitless
 
         camera_id = data.get("camera_id", "unknown_camera")
@@ -657,7 +657,7 @@ def api_save(request: HttpRequest) -> JsonResponse:
         if resolved is None:
             return JsonResponse({"error": "Invalid filename"}, status=400)
 
-        distortion = DistortionCoefficients(
+        distortion = LensDistortion(
             k1=Unitless(coeffs.get("k1", 0.0)),
             k2=Unitless(coeffs.get("k2", 0.0)),
             k3=Unitless(coeffs.get("k3", 0.0)),

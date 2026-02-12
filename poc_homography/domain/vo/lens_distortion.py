@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from poc_homography.types import Unitless
 
 
@@ -43,6 +45,32 @@ class LensDistortion:
     def is_zero(self) -> bool:
         """True if all coefficients are effectively zero (no distortion)."""
         return all(c == 0.0 for c in (self.k1, self.k2, self.p1, self.p2, self.k3))
+
+    # --- Numpy Interop ---
+
+    def to_array(self) -> np.ndarray:
+        """Convert to numpy array in OpenCV format [k1, k2, p1, p2, k3]."""
+        return np.array([self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64)
+
+    @classmethod
+    def from_array(cls, coeffs: np.ndarray) -> LensDistortion:
+        """Create from numpy array [k1, k2, p1, p2, k3].
+
+        Args:
+            coeffs: Array of 5 distortion coefficients.
+
+        Raises:
+            ValueError: If array does not have exactly 5 elements.
+        """
+        if len(coeffs) != 5:
+            raise ValueError(f"Expected 5 distortion coefficients, got {len(coeffs)}")
+        return cls(
+            k1=Unitless(float(coeffs[0])),
+            k2=Unitless(float(coeffs[1])),
+            p1=Unitless(float(coeffs[2])),
+            p2=Unitless(float(coeffs[3])),
+            k3=Unitless(float(coeffs[4])),
+        )
 
     # --- Serialization ---
 

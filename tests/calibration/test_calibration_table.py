@@ -14,7 +14,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import (
     ZoomCalibrationEntry,
     load_calibration_for_camera,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 
 
 class TestZoomCalibrationEntry:
@@ -63,7 +63,7 @@ class TestZoomCalibrationEntry:
             )
 
     def test_to_distortion_coefficients(self):
-        """Should convert to DistortionCoefficients correctly."""
+        """Should convert to LensDistortion correctly."""
         entry = ZoomCalibrationEntry(
             zoom_factor=1.0,
             k1=-0.15,
@@ -76,7 +76,7 @@ class TestZoomCalibrationEntry:
 
         coeffs = entry.to_distortion_coefficients()
 
-        assert isinstance(coeffs, DistortionCoefficients)
+        assert isinstance(coeffs, LensDistortion)
         assert float(coeffs.k1) == -0.15
         assert float(coeffs.k2) == 0.08
         assert float(coeffs.k3) == 0.01

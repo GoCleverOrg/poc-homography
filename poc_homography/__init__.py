@@ -12,9 +12,8 @@ from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
-    DistortionCoefficients,
-    HeightUncertainty,
 )
+from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 from poc_homography.homography import (
     CoordinateSystemMode,
     FeatureMatchHomography,
@@ -38,7 +37,7 @@ __all__ = [
     "CameraGeometry",
     "CameraParameters",
     "CameraGeometryResult",
-    "DistortionCoefficients",
+    "LensDistortion",
     "HeightUncertainty",
     # Homography interface
     "HomographyProvider",

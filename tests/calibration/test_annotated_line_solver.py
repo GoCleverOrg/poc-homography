@@ -20,7 +20,7 @@ from poc_homography.calibration.lens_distortion.annotated_line_solver import (
     build_camera_line_annotations,
     split_lines,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -231,7 +231,7 @@ class TestAnnotatedLineSolver:
         result = solver.solve(lines, intrinsic_matrix)
 
         assert result.success
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
         assert result.overall_rmse >= 0.0
         assert result.iterations >= 0
 
@@ -241,7 +241,7 @@ class TestAnnotatedLineSolver:
         solver = AnnotatedLineSolver()
         result = solver.solve(lines, intrinsic_matrix)
 
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
         assert isinstance(result.initial_error, float)
         assert isinstance(result.final_error, float)
         assert isinstance(result.rmse_per_line, list)
@@ -299,12 +299,12 @@ class TestAnnotatedLineSolver:
         result = solver.solve(lines, intrinsic_matrix)
 
         assert result.success
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
 
     def test_initial_guess_used(self, intrinsic_matrix):
         """Custom initial guess is accepted."""
         lines = _make_lines(n=6, npoints=10)
-        guess = DistortionCoefficients(k1=-0.1, k2=0.01)
+        guess = LensDistortion(k1=-0.1, k2=0.01)
         solver = AnnotatedLineSolver()
         result = solver.solve(lines, intrinsic_matrix, initial_guess=guess)
 

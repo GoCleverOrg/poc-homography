@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 from poc_homography.types import Unitless
 
 logger = logging.getLogger(__name__)
@@ -60,9 +60,9 @@ class ZoomCalibrationEntry:
         if self.zoom_factor <= 0:
             raise ValueError(f"zoom_factor must be positive, got {self.zoom_factor}")
 
-    def to_distortion_coefficients(self) -> DistortionCoefficients:
-        """Convert to DistortionCoefficients instance."""
-        return DistortionCoefficients(
+    def to_distortion_coefficients(self) -> LensDistortion:
+        """Convert to LensDistortion instance."""
+        return LensDistortion(
             k1=Unitless(self.k1),
             k2=Unitless(self.k2),
             p1=Unitless(self.p1),
@@ -124,7 +124,7 @@ class ZoomCalibrationEntry:
     def from_solver_result(
         cls,
         zoom_factor: float,
-        distortion: DistortionCoefficients,
+        distortion: LensDistortion,
         validation_rmse: float = 0.0,
         source_images: list[str] | None = None,
         num_lines_used: int = 0,
@@ -229,7 +229,7 @@ class CameraCalibrationTable:
                 return stored_zoom
         return None
 
-    def get_coefficients(self, zoom_factor: float) -> DistortionCoefficients:
+    def get_coefficients(self, zoom_factor: float) -> LensDistortion:
         """Get distortion coefficients for a zoom level.
 
         If the exact zoom level is calibrated, returns those coefficients.
@@ -239,7 +239,7 @@ class CameraCalibrationTable:
             zoom_factor: The desired zoom level.
 
         Returns:
-            DistortionCoefficients for the zoom level.
+            LensDistortion for the zoom level.
 
         Raises:
             ValueError: If no calibration entries exist.
@@ -282,7 +282,7 @@ class CameraCalibrationTable:
         lower_zoom: float,
         upper_zoom: float,
         target_zoom: float,
-    ) -> DistortionCoefficients:
+    ) -> LensDistortion:
         """Interpolate coefficients between two zoom levels.
 
         Uses linear interpolation for each coefficient.
@@ -293,7 +293,7 @@ class CameraCalibrationTable:
             target_zoom: Desired zoom level.
 
         Returns:
-            Interpolated DistortionCoefficients.
+            Interpolated LensDistortion.
         """
         lower = self.entries[lower_zoom]
         upper = self.entries[upper_zoom]
@@ -312,7 +312,7 @@ class CameraCalibrationTable:
             f"Interpolated zoom {target_zoom} between {lower_zoom} and {upper_zoom} (t={t:.3f})"
         )
 
-        return DistortionCoefficients(
+        return LensDistortion(
             k1=Unitless(k1),
             k2=Unitless(k2),
             p1=Unitless(p1),

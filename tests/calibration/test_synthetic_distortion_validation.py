@@ -26,7 +26,7 @@ from poc_homography.calibration.lens_distortion.distortion_solver import (
     SolverConfig,
 )
 from poc_homography.calibration.lens_distortion.models import CameraLine, PTZPosition
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -187,7 +187,7 @@ def _max_pixel_error(
     true_k3: float,
     true_p1: float,
     true_p2: float,
-    recovered: DistortionCoefficients,
+    recovered: LensDistortion,
     fx: float,
     fy: float,
     cx: float,
