@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from poc_homography.domain.vo import HeightUncertainty, LensDistortion
-from poc_homography.types import Degrees, Meters, Pixels, Unitless  # noqa: F401
+from poc_homography.types import Degrees, Meters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
 
