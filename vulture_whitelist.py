@@ -211,3 +211,6 @@ verbose_name  # unused variable (webapp/point_picker/apps.py:13)
 _.ready  # unused method (webapp/point_picker/apps.py:15)
 app_name  # unused variable (webapp/point_picker/urls.py:7)
 urlpatterns  # unused variable (webapp/point_picker/urls.py:9)
+DATA_DIR  # unused variable (webapp/homography_web/settings.py:19)
+_.load_registry  # unused method (webapp/point_picker/state.py) - used by tests
+_.save_registry  # unused method (webapp/point_picker/state.py) - used by tests

@@ -99,9 +99,15 @@
 {% block content %}
 <div class="info-panel">
     <h3>MapPoint Debug Visualization</h3>
-    <p style="color: #666; margin-bottom: 0;">
-        Viewing MapPoints from registry. These are pixel coordinates on the reference map.
+    <p style="color: #666; margin-bottom: 10px;">
+        Viewing MapPoints from repository. These are pixel coordinates on the reference map.
     </p>
+    <div style="margin-bottom: 10px;">
+        <label for="map-id-select" style="font-size: 13px; color: #666;">Map:</label>
+        <select id="map-id-select" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;">
+            <option value="{{ map_id }}">{{ map_id }}</option>
+        </select>
+    </div>
 
     <div class="stats">
         <div class="stat-item">
@@ -142,6 +148,32 @@
 {{ points|json_script:"points-data" }}
 <script>
 (function() {
+    // Populate map-id dropdown from API
+    const select = document.getElementById('map-id-select');
+    const currentMapId = '{{ map_id }}';
+
+    fetch('{% url "gcp:api_map_ids" %}')
+        .then(r => r.json())
+        .then(data => {
+            if (data.map_ids && data.map_ids.length > 0) {
+                select.innerHTML = '';
+                data.map_ids.forEach(id => {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = id;
+                    if (id === currentMapId) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            }
+        })
+        .catch(() => {});
+
+    select.addEventListener('change', () => {
+        const params = new URLSearchParams(window.location.search);
+        params.set('map_id', select.value);
+        window.location.search = params.toString();
+    });
+
     // Safely load points data using json_script
     const pointsDataElement = document.getElementById('points-data');
     if (!pointsDataElement) return;

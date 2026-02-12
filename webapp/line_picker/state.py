@@ -132,7 +132,6 @@ class LinePickerState:
         self,
         image_path: Path,
         gcp_registry: GCPRegistry,
-        gcp_registry_path: Path | None = None,
         geotransform: list[float] | None = None,
         crs: str | None = None,
     ) -> None:
@@ -141,12 +140,10 @@ class LinePickerState:
         Args:
             image_path: Path to the map image file (PNG, TIFF, etc.).
             gcp_registry: Registry of GCPs that can be used as line endpoints.
-            gcp_registry_path: Path to the GCP registry YAML file (for path validation).
             geotransform: Optional 6-parameter geotransform [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height].
             crs: Optional CRS string (e.g., "EPSG:25830").
         """
         self.geotiff_path = image_path  # Keep name for compatibility
-        self.gcp_registry_path = gcp_registry_path
         self.map_id = gcp_registry.map_id
         self.gcp_registry = gcp_registry
         self.lines: list[Line] = []
@@ -322,7 +319,8 @@ _state: LinePickerState | None = None
 
 def initialize_state(
     image_path: Path,
-    gcp_registry_path: Path,
+    gcps_dir: Path,
+    map_id: str,
     geotransform: list[float] | None = None,
     crs: str | None = None,
 ) -> None:
@@ -330,19 +328,20 @@ def initialize_state(
 
     Args:
         image_path: Path to the map image file (PNG, TIFF, etc.).
-        gcp_registry_path: Path to the GCP registry YAML file.
+        gcps_dir: Directory containing per-GCP YAML files.
+        map_id: Map identifier to load GCPs for.
         geotransform: Optional 6-parameter geotransform.
         crs: Optional CRS string (e.g., "EPSG:25830").
     """
     global _state
 
-    # Load GCP registry
-    gcp_registry = GCPRegistry.load(gcp_registry_path)
+    from poc_homography.map_points.gcp_registry import from_gcp_repo
+
+    gcp_registry = from_gcp_repo(gcps_dir, map_id)
 
     _state = LinePickerState(
         image_path,
         gcp_registry,
-        gcp_registry_path=gcp_registry_path,
         geotransform=geotransform,
         crs=crs,
     )

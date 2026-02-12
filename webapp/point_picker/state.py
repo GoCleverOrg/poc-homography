@@ -219,6 +219,8 @@ class PointPickerState:
     def load_registry(self, path: Path) -> None:
         """Load points from YAML/JSON file.
 
+        .. deprecated:: Use :meth:`load_from_repo` instead.
+
         Args:
             path: Path to the file.
         """
@@ -228,10 +230,34 @@ class PointPickerState:
     def save_registry(self, path: Path) -> None:
         """Save points to YAML/JSON file.
 
+        .. deprecated:: Use :meth:`save_to_repo` instead.
+
         Args:
             path: Path to the file.
         """
         self.registry.save(path)
+
+    def load_from_repo(self, data_dir: Path, map_id: str) -> None:
+        """Load points from the DDD GCP repository.
+
+        Args:
+            data_dir: Directory containing per-GCP YAML files.
+            map_id: Map identifier to load.
+        """
+        from poc_homography.map_points.gcp_registry import from_gcp_repo
+
+        self.registry = from_gcp_repo(data_dir, map_id)
+        self.map_id = self.registry.map_id
+
+    def save_to_repo(self, data_dir: Path) -> None:
+        """Save points to the DDD GCP repository.
+
+        Args:
+            data_dir: Directory for per-GCP YAML files.
+        """
+        from poc_homography.map_points.gcp_registry import save_to_gcp_repo
+
+        save_to_gcp_repo(self.registry, data_dir)
 
     def get_geo_coords(self, pixel_x: float, pixel_y: float) -> tuple[float, float] | None:
         """Convert pixel coordinates to geographic coordinates.

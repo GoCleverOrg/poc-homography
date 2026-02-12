@@ -486,10 +486,8 @@ def api_export(request: HttpRequest) -> JsonResponse:
     state = get_state()
     path = Path(data.get("path", "")) if data.get("path") else Path(f"{state.map_id}_lines.yaml")
 
-    # Validate path is within allowed directory (same directory as GCP registry or image)
-    allowed_base = (
-        state.gcp_registry_path.parent if state.gcp_registry_path else state.geotiff_path.parent
-    )
+    # Validate path is within allowed directory (same directory as the map image)
+    allowed_base = state.geotiff_path.parent
     safe_path = _validate_safe_path(path, allowed_base)
     if safe_path is None:
         return JsonResponse(
@@ -517,10 +515,8 @@ def api_import(request: HttpRequest) -> JsonResponse:
     state = get_state()
     path = Path(data["path"])
 
-    # Validate path is within allowed directory (same directory as GCP registry or image)
-    allowed_base = (
-        state.gcp_registry_path.parent if state.gcp_registry_path else state.geotiff_path.parent
-    )
+    # Validate path is within allowed directory (same directory as the map image)
+    allowed_base = state.geotiff_path.parent
     safe_path = _validate_safe_path(path, allowed_base)
     if safe_path is None:
         return JsonResponse(

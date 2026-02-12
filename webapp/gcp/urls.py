@@ -16,4 +16,9 @@ page_patterns = [
     path("debug/", views.debug_map, name="debug_map"),
 ]
 
-urlpatterns = page_patterns
+# API endpoints
+api_patterns = [
+    path("api/map-ids/", views.api_map_ids, name="api_map_ids"),
+]
+
+urlpatterns = page_patterns + api_patterns

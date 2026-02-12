@@ -18,10 +18,12 @@ from PIL import Image
 from .state import get_state, get_tag_from_id, normalize_array
 from .validation import (
     validate_add_point_request,
-    validate_export_request,
-    validate_import_request,
     validate_update_point_request,
 )
+
+# Project root and data directories
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -333,45 +335,40 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
-    """Export points to YAML file."""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    error = validate_export_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
-
+    """Save points to the GCP repository."""
     state = get_state()
-    path = Path(data.get("path", "")) if data.get("path") else Path(f"{state.map_id}_points.yaml")
-    state.save_registry(path)
-    return JsonResponse({"exported": str(path), "count": len(state.registry.points)})
+    state.save_to_repo(GCPS_DIR)
+    return JsonResponse({"saved": True, "count": len(state.registry.points)})
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_import(request: HttpRequest) -> JsonResponse:
-    """Import points from YAML file."""
+    """Import points from the GCP repository by map_id."""
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    error = validate_import_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
+    map_id = data.get("map_id")
+    if not map_id or not isinstance(map_id, str):
+        return JsonResponse({"error": "Missing or invalid field: map_id"}, status=422)
 
     state = get_state()
-    path = Path(data["path"])
-    if not path.exists():
-        return JsonResponse({"error": f"File not found: {path}"}, status=404)
-
-    state.load_registry(path)
+    state.load_from_repo(GCPS_DIR, map_id)
     return JsonResponse(
         {
-            "imported": str(path),
-            "count": len(state.registry.points),
             "map_id": state.registry.map_id,
+            "count": len(state.registry.points),
         }
     )
+
+
+@require_GET
+def api_registries(request: HttpRequest) -> JsonResponse:
+    """Return available map IDs from the GCP repository."""
+    from poc_homography.map_points.gcp_registry import list_map_ids
+
+    if not GCPS_DIR.exists():
+        return JsonResponse({"map_ids": []})
+    return JsonResponse({"map_ids": list_map_ids(GCPS_DIR)})

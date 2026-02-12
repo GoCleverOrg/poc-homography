@@ -22,11 +22,17 @@ def serve(
         exists=True,
         readable=True,
     ),
-    gcp_registry: Path | None = typer.Option(
+    gcps_dir: Path | None = typer.Option(
         None,
-        "--gcp-registry",
+        "--gcps-dir",
         "-g",
-        help="Path to GCP registry YAML file (defaults to {image_stem}_gcps.yaml in same directory)",
+        help="Directory containing per-GCP YAML files (defaults to data/gcps/)",
+    ),
+    map_id: str | None = typer.Option(
+        None,
+        "--map-id",
+        "-m",
+        help="Map identifier to load GCPs for (defaults to first available)",
     ),
     camera: str | None = typer.Option(
         None,
@@ -49,44 +55,43 @@ def serve(
 ) -> None:
     """Launch the line picker web application.
 
-    Opens a web browser to create lines by selecting pairs of existing GCPs.
-    Lines are defined by connecting two GCPs (start_gcp, end_gcp) and get
-    auto-incrementing IDs (L1, L2, L3, ...).
-
-    The GCP registry is loaded from an existing YAML file to display
-    clickable GCP markers on the map.
+    Opens a web browser to create lines on a map using pixel coordinate endpoints.
+    GCPs from the repository are displayed as clickable markers on the map.
 
     Example:
         hom line-picker serve path/to/Cartografia_valencia.tif
-        hom line-picker serve map.tif --gcp-registry gcps.yaml --port 8001
+        hom line-picker serve map.tif --gcps-dir data/gcps --map-id valte --port 8001
     """
+    from poc_homography.map_points.gcp_registry import list_map_ids
+
     # Resolve to absolute path
     image_path = image_path.resolve()
 
-    # Find GCP registry
-    if gcp_registry is None:
-        # Default: look for {image_stem}_gcps.yaml in same directory
-        gcp_registry = image_path.parent / f"{image_path.stem}_gcps.yaml"
-        if not gcp_registry.exists():
-            # Also check test data directory
-            project_root = Path(__file__).parent.parent.parent
-            test_data_path = (
-                project_root / "tests" / "homography" / "test_data" / f"{image_path.stem}_gcps.yaml"
-            )
-            if test_data_path.exists():
-                gcp_registry = test_data_path
+    # Determine GCPs directory
+    project_root = Path(__file__).parent.parent.parent
+    if gcps_dir is None:
+        gcps_dir = project_root / "data" / "gcps"
     else:
-        gcp_registry = gcp_registry.resolve()
+        gcps_dir = gcps_dir.resolve()
 
-    if not gcp_registry.exists():
-        typer.echo(f"Error: GCP registry not found at {gcp_registry}", err=True)
-        typer.echo(
-            "Please specify the GCP registry path with --gcp-registry option",
-            err=True,
-        )
+    if not gcps_dir.exists():
+        typer.echo(f"Error: GCPs directory not found at {gcps_dir}", err=True)
+        typer.echo("Please specify with --gcps-dir option", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"Loading GCP registry from: {gcp_registry}")
+    # Determine map_id
+    available = list_map_ids(gcps_dir)
+    if not available:
+        typer.echo(f"Error: No GCPs found in {gcps_dir}", err=True)
+        raise typer.Exit(1)
+
+    if map_id is None:
+        map_id = available[0]
+    elif map_id not in available:
+        typer.echo(f"Error: Map '{map_id}' not found. Available: {available}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Loading GCPs for map '{map_id}' from: {gcps_dir}")
 
     geotransform = None
     crs = None
@@ -112,8 +117,6 @@ def serve(
     typer.echo(f"Loading image: {image_path}")
 
     # Find the webapp directory
-    # Path: cli/line_picker.py -> cli/ -> poc_homography/ -> project_root/ -> webapp/
-    project_root = Path(__file__).parent.parent.parent
     webapp_dir = project_root / "webapp"
 
     if not webapp_dir.exists():
@@ -137,7 +140,8 @@ def serve(
 
     initialize_state(
         image_path,
-        gcp_registry_path=gcp_registry,
+        gcps_dir=gcps_dir,
+        map_id=map_id,
         geotransform=geotransform,
         crs=crs,
     )

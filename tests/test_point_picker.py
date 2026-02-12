@@ -569,58 +569,53 @@ class TestPointPickerAPI:
             content_type="application/json",
         )
 
-        # Export
-        export_path = tmp_path / "exported.yaml"
+        # Export (saves to repository)
         resp = test_client.post(
             "/point-picker/api/export/",
-            data=json.dumps({"path": str(export_path)}),
+            data=json.dumps({}),
             content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 2
-        assert export_path.exists()
+        assert data["saved"] is True
 
     def test_import_points(self, test_client, tmp_path: Path) -> None:
-        """POST /point-picker/api/import/ loads points from YAML file."""
-        # Create a YAML file with points (list format with id field)
-        yaml_content = """map_id: test
-points:
-  - id: PS1
-    pixel_x: 100.0
-    pixel_y: 200.0
-  - id: AR1
-    pixel_x: 300.0
-    pixel_y: 400.0
-"""
-        yaml_path = tmp_path / "import_test.yaml"
-        yaml_path.write_text(yaml_content)
+        """POST /point-picker/api/import/ loads points from GCP repository."""
+        import point_picker.views as pp_views
 
-        # Import
-        resp = test_client.post(
-            "/point-picker/api/import/",
-            data=json.dumps({"path": str(yaml_path)}),
-            content_type="application/json",
+        # Create GCP YAML files in repo format
+        gcps_dir = tmp_path / "gcps"
+        gcps_dir.mkdir()
+        (gcps_dir / "test__PS1.yaml").write_text(
+            "id: test/PS1\nname: PS1\nmap_point:\n  map_id: test\n  pixel_point:\n    x: 100.0\n    y: 200.0\n"
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["count"] == 2
-
-        # Verify points were imported
-        resp = test_client.get("/point-picker/api/points/")
-        assert len(resp.json()["points"]) == 2
-
-    def test_import_file_not_found_returns_404(self, test_client, tmp_path: Path) -> None:
-        """POST /point-picker/api/import/ returns 404 for nonexistent file."""
-        resp = test_client.post(
-            "/point-picker/api/import/",
-            data=json.dumps({"path": str(tmp_path / "nonexistent.yaml")}),
-            content_type="application/json",
+        (gcps_dir / "test__AR1.yaml").write_text(
+            "id: test/AR1\nname: AR1\nmap_point:\n  map_id: test\n  pixel_point:\n    x: 300.0\n    y: 400.0\n"
         )
-        assert resp.status_code == 404
 
-    def test_import_missing_path_returns_422(self, test_client) -> None:
-        """POST /point-picker/api/import/ without path returns 422."""
+        # Monkeypatch GCPS_DIR to use tmp directory
+        original = pp_views.GCPS_DIR
+        pp_views.GCPS_DIR = gcps_dir
+
+        try:
+            resp = test_client.post(
+                "/point-picker/api/import/",
+                data=json.dumps({"map_id": "test"}),
+                content_type="application/json",
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["count"] == 2
+
+            # Verify points were imported
+            resp = test_client.get("/point-picker/api/points/")
+            assert len(resp.json()["points"]) == 2
+        finally:
+            pp_views.GCPS_DIR = original
+
+    def test_import_missing_map_id_returns_422(self, test_client) -> None:
+        """POST /point-picker/api/import/ without map_id returns 422."""
         resp = test_client.post(
             "/point-picker/api/import/",
             data=json.dumps({}),

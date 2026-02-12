@@ -29,6 +29,11 @@ class Annotation:
     camera_pose: PTZState
     pixel: PixelPoint
 
+    @property
+    def id(self) -> str:
+        """Composite ID for Entity protocol: ``frame_id/gcp_id``."""
+        return f"{self.frame_id}/{self.gcp_id}"
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {

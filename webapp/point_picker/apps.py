@@ -27,16 +27,18 @@ class PointPickerConfig(AppConfig):
         webapp_dir = Path(__file__).resolve().parent.parent
         project_root = webapp_dir.parent
 
-        # Use the Cartografia valencia map and GCPs
+        # Use the Cartografia valencia map
         map_file = project_root / "Cartografia_valencia.tif"
-        gcp_file = (
-            project_root / "tests" / "homography" / "test_data" / "Cartografia_valencia_gcps.yaml"
-        )
+        gcps_dir = project_root / "data" / "gcps"
 
         if map_file.exists():
             initialize_state(map_file)
 
-            # Load existing GCPs if available
-            if gcp_file.exists():
-                state = get_state()
-                state.load_registry(gcp_file)
+            # Load existing GCPs from repository if available
+            if gcps_dir.exists():
+                from poc_homography.map_points.gcp_registry import from_gcp_repo, list_map_ids
+
+                available = list_map_ids(gcps_dir)
+                if available:
+                    state = get_state()
+                    state.load_from_repo(gcps_dir, available[0])

@@ -1,6 +1,9 @@
 """Repository implementations for the infrastructure layer."""
 
 from poc_homography.infrastructure.repositories.base import RepoYaml
+from poc_homography.infrastructure.repositories.repo_yaml_annotation import (
+    RepoYamlAnnotation,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_camera_calibration import (
     RepoYamlCameraCalibration,
 )
@@ -19,6 +22,7 @@ __all__ = [
     # Base class
     "RepoYaml",
     # Concrete repositories
+    "RepoYamlAnnotation",
     "RepoYamlCameraCalibration",
     "RepoYamlCameraConfig",
     "RepoYamlCapturedFrame",

@@ -162,3 +162,79 @@ class GCPRegistry:
         """
         content = _get_fs(fs).read_text(Path(path))
         return cls.from_yaml(content)
+
+
+# ---------------------------------------------------------------------------
+# Repository adapter functions (bridge legacy GCPRegistry <-> DDD repos)
+# ---------------------------------------------------------------------------
+
+
+def from_gcp_repo(data_dir: Path, map_id: str) -> GCPRegistry:
+    """Load a GCPRegistry from the DDD ``RepoYamlGroundControlPoint`` repository.
+
+    Args:
+        data_dir: Directory containing per-GCP YAML files.
+        map_id: Map identifier to filter GCPs by.
+
+    Returns:
+        GCPRegistry populated with the legacy MapPoint representation.
+    """
+    from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
+
+    repo = RepoYamlGroundControlPoint(data_dir)
+    all_gcps = repo.get_all()
+
+    points: dict[str, MapPoint] = {}
+    for gcp in all_gcps:
+        if gcp.map_id != map_id:
+            continue
+        mp = gcp.map_point
+        points[gcp.name] = MapPoint(
+            pixel_x=float(mp.pixel_point.x),
+            pixel_y=float(mp.pixel_point.y),
+        )
+
+    return GCPRegistry(map_id=map_id, points=points)
+
+
+def save_to_gcp_repo(registry: GCPRegistry, data_dir: Path) -> None:
+    """Save a GCPRegistry to the DDD ``RepoYamlGroundControlPoint`` repository.
+
+    Each point in the registry is converted to a ``GroundControlPoint`` entity
+    and persisted as an individual YAML file.
+
+    Args:
+        registry: The legacy registry to persist.
+        data_dir: Directory for per-GCP YAML files.
+    """
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint as DomainMapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
+
+    repo = RepoYamlGroundControlPoint(data_dir)
+    for name, point in registry.points.items():
+        gcp = GroundControlPoint(
+            name=name,
+            map_point=DomainMapPoint(
+                map_id=registry.map_id,
+                pixel_point=PixelPoint.create(point.pixel_x, point.pixel_y),
+            ),
+        )
+        repo.save(gcp)
+
+
+def list_map_ids(data_dir: Path) -> list[str]:
+    """Return sorted unique map IDs found in the GCP repository.
+
+    Args:
+        data_dir: Directory containing per-GCP YAML files.
+
+    Returns:
+        Sorted list of unique map_id strings.
+    """
+    from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
+
+    repo = RepoYamlGroundControlPoint(data_dir)
+    all_gcps = repo.get_all()
+    return sorted({gcp.map_id for gcp in all_gcps})
