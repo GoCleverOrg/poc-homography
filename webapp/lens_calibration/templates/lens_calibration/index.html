@@ -584,6 +584,24 @@
                 </div>
             </div>
 
+            <!-- Load / Save Calibration -->
+            <div class="card card-fullwidth">
+                <div class="card-header">Load / Save Calibration</div>
+                <div class="card-body">
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <select id="load-camera-select" style="padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 200px;">
+                            <option value="">-- Select camera --</option>
+                        </select>
+                        <button id="load-btn" class="btn btn-secondary">
+                            Load Calibration
+                        </button>
+                        <button id="save-btn" class="btn btn-success">
+                            Save Calibration
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Results -->
             <div class="card card-fullwidth" id="results-card" style="display: none;">
                 <div class="card-header">Calibration Results</div>
@@ -646,9 +664,6 @@
                     </div>
 
                     <div class="actions">
-                        <button id="save-btn" class="btn btn-success">
-                            Save Calibration
-                        </button>
                         <button id="copy-coeffs-btn" class="btn btn-secondary">
                             Copy Coefficients
                         </button>
@@ -1004,11 +1019,12 @@
             showStatus('Saving calibration...', 'info');
 
             try {
+                const cameraId = cameraIdInput.value || 'unknown_camera';
                 const resp = await fetch('{% url "lens_calibration:api_save" %}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify({
-                        camera_id: cameraIdInput.value || 'unknown_camera',
+                        camera_id: cameraId,
                         zoom: parseFloat(zoomInput.value) || 1.0,
                         coefficients: currentResults.coefficients,
                         intrinsics: getIntrinsics(),
@@ -1023,7 +1039,8 @@
                     throw new Error(data.error);
                 }
 
-                showStatus(`Saved to ${data.filename}`, 'success');
+                showStatus(`Saved! Camera: ${cameraId}`, 'success');
+                loadCalibrationIds();
 
             } catch (e) {
                 showStatus(`Save failed: ${e.message}`, 'error');
@@ -1031,6 +1048,89 @@
 
             saveBtn.disabled = false;
         }
+
+        // Load calibration IDs into dropdown
+        const loadCameraSelect = document.getElementById('load-camera-select');
+        const loadBtn = document.getElementById('load-btn');
+
+        async function loadCalibrationIds() {
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_calibration_ids" %}');
+                const data = await resp.json();
+                loadCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
+                (data.camera_ids || []).forEach(id => {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = id;
+                    loadCameraSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load calibration IDs:', e);
+            }
+        }
+
+        // Load calibration from repo
+        async function loadCalibrationFromRepo() {
+            const cameraId = loadCameraSelect.value;
+            if (!cameraId) {
+                showStatus('Select a camera to load', 'warning');
+                return;
+            }
+
+            loadBtn.disabled = true;
+            showStatus('Loading calibration...', 'info');
+
+            try {
+                const resp = await fetch('{% url "lens_calibration:api_load" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({ camera_id: cameraId })
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                cameraIdInput.value = data.camera_id;
+
+                const entries = data.entries || [];
+                if (entries.length > 0) {
+                    const last = entries[entries.length - 1];
+                    zoomInput.value = last.zoom_factor;
+                    if (last.coefficients) {
+                        currentResults = {
+                            coefficients: last.coefficients,
+                            overall_rmse: last.validation_rmse || 0,
+                            num_lines: last.num_lines_used || 0,
+                            quality: (last.validation_rmse || 0) < 2.0 ? 'good' : (last.validation_rmse || 0) < 5.0 ? 'acceptable' : 'poor',
+                            initial_error: 0,
+                            final_error: 0,
+                            improvement_percent: 0,
+                            iterations: 0,
+                            line_errors: [],
+                        };
+                        updateResults(currentResults);
+                    }
+                    if (last.intrinsics) {
+                        fxInput.value = last.intrinsics.fx;
+                        fyInput.value = last.intrinsics.fy;
+                        cxInput.value = last.intrinsics.cx;
+                        cyInput.value = last.intrinsics.cy;
+                    }
+                }
+
+                showStatus(`Loaded! ${entries.length} zoom entries for camera "${cameraId}"`, 'success');
+
+            } catch (e) {
+                showStatus(`Load failed: ${e.message}`, 'error');
+            }
+
+            loadBtn.disabled = false;
+        }
+
+        loadBtn.addEventListener('click', loadCalibrationFromRepo);
 
         // Copy coefficients
         function copyCoefficients() {
@@ -1427,6 +1527,7 @@ p2: ${currentResults.coefficients.p2}`;
 
         // Initialize
         loadSurveySessions();
+        loadCalibrationIds();
         // Auto-compute intrinsics from camera specs on page load
         computeIntrinsics();
     </script>

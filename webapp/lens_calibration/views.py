@@ -28,17 +28,17 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.calibration_utils import (
-    get_cached_calibration_table as _get_cached_calibration_table,
-)
-from homography_web.calibration_utils import (
-    resolve_safe_path as _resolve_safe_path,
+    list_calibration_ids,
+    load_calibration_from_repo,
+    save_calibration_to_repo,
+    serialize_calibration_entry,
 )
 
 # Paths
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 SURVEY_DIR = WEBAPP_DIR / "survey"
-CALIBRATION_DIR = PROJECT_ROOT / "calibration_results"
+CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 
 logger = logging.getLogger(__name__)
@@ -92,10 +92,7 @@ def api_survey_sessions(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "Failed to list survey sessions"}, status=500)
 
 
-from homography_web.calibration_utils import (
-    api_compute_intrinsics,
-    serialize_calibration_entry,
-)
+from homography_web.calibration_utils import api_compute_intrinsics
 
 api_compute_intrinsics = api_compute_intrinsics  # make linter happy
 
@@ -631,7 +628,7 @@ def api_validate(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 def api_save(request: HttpRequest) -> JsonResponse:
-    """Save calibration results to YAML file."""
+    """Save calibration results via the DDD repo."""
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -650,12 +647,6 @@ def api_save(request: HttpRequest) -> JsonResponse:
         coeffs = data.get("coefficients", {})
         validation_rmse = data.get("validation_rmse", 0.0)
         intrinsics = data.get("intrinsics", {})
-
-        # Validate output filename
-        filename = data.get("filename", f"{camera_id}_calibration.yaml")
-        resolved = _resolve_safe_path(filename, CALIBRATION_DIR)
-        if resolved is None:
-            return JsonResponse({"error": "Invalid filename"}, status=400)
 
         distortion = LensDistortion(
             k1=Unitless(coeffs.get("k1", 0.0)),
@@ -679,13 +670,12 @@ def api_save(request: HttpRequest) -> JsonResponse:
         )
         table.add_entry(entry)
 
-        CALIBRATION_DIR.mkdir(parents=True, exist_ok=True)
-        table.save(resolved)
+        save_calibration_to_repo(table, CALIBRATIONS_DIR)
 
         return JsonResponse(
             {
                 "success": True,
-                "filename": filename,
+                "camera_id": camera_id,
             }
         )
 
@@ -699,20 +689,20 @@ def api_save(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 def api_load(request: HttpRequest) -> JsonResponse:
-    """Load calibration from YAML file."""
+    """Load calibration from DDD repo by camera_id."""
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     try:
-        filename = data.get("filename", "")
+        camera_id = data.get("camera_id", "")
+        if not camera_id:
+            return JsonResponse({"error": "Missing camera_id"}, status=400)
 
-        resolved = _resolve_safe_path(filename, CALIBRATION_DIR)
-        if resolved is None or not resolved.exists():
-            return JsonResponse({"error": "Invalid or missing filename"}, status=400)
-
-        table = _get_cached_calibration_table(resolved)
+        table = load_calibration_from_repo(camera_id, CALIBRATIONS_DIR)
+        if table is None:
+            return JsonResponse({"error": f"No calibration found for {camera_id}"}, status=404)
 
         entries = [
             serialize_calibration_entry(entry)
@@ -730,6 +720,17 @@ def api_load(request: HttpRequest) -> JsonResponse:
     except Exception:
         logger.exception("Load failed")
         return JsonResponse({"error": "Load failed"}, status=500)
+
+
+@require_GET
+def api_calibration_ids(request: HttpRequest) -> JsonResponse:
+    """List available camera_ids in the calibration repo."""
+    try:
+        camera_ids = list_calibration_ids(CALIBRATIONS_DIR)
+        return JsonResponse({"camera_ids": camera_ids})
+    except Exception:
+        logger.exception("Failed to list calibration IDs")
+        return JsonResponse({"error": "Failed to list calibration IDs"}, status=500)
 
 
 # ---------------------------------------------------------------------------

@@ -1,15 +1,16 @@
 """Shared utilities for calibration-related Django apps.
 
 Provides filename validation, safe path resolution, mtime-based
-calibration table caching, intrinsics computation, and calibration
-entry serialization used by both ``lens_calibration`` and
-``distortion_validator``.
+calibration table caching, intrinsics computation, calibration
+entry serialization, and DDD repo adapter functions used by both
+``lens_calibration`` and ``distortion_validator``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from django.http import HttpRequest, JsonResponse
@@ -167,3 +168,116 @@ def serialize_calibration_entry(entry) -> dict[str, Any]:
     if entry.reprojection_error_px != 0.0:
         entry_data["reprojection_error_px"] = entry.reprojection_error_px
     return entry_data
+
+
+# ---------------------------------------------------------------------------
+# DDD repo adapter functions
+# ---------------------------------------------------------------------------
+
+def save_calibration_to_repo(table: Any, data_dir: Path) -> None:
+    """Convert a legacy ``CameraCalibrationTable`` to ``LensCalibrationTable`` and persist."""
+    from poc_homography.domain.entities.lens_calibration_table import LensCalibrationTable
+    from poc_homography.domain.vo.lens_distortion import LensDistortion
+    from poc_homography.domain.vo.zoom_calibration_entry import (
+        ZoomCalibrationEntry as DddEntry,
+    )
+    from poc_homography.infrastructure.repositories.repo_yaml_lens_calibration_table import (
+        RepoYamlLensCalibrationTable,
+    )
+    from poc_homography.types import PixelsFloat, Unitless
+
+    repo = RepoYamlLensCalibrationTable(data_dir)
+
+    # Merge with any existing entries already persisted for this camera
+    existing = repo.get(table.camera_id)
+    existing_by_zoom: dict[float, DddEntry] = {}
+    if existing:
+        for e in existing.entries:
+            existing_by_zoom[float(e.zoom_factor)] = e
+
+    for legacy_entry in table.entries.values():
+        ddd_entry = DddEntry(
+            zoom_factor=Unitless(legacy_entry.zoom_factor),
+            distortion=LensDistortion(
+                k1=Unitless(legacy_entry.k1),
+                k2=Unitless(legacy_entry.k2),
+                p1=Unitless(legacy_entry.p1),
+                p2=Unitless(legacy_entry.p2),
+                k3=Unitless(legacy_entry.k3),
+            ),
+            calibration_date=legacy_entry.calibration_date,
+            source_images=tuple(legacy_entry.source_images),
+            validation_rmse=legacy_entry.validation_rmse,
+            num_lines_used=legacy_entry.num_lines_used,
+            fx=PixelsFloat(legacy_entry.fx),
+            fy=PixelsFloat(legacy_entry.fy),
+            cx=PixelsFloat(legacy_entry.cx),
+            cy=PixelsFloat(legacy_entry.cy),
+            reprojection_error_px=legacy_entry.reprojection_error_px,
+        )
+        existing_by_zoom[float(legacy_entry.zoom_factor)] = ddd_entry
+
+    now = datetime.now().isoformat()
+    entity = LensCalibrationTable(
+        id=table.camera_id,
+        entries=tuple(
+            existing_by_zoom[z] for z in sorted(existing_by_zoom)
+        ),
+        created_date=existing.created_date if existing else now,
+        last_modified=now,
+    )
+    repo.save(entity)
+
+
+def load_calibration_from_repo(camera_id: str, data_dir: Path) -> Any | None:
+    """Load from repo and convert ``LensCalibrationTable`` to ``CameraCalibrationTable``."""
+    from poc_homography.calibration.lens_distortion.calibration_table import (
+        CameraCalibrationTable,
+    )
+    from poc_homography.calibration.lens_distortion.calibration_table import (
+        ZoomCalibrationEntry as LegacyEntry,
+    )
+    from poc_homography.infrastructure.repositories.repo_yaml_lens_calibration_table import (
+        RepoYamlLensCalibrationTable,
+    )
+
+    repo = RepoYamlLensCalibrationTable(data_dir)
+    entity = repo.get(camera_id)
+    if entity is None:
+        return None
+
+    table = CameraCalibrationTable(
+        camera_id=entity.id,
+        created_date=entity.created_date,
+        last_modified=entity.last_modified,
+    )
+    for ddd_entry in entity.entries:
+        legacy_entry = LegacyEntry(
+            zoom_factor=float(ddd_entry.zoom_factor),
+            k1=float(ddd_entry.distortion.k1),
+            k2=float(ddd_entry.distortion.k2),
+            k3=float(ddd_entry.distortion.k3),
+            p1=float(ddd_entry.distortion.p1),
+            p2=float(ddd_entry.distortion.p2),
+            calibration_date=ddd_entry.calibration_date,
+            source_images=ddd_entry.source_images,
+            validation_rmse=ddd_entry.validation_rmse,
+            num_lines_used=ddd_entry.num_lines_used,
+            fx=float(ddd_entry.fx),
+            fy=float(ddd_entry.fy),
+            cx=float(ddd_entry.cx),
+            cy=float(ddd_entry.cy),
+            reprojection_error_px=ddd_entry.reprojection_error_px,
+        )
+        table.entries[legacy_entry.zoom_factor] = legacy_entry
+    return table
+
+
+def list_calibration_ids(data_dir: Path) -> list[str]:
+    """List available camera_ids in the repo."""
+    from poc_homography.infrastructure.repositories.repo_yaml_lens_calibration_table import (
+        RepoYamlLensCalibrationTable,
+    )
+
+    repo = RepoYamlLensCalibrationTable(data_dir)
+    return sorted(entity.id for entity in repo.get_all())

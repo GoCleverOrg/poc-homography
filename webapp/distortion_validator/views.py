@@ -30,7 +30,9 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.calibration_utils import (
-    get_cached_calibration_table as _get_cached_calibration_table,
+    list_calibration_ids,
+    load_calibration_from_repo,
+    serialize_calibration_entry,
 )
 from homography_web.calibration_utils import (
     resolve_safe_path as _resolve_safe_path,
@@ -39,7 +41,7 @@ from homography_web.calibration_utils import (
 # Paths
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
-CALIBRATION_DIR = PROJECT_ROOT / "calibration_results"
+CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 SURVEY_DIR = WEBAPP_DIR / "survey"
 RESULT_IMAGE_DIR = WEBAPP_DIR / "distortion_validator" / "_result_images"
@@ -63,40 +65,32 @@ def index(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 def api_calibration_files(request: HttpRequest) -> JsonResponse:
-    """List available calibration YAML files."""
+    """List available camera_ids in the calibration repo."""
     try:
-        files = []
-        if CALIBRATION_DIR.exists():
-            for f in sorted(CALIBRATION_DIR.glob("*.yaml")):
-                files.append({
-                    "name": f.name,
-                })
-        return JsonResponse({"files": files})
+        camera_ids = list_calibration_ids(CALIBRATIONS_DIR)
+        return JsonResponse({"camera_ids": camera_ids})
     except Exception:
-        logger.exception("Failed to list calibration files")
-        return JsonResponse({"error": "Failed to list calibration files"}, status=500)
+        logger.exception("Failed to list calibrations")
+        return JsonResponse({"error": "Failed to list calibrations"}, status=500)
 
 
-from homography_web.calibration_utils import (
-    api_compute_intrinsics,
-    serialize_calibration_entry,
-)
+from homography_web.calibration_utils import api_compute_intrinsics
 
 api_compute_intrinsics = api_compute_intrinsics  # make linter happy
 
 
 @require_http_methods(["POST"])
 def api_load_calibration(request: HttpRequest) -> JsonResponse:
-    """Load a calibration file and return its contents."""
+    """Load a calibration by camera_id from the DDD repo."""
     try:
         data = json.loads(request.body)
-        filename = data.get("filename", "")
+        camera_id = data.get("camera_id", "")
+        if not camera_id:
+            return JsonResponse({"error": "Missing camera_id"}, status=400)
 
-        resolved = _resolve_safe_path(filename, CALIBRATION_DIR)
-        if resolved is None or not resolved.exists():
-            return JsonResponse({"error": "Invalid or missing filename"}, status=400)
-
-        table = _get_cached_calibration_table(resolved)
+        table = load_calibration_from_repo(camera_id, CALIBRATIONS_DIR)
+        if table is None:
+            return JsonResponse({"error": f"No calibration found for {camera_id}"}, status=404)
 
         entries = [
             serialize_calibration_entry(entry)
@@ -109,8 +103,8 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
         })
 
     except Exception:
-        logger.exception("Failed to load calibration file")
-        return JsonResponse({"error": "Failed to load calibration file"}, status=500)
+        logger.exception("Failed to load calibration")
+        return JsonResponse({"error": "Failed to load calibration"}, status=500)
 
 
 @require_GET

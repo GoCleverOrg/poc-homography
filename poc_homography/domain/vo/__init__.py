@@ -17,6 +17,7 @@ from poc_homography.domain.vo.pixel_point import PixelPoint
 from poc_homography.domain.vo.ptz_state import PTZState
 from poc_homography.domain.vo.rotation import Rotation
 from poc_homography.domain.vo.vector3 import Vector3
+from poc_homography.domain.vo.zoom_calibration_entry import ZoomCalibrationEntry
 
 __all__ = [
     "CameraIntrinsics",
@@ -36,4 +37,5 @@ __all__ = [
     "PTZState",
     "Rotation",
     "Vector3",
+    "ZoomCalibrationEntry",
 ]
