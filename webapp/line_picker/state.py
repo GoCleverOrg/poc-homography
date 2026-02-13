@@ -350,3 +350,78 @@ def get_state() -> LinePickerState:
     if _state is None:
         raise RuntimeError("Application not initialized. Call initialize_state() first.")
     return _state
+
+
+# ---------------------------------------------------------------------------
+# Repository adapter functions (bridge legacy Line <-> DDD repos)
+# ---------------------------------------------------------------------------
+
+
+def from_line_repo(data_dir: Path, map_id: str) -> list[Line]:
+    """Load lines from the DDD ``RepoYamlLine`` repository.
+
+    Args:
+        data_dir: Directory containing per-Line YAML files.
+        map_id: Map identifier to filter lines by.
+
+    Returns:
+        List of legacy Line objects for the given map.
+    """
+    from poc_homography.infrastructure.repositories import RepoYamlLine
+
+    repo = RepoYamlLine(data_dir)
+    all_lines = repo.get_all()
+
+    return [
+        Line(
+            line_id=dl.name,
+            start_x=float(dl.start.x),
+            start_y=float(dl.start.y),
+            end_x=float(dl.end.x),
+            end_y=float(dl.end.y),
+        )
+        for dl in all_lines
+        if dl.map_id == map_id
+    ]
+
+
+def save_to_line_repo(lines: list[Line], map_id: str, data_dir: Path) -> None:
+    """Save legacy Line objects to the DDD ``RepoYamlLine`` repository.
+
+    Each line is converted to a domain ``Line`` entity and persisted
+    as an individual YAML file.
+
+    Args:
+        lines: Legacy Line objects to persist.
+        map_id: Map identifier for the lines.
+        data_dir: Directory for per-Line YAML files.
+    """
+    from poc_homography.domain.entities.line import Line as DomainLine
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoYamlLine
+
+    repo = RepoYamlLine(data_dir)
+    for line in lines:
+        domain_line = DomainLine(
+            name=line.line_id,
+            map_id=map_id,
+            start=PixelPoint.create(line.start_x, line.start_y),
+            end=PixelPoint.create(line.end_x, line.end_y),
+        )
+        repo.save(domain_line)
+
+
+def list_line_map_ids(data_dir: Path) -> list[str]:
+    """Return sorted unique map IDs found in the line repository.
+
+    Args:
+        data_dir: Directory containing per-Line YAML files.
+
+    Returns:
+        Sorted list of unique map_id strings.
+    """
+    from poc_homography.infrastructure.repositories import RepoYamlLine
+
+    repo = RepoYamlLine(data_dir)
+    all_lines = repo.get_all()
+    return sorted({line.map_id for line in all_lines})

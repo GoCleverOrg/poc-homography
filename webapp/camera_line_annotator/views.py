@@ -19,6 +19,8 @@ from django.views.decorators.http import require_GET, require_http_methods
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
+LINES_DIR = PROJECT_ROOT / "data" / "lines"
+LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
@@ -48,11 +50,29 @@ def get_lines_registry_path() -> Path | None:
 
 
 def load_lines_registry() -> dict:
-    """Load and cache lines registry from YAML file."""
+    """Load and cache lines registry, trying DDD repo first then legacy YAML."""
     global _lines_registry_data
     if _lines_registry_data is not None:
         return _lines_registry_data
 
+    # Try DDD repository first
+    from webapp.line_picker.state import from_line_repo, list_line_map_ids
+
+    try:
+        map_ids = list_line_map_ids(LINES_DIR)
+        if map_ids:
+            map_id = map_ids[0]
+            repo_lines = from_line_repo(LINES_DIR, map_id)
+            if repo_lines:
+                _lines_registry_data = {
+                    "map_id": map_id,
+                    "lines": [line.to_dict() for line in repo_lines],
+                }
+                return _lines_registry_data
+    except (OSError, ImportError):
+        pass
+
+    # Fall back to legacy YAML file
     registry_path = get_lines_registry_path()
     if registry_path is None or not registry_path.exists():
         return {"map_id": "", "lines": []}
@@ -124,17 +144,96 @@ def save_session_annotations(
     request.session.modified = True
 
 
-def load_existing_line_annotations(image_filename: str) -> list[dict]:
-    """Load existing line annotations for a specific image from exported YAML files.
+def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
+    """Try loading line annotations from the DDD LineAnnotation repository.
 
-    Searches for ``*_line_annotations.yaml`` files in TEST_DATA_DIR whose
-    ``test_cases`` contain a matching ``image`` field.  The per-image file
-    (``{base}_line_annotations.yaml``) is tried first for a fast match, then
-    all other ``*_line_annotations.yaml`` files are scanned as fallback.
+    Args:
+        image_filename: Camera image filename to match.
 
-    Returns the ``line_annotations`` list from the first matching test case,
-    normalised to the internal annotation format.
+    Returns:
+        List of annotation dicts in the internal format, or empty list if repo
+        is unavailable or has no data.
     """
+    from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
+
+    try:
+        repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
+        all_annotations = repo.get_all()
+    except OSError:
+        return []
+
+    frame_id = image_filename.rsplit(".", 1)[0]
+    annotations: list[dict] = []
+    for ann in all_annotations:
+        if ann.frame_id != frame_id:
+            continue
+        annotations.append({
+            "line_id": ann.line_id,
+            "start_pixel_x": float(ann.start_pixel.x),
+            "start_pixel_y": float(ann.start_pixel.y),
+            "end_pixel_x": float(ann.end_pixel.x),
+            "end_pixel_y": float(ann.end_pixel.y),
+        })
+    return annotations
+
+
+def _save_line_annotations_to_repo(
+    image_filename: str,
+    annotations: list[dict],
+    camera_status: dict,
+) -> None:
+    """Persist line annotations to the DDD LineAnnotation repository.
+
+    Args:
+        image_filename: Camera image filename (used as frame_id base).
+        annotations: List of annotation dicts with line_id and pixel coords.
+        camera_status: Dict with pan, tilt, zoom values.
+    """
+    from poc_homography.domain.entities.line_annotation import LineAnnotation
+    from poc_homography.domain.vo import PixelPoint, PTZState
+    from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
+    from poc_homography.types import Degrees, Unitless
+
+    repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
+
+    camera_pose = PTZState(
+        pan_raw=Degrees(float(camera_status.get("pan", 0))),
+        tilt_deg=Degrees(float(camera_status.get("tilt", 0))),
+        zoom=Unitless(float(camera_status.get("zoom", 1))),
+    )
+
+    frame_id = image_filename.rsplit(".", 1)[0]
+    for ann_dict in annotations:
+        line_ann = LineAnnotation(
+            line_id=ann_dict.get("line_id", ""),
+            frame_id=frame_id,
+            camera_pose=camera_pose,
+            start_pixel=PixelPoint.create(
+                float(ann_dict.get("start_pixel_x", 0)),
+                float(ann_dict.get("start_pixel_y", 0)),
+            ),
+            end_pixel=PixelPoint.create(
+                float(ann_dict.get("end_pixel_x", 0)),
+                float(ann_dict.get("end_pixel_y", 0)),
+            ),
+        )
+        repo.save(line_ann)
+
+
+def load_existing_line_annotations(image_filename: str) -> list[dict]:
+    """Load existing line annotations for a specific image.
+
+    Tries the DDD ``RepoYamlLineAnnotation`` first, then falls back to
+    searching ``*_line_annotations.yaml`` files in TEST_DATA_DIR.
+
+    Returns the annotations normalised to the internal annotation format.
+    """
+    # Try DDD repository first
+    repo_annotations = _load_line_annotations_from_repo(image_filename)
+    if repo_annotations:
+        return repo_annotations
+
+    # Fall back to legacy YAML files
     if not TEST_DATA_DIR.exists():
         return []
 
@@ -593,9 +692,12 @@ def api_export(request: HttpRequest) -> JsonResponse:
     except (ValueError, RuntimeError):
         return JsonResponse({"error": "Invalid output path"}, status=400)
 
-    # Write YAML file
+    # Write YAML file (legacy format)
     with open(resolved_path, "w") as f:
         yaml.dump(export_data, f, default_flow_style=False, sort_keys=False)
+
+    # Dual-write: also persist to DDD per-entity repository
+    _save_line_annotations_to_repo(current_image, image_annotations, camera_status)
 
     return JsonResponse({
         "success": True,

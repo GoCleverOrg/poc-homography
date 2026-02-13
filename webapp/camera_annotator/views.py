@@ -17,6 +17,7 @@ WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
+ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
 DEFAULT_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 
 # Supported image extensions
@@ -100,6 +101,76 @@ def load_existing_annotations(
     return []
 
 
+# ---------------------------------------------------------------------------
+# Repository adapter functions (bridge legacy test_cases <-> DDD repos)
+# ---------------------------------------------------------------------------
+
+
+def load_annotations_from_repo(image_filename: str) -> list[dict]:
+    """Load annotations from the DDD Annotation repository.
+
+    Args:
+        image_filename: Camera image filename to match annotations for.
+
+    Returns:
+        List of annotation dicts in legacy format (gcp_id, pixel_x, pixel_y).
+    """
+    from poc_homography.infrastructure.repositories import RepoYamlAnnotation
+
+    repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
+    all_annotations = repo.get_all()
+
+    frame_id = image_filename.rsplit(".", 1)[0]
+    return [
+        {
+            "gcp_id": ann.gcp_id,
+            "pixel_x": round(float(ann.pixel.x), 1),
+            "pixel_y": round(float(ann.pixel.y), 1),
+        }
+        for ann in all_annotations
+        if ann.frame_id == frame_id
+    ]
+
+
+def save_annotations_to_repo(
+    image_filename: str,
+    annotations: list[dict],
+    camera_status: dict,
+) -> None:
+    """Save legacy annotation dicts to the DDD Annotation repository.
+
+    Args:
+        image_filename: Camera image filename (used as frame_id base).
+        annotations: List of dicts with gcp_id, pixel_x, pixel_y.
+        camera_status: Dict with pan, tilt, zoom values.
+    """
+    from poc_homography.domain.entities.annotation import Annotation
+    from poc_homography.domain.vo import PixelPoint, PTZState
+    from poc_homography.infrastructure.repositories import RepoYamlAnnotation
+    from poc_homography.types import Degrees, Unitless
+
+    repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
+
+    camera_pose = PTZState(
+        pan_raw=Degrees(float(camera_status.get("pan", 0))),
+        tilt_deg=Degrees(float(camera_status.get("tilt", 0))),
+        zoom=Unitless(float(camera_status.get("zoom", 1))),
+    )
+
+    frame_id = image_filename.rsplit(".", 1)[0]
+    for ann_dict in annotations:
+        annotation = Annotation(
+            gcp_id=ann_dict["gcp_id"],
+            frame_id=frame_id,
+            camera_pose=camera_pose,
+            pixel=PixelPoint.create(
+                round(float(ann_dict["pixel_x"]), 1),
+                round(float(ann_dict["pixel_y"]), 1),
+            ),
+        )
+        repo.save(annotation)
+
+
 def validate_image_filename(filename: str) -> bool:
     """Validate filename to prevent path traversal attacks.
 
@@ -134,13 +205,21 @@ def api_gcps(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_annotations(request: HttpRequest) -> JsonResponse:
-    """Get existing annotations for current image."""
+    """Get existing annotations for current image.
+
+    Tries the DDD Annotation repository first, then falls back to the
+    legacy monolithic YAML file.
+    """
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse([], safe=False)
 
     try:
-        annotations = load_existing_annotations(current_image)
+        # Try DDD repository first
+        annotations = load_annotations_from_repo(current_image)
+        if not annotations:
+            # Fall back to legacy file
+            annotations = load_existing_annotations(current_image)
         return JsonResponse(annotations, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to load annotations: {e}"}, status=500)
@@ -188,8 +267,10 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     # Store in session
     request.session[SESSION_IMAGE_KEY] = filename
 
-    # Load annotations for the new image
-    annotations = load_existing_annotations(filename)
+    # Load annotations for the new image (DDD repo first, then legacy)
+    annotations = load_annotations_from_repo(filename)
+    if not annotations:
+        annotations = load_existing_annotations(filename)
 
     return JsonResponse(
         {
@@ -279,9 +360,27 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
         new_tc["annotations"] = clean_annotations
         test_cases.append(new_tc)
 
-    # Write back
+    # Write back (legacy format)
     with open(DEFAULT_ANNOTATIONS_FILE, "w") as f:
         yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    # Dual-write: also persist to DDD per-entity repository
+    # Parse camera status from the test case (existing or newly created)
+    tc_camera_status = (existing_tc or new_tc).get("camera_status", {})
+    if not tc_camera_status:
+        # Fallback: parse from filename
+        parts = current_image.replace(".png", "").replace(".jpg", "").split("_")
+        if len(parts) >= 4:
+            try:
+                tc_camera_status = {
+                    "pan": float(parts[1]),
+                    "tilt": float(parts[2]),
+                    "zoom": int(parts[3]),
+                }
+            except (ValueError, IndexError):
+                tc_camera_status = {"pan": 0, "tilt": 0, "zoom": 1}
+
+    save_annotations_to_repo(current_image, clean_annotations, tc_camera_status)
 
     return JsonResponse({"success": True, "saved": len(clean_annotations)})
 

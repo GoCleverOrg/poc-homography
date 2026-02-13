@@ -15,11 +15,16 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from PIL import Image
 
-from .state import get_state
+from .state import from_line_repo, get_state, save_to_line_repo
 from .validation import (
     validate_export_request,
     validate_import_request,
 )
+
+# DDD repository directory for lines
+_WEBAPP_DIR = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = _WEBAPP_DIR.parent
+LINES_DIR = _PROJECT_ROOT / "data" / "lines"
 
 
 def normalize_array(arr: np.ndarray) -> np.ndarray:
@@ -456,6 +461,8 @@ def api_export(request: HttpRequest) -> JsonResponse:
         )
 
     state.save_lines(safe_path)
+    # Dual-write: also persist to DDD per-entity repository
+    save_to_line_repo(state.lines, state.map_id, LINES_DIR)
     return JsonResponse({"exported": str(safe_path), "count": len(state.lines)})
 
 
@@ -484,6 +491,19 @@ def api_import(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
+    # Try DDD repository first
+    repo_lines = from_line_repo(LINES_DIR, state.map_id)
+    if repo_lines:
+        state.lines = repo_lines
+        return JsonResponse(
+            {
+                "imported": "DDD repository",
+                "count": len(state.lines),
+                "map_id": state.map_id,
+            }
+        )
+
+    # Fall back to legacy YAML file
     if not safe_path.exists():
         return JsonResponse({"error": f"File not found: {safe_path}"}, status=404)
 

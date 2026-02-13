@@ -16,6 +16,10 @@ from poc_homography.infrastructure.repositories.repo_yaml_captured_frame import 
 from poc_homography.infrastructure.repositories.repo_yaml_ground_control_point import (
     RepoYamlGroundControlPoint,
 )
+from poc_homography.infrastructure.repositories.repo_yaml_line import RepoYamlLine
+from poc_homography.infrastructure.repositories.repo_yaml_line_annotation import (
+    RepoYamlLineAnnotation,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_map import RepoYamlMap
 
 __all__ = [
@@ -27,5 +31,7 @@ __all__ = [
     "RepoYamlCameraConfig",
     "RepoYamlCapturedFrame",
     "RepoYamlGroundControlPoint",
+    "RepoYamlLine",
+    "RepoYamlLineAnnotation",
     "RepoYamlMap",
 ]
