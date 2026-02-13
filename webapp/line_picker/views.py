@@ -15,11 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from PIL import Image
 
-from .state import from_line_repo, get_state, save_to_line_repo
-from .validation import (
-    validate_export_request,
-    validate_import_request,
-)
+from .state import from_line_repo, get_state, list_line_map_ids, save_to_line_repo
 
 # DDD repository directory for lines
 _WEBAPP_DIR = Path(__file__).resolve().parent.parent
@@ -411,112 +407,37 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     )
 
 
-def _validate_safe_path(path: Path, allowed_base: Path) -> Path | None:
-    """Validate that a path is within the allowed base directory.
-
-    Args:
-        path: The path to validate (can be relative or absolute).
-        allowed_base: The base directory that the path must be within.
-
-    Returns:
-        The resolved absolute path if safe, None if path traversal detected.
-    """
-    # Resolve to absolute path
-    if not path.is_absolute():
-        resolved = (allowed_base / path).resolve()
-    else:
-        resolved = path.resolve()
-
-    # Check that the resolved path is within the allowed base
-    try:
-        resolved.relative_to(allowed_base.resolve())
-        return resolved
-    except ValueError:
-        return None
-
-
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
-    """Export lines to YAML file."""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    error = validate_export_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
-
+    """Save lines to the DDD line repository."""
     state = get_state()
-    path = Path(data.get("path", "")) if data.get("path") else Path(f"{state.map_id}_lines.yaml")
-
-    # Validate path is within allowed directory (same directory as the map image)
-    allowed_base = state.geotiff_path.parent
-    safe_path = _validate_safe_path(path, allowed_base)
-    if safe_path is None:
-        return JsonResponse(
-            {"error": "Invalid path: path traversal not allowed"},
-            status=400,
-        )
-
-    state.save_lines(safe_path)
-    # Dual-write: also persist to DDD per-entity repository
     save_to_line_repo(state.lines, state.map_id, LINES_DIR)
-    return JsonResponse({"exported": str(safe_path), "count": len(state.lines)})
+    return JsonResponse({"saved": True, "count": len(state.lines)})
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_import(request: HttpRequest) -> JsonResponse:
-    """Import lines from YAML file."""
+    """Load lines from the DDD line repository for a given map_id."""
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    error = validate_import_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
+    map_id = data.get("map_id")
+    if not map_id:
+        return JsonResponse({"error": "map_id is required"}, status=400)
 
     state = get_state()
-    path = Path(data["path"])
+    repo_lines = from_line_repo(LINES_DIR, map_id)
+    state.lines = repo_lines
+    return JsonResponse(
+        {"map_id": map_id, "count": len(state.lines)}
+    )
 
-    # Validate path is within allowed directory (same directory as the map image)
-    allowed_base = state.geotiff_path.parent
-    safe_path = _validate_safe_path(path, allowed_base)
-    if safe_path is None:
-        return JsonResponse(
-            {"error": "Invalid path: path traversal not allowed"},
-            status=400,
-        )
 
-    # Try DDD repository first
-    repo_lines = from_line_repo(LINES_DIR, state.map_id)
-    if repo_lines:
-        state.lines = repo_lines
-        return JsonResponse(
-            {
-                "imported": "DDD repository",
-                "count": len(state.lines),
-                "map_id": state.map_id,
-            }
-        )
-
-    # Fall back to legacy YAML file
-    if not safe_path.exists():
-        return JsonResponse({"error": f"File not found: {safe_path}"}, status=404)
-
-    try:
-        state.load_lines(safe_path)
-        return JsonResponse(
-            {
-                "imported": str(safe_path),
-                "count": len(state.lines),
-                "map_id": state.map_id,
-            }
-        )
-    except ValueError as e:
-        return JsonResponse({"error": str(e)}, status=422)
-    except KeyError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+@require_GET
+def api_registries(request: HttpRequest) -> JsonResponse:
+    """List available map IDs from the line repository."""
+    return JsonResponse({"map_ids": list_line_map_ids(LINES_DIR)})

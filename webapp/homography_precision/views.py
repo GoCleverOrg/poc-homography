@@ -467,7 +467,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
 
     # Load GCP registry from repository
     try:
-        registry = from_gcp_repo(GCPS_DIR, "valte")
+        registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -616,7 +616,7 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         {"map_id": "...", "points": {"PS1": {"pixel_x": ..., "pixel_y": ...}, ...}}
     """
     try:
-        registry = from_gcp_repo(GCPS_DIR, "valte")
+        registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
@@ -1022,7 +1022,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
         # Load GCP registry from repository
         try:
-            gcp_registry = from_gcp_repo(GCPS_DIR, "valte")
+            gcp_registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
         except (KeyError, ValueError, OSError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},

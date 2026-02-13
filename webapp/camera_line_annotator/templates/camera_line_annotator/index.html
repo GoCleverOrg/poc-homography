@@ -341,43 +341,22 @@
             color: #2e7d32;
         }
 
-        /* YAML Preview */
-        #yaml-section {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 150px;
-        }
-
-        #yaml-preview {
-            flex: 1;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 11px;
-            line-height: 1.4;
-            padding: 12px;
-            background: #263238;
-            color: #aed581;
-            border: none;
-            resize: none;
-            white-space: pre;
-            overflow: auto;
-        }
-
-        #copy-btn {
+        /* Import button */
+        #import-btn {
+            width: 100%;
             padding: 10px;
-            background: #607d8b;
+            background: #2196f3;
             color: #fff;
             border: none;
             font-size: 13px;
+            font-weight: 500;
             cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 8px;
         }
 
-        #copy-btn:hover {
-            background: #546e7a;
-        }
-
-        #copy-btn.copied {
-            background: #2196f3;
+        #import-btn:hover {
+            background: #1976d2;
         }
 
         /* Instructions */
@@ -498,28 +477,6 @@
             border: 1px solid #ef9a9a;
         }
 
-        /* Import button */
-        #import-btn {
-            width: 100%;
-            padding: 10px;
-            background: #2196f3;
-            color: #fff;
-            border: none;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-bottom: 8px;
-        }
-
-        #import-btn:hover {
-            background: #1976d2;
-        }
-
-        #import-file {
-            display: none;
-        }
-
         /* Canvas draggable state */
         #annotation-canvas.draggable {
             pointer-events: auto;
@@ -594,16 +551,9 @@
         </div>
 
         <div id="export-section">
-            <input type="file" id="import-file" accept=".yaml,.yml">
-            <button id="import-btn">Import YAML</button>
-            <button id="export-btn" disabled>Export to YAML</button>
+            <button id="export-btn" disabled>Save to Repo</button>
+            <button id="import-btn">Load from Repo</button>
             <div id="export-status"></div>
-        </div>
-
-        <div id="yaml-section" class="panel-section">
-            <h2>YAML Preview</h2>
-            <textarea id="yaml-preview" readonly></textarea>
-            <button id="copy-btn">Copy to Clipboard</button>
         </div>
     </div>
 
@@ -651,8 +601,6 @@
         const lineDropdown = document.getElementById('line-dropdown');
         const annotationsList = document.getElementById('annotations-list');
         const annotationCount = document.getElementById('annotation-count');
-        const yamlPreview = document.getElementById('yaml-preview');
-        const copyBtn = document.getElementById('copy-btn');
         const coordsDisplay = document.getElementById('coords-display');
         const imageSelector = document.getElementById('image-selector');
         const filenameDisplay = document.getElementById('filename');
@@ -663,7 +611,6 @@
         const exportBtn = document.getElementById('export-btn');
         const exportStatus = document.getElementById('export-status');
         const importBtn = document.getElementById('import-btn');
-        const importFile = document.getElementById('import-file');
         const qualityIndicator = document.getElementById('quality-indicator');
         const modeBtns = document.querySelectorAll('.mode-btn');
         const instructions = document.getElementById('instructions');
@@ -1327,42 +1274,8 @@
             }
         }
 
-        // Update YAML preview
-        function updateYamlPreview() {
-            if (annotations.length === 0) {
-                yamlPreview.value = '# Click twice on image to create line annotations';
-                return;
-            }
-
-            let yaml = `line_registry: ${document.getElementById('registry-info').textContent.split(': ')[1].split(' ')[0]}\n\n`;
-            yaml += 'test_cases:\n';
-            yaml += `  - name: ${currentFilename.replace(/\.[^/.]+$/, '')}_lines\n`;
-            yaml += `    image: ${currentFilename}\n`;
-            yaml += '    camera_status:\n';
-            yaml += `      pan: ${panInput.value || 0}\n`;
-            yaml += `      tilt: ${tiltInput.value || 0}\n`;
-            yaml += `      zoom: ${zoomInput.value || 1}\n`;
-            yaml += `    point_annotations_ref: ${currentFilename.replace(/\.[^/.]+$/, '').replace(/_\d+$/, '')}\n`;
-            yaml += '    line_annotations:\n';
-
-            annotations.forEach(ann => {
-                yaml += `      - line_id: ${ann.line_id}\n`;
-                // Include points array for N-point annotations
-                if (ann.points && ann.points.length > 2) {
-                    yaml += `        points:\n`;
-                    ann.points.forEach(p => {
-                        yaml += `          - [${p[0].toFixed(1)}, ${p[1].toFixed(1)}]\n`;
-                    });
-                } else {
-                    yaml += `        start_pixel_x: ${ann.start_pixel_x.toFixed(1)}\n`;
-                    yaml += `        start_pixel_y: ${ann.start_pixel_y.toFixed(1)}\n`;
-                    yaml += `        end_pixel_x: ${ann.end_pixel_x.toFixed(1)}\n`;
-                    yaml += `        end_pixel_y: ${ann.end_pixel_y.toFixed(1)}\n`;
-                }
-            });
-
-            yamlPreview.value = yaml;
-        }
+        // Placeholder for removed YAML preview — no-op to avoid breaking callers
+        function updateYamlPreview() {}
 
         // Update export button state
         function updateExportButton() {
@@ -1634,75 +1547,39 @@
             });
         });
 
-        // Import button handler
-        importBtn.addEventListener('click', () => {
-            importFile.click();
-        });
-
-        importFile.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
+        // Event: Load from Repo button
+        importBtn.addEventListener('click', async () => {
+            exportStatus.textContent = 'Loading...';
             try {
-                const text = await file.text();
                 const resp = await fetch('{% url "camera_line_annotator:api_import" %}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ yaml_content: text })
+                    body: JSON.stringify({})
                 });
 
                 const data = await resp.json();
                 if (data.success) {
                     annotations = data.annotations || [];
-
-                    // Update camera status if available
-                    if (data.camera_status) {
-                        if (data.camera_status.pan !== null && data.camera_status.pan !== undefined) {
-                            panInput.value = data.camera_status.pan;
-                        }
-                        if (data.camera_status.tilt !== null && data.camera_status.tilt !== undefined) {
-                            tiltInput.value = data.camera_status.tilt;
-                        }
-                        if (data.camera_status.zoom !== null && data.camera_status.zoom !== undefined) {
-                            zoomInput.value = data.camera_status.zoom;
-                        }
-                    }
-
                     renderLines();
                     renderAnnotationsList();
                     updateYamlPreview();
                     updateExportButton();
 
-                    exportStatus.textContent = `Imported ${data.annotation_count} annotations`;
+                    exportStatus.textContent = `Loaded ${data.count} annotations`;
                     exportStatus.style.color = '#2e7d32';
                 } else {
-                    exportStatus.textContent = `Import error: ${data.error}`;
+                    exportStatus.textContent = `Load error: ${data.error}`;
                     exportStatus.style.color = '#c62828';
                 }
             } catch (err) {
-                exportStatus.textContent = `Import error: ${err.message}`;
+                exportStatus.textContent = `Load error: ${err.message}`;
                 exportStatus.style.color = '#c62828';
             }
-
-            // Reset file input so same file can be selected again
-            importFile.value = '';
         });
 
-        // Event: Copy button
-        copyBtn.addEventListener('click', () => {
-            yamlPreview.select();
-            document.execCommand('copy');
-            copyBtn.textContent = 'Copied!';
-            copyBtn.classList.add('copied');
-            setTimeout(() => {
-                copyBtn.textContent = 'Copy to Clipboard';
-                copyBtn.classList.remove('copied');
-            }, 2000);
-        });
-
-        // Event: Export button
+        // Event: Save to Repo button
         exportBtn.addEventListener('click', async () => {
-            exportStatus.textContent = 'Exporting...';
+            exportStatus.textContent = 'Saving...';
             exportBtn.disabled = true;
 
             try {
@@ -1720,7 +1597,7 @@
 
                 const data = await resp.json();
                 if (data.success) {
-                    exportStatus.textContent = `Exported to ${data.filename} (${data.annotation_count} annotations)`;
+                    exportStatus.textContent = `Saved ${data.count} annotations`;
                     exportStatus.style.color = '#2e7d32';
                 } else {
                     exportStatus.textContent = `Error: ${data.error}`;

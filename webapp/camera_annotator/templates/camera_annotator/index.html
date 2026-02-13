@@ -260,34 +260,13 @@
             background: #d32f2f;
         }
 
-        /* YAML Preview */
-        #yaml-section {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 200px;
-        }
-
-        #yaml-preview {
-            flex: 1;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 12px;
-            line-height: 1.5;
-            padding: 12px;
-            background: #263238;
-            color: #aed581;
-            border: none;
-            resize: none;
-            white-space: pre;
-            overflow: auto;
-        }
-
-        .yaml-actions {
+        /* Save section */
+        .save-actions {
             display: flex;
             gap: 0;
         }
 
-        .yaml-actions button {
+        .save-actions button {
             flex: 1;
             padding: 12px;
             color: #fff;
@@ -297,15 +276,8 @@
             cursor: pointer;
         }
 
-        #copy-btn { background: #4caf50; }
-        #copy-btn:hover { background: #43a047; }
-        #copy-btn.copied { background: #2196f3; }
-
-        #export-btn { background: #1976d2; }
-        #export-btn:hover { background: #1565c0; }
-
-        #import-btn { background: #7b1fa2; }
-        #import-btn:hover { background: #6a1b9a; }
+        #save-btn { background: #1976d2; }
+        #save-btn:hover { background: #1565c0; }
 
         /* Instructions */
         #instructions {
@@ -383,15 +355,10 @@
         </div>
         <div id="annotations-list"></div>
 
-        <div id="yaml-section" class="panel-section">
-            <h2>YAML Preview</h2>
-            <textarea id="yaml-preview" readonly></textarea>
-            <div class="yaml-actions">
-                <button id="copy-btn">Copy</button>
-                <button id="export-btn">Export</button>
-                <button id="import-btn">Import</button>
+        <div class="panel-section">
+            <div class="save-actions">
+                <button id="save-btn">Save to Repo</button>
             </div>
-            <input type="file" id="import-file" accept=".json,.yaml,.yml" style="display: none;">
         </div>
     </div>
 
@@ -417,8 +384,6 @@
         const gcpDropdown = document.getElementById('gcp-dropdown');
         const annotationsList = document.getElementById('annotations-list');
         const annotationCount = document.getElementById('annotation-count');
-        const yamlPreview = document.getElementById('yaml-preview');
-        const copyBtn = document.getElementById('copy-btn');
         const coordsDisplay = document.getElementById('coords-display');
         const imageSelector = document.getElementById('image-selector');
         const filenameDisplay = document.getElementById('filename');
@@ -552,22 +517,8 @@
             });
         }
 
-        // Update YAML preview
-        function updateYamlPreview() {
-            if (annotations.length === 0) {
-                yamlPreview.value = '# Click on image to add annotations';
-                return;
-            }
-
-            let yaml = 'annotations:\n';
-            annotations.forEach(ann => {
-                yaml += `  - pixel_x: ${ann.pixel_x.toFixed(1)}\n`;
-                yaml += `    pixel_y: ${ann.pixel_y.toFixed(1)}\n`;
-                yaml += `    gcp_id: ${ann.gcp_id}\n\n`;
-            });
-
-            yamlPreview.value = yaml;
-        }
+        // Placeholder for removed YAML preview — no-op to avoid breaking callers
+        function updateYamlPreview() {}
 
         // Event: Click on image (only when not dragging)
         img.addEventListener('click', (e) => {
@@ -651,21 +602,9 @@
             }
         });
 
-        // Event: Copy button
-        copyBtn.addEventListener('click', () => {
-            yamlPreview.select();
-            document.execCommand('copy');
-            copyBtn.textContent = 'Copied!';
-            copyBtn.classList.add('copied');
-            setTimeout(() => {
-                copyBtn.textContent = 'Copy';
-                copyBtn.classList.remove('copied');
-            }, 2000);
-        });
-
-        // Event: Export button — save to YAML and download JSON
-        const exportBtn = document.getElementById('export-btn');
-        exportBtn.addEventListener('click', async () => {
+        // Event: Save to Repo button
+        const saveBtn = document.getElementById('save-btn');
+        saveBtn.addEventListener('click', async () => {
             if (annotations.length === 0) return;
 
             const cleanAnnotations = annotations.map(a => ({
@@ -674,7 +613,6 @@
                 pixel_y: parseFloat(a.pixel_y.toFixed(1)),
             }));
 
-            // Save to YAML on server
             try {
                 const resp = await fetch('{% url "camera_annotator:api_save_annotations" %}', {
                     method: 'POST',
@@ -683,120 +621,14 @@
                 });
                 const result = await resp.json();
                 if (result.success) {
-                    exportBtn.textContent = `Saved ${result.saved}!`;
-                    setTimeout(() => { exportBtn.textContent = 'Export'; }, 2000);
+                    saveBtn.textContent = `Saved ${result.saved}!`;
+                    setTimeout(() => { saveBtn.textContent = 'Save to Repo'; }, 2000);
                 } else {
                     alert('Save failed: ' + (result.error || 'Unknown error'));
-                    return;
                 }
             } catch (err) {
                 alert('Save failed: ' + err.message);
-                return;
             }
-
-            // Also download JSON file
-            const exportData = {
-                image: filenameDisplay.textContent,
-                annotations: cleanAnnotations,
-            };
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const baseName = filenameDisplay.textContent.replace(/\.[^.]+$/, '');
-            a.download = `${baseName}_annotations.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
-
-        // Event: Import button — load annotations from JSON file
-        const importFileInput = document.getElementById('import-file');
-        document.getElementById('import-btn').addEventListener('click', () => {
-            importFileInput.click();
-        });
-
-        // Parse YAML annotations into array of {gcp_id, pixel_x, pixel_y}
-        function parseYamlAnnotations(text) {
-            const annotations = [];
-            let current = null;
-
-            for (const raw of text.split('\n')) {
-                const line = raw.replace(/\r$/, '');
-                // Skip comments and empty lines
-                if (/^\s*(#|$)/.test(line)) continue;
-
-                const pxMatch = line.match(/^\s*-?\s*pixel_x:\s*([\d.]+)/);
-                const pyMatch = line.match(/^\s*-?\s*pixel_y:\s*([\d.]+)/);
-                const gcpMatch = line.match(/^\s*-?\s*gcp_id:\s*["']?(\S+?)["']?\s*$/);
-
-                // Detect start of new annotation block (line starting with "- ")
-                if (/^\s*-\s+\w/.test(line)) {
-                    if (current && current.gcp_id && current.pixel_x != null && current.pixel_y != null) {
-                        annotations.push(current);
-                    }
-                    current = {};
-                }
-
-                if (!current) current = {};
-                if (pxMatch) current.pixel_x = parseFloat(pxMatch[1]);
-                if (pyMatch) current.pixel_y = parseFloat(pyMatch[1]);
-                if (gcpMatch) current.gcp_id = gcpMatch[1];
-            }
-            // Push last entry
-            if (current && current.gcp_id && current.pixel_x != null && current.pixel_y != null) {
-                annotations.push(current);
-            }
-            return annotations;
-        }
-
-        importFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                try {
-                    const text = ev.target.result;
-                    let imported = [];
-
-                    // Try JSON first
-                    try {
-                        const data = JSON.parse(text);
-                        if (Array.isArray(data)) {
-                            imported = data;
-                        } else if (data.annotations && Array.isArray(data.annotations)) {
-                            imported = data.annotations;
-                        } else {
-                            throw new Error('not a recognized JSON format');
-                        }
-                    } catch (jsonErr) {
-                        // Fall back to YAML parsing
-                        imported = parseYamlAnnotations(text);
-                        if (imported.length === 0) {
-                            throw new Error('Could not parse as JSON or YAML. Expected annotations with gcp_id, pixel_x, pixel_y.');
-                        }
-                    }
-
-                    // Validate each annotation has required fields
-                    for (const a of imported) {
-                        if (typeof a.gcp_id !== 'string' || typeof a.pixel_x !== 'number' || typeof a.pixel_y !== 'number') {
-                            throw new Error('Each annotation must have gcp_id (string), pixel_x (number), pixel_y (number)');
-                        }
-                    }
-
-                    annotations = imported;
-                    pendingPoint = null;
-                    gcpSection.classList.remove('active');
-                    renderMarkers();
-                    renderAnnotationsList();
-                    updateYamlPreview();
-                } catch (err) {
-                    alert('Failed to import: ' + err.message);
-                }
-            };
-            reader.readAsText(file);
-            // Reset so the same file can be re-imported
-            importFileInput.value = '';
         });
 
         // Load existing annotations

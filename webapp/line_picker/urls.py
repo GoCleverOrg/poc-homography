@@ -22,4 +22,5 @@ urlpatterns = [
     # Import/Export API
     path("api/export/", views.api_export, name="api_export"),
     path("api/import/", views.api_import, name="api_import"),
+    path("api/registries/", views.api_registries, name="api_registries"),
 ]

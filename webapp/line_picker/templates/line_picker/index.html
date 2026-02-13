@@ -197,8 +197,8 @@
 
         <div class="section">
             <div class="btn-group">
-                <button class="btn btn-primary" id="export-btn">Export YAML</button>
-                <button class="btn btn-secondary" id="import-btn">Import</button>
+                <button class="btn btn-primary" id="export-btn">Save to Repo</button>
+                <button class="btn btn-secondary" id="import-btn">Load from Repo</button>
             </div>
         </div>
     </div>
@@ -206,23 +206,15 @@
         <svg id="line-overlay"></svg>
     </div>
 
-    <div id="export-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-title">Export Lines</div>
-            <input type="text" id="export-path" placeholder="filename.yaml">
-            <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="closeModal('export-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doExport()">Export</button>
-            </div>
-        </div>
-    </div>
     <div id="import-modal" class="modal">
         <div class="modal-content">
-            <div class="modal-title">Import Lines</div>
-            <input type="text" id="import-path" placeholder="path/to/file.yaml">
+            <div class="modal-title">Load from Repo</div>
+            <select id="map-id-select" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;margin-bottom:16px;font-size:14px;">
+                <option value="">Loading...</option>
+            </select>
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doImport()">Import</button>
+                <button class="btn btn-primary" onclick="doImport()">Load</button>
             </div>
         </div>
     </div>
@@ -329,11 +321,11 @@
                 // Setup buttons
                 document.getElementById('cancel-btn').addEventListener('click', cancelLineCreation);
                 document.getElementById('create-btn').addEventListener('click', createLine);
-                document.getElementById('export-btn').addEventListener('click', () => {
-                    document.getElementById('export-path').value = imageInfo.filename.replace(/\.[^.]+$/, '_lines.yaml');
-                    openModal('export-modal');
+                document.getElementById('export-btn').addEventListener('click', doExport);
+                document.getElementById('import-btn').addEventListener('click', () => {
+                    populateRegistryDropdown();
+                    openModal('import-modal');
                 });
-                document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
 
                 // ESC key to cancel line creation
                 document.addEventListener('keydown', (e) => {
@@ -865,47 +857,69 @@
         }
 
         async function doExport() {
-            const path = document.getElementById('export-path').value;
-            if (!path) return;
             try {
                 const resp = await fetch(`${API_BASE}/api/export/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
+                    body: JSON.stringify({})
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                    showError(`Export failed: ${err.error || 'Unknown error'}`);
+                    showError(`Save failed: ${err.error || 'Unknown error'}`);
                     return;
                 }
                 const result = await resp.json();
-                alert(`Exported ${result.count} lines to ${result.exported}`);
-                closeModal('export-modal');
+                const btn = document.getElementById('export-btn');
+                btn.textContent = `Saved ${result.count}!`;
+                setTimeout(() => { btn.textContent = 'Save to Repo'; }, 2000);
             } catch (e) {
-                showError(`Export failed: ${e.message}`);
+                showError(`Save failed: ${e.message}`);
+            }
+        }
+
+        async function populateRegistryDropdown() {
+            const select = document.getElementById('map-id-select');
+            select.innerHTML = '<option value="">Loading...</option>';
+            try {
+                const resp = await fetch(`${API_BASE}/api/registries/`);
+                const data = await resp.json();
+                const mapIds = data.map_ids || [];
+                select.innerHTML = '';
+                if (mapIds.length === 0) {
+                    select.innerHTML = '<option value="">No registries found</option>';
+                    return;
+                }
+                mapIds.forEach(id => {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = id;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                select.innerHTML = '<option value="">Error loading registries</option>';
             }
         }
 
         async function doImport() {
-            const path = document.getElementById('import-path').value;
-            if (!path) return;
+            const mapId = document.getElementById('map-id-select').value;
+            if (!mapId) return;
             try {
                 const resp = await fetch(`${API_BASE}/api/import/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
+                    body: JSON.stringify({ map_id: mapId })
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                    showError(`Import failed: ${err.error || 'Unknown error'}`);
+                    showError(`Load failed: ${err.error || 'Unknown error'}`);
                     return;
                 }
                 const result = await resp.json();
-                alert(`Imported ${result.count} lines from ${result.imported}`);
+                alert(`Loaded ${result.count} lines for ${result.map_id}`);
                 closeModal('import-modal');
                 await loadLines();
             } catch (e) {
-                showError(`Import failed: ${e.message}`);
+                showError(`Load failed: ${e.message}`);
             }
         }
 

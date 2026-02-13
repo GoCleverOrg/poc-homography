@@ -68,7 +68,7 @@ def load_gcps() -> list[dict]:
     from poc_homography.map_points.gcp_registry import from_gcp_repo
 
     try:
-        registry = from_gcp_repo(GCPS_DIR, "valte")
+        registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
     except (KeyError, ValueError, OSError):
         return []
 
@@ -284,10 +284,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_save_annotations(request: HttpRequest) -> JsonResponse:
-    """Save annotations for the current image to the annotations YAML file.
-
-    Adds or updates the test_case entry for the current image.
-    """
+    """Save annotations for the current image to the DDD repository."""
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -309,22 +306,6 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
 
-    # Load existing YAML
-    if DEFAULT_ANNOTATIONS_FILE.exists():
-        with open(DEFAULT_ANNOTATIONS_FILE) as f:
-            yaml_data = yaml.safe_load(f) or {}
-    else:
-        yaml_data = {}
-
-    test_cases = yaml_data.setdefault("test_cases", [])
-
-    # Find existing entry for this image
-    existing_tc = None
-    for tc in test_cases:
-        if tc.get("image") == current_image:
-            existing_tc = tc
-            break
-
     # Build clean annotation list (round to 1 decimal)
     clean_annotations = [
         {
@@ -335,52 +316,20 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
         for a in new_annotations
     ]
 
-    if existing_tc:
-        existing_tc["annotations"] = clean_annotations
-    else:
-        # Parse camera status from filename if possible (e.g. valte_102.5_20.7_1_...)
-        parts = current_image.replace(".png", "").replace(".jpg", "").split("_")
-        camera_status = {}
-        if len(parts) >= 4:
-            try:
-                camera_status = {
-                    "pan": float(parts[1]),
-                    "tilt": float(parts[2]),
-                    "zoom": int(parts[3]),
-                }
-            except (ValueError, IndexError):
-                pass
+    # Parse camera status from filename
+    parts = current_image.replace(".png", "").replace(".jpg", "").split("_")
+    camera_status: dict = {}
+    if len(parts) >= 4:
+        try:
+            camera_status = {
+                "pan": float(parts[1]),
+                "tilt": float(parts[2]),
+                "zoom": int(parts[3]),
+            }
+        except (ValueError, IndexError):
+            camera_status = {"pan": 0, "tilt": 0, "zoom": 1}
 
-        new_tc: dict = {
-            "name": current_image.rsplit(".", 1)[0],
-            "image": current_image,
-        }
-        if camera_status:
-            new_tc["camera_status"] = camera_status
-        new_tc["annotations"] = clean_annotations
-        test_cases.append(new_tc)
-
-    # Write back (legacy format)
-    with open(DEFAULT_ANNOTATIONS_FILE, "w") as f:
-        yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
-
-    # Dual-write: also persist to DDD per-entity repository
-    # Parse camera status from the test case (existing or newly created)
-    tc_camera_status = (existing_tc or new_tc).get("camera_status", {})
-    if not tc_camera_status:
-        # Fallback: parse from filename
-        parts = current_image.replace(".png", "").replace(".jpg", "").split("_")
-        if len(parts) >= 4:
-            try:
-                tc_camera_status = {
-                    "pan": float(parts[1]),
-                    "tilt": float(parts[2]),
-                    "zoom": int(parts[3]),
-                }
-            except (ValueError, IndexError):
-                tc_camera_status = {"pan": 0, "tilt": 0, "zoom": 1}
-
-    save_annotations_to_repo(current_image, clean_annotations, tc_camera_status)
+    save_annotations_to_repo(current_image, clean_annotations, camera_status)
 
     return JsonResponse({"success": True, "saved": len(clean_annotations)})
 
