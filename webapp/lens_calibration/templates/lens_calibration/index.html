@@ -490,63 +490,7 @@
             <div class="card card-fullwidth">
                 <div class="card-header">Input Lines</div>
                 <div class="card-body">
-                    <div class="tabs">
-                        <button class="tab active" data-tab="calibration-files">From Calibration Files</button>
-                        <button class="tab" data-tab="manual">Manual Input</button>
-                        <button class="tab" data-tab="survey">From Survey Session</button>
-                        <button class="tab" data-tab="opencv-multi">Annotated Lines</button>
-                    </div>
-
-                    <div id="tab-calibration-files" class="tab-content active">
-                        <div class="form-group">
-                            <label for="calibration-files-input">Upload Calibration JSON Files (from Camera Line Annotator)</label>
-                            <input type="file" id="calibration-files-input" accept=".json" multiple style="margin-top: 8px;">
-                        </div>
-                        <div id="calibration-files-list" style="margin-top: 12px;"></div>
-                        <div id="calibration-files-summary" class="status info" style="display: none; margin-top: 12px;"></div>
-                        <button id="run-calibration-files-btn" class="btn btn-primary" style="margin-top: 12px;" disabled>
-                            Run Calibration from Files
-                        </button>
-                        <p style="font-size: 12px; color: #666; margin-top: 12px;">
-                            Upload multiple JSON files exported from the Camera Line Annotator tool.<br>
-                            Each file should contain n-point calibration lines from a single frame.<br>
-                            Lines with the same line_id across frames will be used together for better calibration.
-                        </p>
-                    </div>
-
-                    <div id="tab-manual" class="tab-content">
-                        <div class="form-group">
-                            <label for="lines-input">Lines (JSON format - one line per array item)</label>
-                            <textarea id="lines-input" placeholder='[
-  {"start_x": 100, "start_y": 200, "end_x": 500, "end_y": 210, "confidence": 0.9},
-  {"start_x": 100, "start_y": 400, "end_x": 500, "end_y": 405, "confidence": 0.85}
-]'></textarea>
-                        </div>
-                        <p style="font-size: 12px; color: #666; margin-top: 8px;">
-                            Tip: Use the Camera Line Annotator tool to detect and export lines, then paste here.
-                        </p>
-                    </div>
-
-                    <div id="tab-survey" class="tab-content">
-                        <div class="form-group">
-                            <label for="survey-select">Select Survey Session</label>
-                            <select id="survey-select">
-                                <option value="">-- Select a survey session --</option>
-                            </select>
-                        </div>
-                        <div id="survey-info" style="display: none; margin-top: 12px;">
-                            <div class="status info">
-                                <strong>Session:</strong> <span id="session-id"></span><br>
-                                <strong>Images:</strong> <span id="image-count"></span><br>
-                                <strong>Path:</strong> <span id="session-path"></span>
-                            </div>
-                        </div>
-                        <button id="load-survey-btn" class="btn btn-secondary" style="margin-top: 12px;" disabled>
-                            Load & Detect Lines from Survey
-                        </button>
-                    </div>
-
-                    <div id="tab-opencv-multi" class="tab-content">
+                    <div id="tab-opencv-multi">
                         <h4 style="font-size: 14px; color: #333; margin-bottom: 12px;">Line Annotation Files</h4>
                         <div id="opencv-images-container"></div>
                         <button id="opencv-add-image-btn" class="btn btn-secondary" style="margin-top: 8px;" type="button">
@@ -574,9 +518,6 @@
                         <div class="fill" style="width: 0%;"></div>
                     </div>
                     <div class="actions">
-                        <button id="calibrate-btn" class="btn btn-primary">
-                            Run Calibration
-                        </button>
                         <button id="validate-btn" class="btn btn-secondary" disabled>
                             Validate Results
                         </button>
@@ -721,11 +662,6 @@
         const optimizeIntrinsicsInput = document.getElementById('optimize-intrinsics');
         const computeIntrinsicsBtn = document.getElementById('compute-intrinsics-btn');
         const intrinsicsInfo = document.getElementById('intrinsics-info');
-        const linesInput = document.getElementById('lines-input');
-        const surveySelect = document.getElementById('survey-select');
-        const loadSurveyBtn = document.getElementById('load-survey-btn');
-        const surveyInfo = document.getElementById('survey-info');
-        const calibrateBtn = document.getElementById('calibrate-btn');
         const validateBtn = document.getElementById('validate-btn');
         const saveBtn = document.getElementById('save-btn');
         const copyCoeffsBtn = document.getElementById('copy-coeffs-btn');
@@ -733,62 +669,9 @@
         const progressBar = document.getElementById('progress-bar');
         const resultsCard = document.getElementById('results-card');
         const errorsCard = document.getElementById('errors-card');
-        const calibrationFilesInput = document.getElementById('calibration-files-input');
-        const calibrationFilesList = document.getElementById('calibration-files-list');
-        const calibrationFilesSummary = document.getElementById('calibration-files-summary');
-        const runCalibrationFilesBtn = document.getElementById('run-calibration-files-btn');
 
         // State
         let currentResults = null;
-        let surveyPath = null;
-        let loadedCalibrationFiles = [];  // Array of parsed JSON file contents
-
-        // Tab handling
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
-            });
-        });
-
-        // Load survey sessions
-        async function loadSurveySessions() {
-            try {
-                const resp = await fetch('{% url "lens_calibration:api_survey_sessions" %}');
-                const data = await resp.json();
-
-                surveySelect.innerHTML = '<option value="">-- Select a survey session --</option>';
-                (data.sessions || []).forEach(session => {
-                    const option = document.createElement('option');
-                    option.value = session.path;
-                    option.textContent = `${session.date} / ${session.session_id} (${session.image_count} images)`;
-                    option.dataset.info = JSON.stringify(session);
-                    surveySelect.appendChild(option);
-                });
-            } catch (e) {
-                console.error('Failed to load survey sessions:', e);
-            }
-        }
-
-        // Survey select change
-        surveySelect.addEventListener('change', () => {
-            const selected = surveySelect.selectedOptions[0];
-            if (selected && selected.value) {
-                const info = JSON.parse(selected.dataset.info);
-                document.getElementById('session-id').textContent = info.session_id;
-                document.getElementById('image-count').textContent = info.image_count;
-                document.getElementById('session-path').textContent = info.path;
-                surveyInfo.style.display = 'block';
-                loadSurveyBtn.disabled = false;
-                surveyPath = info.path;
-            } else {
-                surveyInfo.style.display = 'none';
-                loadSurveyBtn.disabled = true;
-                surveyPath = null;
-            }
-        });
 
         // Get intrinsics from form
         function getIntrinsics() {
@@ -936,81 +819,6 @@
             computeIntrinsicsBtn.disabled = false;
         }
 
-        // Run calibration
-        async function runCalibration() {
-            calibrateBtn.disabled = true;
-            showStatus('Running calibration...', 'info');
-            progressBar.style.display = 'block';
-            progressBar.querySelector('.fill').style.width = '30%';
-
-            try {
-                let requestBody;
-                const activeTab = document.querySelector('.tab.active').dataset.tab;
-
-                if (activeTab === 'survey' && surveyPath) {
-                    // Calibrate from survey images
-                    requestBody = {
-                        source: 'images',
-                        images_path: surveyPath,
-                        intrinsics: getIntrinsics(),
-                        config: getConfig()
-                    };
-                } else {
-                    // Calibrate from manual lines
-                    let lines;
-                    try {
-                        lines = JSON.parse(linesInput.value || '[]');
-                    } catch (e) {
-                        throw new Error('Invalid JSON in lines input');
-                    }
-
-                    if (!Array.isArray(lines) || lines.length === 0) {
-                        throw new Error('Please provide at least one line');
-                    }
-
-                    requestBody = {
-                        source: 'lines',
-                        lines: lines,
-                        intrinsics: getIntrinsics(),
-                        config: getConfig()
-                    };
-                }
-
-                progressBar.querySelector('.fill').style.width = '60%';
-
-                const resp = await fetch('{% url "lens_calibration:api_calibrate" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-                    body: JSON.stringify(requestBody)
-                });
-
-                const data = await resp.json();
-
-                progressBar.querySelector('.fill').style.width = '100%';
-
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                if (data.success) {
-                    showStatus(`Calibration complete! RMSE: ${data.overall_rmse.toFixed(3)} pixels`, 'success');
-                    updateResults(data);
-                } else {
-                    showStatus(`Calibration completed with warnings: ${data.message}`, 'warning');
-                    updateResults(data);
-                }
-
-            } catch (e) {
-                showStatus(`Error: ${e.message}`, 'error');
-            }
-
-            calibrateBtn.disabled = false;
-            setTimeout(() => {
-                progressBar.style.display = 'none';
-                progressBar.querySelector('.fill').style.width = '0%';
-            }, 1000);
-        }
-
         // Save calibration
         async function saveCalibration() {
             if (!currentResults) return;
@@ -1151,140 +959,8 @@ p2: ${currentResults.coefficients.p2}`;
         }
 
         // Event listeners
-        calibrateBtn.addEventListener('click', runCalibration);
         saveBtn.addEventListener('click', saveCalibration);
         copyCoeffsBtn.addEventListener('click', copyCoefficients);
-        loadSurveyBtn.addEventListener('click', () => {
-            document.querySelector('.tab[data-tab="survey"]').click();
-            runCalibration();
-        });
-
-        // Calibration files handling
-        calibrationFilesInput.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files);
-            loadedCalibrationFiles = [];
-            calibrationFilesList.innerHTML = '';
-
-            if (files.length === 0) {
-                calibrationFilesSummary.style.display = 'none';
-                runCalibrationFilesBtn.disabled = true;
-                return;
-            }
-
-            let totalLines = 0;
-            let totalPoints = 0;
-            const lineIds = new Set();
-
-            for (const file of files) {
-                try {
-                    const text = await file.text();
-                    const data = JSON.parse(text);
-
-                    // Validate structure
-                    if (!data.calibration_lines || !Array.isArray(data.calibration_lines)) {
-                        throw new Error('Missing calibration_lines array');
-                    }
-
-                    loadedCalibrationFiles.push(data);
-
-                    // Count lines and points
-                    const fileLines = data.calibration_lines.filter(l => l.points && l.points.length >= 2);
-                    totalLines += fileLines.length;
-                    fileLines.forEach(line => {
-                        totalPoints += line.points.length;
-                        if (line.line_id) lineIds.add(line.line_id);
-                    });
-
-                    // Add to list
-                    const div = document.createElement('div');
-                    div.style.cssText = 'padding: 8px; background: #e8f5e9; border-radius: 4px; margin-bottom: 4px; font-size: 12px;';
-                    const strong = document.createElement('strong');
-                    strong.textContent = data.image || file.name;
-                    div.appendChild(strong);
-                    div.appendChild(document.createTextNode(` - ${fileLines.length} lines, PTZ: (${data.camera_status?.pan || 0}, ${data.camera_status?.tilt || 0}, ${data.camera_status?.zoom || 1})`));
-                    calibrationFilesList.appendChild(div);
-
-                } catch (err) {
-                    const div = document.createElement('div');
-                    div.style.cssText = 'padding: 8px; background: #ffebee; border-radius: 4px; margin-bottom: 4px; font-size: 12px;';
-                    const strong = document.createElement('strong');
-                    strong.textContent = file.name;
-                    div.appendChild(strong);
-                    div.appendChild(document.createTextNode(` - Error: ${err.message}`));
-                    calibrationFilesList.appendChild(div);
-                }
-            }
-
-            if (loadedCalibrationFiles.length > 0) {
-                calibrationFilesSummary.innerHTML = `
-                    <strong>Summary:</strong> ${loadedCalibrationFiles.length} frames, ${totalLines} lines, ${totalPoints} total points<br>
-                    <strong>Unique Line IDs:</strong> ${lineIds.size > 0 ? Array.from(lineIds).join(', ') : '(none assigned)'}
-                `;
-                calibrationFilesSummary.style.display = 'block';
-                runCalibrationFilesBtn.disabled = false;
-            } else {
-                calibrationFilesSummary.style.display = 'none';
-                runCalibrationFilesBtn.disabled = true;
-            }
-        });
-
-        // Run calibration from files
-        async function runCalibrationFromFiles() {
-            if (loadedCalibrationFiles.length === 0) {
-                showStatus('No calibration files loaded', 'error');
-                return;
-            }
-
-            runCalibrationFilesBtn.disabled = true;
-            calibrateBtn.disabled = true;
-            showStatus('Running calibration from calibration files...', 'info');
-            progressBar.style.display = 'block';
-            progressBar.querySelector('.fill').style.width = '30%';
-
-            try {
-                const requestBody = {
-                    files: loadedCalibrationFiles,
-                    intrinsics: getIntrinsics(),
-                    config: getConfig()
-                };
-
-                progressBar.querySelector('.fill').style.width = '60%';
-
-                const resp = await fetch('{% url "lens_calibration:api_calibrate_from_files" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-                    body: JSON.stringify(requestBody)
-                });
-
-                const data = await resp.json();
-
-                progressBar.querySelector('.fill').style.width = '100%';
-
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                if (data.success) {
-                    showStatus(`Calibration complete! ${data.num_frames} frames, ${data.num_lines} lines, RMSE: ${data.overall_rmse.toFixed(3)} pixels`, 'success');
-                    updateResults(data);
-                } else {
-                    showStatus(`Calibration completed with warnings: ${data.message}`, 'warning');
-                    updateResults(data);
-                }
-
-            } catch (e) {
-                showStatus(`Error: ${e.message}`, 'error');
-            }
-
-            runCalibrationFilesBtn.disabled = false;
-            calibrateBtn.disabled = false;
-            setTimeout(() => {
-                progressBar.style.display = 'none';
-                progressBar.querySelector('.fill').style.width = '0%';
-            }, 1000);
-        }
-
-        runCalibrationFilesBtn.addEventListener('click', runCalibrationFromFiles);
         computeIntrinsicsBtn.addEventListener('click', computeIntrinsics);
 
         // Re-compute intrinsics when zoom changes
@@ -1457,7 +1133,6 @@ p2: ${currentResults.coefficients.p2}`;
         // Run annotated lines calibration
         async function runOpencvMultiCalibration() {
             runOpencvMultiBtn.disabled = true;
-            calibrateBtn.disabled = true;
             showStatus('Running annotated lines calibration...', 'info');
             progressBar.style.display = 'block';
             progressBar.querySelector('.fill').style.width = '30%';
@@ -1511,7 +1186,6 @@ p2: ${currentResults.coefficients.p2}`;
             }
 
             runOpencvMultiBtn.disabled = false;
-            calibrateBtn.disabled = false;
             setTimeout(() => {
                 progressBar.style.display = 'none';
                 progressBar.querySelector('.fill').style.width = '0%';
@@ -1526,7 +1200,6 @@ p2: ${currentResults.coefficients.p2}`;
         });
 
         // Initialize
-        loadSurveySessions();
         loadCalibrationIds();
         // Auto-compute intrinsics from camera specs on page load
         computeIntrinsics();
