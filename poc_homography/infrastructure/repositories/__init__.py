@@ -4,6 +4,9 @@ from poc_homography.infrastructure.repositories.base import RepoYaml
 from poc_homography.infrastructure.repositories.repo_yaml_annotation import (
     RepoYamlAnnotation,
 )
+from poc_homography.infrastructure.repositories.repo_yaml_calibration_line_trace_set import (
+    RepoYamlCalibrationLineTraceSet,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_camera_calibration import (
     RepoYamlCameraCalibration,
 )
@@ -30,6 +33,7 @@ __all__ = [
     "RepoYaml",
     # Concrete repositories
     "RepoYamlAnnotation",
+    "RepoYamlCalibrationLineTraceSet",
     "RepoYamlCameraCalibration",
     "RepoYamlCameraConfig",
     "RepoYamlCapturedFrame",

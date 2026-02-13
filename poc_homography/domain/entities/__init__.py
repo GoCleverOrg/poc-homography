@@ -1,6 +1,9 @@
 """Domain entities."""
 
 from poc_homography.domain.entities.annotation import Annotation
+from poc_homography.domain.entities.calibration_line_trace_set import (
+    CalibrationLineTraceSet,
+)
 from poc_homography.domain.entities.camera_calibration import CameraCalibration
 from poc_homography.domain.entities.camera_config import CameraConfig
 from poc_homography.domain.entities.captured_frame import CapturedFrame
@@ -13,6 +16,7 @@ from poc_homography.domain.entities.map import Map
 
 __all__ = [
     "Annotation",
+    "CalibrationLineTraceSet",
     "CameraCalibration",
     "CameraConfig",
     "CapturedFrame",

@@ -22,7 +22,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import yaml
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -41,7 +40,7 @@ from homography_web.calibration_utils import (
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
-TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
+CALIBRATION_LINE_TRACES_DIR = PROJECT_ROOT / "data" / "calibration_line_traces"
 
 logger = logging.getLogger(__name__)
 
@@ -409,35 +408,47 @@ def api_calibration_ids(request: HttpRequest) -> JsonResponse:
 
 
 # ---------------------------------------------------------------------------
-# Test data files API
+# Line trace sets API (DDD repo)
 # ---------------------------------------------------------------------------
 
 @require_GET
-def api_test_data_files(request: HttpRequest) -> JsonResponse:
-    """List YAML files in the test data directory."""
-    if not TEST_DATA_DIR.exists():
-        return JsonResponse({"files": []})
+def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
+    """List available CalibrationLineTraceSet entity names."""
+    from poc_homography.infrastructure.repositories import (
+        RepoYamlCalibrationLineTraceSet,
+    )
 
-    files = sorted(f.name for f in TEST_DATA_DIR.glob("*.yaml"))
-    return JsonResponse({"files": files})
+    try:
+        repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
+        entities = repo.get_all()
+        names = sorted(e.name for e in entities)
+        return JsonResponse({"names": names})
+    except Exception:
+        logger.exception("Failed to list line trace sets")
+        return JsonResponse({"error": "Failed to list line trace sets"}, status=500)
 
 
 @require_GET
-def api_test_data_file_content(request: HttpRequest) -> JsonResponse:
-    """Read and return parsed YAML content of a test data file."""
-    filename = request.GET.get("filename", "")
-    if not filename:
-        return JsonResponse({"error": "Missing filename"}, status=400)
+def api_line_trace_set_detail(request: HttpRequest) -> JsonResponse:
+    """Load a CalibrationLineTraceSet by name and return its line traces."""
+    from poc_homography.infrastructure.repositories import (
+        RepoYamlCalibrationLineTraceSet,
+    )
 
-    # Prevent path traversal
-    filepath = (TEST_DATA_DIR / filename).resolve()
-    if not filepath.is_relative_to(TEST_DATA_DIR.resolve()) or not filepath.exists():
-        return JsonResponse({"error": "File not found"}, status=404)
+    name = request.GET.get("name", "")
+    if not name:
+        return JsonResponse({"error": "Missing name"}, status=400)
 
     try:
-        with open(filepath) as f:
-            data = yaml.safe_load(f)
-        return JsonResponse({"filename": filename, "data": data})
+        repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
+        entity = repo.get(name)
+        if entity is None:
+            return JsonResponse({"error": f"Not found: {name}"}, status=404)
+
+        return JsonResponse({
+            "name": entity.name,
+            "line_traces": [lt.to_dict() for lt in entity.line_traces],
+        })
     except Exception:
-        logger.exception("Failed to read test data file %s", filename)
-        return JsonResponse({"error": "Failed to read file"}, status=500)
+        logger.exception("Failed to load line trace set %s", name)
+        return JsonResponse({"error": "Failed to load line trace set"}, status=500)

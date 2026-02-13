@@ -980,35 +980,25 @@ p2: ${currentResults.coefficients.p2}`;
         const runOpencvMultiBtn = document.getElementById('run-opencv-multi-btn');
 
         // State for annotated lines tab
-        let opencvImageRows = [];          // array of {id, lineRaw, lineData}
-        let testDataFiles = [];            // list of YAML filenames from test_data
+        let opencvImageRows = [];          // array of {id, lineData}
+        let lineTraceSetNames = [];        // flat list of entity names
 
-        // Load test data file list from backend
-        async function loadTestDataFiles() {
+        // Load line trace set names from backend
+        async function loadLineTraceSets() {
             try {
-                const resp = await fetch('{% url "lens_calibration:api_test_data_files" %}');
+                const resp = await fetch('{% url "lens_calibration:api_line_trace_sets" %}');
                 const data = await resp.json();
-                testDataFiles = data.files || [];
+                lineTraceSetNames = data.names || [];
             } catch (e) {
-                console.error('Failed to load test data files:', e);
+                console.error('Failed to load line trace sets:', e);
             }
         }
 
-        function populateSelect(selectEl, files, placeholder) {
-            selectEl.innerHTML = `<option value="">${placeholder}</option>`;
-            files.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f;
-                opt.textContent = f;
-                selectEl.appendChild(opt);
-            });
-        }
-
-        // Fetch and parse a YAML file from test_data
-        async function fetchTestDataFile(filename) {
-            const resp = await fetch(`{% url "lens_calibration:api_test_data_file_content" %}?filename=${encodeURIComponent(filename)}`);
+        // Fetch a line trace set by name
+        async function fetchLineTraceSet(name) {
+            const resp = await fetch(`{% url "lens_calibration:api_line_trace_set_detail" %}?name=${encodeURIComponent(name)}`);
             const result = await resp.json();
-            return result.data;
+            return result.line_traces;
         }
 
         // Line annotation row management
@@ -1020,8 +1010,7 @@ p2: ${currentResults.coefficients.p2}`;
             row.id = `opencv-image-row-${rowId}`;
             row.style.cssText = 'border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin-bottom: 8px; background: #fafafa;';
 
-            const lineAnnFiles = testDataFiles.filter(f => f.includes('line_annotations'));
-            const lineOptions = lineAnnFiles.map(f => `<option value="${f}">${f}</option>`).join('');
+            const nameOptions = lineTraceSetNames.map(n => `<option value="${n}">${n}</option>`).join('');
 
             row.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -1030,19 +1019,16 @@ p2: ${currentResults.coefficients.p2}`;
                             onclick="removeOpencvImageRow(${rowId})">Remove</button>
                 </div>
                 <div class="form-group">
-                    <label>Line Annotations File</label>
-                    <select data-row="${rowId}" data-type="line" onchange="loadOpencvImageFromSelect(this)">
-                        <option value="">-- Select line annotations file --</option>
-                        ${lineOptions}
-                    </select>
-                    <select data-row="${rowId}" data-type="line-tc" style="margin-top: 4px; display: none;" onchange="selectOpencvImageTestcase(this)">
-                        <option value="">-- Select test case --</option>
+                    <label>Line Trace Set</label>
+                    <select data-row="${rowId}" onchange="loadOpencvImageFromSelect(this)">
+                        <option value="">-- Select line trace set --</option>
+                        ${nameOptions}
                     </select>
                 </div>
                 <div id="opencv-image-info-${rowId}" style="font-size: 12px; color: #666; margin-top: 4px;"></div>
             `;
             opencvImagesContainer.appendChild(row);
-            opencvImageRows.push({ id: rowId, lineRaw: null, lineData: [] });
+            opencvImageRows.push({ id: rowId, lineData: [] });
             updateOpencvMultiState();
         }
 
@@ -1055,54 +1041,19 @@ p2: ${currentResults.coefficients.p2}`;
 
         async function loadOpencvImageFromSelect(selectEl) {
             const rowId = parseInt(selectEl.dataset.row);
-            const filename = selectEl.value;
+            const name = selectEl.value;
             const row = opencvImageRows.find(r => r.id === rowId);
             if (!row) return;
 
-            if (!filename) {
-                row.lineRaw = null; row.lineData = [];
+            if (!name) {
+                row.lineData = [];
                 updateOpencvImageInfo(rowId);
                 updateOpencvMultiState();
                 return;
             }
 
-            const data = await fetchTestDataFile(filename);
-            const tcSelect = document.querySelector(`select[data-row="${rowId}"][data-type="line-tc"]`);
-
-            if (data && data.test_cases) {
-                const keys = data.test_cases.map((tc, i) => tc.name || `case_${i}`);
-                tcSelect.innerHTML = '<option value="">-- Select test case --</option>';
-                keys.forEach((k, i) => {
-                    const opt = document.createElement('option');
-                    opt.value = i;
-                    opt.textContent = k;
-                    tcSelect.appendChild(opt);
-                });
-                tcSelect.style.display = 'block';
-                row.lineRaw = data; row.lineData = [];
-
-                if (data.test_cases.length === 1) {
-                    tcSelect.value = '0';
-                    selectOpencvImageTestcase(tcSelect);
-                }
-            } else if (Array.isArray(data)) {
-                tcSelect.style.display = 'none';
-                row.lineRaw = null; row.lineData = data;
-            }
-            updateOpencvImageInfo(rowId);
-            updateOpencvMultiState();
-        }
-
-        function selectOpencvImageTestcase(select) {
-            const rowId = parseInt(select.dataset.row);
-            const idx = parseInt(select.value);
-            const row = opencvImageRows.find(r => r.id === rowId);
-            if (!row || isNaN(idx)) return;
-
-            if (row.lineRaw && row.lineRaw.test_cases) {
-                const tc = row.lineRaw.test_cases[idx];
-                row.lineData = tc ? (tc.line_annotations || []) : [];
-            }
+            const lineTraces = await fetchLineTraceSet(name);
+            row.lineData = lineTraces || [];
             updateOpencvImageInfo(rowId);
             updateOpencvMultiState();
         }
@@ -1111,7 +1062,7 @@ p2: ${currentResults.coefficients.p2}`;
             const row = opencvImageRows.find(r => r.id === rowId);
             const infoEl = document.getElementById(`opencv-image-info-${rowId}`);
             if (!row || !infoEl) return;
-            infoEl.textContent = `${row.lineData.length} line annotations`;
+            infoEl.textContent = `${row.lineData.length} line traces`;
         }
 
         function updateOpencvMultiState() {
@@ -1194,8 +1145,8 @@ p2: ${currentResults.coefficients.p2}`;
 
         runOpencvMultiBtn.addEventListener('click', runOpencvMultiCalibration);
 
-        // Load test data files, then add one row by default
-        loadTestDataFiles().then(() => {
+        // Load line trace sets, then add one row by default
+        loadLineTraceSets().then(() => {
             addOpencvImageRow();
         });
 

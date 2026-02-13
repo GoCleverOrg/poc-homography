@@ -16,6 +16,6 @@ urlpatterns = [
     path("api/load/", views.api_load, name="api_load"),
     path("api/calibration-ids/", views.api_calibration_ids, name="api_calibration_ids"),
     path("api/compute-intrinsics/", views.api_compute_intrinsics, name="api_compute_intrinsics"),
-    path("api/test-data-files/", views.api_test_data_files, name="api_test_data_files"),
-    path("api/test-data-file-content/", views.api_test_data_file_content, name="api_test_data_file_content"),
+    path("api/line-trace-sets/", views.api_line_trace_sets, name="api_line_trace_sets"),
+    path("api/line-trace-set-detail/", views.api_line_trace_set_detail, name="api_line_trace_set_detail"),
 ]
