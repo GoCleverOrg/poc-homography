@@ -4,24 +4,19 @@ from __future__ import annotations
 
 import json
 import mimetypes
-from pathlib import Path
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
+    ANNOTATIONS_DIR,
+    GCPS_DIR,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
     load_annotations_for_frame,
 )
-
-# Paths relative to webapp directory
-WEBAPP_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = WEBAPP_DIR.parent
-GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
-ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
 
 # Session key for current image
 SESSION_IMAGE_KEY = "camera_annotator_image"
@@ -106,19 +101,16 @@ def load_annotations_from_repo(image_filename: str) -> list[dict]:
 def save_annotations_to_repo(
     image_filename: str,
     annotations: list[dict],
-    camera_status: dict,
 ) -> None:
     """Save legacy annotation dicts to the DDD Annotation repository.
 
     Args:
         image_filename: Camera image filename (used as frame_id base).
         annotations: List of dicts with gcp_id, pixel_x, pixel_y.
-        camera_status: Dict with pan, tilt, zoom values.
     """
     from poc_homography.domain.entities.annotation import Annotation
-    from poc_homography.domain.vo import PixelPoint, PTZState
+    from poc_homography.domain.vo import PixelPoint
     from poc_homography.infrastructure.repositories import RepoYamlAnnotation
-    from poc_homography.types import Degrees, Unitless
 
     frame = image_filename_to_frame(image_filename)
     if frame is None:
@@ -126,17 +118,11 @@ def save_annotations_to_repo(
 
     repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
 
-    camera_pose = PTZState(
-        pan_raw=Degrees(float(camera_status.get("pan", 0))),
-        tilt_deg=Degrees(float(camera_status.get("tilt", 0))),
-        zoom=Unitless(float(camera_status.get("zoom", 1))),
-    )
-
     for ann_dict in annotations:
         annotation = Annotation(
             gcp_id=ann_dict["gcp_id"],
             frame_id=frame.id,
-            camera_pose=camera_pose,
+            camera_pose=frame.ptz_state,
             pixel=PixelPoint.create(
                 round(float(ann_dict["pixel_x"]), 1),
                 round(float(ann_dict["pixel_y"]), 1),
@@ -271,20 +257,7 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
         for a in new_annotations
     ]
 
-    # Parse camera status from filename
-    parts = current_image.replace(".png", "").replace(".jpg", "").split("_")
-    camera_status: dict = {}
-    if len(parts) >= 4:
-        try:
-            camera_status = {
-                "pan": float(parts[1]),
-                "tilt": float(parts[2]),
-                "zoom": int(parts[3]),
-            }
-        except (ValueError, IndexError):
-            camera_status = {"pan": 0, "tilt": 0, "zoom": 1}
-
-    save_annotations_to_repo(current_image, clean_annotations, camera_status)
+    save_annotations_to_repo(current_image, clean_annotations)
 
     return JsonResponse({"success": True, "saved": len(clean_annotations)})
 

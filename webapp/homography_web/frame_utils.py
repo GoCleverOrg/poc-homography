@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 FRAMES_DIR = PROJECT_ROOT / "data" / "captured_frames"
+ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
+GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
 LINES_DIR = PROJECT_ROOT / "data" / "lines"
 

@@ -19,11 +19,15 @@ from django.views.decorators.http import require_http_methods
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from poc_homography.domain.entities.lens_calibration_table import LensCalibrationTable
+    from poc_homography.domain.vo.zoom_calibration_entry import ZoomCalibrationEntry
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Filename validation helpers
 # ---------------------------------------------------------------------------
+
 
 def validate_filename(filename: str) -> bool:
     """Validate filename to prevent path traversal attacks."""
@@ -59,6 +63,7 @@ def get_cached_calibration_table(filepath: Path):
     from poc_homography.calibration.lens_distortion.calibration_table import (
         CameraCalibrationTable,
     )
+
     key_path = str(filepath)
     mtime = filepath.stat().st_mtime
     cache_key = (key_path, mtime)
@@ -75,6 +80,7 @@ def get_cached_calibration_table(filepath: Path):
 # ---------------------------------------------------------------------------
 # Shared intrinsics computation
 # ---------------------------------------------------------------------------
+
 
 @require_http_methods(["POST"])
 def api_compute_intrinsics(request: HttpRequest) -> JsonResponse:
@@ -98,9 +104,7 @@ def api_compute_intrinsics(request: HttpRequest) -> JsonResponse:
         image_width = int(data.get("image_width", 1920))
         image_height = int(data.get("image_height", 1080))
         sensor_width_mm = float(data.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM))
-        base_focal_length_mm = float(
-            data.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM)
-        )
+        base_focal_length_mm = float(data.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM))
 
         if zoom <= 0 or image_width <= 0 or image_height <= 0:
             return JsonResponse(
@@ -116,18 +120,20 @@ def api_compute_intrinsics(request: HttpRequest) -> JsonResponse:
             base_focal_length_mm=base_focal_length_mm,
         )
 
-        return JsonResponse({
-            "fx": float(result.focal_length_px),
-            "fy": float(result.focal_length_px),
-            "cx": float(result.cx),
-            "cy": float(result.cy),
-            "focal_length_mm": float(result.focal_length_mm),
-            "sensor_width_mm": sensor_width_mm,
-            "base_focal_length_mm": base_focal_length_mm,
-            "zoom": zoom,
-            "image_width": image_width,
-            "image_height": image_height,
-        })
+        return JsonResponse(
+            {
+                "fx": float(result.focal_length_px),
+                "fy": float(result.focal_length_px),
+                "cx": float(result.cx),
+                "cy": float(result.cy),
+                "focal_length_mm": float(result.focal_length_mm),
+                "sensor_width_mm": sensor_width_mm,
+                "base_focal_length_mm": base_focal_length_mm,
+                "zoom": zoom,
+                "image_width": image_width,
+                "image_height": image_height,
+            }
+        )
 
     except ValueError as e:
         return JsonResponse({"error": f"Invalid parameter: {e}"}, status=400)
@@ -140,30 +146,31 @@ def api_compute_intrinsics(request: HttpRequest) -> JsonResponse:
 # Shared calibration entry serialization
 # ---------------------------------------------------------------------------
 
-def serialize_calibration_entry(entry) -> dict[str, Any]:
-    """Serialize a ZoomCalibrationEntry to a JSON-safe dict.
+
+def serialize_calibration_entry(entry: ZoomCalibrationEntry) -> dict[str, Any]:
+    """Serialize a DDD ``ZoomCalibrationEntry`` VO to a JSON-safe dict.
 
     Includes intrinsics when stored (fx/fy non-zero).
     """
     entry_data: dict[str, Any] = {
-        "zoom_factor": entry.zoom_factor,
+        "zoom_factor": float(entry.zoom_factor),
         "coefficients": {
-            "k1": float(entry.k1),
-            "k2": float(entry.k2),
-            "k3": float(entry.k3),
-            "p1": float(entry.p1),
-            "p2": float(entry.p2),
+            "k1": float(entry.distortion.k1),
+            "k2": float(entry.distortion.k2),
+            "k3": float(entry.distortion.k3),
+            "p1": float(entry.distortion.p1),
+            "p2": float(entry.distortion.p2),
         },
         "calibration_date": entry.calibration_date,
         "validation_rmse": entry.validation_rmse,
         "num_lines_used": entry.num_lines_used,
     }
-    if entry.fx != 0.0 or entry.fy != 0.0:
+    if float(entry.fx) != 0.0 or float(entry.fy) != 0.0:
         entry_data["intrinsics"] = {
-            "fx": entry.fx,
-            "fy": entry.fy,
-            "cx": entry.cx,
-            "cy": entry.cy,
+            "fx": float(entry.fx),
+            "fy": float(entry.fy),
+            "cx": float(entry.cx),
+            "cy": float(entry.cy),
         }
     if entry.reprojection_error_px != 0.0:
         entry_data["reprojection_error_px"] = entry.reprojection_error_px
@@ -173,6 +180,7 @@ def serialize_calibration_entry(entry) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # DDD repo adapter functions
 # ---------------------------------------------------------------------------
+
 
 def save_calibration_to_repo(table: Any, data_dir: Path) -> None:
     """Convert a legacy ``CameraCalibrationTable`` to ``LensCalibrationTable`` and persist."""
@@ -220,57 +228,21 @@ def save_calibration_to_repo(table: Any, data_dir: Path) -> None:
     now = datetime.now().isoformat()
     entity = LensCalibrationTable(
         id=table.camera_id,
-        entries=tuple(
-            existing_by_zoom[z] for z in sorted(existing_by_zoom)
-        ),
+        entries=tuple(existing_by_zoom[z] for z in sorted(existing_by_zoom)),
         created_date=existing.created_date if existing else now,
         last_modified=now,
     )
     repo.save(entity)
 
 
-def load_calibration_from_repo(camera_id: str, data_dir: Path) -> Any | None:
-    """Load from repo and convert ``LensCalibrationTable`` to ``CameraCalibrationTable``."""
-    from poc_homography.calibration.lens_distortion.calibration_table import (
-        CameraCalibrationTable,
-    )
-    from poc_homography.calibration.lens_distortion.calibration_table import (
-        ZoomCalibrationEntry as LegacyEntry,
-    )
+def load_calibration_from_repo(camera_id: str, data_dir: Path) -> LensCalibrationTable | None:
+    """Load a ``LensCalibrationTable`` entity from the DDD repo."""
     from poc_homography.infrastructure.repositories.repo_yaml_lens_calibration_table import (
         RepoYamlLensCalibrationTable,
     )
 
     repo = RepoYamlLensCalibrationTable(data_dir)
-    entity = repo.get(camera_id)
-    if entity is None:
-        return None
-
-    table = CameraCalibrationTable(
-        camera_id=entity.id,
-        created_date=entity.created_date,
-        last_modified=entity.last_modified,
-    )
-    for ddd_entry in entity.entries:
-        legacy_entry = LegacyEntry(
-            zoom_factor=float(ddd_entry.zoom_factor),
-            k1=float(ddd_entry.distortion.k1),
-            k2=float(ddd_entry.distortion.k2),
-            k3=float(ddd_entry.distortion.k3),
-            p1=float(ddd_entry.distortion.p1),
-            p2=float(ddd_entry.distortion.p2),
-            calibration_date=ddd_entry.calibration_date,
-            source_images=ddd_entry.source_images,
-            validation_rmse=ddd_entry.validation_rmse,
-            num_lines_used=ddd_entry.num_lines_used,
-            fx=float(ddd_entry.fx),
-            fy=float(ddd_entry.fy),
-            cx=float(ddd_entry.cx),
-            cy=float(ddd_entry.cy),
-            reprojection_error_px=ddd_entry.reprojection_error_px,
-        )
-        table.entries[legacy_entry.zoom_factor] = legacy_entry
-    return table
+    return repo.get(camera_id)
 
 
 def list_calibration_ids(data_dir: Path) -> list[str]:

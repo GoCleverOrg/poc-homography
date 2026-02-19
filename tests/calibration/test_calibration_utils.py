@@ -16,9 +16,9 @@ from homography_web.calibration_utils import (
     validate_filename,
 )
 
-from poc_homography.calibration.lens_distortion.calibration_table import (
-    ZoomCalibrationEntry,
-)
+from poc_homography.domain.vo.lens_distortion import LensDistortion
+from poc_homography.domain.vo.zoom_calibration_entry import ZoomCalibrationEntry
+from poc_homography.types import PixelsFloat, Unitless
 
 
 class TestValidateFilename:
@@ -65,9 +65,13 @@ class TestSerializeCalibrationEntry:
 
     def test_serializes_basic_entry(self):
         entry = ZoomCalibrationEntry(
-            zoom_factor=2.0,
-            k1=-0.15, k2=0.08, k3=0.01, p1=0.002, p2=-0.003,
+            zoom_factor=Unitless(2.0),
+            distortion=LensDistortion(
+                k1=Unitless(-0.15), k2=Unitless(0.08), k3=Unitless(0.01),
+                p1=Unitless(0.002), p2=Unitless(-0.003),
+            ),
             calibration_date="2024-01-15",
+            source_images=(),
             validation_rmse=0.5,
             num_lines_used=10,
         )
@@ -87,9 +91,10 @@ class TestSerializeCalibrationEntry:
     def test_excludes_intrinsics_when_zero(self):
         """Should not include intrinsics dict when fx/fy are zero."""
         entry = ZoomCalibrationEntry(
-            zoom_factor=1.0,
-            k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+            zoom_factor=Unitless(1.0),
+            distortion=LensDistortion(k1=Unitless(-0.1)),
             calibration_date="2024-01-15",
+            source_images=(),
         )
 
         data = serialize_calibration_entry(entry)
@@ -99,10 +104,12 @@ class TestSerializeCalibrationEntry:
     def test_includes_intrinsics_when_present(self):
         """Should include intrinsics dict when fx or fy is non-zero."""
         entry = ZoomCalibrationEntry(
-            zoom_factor=1.0,
-            k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+            zoom_factor=Unitless(1.0),
+            distortion=LensDistortion(k1=Unitless(-0.1)),
             calibration_date="2024-01-15",
-            fx=1670.0, fy=1670.0, cx=960.0, cy=540.0,
+            source_images=(),
+            fx=PixelsFloat(1670.0), fy=PixelsFloat(1670.0),
+            cx=PixelsFloat(960.0), cy=PixelsFloat(540.0),
         )
 
         data = serialize_calibration_entry(entry)
@@ -116,10 +123,11 @@ class TestSerializeCalibrationEntry:
     def test_includes_intrinsics_when_only_fx_nonzero(self):
         """Should include intrinsics even if only fx is non-zero."""
         entry = ZoomCalibrationEntry(
-            zoom_factor=1.0,
-            k1=0.0, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+            zoom_factor=Unitless(1.0),
+            distortion=LensDistortion(),
             calibration_date="2024-01-15",
-            fx=1000.0, fy=0.0, cx=0.0, cy=0.0,
+            source_images=(),
+            fx=PixelsFloat(1000.0),
         )
 
         data = serialize_calibration_entry(entry)

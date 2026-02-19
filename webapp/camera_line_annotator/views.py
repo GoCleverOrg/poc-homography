@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import re
-from pathlib import Path
 from typing import Any
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
@@ -13,16 +11,13 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
+    LINE_ANNOTATIONS_DIR,
     LINES_DIR,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
+    load_line_annotations_for_frame,
 )
-
-# Paths relative to webapp directory
-WEBAPP_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = WEBAPP_DIR.parent
-LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
@@ -94,69 +89,33 @@ def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:
     return annotations
 
 
-def save_session_annotations(
-    request: HttpRequest, annotations: dict[str, list[dict]]
-) -> None:
+def save_session_annotations(request: HttpRequest, annotations: dict[str, list[dict]]) -> None:
     """Save annotations to session storage."""
     request.session[SESSION_ANNOTATIONS_KEY] = annotations
     request.session.modified = True
 
 
 def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
-    """Try loading line annotations from the DDD LineAnnotation repository.
-
-    Args:
-        image_filename: Camera image filename to match.
-
-    Returns:
-        List of annotation dicts in the internal format, or empty list if repo
-        is unavailable or has no data.
-    """
-    from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
-
+    """Load line annotations from the DDD LineAnnotation repository."""
     frame = image_filename_to_frame(image_filename)
     if frame is None:
         return []
-
-    try:
-        repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
-        all_annotations = repo.get_all()
-    except OSError:
-        return []
-
-    annotations: list[dict] = []
-    for ann in all_annotations:
-        if ann.frame_id != frame.id:
-            continue
-        entry: dict[str, Any] = {
-            "line_id": ann.line_id,
-            "start_pixel_x": float(ann.start_pixel.x),
-            "start_pixel_y": float(ann.start_pixel.y),
-            "end_pixel_x": float(ann.end_pixel.x),
-            "end_pixel_y": float(ann.end_pixel.y),
-        }
-        if ann.points is not None:
-            entry["points"] = [[float(p.x), float(p.y)] for p in ann.points]
-        annotations.append(entry)
-    return annotations
+    return load_line_annotations_for_frame(frame.id)
 
 
 def _save_line_annotations_to_repo(
     image_filename: str,
     annotations: list[dict],
-    camera_status: dict,
 ) -> None:
     """Persist line annotations to the DDD LineAnnotation repository.
 
     Args:
         image_filename: Camera image filename (used as frame_id base).
         annotations: List of annotation dicts with line_id and pixel coords.
-        camera_status: Dict with pan, tilt, zoom values.
     """
     from poc_homography.domain.entities.line_annotation import LineAnnotation
-    from poc_homography.domain.vo import PixelPoint, PTZState
+    from poc_homography.domain.vo import PixelPoint
     from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
-    from poc_homography.types import Degrees, Unitless
 
     frame = image_filename_to_frame(image_filename)
     if frame is None:
@@ -164,24 +123,16 @@ def _save_line_annotations_to_repo(
 
     repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
 
-    camera_pose = PTZState(
-        pan_raw=Degrees(float(camera_status.get("pan", 0))),
-        tilt_deg=Degrees(float(camera_status.get("tilt", 0))),
-        zoom=Unitless(float(camera_status.get("zoom", 1))),
-    )
-
     for ann_dict in annotations:
         raw_points = ann_dict.get("points")
         points: tuple[PixelPoint, ...] | None = None
         if raw_points and len(raw_points) >= 2:
-            points = tuple(
-                PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points
-            )
+            points = tuple(PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points)
 
         line_ann = LineAnnotation(
             line_id=ann_dict.get("line_id", ""),
             frame_id=frame.id,
-            camera_pose=camera_pose,
+            camera_pose=frame.ptz_state,
             start_pixel=PixelPoint.create(
                 float(ann_dict.get("start_pixel_x", 0)),
                 float(ann_dict.get("start_pixel_y", 0)),
@@ -199,50 +150,6 @@ def load_existing_line_annotations(image_filename: str) -> list[dict]:
     """Load existing line annotations for a specific image from the DDD repo."""
     return _load_line_annotations_from_repo(image_filename)
 
-
-def extract_camera_status(filename: str) -> dict[str, Any]:
-    """Extract pan/tilt/zoom from filename pattern.
-
-    Supports two patterns:
-    - Legacy: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
-      Example: valte_56.7_20.7_1_20260114_182208.jpg
-    - Survey: {tenant}_{camera}_{date}_{time}_{pan}_{tilt}_{zoom}.{ext}
-      Example: valte_valte_cam01_20260126_095620_30.0_15.3_1.0.jpg
-    """
-    # Try survey pattern: _YYYYMMDD_HHMMSS_pan_tilt_zoom.ext
-    survey_pattern = r"_\d{8}_\d{6}_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)\.\w+$"
-    match = re.search(survey_pattern, filename)
-    if match:
-        return {
-            "pan": float(match.group(1)),
-            "tilt": float(match.group(2)),
-            "zoom": float(match.group(3)),
-        }
-    # Try legacy pattern: valte_pan_tilt_zoom_timestamp.ext
-    legacy_pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
-    match = re.match(legacy_pattern, filename)
-    if match:
-        return {
-            "pan": float(match.group(1)),
-            "tilt": float(match.group(2)),
-            "zoom": int(match.group(3)),
-        }
-    return {"pan": None, "tilt": None, "zoom": None}
-
-
-def extract_point_annotations_ref(filename: str) -> str:
-    """Extract point annotations reference from filename.
-
-    Removes timestamp and extension to get base test case name.
-    Example: valte_56.7_20.7_1_20260114_182208.jpg -> valte_56.7_20.7_1_20260114
-    """
-    # Remove extension
-    base = filename.rsplit(".", 1)[0]
-    # Remove last segment (timestamp part after last underscore)
-    parts = base.rsplit("_", 1)
-    if len(parts) > 1:
-        return parts[0]
-    return base
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -287,23 +194,26 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
     request.session[SESSION_IMAGE_KEY] = filename
 
+    # Always load fresh from repo on image switch; session tracks in-flight edits only
+    image_annotations = load_existing_line_annotations(filename)
     all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(filename, [])
+    all_annotations[filename] = image_annotations
+    save_session_annotations(request, all_annotations)
 
-    if not image_annotations:
-        image_annotations = load_existing_line_annotations(filename)
-        if image_annotations:
-            all_annotations[filename] = image_annotations
-            save_session_annotations(request, all_annotations)
+    camera_status = {
+        "pan": float(frame.ptz_state.pan_raw),
+        "tilt": float(frame.ptz_state.tilt_deg),
+        "zoom": float(frame.ptz_state.zoom),
+    }
 
-    camera_status = extract_camera_status(filename)
-
-    return JsonResponse({
-        "success": True,
-        "filename": filename,
-        "annotations": image_annotations,
-        "camera_status": camera_status,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "filename": filename,
+            "annotations": image_annotations,
+            "camera_status": camera_status,
+        }
+    )
 
 
 @require_GET
@@ -342,10 +252,12 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
         registry = load_lines_registry()
         lines = registry.get("lines", [])
         line_ids = [line.get("line_id") for line in lines if line.get("line_id")]
-        return JsonResponse({
-            "map_id": registry.get("map_id", ""),
-            "line_ids": line_ids,
-        })
+        return JsonResponse(
+            {
+                "map_id": registry.get("map_id", ""),
+                "line_ids": line_ids,
+            }
+        )
     except Exception as e:
         return JsonResponse({"error": f"Failed to load line IDs: {e}"}, status=500)
 
@@ -354,23 +266,18 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
 def api_annotations(request: HttpRequest) -> JsonResponse:
     """Get line annotations for current image.
 
-    Returns session-stored annotations if available, otherwise falls back
-    to loading from exported ``*_line_annotations.yaml`` files.
+    Always loads fresh from the DDD repo and caches in the session.
+    In-flight edits (create/update/delete) override the session until
+    the next full reload.
     """
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse([], safe=False)
 
+    image_annotations = load_existing_line_annotations(current_image)
     all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(current_image, [])
-
-    # Fall back to file-based annotations when session is empty
-    if not image_annotations:
-        image_annotations = load_existing_line_annotations(current_image)
-        if image_annotations:
-            # Cache into session so subsequent edits persist
-            all_annotations[current_image] = image_annotations
-            save_session_annotations(request, all_annotations)
+    all_annotations[current_image] = image_annotations
+    save_session_annotations(request, all_annotations)
 
     return JsonResponse(image_annotations, safe=False)
 
@@ -408,9 +315,7 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
 
     # Preserve N-point data if provided
     if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
-        annotation["points"] = [
-            [float(p[0]), float(p[1])] for p in data["points"]
-        ]
+        annotation["points"] = [[float(p[0]), float(p[1])] for p in data["points"]]
 
     # Store annotation
     all_annotations = get_session_annotations(request)
@@ -419,11 +324,13 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     all_annotations[current_image].append(annotation)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "annotation": annotation,
-        "index": len(all_annotations[current_image]) - 1,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotation": annotation,
+            "index": len(all_annotations[current_image]) - 1,
+        }
+    )
 
 
 @csrf_exempt
@@ -460,10 +367,12 @@ def api_annotations_update(request: HttpRequest, index: int) -> JsonResponse:
     image_annotations[index] = updated
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "annotation": updated,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotation": updated,
+        }
+    )
 
 
 @csrf_exempt
@@ -483,21 +392,32 @@ def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
     deleted = image_annotations.pop(index)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "deleted": deleted,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "deleted": deleted,
+        }
+    )
 
 
 @require_GET
 def api_camera_status(request: HttpRequest) -> JsonResponse:
-    """Get extracted camera status from current image filename."""
+    """Get camera status from the CapturedFrame entity."""
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse({"pan": None, "tilt": None, "zoom": None})
 
-    camera_status = extract_camera_status(current_image)
-    return JsonResponse(camera_status)
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return JsonResponse({"pan": None, "tilt": None, "zoom": None})
+
+    return JsonResponse(
+        {
+            "pan": float(frame.ptz_state.pan_raw),
+            "tilt": float(frame.ptz_state.tilt_deg),
+            "zoom": float(frame.ptz_state.zoom),
+        }
+    )
 
 
 @csrf_exempt
@@ -513,11 +433,6 @@ def api_export(request: HttpRequest) -> JsonResponse:
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # Get camera status from request or extract from filename
-    camera_status = data.get("camera_status")
-    if camera_status is None:
-        camera_status = extract_camera_status(current_image)
-
     # Get annotations
     all_annotations = get_session_annotations(request)
     image_annotations = all_annotations.get(current_image, [])
@@ -525,12 +440,14 @@ def api_export(request: HttpRequest) -> JsonResponse:
     if not image_annotations:
         return JsonResponse({"error": "No annotations to save"}, status=400)
 
-    _save_line_annotations_to_repo(current_image, image_annotations, camera_status)
+    _save_line_annotations_to_repo(current_image, image_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "count": len(image_annotations),
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "count": len(image_annotations),
+        }
+    )
 
 
 @csrf_exempt
@@ -548,8 +465,10 @@ def api_import(request: HttpRequest) -> JsonResponse:
     all_annotations[current_image] = annotations
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "annotations": annotations,
-        "count": len(annotations),
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotations": annotations,
+            "count": len(annotations),
+        }
+    )

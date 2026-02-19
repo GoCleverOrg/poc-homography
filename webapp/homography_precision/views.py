@@ -9,8 +9,10 @@ from __future__ import annotations
 import io
 import json
 import math
-from pathlib import Path
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import numpy as np
 import tifffile
@@ -19,7 +21,9 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
+    GCPS_DIR,
     LINES_DIR,
+    PROJECT_ROOT,
     get_frame_image_path,
     image_filename_to_frame,
     list_frames,
@@ -36,9 +40,6 @@ from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
-# Paths (relative to project root)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 MAP_GEOTIFF_FILE = PROJECT_ROOT / "Cartografia_valencia.tif"
 
 # Cached line registry
@@ -313,11 +314,13 @@ def api_test_cases(request: HttpRequest) -> JsonResponse:
         annotations = repo.get_annotations(frame.id)
         if not annotations:
             continue
-        test_cases.append({
-            "name": frame.image_path.stem,
-            "image": frame.image_path.name,
-            "annotation_count": len(annotations),
-        })
+        test_cases.append(
+            {
+                "name": frame.image_path.stem,
+                "image": frame.image_path.name,
+                "annotation_count": len(annotations),
+            }
+        )
 
     return JsonResponse({"test_cases": test_cases})
 
@@ -653,11 +656,13 @@ def api_line_test_cases(request: HttpRequest) -> JsonResponse:
         line_anns = load_line_annotations_for_frame(frame.id)
         if not line_anns:
             continue
-        test_cases.append({
-            "name": f"{frame.image_path.stem}_lines",
-            "image": frame.image_path.name,
-            "line_annotation_count": len(line_anns),
-        })
+        test_cases.append(
+            {
+                "name": f"{frame.image_path.stem}_lines",
+                "image": frame.image_path.name,
+                "line_annotation_count": len(line_anns),
+            }
+        )
 
     if not test_cases:
         return JsonResponse(

@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 # Page
 # ---------------------------------------------------------------------------
 
+
 @ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
@@ -58,6 +59,7 @@ def index(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
+
 
 def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
     """Build intrinsic matrix from request data, computing from specs if requested.
@@ -81,9 +83,7 @@ def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
             zoom=zoom,
             image_width=int(intrinsics.get("image_width", 1920)),
             image_height=int(intrinsics.get("image_height", 1080)),
-            sensor_width_mm=float(
-                intrinsics.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM)
-            ),
+            sensor_width_mm=float(intrinsics.get("sensor_width_mm", DEFAULT_SENSOR_WIDTH_MM)),
             base_focal_length_mm=float(
                 intrinsics.get("base_focal_length_mm", DEFAULT_BASE_FOCAL_LENGTH_MM)
             ),
@@ -100,11 +100,13 @@ def _build_intrinsic_matrix(data: dict) -> tuple[Any, dict]:
     cx = intrinsics.get("cx", 960.0)
     cy = intrinsics.get("cy", 540.0)
 
-    intrinsic_matrix = np.array([
-        [fx, 0.0, cx],
-        [0.0, fy, cy],
-        [0.0, 0.0, 1.0],
-    ])
+    intrinsic_matrix = np.array(
+        [
+            [fx, 0.0, cx],
+            [0.0, fy, cy],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
     return intrinsic_matrix, {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
 
@@ -137,9 +139,7 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
     # Validate camera_line_annotations exists and is non-empty
     annotations = data.get("camera_line_annotations")
     if not annotations or not isinstance(annotations, list):
-        return JsonResponse(
-            {"error": "Missing or invalid camera_line_annotations"}, status=400
-        )
+        return JsonResponse({"error": "Missing or invalid camera_line_annotations"}, status=400)
 
     if len(annotations) > MAX_LINE_ANNOTATIONS:
         return JsonResponse(
@@ -182,17 +182,17 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
             },
             "intrinsics_used": intrinsics_used,
             "quality": (
-                "good" if result.overall_rmse < 2.0
-                else "acceptable" if result.overall_rmse < 5.0
+                "good"
+                if result.overall_rmse < 2.0
+                else "acceptable"
+                if result.overall_rmse < 5.0
                 else "poor"
             ),
             "line_errors": result.line_errors[:20],
         }
 
         if result.success:
-            response_data["improvement_percent"] = (
-                (1 - result.improvement_ratio()) * 100
-            )
+            response_data["improvement_percent"] = (1 - result.improvement_ratio()) * 100
         else:
             response_data["improvement_percent"] = 0.0
 
@@ -204,12 +204,14 @@ def api_calibrate_annotated_lines(request: HttpRequest) -> JsonResponse:
     except ImportError:
         logger.exception("Annotated line solver module not available")
         return JsonResponse(
-            {"error": "Annotated line solver module not available"}, status=500,
+            {"error": "Annotated line solver module not available"},
+            status=500,
         )
     except Exception:
         logger.exception("Annotated line calibration failed")
         return JsonResponse(
-            {"error": "Annotated line calibration failed"}, status=500,
+            {"error": "Annotated line calibration failed"},
+            status=500,
         )
 
 
@@ -281,7 +283,9 @@ def api_validate(request: HttpRequest) -> JsonResponse:
         )
         corrected_rmse = straightness_rmse(camera_lines, intrinsic_matrix, distortion=distortion)
 
-        improvement = (baseline_rmse - corrected_rmse) / baseline_rmse * 100 if baseline_rmse > 0 else 0
+        improvement = (
+            (baseline_rmse - corrected_rmse) / baseline_rmse * 100 if baseline_rmse > 0 else 0
+        )
 
         return JsonResponse(
             {
@@ -374,19 +378,18 @@ def api_load(request: HttpRequest) -> JsonResponse:
         if not camera_id:
             return JsonResponse({"error": "Missing camera_id"}, status=400)
 
-        table = load_calibration_from_repo(camera_id, CALIBRATIONS_DIR)
-        if table is None:
+        entity = load_calibration_from_repo(camera_id, CALIBRATIONS_DIR)
+        if entity is None:
             return JsonResponse({"error": f"No calibration found for {camera_id}"}, status=404)
 
-        entries = [
-            serialize_calibration_entry(entry)
-            for entry in table.entries.values()
-        ]
+        entries = [serialize_calibration_entry(entry) for entry in entity.entries]
 
-        return JsonResponse({
-            "camera_id": table.camera_id,
-            "entries": entries,
-        })
+        return JsonResponse(
+            {
+                "camera_id": entity.id,
+                "entries": entries,
+            }
+        )
 
     except ImportError:
         logger.exception("Calibration module not available")
@@ -410,6 +413,7 @@ def api_calibration_ids(request: HttpRequest) -> JsonResponse:
 # ---------------------------------------------------------------------------
 # Line trace sets API (DDD repo)
 # ---------------------------------------------------------------------------
+
 
 @require_GET
 def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
@@ -445,10 +449,12 @@ def api_line_trace_set_detail(request: HttpRequest) -> JsonResponse:
         if entity is None:
             return JsonResponse({"error": f"Not found: {name}"}, status=404)
 
-        return JsonResponse({
-            "name": entity.name,
-            "line_traces": [lt.to_dict() for lt in entity.line_traces],
-        })
+        return JsonResponse(
+            {
+                "name": entity.name,
+                "line_traces": [lt.to_dict() for lt in entity.line_traces],
+            }
+        )
     except Exception:
         logger.exception("Failed to load line trace set %s", name)
         return JsonResponse({"error": "Failed to load line trace set"}, status=500)
