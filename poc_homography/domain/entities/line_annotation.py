@@ -61,9 +61,7 @@ class LineAnnotation:
         raw_points = data.get("points")
         points: tuple[PixelPoint, ...] | None = None
         if raw_points and len(raw_points) >= 2:
-            points = tuple(
-                PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points
-            )
+            points = tuple(PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points)
 
         return cls(
             line_id=data["line_id"],

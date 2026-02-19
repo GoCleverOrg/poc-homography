@@ -39,9 +39,7 @@ class LensCalibrationTable:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> LensCalibrationTable:
         """Create LensCalibrationTable from dictionary."""
-        entries = tuple(
-            ZoomCalibrationEntry.from_dict(e) for e in data.get("entries", [])
-        )
+        entries = tuple(ZoomCalibrationEntry.from_dict(e) for e in data.get("entries", []))
         return cls(
             id=data["id"],
             entries=entries,
