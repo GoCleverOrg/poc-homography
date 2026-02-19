@@ -6,19 +6,14 @@ Django view wrappers that use the DDD repository for persistence.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 
+from homography_web.frame_utils import GCPS_DIR
 from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.map_points.gcp_registry import from_gcp_repo, list_map_ids
-
-# Project root and data directories
-# Path: views.py -> gcp/ -> webapp/ -> project_root/
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 
 
 def _load_registry(map_id: str | None = None) -> GCPRegistry:

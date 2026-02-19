@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path  # noqa: TC003 - used at runtime
 
 import tifffile
-import yaml
 from PIL import Image
 
 
@@ -260,54 +259,6 @@ class LinePickerState:
                 return line
         return None
 
-    def save_lines(self, path: Path) -> None:
-        """Save lines to YAML file.
-
-        Args:
-            path: Path to the output YAML file.
-        """
-        data = {
-            "map_id": self.map_id,
-            "lines": [line.to_dict() for line in self.lines],
-        }
-        path.write_text(
-            yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8"
-        )
-
-    def load_lines(self, path: Path) -> None:
-        """Load lines from YAML file.
-
-        Args:
-            path: Path to the input YAML file.
-
-        Raises:
-            FileNotFoundError: If file doesn't exist.
-            yaml.YAMLError: If YAML is invalid.
-            KeyError: If required keys are missing.
-            ValueError: If YAML content is empty or map_id doesn't match.
-        """
-        content = path.read_text(encoding="utf-8")
-        data = yaml.safe_load(content)
-
-        if data is None:
-            raise ValueError("YAML content is empty")
-
-        # Validate map_id matches
-        file_map_id = data.get("map_id")
-        if file_map_id != self.map_id:
-            raise ValueError(f"Map ID mismatch: expected {self.map_id}, got {file_map_id}")
-
-        # Load lines with pixel coordinates
-        self.lines = []
-        for line_data in data.get("lines", []):
-            line = Line(
-                line_id=line_data["line_id"],
-                start_x=float(line_data["start_x"]),
-                start_y=float(line_data["start_y"]),
-                end_x=float(line_data["end_x"]),
-                end_y=float(line_data["end_y"]),
-            )
-            self.lines.append(line)
 
 
 # Module-level state

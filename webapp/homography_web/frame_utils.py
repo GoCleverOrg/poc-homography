@@ -11,6 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+from numpy.typing import NDArray
+
 from poc_homography.infrastructure.repositories import (
     RepoYamlCapturedFrame,
     RepoYamlLineAnnotation,
@@ -27,12 +30,58 @@ ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
 GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
 LINES_DIR = PROJECT_ROOT / "data" / "lines"
+CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
+
+# ---------------------------------------------------------------------------
+# Filename validation helpers
+# ---------------------------------------------------------------------------
+
+
+def validate_image_filename(filename: str) -> bool:
+    """Validate filename to prevent path traversal attacks."""
+    if not filename:
+        return False
+    if "/" in filename or ".." in filename or "\\" in filename:
+        return False
+    return True
+
+
+def normalize_array(arr: NDArray) -> NDArray[np.uint8]:
+    """Normalize array values to 0-255 range for display.
+
+    Args:
+        arr: Input array.
+
+    Returns:
+        Normalized uint8 array.
+    """
+    if arr.dtype == np.uint8:
+        return arr
+
+    # Handle floating point and other types
+    arr = arr.astype(np.float64)
+    min_val = np.nanmin(arr)
+    max_val = np.nanmax(arr)
+
+    if max_val - min_val > 0:
+        arr = (arr - min_val) / (max_val - min_val) * 255
+    else:
+        arr = np.zeros_like(arr)
+
+    return arr.astype(np.uint8)
+
+
+# Default map identifier used across all webapp apps.
+# Centralised here so the value is defined exactly once.
+DEFAULT_MAP_ID = "Cartografia_valencia"
 
 # ---------------------------------------------------------------------------
 # Module-level caches
 # ---------------------------------------------------------------------------
 
 _frame_repo: RepoYamlCapturedFrame | None = None
+_line_ann_repo: RepoYamlLineAnnotation | None = None
+_line_anns_by_frame: dict[str, list] | None = None
 _frames: list[CapturedFrame] | None = None
 _image_to_frame: dict[str, CapturedFrame] | None = None
 
@@ -95,18 +144,27 @@ def load_annotations_for_frame(frame_id: str) -> list[dict]:
     ]
 
 
+def _get_line_anns_by_frame() -> dict[str, list]:
+    """Build and cache mapping from frame_id -> list of line annotations."""
+    global _line_ann_repo, _line_anns_by_frame
+    if _line_anns_by_frame is None:
+        if _line_ann_repo is None:
+            _line_ann_repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
+        by_frame: dict[str, list] = {}
+        for ann in _line_ann_repo.get_all():
+            by_frame.setdefault(ann.frame_id, []).append(ann)
+        _line_anns_by_frame = by_frame
+    return _line_anns_by_frame
+
+
 def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
     """Load line annotations for a frame in legacy dict format.
 
     Returns list of dicts with ``line_id``, pixel endpoints, and optional
     ``points`` array for n-point polylines.
     """
-    repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
-    all_annotations = repo.get_all()
     results: list[dict] = []
-    for ann in all_annotations:
-        if ann.frame_id != frame_id:
-            continue
+    for ann in _get_line_anns_by_frame().get(frame_id, []):
         entry: dict = {
             "line_id": ann.line_id,
             "start_pixel_x": float(ann.start_pixel.x),
@@ -122,7 +180,9 @@ def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
 
 def invalidate_cache() -> None:
     """Clear all module-level caches. Useful after saves."""
-    global _frame_repo, _frames, _image_to_frame
+    global _frame_repo, _frames, _image_to_frame, _line_ann_repo, _line_anns_by_frame
     _frame_repo = None
     _frames = None
     _image_to_frame = None
+    _line_ann_repo = None
+    _line_anns_by_frame = None

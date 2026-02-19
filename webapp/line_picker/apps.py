@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from django.apps import AppConfig
+from homography_web.frame_utils import DEFAULT_MAP_ID
 
 
 class LinePickerConfig(AppConfig):
@@ -27,8 +28,8 @@ class LinePickerConfig(AppConfig):
         webapp_dir = Path(__file__).resolve().parent.parent
         project_root = webapp_dir.parent
 
-        # Use the Cartografia valencia map
-        map_file = project_root / "Cartografia_valencia.tif"
+        # Use the default map
+        map_file = project_root / f"{DEFAULT_MAP_ID}.tif"
 
         if map_file.exists():
             initialize_state(map_file, "valte")

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 - used at runtime
-from typing import TYPE_CHECKING
 
 import numpy as np
 import tifffile
@@ -13,9 +12,6 @@ from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.map_points.gcp_registry import GCPRegistry
 from poc_homography.map_points.map_point import MapPoint
 from poc_homography.types import Easting, Meters, Northing, Unitless
-
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
 
 # Tag abbreviation mapping
 TAG_ABBREVIATIONS = {
@@ -216,27 +212,6 @@ class PointPickerState:
         del new_points[point_id]
         self.registry = GCPRegistry(map_id=self.map_id, points=new_points)
 
-    def load_registry(self, path: Path) -> None:
-        """Load points from YAML/JSON file.
-
-        .. deprecated:: Use :meth:`load_from_repo` instead.
-
-        Args:
-            path: Path to the file.
-        """
-        self.registry = GCPRegistry.load(path)
-        self.map_id = self.registry.map_id
-
-    def save_registry(self, path: Path) -> None:
-        """Save points to YAML/JSON file.
-
-        .. deprecated:: Use :meth:`save_to_repo` instead.
-
-        Args:
-            path: Path to the file.
-        """
-        self.registry.save(path)
-
     def load_from_repo(self, data_dir: Path, map_id: str) -> None:
         """Load points from the DDD GCP repository.
 
@@ -297,31 +272,6 @@ def get_state() -> PointPickerState:
     if _state is None:
         raise RuntimeError("Application not initialized. Call initialize_state() first.")
     return _state
-
-
-def normalize_array(arr: NDArray) -> NDArray[np.uint8]:
-    """Normalize array values to 0-255 range for display.
-
-    Args:
-        arr: Input array.
-
-    Returns:
-        Normalized uint8 array.
-    """
-    if arr.dtype == np.uint8:
-        return arr
-
-    # Handle floating point and other types
-    arr = arr.astype(np.float64)
-    min_val = np.nanmin(arr)
-    max_val = np.nanmax(arr)
-
-    if max_val - min_val > 0:
-        arr = (arr - min_val) / (max_val - min_val) * 255
-    else:
-        arr = np.zeros_like(arr)
-
-    return arr.astype(np.uint8)
 
 
 def get_tag_from_id(point_id: str) -> str:

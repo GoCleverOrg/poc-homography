@@ -17,6 +17,7 @@ from homography_web.frame_utils import (
     image_filename_to_frame,
     list_image_filenames,
     load_line_annotations_for_frame,
+    validate_image_filename,
 )
 
 # Session keys
@@ -69,15 +70,6 @@ def get_current_image(request: HttpRequest) -> str | None:
         return images[0]
 
     return None
-
-
-def validate_image_filename(filename: str) -> bool:
-    """Validate filename to prevent path traversal attacks."""
-    if not filename:
-        return False
-    if "/" in filename or ".." in filename or "\\" in filename:
-        return False
-    return True
 
 
 def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:

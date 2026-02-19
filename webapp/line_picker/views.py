@@ -5,47 +5,16 @@ from __future__ import annotations
 import io
 import json
 import math
-from pathlib import Path
-
 import numpy as np
 import tifffile
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.frame_utils import LINES_DIR, normalize_array
 from PIL import Image
 
 from .state import from_line_repo, get_state, list_line_map_ids, save_to_line_repo
-
-# DDD repository directory for lines
-_WEBAPP_DIR = Path(__file__).resolve().parent.parent
-_PROJECT_ROOT = _WEBAPP_DIR.parent
-LINES_DIR = _PROJECT_ROOT / "data" / "lines"
-
-
-def normalize_array(arr: np.ndarray) -> np.ndarray:
-    """Normalize array values to 0-255 range for display.
-
-    Args:
-        arr: Input array.
-
-    Returns:
-        Normalized uint8 array.
-    """
-    if arr.dtype == np.uint8:
-        return arr
-
-    # Handle floating point and other types
-    arr = arr.astype(np.float64)
-    min_val = np.nanmin(arr)
-    max_val = np.nanmax(arr)
-
-    if max_val - min_val > 0:
-        arr = (arr - min_val) / (max_val - min_val) * 255
-    else:
-        arr = np.zeros_like(arr)
-
-    return arr.astype(np.uint8)
 
 
 def index(request: HttpRequest) -> HttpResponse:

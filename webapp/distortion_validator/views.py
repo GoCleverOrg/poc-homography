@@ -41,15 +41,14 @@ from homography_web.calibration_utils import (
     resolve_safe_path as _resolve_safe_path,
 )
 from homography_web.frame_utils import (
+    CALIBRATIONS_DIR,
+    WEBAPP_DIR,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
 )
 
-# Paths
-WEBAPP_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = WEBAPP_DIR.parent
-CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
+# Paths (unique to this app — shared paths imported from frame_utils above)
 SURVEY_DIR = WEBAPP_DIR / "survey"
 RESULT_IMAGE_DIR = WEBAPP_DIR / "distortion_validator" / "_result_images"
 

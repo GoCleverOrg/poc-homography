@@ -35,11 +35,9 @@ from homography_web.calibration_utils import (
     save_calibration_to_repo,
     serialize_calibration_entry,
 )
+from homography_web.frame_utils import CALIBRATIONS_DIR, PROJECT_ROOT
 
-# Paths
-WEBAPP_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = WEBAPP_DIR.parent
-CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
+# Paths (unique to this app — shared paths imported from frame_utils above)
 CALIBRATION_LINE_TRACES_DIR = PROJECT_ROOT / "data" / "calibration_line_traces"
 
 logger = logging.getLogger(__name__)

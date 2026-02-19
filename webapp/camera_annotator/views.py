@@ -11,11 +11,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     ANNOTATIONS_DIR,
+    DEFAULT_MAP_ID,
     GCPS_DIR,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
     load_annotations_for_frame,
+    validate_image_filename,
 )
 
 # Session key for current image
@@ -46,7 +48,7 @@ def load_gcps() -> list[dict]:
     from poc_homography.map_points.gcp_registry import from_gcp_repo
 
     try:
-        registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
+        registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
     except (KeyError, ValueError, OSError):
         return []
 
@@ -129,19 +131,6 @@ def save_annotations_to_repo(
             ),
         )
         repo.save(annotation)
-
-
-def validate_image_filename(filename: str) -> bool:
-    """Validate filename to prevent path traversal attacks.
-
-    Returns True if filename is valid, False otherwise.
-    """
-    if not filename:
-        return False
-    # Security: Reject paths containing directory traversal or path separators
-    if "/" in filename or ".." in filename or "\\" in filename:
-        return False
-    return True
 
 
 def index(request: HttpRequest) -> HttpResponse:

@@ -212,11 +212,6 @@ _.ready  # unused method (webapp/point_picker/apps.py:15)
 app_name  # unused variable (webapp/point_picker/urls.py:7)
 urlpatterns  # unused variable (webapp/point_picker/urls.py:9)
 DATA_DIR  # unused variable (webapp/homography_web/settings.py:19)
-_.load_registry  # unused method (webapp/point_picker/state.py) - used by tests
-_.save_registry  # unused method (webapp/point_picker/state.py) - used by tests
-get_cached_calibration_table  # unused function (webapp/homography_web/calibration_utils.py) - used by apps
 invalidate_cache  # unused function (webapp/homography_web/frame_utils.py) - public API
-_.save_lines  # unused method (webapp/line_picker/state.py) - public API
-_.load_lines  # unused method (webapp/line_picker/state.py) - public API
 validate_export_request  # unused function (webapp/line_picker/validation.py) - used by views
 validate_import_request  # unused function (webapp/line_picker/validation.py) - used by views

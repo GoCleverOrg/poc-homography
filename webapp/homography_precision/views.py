@@ -21,6 +21,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
+    DEFAULT_MAP_ID,
     GCPS_DIR,
     LINES_DIR,
     PROJECT_ROOT,
@@ -29,6 +30,7 @@ from homography_web.frame_utils import (
     list_frames,
     load_annotations_for_frame,
     load_line_annotations_for_frame,
+    normalize_array as _normalize_array,
 )
 from homography_web.frame_utils import (
     get_frame_repo as _get_frame_repo,
@@ -40,7 +42,7 @@ from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
-MAP_GEOTIFF_FILE = PROJECT_ROOT / "Cartografia_valencia.tif"
+MAP_GEOTIFF_FILE = PROJECT_ROOT / f"{DEFAULT_MAP_ID}.tif"
 
 # Cached line registry
 _line_registry_cache: list[Line] | None = None
@@ -50,7 +52,7 @@ def _load_line_registry() -> list[Line]:
     """Load and cache line registry from DDD repo."""
     global _line_registry_cache
     if _line_registry_cache is None:
-        _line_registry_cache = from_line_repo(LINES_DIR, "Cartografia_valencia")
+        _line_registry_cache = from_line_repo(LINES_DIR, DEFAULT_MAP_ID)
     return _line_registry_cache
 
 
@@ -68,29 +70,6 @@ class ImageInfoCache(TypedDict):
 _image_info_cache: dict[str, ImageInfoCache] = {}
 
 
-def _normalize_array(arr: np.ndarray) -> np.ndarray:
-    """Normalize array values to 0-255 range for display.
-
-    Args:
-        arr: Input array.
-
-    Returns:
-        Normalized uint8 array.
-    """
-    if arr.dtype == np.uint8:
-        return arr
-
-    # Handle floating point and other types
-    arr = arr.astype(np.float64)
-    min_val = np.nanmin(arr)
-    max_val = np.nanmax(arr)
-
-    if max_val - min_val > 0:
-        arr = (arr - min_val) / (max_val - min_val) * 255
-    else:
-        arr = np.zeros_like(arr)
-
-    return arr.astype(np.uint8)
 
 
 def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, str | None]:
@@ -470,7 +449,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
 
     # Load GCP registry from repository
     try:
-        registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
+        registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -619,7 +598,7 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         {"map_id": "...", "points": {"PS1": {"pixel_x": ..., "pixel_y": ...}, ...}}
     """
     try:
-        registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
+        registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
@@ -721,7 +700,7 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
 
     return JsonResponse(
         {
-            "map_id": "Cartografia_valencia",
+            "map_id": DEFAULT_MAP_ID,
             "lines": [line.to_dict() for line in lines],
         }
     )
@@ -795,7 +774,7 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
 
     # Compute homography from lines
     try:
-        homography = MapPointHomography(map_id="Cartografia_valencia")
+        homography = MapPointHomography(map_id=DEFAULT_MAP_ID)
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
             line_registry=line_registry,
@@ -902,7 +881,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         try:
-            homography = MapPointHomography(map_id="Cartografia_valencia")
+            homography = MapPointHomography(map_id=DEFAULT_MAP_ID)
             line_result = homography.compute_from_lines(
                 line_annotations=line_annotations,
                 line_registry=line_registry,
@@ -949,7 +928,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
         # Load GCP registry from repository
         try:
-            gcp_registry = from_gcp_repo(GCPS_DIR, "Cartografia_valencia")
+            gcp_registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
         except (KeyError, ValueError, OSError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},
