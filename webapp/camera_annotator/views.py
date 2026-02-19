@@ -23,6 +23,19 @@ from homography_web.frame_utils import (
 # Session key for current image
 SESSION_IMAGE_KEY = "camera_annotator_image"
 
+# Cached annotation repo
+_annotation_repo = None
+
+
+def _get_annotation_repo():
+    """Return a cached RepoYamlAnnotation instance."""
+    global _annotation_repo
+    if _annotation_repo is None:
+        from poc_homography.infrastructure.repositories import RepoYamlAnnotation
+
+        _annotation_repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
+    return _annotation_repo
+
 
 def get_available_images() -> list[str]:
     """Return available image filenames from the CapturedFrame repo."""
@@ -80,23 +93,18 @@ def load_annotations_from_repo(image_filename: str) -> list[dict]:
     Returns:
         List of annotation dicts in legacy format (gcp_id, pixel_x, pixel_y).
     """
-    from poc_homography.infrastructure.repositories import RepoYamlAnnotation
-
     frame = image_filename_to_frame(image_filename)
     if frame is None:
         return []
 
-    repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
-    all_annotations = repo.get_all()
-
+    repo = _get_annotation_repo()
     return [
         {
             "gcp_id": ann.gcp_id,
             "pixel_x": round(float(ann.pixel.x), 1),
             "pixel_y": round(float(ann.pixel.y), 1),
         }
-        for ann in all_annotations
-        if ann.frame_id == frame.id
+        for ann in repo.get_by_frame_id(frame.id)
     ]
 
 
@@ -112,13 +120,12 @@ def save_annotations_to_repo(
     """
     from poc_homography.domain.entities.annotation import Annotation
     from poc_homography.domain.vo import PixelPoint
-    from poc_homography.infrastructure.repositories import RepoYamlAnnotation
 
     frame = image_filename_to_frame(image_filename)
     if frame is None:
         return
 
-    repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
+    repo = _get_annotation_repo()
 
     for ann_dict in annotations:
         annotation = Annotation(

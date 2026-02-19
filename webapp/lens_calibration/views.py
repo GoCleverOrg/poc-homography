@@ -35,12 +35,24 @@ from homography_web.calibration_utils import (
     save_calibration_to_repo,
     serialize_calibration_entry,
 )
-from homography_web.frame_utils import CALIBRATIONS_DIR, PROJECT_ROOT
-
-# Paths (unique to this app — shared paths imported from frame_utils above)
-CALIBRATION_LINE_TRACES_DIR = PROJECT_ROOT / "data" / "calibration_line_traces"
+from homography_web.frame_utils import CALIBRATION_LINE_TRACES_DIR, CALIBRATIONS_DIR
 
 logger = logging.getLogger(__name__)
+
+# Cached repo
+_line_trace_set_repo = None
+
+
+def _get_line_trace_set_repo():
+    """Return a cached RepoYamlCalibrationLineTraceSet instance."""
+    global _line_trace_set_repo
+    if _line_trace_set_repo is None:
+        from poc_homography.infrastructure.repositories import (
+            RepoYamlCalibrationLineTraceSet,
+        )
+
+        _line_trace_set_repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
+    return _line_trace_set_repo
 
 
 # ---------------------------------------------------------------------------
@@ -416,12 +428,8 @@ def api_calibration_ids(request: HttpRequest) -> JsonResponse:
 @require_GET
 def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
     """List available CalibrationLineTraceSet entity names."""
-    from poc_homography.infrastructure.repositories import (
-        RepoYamlCalibrationLineTraceSet,
-    )
-
     try:
-        repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
+        repo = _get_line_trace_set_repo()
         entities = repo.get_all()
         names = sorted(e.name for e in entities)
         return JsonResponse({"names": names})
@@ -433,16 +441,12 @@ def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
 @require_GET
 def api_line_trace_set_detail(request: HttpRequest) -> JsonResponse:
     """Load a CalibrationLineTraceSet by name and return its line traces."""
-    from poc_homography.infrastructure.repositories import (
-        RepoYamlCalibrationLineTraceSet,
-    )
-
     name = request.GET.get("name", "")
     if not name:
         return JsonResponse({"error": "Missing name"}, status=400)
 
     try:
-        repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
+        repo = _get_line_trace_set_repo()
         entity = repo.get(name)
         if entity is None:
             return JsonResponse({"error": f"Not found: {name}"}, status=404)

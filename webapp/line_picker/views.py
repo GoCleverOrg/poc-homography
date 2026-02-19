@@ -30,8 +30,8 @@ def api_image_info(request: HttpRequest) -> JsonResponse:
         {
             "width": state.width,
             "height": state.height,
-            "geotransform": state.geotransform,
-            "crs": state.crs,
+            "geotransform": state.geotiff.geotransform.to_list() if state.geotiff else None,
+            "crs": state.geotiff.crs if state.geotiff else None,
             "filename": state.geotiff_path.name,
         }
     )
@@ -352,7 +352,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid coordinate parameters"}, status=400)
 
-    if state.geotransform is None:
+    if state.geotiff is None:
         return JsonResponse(
             {
                 "easting": None,
@@ -362,16 +362,13 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
             }
         )
 
-    # Apply geotransform: [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height]
-    gt = state.geotransform
-    easting = gt[0] + pixel_x * gt[1] + pixel_y * gt[2]
-    northing = gt[3] + pixel_x * gt[4] + pixel_y * gt[5]
+    easting, northing = state.geotiff.pixel_to_geo(pixel_x, pixel_y)
 
     return JsonResponse(
         {
-            "easting": easting,
-            "northing": northing,
-            "crs": state.crs,
+            "easting": float(easting),
+            "northing": float(northing),
+            "crs": state.geotiff.crs,
         }
     )
 

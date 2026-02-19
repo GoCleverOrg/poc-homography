@@ -4,85 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path  # noqa: TC003 - used at runtime
+from typing import TYPE_CHECKING
 
 import tifffile
 from PIL import Image
 
+from poc_homography.infrastructure.repositories import RepoYamlLine
 
-def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, str | None]:
-    """Extract GeoTIFF geotransform and CRS info from TIFF tags.
-
-    Args:
-        tif: Open tifffile TiffFile object.
-
-    Returns:
-        Tuple of (geotransform, crs_string).
-        geotransform is 6-element list [origin_x, pixel_width, rotation_x, origin_y, rotation_y, pixel_height]
-        or None if not available.
-    """
-    page = tif.pages[0]
-    # type: ignore needed because tifffile types are incomplete
-    tags = {tag.name: tag for tag in page.tags.values()}  # type: ignore[union-attr]
-
-    geotransform = None
-    crs = None
-
-    # Try to extract GeoTIFF metadata
-    if "ModelPixelScaleTag" in tags and "ModelTiepointTag" in tags:
-        # Common GeoTIFF format: pixel scale + tiepoint
-        try:
-            scale = tags["ModelPixelScaleTag"].value
-            tiepoint = tags["ModelTiepointTag"].value
-
-            # GDAL-style geotransform: [originX, pixelWidth, rotationX, originY, rotationY, pixelHeight]
-            # tiepoint = [I, J, K, X, Y, Z] where (I,J,K) is pixel coord and (X,Y,Z) is map coord
-            origin_x = tiepoint[3] - tiepoint[0] * scale[0]
-            origin_y = tiepoint[4] + tiepoint[1] * scale[1]
-
-            geotransform = [
-                float(origin_x),  # GT[0]: origin X
-                float(scale[0]),  # GT[1]: pixel width
-                0.0,  # GT[2]: rotation (typically 0)
-                float(origin_y),  # GT[3]: origin Y
-                0.0,  # GT[4]: rotation (typically 0)
-                -float(scale[1]),  # GT[5]: pixel height (negative for north-up)
-            ]
-        except (IndexError, TypeError, ValueError):
-            pass
-
-    elif "ModelTransformationTag" in tags:
-        # Alternative: 4x4 transformation matrix
-        try:
-            matrix = tags["ModelTransformationTag"].value
-            geotransform = [
-                float(matrix[3]),  # origin X
-                float(matrix[0]),  # pixel width
-                float(matrix[1]),  # rotation
-                float(matrix[7]),  # origin Y
-                float(matrix[4]),  # rotation
-                float(matrix[5]),  # pixel height
-            ]
-        except (IndexError, TypeError, ValueError):
-            pass
-
-    # Try to get CRS info from GeoKeyDirectoryTag
-    if "GeoKeyDirectoryTag" in tags:
-        try:
-            geo_keys = tags["GeoKeyDirectoryTag"].value
-            # Look for ProjectedCSTypeGeoKey (3072) or GeographicTypeGeoKey (2048)
-            for i in range(4, len(geo_keys), 4):
-                key_id = geo_keys[i]
-                if key_id == 3072:  # ProjectedCSTypeGeoKey
-                    epsg = geo_keys[i + 3]
-                    crs = f"EPSG:{epsg}"
-                    break
-                elif key_id == 2048:  # GeographicTypeGeoKey
-                    epsg = geo_keys[i + 3]
-                    crs = f"EPSG:{epsg}"
-        except (IndexError, TypeError, ValueError):
-            pass
-
-    return geotransform, crs
+if TYPE_CHECKING:
+    from poc_homography.domain.vo.geotiff import GeoTiff
 
 
 @dataclass
@@ -129,16 +59,14 @@ class LinePickerState:
         self,
         image_path: Path,
         map_id: str,
-        geotransform: list[float] | None = None,
-        crs: str | None = None,
+        geotiff: GeoTiff | None = None,
     ) -> None:
         """Initialize state with image file and map identifier.
 
         Args:
             image_path: Path to the map image file (PNG, TIFF, etc.).
             map_id: Map identifier for tagging saved line files.
-            geotransform: Optional 6-parameter geotransform [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height].
-            crs: Optional CRS string (e.g., "EPSG:25830").
+            geotiff: Optional GeoTiff VO with geotransform and CRS.
         """
         self.geotiff_path = image_path  # Keep name for compatibility
         self.map_id = map_id
@@ -147,28 +75,22 @@ class LinePickerState:
         # Detect file type and load accordingly
         suffix = image_path.suffix.lower()
         if suffix in (".tif", ".tiff"):
-            # Load TIFF metadata using tifffile
             with tifffile.TiffFile(image_path) as tif:
                 page = tif.pages[0]
                 # type: ignore needed because tifffile types are incomplete
                 self.width: int = page.imagewidth  # type: ignore[union-attr]
                 self.height: int = page.imagelength  # type: ignore[union-attr]
 
-                # Extract geotransform and CRS from TIFF if not provided
-                if geotransform is None or crs is None:
-                    tiff_gt, tiff_crs = _extract_geotransform(tif)
-                    if geotransform is None:
-                        geotransform = tiff_gt
-                    if crs is None:
-                        crs = tiff_crs
+                if geotiff is None:
+                    from homography_web.frame_utils import extract_geotiff
+
+                    geotiff = extract_geotiff(tif)
         else:
-            # Load other image formats (PNG, JPG, etc.) using PIL
             with Image.open(image_path) as img:
                 self.width = img.width
                 self.height = img.height
 
-        self.geotransform = geotransform
-        self.crs = crs
+        self.geotiff = geotiff
 
     def get_next_id(self) -> str:
         """Get the next auto-incremented line ID.
@@ -268,24 +190,21 @@ _state: LinePickerState | None = None
 def initialize_state(
     image_path: Path,
     map_id: str,
-    geotransform: list[float] | None = None,
-    crs: str | None = None,
+    geotiff: GeoTiff | None = None,
 ) -> None:
     """Initialize the module-level state.
 
     Args:
         image_path: Path to the map image file (PNG, TIFF, etc.).
         map_id: Map identifier for tagging saved line files.
-        geotransform: Optional 6-parameter geotransform.
-        crs: Optional CRS string (e.g., "EPSG:25830").
+        geotiff: Optional GeoTiff VO with geotransform and CRS.
     """
     global _state
 
     _state = LinePickerState(
         image_path,
         map_id,
-        geotransform=geotransform,
-        crs=crs,
+        geotiff=geotiff,
     )
 
 
@@ -307,6 +226,16 @@ def get_state() -> LinePickerState:
 # Repository adapter functions (bridge legacy Line <-> DDD repos)
 # ---------------------------------------------------------------------------
 
+_line_repo_cache: dict[str, RepoYamlLine] = {}
+
+
+def _get_line_repo(data_dir: Path) -> RepoYamlLine:
+    """Return a cached RepoYamlLine for *data_dir*."""
+    key = str(data_dir)
+    if key not in _line_repo_cache:
+        _line_repo_cache[key] = RepoYamlLine(data_dir)
+    return _line_repo_cache[key]
+
 
 def from_line_repo(data_dir: Path, map_id: str) -> list[Line]:
     """Load lines from the DDD ``RepoYamlLine`` repository.
@@ -318,10 +247,7 @@ def from_line_repo(data_dir: Path, map_id: str) -> list[Line]:
     Returns:
         List of legacy Line objects for the given map.
     """
-    from poc_homography.infrastructure.repositories import RepoYamlLine
-
-    repo = RepoYamlLine(data_dir)
-    all_lines = repo.get_all()
+    repo = _get_line_repo(data_dir)
 
     return [
         Line(
@@ -331,8 +257,7 @@ def from_line_repo(data_dir: Path, map_id: str) -> list[Line]:
             end_x=float(dl.end.x),
             end_y=float(dl.end.y),
         )
-        for dl in all_lines
-        if dl.map_id == map_id
+        for dl in repo.get_by_map_id(map_id)
     ]
 
 
@@ -349,9 +274,8 @@ def save_to_line_repo(lines: list[Line], map_id: str, data_dir: Path) -> None:
     """
     from poc_homography.domain.entities.line import Line as DomainLine
     from poc_homography.domain.vo.pixel_point import PixelPoint
-    from poc_homography.infrastructure.repositories import RepoYamlLine
 
-    repo = RepoYamlLine(data_dir)
+    repo = _get_line_repo(data_dir)
     for line in lines:
         domain_line = DomainLine(
             name=line.line_id,
@@ -371,8 +295,6 @@ def list_line_map_ids(data_dir: Path) -> list[str]:
     Returns:
         Sorted list of unique map_id strings.
     """
-    from poc_homography.infrastructure.repositories import RepoYamlLine
-
-    repo = RepoYamlLine(data_dir)
+    repo = _get_line_repo(data_dir)
     all_lines = repo.get_all()
     return sorted({line.map_id for line in all_lines})

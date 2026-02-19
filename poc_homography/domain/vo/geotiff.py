@@ -35,6 +35,17 @@ class GeoTransform:
     col_rotation: Unitless
     pixel_height: Meters
 
+    def to_list(self) -> list[float]:
+        """Return as GDAL-style 6-element list [GT0..GT5]."""
+        return [
+            float(self.origin_easting),
+            float(self.pixel_width),
+            float(self.row_rotation),
+            float(self.origin_northing),
+            float(self.col_rotation),
+            float(self.pixel_height),
+        ]
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {

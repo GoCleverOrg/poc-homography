@@ -11,24 +11,10 @@ from collections.abc import Generator
 
 import cv2
 
+from camera_diagnostic.services import create_rtsp_capture
 from poc_homography.camera_config import get_rtsp_url
 
 logger = logging.getLogger(__name__)
-
-# =============================================================================
-# MJPEG Streaming Service (for video preview)
-# =============================================================================
-
-RTSP_CONNECTION_TIMEOUT_SEC = 10
-
-
-def create_rtsp_capture(rtsp_url: str) -> cv2.VideoCapture:
-    """Create an OpenCV VideoCapture with RTSP-optimized settings."""
-    cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, RTSP_CONNECTION_TIMEOUT_SEC * 1000)
-    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, RTSP_CONNECTION_TIMEOUT_SEC * 1000)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    return cap
 
 
 def generate_mjpeg_frames(camera_id: str) -> Generator[bytes, None, None]:

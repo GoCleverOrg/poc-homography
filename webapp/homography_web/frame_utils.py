@@ -12,12 +12,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import tifffile
 from numpy.typing import NDArray
 
+from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.infrastructure.repositories import (
     RepoYamlCapturedFrame,
     RepoYamlLineAnnotation,
 )
+from poc_homography.types import Easting, Meters, Northing, Unitless
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.captured_frame import CapturedFrame
@@ -31,6 +34,7 @@ GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
 LINES_DIR = PROJECT_ROOT / "data" / "lines"
 CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
+CALIBRATION_LINE_TRACES_DIR = PROJECT_ROOT / "data" / "calibration_line_traces"
 
 # ---------------------------------------------------------------------------
 # Filename validation helpers
@@ -69,6 +73,74 @@ def normalize_array(arr: NDArray) -> NDArray[np.uint8]:
         arr = np.zeros_like(arr)
 
     return arr.astype(np.uint8)
+
+
+def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
+    """Extract GeoTiff VO from TIFF tags.
+
+    Args:
+        tif: Open tifffile TiffFile object.
+
+    Returns:
+        GeoTiff value object, or None if metadata not available.
+    """
+    page = tif.pages[0]
+    # type: ignore needed because tifffile types are incomplete
+    tags = {tag.name: tag for tag in page.tags.values()}  # type: ignore[union-attr]
+
+    gt_params: list[float] | None = None
+    crs: str | None = None
+
+    if "ModelPixelScaleTag" in tags and "ModelTiepointTag" in tags:
+        try:
+            scale = tags["ModelPixelScaleTag"].value
+            tiepoint = tags["ModelTiepointTag"].value
+
+            origin_x = tiepoint[3] - tiepoint[0] * scale[0]
+            origin_y = tiepoint[4] + tiepoint[1] * scale[1]
+
+            gt_params = [
+                float(origin_x), float(scale[0]), 0.0,
+                float(origin_y), 0.0, -float(scale[1]),
+            ]
+        except (IndexError, TypeError, ValueError):
+            pass
+
+    elif "ModelTransformationTag" in tags:
+        try:
+            matrix = tags["ModelTransformationTag"].value
+            gt_params = [
+                float(matrix[3]), float(matrix[0]), float(matrix[1]),
+                float(matrix[7]), float(matrix[4]), float(matrix[5]),
+            ]
+        except (IndexError, TypeError, ValueError):
+            pass
+
+    if "GeoKeyDirectoryTag" in tags:
+        try:
+            geo_keys = tags["GeoKeyDirectoryTag"].value
+            for i in range(4, len(geo_keys), 4):
+                key_id = geo_keys[i]
+                if key_id in (3072, 2048):
+                    crs = f"EPSG:{geo_keys[i + 3]}"
+                    break
+        except (IndexError, TypeError, ValueError):
+            pass
+
+    if gt_params is None or crs is None:
+        return None
+
+    return GeoTiff(
+        geotransform=GeoTransform(
+            origin_easting=Easting(gt_params[0]),
+            pixel_width=Meters(gt_params[1]),
+            row_rotation=Unitless(gt_params[2]),
+            origin_northing=Northing(gt_params[3]),
+            col_rotation=Unitless(gt_params[4]),
+            pixel_height=Meters(gt_params[5]),
+        ),
+        crs=crs,
+    )
 
 
 # Default map identifier used across all webapp apps.

@@ -25,6 +25,7 @@ from homography_web.frame_utils import (
     GCPS_DIR,
     LINES_DIR,
     PROJECT_ROOT,
+    extract_geotiff,
     get_frame_image_path,
     image_filename_to_frame,
     list_frames,
@@ -70,82 +71,6 @@ class ImageInfoCache(TypedDict):
 _image_info_cache: dict[str, ImageInfoCache] = {}
 
 
-
-
-def _extract_geotransform(tif: tifffile.TiffFile) -> tuple[list[float] | None, str | None]:
-    """Extract GeoTIFF geotransform and CRS info from TIFF tags.
-
-    Args:
-        tif: Open tifffile TiffFile object.
-
-    Returns:
-        Tuple of (geotransform, crs_string).
-        geotransform is 6-element list [origin_x, pixel_width, rotation_x, origin_y, rotation_y, pixel_height]
-        or None if not available.
-    """
-    page = tif.pages[0]
-    # type: ignore needed because tifffile types are incomplete
-    tags = {tag.name: tag for tag in page.tags.values()}  # type: ignore[union-attr]
-
-    geotransform = None
-    crs = None
-
-    # Try to extract GeoTIFF metadata
-    if "ModelPixelScaleTag" in tags and "ModelTiepointTag" in tags:
-        # Common GeoTIFF format: pixel scale + tiepoint
-        try:
-            scale = tags["ModelPixelScaleTag"].value
-            tiepoint = tags["ModelTiepointTag"].value
-
-            # GDAL-style geotransform: [originX, pixelWidth, rotationX, originY, rotationY, pixelHeight]
-            # tiepoint = [I, J, K, X, Y, Z] where (I,J,K) is pixel coord and (X,Y,Z) is map coord
-            origin_x = tiepoint[3] - tiepoint[0] * scale[0]
-            origin_y = tiepoint[4] + tiepoint[1] * scale[1]
-
-            geotransform = [
-                float(origin_x),  # GT[0]: origin X
-                float(scale[0]),  # GT[1]: pixel width
-                0.0,  # GT[2]: rotation (typically 0)
-                float(origin_y),  # GT[3]: origin Y
-                0.0,  # GT[4]: rotation (typically 0)
-                -float(scale[1]),  # GT[5]: pixel height (negative for north-up)
-            ]
-        except (IndexError, TypeError, ValueError):
-            pass
-
-    elif "ModelTransformationTag" in tags:
-        # Alternative: 4x4 transformation matrix
-        try:
-            matrix = tags["ModelTransformationTag"].value
-            geotransform = [
-                float(matrix[3]),  # origin X
-                float(matrix[0]),  # pixel width
-                float(matrix[1]),  # rotation
-                float(matrix[7]),  # origin Y
-                float(matrix[4]),  # rotation
-                float(matrix[5]),  # pixel height
-            ]
-        except (IndexError, TypeError, ValueError):
-            pass
-
-    # Try to get CRS info from GeoKeyDirectoryTag
-    if "GeoKeyDirectoryTag" in tags:
-        try:
-            geo_keys = tags["GeoKeyDirectoryTag"].value
-            # Look for ProjectedCSTypeGeoKey (3072) or GeographicTypeGeoKey (2048)
-            for i in range(4, len(geo_keys), 4):
-                key_id = geo_keys[i]
-                if key_id == 3072:  # ProjectedCSTypeGeoKey
-                    epsg = geo_keys[i + 3]
-                    crs = f"EPSG:{epsg}"
-                    break
-                elif key_id == 2048:  # GeographicTypeGeoKey
-                    epsg = geo_keys[i + 3]
-                    crs = f"EPSG:{epsg}"
-        except (IndexError, TypeError, ValueError):
-            pass
-
-    return geotransform, crs
 
 
 def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
@@ -249,14 +174,14 @@ def _get_map_info() -> ImageInfoCache | None:
         page = tif.pages[0]
         width: int = page.imagewidth  # type: ignore[union-attr]
         height: int = page.imagelength  # type: ignore[union-attr]
-        geotransform, crs = _extract_geotransform(tif)
+        geotiff = extract_geotiff(tif)
 
         info: ImageInfoCache = {
             "width": width,
             "height": height,
             "filename": MAP_GEOTIFF_FILE.name,
-            "geotransform": geotransform,
-            "crs": crs,
+            "geotransform": geotiff.geotransform.to_list() if geotiff else None,
+            "crs": geotiff.crs if geotiff else None,
         }
 
     _image_info_cache[cache_key] = info

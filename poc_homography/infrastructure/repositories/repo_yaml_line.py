@@ -11,3 +11,13 @@ class RepoYamlLine(RepoYaml[Line], MixinRepoMapFilter):
 
     def __init__(self, data_dir: Path) -> None:
         super().__init__(data_dir, Line)
+
+    def get_by_map_id(self, map_id: str) -> list[Line]:
+        """Return lines for a specific map using prefix-based glob."""
+        prefix = map_id.replace(self._id_sep, self._filename_sep)
+        results: list[Line] = []
+        for path in self._data_dir.glob(f"{prefix}{self._filename_sep}*.yaml"):
+            entity = self.get(self._path_to_id(path))
+            if entity:
+                results.append(entity)
+        return results

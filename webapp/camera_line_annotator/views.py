@@ -24,8 +24,19 @@ from homography_web.frame_utils import (
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
 SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 
-# Lines registry cache
+# Cached repos
 _lines_registry_data: dict | None = None
+_line_annotation_repo = None
+
+
+def _get_line_annotation_repo():
+    """Return a cached RepoYamlLineAnnotation instance."""
+    global _line_annotation_repo
+    if _line_annotation_repo is None:
+        from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
+
+        _line_annotation_repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
+    return _line_annotation_repo
 
 
 def load_lines_registry() -> dict:
@@ -107,13 +118,12 @@ def _save_line_annotations_to_repo(
     """
     from poc_homography.domain.entities.line_annotation import LineAnnotation
     from poc_homography.domain.vo import PixelPoint
-    from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
 
     frame = image_filename_to_frame(image_filename)
     if frame is None:
         return
 
-    repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
+    repo = _get_line_annotation_repo()
 
     for ann_dict in annotations:
         raw_points = ann_dict.get("points")
