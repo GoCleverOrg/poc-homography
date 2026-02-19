@@ -118,6 +118,8 @@ class RepoYamlCapturedFrame:
         entities = []
         # Walk through map_id/camera_name/ subdirectories
         for yaml_path in self._data_dir.glob("*/*/*.yaml"):
+            if yaml_path.stem.endswith("_annotations"):
+                continue
             entity_id = self._path_to_id(yaml_path)
             entity = self.get(entity_id)
             if entity:
@@ -139,6 +141,8 @@ class RepoYamlCapturedFrame:
 
         entities = []
         for yaml_path in map_dir.glob("*/*.yaml"):
+            if yaml_path.stem.endswith("_annotations"):
+                continue
             entity_id = self._path_to_id(yaml_path)
             entity = self.get(entity_id)
             if entity:
@@ -167,6 +171,8 @@ class RepoYamlCapturedFrame:
 
         entities = []
         for yaml_path in camera_dir.glob("*.yaml"):
+            if yaml_path.stem.endswith("_annotations"):
+                continue
             entity_id = self._path_to_id(yaml_path)
             entity = self.get(entity_id)
             if entity:

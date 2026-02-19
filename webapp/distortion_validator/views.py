@@ -37,12 +37,16 @@ from homography_web.calibration_utils import (
 from homography_web.calibration_utils import (
     resolve_safe_path as _resolve_safe_path,
 )
+from homography_web.frame_utils import (
+    get_frame_image_path,
+    image_filename_to_frame,
+    list_image_filenames,
+)
 
 # Paths
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 CALIBRATIONS_DIR = PROJECT_ROOT / "data" / "lens_calibrations"
-TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
 SURVEY_DIR = WEBAPP_DIR / "survey"
 RESULT_IMAGE_DIR = WEBAPP_DIR / "distortion_validator" / "_result_images"
 
@@ -111,16 +115,16 @@ def api_load_calibration(request: HttpRequest) -> JsonResponse:
 def api_images(request: HttpRequest) -> JsonResponse:
     """List available test images."""
     try:
-        images = []
+        images: list[dict[str, str]] = []
 
-        if TEST_DATA_DIR.exists():
-            for ext in ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]:
-                for f in sorted(TEST_DATA_DIR.glob(ext)):
-                    images.append({
-                        "name": f.name,
-                        "source": "test_data",
-                    })
+        # Images from captured-frame repo
+        for filename in list_image_filenames():
+            images.append({
+                "name": filename,
+                "source": "captured_frame",
+            })
 
+        # Survey images (operational, not test data)
         if SURVEY_DIR.exists():
             for date_dir in sorted(SURVEY_DIR.iterdir(), reverse=True):
                 if not date_dir.is_dir():
@@ -143,13 +147,14 @@ def api_images(request: HttpRequest) -> JsonResponse:
 
 def _resolve_image_path(image_path: str) -> Path | None:
     """Resolve an image path safely against known directories."""
-    # Try as filename within TEST_DATA_DIR
-    resolved = _resolve_safe_path(image_path, TEST_DATA_DIR)
-    if resolved is not None and resolved.exists():
-        return resolved
+    # Try as filename in the CapturedFrame repo
+    frame = image_filename_to_frame(image_path)
+    if frame is not None:
+        fp = get_frame_image_path(frame)
+        if fp.exists():
+            return fp
 
     # Try as relative path under SURVEY_DIR (e.g. "survey/2024-01-01/session/img.jpg")
-    # Strip leading "survey/" prefix if present
     survey_rel = image_path
     if survey_rel.startswith("survey/"):
         survey_rel = survey_rel[len("survey/"):]

@@ -14,25 +14,43 @@ from typing import TypedDict
 
 import numpy as np
 import tifffile
-import yaml
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.frame_utils import (
+    LINES_DIR,
+    get_frame_image_path,
+    image_filename_to_frame,
+    list_frames,
+    load_annotations_for_frame,
+    load_line_annotations_for_frame,
+)
+from homography_web.frame_utils import (
+    get_frame_repo as _get_frame_repo,
+)
+from line_picker.state import Line, from_line_repo
 from PIL import Image
 
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
-# Test data paths (relative to project root)
+# Paths (relative to project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
-ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
-LINE_ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_line_annotations.yaml"
-LINE_REGISTRY_FILE = TEST_DATA_DIR / "Cartografia_valencia_lines.yaml"
 MAP_GEOTIFF_FILE = PROJECT_ROOT / "Cartografia_valencia.tif"
+
+# Cached line registry
+_line_registry_cache: list[Line] | None = None
+
+
+def _load_line_registry() -> list[Line]:
+    """Load and cache line registry from DDD repo."""
+    global _line_registry_cache
+    if _line_registry_cache is None:
+        _line_registry_cache = from_line_repo(LINES_DIR, "Cartografia_valencia")
+    return _line_registry_cache
 
 
 # Cache for image dimensions to avoid repeatedly opening files
@@ -197,7 +215,10 @@ def _get_camera_image_path(test_case_name: str) -> Path | None:
     if not image_filename:
         return None
 
-    return TEST_DATA_DIR / image_filename
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
+        return None
+    return get_frame_image_path(frame)
 
 
 def _get_camera_info(test_case_name: str) -> ImageInfoCache | None:
@@ -282,35 +303,21 @@ def api_test_cases(request: HttpRequest) -> JsonResponse:
         JSON with list of test cases:
         {"test_cases": [{"name": "...", "image": "...", "annotation_count": N}, ...]}
     """
-    if not ANNOTATIONS_FILE.exists():
-        return JsonResponse(
-            {"error": f"Annotations file not found: {ANNOTATIONS_FILE}"},
-            status=404,
-        )
+    repo = _get_frame_repo()
+    frames = list_frames()
+    if not frames:
+        return JsonResponse({"error": "No captured frames found"}, status=404)
 
-    try:
-        with open(ANNOTATIONS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"error": f"Failed to parse annotations YAML: {e}"},
-            status=500,
-        )
-
-    if not data or "test_cases" not in data:
-        return JsonResponse(
-            {"error": "No test_cases found in annotations file"},
-            status=404,
-        )
-
-    test_cases = [
-        {
-            "name": tc.get("name", ""),
-            "image": tc.get("image", ""),
-            "annotation_count": len(tc.get("annotations", [])),
-        }
-        for tc in data["test_cases"]
-    ]
+    test_cases = []
+    for frame in frames:
+        annotations = repo.get_annotations(frame.id)
+        if not annotations:
+            continue
+        test_cases.append({
+            "name": frame.image_path.stem,
+            "image": frame.image_path.name,
+            "annotation_count": len(annotations),
+        })
 
     return JsonResponse({"test_cases": test_cases})
 
@@ -326,96 +333,89 @@ def api_test_case_detail(request: HttpRequest, name: str) -> JsonResponse:
         JSON with full test case data:
         {"name": "...", "image": "...", "annotations": [{...}, ...]}
     """
-    if not ANNOTATIONS_FILE.exists():
+    tc = _load_test_case_by_name(name)
+    if tc is None:
         return JsonResponse(
-            {"error": f"Annotations file not found: {ANNOTATIONS_FILE}"},
+            {"error": f"Test case not found: {name}"},
             status=404,
         )
-
-    try:
-        with open(ANNOTATIONS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"error": f"Failed to parse annotations YAML: {e}"},
-            status=500,
-        )
-
-    if not data or "test_cases" not in data:
-        return JsonResponse(
-            {"error": "No test_cases found in annotations file"},
-            status=404,
-        )
-
-    for tc in data["test_cases"]:
-        if tc.get("name") == name:
-            return JsonResponse(
-                {
-                    "name": tc.get("name", ""),
-                    "image": tc.get("image", ""),
-                    "annotations": tc.get("annotations", []),
-                }
-            )
 
     return JsonResponse(
-        {"error": f"Test case not found: {name}"},
-        status=404,
+        {
+            "name": tc.get("name", ""),
+            "image": tc.get("image", ""),
+            "annotations": tc.get("annotations", []),
+        }
     )
 
 
 def _load_test_case_by_name(name: str) -> dict | None:
-    """Load a test case by name from the annotations file.
+    """Load a test case by name from the CapturedFrame repo.
+
+    Matches ``name`` against each frame's image stem (filename without extension).
 
     Args:
-        name: Name of the test case to load.
+        name: Name of the test case (image filename stem).
 
     Returns:
-        The test case dictionary if found, None otherwise.
+        Legacy-format test case dict if found, None otherwise.
     """
-    if not ANNOTATIONS_FILE.exists():
-        return None
-
-    try:
-        with open(ANNOTATIONS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError:
-        return None
-
-    if not data or "test_cases" not in data:
-        return None
-
-    for tc in data["test_cases"]:
-        if tc.get("name") == name:
-            return tc
-
+    for frame in list_frames():
+        if frame.image_path.stem != name:
+            continue
+        annotations = load_annotations_for_frame(frame.id)
+        if not annotations:
+            continue
+        tc: dict = {
+            "name": frame.image_path.stem,
+            "image": frame.image_path.name,
+            "annotations": annotations,
+            "camera_status": {
+                "pan": float(frame.ptz_state.pan_raw),
+                "tilt": float(frame.ptz_state.tilt_deg),
+                "zoom": float(frame.ptz_state.zoom),
+            },
+        }
+        return tc
     return None
 
 
 def _load_line_test_case_by_name(name: str) -> dict | None:
-    """Load a line test case by name from the line annotations file.
+    """Load a line test case by name from the DDD repos.
+
+    For line test cases the ``name`` convention is ``{image_stem}_lines``.
+    We strip the ``_lines`` suffix to find the frame, then load line
+    annotations from the LineAnnotation repo.
 
     Args:
-        name: Name of the line test case to load.
+        name: Name of the line test case (e.g. ``valte_102.5_20.7_1_20260115_112639_lines``).
 
     Returns:
-        The line test case dictionary if found, None otherwise.
+        Legacy-format line test case dict if found, None otherwise.
     """
-    if not LINE_ANNOTATIONS_FILE.exists():
-        return None
+    # Strip trailing _lines suffix if present
+    stem = name.removesuffix("_lines") if name.endswith("_lines") else name
 
-    try:
-        with open(LINE_ANNOTATIONS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError:
-        return None
-
-    if not data or "test_cases" not in data:
-        return None
-
-    for tc in data["test_cases"]:
-        if tc.get("name") == name:
-            return tc
-
+    for frame in list_frames():
+        if frame.image_path.stem != stem:
+            continue
+        line_anns = load_line_annotations_for_frame(frame.id)
+        if not line_anns:
+            continue
+        # Find the point-annotations reference (same frame, for point-based homography)
+        point_anns = load_annotations_for_frame(frame.id)
+        point_annotations_ref = frame.image_path.stem if point_anns else ""
+        return {
+            "name": name,
+            "image": frame.image_path.name,
+            "camera_status": {
+                "pan": float(frame.ptz_state.pan_raw),
+                "tilt": float(frame.ptz_state.tilt_deg),
+                "zoom": float(frame.ptz_state.zoom),
+            },
+            "point_annotations_ref": point_annotations_ref,
+            "line_annotations": line_anns,
+        }
     return None
 
 
@@ -648,35 +648,22 @@ def api_line_test_cases(request: HttpRequest) -> JsonResponse:
         JSON with list of line test cases:
         {"test_cases": [{"name": "...", "image": "...", "line_annotation_count": N}, ...]}
     """
-    if not LINE_ANNOTATIONS_FILE.exists():
+    test_cases = []
+    for frame in list_frames():
+        line_anns = load_line_annotations_for_frame(frame.id)
+        if not line_anns:
+            continue
+        test_cases.append({
+            "name": f"{frame.image_path.stem}_lines",
+            "image": frame.image_path.name,
+            "line_annotation_count": len(line_anns),
+        })
+
+    if not test_cases:
         return JsonResponse(
-            {"error": f"Line annotations file not found: {LINE_ANNOTATIONS_FILE}"},
+            {"error": "No frames with line annotations found"},
             status=404,
         )
-
-    try:
-        with open(LINE_ANNOTATIONS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"error": f"Failed to parse line annotations YAML: {e}"},
-            status=500,
-        )
-
-    if not data or "test_cases" not in data:
-        return JsonResponse(
-            {"error": "No test_cases found in line annotations file"},
-            status=404,
-        )
-
-    test_cases = [
-        {
-            "name": tc.get("name", ""),
-            "image": tc.get("image", ""),
-            "line_annotation_count": len(tc.get("line_annotations", [])),
-        }
-        for tc in data["test_cases"]
-    ]
 
     return JsonResponse({"test_cases": test_cases})
 
@@ -692,41 +679,20 @@ def api_line_test_case_detail(request: HttpRequest, name: str) -> JsonResponse:
         JSON with full line test case data including point_annotations_ref:
         {"name": "...", "image": "...", "point_annotations_ref": "...", "line_annotations": [{...}, ...]}
     """
-    if not LINE_ANNOTATIONS_FILE.exists():
+    tc = _load_line_test_case_by_name(name)
+    if tc is None:
         return JsonResponse(
-            {"error": f"Line annotations file not found: {LINE_ANNOTATIONS_FILE}"},
+            {"error": f"Line test case not found: {name}"},
             status=404,
         )
-
-    try:
-        with open(LINE_ANNOTATIONS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"error": f"Failed to parse line annotations YAML: {e}"},
-            status=500,
-        )
-
-    if not data or "test_cases" not in data:
-        return JsonResponse(
-            {"error": "No test_cases found in line annotations file"},
-            status=404,
-        )
-
-    for tc in data["test_cases"]:
-        if tc.get("name") == name:
-            return JsonResponse(
-                {
-                    "name": tc.get("name", ""),
-                    "image": tc.get("image", ""),
-                    "point_annotations_ref": tc.get("point_annotations_ref", ""),
-                    "line_annotations": tc.get("line_annotations", []),
-                }
-            )
 
     return JsonResponse(
-        {"error": f"Line test case not found: {name}"},
-        status=404,
+        {
+            "name": tc.get("name", ""),
+            "image": tc.get("image", ""),
+            "point_annotations_ref": tc.get("point_annotations_ref", ""),
+            "line_annotations": tc.get("line_annotations", []),
+        }
     )
 
 
@@ -741,31 +707,17 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
         JSON with line registry data:
         {"map_id": "...", "lines": [{"line_id": "L1", "start_x": 100.0, "start_y": 200.0, "end_x": 300.0, "end_y": 400.0}, ...]}
     """
-    if not LINE_REGISTRY_FILE.exists():
+    lines = _load_line_registry()
+    if not lines:
         return JsonResponse(
-            {"error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
-            status=404,
-        )
-
-    try:
-        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"error": f"Failed to parse line registry YAML: {e}"},
-            status=500,
-        )
-
-    if not data or "lines" not in data:
-        return JsonResponse(
-            {"error": "No lines found in line registry file"},
+            {"error": "No lines found in line registry"},
             status=404,
         )
 
     return JsonResponse(
         {
-            "map_id": data.get("map_id", ""),
-            "lines": data["lines"],
+            "map_id": "Cartografia_valencia",
+            "lines": [line.to_dict() for line in lines],
         }
     )
 
@@ -826,34 +778,19 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    # Load line registry
-    if not LINE_REGISTRY_FILE.exists():
-        return JsonResponse(
-            {"success": False, "error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
-            status=500,
-        )
-
-    try:
-        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
-            line_registry_data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"success": False, "error": f"Failed to parse line registry YAML: {e}"},
-            status=500,
-        )
-
-    if not line_registry_data or "lines" not in line_registry_data:
+    # Load line registry from DDD repo
+    lines = _load_line_registry()
+    if not lines:
         return JsonResponse(
             {"success": False, "error": "No lines found in line registry"},
             status=500,
         )
 
-    # Create line registry lookup
-    line_registry = {line["line_id"]: line for line in line_registry_data["lines"]}
+    line_registry = {line.line_id: line.to_dict() for line in lines}
 
     # Compute homography from lines
     try:
-        homography = MapPointHomography(map_id=line_registry_data.get("map_id", "unknown"))
+        homography = MapPointHomography(map_id="Cartografia_valencia")
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
             line_registry=line_registry,
@@ -935,30 +872,15 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    # Load line registry (needed for both approaches)
-    if not LINE_REGISTRY_FILE.exists():
-        return JsonResponse(
-            {"success": False, "error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
-            status=500,
-        )
-
-    try:
-        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
-            line_registry_data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"success": False, "error": f"Failed to parse line registry YAML: {e}"},
-            status=500,
-        )
-
-    if not line_registry_data or "lines" not in line_registry_data:
+    # Load line registry from DDD repo (needed for both approaches)
+    lines = _load_line_registry()
+    if not lines:
         return JsonResponse(
             {"success": False, "error": "No lines found in line registry"},
             status=500,
         )
 
-    # Create line registry lookup
-    line_registry = {line["line_id"]: line for line in line_registry_data["lines"]}
+    line_registry = {line.line_id: line.to_dict() for line in lines}
 
     # Compute homography - either from lines or from referenced point annotations
     homography_source = "lines" if use_line_homography else "points"
@@ -975,7 +897,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         try:
-            homography = MapPointHomography(map_id=line_registry_data.get("map_id", "unknown"))
+            homography = MapPointHomography(map_id="Cartografia_valencia")
             line_result = homography.compute_from_lines(
                 line_annotations=line_annotations,
                 line_registry=line_registry,
@@ -1044,32 +966,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
                 status=500,
             )
 
-    # Load line registry
-    if not LINE_REGISTRY_FILE.exists():
-        return JsonResponse(
-            {"success": False, "error": f"Line registry file not found: {LINE_REGISTRY_FILE}"},
-            status=500,
-        )
-
-    try:
-        with open(LINE_REGISTRY_FILE, encoding="utf-8") as f:
-            line_registry_data = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        return JsonResponse(
-            {"success": False, "error": f"Failed to parse line registry YAML: {e}"},
-            status=500,
-        )
-
-    if not line_registry_data or "lines" not in line_registry_data:
-        return JsonResponse(
-            {"success": False, "error": "No lines found in line registry"},
-            status=500,
-        )
-
-    # Create line registry lookup
-    line_registry = {line["line_id"]: line for line in line_registry_data["lines"]}
-
-    # Compute per-line errors
+    # Compute per-line errors (line_registry already loaded above)
     per_line_errors = []
     camera_annotations = []
     camera_reprojected_lines = []

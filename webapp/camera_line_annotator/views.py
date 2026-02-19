@@ -4,59 +4,41 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import os
 import re
 from pathlib import Path
 from typing import Any
 
-import yaml
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.frame_utils import (
+    LINES_DIR,
+    get_frame_image_path,
+    image_filename_to_frame,
+    list_image_filenames,
+)
 
 # Paths relative to webapp directory
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
-TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
-LINES_DIR = PROJECT_ROOT / "data" / "lines"
 LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
-
-# Supported image extensions
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
 SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 
-# Lines registry path (set via environment variable or default)
-_lines_registry_path: Path | None = None
+# Lines registry cache
 _lines_registry_data: dict | None = None
 
 
-def get_lines_registry_path() -> Path | None:
-    """Get the lines registry path from environment variable."""
-    global _lines_registry_path
-    if _lines_registry_path is None:
-        env_path = os.environ.get("LINES_REGISTRY_PATH")
-        if env_path:
-            _lines_registry_path = Path(env_path)
-        else:
-            # Default to Cartografia_valencia_lines.yaml in test data
-            default_path = TEST_DATA_DIR / "Cartografia_valencia_lines.yaml"
-            if default_path.exists():
-                _lines_registry_path = default_path
-    return _lines_registry_path
-
-
 def load_lines_registry() -> dict:
-    """Load and cache lines registry, trying DDD repo first then legacy YAML."""
+    """Load and cache lines registry from the DDD repo."""
     global _lines_registry_data
     if _lines_registry_data is not None:
         return _lines_registry_data
 
-    # Try DDD repository first
-    from webapp.line_picker.state import from_line_repo, list_line_map_ids
+    from line_picker.state import from_line_repo, list_line_map_ids
 
     try:
         map_ids = list_line_map_ids(LINES_DIR)
@@ -69,46 +51,22 @@ def load_lines_registry() -> dict:
                     "lines": [line.to_dict() for line in repo_lines],
                 }
                 return _lines_registry_data
-    except (OSError, ImportError):
+    except OSError:
         pass
 
-    # Fall back to legacy YAML file
-    registry_path = get_lines_registry_path()
-    if registry_path is None or not registry_path.exists():
-        return {"map_id": "", "lines": []}
-
-    with open(registry_path) as f:
-        data = yaml.safe_load(f)
-
-    if not data or not isinstance(data, dict):
-        return {"map_id": "", "lines": []}
-
-    # Validate structure
-    if "map_id" not in data or "lines" not in data:
-        return {"map_id": "", "lines": []}
-
-    _lines_registry_data = data
-    return _lines_registry_data
+    return {"map_id": "", "lines": []}
 
 
 def get_available_images() -> list[str]:
-    """Scan TEST_DATA_DIR for available image files."""
-    if not TEST_DATA_DIR.exists():
-        return []
-
-    images = []
-    for ext in IMAGE_EXTENSIONS:
-        images.extend(f.name for f in TEST_DATA_DIR.glob(f"*{ext}"))
-        images.extend(f.name for f in TEST_DATA_DIR.glob(f"*{ext.upper()}"))
-
-    return sorted(set(images))
+    """Return available image filenames from the CapturedFrame repo."""
+    return list_image_filenames()
 
 
 def get_current_image(request: HttpRequest) -> str | None:
     """Get the current image filename from session, or first available image."""
     session_image = request.session.get(SESSION_IMAGE_KEY)
     if session_image:
-        if (TEST_DATA_DIR / session_image).exists():
+        if image_filename_to_frame(session_image) is not None:
             return session_image
 
     images = get_available_images()
@@ -156,24 +114,30 @@ def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
     """
     from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
 
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
+        return []
+
     try:
         repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
         all_annotations = repo.get_all()
     except OSError:
         return []
 
-    frame_id = image_filename.rsplit(".", 1)[0]
     annotations: list[dict] = []
     for ann in all_annotations:
-        if ann.frame_id != frame_id:
+        if ann.frame_id != frame.id:
             continue
-        annotations.append({
+        entry: dict[str, Any] = {
             "line_id": ann.line_id,
             "start_pixel_x": float(ann.start_pixel.x),
             "start_pixel_y": float(ann.start_pixel.y),
             "end_pixel_x": float(ann.end_pixel.x),
             "end_pixel_y": float(ann.end_pixel.y),
-        })
+        }
+        if ann.points is not None:
+            entry["points"] = [[float(p.x), float(p.y)] for p in ann.points]
+        annotations.append(entry)
     return annotations
 
 
@@ -194,6 +158,10 @@ def _save_line_annotations_to_repo(
     from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
     from poc_homography.types import Degrees, Unitless
 
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
+        return
+
     repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
 
     camera_pose = PTZState(
@@ -202,11 +170,17 @@ def _save_line_annotations_to_repo(
         zoom=Unitless(float(camera_status.get("zoom", 1))),
     )
 
-    frame_id = image_filename.rsplit(".", 1)[0]
     for ann_dict in annotations:
+        raw_points = ann_dict.get("points")
+        points: tuple[PixelPoint, ...] | None = None
+        if raw_points and len(raw_points) >= 2:
+            points = tuple(
+                PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points
+            )
+
         line_ann = LineAnnotation(
             line_id=ann_dict.get("line_id", ""),
-            frame_id=frame_id,
+            frame_id=frame.id,
             camera_pose=camera_pose,
             start_pixel=PixelPoint.create(
                 float(ann_dict.get("start_pixel_x", 0)),
@@ -216,82 +190,14 @@ def _save_line_annotations_to_repo(
                 float(ann_dict.get("end_pixel_x", 0)),
                 float(ann_dict.get("end_pixel_y", 0)),
             ),
+            points=points,
         )
         repo.save(line_ann)
 
 
 def load_existing_line_annotations(image_filename: str) -> list[dict]:
-    """Load existing line annotations for a specific image.
-
-    Tries the DDD ``RepoYamlLineAnnotation`` first, then falls back to
-    searching ``*_line_annotations.yaml`` files in TEST_DATA_DIR.
-
-    Returns the annotations normalised to the internal annotation format.
-    """
-    # Try DDD repository first
-    repo_annotations = _load_line_annotations_from_repo(image_filename)
-    if repo_annotations:
-        return repo_annotations
-
-    # Fall back to legacy YAML files
-    if not TEST_DATA_DIR.exists():
-        return []
-
-    base_name = image_filename.rsplit(".", 1)[0]
-    per_image_file = TEST_DATA_DIR / f"{base_name}_line_annotations.yaml"
-
-    # Ordered candidates: per-image file first, then everything else
-    candidates: list[Path] = []
-    if per_image_file.exists():
-        candidates.append(per_image_file)
-    for p in sorted(TEST_DATA_DIR.glob("*_line_annotations.yaml")):
-        if p not in candidates:
-            candidates.append(p)
-
-    for yaml_path in candidates:
-        try:
-            with open(yaml_path) as f:
-                data = yaml.safe_load(f)
-        except (yaml.YAMLError, OSError):
-            continue
-
-        if not data or not isinstance(data, dict):
-            continue
-
-        for tc in data.get("test_cases", []):
-            if tc.get("image") != image_filename:
-                continue
-
-            raw = tc.get("line_annotations", [])
-            annotations: list[dict] = []
-            for ann in raw:
-                if "points" in ann:
-                    points = ann["points"]
-                    if len(points) >= 2:
-                        annotations.append({
-                            "line_id": ann.get("line_id", ""),
-                            "start_pixel_x": float(points[0][0]),
-                            "start_pixel_y": float(points[0][1]),
-                            "end_pixel_x": float(points[-1][0]),
-                            "end_pixel_y": float(points[-1][1]),
-                            "points": points,
-                        })
-                elif all(
-                    k in ann
-                    for k in ("start_pixel_x", "start_pixel_y", "end_pixel_x", "end_pixel_y")
-                ):
-                    entry: dict[str, Any] = {
-                        "line_id": ann.get("line_id", ""),
-                        "start_pixel_x": float(ann["start_pixel_x"]),
-                        "start_pixel_y": float(ann["start_pixel_y"]),
-                        "end_pixel_x": float(ann["end_pixel_x"]),
-                        "end_pixel_y": float(ann["end_pixel_y"]),
-                    }
-                    annotations.append(entry)
-
-            return annotations
-
-    return []
+    """Load existing line annotations for a specific image from the DDD repo."""
+    return _load_line_annotations_from_repo(image_filename)
 
 
 def extract_camera_status(filename: str) -> dict[str, Any]:
@@ -345,9 +251,7 @@ def index(request: HttpRequest) -> HttpResponse:
     registry = load_lines_registry()
     context = {
         "image_filename": current_image or "No images available",
-        "registry_filename": (
-            get_lines_registry_path().name if get_lines_registry_path() else "No registry"
-        ),
+        "registry_filename": "DDD line repo",
         "map_id": registry.get("map_id", ""),
     }
     return render(request, "camera_line_annotator/index.html", context)
@@ -377,21 +281,12 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     if not validate_image_filename(filename):
         return JsonResponse({"error": "Invalid filename"}, status=400)
 
-    image_path = TEST_DATA_DIR / filename
-
-    try:
-        resolved_path = image_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return JsonResponse({"error": "Invalid filename"}, status=400)
-    except (ValueError, RuntimeError):
-        return JsonResponse({"error": "Invalid filename"}, status=400)
-
-    if not resolved_path.exists():
+    frame = image_filename_to_frame(filename)
+    if frame is None:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
     request.session[SESSION_IMAGE_KEY] = filename
 
-    # Load annotations for the new image (session first, then files)
     all_annotations = get_session_annotations(request)
     image_annotations = all_annotations.get(filename, [])
 
@@ -401,7 +296,6 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
             all_annotations[filename] = image_annotations
             save_session_annotations(request, all_annotations)
 
-    # Extract camera status from filename
     camera_status = extract_camera_status(filename)
 
     return JsonResponse({
@@ -419,15 +313,11 @@ def serve_image(request: HttpRequest) -> HttpResponse:
     if not current_image:
         return HttpResponse("No image available", status=404)
 
-    image_path = TEST_DATA_DIR / current_image
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return HttpResponse("Image not found", status=404)
 
-    try:
-        resolved_path = image_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return HttpResponse("Invalid image path", status=400)
-    except (ValueError, RuntimeError):
-        return HttpResponse("Invalid image path", status=400)
-
+    resolved_path = get_frame_image_path(frame)
     if not resolved_path.exists():
         return HttpResponse("Image not found", status=404)
 

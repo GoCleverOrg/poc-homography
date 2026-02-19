@@ -68,3 +68,47 @@ class TestLineAnnotation:
         assert float(restored.camera_pose.pan_raw) == float(sample_annotation.camera_pose.pan_raw)
         assert float(restored.start_pixel.x) == float(sample_annotation.start_pixel.x)
         assert float(restored.end_pixel.y) == float(sample_annotation.end_pixel.y)
+
+    def test_legacy_no_points(self, sample_annotation: LineAnnotation) -> None:
+        """Legacy annotations have points=None and omit it from dict."""
+        assert sample_annotation.points is None
+        assert "points" not in sample_annotation.to_dict()
+
+    def test_points_field(self) -> None:
+        """N-point annotation stores and round-trips full polyline."""
+        pts = (
+            PixelPoint.create(1.0, 2.0),
+            PixelPoint.create(5.0, 6.0),
+            PixelPoint.create(10.0, 12.0),
+        )
+        ann = LineAnnotation(
+            line_id="L1",
+            frame_id="f/c/t",
+            camera_pose=PTZState(
+                pan_raw=Degrees(0), tilt_deg=Degrees(0), zoom=Unitless(1),
+            ),
+            start_pixel=pts[0],
+            end_pixel=pts[-1],
+            points=pts,
+        )
+        d = ann.to_dict()
+        assert d["points"] == [[1.0, 2.0], [5.0, 6.0], [10.0, 12.0]]
+
+        restored = LineAnnotation.from_dict(d)
+        assert restored.points is not None
+        assert len(restored.points) == 3
+        assert float(restored.points[1].x) == 5.0
+        assert float(restored.points[1].y) == 6.0
+
+    def test_from_dict_ignores_single_point(self) -> None:
+        """points with <2 elements is treated as None."""
+        data = {
+            "line_id": "L1",
+            "frame_id": "f/c/t",
+            "camera_pose": {"pan_raw": 0, "tilt_deg": 0, "zoom": 1},
+            "start_pixel": {"x": 1.0, "y": 2.0},
+            "end_pixel": {"x": 3.0, "y": 4.0},
+            "points": [[1.0, 2.0]],
+        }
+        ann = LineAnnotation.from_dict(data)
+        assert ann.points is None
