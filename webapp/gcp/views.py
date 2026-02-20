@@ -56,6 +56,7 @@ def index(request: HttpRequest) -> HttpResponse:
     # Get maps for the current tenant
     maps = get_map_repo().get_by_tenant(current_tenant_id)
 
+    tenant_maps = [m.to_dict() for m in maps.values()]
     return render(
         request,
         "gcp/index.html",
@@ -63,7 +64,8 @@ def index(request: HttpRequest) -> HttpResponse:
             "title": "Homography GCP Tools",
             "tenants": [t.to_dict() for t in tenants],
             "current_tenant_id": current_tenant_id,
-            "tenant_maps": [m.to_dict() for m in maps.values()],
+            "tenant_maps": tenant_maps,
+            "has_maps": bool(tenant_maps),
         },
     )
 

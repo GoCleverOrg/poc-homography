@@ -177,25 +177,23 @@ def get_map_repo() -> RepoYamlMap:
     return _map_repo
 
 
-def get_default_map_id(tenant_id: str | None = None) -> str:
-    """Return the default map ID for a tenant.
+def get_default_map_id(tenant_id: str | None = None) -> str | None:
+    """Return the default map ID for a tenant, or None if no maps exist.
 
     Resolves the first map belonging to the given tenant.
-    Falls back to "Cartografia_valencia" for backward compatibility.
 
     Args:
         tenant_id: Tenant to look up. Defaults to settings.DEFAULT_TENANT_ID.
 
     Returns:
-        Map ID string.
+        Map ID string, or None if the tenant has no maps configured.
     """
     if tenant_id is None:
         tenant_id = get_default_tenant_id()
     maps = get_map_repo().get_by_tenant(tenant_id)
     if maps:
         return next(iter(maps.values())).id
-    # Fallback for backward compatibility
-    return "Cartografia_valencia"
+    return None
 
 
 # ---------------------------------------------------------------------------

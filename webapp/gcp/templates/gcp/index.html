@@ -47,6 +47,19 @@
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
 }
 
+.tool-card.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
+.tool-card.disabled:hover {
+    background: #f8f9fa;
+    border-color: transparent;
+    transform: none;
+    box-shadow: none;
+}
+
 .tool-title {
     font-size: 20px;
     font-weight: 600;
@@ -69,6 +82,35 @@
     font-weight: 600;
     text-transform: uppercase;
     margin-left: 8px;
+}
+
+.no-map-warning {
+    margin-bottom: 24px;
+    padding: 20px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    color: #856404;
+}
+
+.no-map-warning strong {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 15px;
+}
+
+.no-map-warning code {
+    background: rgba(0,0,0,0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+.no-map-warning ol {
+    margin: 10px 0 0 20px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.8;
 }
 
 .footer {
@@ -98,7 +140,7 @@
     {% if tenants %}
     <div style="margin-bottom: 24px; padding: 16px; background: #f0f2ff; border-radius: 8px;">
         <label for="tenant-select" style="font-weight: 600; margin-right: 8px;">Tenant:</label>
-        <select id="tenant-select" onchange="window.location.href='?tenant_id='+this.value" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px;">
+        <select id="tenant-select" onchange="window.location.href='?tenant_id='+encodeURIComponent(this.value)" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px;">
             {% for tenant in tenants %}
             <option value="{{ tenant.id }}" {% if tenant.id == current_tenant_id %}selected{% endif %}>
                 {{ tenant.name }}{% if tenant.description %} - {{ tenant.description }}{% endif %}
@@ -113,8 +155,36 @@
     </div>
     {% endif %}
 
+    {% if not has_maps %}
+    <div class="no-map-warning">
+        <strong>No map configured for tenant "{{ current_tenant_id }}"</strong>
+        Map-dependent tools are disabled. To set up a map for this tenant:
+        <ol>
+            <li>Place a GeoTIFF file in the project root (e.g. <code>my_map.tif</code>)</li>
+            <li>Create a map YAML file at <code>data/maps/&lt;name&gt;.yaml</code> with:
+<pre style="margin: 6px 0; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; font-size: 12px;">id: my_map          # must match the .tif filename (without extension)
+tenant_id: {{ current_tenant_id }}
+photo:
+  path: my_map.png
+  width: ...         # image width in pixels
+  height: ...        # image height in pixels
+geotiff:
+  geotransform:
+    origin_easting: ...
+    pixel_width: ...
+    row_rotation: 0.0
+    origin_northing: ...
+    col_rotation: 0.0
+    pixel_height: ...
+  crs: EPSG:25830</pre>
+            </li>
+            <li>Restart the server</li>
+        </ol>
+    </div>
+    {% endif %}
+
     <div class="tool-grid">
-        <a href="{% url 'point_picker:index' %}" class="tool-card">
+        <a href="{% url 'point_picker:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Point Picker <span class="badge">Primary</span></div>
             <div class="tool-description">
                 Pick and annotate points on high-resolution images.
@@ -122,7 +192,7 @@
             </div>
         </a>
 
-        <a href="{% url 'homography_precision:index' %}" class="tool-card">
+        <a href="{% url 'homography_precision:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Homography Precision Tool</div>
             <div class="tool-description">
                 Visualize and analyze homography transformation precision across camera frames.
@@ -130,14 +200,14 @@
             </div>
         </a>
 
-        <a href="{% url 'line_picker:index' %}" class="tool-card">
+        <a href="{% url 'line_picker:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Line Picker</div>
             <div class="tool-description">
                 Select and annotate lines on camera frames for calibration and analysis.
             </div>
         </a>
 
-        <a href="{% url 'camera_annotator:index' %}" class="tool-card">
+        <a href="{% url 'camera_annotator:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Camera Frame Annotator</div>
             <div class="tool-description">
                 Annotate camera frames with GCP references.
@@ -145,7 +215,7 @@
             </div>
         </a>
 
-        <a href="{% url 'camera_line_annotator:index' %}" class="tool-card">
+        <a href="{% url 'camera_line_annotator:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Camera Line Annotator <span class="badge">New</span></div>
             <div class="tool-description">
                 Annotate lines on camera frames for line-based homography testing.
@@ -153,7 +223,7 @@
             </div>
         </a>
 
-        <a href="{% url 'camera_diagnostic:index' %}" class="tool-card">
+        <a href="{% url 'camera_diagnostic:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card">
             <div class="tool-title">Camera Diagnostic Tool <span class="badge">Diagnostic</span></div>
             <div class="tool-description">
                 Test camera connectivity, RTSP streaming, web interface, and PTZ control functionality.
@@ -161,7 +231,7 @@
             </div>
         </a>
 
-        <a href="{% url 'camera_evaluation:index' %}" class="tool-card">
+        <a href="{% url 'camera_evaluation:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card">
             <div class="tool-title">Camera Evaluation Tool <span class="badge">Evaluation</span></div>
             <div class="tool-description">
                 Survey camera surroundings with PTZ control and run stress tests to validate equipment installation.

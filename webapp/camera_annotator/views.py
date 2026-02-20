@@ -60,8 +60,11 @@ def load_gcps() -> list[dict]:
     """Load GCPs from the repository."""
     from poc_homography.map_points.gcp_registry import from_gcp_repo
 
+    map_id = get_default_map_id()
+    if map_id is None:
+        return []
     try:
-        registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
+        registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError):
         return []
 

@@ -29,7 +29,10 @@ class PointPickerConfig(AppConfig):
         project_root = webapp_dir.parent
 
         # Use the default map
-        map_file = project_root / f"{get_default_map_id()}.tif"
+        default_map = get_default_map_id()
+        if default_map is None:
+            return  # No map configured for default tenant
+        map_file = project_root / f"{default_map}.tif"
         gcps_dir = project_root / "data" / "gcps"
 
         if map_file.exists():

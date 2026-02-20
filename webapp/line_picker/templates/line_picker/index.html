@@ -336,8 +336,11 @@
                     }
                 });
 
-                // Load lines
+                // Load lines - auto-import from repo if state is empty
                 await loadLines();
+                if (lines.length === 0) {
+                    await autoImportFromRepo();
+                }
                 await updateNextId();
             } catch (e) {
                 showError(`Initialization failed: ${e.message}`);
@@ -920,6 +923,28 @@
                 await loadLines();
             } catch (e) {
                 showError(`Load failed: ${e.message}`);
+            }
+        }
+
+        async function autoImportFromRepo() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/registries/`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const mapIds = data.map_ids || [];
+                if (mapIds.length === 0) return;
+
+                const mapId = mapIds[0];
+                const importResp = await fetch(`${API_BASE}/api/import/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ map_id: mapId })
+                });
+                if (!importResp.ok) return;
+
+                await loadLines();
+            } catch (e) {
+                console.warn('Auto-import from repo failed:', e);
             }
         }
 

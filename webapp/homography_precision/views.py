@@ -45,10 +45,23 @@ from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
+_NO_MAP_ERROR = JsonResponse(
+    {"success": False, "error": "No map configured for the current tenant. Upload a GeoTIFF map first."},
+    status=422,
+)
 
-def _get_map_geotiff_file() -> Path:
-    """Return path to the GeoTIFF file for the default map."""
-    return PROJECT_ROOT / f"{get_default_map_id()}.tif"
+
+def _require_map_id() -> str | None:
+    """Return the default map ID, or None if no map is configured."""
+    return get_default_map_id()
+
+
+def _get_map_geotiff_file() -> Path | None:
+    """Return path to the GeoTIFF file for the default map, or None."""
+    map_id = get_default_map_id()
+    if map_id is None:
+        return None
+    return PROJECT_ROOT / f"{map_id}.tif"
 
 # Cached line registry
 _line_registry_cache: list[Line] | None = None
@@ -58,7 +71,10 @@ def _load_line_registry() -> list[Line]:
     """Load and cache line registry from DDD repo."""
     global _line_registry_cache
     if _line_registry_cache is None:
-        _line_registry_cache = from_line_repo(LINES_DIR, get_default_map_id())
+        map_id = get_default_map_id()
+        if map_id is None:
+            return []
+        _line_registry_cache = from_line_repo(LINES_DIR, map_id)
     return _line_registry_cache
 
 
@@ -378,8 +394,11 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         )
 
     # Load GCP registry from repository
+    map_id = _require_map_id()
+    if map_id is None:
+        return _NO_MAP_ERROR
     try:
-        registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
+        registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -527,8 +546,11 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         JSON with registry data:
         {"map_id": "...", "points": {"PS1": {"pixel_x": ..., "pixel_y": ...}, ...}}
     """
+    map_id = _require_map_id()
+    if map_id is None:
+        return _NO_MAP_ERROR
     try:
-        registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
+        registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
@@ -630,7 +652,7 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
 
     return JsonResponse(
         {
-            "map_id": get_default_map_id(),
+            "map_id": _require_map_id(),
             "lines": [line.to_dict() for line in lines],
         }
     )
@@ -703,8 +725,11 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
     line_registry = {line.line_id: line.to_dict() for line in lines}
 
     # Compute homography from lines
+    map_id = _require_map_id()
+    if map_id is None:
+        return _NO_MAP_ERROR
     try:
-        homography = MapPointHomography(map_id=get_default_map_id())
+        homography = MapPointHomography(map_id=map_id)
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
             line_registry=line_registry,
@@ -810,8 +835,11 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
 
+        map_id = _require_map_id()
+        if map_id is None:
+            return _NO_MAP_ERROR
         try:
-            homography = MapPointHomography(map_id=get_default_map_id())
+            homography = MapPointHomography(map_id=map_id)
             line_result = homography.compute_from_lines(
                 line_annotations=line_annotations,
                 line_registry=line_registry,
@@ -857,8 +885,11 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         # Load GCP registry from repository
+        map_id_for_gcps = _require_map_id()
+        if map_id_for_gcps is None:
+            return _NO_MAP_ERROR
         try:
-            gcp_registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
+            gcp_registry = from_gcp_repo(GCPS_DIR, map_id_for_gcps)
         except (KeyError, ValueError, OSError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},
