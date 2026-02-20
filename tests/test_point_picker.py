@@ -247,15 +247,16 @@ class TestPointPickerState:
         with pytest.raises(KeyError):
             mock_state.delete_point("PS999")
 
-    def test_save_and_load_registry(
+    def test_save_and_load_repo(
         self, mock_state: PointPickerState, tmp_path: Path
     ) -> None:
-        """Save and load preserves points."""
+        """Save and load via GCP repo preserves points."""
         mock_state.add_point("parking_spot", 100, 200)
         mock_state.add_point("arrows", 300, 400)
 
-        yaml_path = tmp_path / "points.yaml"
-        mock_state.save_registry(yaml_path)
+        gcps_dir = tmp_path / "gcps"
+        gcps_dir.mkdir()
+        mock_state.save_to_repo(gcps_dir)
 
         # Load into a new state
         with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
@@ -264,7 +265,7 @@ class TestPointPickerState:
             geotiff_path.touch()
             new_state = PointPickerState(geotiff_path)
 
-        new_state.load_registry(yaml_path)
+        new_state.load_from_repo(gcps_dir, mock_state.map_id)
 
         assert len(new_state.registry.points) == 2
         assert "PS1" in new_state.registry.points
