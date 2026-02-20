@@ -31,6 +31,7 @@ def _get_tenant_repo():
 
     return RepoYamlTenant(_project_root() / "data" / "tenants")
 
+
 # =============================================================================
 # CAMERA LENS SPECIFICATIONS (Hikvision DS-2DF8425IX-AELW series)
 # =============================================================================
