@@ -126,7 +126,7 @@ class Sam3PromptTestingService:
 
         return results
 
-    def _encode_image(self, frame: npt.NDArray[np.uint8]) -> str:
+    def _encode_image(self, frame: npt.NDArray) -> str:
         """Encode an image frame to base64.
 
         Args:
@@ -147,7 +147,7 @@ class Sam3PromptTestingService:
         self,
         prompt: str,
         image_base64: str,
-        frame: npt.NDArray[np.uint8],
+        frame: npt.NDArray,
         output_dir: Path | None,
         verbose: bool,
     ) -> Sam3PromptResult:
@@ -256,7 +256,7 @@ class Sam3PromptTestingService:
         self,
         prompt: str,
         mask: Mask,
-        frame: npt.NDArray[np.uint8],
+        frame: npt.NDArray,
         output_dir: Path,
         verbose: bool,
     ) -> None:
