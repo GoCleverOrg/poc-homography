@@ -1,16 +1,35 @@
 """
 Camera configuration file.
 Central location for all camera settings and credentials.
+
+Tenant data is loaded from DDD YAML repository (data/tenants/).
+Camera data remains hardcoded here for now (contains calibration
+parameters not yet in the DDD model).
 """
 
 from __future__ import annotations
 
 import os
+from functools import lru_cache
+from pathlib import Path
 
 # Legacy global credentials - kept for backwards compatibility
-# Prefer tenant-specific credentials defined in TENANTS
+# Prefer tenant-specific credentials defined in per-tenant env vars
 USERNAME = os.getenv("CAMERA_USERNAME")
 PASSWORD = os.getenv("CAMERA_PASSWORD")
+
+
+def _project_root() -> Path:
+    """Get project root directory."""
+    return Path(__file__).parent.parent
+
+
+@lru_cache(maxsize=1)
+def _get_tenant_repo():
+    """Lazily create the tenant repository (singleton)."""
+    from poc_homography.infrastructure.repositories import RepoYamlTenant
+
+    return RepoYamlTenant(_project_root() / "data" / "tenants")
 
 # =============================================================================
 # CAMERA LENS SPECIFICATIONS (Hikvision DS-2DF8425IX-AELW series)
@@ -83,44 +102,9 @@ DEFAULT_MAX_ZOOM = 25.0  # Maximum optical zoom factor
 # Each camera belongs to exactly one tenant via tenant_id.
 # =============================================================================
 
-# Tenant definitions
+# Tenant definitions are now loaded from DDD YAML repository (data/tenants/).
 # Credentials are loaded from environment variables: {TENANT_ID}_CAMERA_USERNAME, {TENANT_ID}_CAMERA_PASSWORD
 # Falls back to global CAMERA_USERNAME/CAMERA_PASSWORD if tenant-specific not set
-TENANTS = [
-    {
-        "id": "valte",
-        "name": "Valte",
-        "description": "Valte deployment site - Valencia, Spain",
-        "location": {
-            "lat": "39°38'25.72\"N",
-            "lon": "0°13'48.63\"W",
-        },
-        "username": os.getenv("VALTE_CAMERA_USERNAME"),
-        "password": os.getenv("VALTE_CAMERA_PASSWORD"),
-    },
-    {
-        "id": "setram",
-        "name": "Setram",
-        "description": "Setram deployment site - Barcelona, Spain",
-        "location": {
-            "lat": "41°19'46.8\"N",
-            "lon": "2°08'31.3\"E",
-        },
-        "username": os.getenv("SETRAM_CAMERA_USERNAME"),
-        "password": os.getenv("SETRAM_CAMERA_PASSWORD"),
-    },
-    {
-        "id": "icozee",
-        "name": "Icozee",
-        "description": "Icozee deployment site",
-        "location": {
-            "lat": "",
-            "lon": "",
-        },
-        "username": os.getenv("ICOZEE_CAMERA_USERNAME"),
-        "password": os.getenv("ICOZEE_CAMERA_PASSWORD"),
-    },
-]
 
 # Camera configurations - each camera belongs to a tenant
 CAMERAS = [
@@ -395,14 +379,24 @@ CAMERAS = [
 # =============================================================================
 
 
+def _tenant_to_dict(tenant) -> dict:
+    """Convert a Tenant entity to the legacy dict format."""
+    d = tenant.to_dict()
+    # Inject credentials from environment variables
+    tid = tenant.id.upper()
+    d["username"] = os.getenv(f"{tid}_CAMERA_USERNAME")
+    d["password"] = os.getenv(f"{tid}_CAMERA_PASSWORD")
+    return d
+
+
 def get_tenants() -> list:
     """
     Get list of all tenant configurations.
 
     Returns:
-        List of tenant configuration dicts.
+        List of tenant configuration dicts (loaded from DDD YAML repo).
     """
-    return TENANTS
+    return [_tenant_to_dict(t) for t in _get_tenant_repo().get_all()]
 
 
 def get_tenant_by_id(tenant_id: str) -> dict | None:
@@ -415,7 +409,8 @@ def get_tenant_by_id(tenant_id: str) -> dict | None:
     Returns:
         Tenant configuration dict or None if not found
     """
-    return next((t for t in TENANTS if t.get("id") == tenant_id), None)
+    tenant = _get_tenant_repo().get(tenant_id)
+    return _tenant_to_dict(tenant) if tenant else None
 
 
 def get_tenant_by_name(tenant_name: str) -> dict | None:
@@ -428,7 +423,10 @@ def get_tenant_by_name(tenant_name: str) -> dict | None:
     Returns:
         Tenant configuration dict or None if not found
     """
-    return next((t for t in TENANTS if t.get("name") == tenant_name), None)
+    for tenant in _get_tenant_repo().get_all():
+        if tenant.name == tenant_name:
+            return _tenant_to_dict(tenant)
+    return None
 
 
 def get_cameras_for_tenant(tenant_id: str) -> list:
@@ -448,21 +446,20 @@ def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
     """
     Get credentials for a tenant.
 
-    Falls back to global CAMERA_USERNAME/CAMERA_PASSWORD if tenant-specific
-    credentials are not set.
+    Loads tenant-specific credentials from environment variables:
+    {TENANT_ID}_CAMERA_USERNAME / {TENANT_ID}_CAMERA_PASSWORD.
+    Falls back to global CAMERA_USERNAME/CAMERA_PASSWORD if not set.
 
     Args:
         tenant_id: ID of the tenant
 
     Returns:
-        Tuple of (username, password), either from tenant config or global fallback
+        Tuple of (username, password), either from tenant env vars or global fallback
     """
-    tenant = get_tenant_by_id(tenant_id)
-    if tenant:
-        username = tenant.get("username") or USERNAME
-        password = tenant.get("password") or PASSWORD
-        return username, password
-    return USERNAME, PASSWORD
+    tid = tenant_id.upper()
+    username = os.getenv(f"{tid}_CAMERA_USERNAME") or USERNAME
+    password = os.getenv(f"{tid}_CAMERA_PASSWORD") or PASSWORD
+    return username, password
 
 
 # =============================================================================
@@ -618,13 +615,15 @@ if __name__ == "__main__":
     print("=" * 70)
     print(f"\nGlobal Credentials (fallback): {USERNAME} / {'*' * len(PASSWORD or '')}")
 
-    print(f"\nConfigured Tenants: {len(TENANTS)}")
-    for tenant in TENANTS:
+    tenants = get_tenants()
+    print(f"\nConfigured Tenants: {len(tenants)}")
+    for tenant in tenants:
         cameras = get_cameras_for_tenant(tenant["id"])
         username, password = get_tenant_credentials(tenant["id"])
         cred_source = "tenant" if tenant.get("username") else "global"
         print(f"\n{tenant['name']} ({tenant['id']}):")
-        print(f"  Location: {tenant['location']['lat']}, {tenant['location']['lon']}")
+        location = tenant.get("location", {})
+        print(f"  Location: {location.get('lat', '')}, {location.get('lon', '')}")
         print(f"  Credentials: {username} / {'*' * len(password or '')} ({cred_source})")
         print(f"  Cameras: {len(cameras)}")
         for cam in cameras:

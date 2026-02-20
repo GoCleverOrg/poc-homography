@@ -18,6 +18,12 @@ page_patterns = [
 
 # API endpoints
 api_patterns = [
+    path("api/tenants/", views.api_tenants, name="api_tenants"),
+    path(
+        "api/tenants/<str:tenant_id>/maps/",
+        views.api_tenant_maps,
+        name="api_tenant_maps",
+    ),
     path("api/map-ids/", views.api_map_ids, name="api_map_ids"),
 ]
 

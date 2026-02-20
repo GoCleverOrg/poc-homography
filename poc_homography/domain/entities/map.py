@@ -19,11 +19,13 @@ class Map:
 
     Attributes:
         id: Unique identifier for the map (e.g., "valte").
+        tenant_id: ID of the tenant this map belongs to (e.g., "valte").
         photo: The map image with its dimensions.
         geotiff: GeoTiff metadata for coordinate transformation.
     """
 
     id: str
+    tenant_id: str
     photo: Photo
     geotiff: GeoTiff
 
@@ -31,6 +33,7 @@ class Map:
         """Convert to dictionary for serialization."""
         return {
             "id": self.id,
+            "tenant_id": self.tenant_id,
             "photo": self.photo.to_dict(),
             "geotiff": self.geotiff.to_dict(),
         }
@@ -43,6 +46,7 @@ class Map:
 
         return cls(
             id=data["id"],
+            tenant_id=data.get("tenant_id", ""),
             photo=Photo.from_dict(data["photo"]),
             geotiff=GeoTiff.from_dict(data["geotiff"]),
         )

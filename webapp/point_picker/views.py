@@ -5,18 +5,17 @@ from __future__ import annotations
 import io
 import json
 import math
+
 import numpy as np
 import tifffile
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.frame_utils import GCPS_DIR, normalize_array
 from PIL import Image
 
-from homography_web.frame_utils import GCPS_DIR, normalize_array
-
 from .state import get_state, get_tag_from_id
-
 from .validation import (
     validate_add_point_request,
     validate_update_point_request,

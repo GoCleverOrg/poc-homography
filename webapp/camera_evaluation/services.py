@@ -10,8 +10,8 @@ import logging
 from collections.abc import Generator
 
 import cv2
-
 from camera_diagnostic.services import create_rtsp_capture
+
 from poc_homography.camera_config import get_rtsp_url
 
 logger = logging.getLogger(__name__)

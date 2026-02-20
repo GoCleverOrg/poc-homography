@@ -13,6 +13,7 @@ from poc_homography.domain.entities.lens_calibration_table import LensCalibratio
 from poc_homography.domain.entities.line import Line
 from poc_homography.domain.entities.line_annotation import LineAnnotation
 from poc_homography.domain.entities.map import Map
+from poc_homography.domain.entities.tenant import Tenant
 
 __all__ = [
     "Annotation",
@@ -26,4 +27,5 @@ __all__ = [
     "Line",
     "LineAnnotation",
     "Map",
+    "Tenant",
 ]

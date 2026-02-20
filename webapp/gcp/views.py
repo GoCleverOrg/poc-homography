@@ -10,8 +10,13 @@ from typing import Any
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from homography_web.frame_utils import (
+    GCPS_DIR,
+    get_default_tenant_id,
+    get_map_repo,
+    get_tenant_repo,
+)
 
-from homography_web.frame_utils import GCPS_DIR
 from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.map_points.gcp_registry import from_gcp_repo, list_map_ids
 
@@ -43,8 +48,23 @@ def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    """Landing page with links to tools."""
-    return render(request, "gcp/index.html", {"title": "Homography GCP Tools"})
+    """Landing page with links to tools and tenant selector."""
+    tenants = get_tenant_repo().get_all()
+    current_tenant_id = request.GET.get("tenant_id", get_default_tenant_id())
+
+    # Get maps for the current tenant
+    maps = get_map_repo().get_by_tenant(current_tenant_id)
+
+    return render(
+        request,
+        "gcp/index.html",
+        {
+            "title": "Homography GCP Tools",
+            "tenants": [t.to_dict() for t in tenants],
+            "current_tenant_id": current_tenant_id,
+            "tenant_maps": [m.to_dict() for m in maps.values()],
+        },
+    )
 
 
 def debug_map(request: HttpRequest) -> HttpResponse:
@@ -67,6 +87,22 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     }
 
     return render(request, "gcp/debug_map.html", context)
+
+
+def api_tenants(request: HttpRequest) -> JsonResponse:
+    """Return available tenants from the DDD repository."""
+    tenants = get_tenant_repo().get_all()
+    return JsonResponse(
+        {"tenants": [t.to_dict() for t in tenants]},
+    )
+
+
+def api_tenant_maps(request: HttpRequest, tenant_id: str) -> JsonResponse:
+    """Return maps belonging to a specific tenant."""
+    maps = get_map_repo().get_by_tenant(tenant_id)
+    return JsonResponse(
+        {"maps": [m.to_dict() for m in maps.values()]},
+    )
 
 
 def api_map_ids(request: HttpRequest) -> JsonResponse:

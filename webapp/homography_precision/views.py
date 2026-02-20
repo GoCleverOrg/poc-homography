@@ -21,20 +21,22 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
-    DEFAULT_MAP_ID,
     GCPS_DIR,
     LINES_DIR,
     PROJECT_ROOT,
     extract_geotiff,
+    get_default_map_id,
     get_frame_image_path,
     image_filename_to_frame,
     list_frames,
     load_annotations_for_frame,
     load_line_annotations_for_frame,
-    normalize_array as _normalize_array,
 )
 from homography_web.frame_utils import (
     get_frame_repo as _get_frame_repo,
+)
+from homography_web.frame_utils import (
+    normalize_array as _normalize_array,
 )
 from line_picker.state import Line, from_line_repo
 from PIL import Image
@@ -43,7 +45,10 @@ from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
-MAP_GEOTIFF_FILE = PROJECT_ROOT / f"{DEFAULT_MAP_ID}.tif"
+
+def _get_map_geotiff_file() -> Path:
+    """Return path to the GeoTIFF file for the default map."""
+    return PROJECT_ROOT / f"{get_default_map_id()}.tif"
 
 # Cached line registry
 _line_registry_cache: list[Line] | None = None
@@ -53,7 +58,7 @@ def _load_line_registry() -> list[Line]:
     """Load and cache line registry from DDD repo."""
     global _line_registry_cache
     if _line_registry_cache is None:
-        _line_registry_cache = from_line_repo(LINES_DIR, DEFAULT_MAP_ID)
+        _line_registry_cache = from_line_repo(LINES_DIR, get_default_map_id())
     return _line_registry_cache
 
 
@@ -167,10 +172,10 @@ def _get_map_info() -> ImageInfoCache | None:
     if cache_key in _image_info_cache:
         return _image_info_cache[cache_key]
 
-    if not MAP_GEOTIFF_FILE.exists():
+    if not _get_map_geotiff_file().exists():
         return None
 
-    with tifffile.TiffFile(MAP_GEOTIFF_FILE) as tif:
+    with tifffile.TiffFile(_get_map_geotiff_file()) as tif:
         page = tif.pages[0]
         width: int = page.imagewidth  # type: ignore[union-attr]
         height: int = page.imagelength  # type: ignore[union-attr]
@@ -179,7 +184,7 @@ def _get_map_info() -> ImageInfoCache | None:
         info: ImageInfoCache = {
             "width": width,
             "height": height,
-            "filename": MAP_GEOTIFF_FILE.name,
+            "filename": _get_map_geotiff_file().name,
             "geotransform": geotiff.geotransform.to_list() if geotiff else None,
             "crs": geotiff.crs if geotiff else None,
         }
@@ -374,7 +379,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
 
     # Load GCP registry from repository
     try:
-        registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
+        registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -523,7 +528,7 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         {"map_id": "...", "points": {"PS1": {"pixel_x": ..., "pixel_y": ...}, ...}}
     """
     try:
-        registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
+        registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
@@ -625,7 +630,7 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
 
     return JsonResponse(
         {
-            "map_id": DEFAULT_MAP_ID,
+            "map_id": get_default_map_id(),
             "lines": [line.to_dict() for line in lines],
         }
     )
@@ -699,7 +704,7 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
 
     # Compute homography from lines
     try:
-        homography = MapPointHomography(map_id=DEFAULT_MAP_ID)
+        homography = MapPointHomography(map_id=get_default_map_id())
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
             line_registry=line_registry,
@@ -806,7 +811,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         try:
-            homography = MapPointHomography(map_id=DEFAULT_MAP_ID)
+            homography = MapPointHomography(map_id=get_default_map_id())
             line_result = homography.compute_from_lines(
                 line_annotations=line_annotations,
                 line_registry=line_registry,
@@ -853,7 +858,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
         # Load GCP registry from repository
         try:
-            gcp_registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
+            gcp_registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
         except (KeyError, ValueError, OSError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -1058,7 +1063,7 @@ def api_map_info(request: HttpRequest) -> JsonResponse:
     info = _get_map_info()
     if info is None:
         return JsonResponse(
-            {"error": f"Map GeoTIFF not found: {MAP_GEOTIFF_FILE}"},
+            {"error": f"Map GeoTIFF not found: {_get_map_geotiff_file()}"},
             status=404,
         )
 
@@ -1201,7 +1206,7 @@ def api_map_tile(request: HttpRequest) -> HttpResponse:
     info = _get_map_info()
     if info is None:
         return JsonResponse(
-            {"error": f"Map GeoTIFF not found: {MAP_GEOTIFF_FILE}"},
+            {"error": f"Map GeoTIFF not found: {_get_map_geotiff_file()}"},
             status=404,
         )
 
@@ -1235,7 +1240,7 @@ def api_map_tile(request: HttpRequest) -> HttpResponse:
         return HttpResponse(buffer.getvalue(), content_type="image/png")
 
     # Read from TIFF using tifffile
-    with tifffile.TiffFile(MAP_GEOTIFF_FILE) as tif:
+    with tifffile.TiffFile(_get_map_geotiff_file()) as tif:
         page = tif.pages[0]
         data = page.asarray()
 

@@ -16,6 +16,11 @@ from poc_homography.infrastructure.repositories.repo_yaml_camera_config import (
 from poc_homography.infrastructure.repositories.repo_yaml_captured_frame import (
     RepoYamlCapturedFrame,
 )
+
+# Session repositories (date-partitioned storage, webapp models)
+from poc_homography.infrastructure.repositories.repo_yaml_diagnostic_session import (
+    RepoYamlDiagnosticSession,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_ground_control_point import (
     RepoYamlGroundControlPoint,
 )
@@ -27,17 +32,13 @@ from poc_homography.infrastructure.repositories.repo_yaml_line_annotation import
     RepoYamlLineAnnotation,
 )
 from poc_homography.infrastructure.repositories.repo_yaml_map import RepoYamlMap
-
-# Session repositories (date-partitioned storage, webapp models)
-from poc_homography.infrastructure.repositories.repo_yaml_diagnostic_session import (
-    RepoYamlDiagnosticSession,
-)
 from poc_homography.infrastructure.repositories.repo_yaml_stress_test_session import (
     RepoYamlStressTestSession,
 )
 from poc_homography.infrastructure.repositories.repo_yaml_survey_session import (
     RepoYamlSurveySession,
 )
+from poc_homography.infrastructure.repositories.repo_yaml_tenant import RepoYamlTenant
 
 __all__ = [
     # Base class
@@ -54,6 +55,7 @@ __all__ = [
     "RepoYamlLine",
     "RepoYamlLineAnnotation",
     "RepoYamlMap",
+    "RepoYamlTenant",
     "RepoYamlStressTestSession",
     "RepoYamlSurveySession",
 ]

@@ -1,0 +1,15 @@
+id: valte
+tenant_id: valte
+photo:
+  path: valte.png
+  width: 1681
+  height: 916
+geotiff:
+  geotransform:
+    origin_easting: 737575.05
+    pixel_width: 0.15
+    row_rotation: 0.0
+    origin_northing: 4391595.45
+    col_rotation: 0.0
+    pixel_height: -0.15
+  crs: EPSG:25830

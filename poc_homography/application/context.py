@@ -40,6 +40,7 @@ from poc_homography.infrastructure.repositories import (
     RepoYamlCameraConfig,
     RepoYamlCapturedFrame,
     RepoYamlGroundControlPoint,
+    RepoYamlTenant,
 )
 
 
@@ -61,6 +62,11 @@ class ApplicationContext:
     """
 
     data_dir: Path
+
+    @cached_property
+    def repo_tenant(self) -> RepoYamlTenant:
+        """Repository for tenant entities."""
+        return RepoYamlTenant(self.data_dir / "tenants")
 
     @cached_property
     def repo_camera_config(self) -> RepoYamlCameraConfig:

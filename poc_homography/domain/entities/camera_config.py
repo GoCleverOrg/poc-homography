@@ -20,6 +20,7 @@ class CameraConfig:
 
     Attributes:
         id: Unique identifier for this camera configuration.
+        tenant_id: ID of the tenant this camera belongs to.
         map_id: ID of the map this camera is associated with.
         name: Human-readable name for the camera.
         spec: Camera hardware specification (enum).
@@ -28,6 +29,7 @@ class CameraConfig:
     """
 
     id: str
+    tenant_id: str
     map_id: str
     name: str
     spec: CameraSpec
@@ -38,6 +40,7 @@ class CameraConfig:
         """Convert to dictionary for serialization."""
         data: dict[str, Any] = {
             "id": self.id,
+            "tenant_id": self.tenant_id,
             "map_id": self.map_id,
             "name": self.name,
             "spec": self.spec.name,
@@ -71,6 +74,7 @@ class CameraConfig:
 
         return cls(
             id=data["id"],
+            tenant_id=data.get("tenant_id", ""),
             map_id=data["map_id"],
             name=data["name"],
             spec=CameraSpec[data["spec"]],

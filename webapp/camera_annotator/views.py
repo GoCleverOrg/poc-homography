@@ -11,8 +11,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     ANNOTATIONS_DIR,
-    DEFAULT_MAP_ID,
     GCPS_DIR,
+    get_default_map_id,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
@@ -61,7 +61,7 @@ def load_gcps() -> list[dict]:
     from poc_homography.map_points.gcp_registry import from_gcp_repo
 
     try:
-        registry = from_gcp_repo(GCPS_DIR, DEFAULT_MAP_ID)
+        registry = from_gcp_repo(GCPS_DIR, get_default_map_id())
     except (KeyError, ValueError, OSError):
         return []
 

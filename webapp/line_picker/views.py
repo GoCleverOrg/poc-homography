@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import math
+
 import numpy as np
 import tifffile
 from django.http import HttpRequest, HttpResponse, JsonResponse

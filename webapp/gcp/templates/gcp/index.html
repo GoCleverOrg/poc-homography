@@ -95,6 +95,24 @@
     <h1>Homography GCP Tools</h1>
     <p class="subtitle">Ground Control Point management and visualization for camera homography</p>
 
+    {% if tenants %}
+    <div style="margin-bottom: 24px; padding: 16px; background: #f0f2ff; border-radius: 8px;">
+        <label for="tenant-select" style="font-weight: 600; margin-right: 8px;">Tenant:</label>
+        <select id="tenant-select" onchange="window.location.href='?tenant_id='+this.value" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px;">
+            {% for tenant in tenants %}
+            <option value="{{ tenant.id }}" {% if tenant.id == current_tenant_id %}selected{% endif %}>
+                {{ tenant.name }}{% if tenant.description %} - {{ tenant.description }}{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        {% if tenant_maps %}
+        <span style="margin-left: 16px; color: #666; font-size: 13px;">
+            Maps: {% for map in tenant_maps %}{{ map.id }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </span>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="tool-grid">
         <a href="{% url 'point_picker:index' %}" class="tool-card">
             <div class="tool-title">Point Picker <span class="badge">Primary</span></div>

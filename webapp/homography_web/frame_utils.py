@@ -143,8 +143,54 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
     )
 
 
-# Default map identifier used across all webapp apps.
-# Centralised here so the value is defined exactly once.
+# ---------------------------------------------------------------------------
+# Tenant-aware helpers
+# ---------------------------------------------------------------------------
+
+
+def get_default_tenant_id() -> str:
+    """Return the default tenant ID from Django settings."""
+    from django.conf import settings
+
+    return getattr(settings, "DEFAULT_TENANT_ID", "valte")
+
+
+def get_tenant_repo():
+    """Return a cached Tenant repository instance."""
+    from poc_homography.infrastructure.repositories import RepoYamlTenant
+
+    return RepoYamlTenant(PROJECT_ROOT / "data" / "tenants")
+
+
+def get_map_repo():
+    """Return a cached Map repository instance."""
+    from poc_homography.infrastructure.repositories import RepoYamlMap
+
+    return RepoYamlMap(PROJECT_ROOT / "data" / "maps")
+
+
+def get_default_map_id(tenant_id: str | None = None) -> str:
+    """Return the default map ID for a tenant.
+
+    Resolves the first map belonging to the given tenant.
+    Falls back to "Cartografia_valencia" for backward compatibility.
+
+    Args:
+        tenant_id: Tenant to look up. Defaults to settings.DEFAULT_TENANT_ID.
+
+    Returns:
+        Map ID string.
+    """
+    if tenant_id is None:
+        tenant_id = get_default_tenant_id()
+    maps = get_map_repo().get_by_tenant(tenant_id)
+    if maps:
+        return next(iter(maps.values())).id
+    # Fallback for backward compatibility
+    return "Cartografia_valencia"
+
+
+# Backward-compatible constant (deprecated - use get_default_map_id() instead)
 DEFAULT_MAP_ID = "Cartografia_valencia"
 
 # ---------------------------------------------------------------------------
