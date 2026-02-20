@@ -54,6 +54,7 @@ class ServiceGeoTiffImport:
         tiff_path: Path,
         output_dir: Path,
         map_id: str,
+        tenant_id: str = "",
     ) -> GeoTiffImportResult:
         """Import a GeoTIFF file and create a Map entity.
 
@@ -61,6 +62,7 @@ class ServiceGeoTiffImport:
             tiff_path: Path to the source GeoTIFF file.
             output_dir: Directory where the PNG will be created.
             map_id: Unique identifier for the map.
+            tenant_id: Tenant that owns this map.
 
         Returns:
             GeoTiffImportResult containing the Map entity and PNG path.
@@ -89,6 +91,7 @@ class ServiceGeoTiffImport:
         # Create Map entity
         map_entity = Map(
             id=map_id,
+            tenant_id=tenant_id,
             photo=photo,
             geotiff=geotiff,
         )
