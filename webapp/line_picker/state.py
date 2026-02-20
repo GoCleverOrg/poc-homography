@@ -182,7 +182,6 @@ class LinePickerState:
         return None
 
 
-
 # Module-level state
 _state: LinePickerState | None = None
 

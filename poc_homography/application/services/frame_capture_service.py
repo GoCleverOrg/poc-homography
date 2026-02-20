@@ -15,8 +15,8 @@ if TYPE_CHECKING:
     from poc_homography.domain.entities.camera_config import CameraConfig
     from poc_homography.domain.entities.captured_frame import CapturedFrame
     from poc_homography.domain.protocols.camera_controller import CameraController
-    from poc_homography.infrastructure.repositories.repo_yaml_captured_frame import (
-        RepoYamlCapturedFrame,
+    from poc_homography.domain.repositories.captured_frame_repo import (
+        CapturedFrameRepository,
     )
 
 
@@ -49,7 +49,7 @@ class FrameCaptureService:
 
     def __init__(
         self,
-        repo: RepoYamlCapturedFrame,
+        repo: CapturedFrameRepository,
     ) -> None:
         """Initialize the frame capture service.
 
@@ -91,7 +91,7 @@ class FrameCaptureService:
             image_filename = f"{ts_str}.jpg"
 
             # Image stored alongside YAML in same folder
-            image_dir = self._repo._data_dir / camera_config.map_id / camera_config.name
+            image_dir = self._repo.image_dir_for(camera_config.map_id, camera_config.name)
             image_dir.mkdir(parents=True, exist_ok=True)
 
             image_path_abs = image_dir / image_filename

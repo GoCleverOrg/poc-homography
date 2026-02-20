@@ -60,19 +60,20 @@ class Sam3ApiClient:
         Raises:
             Sam3ApiError: If the API call fails.
         """
-        url = f"{SAM3_API_URL}?api_key={self._api_key}"
-
         request_body = {
             "format": "polygon",
             "image": {"type": "base64", "value": image_base64},
             "prompts": [{"type": "text", "text": prompt}],
         }
 
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self._api_key,
+        }
 
         try:
             response = requests.post(
-                url,
+                SAM3_API_URL,
                 json=request_body,
                 headers=headers,
                 timeout=SAM3_REQUEST_TIMEOUT,

@@ -32,6 +32,18 @@ class RepoYamlCapturedFrame:
             self._data_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, CapturedFrame] = {}
 
+    def image_dir_for(self, map_id: str, camera_name: str) -> Path:
+        """Return the directory where images are stored for a given map/camera.
+
+        Args:
+            map_id: Map identifier.
+            camera_name: Camera name.
+
+        Returns:
+            Path to the image storage directory.
+        """
+        return self._data_dir / map_id / camera_name
+
     def _id_to_path(self, entity_id: str) -> Path:
         """Convert entity ID to YAML file path.
 
@@ -98,8 +110,11 @@ class RepoYamlCapturedFrame:
 
         # Delete associated image (relative to YAML location)
         if entity and entity.image_path:
-            image_full_path = path.parent / entity.image_path
-            if image_full_path.exists():
+            image_full_path = (path.parent / entity.image_path).resolve()
+            if (
+                image_full_path.is_relative_to(self._data_dir.resolve())
+                and image_full_path.exists()
+            ):
                 image_full_path.unlink()
 
         # Delete associated annotations

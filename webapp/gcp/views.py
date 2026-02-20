@@ -110,6 +110,7 @@ def api_tenant_maps(request: HttpRequest, tenant_id: str) -> JsonResponse:
     )
 
 
+@require_GET
 def api_map_ids(request: HttpRequest) -> JsonResponse:
     """Return available map IDs from the GCP repository."""
     if not GCPS_DIR.exists():

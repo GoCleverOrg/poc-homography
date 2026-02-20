@@ -4,6 +4,8 @@ This protocol defines the common interface that all persistable entities
 must implement to work with generic repository implementations.
 """
 
+from __future__ import annotations
+
 from typing import Any, Protocol
 
 from typing_extensions import Self

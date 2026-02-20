@@ -11,13 +11,15 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
-    LINE_ANNOTATIONS_DIR,
     LINES_DIR,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
     load_line_annotations_for_frame,
     validate_image_filename,
+)
+from homography_web.frame_utils import (
+    get_line_annotation_repo as _get_line_annotation_repo,
 )
 
 # Session keys
@@ -26,17 +28,6 @@ SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 
 # Cached repos
 _lines_registry_data: dict | None = None
-_line_annotation_repo = None
-
-
-def _get_line_annotation_repo():
-    """Return a cached RepoYamlLineAnnotation instance."""
-    global _line_annotation_repo
-    if _line_annotation_repo is None:
-        from poc_homography.infrastructure.repositories import RepoYamlLineAnnotation
-
-        _line_annotation_repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
-    return _line_annotation_repo
 
 
 def load_lines_registry() -> dict:
@@ -153,7 +144,6 @@ def load_existing_line_annotations(image_filename: str) -> list[dict]:
     return _load_line_annotations_from_repo(image_filename)
 
 
-
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
     current_image = get_current_image(request)
@@ -268,20 +258,21 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
 def api_annotations(request: HttpRequest) -> JsonResponse:
     """Get line annotations for current image.
 
-    Always loads fresh from the DDD repo and caches in the session.
-    In-flight edits (create/update/delete) override the session until
-    the next full reload.
+    Loads from the DDD repo only when the session has no data for this image.
+    In-flight edits (create/update/delete) are preserved in the session until
+    the user explicitly reloads.
     """
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse([], safe=False)
 
-    image_annotations = load_existing_line_annotations(current_image)
     all_annotations = get_session_annotations(request)
-    all_annotations[current_image] = image_annotations
-    save_session_annotations(request, all_annotations)
+    if current_image not in all_annotations:
+        image_annotations = load_existing_line_annotations(current_image)
+        all_annotations[current_image] = image_annotations
+        save_session_annotations(request, all_annotations)
 
-    return JsonResponse(image_annotations, safe=False)
+    return JsonResponse(all_annotations[current_image], safe=False)
 
 
 @csrf_exempt

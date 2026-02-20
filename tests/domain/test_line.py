@@ -22,15 +22,14 @@ class TestLine:
     def test_auto_id(self, sample_line: Line) -> None:
         assert sample_line.id == "valte/L1"
 
-    def test_explicit_id(self) -> None:
+    def test_id_is_computed(self) -> None:
         line = Line(
             name="L2",
             map_id="test",
             start=PixelPoint.create(0, 0),
             end=PixelPoint.create(1, 1),
-            id="custom/id",
         )
-        assert line.id == "custom/id"
+        assert line.id == "test/L2"
 
     def test_map_id_property(self, sample_line: Line) -> None:
         assert sample_line.map_id == "valte"

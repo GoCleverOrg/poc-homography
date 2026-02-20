@@ -44,8 +44,11 @@ class TestSerializeCalibrationEntry:
         entry = ZoomCalibrationEntry(
             zoom_factor=Unitless(2.0),
             distortion=LensDistortion(
-                k1=Unitless(-0.15), k2=Unitless(0.08), k3=Unitless(0.01),
-                p1=Unitless(0.002), p2=Unitless(-0.003),
+                k1=Unitless(-0.15),
+                k2=Unitless(0.08),
+                k3=Unitless(0.01),
+                p1=Unitless(0.002),
+                p2=Unitless(-0.003),
             ),
             calibration_date="2024-01-15",
             source_images=(),
@@ -85,8 +88,10 @@ class TestSerializeCalibrationEntry:
             distortion=LensDistortion(k1=Unitless(-0.1)),
             calibration_date="2024-01-15",
             source_images=(),
-            fx=PixelsFloat(1670.0), fy=PixelsFloat(1670.0),
-            cx=PixelsFloat(960.0), cy=PixelsFloat(540.0),
+            fx=PixelsFloat(1670.0),
+            fy=PixelsFloat(1670.0),
+            cx=PixelsFloat(960.0),
+            cy=PixelsFloat(540.0),
         )
 
         data = serialize_calibration_entry(entry)

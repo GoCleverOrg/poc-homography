@@ -67,12 +67,14 @@ class TestFromLineRepo:
     def test_loads_all_lines_for_map(self, tmp_dir: Path) -> None:
         repo = RepoYamlLine(tmp_dir)
         for name in ("L1", "L2"):
-            repo.save(DomainLine(
-                name=name,
-                map_id="valte",
-                start=PixelPoint.create(10, 20),
-                end=PixelPoint.create(30, 40),
-            ))
+            repo.save(
+                DomainLine(
+                    name=name,
+                    map_id="valte",
+                    start=PixelPoint.create(10, 20),
+                    end=PixelPoint.create(30, 40),
+                )
+            )
 
         lines = from_line_repo(tmp_dir, "valte")
         assert len(lines) == 2
@@ -81,14 +83,22 @@ class TestFromLineRepo:
 
     def test_filters_by_map_id(self, tmp_dir: Path) -> None:
         repo = RepoYamlLine(tmp_dir)
-        repo.save(DomainLine(
-            name="L1", map_id="valte",
-            start=PixelPoint.create(0, 0), end=PixelPoint.create(1, 1),
-        ))
-        repo.save(DomainLine(
-            name="L2", map_id="other",
-            start=PixelPoint.create(0, 0), end=PixelPoint.create(1, 1),
-        ))
+        repo.save(
+            DomainLine(
+                name="L1",
+                map_id="valte",
+                start=PixelPoint.create(0, 0),
+                end=PixelPoint.create(1, 1),
+            )
+        )
+        repo.save(
+            DomainLine(
+                name="L2",
+                map_id="other",
+                start=PixelPoint.create(0, 0),
+                end=PixelPoint.create(1, 1),
+            )
+        )
 
         lines = from_line_repo(tmp_dir, "valte")
         assert len(lines) == 1
@@ -96,12 +106,14 @@ class TestFromLineRepo:
 
     def test_returns_correct_coordinates(self, tmp_dir: Path) -> None:
         repo = RepoYamlLine(tmp_dir)
-        repo.save(DomainLine(
-            name="L1",
-            map_id="valte",
-            start=PixelPoint.create(100.5, 200.5),
-            end=PixelPoint.create(300.0, 400.0),
-        ))
+        repo.save(
+            DomainLine(
+                name="L1",
+                map_id="valte",
+                start=PixelPoint.create(100.5, 200.5),
+                end=PixelPoint.create(300.0, 400.0),
+            )
+        )
 
         lines = from_line_repo(tmp_dir, "valte")
         assert len(lines) == 1
@@ -117,10 +129,14 @@ class TestListLineMapIds:
     def test_returns_unique_sorted_map_ids(self, tmp_dir: Path) -> None:
         repo = RepoYamlLine(tmp_dir)
         for name, map_id in [("L1", "beta"), ("L2", "alpha"), ("L3", "beta")]:
-            repo.save(DomainLine(
-                name=name, map_id=map_id,
-                start=PixelPoint.create(0, 0), end=PixelPoint.create(1, 1),
-            ))
+            repo.save(
+                DomainLine(
+                    name=name,
+                    map_id=map_id,
+                    start=PixelPoint.create(0, 0),
+                    end=PixelPoint.create(1, 1),
+                )
+            )
 
         ids = list_line_map_ids(tmp_dir)
         assert ids == ["alpha", "beta"]

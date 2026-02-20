@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.camera_config import CameraConfig
+    from poc_homography.domain.protocols.camera_controller import CameraController
 
 from poc_homography.application.services import (
     FrameCaptureService,
@@ -123,7 +124,7 @@ class ApplicationContext:
         self,
         camera_config: CameraConfig,
         timeout: float = 5.0,
-    ) -> HikvisionCameraController:
+    ) -> CameraController:
         """Create a camera controller for a specific camera.
 
         Args:
@@ -131,7 +132,7 @@ class ApplicationContext:
             timeout: Request timeout in seconds.
 
         Returns:
-            HikvisionCameraController instance.
+            Camera controller instance.
 
         Raises:
             ValueError: If camera has no IP address.

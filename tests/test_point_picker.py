@@ -247,9 +247,7 @@ class TestPointPickerState:
         with pytest.raises(KeyError):
             mock_state.delete_point("PS999")
 
-    def test_save_and_load_repo(
-        self, mock_state: PointPickerState, tmp_path: Path
-    ) -> None:
+    def test_save_and_load_repo(self, mock_state: PointPickerState, tmp_path: Path) -> None:
         """Save and load via GCP repo preserves points."""
         mock_state.add_point("parking_spot", 100, 200)
         mock_state.add_point("arrows", 300, 400)

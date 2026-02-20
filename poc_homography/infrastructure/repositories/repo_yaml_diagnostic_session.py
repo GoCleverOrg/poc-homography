@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -31,9 +32,14 @@ def _is_valid_session_id(session_id: str) -> bool:
 class RepoYamlDiagnosticSession:
     """Repository for DiagnosticSession entities stored as date-partitioned YAML manifests."""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        entity_factory: Callable[[dict[str, Any]], Any],
+    ) -> None:
         self._data_dir = Path(data_dir)
         self._data_dir.mkdir(parents=True, exist_ok=True)
+        self._entity_factory = entity_factory
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -156,19 +162,11 @@ class RepoYamlDiagnosticSession:
     # Internal
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _load_entity(manifest_path: Path) -> Any | None:
-        # Late import to avoid circular dependencies between poc_homography
-        # and the webapp layer. The entity class lives in the webapp models
-        # module (camera_diagnostic.models.DiagnosticSession).
+    def _load_entity(self, manifest_path: Path) -> Any | None:
         try:
-            # Import at call-time so the module can be used from both
-            # the webapp Django process and standalone scripts.
-            from camera_diagnostic.models import DiagnosticSession  # type: ignore[import-untyped]
-
             with open(manifest_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-            return DiagnosticSession.from_dict(data)
+            return self._entity_factory(data)
         except Exception:
             logger.warning("Failed to load session from %s", manifest_path, exc_info=True)
             return None

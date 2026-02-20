@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
 
 from poc_homography.domain.vo.image_dimensions import ImageDimensions
@@ -53,6 +52,8 @@ class Mask:
         total_pixels = self.dimensions.area
         if total_pixels == 0:
             return 0.0
+        import cv2
+
         white_pixels = cv2.countNonZero(self.data)
         return (white_pixels / total_pixels) * 100.0
 
@@ -74,6 +75,8 @@ class Mask:
         height, width = shape
         dimensions = ImageDimensions.create(width=width, height=height)
         mask_data = np.zeros((height, width), dtype=np.uint8)
+
+        import cv2
 
         for polygon in polygons:
             if len(polygon) >= 3:

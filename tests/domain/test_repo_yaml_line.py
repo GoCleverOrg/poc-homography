@@ -63,12 +63,14 @@ class TestRepoYamlLine:
     def test_get_all(self, tmp_dir: Path) -> None:
         repo = RepoYamlLine(tmp_dir)
         for name in ("L1", "L2", "L3"):
-            repo.save(Line(
-                name=name,
-                map_id="valte",
-                start=PixelPoint.create(0, 0),
-                end=PixelPoint.create(1, 1),
-            ))
+            repo.save(
+                Line(
+                    name=name,
+                    map_id="valte",
+                    start=PixelPoint.create(0, 0),
+                    end=PixelPoint.create(1, 1),
+                )
+            )
 
         all_lines = repo.get_all()
         assert len(all_lines) == 3
@@ -77,14 +79,22 @@ class TestRepoYamlLine:
 
     def test_get_by_map(self, tmp_dir: Path) -> None:
         repo = RepoYamlLine(tmp_dir)
-        repo.save(Line(
-            name="L1", map_id="valte",
-            start=PixelPoint.create(0, 0), end=PixelPoint.create(1, 1),
-        ))
-        repo.save(Line(
-            name="L2", map_id="other",
-            start=PixelPoint.create(0, 0), end=PixelPoint.create(1, 1),
-        ))
+        repo.save(
+            Line(
+                name="L1",
+                map_id="valte",
+                start=PixelPoint.create(0, 0),
+                end=PixelPoint.create(1, 1),
+            )
+        )
+        repo.save(
+            Line(
+                name="L2",
+                map_id="other",
+                start=PixelPoint.create(0, 0),
+                end=PixelPoint.create(1, 1),
+            )
+        )
 
         valte_lines = repo.get_by_map("valte")
         assert len(valte_lines) == 1
@@ -112,9 +122,7 @@ class TestRepoYamlLine:
 
 
 class TestRepoYamlLineAnnotation:
-    def test_save_and_get(
-        self, tmp_dir: Path, sample_line_annotation: LineAnnotation
-    ) -> None:
+    def test_save_and_get(self, tmp_dir: Path, sample_line_annotation: LineAnnotation) -> None:
         repo = RepoYamlLineAnnotation(tmp_dir)
         repo.save(sample_line_annotation)
 
@@ -130,13 +138,15 @@ class TestRepoYamlLineAnnotation:
         repo = RepoYamlLineAnnotation(tmp_dir)
         pose = PTZState(pan_raw=Degrees(0), tilt_deg=Degrees(0), zoom=Unitless(1))
         for line_id in ("L1", "L2"):
-            repo.save(LineAnnotation(
-                line_id=line_id,
-                frame_id="frame_001",
-                camera_pose=pose,
-                start_pixel=PixelPoint.create(0, 0),
-                end_pixel=PixelPoint.create(1, 1),
-            ))
+            repo.save(
+                LineAnnotation(
+                    line_id=line_id,
+                    frame_id="frame_001",
+                    camera_pose=pose,
+                    start_pixel=PixelPoint.create(0, 0),
+                    end_pixel=PixelPoint.create(1, 1),
+                )
+            )
 
         all_anns = repo.get_all()
         assert len(all_anns) == 2

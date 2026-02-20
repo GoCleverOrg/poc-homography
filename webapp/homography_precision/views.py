@@ -46,7 +46,10 @@ from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
 _NO_MAP_ERROR = JsonResponse(
-    {"success": False, "error": "No map configured for the current tenant. Upload a GeoTIFF map first."},
+    {
+        "success": False,
+        "error": "No map configured for the current tenant. Upload a GeoTIFF map first.",
+    },
     status=422,
 )
 
@@ -62,6 +65,7 @@ def _get_map_geotiff_file() -> Path | None:
     if map_id is None:
         return None
     return PROJECT_ROOT / f"{map_id}.tif"
+
 
 # Cached line registry
 _line_registry_cache: list[Line] | None = None
@@ -90,8 +94,6 @@ class ImageInfoCache(TypedDict):
 
 
 _image_info_cache: dict[str, ImageInfoCache] = {}
-
-
 
 
 def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
@@ -188,10 +190,11 @@ def _get_map_info() -> ImageInfoCache | None:
     if cache_key in _image_info_cache:
         return _image_info_cache[cache_key]
 
-    if not _get_map_geotiff_file().exists():
+    geotiff_path = _get_map_geotiff_file()
+    if geotiff_path is None or not geotiff_path.exists():
         return None
 
-    with tifffile.TiffFile(_get_map_geotiff_file()) as tif:
+    with tifffile.TiffFile(geotiff_path) as tif:
         page = tif.pages[0]
         width: int = page.imagewidth  # type: ignore[union-attr]
         height: int = page.imagelength  # type: ignore[union-attr]
@@ -200,7 +203,7 @@ def _get_map_info() -> ImageInfoCache | None:
         info: ImageInfoCache = {
             "width": width,
             "height": height,
-            "filename": _get_map_geotiff_file().name,
+            "filename": geotiff_path.name,
             "geotransform": geotiff.geotransform.to_list() if geotiff else None,
             "crs": geotiff.crs if geotiff else None,
         }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 import yaml
 
@@ -40,24 +40,24 @@ class RepoYaml(ABC, Generic[TEntity]):
     def _path_to_id(self, path: Path) -> str:
         return path.stem.replace(self._filename_sep, self._id_sep)
 
-    def _read_yaml(self, path: Path) -> dict | None:
+    def _read_yaml(self, path: Path) -> dict[str, Any] | None:
         if not path.exists():
             return None
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data if data else None
 
-    def _write_yaml(self, path: Path, data: dict) -> None:
+    def _write_yaml(self, path: Path, data: dict[str, Any]) -> None:
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     def _get_entity_id(self, entity: TEntity) -> str:
         return entity.id
 
-    def _entity_to_dict(self, entity: TEntity) -> dict:
+    def _entity_to_dict(self, entity: TEntity) -> dict[str, Any]:
         return entity.to_dict()
 
-    def _dict_to_entity(self, data: dict) -> TEntity | None:
+    def _dict_to_entity(self, data: dict[str, Any]) -> TEntity | None:
         return self._entity_cls.from_dict(data)
 
     def get(self, entity_id: str) -> TEntity | None:

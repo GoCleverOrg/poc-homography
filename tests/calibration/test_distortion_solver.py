@@ -37,10 +37,12 @@ def _make_distorted_line(
     so the line will pass the ``has_edge_curvature()`` check used by
     the solver to filter interpolated lines.
     """
-    undistorted = np.column_stack([
-        np.linspace(x_start, x_end, num_points),
-        np.full(num_points, y_pos),
-    ])
+    undistorted = np.column_stack(
+        [
+            np.linspace(x_start, x_end, num_points),
+            np.full(num_points, y_pos),
+        ]
+    )
     x = (undistorted[:, 0] - cx) / fx
     y = (undistorted[:, 1] - cy) / fy
     r2 = x * x + y * y
@@ -328,9 +330,7 @@ class TestDistortionSolver:
         assert float(result.distortion.p1) == 0.0
         assert float(result.distortion.p2) == 0.0
 
-    def test_solve_rejects_all_interpolated_lines(
-        self, intrinsic_matrix, ptz_position
-    ):
+    def test_solve_rejects_all_interpolated_lines(self, intrinsic_matrix, ptz_position):
         """Should raise ValueError when all lines are interpolated (no curvature)."""
         solver = DistortionSolver()
         lines = [
@@ -495,11 +495,13 @@ class TestRoundTripDistortionRecovery:
 
     @pytest.fixture
     def intrinsic_matrix(self):
-        return np.array([
-            [1000.0, 0.0, 960.0],
-            [0.0, 1000.0, 540.0],
-            [0.0, 0.0, 1.0],
-        ])
+        return np.array(
+            [
+                [1000.0, 0.0, 960.0],
+                [0.0, 1000.0, 540.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
     @pytest.fixture
     def ptz_position(self):
@@ -527,13 +529,13 @@ class TestRoundTripDistortionRecovery:
         lines = []
         for y_pos in [200, 400, 600, 800]:
             # Horizontal line
-            undistorted_pts = np.column_stack([
-                np.linspace(200, 1700, 30),
-                np.full(30, float(y_pos)),
-            ])
-            distorted_pts = self._apply_forward_distortion(
-                undistorted_pts, true_k1, fx, fy, cx, cy
+            undistorted_pts = np.column_stack(
+                [
+                    np.linspace(200, 1700, 30),
+                    np.full(30, float(y_pos)),
+                ]
             )
+            distorted_pts = self._apply_forward_distortion(undistorted_pts, true_k1, fx, fy, cx, cy)
             edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted_pts)
             line = CameraLine(
                 line_id=f"h_line_{y_pos}",
@@ -547,13 +549,13 @@ class TestRoundTripDistortionRecovery:
 
         for x_pos in [200, 600, 1400, 1700]:
             # Vertical line
-            undistorted_pts = np.column_stack([
-                np.full(30, float(x_pos)),
-                np.linspace(100, 900, 30),
-            ])
-            distorted_pts = self._apply_forward_distortion(
-                undistorted_pts, true_k1, fx, fy, cx, cy
+            undistorted_pts = np.column_stack(
+                [
+                    np.full(30, float(x_pos)),
+                    np.linspace(100, 900, 30),
+                ]
             )
+            distorted_pts = self._apply_forward_distortion(undistorted_pts, true_k1, fx, fy, cx, cy)
             edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted_pts)
             line = CameraLine(
                 line_id=f"v_line_{x_pos}",
@@ -571,8 +573,6 @@ class TestRoundTripDistortionRecovery:
 
         # The solver should recover k1 approximately
         recovered_k1 = float(result.distortion.k1)
-        assert abs(recovered_k1 - true_k1) < 0.05, (
-            f"Expected k1 ~{true_k1}, got {recovered_k1}"
-        )
+        assert abs(recovered_k1 - true_k1) < 0.05, f"Expected k1 ~{true_k1}, got {recovered_k1}"
         # RMSE should be very low after correction
         assert result.overall_rmse < 1.0

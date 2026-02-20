@@ -74,5 +74,3 @@ def validate_update_point_request(data: dict[str, Any]) -> str | None:
         return "pixel_y must be a number"
 
     return None
-
-

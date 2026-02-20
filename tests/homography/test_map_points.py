@@ -374,9 +374,9 @@ class TestInverseProjection:
             gcp_coord = np.array([[[gcp.pixel_x, gcp.pixel_y]]], dtype=np.float32)
 
             # Project to annotation (camera) space
-            projected_annotation_pt = cv2.perspectiveTransform(gcp_coord, inverse_homography_matrix)[
-                0, 0
-            ]
+            projected_annotation_pt = cv2.perspectiveTransform(
+                gcp_coord, inverse_homography_matrix
+            )[0, 0]
 
             # Expected annotation pixel
             expected = np.array([annotation.pixel.x, annotation.pixel.y])
@@ -421,7 +421,9 @@ class TestRoundTripProjection:
         H_inv = np.linalg.inv(H)
         return H, H_inv
 
-    def test_round_trip_annotation_to_gcp_to_annotation(self, homography_matrices, valte_annotations):
+    def test_round_trip_annotation_to_gcp_to_annotation(
+        self, homography_matrices, valte_annotations
+    ):
         """Test annotation -> GCP -> annotation preserves coordinates."""
         H, H_inv = homography_matrices
 
@@ -501,7 +503,9 @@ class TestReprojectionErrorMetrics:
         H, _ = cv2.findHomography(annotation_pixels, gcp_coords, cv2.RANSAC, 50.0)
         return H
 
-    def test_mean_reprojection_error(self, homography_matrix, map_point_registry, valte_annotations):
+    def test_mean_reprojection_error(
+        self, homography_matrix, map_point_registry, valte_annotations
+    ):
         """Test computing mean reprojection error across all annotation-GCP pairs."""
         errors = []
 
@@ -532,7 +536,9 @@ class TestReprojectionErrorMetrics:
         assert mean_error < 20.0, f"Mean reprojection error too high: {mean_error:.2f} pixels"
         assert max_error < 50.0, f"Max reprojection error too high: {max_error:.2f} pixels"
 
-    def test_rmse_reprojection_error(self, homography_matrix, map_point_registry, valte_annotations):
+    def test_rmse_reprojection_error(
+        self, homography_matrix, map_point_registry, valte_annotations
+    ):
         """Test computing RMSE (Root Mean Square Error) of reprojection."""
         squared_errors = []
 

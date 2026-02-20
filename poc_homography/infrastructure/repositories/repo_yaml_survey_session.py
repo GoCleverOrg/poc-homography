@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,14 @@ def _is_valid_session_id(session_id: str) -> bool:
 class RepoYamlSurveySession:
     """Repository for SurveySession entities stored as date-partitioned YAML manifests."""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        entity_factory: Callable[[dict[str, Any]], Any],
+    ) -> None:
         self._data_dir = Path(data_dir)
         self._data_dir.mkdir(parents=True, exist_ok=True)
+        self._entity_factory = entity_factory
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -142,17 +148,14 @@ class RepoYamlSurveySession:
     # Internal
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _load_entity(session_dir: Path) -> Any | None:
+    def _load_entity(self, session_dir: Path) -> Any | None:
         try:
-            from camera_survey.models import SurveySession  # type: ignore[import-untyped]
-
             manifest_path = session_dir / "manifest.yaml"
             if not manifest_path.exists():
                 return None
             with open(manifest_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-            return SurveySession.from_dict(data)
+            return self._entity_factory(data)
         except Exception:
             logger.warning("Failed to load survey session from %s", session_dir, exc_info=True)
             return None

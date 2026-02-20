@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.infrastructure.repositories import (
+    RepoYamlAnnotation,
     RepoYamlCapturedFrame,
     RepoYamlLineAnnotation,
     RepoYamlMap,
@@ -102,8 +103,12 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
             origin_y = tiepoint[4] + tiepoint[1] * scale[1]
 
             gt_params = [
-                float(origin_x), float(scale[0]), 0.0,
-                float(origin_y), 0.0, -float(scale[1]),
+                float(origin_x),
+                float(scale[0]),
+                0.0,
+                float(origin_y),
+                0.0,
+                -float(scale[1]),
             ]
         except (IndexError, TypeError, ValueError):
             pass
@@ -112,8 +117,12 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
         try:
             matrix = tags["ModelTransformationTag"].value
             gt_params = [
-                float(matrix[3]), float(matrix[0]), float(matrix[1]),
-                float(matrix[7]), float(matrix[4]), float(matrix[5]),
+                float(matrix[3]),
+                float(matrix[0]),
+                float(matrix[1]),
+                float(matrix[7]),
+                float(matrix[4]),
+                float(matrix[5]),
             ]
         except (IndexError, TypeError, ValueError):
             pass
@@ -200,11 +209,28 @@ def get_default_map_id(tenant_id: str | None = None) -> str | None:
 # Module-level caches
 # ---------------------------------------------------------------------------
 
+_annotation_repo: RepoYamlAnnotation | None = None
 _frame_repo: RepoYamlCapturedFrame | None = None
 _line_ann_repo: RepoYamlLineAnnotation | None = None
 _line_anns_by_frame: dict[str, list] | None = None
 _frames: list[CapturedFrame] | None = None
 _image_to_frame: dict[str, CapturedFrame] | None = None
+
+
+def get_annotation_repo() -> RepoYamlAnnotation:
+    """Return a cached Annotation repository instance."""
+    global _annotation_repo
+    if _annotation_repo is None:
+        _annotation_repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
+    return _annotation_repo
+
+
+def get_line_annotation_repo() -> RepoYamlLineAnnotation:
+    """Return a cached LineAnnotation repository instance."""
+    global _line_ann_repo
+    if _line_ann_repo is None:
+        _line_ann_repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
+    return _line_ann_repo
 
 
 def get_frame_repo() -> RepoYamlCapturedFrame:
@@ -267,12 +293,10 @@ def load_annotations_for_frame(frame_id: str) -> list[dict]:
 
 def _get_line_anns_by_frame() -> dict[str, list]:
     """Build and cache mapping from frame_id -> list of line annotations."""
-    global _line_ann_repo, _line_anns_by_frame
+    global _line_anns_by_frame
     if _line_anns_by_frame is None:
-        if _line_ann_repo is None:
-            _line_ann_repo = RepoYamlLineAnnotation(LINE_ANNOTATIONS_DIR)
         by_frame: dict[str, list] = {}
-        for ann in _line_ann_repo.get_all():
+        for ann in get_line_annotation_repo().get_all():
             by_frame.setdefault(ann.frame_id, []).append(ann)
         _line_anns_by_frame = by_frame
     return _line_anns_by_frame
@@ -301,8 +325,9 @@ def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
 
 def invalidate_cache() -> None:
     """Clear all module-level caches. Useful after saves."""
-    global _frame_repo, _frames, _image_to_frame, _line_ann_repo, _line_anns_by_frame
-    global _tenant_repo, _map_repo
+    global _annotation_repo, _frame_repo, _frames, _image_to_frame
+    global _line_ann_repo, _line_anns_by_frame, _tenant_repo, _map_repo
+    _annotation_repo = None
     _frame_repo = None
     _frames = None
     _image_to_frame = None

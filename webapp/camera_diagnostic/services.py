@@ -1125,7 +1125,9 @@ def _get_diagnostic_repo():
     """Return a RepoYamlDiagnosticSession for the default storage directory."""
     from poc_homography.infrastructure.repositories import RepoYamlDiagnosticSession
 
-    return RepoYamlDiagnosticSession(get_diagnostic_storage_dir())
+    from .models import DiagnosticSession
+
+    return RepoYamlDiagnosticSession(get_diagnostic_storage_dir(), DiagnosticSession.from_dict)
 
 
 def save_diagnostic_session(session) -> bool:
@@ -1158,7 +1160,9 @@ def delete_diagnostic_session(session_id: str) -> tuple[bool, str | None]:
 
 # Constants for stress testing
 STRESS_TEST_STABILIZATION_TIMEOUT = 10.0  # Max seconds to wait for position stabilization
-STRESS_TEST_STABILIZATION_THRESHOLD = 0.0  # Seconds of no change to consider stabilized (0 = no wait)
+STRESS_TEST_STABILIZATION_THRESHOLD = (
+    0.0  # Seconds of no change to consider stabilized (0 = no wait)
+)
 STRESS_TEST_POLL_INTERVAL = 0.01  # Polling interval for position checks (minimal for max speed)
 POSITION_TOLERANCE = 0.5  # Position tolerance in degrees for matching
 
@@ -1184,7 +1188,9 @@ def _get_stress_test_repo():
     """Return a RepoYamlStressTestSession for the default storage directory."""
     from poc_homography.infrastructure.repositories import RepoYamlStressTestSession
 
-    return RepoYamlStressTestSession(get_stress_test_storage_dir())
+    from .models import StressTestSession
+
+    return RepoYamlStressTestSession(get_stress_test_storage_dir(), StressTestSession.from_dict)
 
 
 class CameraStressTestService:
@@ -1483,9 +1489,21 @@ class CameraStressTestService:
         zoom_diff = target_zoom - start_position["zoom"]
 
         # Determine speed values (-100 to +100)
-        pan_speed = MAX_SPEED if pan_diff > POSITION_THRESHOLD else (-MAX_SPEED if pan_diff < -POSITION_THRESHOLD else 0)
-        tilt_speed = MAX_SPEED if tilt_diff > POSITION_THRESHOLD else (-MAX_SPEED if tilt_diff < -POSITION_THRESHOLD else 0)
-        zoom_speed = MAX_SPEED if zoom_diff > POSITION_THRESHOLD else (-MAX_SPEED if zoom_diff < -POSITION_THRESHOLD else 0)
+        pan_speed = (
+            MAX_SPEED
+            if pan_diff > POSITION_THRESHOLD
+            else (-MAX_SPEED if pan_diff < -POSITION_THRESHOLD else 0)
+        )
+        tilt_speed = (
+            MAX_SPEED
+            if tilt_diff > POSITION_THRESHOLD
+            else (-MAX_SPEED if tilt_diff < -POSITION_THRESHOLD else 0)
+        )
+        zoom_speed = (
+            MAX_SPEED
+            if zoom_diff > POSITION_THRESHOLD
+            else (-MAX_SPEED if zoom_diff < -POSITION_THRESHOLD else 0)
+        )
 
         # Start continuous movement at max speed
         command_sent = datetime.now(timezone.utc)
@@ -1506,16 +1524,16 @@ class CameraStressTestService:
 
             # Check if we've reached or passed the target on each active axis
             reached_pan = pan_speed == 0 or (
-                (pan_speed > 0 and current["pan"] >= target_pan - POSITION_THRESHOLD) or
-                (pan_speed < 0 and current["pan"] <= target_pan + POSITION_THRESHOLD)
+                (pan_speed > 0 and current["pan"] >= target_pan - POSITION_THRESHOLD)
+                or (pan_speed < 0 and current["pan"] <= target_pan + POSITION_THRESHOLD)
             )
             reached_tilt = tilt_speed == 0 or (
-                (tilt_speed > 0 and current["tilt"] >= target_tilt - POSITION_THRESHOLD) or
-                (tilt_speed < 0 and current["tilt"] <= target_tilt + POSITION_THRESHOLD)
+                (tilt_speed > 0 and current["tilt"] >= target_tilt - POSITION_THRESHOLD)
+                or (tilt_speed < 0 and current["tilt"] <= target_tilt + POSITION_THRESHOLD)
             )
             reached_zoom = zoom_speed == 0 or (
-                (zoom_speed > 0 and current["zoom"] >= target_zoom - POSITION_THRESHOLD) or
-                (zoom_speed < 0 and current["zoom"] <= target_zoom + POSITION_THRESHOLD)
+                (zoom_speed > 0 and current["zoom"] >= target_zoom - POSITION_THRESHOLD)
+                or (zoom_speed < 0 and current["zoom"] <= target_zoom + POSITION_THRESHOLD)
             )
 
             if reached_pan and reached_tilt and reached_zoom:
@@ -1823,12 +1841,8 @@ class CameraStressTestService:
         current_zoom = (status.zoom or 0) if status else 0
 
         # Generate waypoints for forward and back sweeps
-        forward_waypoints = cls._generate_sweep_waypoints(
-            axis_config.start, axis_config.end
-        )
-        back_waypoints = cls._generate_sweep_waypoints(
-            axis_config.end, axis_config.start
-        )
+        forward_waypoints = cls._generate_sweep_waypoints(axis_config.start, axis_config.end)
+        back_waypoints = cls._generate_sweep_waypoints(axis_config.end, axis_config.start)
 
         # Calculate total movements: (forward waypoints + back waypoints) * repetitions
         movements_per_rep = len(forward_waypoints) + len(back_waypoints)

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import PixelPoint
 
 
-@dataclass
+@dataclass(frozen=True)
 class Line:
     """A line on a map image, defined by two pixel endpoints.
 
@@ -21,18 +21,17 @@ class Line:
         map_id: Map this line belongs to.
         start: Start endpoint in map pixels.
         end: End endpoint in map pixels.
-        id: Auto-generated composite ID ``{map_id}/{name}``.
     """
 
     name: str
     map_id: str
     start: PixelPoint
     end: PixelPoint
-    id: str = ""
 
-    def __post_init__(self) -> None:
-        if not self.id:
-            self.id = f"{self.map_id}/{self.name}"
+    @property
+    def id(self) -> str:
+        """Composite identity: ``{map_id}/{name}``."""
+        return f"{self.map_id}/{self.name}"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -50,7 +49,6 @@ class Line:
         from poc_homography.domain.vo import PixelPoint
 
         return cls(
-            id=data.get("id", ""),
             name=data["name"],
             map_id=data["map_id"],
             start=PixelPoint.from_dict(data["start"]),

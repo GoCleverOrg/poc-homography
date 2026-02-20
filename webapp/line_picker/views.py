@@ -399,9 +399,7 @@ def api_import(request: HttpRequest) -> JsonResponse:
     state = get_state()
     repo_lines = from_line_repo(LINES_DIR, map_id)
     state.lines = repo_lines
-    return JsonResponse(
-        {"map_id": map_id, "count": len(state.lines)}
-    )
+    return JsonResponse({"map_id": map_id, "count": len(state.lines)})
 
 
 @require_GET

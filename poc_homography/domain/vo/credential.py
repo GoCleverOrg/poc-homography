@@ -21,6 +21,9 @@ class Credential:
     username: str
     password: str
 
+    def __repr__(self) -> str:
+        return f"Credential(username={self.username!r}, password='***')"
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {

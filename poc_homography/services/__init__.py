@@ -17,10 +17,12 @@ Note on CoordinateTransformService:
 """
 
 from poc_homography.services.homography import (
+    ServiceHomography,
     StrategyHomography,
     StrategyIntrinsicExtrinsic,
 )
 from poc_homography.services.orientation import (
+    ServiceOrientation,
     StrategyOrientation,
     StrategyOrientationAdditive,
     StrategyRotationMatrix,
@@ -33,6 +35,8 @@ from poc_homography.services.service_geotiff_import import (
 __all__ = [
     "GeoTiffImportResult",
     "ServiceGeoTiffImport",
+    "ServiceHomography",
+    "ServiceOrientation",
     "StrategyHomography",
     "StrategyIntrinsicExtrinsic",
     "StrategyOrientation",

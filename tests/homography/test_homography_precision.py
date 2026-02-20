@@ -43,7 +43,9 @@ ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 # Valte camera geotransform: 0.15 m/pixel in map space
 # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
 VALTE_CONFIG = get_camera_by_name("Valte")
-MAP_METERS_PER_PIXEL = abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
+MAP_METERS_PER_PIXEL = (
+    abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
+)
 
 
 # =============================================================================
@@ -191,7 +193,7 @@ def compute_pixel_precision(
     return {
         "mean_error": float(np.mean(errors_array)),
         "max_error": float(np.max(errors_array)),
-        "rmse": float(np.sqrt(np.mean(errors_array ** 2))),
+        "rmse": float(np.sqrt(np.mean(errors_array**2))),
         "per_point_errors": errors,
     }
 
@@ -249,20 +251,22 @@ def compute_metric_precision(
 
         errors_map_pixels.append(error_map_px)
         errors_meters.append(error_meters)
-        per_point_details.append({
-            "gcp_id": annotation["gcp_id"],
-            "error_map_px": error_map_px,
-            "error_meters": error_meters,
-            "projected_map": (projected_map.pixel_x, projected_map.pixel_y),
-            "actual_map": (known_map.pixel_x, known_map.pixel_y),
-        })
+        per_point_details.append(
+            {
+                "gcp_id": annotation["gcp_id"],
+                "error_map_px": error_map_px,
+                "error_meters": error_meters,
+                "projected_map": (projected_map.pixel_x, projected_map.pixel_y),
+                "actual_map": (known_map.pixel_x, known_map.pixel_y),
+            }
+        )
 
     errors_array = np.array(errors_meters)
 
     return {
         "mean_error_m": float(np.mean(errors_array)),
         "max_error_m": float(np.max(errors_array)),
-        "rmse_m": float(np.sqrt(np.mean(errors_array ** 2))),
+        "rmse_m": float(np.sqrt(np.mean(errors_array**2))),
         "mean_error_map_px": float(np.mean(errors_map_pixels)),
         "per_point_details": per_point_details,
     }
@@ -418,7 +422,9 @@ class TestMetricPrecision:
         print(f"  RMSE:       {precision['rmse_m']:.2f} m")
         print("\nPer-point errors:")
         for detail in sorted(precision["per_point_details"], key=lambda x: -x["error_meters"]):
-            print(f"  {detail['gcp_id']}: {detail['error_meters']:.2f} m ({detail['error_map_px']:.1f} map px)")
+            print(
+                f"  {detail['gcp_id']}: {detail['error_meters']:.2f} m ({detail['error_map_px']:.1f} map px)"
+            )
 
         # Assert metric thresholds (sub-meter accuracy is good for surveying)
         assert precision["mean_error_m"] < 2.0, (
@@ -464,13 +470,15 @@ class TestMetricPrecision:
         if len(annotations) < 5:
             pytest.skip("Need at least 5 unique annotations for holdout validation")
 
-        print(f"\nUsing {len(annotations)} unique annotations from {len(all_test_cases)} test cases")
+        print(
+            f"\nUsing {len(annotations)} unique annotations from {len(all_test_cases)} test cases"
+        )
 
         holdout_errors = []
 
         for i, holdout_annotation in enumerate(annotations):
             # Train on all annotations except holdout
-            train_annotations = annotations[:i] + annotations[i+1:]
+            train_annotations = annotations[:i] + annotations[i + 1 :]
 
             homography = MapPointHomography(map_id=map_registry.map_id)
             homography.compute_from_gcps(
@@ -486,10 +494,12 @@ class TestMetricPrecision:
                 map_registry=map_registry,
             )
 
-            holdout_errors.append({
-                "gcp_id": holdout_annotation["gcp_id"],
-                "error_m": precision["mean_error_m"],
-            })
+            holdout_errors.append(
+                {
+                    "gcp_id": holdout_annotation["gcp_id"],
+                    "error_m": precision["mean_error_m"],
+                }
+            )
 
         # Sort by error for display
         holdout_errors.sort(key=lambda x: -x["error_m"])
@@ -537,8 +547,8 @@ class TestRoundTrip:
 
             # Compare
             error = np.linalg.norm(
-                np.array([recovered_pixel.x, recovered_pixel.y]) -
-                np.array([original_pixel.x, original_pixel.y])
+                np.array([recovered_pixel.x, recovered_pixel.y])
+                - np.array([original_pixel.x, original_pixel.y])
             )
 
             # Round-trip should have low error (tolerance 0.1 pixel for numerical precision)
@@ -704,10 +714,8 @@ class TestAllTestCases:
             recovered_pixel = homography.map_to_camera(gcp_as_pixel)
 
             error = np.linalg.norm(
-                np.array([recovered_pixel.x, recovered_pixel.y]) -
-                np.array([original_pixel.x, original_pixel.y])
+                np.array([recovered_pixel.x, recovered_pixel.y])
+                - np.array([original_pixel.x, original_pixel.y])
             )
 
-            assert error < 0.01, (
-                f"[{test_case_name}] Round-trip error too high: {error:.4f} pixels"
-            )
+            assert error < 0.01, f"[{test_case_name}] Round-trip error too high: {error:.4f} pixels"

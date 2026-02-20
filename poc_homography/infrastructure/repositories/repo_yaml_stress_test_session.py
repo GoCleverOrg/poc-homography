@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,14 @@ def _is_valid_session_id(session_id: str) -> bool:
 class RepoYamlStressTestSession:
     """Repository for StressTestSession entities stored as date-partitioned YAML manifests."""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        entity_factory: Callable[[dict[str, Any]], Any],
+    ) -> None:
         self._data_dir = Path(data_dir)
         self._data_dir.mkdir(parents=True, exist_ok=True)
+        self._entity_factory = entity_factory
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -135,14 +141,11 @@ class RepoYamlStressTestSession:
     # Internal
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _load_entity(manifest_path: Path) -> Any | None:
+    def _load_entity(self, manifest_path: Path) -> Any | None:
         try:
-            from camera_diagnostic.models import StressTestSession  # type: ignore[import-untyped]
-
             with open(manifest_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-            return StressTestSession.from_dict(data)
+            return self._entity_factory(data)
         except Exception:
             logger.warning("Failed to load session from %s", manifest_path, exc_info=True)
             return None

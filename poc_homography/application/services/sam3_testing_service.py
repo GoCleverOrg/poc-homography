@@ -5,10 +5,10 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from pathlib import Path  # noqa: TC003 - used at runtime
-from typing import Any
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 
 from poc_homography.domain.protocols import Sam3ApiError, Sam3Client
 from poc_homography.domain.vo.mask import Mask
@@ -126,7 +126,7 @@ class Sam3PromptTestingService:
 
         return results
 
-    def _encode_image(self, frame: np.ndarray[Any, Any]) -> str:
+    def _encode_image(self, frame: npt.NDArray[np.uint8]) -> str:
         """Encode an image frame to base64.
 
         Args:
@@ -147,7 +147,7 @@ class Sam3PromptTestingService:
         self,
         prompt: str,
         image_base64: str,
-        frame: np.ndarray[Any, Any],
+        frame: npt.NDArray[np.uint8],
         output_dir: Path | None,
         verbose: bool,
     ) -> Sam3PromptResult:
@@ -256,7 +256,7 @@ class Sam3PromptTestingService:
         self,
         prompt: str,
         mask: Mask,
-        frame: np.ndarray[Any, Any],
+        frame: npt.NDArray[np.uint8],
         output_dir: Path,
         verbose: bool,
     ) -> None:

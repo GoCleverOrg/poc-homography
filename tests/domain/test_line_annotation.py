@@ -85,7 +85,9 @@ class TestLineAnnotation:
             line_id="L1",
             frame_id="f/c/t",
             camera_pose=PTZState(
-                pan_raw=Degrees(0), tilt_deg=Degrees(0), zoom=Unitless(1),
+                pan_raw=Degrees(0),
+                tilt_deg=Degrees(0),
+                zoom=Unitless(1),
             ),
             start_pixel=pts[0],
             end_pixel=pts[-1],

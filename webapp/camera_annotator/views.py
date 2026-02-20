@@ -10,31 +10,19 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
-    ANNOTATIONS_DIR,
     GCPS_DIR,
     get_default_map_id,
     get_frame_image_path,
     image_filename_to_frame,
     list_image_filenames,
-    load_annotations_for_frame,
     validate_image_filename,
+)
+from homography_web.frame_utils import (
+    get_annotation_repo as _get_annotation_repo,
 )
 
 # Session key for current image
 SESSION_IMAGE_KEY = "camera_annotator_image"
-
-# Cached annotation repo
-_annotation_repo = None
-
-
-def _get_annotation_repo():
-    """Return a cached RepoYamlAnnotation instance."""
-    global _annotation_repo
-    if _annotation_repo is None:
-        from poc_homography.infrastructure.repositories import RepoYamlAnnotation
-
-        _annotation_repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
-    return _annotation_repo
 
 
 def get_available_images() -> list[str]:
@@ -75,11 +63,8 @@ def load_gcps() -> list[dict]:
 
 
 def load_existing_annotations(image_filename: str) -> list[dict]:
-    """Load existing annotations for a specific image from the CapturedFrame repo."""
-    frame = image_filename_to_frame(image_filename)
-    if frame is None:
-        return []
-    return load_annotations_for_frame(frame.id)
+    """Load existing annotations for a specific image from the Annotation repo."""
+    return load_annotations_from_repo(image_filename)
 
 
 # ---------------------------------------------------------------------------

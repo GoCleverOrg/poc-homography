@@ -197,10 +197,12 @@ def _get_survey_repo():
     """Return a RepoYamlSurveySession for the default storage directory."""
     from poc_homography.infrastructure.repositories import RepoYamlSurveySession
 
-    return RepoYamlSurveySession(_get_survey_base_path())
+    from .models import SurveySession
+
+    return RepoYamlSurveySession(_get_survey_base_path(), SurveySession.from_dict)
 
 
-def _write_manifest(session: SurveySession, session_path: Path) -> bool:
+def _write_manifest(session: SurveySession) -> bool:
     """Write session manifest via the DDD repository."""
     return _get_survey_repo().save(session)
 
@@ -376,15 +378,27 @@ class CameraSurveyService:
                 # Use config's fixed values for non-swept axes, falling back to current_ptz
                 if config.axis.value == "pan":
                     target_pan = axis_value
-                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
-                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    target_tilt = (
+                        config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    )
+                    target_zoom = (
+                        config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    )
                 elif config.axis.value == "tilt":
-                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    target_pan = (
+                        config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    )
                     target_tilt = axis_value
-                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    target_zoom = (
+                        config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    )
                 else:  # zoom
-                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
-                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    target_pan = (
+                        config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    )
+                    target_tilt = (
+                        config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    )
                     target_zoom = axis_value
 
                 # Move to target position with retry logic
@@ -441,7 +455,7 @@ class CameraSurveyService:
                         )
 
                 # Write manifest after each step for crash recovery
-                _write_manifest(session, session_path)
+                _write_manifest(session)
 
             # Survey complete or failed
             if session.status == SurveyStatus.RUNNING:
@@ -472,7 +486,7 @@ class CameraSurveyService:
             session.end_time = datetime.now(timezone.utc)
 
             # Write final manifest
-            _write_manifest(session, session_path)
+            _write_manifest(session)
 
             # Update progress
             with _active_surveys_lock:
@@ -484,7 +498,7 @@ class CameraSurveyService:
             session.status = SurveyStatus.FAILED
             session.abort_reason = str(e)
             session.end_time = datetime.now(timezone.utc)
-            _write_manifest(session, session_path)
+            _write_manifest(session)
 
             with _active_surveys_lock:
                 if session.id in _active_surveys:
@@ -588,9 +602,7 @@ class CameraSurveyService:
             sessions.append(
                 {
                     "id": session.id,
-                    "date": session.start_time.strftime("%Y%m%d")
-                    if session.start_time
-                    else None,
+                    "date": session.start_time.strftime("%Y%m%d") if session.start_time else None,
                     "tenant_id": session.tenant.id if session.tenant else None,
                     "tenant_name": session.tenant.name if session.tenant else None,
                     "camera_id": session.camera.id if session.camera else None,
@@ -600,9 +612,7 @@ class CameraSurveyService:
                     else None,
                     "step_count": len(session.captures),
                     "status": session.status.value,
-                    "start_time": session.start_time.isoformat()
-                    if session.start_time
-                    else None,
+                    "start_time": session.start_time.isoformat() if session.start_time else None,
                 }
             )
 
