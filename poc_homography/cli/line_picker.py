@@ -60,8 +60,7 @@ def serve(
 
     project_root = Path(__file__).parent.parent.parent
 
-    geotransform = None
-    crs = None
+    geotiff = None
 
     # Load geotransform from camera config if specified
     if camera:
@@ -74,10 +73,25 @@ def serve(
 
         geotiff_params = cam_config.get("geotiff_params")
         if geotiff_params:
-            geotransform = geotiff_params.get("geotransform")
+            gt = geotiff_params.get("geotransform")
             crs = geotiff_params.get("utm_crs")
-            typer.echo(f"Loaded geotransform from camera '{camera}': {geotransform}")
-            typer.echo(f"CRS: {crs}")
+            if gt and crs:
+                from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
+                from poc_homography.types import Easting, Meters, Northing, Unitless
+
+                geotiff = GeoTiff(
+                    geotransform=GeoTransform(
+                        origin_easting=Easting(gt[0]),
+                        pixel_width=Meters(gt[1]),
+                        row_rotation=Unitless(gt[2]),
+                        origin_northing=Northing(gt[3]),
+                        col_rotation=Unitless(gt[4]),
+                        pixel_height=Meters(gt[5]),
+                    ),
+                    crs=crs,
+                )
+                typer.echo(f"Loaded geotransform from camera '{camera}': {gt}")
+                typer.echo(f"CRS: {crs}")
         else:
             typer.echo(f"Warning: Camera '{camera}' has no geotiff_params", err=True)
 
@@ -108,8 +122,7 @@ def serve(
     initialize_state(
         image_path,
         map_id=map_id,
-        geotransform=geotransform,
-        crs=crs,
+        geotiff=geotiff,
     )
 
     typer.echo(f"Starting server at http://{host}:{port}/line-picker/")
