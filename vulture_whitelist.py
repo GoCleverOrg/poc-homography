@@ -1,6 +1,7 @@
 DistortionCoefficients  # backward-compat alias (poc_homography/camera_parameters.py:21)
 load_distortion_coefficients  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:461)
 _.repo_camera_config  # unused method (poc_homography/application/context.py:65)
+_.repo_tenant  # unused method (poc_homography/application/context.py:66)
 _.repo_camera_calibration  # unused method (poc_homography/application/context.py:70)
 _.repo_gcp  # unused method (poc_homography/application/context.py:75)
 _.sam3_testing_service  # unused method (poc_homography/application/context.py:105)

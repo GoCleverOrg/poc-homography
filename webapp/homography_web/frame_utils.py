@@ -190,9 +190,6 @@ def get_default_map_id(tenant_id: str | None = None) -> str:
     return "Cartografia_valencia"
 
 
-# Backward-compatible constant (deprecated - use get_default_map_id() instead)
-DEFAULT_MAP_ID = "Cartografia_valencia"
-
 # ---------------------------------------------------------------------------
 # Module-level caches
 # ---------------------------------------------------------------------------
