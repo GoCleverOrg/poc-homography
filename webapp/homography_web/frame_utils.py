@@ -19,6 +19,8 @@ from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.infrastructure.repositories import (
     RepoYamlCapturedFrame,
     RepoYamlLineAnnotation,
+    RepoYamlMap,
+    RepoYamlTenant,
 )
 from poc_homography.types import Easting, Meters, Northing, Unitless
 
@@ -155,18 +157,24 @@ def get_default_tenant_id() -> str:
     return getattr(settings, "DEFAULT_TENANT_ID", "valte")
 
 
-def get_tenant_repo():
+_tenant_repo: RepoYamlTenant | None = None
+_map_repo: RepoYamlMap | None = None
+
+
+def get_tenant_repo() -> RepoYamlTenant:
     """Return a cached Tenant repository instance."""
-    from poc_homography.infrastructure.repositories import RepoYamlTenant
+    global _tenant_repo
+    if _tenant_repo is None:
+        _tenant_repo = RepoYamlTenant(PROJECT_ROOT / "data" / "tenants")
+    return _tenant_repo
 
-    return RepoYamlTenant(PROJECT_ROOT / "data" / "tenants")
 
-
-def get_map_repo():
+def get_map_repo() -> RepoYamlMap:
     """Return a cached Map repository instance."""
-    from poc_homography.infrastructure.repositories import RepoYamlMap
-
-    return RepoYamlMap(PROJECT_ROOT / "data" / "maps")
+    global _map_repo
+    if _map_repo is None:
+        _map_repo = RepoYamlMap(PROJECT_ROOT / "data" / "maps")
+    return _map_repo
 
 
 def get_default_map_id(tenant_id: str | None = None) -> str:
@@ -296,8 +304,11 @@ def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
 def invalidate_cache() -> None:
     """Clear all module-level caches. Useful after saves."""
     global _frame_repo, _frames, _image_to_frame, _line_ann_repo, _line_anns_by_frame
+    global _tenant_repo, _map_repo
     _frame_repo = None
     _frames = None
     _image_to_frame = None
     _line_ann_repo = None
     _line_anns_by_frame = None
+    _tenant_repo = None
+    _map_repo = None

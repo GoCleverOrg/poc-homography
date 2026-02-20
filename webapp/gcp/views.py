@@ -10,6 +10,7 @@ from typing import Any
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.http import require_GET
 from homography_web.frame_utils import (
     GCPS_DIR,
     get_default_tenant_id,
@@ -89,6 +90,7 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     return render(request, "gcp/debug_map.html", context)
 
 
+@require_GET
 def api_tenants(request: HttpRequest) -> JsonResponse:
     """Return available tenants from the DDD repository."""
     tenants = get_tenant_repo().get_all()
@@ -97,6 +99,7 @@ def api_tenants(request: HttpRequest) -> JsonResponse:
     )
 
 
+@require_GET
 def api_tenant_maps(request: HttpRequest, tenant_id: str) -> JsonResponse:
     """Return maps belonging to a specific tenant."""
     maps = get_map_repo().get_by_tenant(tenant_id)

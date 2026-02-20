@@ -32,4 +32,4 @@ class LinePickerConfig(AppConfig):
         map_file = project_root / f"{get_default_map_id()}.tif"
 
         if map_file.exists():
-            initialize_state(map_file, "valte")
+            initialize_state(map_file, get_default_map_id())
