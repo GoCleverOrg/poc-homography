@@ -23,8 +23,8 @@ from point_picker.state import (
     TAG_ABBREVIATIONS,
     PointPickerState,
     get_tag_from_id,
-    normalize_array,
 )
+from homography_web.frame_utils import normalize_array
 
 
 class TestTagAbbreviations:

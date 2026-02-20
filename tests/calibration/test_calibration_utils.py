@@ -13,34 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "webapp"))
 from homography_web.calibration_utils import (
     resolve_safe_path,
     serialize_calibration_entry,
-    validate_filename,
 )
 
 from poc_homography.domain.vo.lens_distortion import LensDistortion
 from poc_homography.domain.vo.zoom_calibration_entry import ZoomCalibrationEntry
 from poc_homography.types import PixelsFloat, Unitless
-
-
-class TestValidateFilename:
-    """Tests for validate_filename."""
-
-    def test_accepts_simple_filename(self):
-        assert validate_filename("calibration.yaml") is True
-
-    def test_accepts_filename_with_underscores(self):
-        assert validate_filename("cam_01_calibration.yaml") is True
-
-    def test_rejects_empty_string(self):
-        assert validate_filename("") is False
-
-    def test_rejects_path_traversal_dotdot(self):
-        assert validate_filename("../etc/passwd") is False
-
-    def test_rejects_forward_slash(self):
-        assert validate_filename("subdir/file.yaml") is False
-
-    def test_rejects_backslash(self):
-        assert validate_filename("subdir\\file.yaml") is False
 
 
 class TestResolveSafePath:
