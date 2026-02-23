@@ -31,6 +31,9 @@ if TYPE_CHECKING:
     from poc_homography.domain.entities.ground_control_point import GroundControlPoint
     from poc_homography.domain.entities.tenant import Tenant
     from poc_homography.domain.protocols.camera_controller import CameraController
+    from poc_homography.domain.repositories.captured_frame_repo import (
+        CapturedFrameRepository,
+    )
     from poc_homography.domain.repositories.repo import Repo
 
 from poc_homography.application.services import (
@@ -90,7 +93,7 @@ class ApplicationContext:
         return RepoYamlGroundControlPoint(self.data_dir / "ground_control_points")
 
     @cached_property
-    def repo_captured_frame(self) -> Repo[CapturedFrame]:
+    def repo_captured_frame(self) -> CapturedFrameRepository:
         """Repository for captured frame entities."""
         return RepoYamlCapturedFrame(self.data_dir / "frames")
 
