@@ -775,7 +775,7 @@
 </head>
 <body>
     <div class="container">
-        <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+        <a href="{% url 'gcp:index' %}?tenant_id={{ tenant_id }}" class="back-link">&larr; Back to Tools</a>
 
         <div class="header">
             <h1>Camera Evaluation Tool</h1>
@@ -793,14 +793,12 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>Tenant</label>
-                        <select id="survey-tenant-select">
-                            <option value="">-- Select tenant --</option>
-                        </select>
+                        <span style="font-weight: 600; color: #ccc; padding: 10px 0; display: block;">{{ tenant_name }}</span>
                     </div>
                     <div class="form-group">
                         <label>Camera</label>
                         <select id="survey-camera-select" disabled>
-                            <option value="">-- Select tenant first --</option>
+                            <option value="">-- Loading cameras --</option>
                         </select>
                     </div>
                 </div>
@@ -915,8 +913,8 @@
     </div>
 
     <script>
-        // State - Survey
-        let surveyTenant = null;
+        // State - Survey (tenant comes from landing page)
+        let surveyTenant = '{{ tenant_id }}';
         let surveyCamera = null;
         let surveyCameraData = null;
         let surveyCameras = [];
@@ -927,7 +925,6 @@
         let surveyCurrentPosition = null;     // Current PTZ position
 
         // Elements - Survey
-        const surveyTenantSelect = document.getElementById('survey-tenant-select');
         const surveyCameraSelect = document.getElementById('survey-camera-select');
         const surveyCameraInfo = document.getElementById('survey-camera-info');
         const surveyCameraIp = document.getElementById('survey-camera-ip');
@@ -991,23 +988,6 @@
                 }
             }
             return null;
-        }
-
-        // Load tenants
-        async function loadTenants() {
-            try {
-                const resp = await fetch('{% url "camera_evaluation:api_tenants" %}');
-                const result = await resp.json();
-                if (result.status !== 'success') throw new Error(result.message);
-
-                const tenants = result.data.tenants;
-                const options = '<option value="">-- Select tenant --</option>' +
-                    tenants.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-
-                surveyTenantSelect.innerHTML = options;
-            } catch (e) {
-                console.error('Failed to load tenants:', e);
-            }
         }
 
         // Load cameras for tenant
@@ -1507,25 +1487,6 @@
         // =====================================================================
 
         // Event listeners - Survey tab
-        surveyTenantSelect.addEventListener('change', async (e) => {
-            surveyTenant = e.target.value;
-            surveyCamera = null;
-            surveyCameraData = null;
-            surveyCameras = [];
-            surveyCameraCapabilities = null;
-            surveyCurrentPosition = null;
-            surveyCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
-            surveyCameraSelect.disabled = true;
-            surveyCameraInfo.classList.add('hidden');
-            surveyConfigPanel.classList.add('hidden');
-            surveyControlPanel.classList.add('hidden');
-            updateCurrentPositionDisplay();
-
-            if (surveyTenant) {
-                await loadCameras(surveyTenant);
-            }
-        });
-
         surveyCameraSelect.addEventListener('change', async (e) => {
             surveyCamera = e.target.value;
             surveyCameraData = surveyCameras.find(c => c.id === surveyCamera);
@@ -1579,8 +1540,8 @@
 
         // Note: Stress testing functionality has been moved to Camera Diagnostic Tool
 
-        // Initialize
-        loadTenants();
+        // Initialize - load cameras for the tenant from landing page
+        loadCameras(surveyTenant);
         loadSurveyPresets();
         loadSurveySessions();
     </script>

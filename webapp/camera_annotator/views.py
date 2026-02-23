@@ -13,12 +13,11 @@ from homography_web.frame_utils import (
     GCPS_DIR,
     get_default_map_id,
     get_frame_image_path,
+    get_frame_repo,
     image_filename_to_frame,
     list_image_filenames,
+    load_annotations_for_frame,
     validate_image_filename,
-)
-from homography_web.frame_utils import (
-    get_annotation_repo as _get_annotation_repo,
 )
 
 # Session key for current image
@@ -63,44 +62,18 @@ def load_gcps() -> list[dict]:
 
 
 def load_existing_annotations(image_filename: str) -> list[dict]:
-    """Load existing annotations for a specific image from the Annotation repo."""
-    return load_annotations_from_repo(image_filename)
-
-
-# ---------------------------------------------------------------------------
-# Repository adapter functions (bridge legacy test_cases <-> DDD repos)
-# ---------------------------------------------------------------------------
-
-
-def load_annotations_from_repo(image_filename: str) -> list[dict]:
-    """Load annotations from the DDD Annotation repository.
-
-    Args:
-        image_filename: Camera image filename to match annotations for.
-
-    Returns:
-        List of annotation dicts in legacy format (gcp_id, pixel_x, pixel_y).
-    """
+    """Load existing annotations for a specific image from the CapturedFrame repo."""
     frame = image_filename_to_frame(image_filename)
     if frame is None:
         return []
-
-    repo = _get_annotation_repo()
-    return [
-        {
-            "gcp_id": ann.gcp_id,
-            "pixel_x": round(float(ann.pixel.x), 1),
-            "pixel_y": round(float(ann.pixel.y), 1),
-        }
-        for ann in repo.get_by_frame_id(frame.id)
-    ]
+    return load_annotations_for_frame(frame.id)
 
 
 def save_annotations_to_repo(
     image_filename: str,
     annotations: list[dict],
 ) -> None:
-    """Save legacy annotation dicts to the DDD Annotation repository.
+    """Save annotations to the CapturedFrame repo (alongside frame YAML).
 
     Args:
         image_filename: Camera image filename (used as frame_id base).
@@ -113,10 +86,8 @@ def save_annotations_to_repo(
     if frame is None:
         return
 
-    repo = _get_annotation_repo()
-
-    for ann_dict in annotations:
-        annotation = Annotation(
+    ann_entities = [
+        Annotation(
             gcp_id=ann_dict["gcp_id"],
             frame_id=frame.id,
             camera_pose=frame.ptz_state,
@@ -125,7 +96,9 @@ def save_annotations_to_repo(
                 round(float(ann_dict["pixel_y"]), 1),
             ),
         )
-        repo.save(annotation)
+        for ann_dict in annotations
+    ]
+    get_frame_repo().save_annotations(frame.id, ann_entities)
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -155,9 +128,7 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
         return JsonResponse([], safe=False)
 
     try:
-        annotations = load_annotations_from_repo(current_image)
-        if not annotations:
-            annotations = load_existing_annotations(current_image)
+        annotations = load_existing_annotations(current_image)
         return JsonResponse(annotations, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to load annotations: {e}"}, status=500)
@@ -193,9 +164,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
     request.session[SESSION_IMAGE_KEY] = filename
 
-    annotations = load_annotations_from_repo(filename)
-    if not annotations:
-        annotations = load_existing_annotations(filename)
+    annotations = load_existing_annotations(filename)
 
     return JsonResponse(
         {
