@@ -207,23 +207,22 @@ def get_default_map_id(tenant_id: str | None = None) -> str | None:
     return None
 
 
-def get_map_entity(map_id: str) -> Map:
-    """Return a ``Map`` domain entity by ID.
+def get_default_map(tenant_id: str | None = None) -> Map | None:
+    """Return the default ``Map`` entity for a tenant, or ``None``.
+
+    Unlike :func:`get_default_map_id` this returns the full entity, which
+    avoids a second repository lookup (the YAML filename may differ from
+    the entity ``id``).
 
     Args:
-        map_id: Map identifier (e.g. ``"Cartografia_valencia"``).
-
-    Returns:
-        The Map entity loaded from ``data/maps/``.
-
-    Raises:
-        FileNotFoundError: If no map YAML exists for *map_id*.
+        tenant_id: Tenant to look up. Defaults to settings.DEFAULT_TENANT_ID.
     """
-    entity = get_map_repo().get(map_id)
-    if entity is None:
-        msg = f"Map entity not found for map_id={map_id!r}"
-        raise FileNotFoundError(msg)
-    return entity
+    if tenant_id is None:
+        tenant_id = get_default_tenant_id()
+    maps = get_map_repo().get_by_tenant(tenant_id)
+    if maps:
+        return next(iter(maps.values()))
+    return None
 
 
 def get_map_image_path(map_id: str) -> Path:
@@ -241,7 +240,10 @@ def get_map_image_path(map_id: str) -> Path:
         FileNotFoundError: If the map entity is not found or the resolved path
             does not exist on disk.
     """
-    entity = get_map_entity(map_id)
+    entity = get_default_map()
+    if entity is None or entity.id != map_id:
+        msg = f"Map entity not found for map_id={map_id!r}"
+        raise FileNotFoundError(msg)
     resolved = DATA_MAPS_DIR / entity.photo.path
     if not resolved.exists():
         msg = f"Map image not found at {resolved} (photo.path={entity.photo.path})"

@@ -2,10 +2,9 @@
 
 from django.apps import AppConfig
 from homography_web.frame_utils import (
+    DATA_MAPS_DIR,
     GCPS_DIR,
-    get_default_map_id,
-    get_map_entity,
-    get_map_image_path,
+    get_default_map,
 )
 
 
@@ -28,14 +27,12 @@ class PointPickerConfig(AppConfig):
             pass
 
         # Use the default map
-        default_map = get_default_map_id()
-        if default_map is None:
+        map_entity = get_default_map()
+        if map_entity is None:
             return  # No map configured for default tenant
 
-        try:
-            map_file = get_map_image_path(default_map)
-            map_entity = get_map_entity(default_map)
-        except FileNotFoundError:
+        map_file = DATA_MAPS_DIR / map_entity.photo.path
+        if not map_file.exists():
             return
 
         initialize_state(
