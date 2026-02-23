@@ -208,6 +208,9 @@ app_name  # unused variable (webapp/point_picker/urls.py:7)
 urlpatterns  # unused variable (webapp/point_picker/urls.py:9)
 DATA_DIR  # unused variable (webapp/homography_web/settings.py:19)
 invalidate_cache  # unused function (webapp/homography_web/frame_utils.py) - public API
+_.get_by_frame_id  # unused method (poc_homography/infrastructure/repositories/repo_yaml_annotation.py:15) - repository query API
+_invalidate_line_registry_cache  # unused function (webapp/homography_precision/views.py:88) - cache management
+get_annotation_repo  # unused function (webapp/homography_web/frame_utils.py:220) - public API
 validate_export_request  # unused function (webapp/line_picker/validation.py) - used by views
 validate_import_request  # unused function (webapp/line_picker/validation.py) - used by views
 
