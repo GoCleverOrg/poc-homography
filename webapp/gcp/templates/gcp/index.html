@@ -184,7 +184,7 @@ geotiff:
     {% endif %}
 
     <div class="tool-grid">
-        <a href="{% url 'point_picker:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
+        <a href="{% url 'point_picker:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Point Picker <span class="badge">Primary</span></div>
             <div class="tool-description">
                 Pick and annotate points on high-resolution images.
@@ -192,7 +192,7 @@ geotiff:
             </div>
         </a>
 
-        <a href="{% url 'homography_precision:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
+        <a href="{% url 'homography_precision:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Homography Precision Tool</div>
             <div class="tool-description">
                 Visualize and analyze homography transformation precision across camera frames.
@@ -200,14 +200,14 @@ geotiff:
             </div>
         </a>
 
-        <a href="{% url 'line_picker:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
+        <a href="{% url 'line_picker:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Line Picker</div>
             <div class="tool-description">
                 Select and annotate lines on camera frames for calibration and analysis.
             </div>
         </a>
 
-        <a href="{% url 'camera_annotator:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
+        <a href="{% url 'camera_annotator:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Camera Frame Annotator</div>
             <div class="tool-description">
                 Annotate camera frames with GCP references.
@@ -215,7 +215,7 @@ geotiff:
             </div>
         </a>
 
-        <a href="{% url 'camera_line_annotator:index' %}" class="tool-card{% if not has_maps %} disabled{% endif %}">
+        <a href="{% url 'camera_line_annotator:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card{% if not has_maps %} disabled{% endif %}">
             <div class="tool-title">Camera Line Annotator <span class="badge">New</span></div>
             <div class="tool-description">
                 Annotate lines on camera frames for line-based homography testing.
@@ -239,7 +239,7 @@ geotiff:
             </div>
         </a>
 
-        <a href="{% url 'lens_calibration:index' %}" class="tool-card">
+        <a href="{% url 'lens_calibration:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card">
             <div class="tool-title">Lens Calibration Tool <span class="badge">Calibration</span></div>
             <div class="tool-description">
                 Calculate lens distortion coefficients (k1, k2, k3, p1, p2) using detected parking lines.
@@ -247,7 +247,7 @@ geotiff:
             </div>
         </a>
 
-        <a href="{% url 'distortion_validator:index' %}" class="tool-card">
+        <a href="{% url 'distortion_validator:index' %}?tenant_id={{ current_tenant_id }}" class="tool-card">
             <div class="tool-title">Distortion Validator <span class="badge">Validation</span></div>
             <div class="tool-description">
                 Validate lens distortion calibration by viewing undistorted images side-by-side.
