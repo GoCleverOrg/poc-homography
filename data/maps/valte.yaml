@@ -1,7 +1,7 @@
 id: Cartografia_valencia
 tenant_id: valte
 photo:
-  path: valte.png
+  path: Cartografia_valencia.tif
   width: 1681
   height: 916
 geotiff:
