@@ -2,37 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from enum import Enum
-from typing import TYPE_CHECKING
 
 from poc_homography.domain.enums.tilt_convention import TiltConvention
 from poc_homography.domain.vo.image_dimensions import ImageDimensions
 from poc_homography.types import Millimeters, Pixels
-
-if TYPE_CHECKING:
-    from poc_homography.domain.vo.credential import Credential
-
-
-def hikvision_rtsp_url(ip: str, credential: Credential, stream_type: str = "main") -> str:
-    """Build RTSP URL for Hikvision camera stream.
-
-    Args:
-        ip: Camera IP address
-        credential: Camera credentials
-        stream_type: "main" (101) for high quality or "sub" (102) for low quality
-
-    Returns:
-        Full RTSP URL for the camera stream
-    """
-    channel = "101" if stream_type == "main" else "102"
-    return (
-        f"rtsp://{credential.username}:{credential.password}@{ip}:554/Streaming/Channels/{channel}"
-    )
-
-
-# Type alias for RTSP URL builder function
-RtspUrlBuilder = Callable[["str", "Credential", "str"], str]
 
 
 class CameraSpec(Enum):
@@ -44,6 +18,8 @@ class CameraSpec(Enum):
 
     Note: Distortion coefficients are NOT included here because they are
     calibrated per-camera (not per-model) and stored in CameraCalibration.
+    Note: RTSP URL building is an infrastructure concern and lives in
+    ``poc_homography.infrastructure.clients.rtsp``.
 
     Usage:
         spec = CameraSpec.HIKVISION_DS_2DF8425IX
@@ -64,7 +40,6 @@ class CameraSpec(Enum):
         ImageDimensions.create(width=2560, height=1440),  # dimensions
         TiltConvention.POSITIVE_DOWN,  # tilt_convention
         25.0,  # max_zoom
-        hikvision_rtsp_url,  # rtsp_url_builder
     )
 
     def __init__(
@@ -75,7 +50,6 @@ class CameraSpec(Enum):
         dimensions: ImageDimensions,
         tilt_convention: TiltConvention,
         max_zoom: float,
-        rtsp_url_builder: RtspUrlBuilder,
     ) -> None:
         self._model_name = model_name
         self._sensor_width = sensor_width
@@ -83,7 +57,6 @@ class CameraSpec(Enum):
         self._dimensions = dimensions
         self._tilt_convention = tilt_convention
         self._max_zoom = max_zoom
-        self._rtsp_url_builder = rtsp_url_builder
 
     @property
     def model_name(self) -> str:
@@ -124,19 +97,6 @@ class CameraSpec(Enum):
     def max_zoom(self) -> float:
         """Maximum optical zoom factor."""
         return self._max_zoom
-
-    def rtsp_url(self, ip: str, credential: Credential, stream_type: str = "main") -> str:
-        """Build RTSP URL for this camera model.
-
-        Args:
-            ip: Camera IP address
-            credential: Camera credentials
-            stream_type: "main" for high quality or "sub" for low quality
-
-        Returns:
-            Full RTSP URL for the camera stream
-        """
-        return self._rtsp_url_builder(ip, credential, stream_type)
 
     def focal_length_at_zoom(self, zoom: float) -> Millimeters:
         """Calculate focal length at a given zoom level.

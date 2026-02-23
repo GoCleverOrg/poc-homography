@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo.photo import Photo
 
 
-@dataclass
+@dataclass(frozen=True, eq=False)
 class Map:
     """A georeferenced map image.
 
@@ -28,6 +28,14 @@ class Map:
     tenant_id: str
     photo: Photo
     geotiff: GeoTiff
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

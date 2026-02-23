@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Tenant:
     """A deployment site (e.g., a port terminal or logistics yard).
 
@@ -27,6 +27,14 @@ class Tenant:
     description: str = ""
     location_lat: str = ""
     location_lon: str = ""
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

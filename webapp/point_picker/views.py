@@ -35,7 +35,7 @@ def api_image_info(request: HttpRequest) -> JsonResponse:
         {
             "width": state.width,
             "height": state.height,
-            "geotransform": state.geotiff.geotransform.to_dict() if state.geotiff else None,
+            "geotransform": state.geotiff.geotransform.to_list() if state.geotiff else None,
             "crs": state.geotiff.crs if state.geotiff else None,
             "filename": state.geotiff_path.name,
         }

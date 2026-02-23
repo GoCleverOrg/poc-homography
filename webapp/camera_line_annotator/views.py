@@ -14,6 +14,7 @@ from homography_web.frame_utils import (
     LINES_DIR,
     get_frame_image_path,
     image_filename_to_frame,
+    invalidate_cache,
     list_image_filenames,
     load_line_annotations_for_frame,
     validate_image_filename,
@@ -30,18 +31,24 @@ SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 _lines_registry_data: dict | None = None
 
 
+def _invalidate_lines_cache() -> None:
+    """Clear the local line registry cache."""
+    global _lines_registry_data
+    _lines_registry_data = None
+
+
 def load_lines_registry() -> dict:
     """Load and cache lines registry from the DDD repo."""
     global _lines_registry_data
     if _lines_registry_data is not None:
         return _lines_registry_data
 
-    from line_picker.state import from_line_repo, list_line_map_ids
+    from homography_web.frame_utils import get_default_map_id
+    from line_picker.state import from_line_repo
 
     try:
-        map_ids = list_line_map_ids(LINES_DIR)
-        if map_ids:
-            map_id = map_ids[0]
+        map_id = get_default_map_id()
+        if map_id:
             repo_lines = from_line_repo(LINES_DIR, map_id)
             if repo_lines:
                 _lines_registry_data = {
@@ -434,6 +441,8 @@ def api_export(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "No annotations to save"}, status=400)
 
     _save_line_annotations_to_repo(current_image, image_annotations)
+    invalidate_cache()
+    _invalidate_lines_cache()
 
     return JsonResponse(
         {

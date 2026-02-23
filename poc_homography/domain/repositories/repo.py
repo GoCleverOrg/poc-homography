@@ -18,53 +18,28 @@ class Repo(Protocol[T]):
 
     Provides the standard CRUD interface that all repositories implement.
     Specific repository protocols can extend this with entity-specific
-    operations like `get_by_map()` or `get_all()`.
+    operations like ``get_by_map()`` or filtered queries.
 
     Type Parameters:
         T: The entity type this repository manages.
-
-    Example:
-        class UserRepository(Repository[User], Protocol):
-            def get_by_email(self, email: str) -> User | None: ...
     """
 
     def get(self, entity_id: str) -> T | None:
-        """Retrieve an entity by its unique identifier.
-
-        Args:
-            entity_id: Unique identifier for the entity.
-
-        Returns:
-            The entity if found, None otherwise.
-        """
+        """Retrieve an entity by its unique identifier."""
         ...
 
     def save(self, entity: T) -> None:
-        """Save an entity (create or update).
-
-        Args:
-            entity: The entity to save.
-        """
+        """Save an entity (create or update)."""
         ...
 
     def delete(self, entity_id: str) -> bool:
-        """Delete an entity by its unique identifier.
-
-        Args:
-            entity_id: Unique identifier for the entity.
-
-        Returns:
-            True if the entity was deleted, False if it didn't exist.
-        """
+        """Delete an entity by its unique identifier."""
         ...
 
     def exists(self, entity_id: str) -> bool:
-        """Check if an entity exists.
+        """Check if an entity exists."""
+        ...
 
-        Args:
-            entity_id: Unique identifier for the entity.
-
-        Returns:
-            True if the entity exists, False otherwise.
-        """
+    def get_all(self) -> list[T]:
+        """Return all entities in the repository."""
         ...

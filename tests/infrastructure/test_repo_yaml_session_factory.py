@@ -44,6 +44,7 @@ MANIFEST = {"id": SESSION_ID, "created_at": CREATED_AT.isoformat(), "data": "tes
 
 # ── DiagnosticSession ─────────────────────────────────────────────
 
+
 class TestDiagnosticSessionFactory:
     def test_factory_called_on_get(self, tmp_path: Path) -> None:
         calls: list[dict[str, Any]] = []
@@ -75,6 +76,7 @@ class TestDiagnosticSessionFactory:
 
 # ── StressTestSession ─────────────────────────────────────────────
 
+
 class TestStressTestSessionFactory:
     def test_factory_called_on_get(self, tmp_path: Path) -> None:
         calls: list[dict[str, Any]] = []
@@ -105,6 +107,7 @@ class TestStressTestSessionFactory:
 
 
 # ── SurveySession ────────────────────────────────────────────────
+
 
 class TestSurveySessionFactory:
     def test_factory_called_on_get(self, tmp_path: Path) -> None:

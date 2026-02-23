@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import PixelPoint, PTZState
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Annotation:
     """An annotation links a Ground Control Point (GCP) to its observed pixel location in a camera image.
 
@@ -33,6 +33,14 @@ class Annotation:
     def id(self) -> str:
         """Composite ID for Entity protocol: ``frame_id/gcp_id``."""
         return f"{self.frame_id}/{self.gcp_id}"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

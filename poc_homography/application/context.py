@@ -25,8 +25,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from poc_homography.domain.entities.camera_calibration import CameraCalibration
     from poc_homography.domain.entities.camera_config import CameraConfig
+    from poc_homography.domain.entities.captured_frame import CapturedFrame
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.entities.tenant import Tenant
     from poc_homography.domain.protocols.camera_controller import CameraController
+    from poc_homography.domain.repositories.repo import Repo
 
 from poc_homography.application.services import (
     FrameCaptureService,
@@ -65,27 +70,27 @@ class ApplicationContext:
     data_dir: Path
 
     @cached_property
-    def repo_tenant(self) -> RepoYamlTenant:
+    def repo_tenant(self) -> Repo[Tenant]:
         """Repository for tenant entities."""
         return RepoYamlTenant(self.data_dir / "tenants")
 
     @cached_property
-    def repo_camera_config(self) -> RepoYamlCameraConfig:
+    def repo_camera_config(self) -> Repo[CameraConfig]:
         """Repository for camera configuration entities."""
         return RepoYamlCameraConfig(self.data_dir / "cameras")
 
     @cached_property
-    def repo_camera_calibration(self) -> RepoYamlCameraCalibration:
+    def repo_camera_calibration(self) -> Repo[CameraCalibration]:
         """Repository for camera calibration entities."""
         return RepoYamlCameraCalibration(self.data_dir / "calibrations")
 
     @cached_property
-    def repo_gcp(self) -> RepoYamlGroundControlPoint:
+    def repo_gcp(self) -> Repo[GroundControlPoint]:
         """Repository for ground control point entities."""
         return RepoYamlGroundControlPoint(self.data_dir / "ground_control_points")
 
     @cached_property
-    def repo_captured_frame(self) -> RepoYamlCapturedFrame:
+    def repo_captured_frame(self) -> Repo[CapturedFrame]:
         """Repository for captured frame entities."""
         return RepoYamlCapturedFrame(self.data_dir / "frames")
 

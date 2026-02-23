@@ -45,7 +45,11 @@ class TestLineHashable:
         assert d[line] == 42
 
     def test_equal_lines_same_hash(self) -> None:
-        a = Line(name="L1", map_id="valte", start=PixelPoint.create(1, 2), end=PixelPoint.create(3, 4))
-        b = Line(name="L1", map_id="valte", start=PixelPoint.create(1, 2), end=PixelPoint.create(3, 4))
+        a = Line(
+            name="L1", map_id="valte", start=PixelPoint.create(1, 2), end=PixelPoint.create(3, 4)
+        )
+        b = Line(
+            name="L1", map_id="valte", start=PixelPoint.create(1, 2), end=PixelPoint.create(3, 4)
+        )
         assert a == b
         assert hash(a) == hash(b)

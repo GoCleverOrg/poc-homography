@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo.credential import Credential
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class CameraConfig:
     """Camera configuration set once during registration.
 
@@ -36,6 +36,14 @@ class CameraConfig:
     credential: Credential
     ip_address: str | None = None
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         data: dict[str, Any] = {
@@ -53,6 +61,8 @@ class CameraConfig:
     def rtsp_url(self, stream_type: str = "main") -> str:
         """Build RTSP URL for this camera.
 
+        Delegates to the infrastructure RTSP URL builder.
+
         Args:
             stream_type: "main" for high quality or "sub" for low quality
 
@@ -62,9 +72,9 @@ class CameraConfig:
         Raises:
             ValueError: If camera has no IP address configured
         """
-        if not self.ip_address:
-            raise ValueError(f"Camera '{self.name}' has no IP address configured")
-        return self.spec.rtsp_url(self.ip_address, self.credential, stream_type)
+        from poc_homography.infrastructure.clients.rtsp import build_rtsp_url
+
+        return build_rtsp_url(self, stream_type)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CameraConfig:

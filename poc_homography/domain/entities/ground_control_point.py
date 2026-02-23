@@ -6,7 +6,7 @@ from typing import Any
 from poc_homography.domain.vo.map_point import MapPoint
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class GroundControlPoint:
     """Ground Control Point (GCP) - a reference point on a georeferenced map.
 
@@ -21,6 +21,14 @@ class GroundControlPoint:
     def id(self) -> str:
         """Composite identity: ``{map_id}/{name}``."""
         return f"{self.map_point.map_id}/{self.name}"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     @property
     def map_id(self) -> str:

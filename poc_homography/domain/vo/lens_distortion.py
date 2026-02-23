@@ -42,9 +42,9 @@ class LensDistortion:
         """True if any distortion coefficient is non-zero."""
         return not self.is_zero()
 
-    def is_zero(self) -> bool:
+    def is_zero(self, atol: float = 1e-12) -> bool:
         """True if all coefficients are effectively zero (no distortion)."""
-        return all(c == 0.0 for c in (self.k1, self.k2, self.p1, self.p2, self.k3))
+        return all(abs(c) < atol for c in (self.k1, self.k2, self.p1, self.p2, self.k3))
 
     # --- Numpy Interop ---
 

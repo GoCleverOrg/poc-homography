@@ -1,4 +1,10 @@
-"""Service for capturing frames from PTZ cameras."""
+"""Service for capturing frames from PTZ cameras.
+
+Architecture note: This application service currently performs direct IO
+(cv2.VideoCapture for RTSP, cv2.imwrite for JPEG persistence).  Ideally
+these operations should be delegated to infrastructure-layer adapters so
+that the application layer only orchestrates domain operations.
+"""
 
 from __future__ import annotations
 

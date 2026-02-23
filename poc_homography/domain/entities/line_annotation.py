@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import PixelPoint, PTZState
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class LineAnnotation:
     """A camera observation of a map line.
 
@@ -40,6 +40,14 @@ class LineAnnotation:
         """Composite ID for Entity protocol: ``frame_id/line_id``."""
         return f"{self.frame_id}/{self.line_id}"
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         d: dict[str, Any] = {
@@ -62,6 +70,14 @@ class LineAnnotation:
         points: tuple[PixelPoint, ...] | None = None
         if raw_points and len(raw_points) >= 2:
             points = tuple(PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points)
+        elif raw_points and len(raw_points) == 1:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "LineAnnotation has single-point polyline (line_id=%s, frame_id=%s) — dropped",
+                data.get("line_id"),
+                data.get("frame_id"),
+            )
 
         return cls(
             line_id=data["line_id"],

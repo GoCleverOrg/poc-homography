@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo import LineTrace, PTZState
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class CalibrationLineTraceSet:
     """A set of N-point line traces from a single camera frame.
 
@@ -29,6 +29,14 @@ class CalibrationLineTraceSet:
     def id(self) -> str:
         """Entity identifier."""
         return self.name
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

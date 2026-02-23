@@ -1,6 +1,12 @@
 """YAML-based DiagnosticSession repository with date-partitioned storage.
 
 Storage layout: ``data_dir/YYYYMMDD/<session_id>/manifest.yaml``
+
+Note: This repository uses ``Any`` for the entity type because the session
+entities (DiagnosticSession, StressTestSession, SurveySession) are defined
+in the webapp layer rather than the domain layer.  A future DDD iteration
+should promote these to domain entities so that the repository can be
+properly typed.
 """
 
 from __future__ import annotations

@@ -1,4 +1,10 @@
-"""SAM3 prompt testing service for comparing segmentation prompts."""
+"""SAM3 prompt testing service for comparing segmentation prompts.
+
+Architecture note: This application service currently performs direct IO
+(cv2.imread/imwrite for image loading/saving, cv2.imencode for encoding).
+Ideally these operations should be delegated to infrastructure-layer
+adapters so that the application layer only orchestrates domain operations.
+"""
 
 from __future__ import annotations
 

@@ -45,13 +45,16 @@ from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 from poc_homography.pixel_point import PixelPoint
 
-_NO_MAP_ERROR = JsonResponse(
-    {
-        "success": False,
-        "error": "No map configured for the current tenant. Upload a GeoTIFF map first.",
-    },
-    status=422,
-)
+
+def _no_map_error() -> JsonResponse:
+    """Create a fresh 'no map configured' error response."""
+    return JsonResponse(
+        {
+            "success": False,
+            "error": "No map configured for the current tenant. Upload a GeoTIFF map first.",
+        },
+        status=422,
+    )
 
 
 def _require_map_id() -> str | None:
@@ -80,6 +83,12 @@ def _load_line_registry() -> list[Line]:
             return []
         _line_registry_cache = from_line_repo(LINES_DIR, map_id)
     return _line_registry_cache
+
+
+def _invalidate_line_registry_cache() -> None:
+    """Clear the local line registry cache."""
+    global _line_registry_cache
+    _line_registry_cache = None
 
 
 # Cache for image dimensions to avoid repeatedly opening files
@@ -399,7 +408,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
     # Load GCP registry from repository
     map_id = _require_map_id()
     if map_id is None:
-        return _NO_MAP_ERROR
+        return _no_map_error()
     try:
         registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError) as e:
@@ -551,7 +560,7 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
     """
     map_id = _require_map_id()
     if map_id is None:
-        return _NO_MAP_ERROR
+        return _no_map_error()
     try:
         registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError) as e:
@@ -730,7 +739,7 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
     # Compute homography from lines
     map_id = _require_map_id()
     if map_id is None:
-        return _NO_MAP_ERROR
+        return _no_map_error()
     try:
         homography = MapPointHomography(map_id=map_id)
         result = homography.compute_from_lines(
@@ -840,7 +849,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
         map_id = _require_map_id()
         if map_id is None:
-            return _NO_MAP_ERROR
+            return _no_map_error()
         try:
             homography = MapPointHomography(map_id=map_id)
             line_result = homography.compute_from_lines(
@@ -890,7 +899,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         # Load GCP registry from repository
         map_id_for_gcps = _require_map_id()
         if map_id_for_gcps is None:
-            return _NO_MAP_ERROR
+            return _no_map_error()
         try:
             gcp_registry = from_gcp_repo(GCPS_DIR, map_id_for_gcps)
         except (KeyError, ValueError, OSError) as e:

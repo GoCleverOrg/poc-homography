@@ -8,7 +8,7 @@ from typing import Any
 from poc_homography.domain.vo.zoom_calibration_entry import ZoomCalibrationEntry
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class LensCalibrationTable:
     """Zoom-indexed lens calibration data for a single camera.
 
@@ -26,6 +26,14 @@ class LensCalibrationTable:
     entries: tuple[ZoomCalibrationEntry, ...]
     created_date: str
     last_modified: str
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

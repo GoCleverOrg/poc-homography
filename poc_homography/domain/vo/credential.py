@@ -24,11 +24,16 @@ class Credential:
     def __repr__(self) -> str:
         return f"Credential(username={self.username!r}, password='***')"
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
+    def to_dict(self, *, include_secret: bool = False) -> dict[str, Any]:
+        """Convert to dictionary for serialization.
+
+        Args:
+            include_secret: If True, include the plaintext password.
+                Defaults to False (password redacted as ``'***'``).
+        """
         return {
             "username": self.username,
-            "password": self.password,
+            "password": self.password if include_secret else "***",
         }
 
     @classmethod

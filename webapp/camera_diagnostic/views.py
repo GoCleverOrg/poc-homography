@@ -206,10 +206,11 @@ def api_tenants(request: HttpRequest) -> JsonResponse:
         JSON response with tenant list or error.
     """
     try:
-        tenants = get_tenants()
+        from homography_web.frame_utils import get_tenant_repo
+
+        tenant_entities = get_tenant_repo().get_all()
         tenant_list = [
-            {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
-            for t in tenants
+            {"id": t.id, "name": t.name, "description": t.description} for t in tenant_entities
         ]
         return _success_response({"tenants": tenant_list})
     except Exception as e:

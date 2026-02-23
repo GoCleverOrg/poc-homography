@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from poc_homography.types import Meters
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class CameraCalibration:
     """Camera calibration data refined during the calibration process.
 
@@ -36,6 +36,14 @@ class CameraCalibration:
     height: Meters
     base_orientation: Orientation
     distortion: LensDistortion
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

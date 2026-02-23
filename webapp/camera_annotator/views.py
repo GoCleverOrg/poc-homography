@@ -15,6 +15,7 @@ from homography_web.frame_utils import (
     get_frame_image_path,
     get_frame_repo,
     image_filename_to_frame,
+    invalidate_cache,
     list_image_filenames,
     load_annotations_for_frame,
     validate_image_filename,
@@ -211,6 +212,7 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
     ]
 
     save_annotations_to_repo(current_image, clean_annotations)
+    invalidate_cache()
 
     return JsonResponse({"success": True, "saved": len(clean_annotations)})
 

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from poc_homography.domain.vo.ptz_state import PTZState
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class CapturedFrame:
     """A captured camera frame with associated PTZ state.
 
@@ -42,6 +42,14 @@ class CapturedFrame:
     timestamp: datetime
     ptz_state: PTZState
     image_path: Path
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     @classmethod
     def create(
