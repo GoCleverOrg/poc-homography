@@ -224,8 +224,12 @@ class TestCameraLine:
     def test_sample_points_uses_edge_pixels_when_available(self, ptz_position):
         """Should return edge_pixels data when available, not interpolated points."""
         edge_pixels = (
-            (10.0, 20.0), (15.0, 22.0), (20.0, 25.0),
-            (25.0, 27.0), (30.0, 30.0), (35.0, 32.0),
+            (10.0, 20.0),
+            (15.0, 22.0),
+            (20.0, 25.0),
+            (25.0, 27.0),
+            (30.0, 30.0),
+            (35.0, 32.0),
         )
         line = CameraLine(
             line_id="line_1",

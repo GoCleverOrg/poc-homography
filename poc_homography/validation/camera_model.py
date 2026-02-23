@@ -5,7 +5,7 @@ Tests projection accuracy with a few known GCPs to validate that the
 camera geometry model works correctly before running full calibration.
 
 GCPs are defined in YAML format with Map Point IDs referencing coordinates
-from a MapPointRegistry:
+from a GCPRegistry:
 
     gcps:
       - map_point_id: Z1
@@ -25,13 +25,14 @@ import numpy as np
 import yaml
 
 from poc_homography.camera_geometry import CameraGeometry
-from poc_homography.camera_parameters import CameraParameters, DistortionCoefficients
+from poc_homography.camera_parameters import CameraParameters
+from poc_homography.domain.vo import LensDistortion
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from poc_homography.map_points import MapPointRegistry
+    from poc_homography.map_points import GCPRegistry
 
 
 class GCPData(NamedTuple):
@@ -77,7 +78,7 @@ def load_gcps_from_yaml(yaml_path: Path) -> list[GCPData]:
             zoom: 1.0
 
     Each GCP references a Map Point by ID. The map point's world/map coordinates
-    (pixel_x, pixel_y) are looked up from the MapPointRegistry at projection time.
+    (pixel_x, pixel_y) are looked up from the GCPRegistry at projection time.
     The pixel_u/pixel_v values are the image pixel coordinates where the point appears.
 
     Args:
@@ -173,7 +174,7 @@ def project_map_point_to_pixel(
         # Set up distortion if needed
         distortion = None
         if k1 != 0.0 or k2 != 0.0:
-            distortion = DistortionCoefficients(k1=Unitless(k1), k2=Unitless(k2))
+            distortion = LensDistortion(k1=Unitless(k1), k2=Unitless(k2))
 
         params = CameraParameters.create(
             image_width=image_width,
@@ -221,7 +222,7 @@ def project_map_point_to_pixel(
 def validate_model(
     camera_config: dict[str, float | str],
     gcps: list[GCPData],
-    registry: MapPointRegistry,
+    registry: GCPRegistry,
     verbose: bool = True,
 ) -> tuple[float | None, list[ValidationResult]]:
     """
@@ -230,7 +231,7 @@ def validate_model(
     Args:
         camera_config: Camera configuration dictionary with height_m, pan_offset_deg, etc.
         gcps: List of GCPData objects
-        registry: MapPointRegistry containing the map point coordinates
+        registry: GCPRegistry containing the map point coordinates
         verbose: Whether to print detailed output
 
     Returns:

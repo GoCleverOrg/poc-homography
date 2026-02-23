@@ -17,12 +17,10 @@ from poc_homography.calibration.lens_distortion.annotated_line_solver import (
     AnnotatedLineSolver,
     AnnotatedLineSolverConfig,
     CameraLineAnnotation,
-    LineSplitResult,
     build_camera_line_annotations,
     split_lines,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
-
+from poc_homography.domain.vo import LensDistortion
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -35,40 +33,67 @@ def sample_camera_line_annotations_npoint() -> list[dict]:
     return [
         {
             "line_id": "L1",
-            "start_pixel_x": 100.0, "start_pixel_y": 200.0,
-            "end_pixel_x": 500.0, "end_pixel_y": 600.0,
+            "start_pixel_x": 100.0,
+            "start_pixel_y": 200.0,
+            "end_pixel_x": 500.0,
+            "end_pixel_y": 600.0,
             "points": [
-                [100.0, 200.0], [150.0, 260.0], [200.0, 320.0],
-                [250.0, 380.0], [300.0, 440.0], [350.0, 500.0],
-                [400.0, 555.0], [450.0, 580.0], [500.0, 600.0],
+                [100.0, 200.0],
+                [150.0, 260.0],
+                [200.0, 320.0],
+                [250.0, 380.0],
+                [300.0, 440.0],
+                [350.0, 500.0],
+                [400.0, 555.0],
+                [450.0, 580.0],
+                [500.0, 600.0],
             ],
         },
         {
             "line_id": "L2",
-            "start_pixel_x": 200.0, "start_pixel_y": 300.0,
-            "end_pixel_x": 600.0, "end_pixel_y": 700.0,
+            "start_pixel_x": 200.0,
+            "start_pixel_y": 300.0,
+            "end_pixel_x": 600.0,
+            "end_pixel_y": 700.0,
             "points": [
-                [200.0, 300.0], [280.0, 370.0], [360.0, 440.0],
-                [440.0, 510.0], [520.0, 580.0], [600.0, 700.0],
+                [200.0, 300.0],
+                [280.0, 370.0],
+                [360.0, 440.0],
+                [440.0, 510.0],
+                [520.0, 580.0],
+                [600.0, 700.0],
             ],
         },
         {
             "line_id": "L3",
-            "start_pixel_x": 608.0, "start_pixel_y": 169.5,
-            "end_pixel_x": 1724.0, "end_pixel_y": 580.5,
+            "start_pixel_x": 608.0,
+            "start_pixel_y": 169.5,
+            "end_pixel_x": 1724.0,
+            "end_pixel_y": 580.5,
             "points": [
-                [608.0, 169.5], [750.0, 230.0], [900.0, 300.0],
-                [1050.0, 370.0], [1200.0, 430.0], [1350.0, 490.0],
-                [1500.0, 540.0], [1724.0, 580.5],
+                [608.0, 169.5],
+                [750.0, 230.0],
+                [900.0, 300.0],
+                [1050.0, 370.0],
+                [1200.0, 430.0],
+                [1350.0, 490.0],
+                [1500.0, 540.0],
+                [1724.0, 580.5],
             ],
         },
         {
             "line_id": "L4",
-            "start_pixel_x": 1874.0, "start_pixel_y": 533.5,
-            "end_pixel_x": 714.0, "end_pixel_y": 160.5,
+            "start_pixel_x": 1874.0,
+            "start_pixel_y": 533.5,
+            "end_pixel_x": 714.0,
+            "end_pixel_y": 160.5,
             "points": [
-                [1874.0, 533.5], [1700.0, 480.0], [1500.0, 410.0],
-                [1300.0, 340.0], [1100.0, 270.0], [900.0, 210.0],
+                [1874.0, 533.5],
+                [1700.0, 480.0],
+                [1500.0, 410.0],
+                [1300.0, 340.0],
+                [1100.0, 270.0],
+                [900.0, 210.0],
                 [714.0, 160.5],
             ],
         },
@@ -81,13 +106,17 @@ def sample_camera_line_annotations_flat() -> list[dict]:
     return [
         {
             "line_id": "L1",
-            "start_pixel_x": 100.0, "start_pixel_y": 200.0,
-            "end_pixel_x": 500.0, "end_pixel_y": 600.0,
+            "start_pixel_x": 100.0,
+            "start_pixel_y": 200.0,
+            "end_pixel_x": 500.0,
+            "end_pixel_y": 600.0,
         },
         {
             "line_id": "L2",
-            "start_pixel_x": 200.0, "start_pixel_y": 300.0,
-            "end_pixel_x": 600.0, "end_pixel_y": 700.0,
+            "start_pixel_x": 200.0,
+            "start_pixel_y": 300.0,
+            "end_pixel_x": 600.0,
+            "end_pixel_y": 700.0,
         },
     ]
 
@@ -95,11 +124,13 @@ def sample_camera_line_annotations_flat() -> list[dict]:
 @pytest.fixture
 def intrinsic_matrix() -> np.ndarray:
     """Sample 3x3 intrinsic matrix."""
-    return np.array([
-        [1000.0, 0.0, 960.0],
-        [0.0, 1000.0, 540.0],
-        [0.0, 0.0, 1.0],
-    ])
+    return np.array(
+        [
+            [1000.0, 0.0, 960.0],
+            [0.0, 1000.0, 540.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
 
 def _make_lines(
@@ -184,8 +215,12 @@ class TestSplitLines:
         lines = self._make_lines(20)
         split1 = split_lines(lines, 0.7)
         split2 = split_lines(lines, 0.7)
-        assert [l.line_id for l in split1.training_lines] == [l.line_id for l in split2.training_lines]
-        assert [l.line_id for l in split1.validation_lines] == [l.line_id for l in split2.validation_lines]
+        assert [l.line_id for l in split1.training_lines] == [
+            l.line_id for l in split2.training_lines
+        ]
+        assert [l.line_id for l in split1.validation_lines] == [
+            l.line_id for l in split2.validation_lines
+        ]
 
     def test_approximate_ratio(self):
         """Split ratio approximately respected for large N."""
@@ -214,7 +249,9 @@ class TestSplitLines:
         lines = self._make_lines(15)
         split = split_lines(lines, 0.7)
         all_ids = {l.line_id for l in lines}
-        split_ids = {l.line_id for l in split.training_lines} | {l.line_id for l in split.validation_lines}
+        split_ids = {l.line_id for l in split.training_lines} | {
+            l.line_id for l in split.validation_lines
+        }
         assert all_ids == split_ids
 
 
@@ -233,7 +270,7 @@ class TestAnnotatedLineSolver:
         result = solver.solve(lines, intrinsic_matrix)
 
         assert result.success
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
         assert result.overall_rmse >= 0.0
         assert result.iterations >= 0
 
@@ -243,7 +280,7 @@ class TestAnnotatedLineSolver:
         solver = AnnotatedLineSolver()
         result = solver.solve(lines, intrinsic_matrix)
 
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
         assert isinstance(result.initial_error, float)
         assert isinstance(result.final_error, float)
         assert isinstance(result.rmse_per_line, list)
@@ -293,7 +330,9 @@ class TestAnnotatedLineSolver:
             assert isinstance(err["rmse_pixels"], float)
 
     def test_npoint_annotations_used(
-        self, sample_camera_line_annotations_npoint, intrinsic_matrix,
+        self,
+        sample_camera_line_annotations_npoint,
+        intrinsic_matrix,
     ):
         """Solver works with build_camera_line_annotations output."""
         lines = build_camera_line_annotations(sample_camera_line_annotations_npoint)
@@ -301,12 +340,12 @@ class TestAnnotatedLineSolver:
         result = solver.solve(lines, intrinsic_matrix)
 
         assert result.success
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
 
     def test_initial_guess_used(self, intrinsic_matrix):
         """Custom initial guess is accepted."""
         lines = _make_lines(n=6, npoints=10)
-        guess = DistortionCoefficients(k1=-0.1, k2=0.01)
+        guess = LensDistortion(k1=-0.1, k2=0.01)
         solver = AnnotatedLineSolver()
         result = solver.solve(lines, intrinsic_matrix, initial_guess=guess)
 

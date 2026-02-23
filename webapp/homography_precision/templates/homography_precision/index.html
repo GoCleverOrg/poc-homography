@@ -516,6 +516,7 @@
 <body>
     <!-- Top Bar: Controls and Summary Metrics -->
     <div id="top-bar">
+        <a href="/" style="color: #0066cc; text-decoration: none; font-size: 13px; white-space: nowrap;">&larr; Back to Tools</a>
         <h1>Homography Precision</h1>
 
         <div class="control-group">
@@ -1828,5 +1829,19 @@
             console.error('Application initialization failed:', e);
         });
     </script>
+<script>
+(function() {
+    var tid = new URLSearchParams(window.location.search).get('tenant_id');
+    if (tid) {
+        document.querySelectorAll('a').forEach(function(a) {
+            if (a.textContent.trim().includes('Back to Tools')) {
+                var url = new URL(a.href, window.location.origin);
+                url.searchParams.set('tenant_id', tid);
+                a.href = url.toString();
+            }
+        });
+    }
+})();
+</script>
 </body>
 </html>

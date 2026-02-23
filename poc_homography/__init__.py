@@ -12,14 +12,8 @@ from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
-    DistortionCoefficients,
-    HeightUncertainty,
 )
-from poc_homography.coordinate_converter import (
-    GCPCoordinateConverter,
-    UTMConverter,
-    UTMConverterConfig,
-)
+from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 from poc_homography.homography import (
     CoordinateSystemMode,
     FeatureMatchHomography,
@@ -35,7 +29,7 @@ from poc_homography.homography import (
     MapPointHomography,
     get_default_config,
 )
-from poc_homography.map_points import MapPoint, MapPointRegistry
+from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.pixel_point import PixelPoint
 
 __all__ = [
@@ -43,12 +37,8 @@ __all__ = [
     "CameraGeometry",
     "CameraParameters",
     "CameraGeometryResult",
-    "DistortionCoefficients",
+    "LensDistortion",
     "HeightUncertainty",
-    # Coordinate converters (immutable factory pattern)
-    "UTMConverter",
-    "UTMConverterConfig",
-    "GCPCoordinateConverter",
     # Homography interface
     "HomographyProvider",
     "HomographyApproach",
@@ -60,7 +50,7 @@ __all__ = [
     "IntrinsicExtrinsicResult",
     # Map points
     "MapPoint",
-    "MapPointRegistry",
+    "GCPRegistry",
     "MapPointHomography",
     "MapPointComputationResult",
     # Other

@@ -1,4 +1,4 @@
-"""Annotation and capture context for calibration data."""
+"""Annotation and camera pose for calibration data."""
 
 from __future__ import annotations
 
@@ -19,12 +19,13 @@ class Annotation:
 
     gcp_id: str
     pixel: PixelPoint
+    pose_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Annotation to a dictionary for JSON serialization.
 
         Returns:
-            Dictionary with gcp_id and pixel (x, y) keys.
+            Dictionary with gcp_id, pixel (x, y), and pose_id keys.
         """
         return {
             "gcp_id": self.gcp_id,
@@ -32,6 +33,7 @@ class Annotation:
                 "x": self.pixel.x,
                 "y": self.pixel.y,
             },
+            "pose_id": self.pose_id,
         }
 
     @classmethod
@@ -55,12 +57,13 @@ class Annotation:
                 x=float(pixel_data["x"]),
                 y=float(pixel_data["y"]),
             ),
+            pose_id=str(data.get("pose_id", "")),
         )
 
 
 @dataclass(frozen=True)
-class CaptureContext:
-    """Camera state when a calibration frame was captured.
+class CameraPose:
+    """Camera pose when a calibration frame was captured.
 
     Attributes:
         camera: Camera name (e.g., "Valte", "Setram").
@@ -75,7 +78,7 @@ class CaptureContext:
     zoom: float
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert CaptureContext to a dictionary for JSON serialization.
+        """Convert CameraPose to a dictionary for JSON serialization.
 
         Returns:
             Dictionary with camera, pan_raw, tilt_deg, and zoom keys.
@@ -88,14 +91,14 @@ class CaptureContext:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> CaptureContext:
-        """Create CaptureContext from a dictionary.
+    def from_dict(cls, data: dict[str, Any]) -> CameraPose:
+        """Create CameraPose from a dictionary.
 
         Args:
             data: Dictionary with camera, pan_raw, tilt_deg, and zoom keys.
 
         Returns:
-            New CaptureContext instance.
+            New CameraPose instance.
 
         Raises:
             KeyError: If required keys are missing from data.

@@ -26,7 +26,7 @@ from poc_homography.calibration.lens_distortion.apply_calibration import (
 from poc_homography.calibration.lens_distortion.apply_calibration import (
     undistort_points as _undistort_points_impl,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 from poc_homography.types import Unitless
 
 if TYPE_CHECKING:
@@ -76,7 +76,7 @@ class SolverConfig:
         """Get bounds list for scipy optimizer.
 
         Returns bounds in OpenCV order [k1, k2, p1, p2, k3] to match
-        DistortionCoefficients.to_array() / from_array().
+        LensDistortion.to_array() / from_array().
         When optimize_intrinsics is True, appends [fx, fy, cx, cy] bounds.
 
         Args:
@@ -127,7 +127,7 @@ class SolverResult:
         line_errors: Per-line error details.
     """
 
-    distortion: DistortionCoefficients
+    distortion: LensDistortion
     initial_error: float
     final_error: float
     rmse_per_line: list[float]
@@ -175,7 +175,7 @@ class DistortionSolver:
         self,
         lines: list[CameraLine],
         intrinsic_matrix: np.ndarray,
-        initial_guess: DistortionCoefficients | None = None,
+        initial_guess: LensDistortion | None = None,
     ) -> SolverResult:
         """Solve for distortion coefficients that straighten the given lines.
 
@@ -228,7 +228,7 @@ class DistortionSolver:
 
         # Initial guess
         if initial_guess is None:
-            initial_guess = DistortionCoefficients()
+            initial_guess = LensDistortion()
 
         if self.config.use_radial_only:
             x0 = np.array([initial_guess.k1, initial_guess.k2, initial_guess.k3])
@@ -277,7 +277,7 @@ class DistortionSolver:
             distortion_coeffs = result.x
 
         if self.config.use_radial_only:
-            optimized = DistortionCoefficients(
+            optimized = LensDistortion(
                 k1=Unitless(float(distortion_coeffs[0])),
                 k2=Unitless(float(distortion_coeffs[1])),
                 k3=Unitless(float(distortion_coeffs[2])),
@@ -285,7 +285,7 @@ class DistortionSolver:
                 p2=Unitless(0.0),
             )
         else:
-            optimized = DistortionCoefficients.from_array(distortion_coeffs)
+            optimized = LensDistortion.from_array(distortion_coeffs)
 
         # Calculate per-line errors with optimized coefficients
         rmse_per_line = []
@@ -427,7 +427,7 @@ class DistortionSolver:
         self,
         lines: list[CameraLine],
         intrinsic_matrix: np.ndarray,
-        distortion: DistortionCoefficients,
+        distortion: LensDistortion,
     ) -> list[dict]:
         """Calculate straightness errors for lines with given distortion.
 
@@ -474,7 +474,7 @@ class DistortionSolver:
 def straightness_rmse(
     lines: list[CameraLine],
     intrinsic_matrix: np.ndarray,
-    distortion: DistortionCoefficients | None = None,
+    distortion: LensDistortion | None = None,
     num_samples: int = 20,
 ) -> float:
     """Convenience function to calculate overall straightness RMSE.
@@ -489,7 +489,7 @@ def straightness_rmse(
         Overall RMSE in pixels.
     """
     if distortion is None:
-        distortion = DistortionCoefficients()
+        distortion = LensDistortion()
 
     solver = DistortionSolver(SolverConfig(num_samples_per_line=num_samples))
     errors = solver.calculate_line_errors(lines, intrinsic_matrix, distortion)

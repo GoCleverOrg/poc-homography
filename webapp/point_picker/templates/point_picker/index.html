@@ -115,6 +115,7 @@
 </head>
 <body>
     <div id="sidebar">
+        <a href="/" style="color: #0066cc; text-decoration: none; font-size: 13px;">&larr; Back to Tools</a>
         <h1>Point Picker</h1>
         <div id="filename"></div>
         <div class="section">
@@ -137,30 +138,22 @@
         </div>
         <div class="section">
             <div class="btn-group">
-                <button class="btn btn-primary" id="export-btn">Export YAML</button>
-                <button class="btn btn-secondary" id="import-btn">Import</button>
+                <button class="btn btn-primary" id="export-btn">Save to Repo</button>
+                <button class="btn btn-secondary" id="import-btn">Load from Repo</button>
             </div>
         </div>
     </div>
     <div id="viewer"></div>
 
-    <div id="export-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-title">Export Points</div>
-            <input type="text" id="export-path" placeholder="filename.yaml">
-            <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="closeModal('export-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doExport()">Export</button>
-            </div>
-        </div>
-    </div>
     <div id="import-modal" class="modal">
         <div class="modal-content">
-            <div class="modal-title">Import Points</div>
-            <input type="text" id="import-path" placeholder="path/to/file.yaml">
+            <div class="modal-title">Load from Repository</div>
+            <select id="import-map-id" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;margin-bottom:16px;font-size:14px;">
+                <option value="">Loading...</option>
+            </select>
             <div class="modal-buttons">
                 <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doImport()">Import</button>
+                <button class="btn btn-primary" onclick="doImport()">Load</button>
             </div>
         </div>
     </div>
@@ -265,11 +258,11 @@
                 });
 
                 // Setup export/import
-                document.getElementById('export-btn').addEventListener('click', () => {
-                    document.getElementById('export-path').value = imageInfo.filename.replace(/\.[^.]+$/, '_points.yaml');
-                    openModal('export-modal');
+                document.getElementById('export-btn').addEventListener('click', () => doExport());
+                document.getElementById('import-btn').addEventListener('click', () => {
+                    populateRegistryDropdown();
+                    openModal('import-modal');
                 });
-                document.getElementById('import-btn').addEventListener('click', () => openModal('import-modal'));
 
                 // Initial setup
                 selectTag('parking_spot');
@@ -554,48 +547,63 @@
             document.getElementById(id).classList.remove('active');
         }
 
+        async function populateRegistryDropdown() {
+            const select = document.getElementById('import-map-id');
+            try {
+                const resp = await fetch(`${API_BASE}/api/registries/`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                select.innerHTML = '';
+                (data.map_ids || []).forEach(id => {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = id;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                select.innerHTML = '<option value="">Error loading</option>';
+            }
+        }
+
         async function doExport() {
-            const path = document.getElementById('export-path').value;
-            if (!path) return;
             try {
                 const resp = await fetch(`${API_BASE}/api/export/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
+                    body: '{}'
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                    showError(`Export failed: ${err.error || err.detail || 'Unknown error'}`);
+                    showError(`Save failed: ${err.error || err.detail || 'Unknown error'}`);
                     return;
                 }
                 const result = await resp.json();
-                alert(`Exported ${result.count} points to ${result.exported}`);
-                closeModal('export-modal');
+                alert(`Saved ${result.count} points to repository`);
             } catch (e) {
-                showError(`Export failed: ${e.message}`);
+                showError(`Save failed: ${e.message}`);
             }
         }
 
         async function doImport() {
-            const path = document.getElementById('import-path').value;
-            if (!path) return;
+            const mapId = document.getElementById('import-map-id').value;
+            if (!mapId) return;
             try {
                 const resp = await fetch(`${API_BASE}/api/import/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
+                    body: JSON.stringify({ map_id: mapId })
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                    showError(`Import failed: ${err.error || err.detail || 'Unknown error'}`);
+                    showError(`Load failed: ${err.error || err.detail || 'Unknown error'}`);
                     return;
                 }
                 const result = await resp.json();
-                alert(`Imported ${result.count} points from ${result.imported}`);
+                alert(`Loaded ${result.count} points for map "${result.map_id}"`);
                 closeModal('import-modal');
                 await loadPoints();
             } catch (e) {
-                showError(`Import failed: ${e.message}`);
+                showError(`Load failed: ${e.message}`);
             }
         }
 
@@ -605,5 +613,19 @@
             document.getElementById('coords').textContent = 'Error: Failed to initialize. Check console.';
         });
     </script>
+<script>
+(function() {
+    var tid = new URLSearchParams(window.location.search).get('tenant_id');
+    if (tid) {
+        document.querySelectorAll('a').forEach(function(a) {
+            if (a.textContent.trim().includes('Back to Tools')) {
+                var url = new URL(a.href, window.location.origin);
+                url.searchParams.set('tenant_id', tid);
+                a.href = url.toString();
+            }
+        });
+    }
+})();
+</script>
 </body>
 </html>

@@ -30,17 +30,25 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.calibration_utils import (
-    get_cached_calibration_table as _get_cached_calibration_table,
+    api_compute_intrinsics as api_compute_intrinsics,
+)
+from homography_web.calibration_utils import (
+    list_calibration_ids,
+    load_calibration_from_repo,
+    serialize_calibration_entry,
 )
 from homography_web.calibration_utils import (
     resolve_safe_path as _resolve_safe_path,
 )
+from homography_web.frame_utils import (
+    CALIBRATIONS_DIR,
+    WEBAPP_DIR,
+    get_frame_image_path,
+    image_filename_to_frame,
+    list_image_filenames,
+)
 
-# Paths
-WEBAPP_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = WEBAPP_DIR.parent
-CALIBRATION_DIR = PROJECT_ROOT / "calibration_results"
-TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
+# Paths (unique to this app — shared paths imported from frame_utils above)
 SURVEY_DIR = WEBAPP_DIR / "survey"
 RESULT_IMAGE_DIR = WEBAPP_DIR / "distortion_validator" / "_result_images"
 
@@ -50,6 +58,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
+
 
 @ensure_csrf_cookie
 def index(request: HttpRequest) -> HttpResponse:
@@ -61,71 +70,61 @@ def index(request: HttpRequest) -> HttpResponse:
 # API endpoints
 # ---------------------------------------------------------------------------
 
+
 @require_GET
 def api_calibration_files(request: HttpRequest) -> JsonResponse:
-    """List available calibration YAML files."""
+    """List available camera_ids in the calibration repo."""
     try:
-        files = []
-        if CALIBRATION_DIR.exists():
-            for f in sorted(CALIBRATION_DIR.glob("*.yaml")):
-                files.append({
-                    "name": f.name,
-                })
-        return JsonResponse({"files": files})
+        camera_ids = list_calibration_ids(CALIBRATIONS_DIR)
+        return JsonResponse({"camera_ids": camera_ids})
     except Exception:
-        logger.exception("Failed to list calibration files")
-        return JsonResponse({"error": "Failed to list calibration files"}, status=500)
-
-
-from homography_web.calibration_utils import (
-    api_compute_intrinsics,  # noqa: F401 - re-exported for URL routing
-    serialize_calibration_entry,
-)
-api_compute_intrinsics = api_compute_intrinsics  # make linter happy
+        logger.exception("Failed to list calibrations")
+        return JsonResponse({"error": "Failed to list calibrations"}, status=500)
 
 
 @require_http_methods(["POST"])
 def api_load_calibration(request: HttpRequest) -> JsonResponse:
-    """Load a calibration file and return its contents."""
+    """Load a calibration by camera_id from the DDD repo."""
     try:
         data = json.loads(request.body)
-        filename = data.get("filename", "")
+        camera_id = data.get("camera_id", "")
+        if not camera_id:
+            return JsonResponse({"error": "Missing camera_id"}, status=400)
 
-        resolved = _resolve_safe_path(filename, CALIBRATION_DIR)
-        if resolved is None or not resolved.exists():
-            return JsonResponse({"error": "Invalid or missing filename"}, status=400)
+        entity = load_calibration_from_repo(camera_id, CALIBRATIONS_DIR)
+        if entity is None:
+            return JsonResponse({"error": f"No calibration found for {camera_id}"}, status=404)
 
-        table = _get_cached_calibration_table(resolved)
+        entries = [serialize_calibration_entry(entry) for entry in entity.entries]
 
-        entries = [
-            serialize_calibration_entry(entry)
-            for entry in table.entries.values()
-        ]
-
-        return JsonResponse({
-            "camera_id": table.camera_id,
-            "entries": entries,
-        })
+        return JsonResponse(
+            {
+                "camera_id": entity.id,
+                "entries": entries,
+            }
+        )
 
     except Exception:
-        logger.exception("Failed to load calibration file")
-        return JsonResponse({"error": "Failed to load calibration file"}, status=500)
+        logger.exception("Failed to load calibration")
+        return JsonResponse({"error": "Failed to load calibration"}, status=500)
 
 
 @require_GET
 def api_images(request: HttpRequest) -> JsonResponse:
     """List available test images."""
     try:
-        images = []
+        images: list[dict[str, str]] = []
 
-        if TEST_DATA_DIR.exists():
-            for ext in ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]:
-                for f in sorted(TEST_DATA_DIR.glob(ext)):
-                    images.append({
-                        "name": f.name,
-                        "source": "test_data",
-                    })
+        # Images from captured-frame repo
+        for filename in list_image_filenames():
+            images.append(
+                {
+                    "name": filename,
+                    "source": "captured_frame",
+                }
+            )
 
+        # Survey images (operational, not test data)
         if SURVEY_DIR.exists():
             for date_dir in sorted(SURVEY_DIR.iterdir(), reverse=True):
                 if not date_dir.is_dir():
@@ -135,10 +134,12 @@ def api_images(request: HttpRequest) -> JsonResponse:
                         continue
                     for ext in ["*.jpg", "*.jpeg", "*.png"]:
                         for f in list(session_dir.glob(ext))[:5]:
-                            images.append({
-                                "name": f"survey/{date_dir.name}/{session_dir.name}/{f.name}",
-                                "source": "survey",
-                            })
+                            images.append(
+                                {
+                                    "name": f"survey/{date_dir.name}/{session_dir.name}/{f.name}",
+                                    "source": "survey",
+                                }
+                            )
 
         return JsonResponse({"images": images})
     except Exception:
@@ -148,16 +149,17 @@ def api_images(request: HttpRequest) -> JsonResponse:
 
 def _resolve_image_path(image_path: str) -> Path | None:
     """Resolve an image path safely against known directories."""
-    # Try as filename within TEST_DATA_DIR
-    resolved = _resolve_safe_path(image_path, TEST_DATA_DIR)
-    if resolved is not None and resolved.exists():
-        return resolved
+    # Try as filename in the CapturedFrame repo
+    frame = image_filename_to_frame(image_path)
+    if frame is not None:
+        fp = get_frame_image_path(frame)
+        if fp.exists():
+            return fp
 
     # Try as relative path under SURVEY_DIR (e.g. "survey/2024-01-01/session/img.jpg")
-    # Strip leading "survey/" prefix if present
     survey_rel = image_path
     if survey_rel.startswith("survey/"):
-        survey_rel = survey_rel[len("survey/"):]
+        survey_rel = survey_rel[len("survey/") :]
     try:
         candidate = (SURVEY_DIR / survey_rel).resolve()
         if candidate.is_relative_to(SURVEY_DIR.resolve()) and candidate.exists():
@@ -208,11 +210,7 @@ def api_undistort(request: HttpRequest) -> JsonResponse:
         cy = intrinsics.get("cy", h / 2)
 
         if use_opencv:
-            camera_matrix = np.array([
-                [fx, 0, cx],
-                [0, fy, cy],
-                [0, 0, 1]
-            ], dtype=np.float64)
+            camera_matrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
             dist_coeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float64)
             undistorted = cv2.undistort(image, camera_matrix, dist_coeffs, None, camera_matrix)
             method_used = "opencv"
@@ -220,6 +218,7 @@ def api_undistort(request: HttpRequest) -> JsonResponse:
             from poc_homography.calibration.lens_distortion.apply_calibration import (
                 undistort_image,
             )
+
             undistorted = undistort_image(image, k1, k2, k3, p1, p2, fx, fy, cx, cy)
             method_used = "solver"
 
@@ -228,20 +227,16 @@ def api_undistort(request: HttpRequest) -> JsonResponse:
 
         # Encode images as base64 JPEG
         def encode_image(img: np.ndarray) -> str:
-            _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            return base64.b64encode(buffer).decode('utf-8')
+            _, buffer = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return base64.b64encode(buffer).decode("utf-8")
 
         response_data: dict[str, Any] = {
             "original": encode_image(image),
             "width": w,
             "height": h,
             "method_used": method_used,
-            "coefficients_used": {
-                "k1": k1, "k2": k2, "k3": k3, "p1": p1, "p2": p2
-            },
-            "intrinsics_used": {
-                "fx": fx, "fy": fy, "cx": cx, "cy": cy
-            },
+            "coefficients_used": {"k1": k1, "k2": k2, "k3": k3, "p1": p1, "p2": p2},
+            "intrinsics_used": {"fx": fx, "fy": fy, "cx": cx, "cy": cy},
         }
 
         if result_url is not None:
@@ -304,14 +299,10 @@ def api_transform_points(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"error": "Need at least 1 point"}, status=400)
 
         if len(points) > MAX_POINTS:
-            return JsonResponse(
-                {"error": f"Too many points (max {MAX_POINTS})"}, status=400
-            )
+            return JsonResponse({"error": f"Too many points (max {MAX_POINTS})"}, status=400)
 
         if direction not in ("distort", "undistort"):
-            return JsonResponse(
-                {"error": "direction must be 'distort' or 'undistort'"}, status=400
-            )
+            return JsonResponse({"error": "direction must be 'distort' or 'undistort'"}, status=400)
 
         pts = np.array(points, dtype=np.float64)
 
@@ -333,17 +324,21 @@ def api_transform_points(request: HttpRequest) -> JsonResponse:
             from poc_homography.calibration.lens_distortion.apply_calibration import (
                 undistort_points,
             )
+
             transformed = undistort_points(pts, k1, k2, k3, p1, p2, fx, fy, cx, cy)
         else:
             from poc_homography.calibration.lens_distortion.apply_calibration import (
                 distort_points,
             )
+
             transformed = distort_points(pts, k1, k2, k3, p1, p2, fx, fy, cx, cy)
 
-        return JsonResponse({
-            "points": transformed.tolist(),
-            "direction": direction,
-        })
+        return JsonResponse(
+            {
+                "points": transformed.tolist(),
+                "direction": direction,
+            }
+        )
 
     except Exception:
         logger.exception("Failed to transform points")
@@ -382,19 +377,24 @@ def api_measure_straightness(request: HttpRequest) -> JsonResponse:
             from poc_homography.calibration.lens_distortion.apply_calibration import (
                 undistort_points,
             )
+
             pts = undistort_points(pts, k1, k2, k3, p1, p2, fx, fy, cx, cy)
 
         from poc_homography.calibration.lens_distortion.apply_calibration import (
             measure_line_straightness,
         )
+
         result = measure_line_straightness(pts)
 
         rmse = result["rmse_pixels"]
         result["is_straight"] = rmse < 2.0
         result["quality"] = (
-            "excellent" if rmse < 0.5
-            else "good" if rmse < 2.0
-            else "acceptable" if rmse < 5.0
+            "excellent"
+            if rmse < 0.5
+            else "good"
+            if rmse < 2.0
+            else "acceptable"
+            if rmse < 5.0
             else "poor"
         )
         result["undistorted"] = should_undistort

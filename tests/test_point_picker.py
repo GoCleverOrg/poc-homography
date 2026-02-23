@@ -5,16 +5,11 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
-from PIL import Image
-
-from poc_homography.map_points.map_point import MapPoint
-from poc_homography.map_points.map_point_registry import MapPointRegistry
 
 # Add webapp to path for Django imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -28,8 +23,8 @@ from point_picker.state import (
     TAG_ABBREVIATIONS,
     PointPickerState,
     get_tag_from_id,
-    normalize_array,
 )
+from homography_web.frame_utils import normalize_array
 
 
 class TestTagAbbreviations:
@@ -252,15 +247,14 @@ class TestPointPickerState:
         with pytest.raises(KeyError):
             mock_state.delete_point("PS999")
 
-    def test_save_and_load_registry(
-        self, mock_state: PointPickerState, tmp_path: Path
-    ) -> None:
-        """Save and load preserves points."""
+    def test_save_and_load_repo(self, mock_state: PointPickerState, tmp_path: Path) -> None:
+        """Save and load via GCP repo preserves points."""
         mock_state.add_point("parking_spot", 100, 200)
         mock_state.add_point("arrows", 300, 400)
 
-        yaml_path = tmp_path / "points.yaml"
-        mock_state.save_registry(yaml_path)
+        gcps_dir = tmp_path / "gcps"
+        gcps_dir.mkdir()
+        mock_state.save_to_repo(gcps_dir)
 
         # Load into a new state
         with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
@@ -269,7 +263,7 @@ class TestPointPickerState:
             geotiff_path.touch()
             new_state = PointPickerState(geotiff_path)
 
-        new_state.load_registry(yaml_path)
+        new_state.load_from_repo(gcps_dir, mock_state.map_id)
 
         assert len(new_state.registry.points) == 2
         assert "PS1" in new_state.registry.points
@@ -282,15 +276,28 @@ class TestPointPickerStateGeoCoords:
     @pytest.fixture
     def state_with_geotransform(self, tmp_path: Path) -> PointPickerState:
         """Create state with geotransform."""
+        from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
+        from poc_homography.types import Easting, Meters, Northing, Unitless
+
         geotiff_path = tmp_path / "test.tif"
         geotiff_path.touch()
 
         with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
             mock_tif.return_value = MockTiffFile()
-            state = PointPickerState(geotiff_path)
+            # origin at (1000, 2000), 1 unit per pixel
+            geotiff = GeoTiff(
+                geotransform=GeoTransform(
+                    origin_easting=Easting(1000.0),
+                    pixel_width=Meters(1.0),
+                    row_rotation=Unitless(0.0),
+                    origin_northing=Northing(2000.0),
+                    col_rotation=Unitless(0.0),
+                    pixel_height=Meters(-1.0),
+                ),
+                crs="EPSG:25830",
+            )
+            state = PointPickerState(geotiff_path, geotiff=geotiff)
 
-        # Set a simple geotransform: origin at (1000, 2000), 1 unit per pixel
-        state.geotransform = [1000.0, 1.0, 0.0, 2000.0, 0.0, -1.0]
         return state
 
     @pytest.fixture
@@ -303,7 +310,6 @@ class TestPointPickerStateGeoCoords:
             mock_tif.return_value = MockTiffFile()
             state = PointPickerState(geotiff_path)
 
-        state.geotransform = None
         return state
 
     def test_get_geo_coords_with_geotransform(
@@ -562,58 +568,53 @@ class TestPointPickerAPI:
             content_type="application/json",
         )
 
-        # Export
-        export_path = tmp_path / "exported.yaml"
+        # Export (saves to repository)
         resp = test_client.post(
             "/point-picker/api/export/",
-            data=json.dumps({"path": str(export_path)}),
+            data=json.dumps({}),
             content_type="application/json",
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 2
-        assert export_path.exists()
+        assert data["saved"] is True
 
     def test_import_points(self, test_client, tmp_path: Path) -> None:
-        """POST /point-picker/api/import/ loads points from YAML file."""
-        # Create a YAML file with points (list format with id field)
-        yaml_content = """map_id: test
-points:
-  - id: PS1
-    pixel_x: 100.0
-    pixel_y: 200.0
-  - id: AR1
-    pixel_x: 300.0
-    pixel_y: 400.0
-"""
-        yaml_path = tmp_path / "import_test.yaml"
-        yaml_path.write_text(yaml_content)
+        """POST /point-picker/api/import/ loads points from GCP repository."""
+        import point_picker.views as pp_views
 
-        # Import
-        resp = test_client.post(
-            "/point-picker/api/import/",
-            data=json.dumps({"path": str(yaml_path)}),
-            content_type="application/json",
+        # Create GCP YAML files in repo format
+        gcps_dir = tmp_path / "gcps"
+        gcps_dir.mkdir()
+        (gcps_dir / "test__PS1.yaml").write_text(
+            "id: test/PS1\nname: PS1\nmap_point:\n  map_id: test\n  pixel_point:\n    x: 100.0\n    y: 200.0\n"
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["count"] == 2
-
-        # Verify points were imported
-        resp = test_client.get("/point-picker/api/points/")
-        assert len(resp.json()["points"]) == 2
-
-    def test_import_file_not_found_returns_404(self, test_client, tmp_path: Path) -> None:
-        """POST /point-picker/api/import/ returns 404 for nonexistent file."""
-        resp = test_client.post(
-            "/point-picker/api/import/",
-            data=json.dumps({"path": str(tmp_path / "nonexistent.yaml")}),
-            content_type="application/json",
+        (gcps_dir / "test__AR1.yaml").write_text(
+            "id: test/AR1\nname: AR1\nmap_point:\n  map_id: test\n  pixel_point:\n    x: 300.0\n    y: 400.0\n"
         )
-        assert resp.status_code == 404
 
-    def test_import_missing_path_returns_422(self, test_client) -> None:
-        """POST /point-picker/api/import/ without path returns 422."""
+        # Monkeypatch GCPS_DIR to use tmp directory
+        original = pp_views.GCPS_DIR
+        pp_views.GCPS_DIR = gcps_dir
+
+        try:
+            resp = test_client.post(
+                "/point-picker/api/import/",
+                data=json.dumps({"map_id": "test"}),
+                content_type="application/json",
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["count"] == 2
+
+            # Verify points were imported
+            resp = test_client.get("/point-picker/api/points/")
+            assert len(resp.json()["points"]) == 2
+        finally:
+            pp_views.GCPS_DIR = original
+
+    def test_import_missing_map_id_returns_422(self, test_client) -> None:
+        """POST /point-picker/api/import/ without map_id returns 422."""
         resp = test_client.post(
             "/point-picker/api/import/",
             data=json.dumps({}),

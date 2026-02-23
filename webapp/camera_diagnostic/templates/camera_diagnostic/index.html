@@ -991,7 +991,7 @@
 </head>
 <body>
     <div class="container">
-        <a href="{% url 'gcp:index' %}" class="back-link">&larr; Back to Tools</a>
+        <a href="{% url 'gcp:index' %}?tenant_id={{ tenant_id }}" class="back-link">&larr; Back to Tools</a>
 
         <div class="header">
             <h1>Camera Diagnostic Tool</h1>
@@ -1015,16 +1015,13 @@
 
         <!-- Run Tests Tab -->
         <div id="run-tests-tab" class="tab-content active">
-            <!-- Tenant and Camera selector -->
+            <!-- Camera selector (tenant from landing page) -->
             <div class="selector-panel">
-                <label for="tenant-select">Tenant:</label>
-                <select id="tenant-select">
-                    <option value="">-- Select a tenant --</option>
-                </select>
+                <span style="font-weight: 600; color: #ccc;">Tenant: {{ tenant_name }}</span>
 
                 <label for="camera-select">Camera:</label>
                 <select id="camera-select" disabled>
-                    <option value="">-- Select tenant first --</option>
+                    <option value="">Loading cameras...</option>
                 </select>
 
                 <button id="run-all-btn" class="btn-primary" disabled>Run All Tests on All Cameras</button>
@@ -1086,10 +1083,7 @@
         <div id="history-tab" class="tab-content">
             <div class="selector-panel" style="justify-content: space-between;">
                 <div style="display: flex; align-items: center; gap: 16px;">
-                    <label for="history-tenant-select">Filter by Tenant:</label>
-                    <select id="history-tenant-select">
-                        <option value="">All tenants</option>
-                    </select>
+                    <span style="font-weight: 600; color: #ccc;">Tenant: {{ tenant_name }}</span>
                 </div>
                 <button id="refresh-history-btn" class="btn-primary" style="padding: 8px 16px; font-size: 13px;">
                     Refresh
@@ -1112,14 +1106,12 @@
                 <div class="stress-form-row">
                     <div class="stress-form-group">
                         <label>Tenant</label>
-                        <select id="stress-tenant-select">
-                            <option value="">-- Select tenant --</option>
-                        </select>
+                        <span style="font-weight: 600; color: #ccc; padding: 8px 0; display: block;">{{ tenant_name }}</span>
                     </div>
                     <div class="stress-form-group">
                         <label>Camera</label>
                         <select id="stress-camera-select" disabled>
-                            <option value="">-- Select tenant first --</option>
+                            <option value="">Loading cameras...</option>
                         </select>
                     </div>
                 </div>
@@ -1350,8 +1342,8 @@
     </div>
 
     <script>
-        // State
-        let selectedTenant = null;
+        // State - tenant comes from landing page
+        let selectedTenant = '{{ tenant_id }}';
         let selectedCamera = null;
         let tenantCameras = [];
         let isRunning = false;
@@ -1363,7 +1355,6 @@
         const TEST_TIMEOUTS = { rtsp: 30000, webui: 60000, ptz: 120000 };
 
         // Elements
-        const tenantSelect = document.getElementById('tenant-select');
         const cameraSelect = document.getElementById('camera-select');
         const runAllBtn = document.getElementById('run-all-btn');
         const summaryReport = document.getElementById('summary-report');
@@ -1385,7 +1376,6 @@
         const failCount = document.getElementById('fail-count');
         const pendingCount = document.getElementById('pending-count');
         const progressFill = document.getElementById('progress-fill');
-        const historyTenantSelect = document.getElementById('history-tenant-select');
         const sessionList = document.getElementById('session-list');
         const refreshHistoryBtn = document.getElementById('refresh-history-btn');
 
@@ -1405,30 +1395,6 @@
                 }
             });
         });
-
-        // Load tenants on page load
-        async function loadTenants() {
-            try {
-                const resp = await fetch('{% url "camera_diagnostic:api_tenants" %}');
-                const result = await resp.json();
-
-                if (result.status !== 'success') {
-                    throw new Error(result.message || 'Failed to load tenants');
-                }
-
-                const tenants = result.data.tenants;
-                tenantSelect.innerHTML = '<option value="">-- Select a tenant --</option>';
-                tenants.forEach(tenant => {
-                    const option = document.createElement('option');
-                    option.value = tenant.id;
-                    option.textContent = tenant.name;
-                    tenantSelect.appendChild(option);
-                });
-            } catch (e) {
-                console.error('Failed to load tenants:', e);
-                tenantSelect.innerHTML = '<option value="">Error loading tenants</option>';
-            }
-        }
 
         // Load cameras for selected tenant
         async function loadCameras(tenantId) {
@@ -1942,11 +1908,8 @@
 
         // Session history functions
         async function loadSessionHistory() {
-            const tenantFilter = historyTenantSelect.value;
-            let url = '{% url "camera_diagnostic:api_list_sessions" %}';
-            if (tenantFilter) {
-                url += `?tenant_id=${encodeURIComponent(tenantFilter)}`;
-            }
+            let url = '{% url "camera_diagnostic:api_list_sessions" %}' +
+                `?tenant_id=${encodeURIComponent(selectedTenant)}`;
 
             try {
                 const resp = await fetch(url);
@@ -2058,26 +2021,6 @@
         }
 
         // Event listeners
-        tenantSelect.addEventListener('change', async (e) => {
-            selectedTenant = e.target.value || null;
-            selectedCamera = null;
-            tenantCameras = [];
-
-            if (selectedTenant) {
-                await loadCameras(selectedTenant);
-            } else {
-                cameraSelect.innerHTML = '<option value="">-- Select tenant first --</option>';
-                cameraSelect.disabled = true;
-                runAllBtn.disabled = true;
-                runAllBtn.textContent = 'Run All Tests on All Cameras';
-            }
-
-            // Hide video preview
-            showVideoPreview(null);
-            // Hide summary
-            summaryReport.classList.remove('visible');
-        });
-
         cameraSelect.addEventListener('change', (e) => {
             selectedCamera = e.target.value || null;
             showVideoPreview(selectedCamera);
@@ -2102,30 +2045,23 @@
         btnTestAllSingle.addEventListener('click', runAllTestsSingleCamera);
         snapshotBtn.addEventListener('click', captureSnapshot);
         refreshHistoryBtn.addEventListener('click', loadSessionHistory);
-        historyTenantSelect.addEventListener('change', loadSessionHistory);
 
-        // Initialize
-        loadTenants().then(() => {
-            // Populate history tenant dropdown too
-            const options = tenantSelect.innerHTML;
-            historyTenantSelect.innerHTML = '<option value="">All tenants</option>' +
-                Array.from(tenantSelect.options).slice(1).map(o =>
-                    `<option value="${o.value}">${o.textContent}</option>`
-                ).join('');
-
-            // Also populate stress testing tenant dropdown
-            stressTenantSelect.innerHTML = '<option value="">-- Select tenant --</option>' +
-                Array.from(tenantSelect.options).slice(1).map(o =>
-                    `<option value="${o.value}">${o.textContent}</option>`
-                ).join('');
+        // Initialize - load cameras for the tenant from landing page
+        loadCameras(selectedTenant).then(() => {
+            // Also load stress cameras
+            loadStressCameras(selectedTenant).then(cameras => {
+                if (cameras && cameras.length > 0) {
+                    stressMultiCameraPanel.classList.remove('hidden');
+                }
+            });
         });
 
         // =====================================================================
         // STRESS TESTING TAB STATE AND ELEMENTS
         // =====================================================================
 
-        // State - Stress testing tab
-        let stressTenant = null;
+        // State - Stress testing tab (tenant from landing page)
+        let stressTenant = '{{ tenant_id }}';
         let stressCamera = null;
         let stressCameras = [];
         let stressPresets = [];
@@ -2148,7 +2084,6 @@
         let allCamerasResults = [];
 
         // Elements - Stress testing tab
-        const stressTenantSelect = document.getElementById('stress-tenant-select');
         const stressCameraSelect = document.getElementById('stress-camera-select');
         const stressVideoPanel = document.getElementById('stress-video-panel');
         const stressCameraNameEl = document.getElementById('stress-camera-name');
@@ -2978,34 +2913,6 @@
         // =====================================================================
         // STRESS TESTING TAB EVENT LISTENERS
         // =====================================================================
-
-        stressTenantSelect.addEventListener('change', async (e) => {
-            // Abort any active multi-camera or single-camera execution
-            if (runAllCamerasMode) {
-                abortStressTest();
-                abortRunAllCameras();
-            } else if (runAllTestsMode) {
-                abortStressTest();
-                abortRunAllTests();
-            }
-
-            stressTenant = e.target.value;
-            stressCamera = null;
-            stressCameraSelect.innerHTML = '<option value="">-- Select camera --</option>';
-            stressCameraSelect.disabled = true;
-            showStressVideoStream(null);
-            stressTestConfigPanel.classList.add('hidden');
-            stressTestControlPanel.classList.add('hidden');
-            stressMultiCameraPanel.classList.add('hidden');
-
-            if (stressTenant) {
-                const cameras = await loadStressCameras(stressTenant);
-                if (cameras && cameras.length > 0) {
-                    stressMultiCameraPanel.classList.remove('hidden');
-                }
-            }
-            loadStressSessions();
-        });
 
         stressCameraSelect.addEventListener('change', (e) => {
             stressCamera = e.target.value;

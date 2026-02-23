@@ -31,14 +31,8 @@ from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
-    DistortionCoefficients,
-    HeightUncertainty,
 )
-from poc_homography.coordinate_converter import (
-    PYPROJ_AVAILABLE,
-    GCPCoordinateConverter,
-    UTMConverter,
-)
+from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 from poc_homography.homography import (
     IntrinsicExtrinsicConfig,
     IntrinsicExtrinsicHomography,
@@ -195,7 +189,7 @@ class TestCameraParametersCreateFactory:
 
     def test_create_with_distortion(self, sample_intrinsic_matrix, sample_camera_position):
         """Create with distortion coefficients."""
-        distortion = DistortionCoefficients(
+        distortion = LensDistortion(
             k1=Unitless(-0.1),
             k2=Unitless(0.01),
             p1=Unitless(0.0),
@@ -827,100 +821,6 @@ class TestIntrinsicExtrinsicHomographyComputeFromConfig:
 
         with pytest.raises(FrozenInstanceError):
             result.confidence = 0.5  # type: ignore[misc]  # Intentional for test
-
-
-# ============================================================================
-# UTMConverter Factory Tests
-# ============================================================================
-
-
-@pytest.mark.skipif(not PYPROJ_AVAILABLE, reason="pyproj not installed")
-class TestUTMConverterFactoryMethods:
-    """Test UTMConverter factory methods for immutable pattern."""
-
-    def test_with_reference_creates_new_instance(self):
-        """UTMConverter.with_reference() creates a new configured instance."""
-        converter = UTMConverter.with_reference(
-            lat=Degrees(39.5),
-            lon=Degrees(-0.5),
-        )
-
-        assert converter._ref_lat == 39.5
-        assert converter._ref_lon == -0.5
-        assert converter._ref_easting is not None
-        assert converter._ref_northing is not None
-
-    def test_with_reference_utm_creates_new_instance(self):
-        """UTMConverter.with_reference_utm() creates a new configured instance."""
-        converter = UTMConverter.with_reference_utm(
-            easting=Meters(737575.0),
-            northing=Meters(4391595.0),
-        )
-
-        assert converter._ref_easting == 737575.0
-        assert converter._ref_northing == 4391595.0
-        assert converter._ref_lat is not None
-        assert converter._ref_lon is not None
-
-    def test_with_reference_returns_different_instances(self):
-        """Each call to with_reference() returns a new instance."""
-        converter1 = UTMConverter.with_reference(lat=Degrees(39.5), lon=Degrees(-0.5))
-        converter2 = UTMConverter.with_reference(lat=Degrees(40.0), lon=Degrees(-0.4))
-
-        assert converter1 is not converter2
-        assert converter1._ref_lat != converter2._ref_lat
-
-    def test_converter_without_reference_raises_on_conversion(self):
-        """UTMConverter without reference raises ValueError on conversion."""
-        converter = UTMConverter()
-
-        with pytest.raises(ValueError, match="Reference point not set"):
-            converter.gps_to_local_xy(39.5, -0.5)
-
-
-# ============================================================================
-# GCPCoordinateConverter Factory Tests
-# ============================================================================
-
-
-@pytest.mark.skipif(not PYPROJ_AVAILABLE, reason="pyproj not installed")
-class TestGCPCoordinateConverterFactoryMethods:
-    """Test GCPCoordinateConverter factory methods for immutable pattern."""
-
-    def test_with_reference_gps_creates_new_instance(self):
-        """GCPCoordinateConverter.with_reference_gps() creates a configured instance."""
-        converter = GCPCoordinateConverter.with_reference_gps(
-            lat=Degrees(39.640472),
-            lon=Degrees(-0.230194),
-        )
-
-        assert converter._ref_lat == 39.640472
-        assert converter._ref_lon == -0.230194
-
-    def test_with_reference_utm_creates_new_instance(self):
-        """GCPCoordinateConverter.with_reference_utm() creates a configured instance."""
-        converter = GCPCoordinateConverter.with_reference_utm(
-            easting=Meters(737575.0),
-            northing=Meters(4391595.0),
-        )
-
-        assert converter._ref_easting == 737575.0
-        assert converter._ref_northing == 4391595.0
-
-    def test_with_reference_gps_returns_different_instances(self):
-        """Each call to with_reference_gps() returns a new instance."""
-        converter1 = GCPCoordinateConverter.with_reference_gps(lat=Degrees(39.5), lon=Degrees(-0.5))
-        converter2 = GCPCoordinateConverter.with_reference_gps(lat=Degrees(40.0), lon=Degrees(-0.4))
-
-        assert converter1 is not converter2
-        assert converter1._ref_lat != converter2._ref_lat
-
-    def test_converter_without_reference_raises_on_conversion(self):
-        """GCPCoordinateConverter without reference raises ValueError on conversion."""
-        converter = GCPCoordinateConverter()
-
-        with pytest.raises(ValueError, match="Reference point not set"):
-            converter.gps_to_local(39.5, -0.5)
 
 
 # ============================================================================

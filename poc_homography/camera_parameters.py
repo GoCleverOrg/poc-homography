@@ -12,112 +12,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class DistortionCoefficients:
-    """Lens distortion coefficients using the OpenCV distortion model.
-
-    The distortion model corrects for radial and tangential lens distortion:
-    - Radial distortion (barrel/pincushion): controlled by k1, k2, k3
-    - Tangential distortion (decentering): controlled by p1, p2
-
-    For most PTZ cameras, only k1 (and sometimes k2) are significant.
-    Positive k1 = barrel distortion (edges curve outward)
-    Negative k1 = pincushion distortion (edges curve inward)
-
-    Attributes:
-        k1: First radial distortion coefficient (most significant).
-        k2: Second radial distortion coefficient.
-        p1: First tangential distortion coefficient.
-        p2: Second tangential distortion coefficient.
-        k3: Third radial distortion coefficient (usually 0).
-    """
-
-    k1: Unitless = 0.0  # type: ignore[assignment]
-    k2: Unitless = 0.0  # type: ignore[assignment]
-    p1: Unitless = 0.0  # type: ignore[assignment]
-    p2: Unitless = 0.0  # type: ignore[assignment]
-    k3: Unitless = 0.0  # type: ignore[assignment]
-
-    def to_array(self) -> np.ndarray:
-        """Convert to numpy array in OpenCV format [k1, k2, p1, p2, k3]."""
-        return np.array([self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64)
-
-    def is_zero(self) -> bool:
-        """Check if all coefficients are effectively zero."""
-        return np.allclose(self.to_array(), 0.0)
-
-    @classmethod
-    def from_array(cls, coeffs: np.ndarray) -> DistortionCoefficients:
-        """Create from numpy array [k1, k2, p1, p2, k3].
-
-        Args:
-            coeffs: Array of 5 distortion coefficients.
-
-        Returns:
-            New DistortionCoefficients instance.
-
-        Raises:
-            ValueError: If array does not have exactly 5 elements.
-        """
-        if len(coeffs) != 5:
-            raise ValueError(f"Expected 5 distortion coefficients, got {len(coeffs)}")
-        return cls(
-            k1=Unitless(float(coeffs[0])),
-            k2=Unitless(float(coeffs[1])),
-            p1=Unitless(float(coeffs[2])),
-            p2=Unitless(float(coeffs[3])),
-            k3=Unitless(float(coeffs[4])),
-        )
-
-    @classmethod
-    def load_calibration(
-        cls,
-        camera_id: str,
-        zoom_factor: float,
-        calibration_dir: str,
-    ) -> DistortionCoefficients | None:
-        """Load calibrated distortion coefficients for a camera.
-
-        .. deprecated::
-            Use ``poc_homography.calibration.lens_distortion.apply_calibration.load_distortion_coefficients``
-            instead.  This class method will be removed in a future release.
-        """
-        from poc_homography.calibration.lens_distortion.apply_calibration import (
-            load_distortion_coefficients,
-        )
-
-        return load_distortion_coefficients(camera_id, zoom_factor, calibration_dir)
-
-
-@dataclass(frozen=True)
-class HeightUncertainty:
-    """Height uncertainty bounds for error propagation.
-
-    Represents a confidence interval for camera height, typically from
-    height calibration. Used for propagating uncertainty to world
-    coordinate projections.
-
-    Attributes:
-        lower: Lower bound of height confidence interval in meters.
-        upper: Upper bound of height confidence interval in meters.
-    """
-
-    lower: Meters
-    upper: Meters
-
-    def __post_init__(self) -> None:
-        """Validate height uncertainty bounds."""
-        if self.lower <= 0:
-            raise ValueError(f"Lower bound must be positive, got {self.lower}")
-        if self.upper <= 0:
-            raise ValueError(f"Upper bound must be positive, got {self.upper}")
-        if self.lower > self.upper:
-            raise ValueError(f"Lower bound ({self.lower}) cannot exceed upper bound ({self.upper})")
+# Backward-compatible alias
+DistortionCoefficients = LensDistortion
 
 
 def _validate_matrix_shape(matrix: np.ndarray, expected_shape: tuple[int, ...], name: str) -> None:
@@ -208,7 +109,7 @@ class CameraParameters:
     pixels_per_meter: Unitless
 
     # Optional parameters
-    distortion: DistortionCoefficients | None = None
+    distortion: LensDistortion | None = None
     height_uncertainty: HeightUncertainty | None = None
 
     # Optional GeoTIFF affine matrix (stored as bytes for hashability)
@@ -303,7 +204,7 @@ class CameraParameters:
         map_width: Pixels,
         map_height: Pixels,
         pixels_per_meter: Unitless,
-        distortion: DistortionCoefficients | None = None,
+        distortion: LensDistortion | None = None,
         height_uncertainty: HeightUncertainty | None = None,
         affine_matrix: np.ndarray | None = None,
     ) -> CameraParameters:

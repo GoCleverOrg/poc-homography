@@ -4,91 +4,74 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import os
-import re
-from pathlib import Path
 from typing import Any
 
-import yaml
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-
-# Paths relative to webapp directory
-WEBAPP_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = WEBAPP_DIR.parent
-TEST_DATA_DIR = PROJECT_ROOT / "tests" / "homography" / "test_data"
-
-# Supported image extensions
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+from homography_web.frame_utils import (
+    LINES_DIR,
+    get_frame_image_path,
+    image_filename_to_frame,
+    invalidate_cache,
+    list_image_filenames,
+    load_line_annotations_for_frame,
+    validate_image_filename,
+)
+from homography_web.frame_utils import (
+    get_line_annotation_repo as _get_line_annotation_repo,
+)
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
 SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 
-# Lines registry path (set via environment variable or default)
-_lines_registry_path: Path | None = None
+# Cached repos
 _lines_registry_data: dict | None = None
 
 
-def get_lines_registry_path() -> Path | None:
-    """Get the lines registry path from environment variable."""
-    global _lines_registry_path
-    if _lines_registry_path is None:
-        env_path = os.environ.get("LINES_REGISTRY_PATH")
-        if env_path:
-            _lines_registry_path = Path(env_path)
-        else:
-            # Default to Cartografia_valencia_lines.yaml in test data
-            default_path = TEST_DATA_DIR / "Cartografia_valencia_lines.yaml"
-            if default_path.exists():
-                _lines_registry_path = default_path
-    return _lines_registry_path
+def _invalidate_lines_cache() -> None:
+    """Clear the local line registry cache."""
+    global _lines_registry_data
+    _lines_registry_data = None
 
 
 def load_lines_registry() -> dict:
-    """Load and cache lines registry from YAML file."""
+    """Load and cache lines registry from the DDD repo."""
     global _lines_registry_data
     if _lines_registry_data is not None:
         return _lines_registry_data
 
-    registry_path = get_lines_registry_path()
-    if registry_path is None or not registry_path.exists():
-        return {"map_id": "", "lines": []}
+    from homography_web.frame_utils import get_default_map_id
+    from line_picker.state import from_line_repo
 
-    with open(registry_path) as f:
-        data = yaml.safe_load(f)
+    try:
+        map_id = get_default_map_id()
+        if map_id:
+            repo_lines = from_line_repo(LINES_DIR, map_id)
+            if repo_lines:
+                _lines_registry_data = {
+                    "map_id": map_id,
+                    "lines": [line.to_dict() for line in repo_lines],
+                }
+                return _lines_registry_data
+    except OSError:
+        pass
 
-    if not data or not isinstance(data, dict):
-        return {"map_id": "", "lines": []}
-
-    # Validate structure
-    if "map_id" not in data or "lines" not in data:
-        return {"map_id": "", "lines": []}
-
-    _lines_registry_data = data
-    return _lines_registry_data
+    return {"map_id": "", "lines": []}
 
 
 def get_available_images() -> list[str]:
-    """Scan TEST_DATA_DIR for available image files."""
-    if not TEST_DATA_DIR.exists():
-        return []
-
-    images = []
-    for ext in IMAGE_EXTENSIONS:
-        images.extend(f.name for f in TEST_DATA_DIR.glob(f"*{ext}"))
-        images.extend(f.name for f in TEST_DATA_DIR.glob(f"*{ext.upper()}"))
-
-    return sorted(set(images))
+    """Return available image filenames from the CapturedFrame repo."""
+    return list_image_filenames()
 
 
 def get_current_image(request: HttpRequest) -> str | None:
     """Get the current image filename from session, or first available image."""
     session_image = request.session.get(SESSION_IMAGE_KEY)
     if session_image:
-        if (TEST_DATA_DIR / session_image).exists():
+        if image_filename_to_frame(session_image) is not None:
             return session_image
 
     images = get_available_images()
@@ -96,15 +79,6 @@ def get_current_image(request: HttpRequest) -> str | None:
         return images[0]
 
     return None
-
-
-def validate_image_filename(filename: str) -> bool:
-    """Validate filename to prevent path traversal attacks."""
-    if not filename:
-        return False
-    if "/" in filename or ".." in filename or "\\" in filename:
-        return False
-    return True
 
 
 def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:
@@ -116,128 +90,65 @@ def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:
     return annotations
 
 
-def save_session_annotations(
-    request: HttpRequest, annotations: dict[str, list[dict]]
-) -> None:
+def save_session_annotations(request: HttpRequest, annotations: dict[str, list[dict]]) -> None:
     """Save annotations to session storage."""
     request.session[SESSION_ANNOTATIONS_KEY] = annotations
     request.session.modified = True
 
 
-def load_existing_line_annotations(image_filename: str) -> list[dict]:
-    """Load existing line annotations for a specific image from exported YAML files.
-
-    Searches for ``*_line_annotations.yaml`` files in TEST_DATA_DIR whose
-    ``test_cases`` contain a matching ``image`` field.  The per-image file
-    (``{base}_line_annotations.yaml``) is tried first for a fast match, then
-    all other ``*_line_annotations.yaml`` files are scanned as fallback.
-
-    Returns the ``line_annotations`` list from the first matching test case,
-    normalised to the internal annotation format.
-    """
-    if not TEST_DATA_DIR.exists():
+def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
+    """Load line annotations from the DDD LineAnnotation repository."""
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
         return []
-
-    base_name = image_filename.rsplit(".", 1)[0]
-    per_image_file = TEST_DATA_DIR / f"{base_name}_line_annotations.yaml"
-
-    # Ordered candidates: per-image file first, then everything else
-    candidates: list[Path] = []
-    if per_image_file.exists():
-        candidates.append(per_image_file)
-    for p in sorted(TEST_DATA_DIR.glob("*_line_annotations.yaml")):
-        if p not in candidates:
-            candidates.append(p)
-
-    for yaml_path in candidates:
-        try:
-            with open(yaml_path) as f:
-                data = yaml.safe_load(f)
-        except (yaml.YAMLError, OSError):
-            continue
-
-        if not data or not isinstance(data, dict):
-            continue
-
-        for tc in data.get("test_cases", []):
-            if tc.get("image") != image_filename:
-                continue
-
-            raw = tc.get("line_annotations", [])
-            annotations: list[dict] = []
-            for ann in raw:
-                if "points" in ann:
-                    points = ann["points"]
-                    if len(points) >= 2:
-                        annotations.append({
-                            "line_id": ann.get("line_id", ""),
-                            "start_pixel_x": float(points[0][0]),
-                            "start_pixel_y": float(points[0][1]),
-                            "end_pixel_x": float(points[-1][0]),
-                            "end_pixel_y": float(points[-1][1]),
-                            "points": points,
-                        })
-                elif all(
-                    k in ann
-                    for k in ("start_pixel_x", "start_pixel_y", "end_pixel_x", "end_pixel_y")
-                ):
-                    entry: dict[str, Any] = {
-                        "line_id": ann.get("line_id", ""),
-                        "start_pixel_x": float(ann["start_pixel_x"]),
-                        "start_pixel_y": float(ann["start_pixel_y"]),
-                        "end_pixel_x": float(ann["end_pixel_x"]),
-                        "end_pixel_y": float(ann["end_pixel_y"]),
-                    }
-                    annotations.append(entry)
-
-            return annotations
-
-    return []
+    return load_line_annotations_for_frame(frame.id)
 
 
-def extract_camera_status(filename: str) -> dict[str, Any]:
-    """Extract pan/tilt/zoom from filename pattern.
+def _save_line_annotations_to_repo(
+    image_filename: str,
+    annotations: list[dict],
+) -> None:
+    """Persist line annotations to the DDD LineAnnotation repository.
 
-    Supports two patterns:
-    - Legacy: valte_{pan}_{tilt}_{zoom}_{timestamp}.{ext}
-      Example: valte_56.7_20.7_1_20260114_182208.jpg
-    - Survey: {tenant}_{camera}_{date}_{time}_{pan}_{tilt}_{zoom}.{ext}
-      Example: valte_valte_cam01_20260126_095620_30.0_15.3_1.0.jpg
+    Args:
+        image_filename: Camera image filename (used as frame_id base).
+        annotations: List of annotation dicts with line_id and pixel coords.
     """
-    # Try survey pattern: _YYYYMMDD_HHMMSS_pan_tilt_zoom.ext
-    survey_pattern = r"_\d{8}_\d{6}_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)\.\w+$"
-    match = re.search(survey_pattern, filename)
-    if match:
-        return {
-            "pan": float(match.group(1)),
-            "tilt": float(match.group(2)),
-            "zoom": float(match.group(3)),
-        }
-    # Try legacy pattern: valte_pan_tilt_zoom_timestamp.ext
-    legacy_pattern = r"valte_([0-9.]+)_([0-9.]+)_([0-9]+)_"
-    match = re.match(legacy_pattern, filename)
-    if match:
-        return {
-            "pan": float(match.group(1)),
-            "tilt": float(match.group(2)),
-            "zoom": int(match.group(3)),
-        }
-    return {"pan": None, "tilt": None, "zoom": None}
+    from poc_homography.domain.entities.line_annotation import LineAnnotation
+    from poc_homography.domain.vo import PixelPoint
+
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
+        return
+
+    repo = _get_line_annotation_repo()
+
+    for ann_dict in annotations:
+        raw_points = ann_dict.get("points")
+        points: tuple[PixelPoint, ...] | None = None
+        if raw_points and len(raw_points) >= 2:
+            points = tuple(PixelPoint.create(float(p[0]), float(p[1])) for p in raw_points)
+
+        line_ann = LineAnnotation(
+            line_id=ann_dict.get("line_id", ""),
+            frame_id=frame.id,
+            camera_pose=frame.ptz_state,
+            start_pixel=PixelPoint.create(
+                float(ann_dict.get("start_pixel_x", 0)),
+                float(ann_dict.get("start_pixel_y", 0)),
+            ),
+            end_pixel=PixelPoint.create(
+                float(ann_dict.get("end_pixel_x", 0)),
+                float(ann_dict.get("end_pixel_y", 0)),
+            ),
+            points=points,
+        )
+        repo.save(line_ann)
 
 
-def extract_point_annotations_ref(filename: str) -> str:
-    """Extract point annotations reference from filename.
-
-    Removes timestamp and extension to get base test case name.
-    Example: valte_56.7_20.7_1_20260114_182208.jpg -> valte_56.7_20.7_1_20260114
-    """
-    # Remove extension
-    base = filename.rsplit(".", 1)[0]
-    # Remove last segment (timestamp part after last underscore)
-    parts = base.rsplit("_", 1)
-    if len(parts) > 1:
-        return parts[0]
-    return base
+def load_existing_line_annotations(image_filename: str) -> list[dict]:
+    """Load existing line annotations for a specific image from the DDD repo."""
+    return _load_line_annotations_from_repo(image_filename)
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -246,9 +157,7 @@ def index(request: HttpRequest) -> HttpResponse:
     registry = load_lines_registry()
     context = {
         "image_filename": current_image or "No images available",
-        "registry_filename": (
-            get_lines_registry_path().name if get_lines_registry_path() else "No registry"
-        ),
+        "registry_filename": "DDD line repo",
         "map_id": registry.get("map_id", ""),
     }
     return render(request, "camera_line_annotator/index.html", context)
@@ -278,39 +187,32 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     if not validate_image_filename(filename):
         return JsonResponse({"error": "Invalid filename"}, status=400)
 
-    image_path = TEST_DATA_DIR / filename
-
-    try:
-        resolved_path = image_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return JsonResponse({"error": "Invalid filename"}, status=400)
-    except (ValueError, RuntimeError):
-        return JsonResponse({"error": "Invalid filename"}, status=400)
-
-    if not resolved_path.exists():
+    frame = image_filename_to_frame(filename)
+    if frame is None:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
     request.session[SESSION_IMAGE_KEY] = filename
 
-    # Load annotations for the new image (session first, then files)
+    # Always load fresh from repo on image switch; session tracks in-flight edits only
+    image_annotations = load_existing_line_annotations(filename)
     all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(filename, [])
+    all_annotations[filename] = image_annotations
+    save_session_annotations(request, all_annotations)
 
-    if not image_annotations:
-        image_annotations = load_existing_line_annotations(filename)
-        if image_annotations:
-            all_annotations[filename] = image_annotations
-            save_session_annotations(request, all_annotations)
+    camera_status = {
+        "pan": float(frame.ptz_state.pan_raw),
+        "tilt": float(frame.ptz_state.tilt_deg),
+        "zoom": float(frame.ptz_state.zoom),
+    }
 
-    # Extract camera status from filename
-    camera_status = extract_camera_status(filename)
-
-    return JsonResponse({
-        "success": True,
-        "filename": filename,
-        "annotations": image_annotations,
-        "camera_status": camera_status,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "filename": filename,
+            "annotations": image_annotations,
+            "camera_status": camera_status,
+        }
+    )
 
 
 @require_GET
@@ -320,15 +222,11 @@ def serve_image(request: HttpRequest) -> HttpResponse:
     if not current_image:
         return HttpResponse("No image available", status=404)
 
-    image_path = TEST_DATA_DIR / current_image
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return HttpResponse("Image not found", status=404)
 
-    try:
-        resolved_path = image_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return HttpResponse("Invalid image path", status=400)
-    except (ValueError, RuntimeError):
-        return HttpResponse("Invalid image path", status=400)
-
+    resolved_path = get_frame_image_path(frame)
     if not resolved_path.exists():
         return HttpResponse("Image not found", status=404)
 
@@ -353,10 +251,12 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
         registry = load_lines_registry()
         lines = registry.get("lines", [])
         line_ids = [line.get("line_id") for line in lines if line.get("line_id")]
-        return JsonResponse({
-            "map_id": registry.get("map_id", ""),
-            "line_ids": line_ids,
-        })
+        return JsonResponse(
+            {
+                "map_id": registry.get("map_id", ""),
+                "line_ids": line_ids,
+            }
+        )
     except Exception as e:
         return JsonResponse({"error": f"Failed to load line IDs: {e}"}, status=500)
 
@@ -365,25 +265,21 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
 def api_annotations(request: HttpRequest) -> JsonResponse:
     """Get line annotations for current image.
 
-    Returns session-stored annotations if available, otherwise falls back
-    to loading from exported ``*_line_annotations.yaml`` files.
+    Loads from the DDD repo only when the session has no data for this image.
+    In-flight edits (create/update/delete) are preserved in the session until
+    the user explicitly reloads.
     """
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse([], safe=False)
 
     all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(current_image, [])
-
-    # Fall back to file-based annotations when session is empty
-    if not image_annotations:
+    if current_image not in all_annotations:
         image_annotations = load_existing_line_annotations(current_image)
-        if image_annotations:
-            # Cache into session so subsequent edits persist
-            all_annotations[current_image] = image_annotations
-            save_session_annotations(request, all_annotations)
+        all_annotations[current_image] = image_annotations
+        save_session_annotations(request, all_annotations)
 
-    return JsonResponse(image_annotations, safe=False)
+    return JsonResponse(all_annotations[current_image], safe=False)
 
 
 @csrf_exempt
@@ -419,9 +315,7 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
 
     # Preserve N-point data if provided
     if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
-        annotation["points"] = [
-            [float(p[0]), float(p[1])] for p in data["points"]
-        ]
+        annotation["points"] = [[float(p[0]), float(p[1])] for p in data["points"]]
 
     # Store annotation
     all_annotations = get_session_annotations(request)
@@ -430,11 +324,13 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     all_annotations[current_image].append(annotation)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "annotation": annotation,
-        "index": len(all_annotations[current_image]) - 1,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotation": annotation,
+            "index": len(all_annotations[current_image]) - 1,
+        }
+    )
 
 
 @csrf_exempt
@@ -471,10 +367,12 @@ def api_annotations_update(request: HttpRequest, index: int) -> JsonResponse:
     image_annotations[index] = updated
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "annotation": updated,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotation": updated,
+        }
+    )
 
 
 @csrf_exempt
@@ -494,27 +392,38 @@ def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
     deleted = image_annotations.pop(index)
     save_session_annotations(request, all_annotations)
 
-    return JsonResponse({
-        "success": True,
-        "deleted": deleted,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "deleted": deleted,
+        }
+    )
 
 
 @require_GET
 def api_camera_status(request: HttpRequest) -> JsonResponse:
-    """Get extracted camera status from current image filename."""
+    """Get camera status from the CapturedFrame entity."""
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse({"pan": None, "tilt": None, "zoom": None})
 
-    camera_status = extract_camera_status(current_image)
-    return JsonResponse(camera_status)
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return JsonResponse({"pan": None, "tilt": None, "zoom": None})
+
+    return JsonResponse(
+        {
+            "pan": float(frame.ptz_state.pan_raw),
+            "tilt": float(frame.ptz_state.tilt_deg),
+            "zoom": float(frame.ptz_state.zoom),
+        }
+    )
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
-    """Export current annotations to YAML file."""
+    """Save current annotations to the DDD line-annotation repository."""
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
@@ -523,192 +432,45 @@ def api_export(request: HttpRequest) -> JsonResponse:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    # Get camera status from request or extract from filename
-    camera_status = data.get("camera_status")
-    if camera_status is None:
-        camera_status = extract_camera_status(current_image)
-
-    # Validate camera status values
-    try:
-        pan = float(camera_status.get("pan"))
-        tilt = float(camera_status.get("tilt"))
-        zoom = int(camera_status.get("zoom"))
-    except (TypeError, ValueError):
-        return JsonResponse(
-            {"error": "Invalid camera status values. pan, tilt, zoom are required."},
-            status=422,
-        )
 
     # Get annotations
     all_annotations = get_session_annotations(request)
     image_annotations = all_annotations.get(current_image, [])
 
     if not image_annotations:
-        return JsonResponse({"error": "No annotations to export"}, status=400)
+        return JsonResponse({"error": "No annotations to save"}, status=400)
 
-    # Build export data
-    registry_path = get_lines_registry_path()
-    registry_filename = registry_path.name if registry_path else "unknown_lines.yaml"
+    _save_line_annotations_to_repo(current_image, image_annotations)
+    invalidate_cache()
+    _invalidate_lines_cache()
 
-    # Generate test case name from image filename
-    base_name = current_image.rsplit(".", 1)[0]
-    test_case_name = f"{base_name}_lines"
-
-    # Point annotations reference
-    point_annotations_ref = extract_point_annotations_ref(current_image)
-
-    export_data = {
-        "line_registry": registry_filename,
-        "test_cases": [
-            {
-                "name": test_case_name,
-                "image": current_image,
-                "camera_status": {
-                    "pan": pan,
-                    "tilt": tilt,
-                    "zoom": zoom,
-                },
-                "point_annotations_ref": point_annotations_ref,
-                "line_annotations": image_annotations,
-            }
-        ],
-    }
-
-    # Determine output filename
-    output_filename = data.get("output_filename")
-    if not output_filename:
-        output_filename = f"{base_name}_line_annotations.yaml"
-
-    # Validate output filename
-    if not validate_image_filename(output_filename):
-        return JsonResponse({"error": "Invalid output filename"}, status=400)
-
-    output_path = TEST_DATA_DIR / output_filename
-
-    try:
-        resolved_path = output_path.resolve()
-        if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-            return JsonResponse({"error": "Invalid output path"}, status=400)
-    except (ValueError, RuntimeError):
-        return JsonResponse({"error": "Invalid output path"}, status=400)
-
-    # Write YAML file
-    with open(resolved_path, "w") as f:
-        yaml.dump(export_data, f, default_flow_style=False, sort_keys=False)
-
-    return JsonResponse({
-        "success": True,
-        "filename": output_filename,
-        "path": str(resolved_path),
-        "test_case_name": test_case_name,
-        "annotation_count": len(image_annotations),
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "count": len(image_annotations),
+        }
+    )
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_import(request: HttpRequest) -> JsonResponse:
-    """Import annotations from YAML file or YAML content."""
+    """Load annotations from the DDD line-annotation repository."""
     current_image = get_current_image(request)
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    annotations = _load_line_annotations_from_repo(current_image)
 
-    # Get YAML content - either from filename or direct content
-    yaml_content = None
-    filename = data.get("filename")
-    yaml_text = data.get("yaml_content")
-
-    if yaml_text:
-        # Direct YAML content provided
-        try:
-            yaml_content = yaml.safe_load(yaml_text)
-        except yaml.YAMLError as e:
-            return JsonResponse({"error": f"Invalid YAML: {e}"}, status=400)
-    elif filename:
-        # Load from file
-        if not validate_image_filename(filename):
-            return JsonResponse({"error": "Invalid filename"}, status=400)
-
-        file_path = TEST_DATA_DIR / filename
-        try:
-            resolved_path = file_path.resolve()
-            if not resolved_path.is_relative_to(TEST_DATA_DIR.resolve()):
-                return JsonResponse({"error": "Invalid filename"}, status=400)
-        except (ValueError, RuntimeError):
-            return JsonResponse({"error": "Invalid filename"}, status=400)
-
-        if not resolved_path.exists():
-            return JsonResponse({"error": f"File not found: {filename}"}, status=404)
-
-        try:
-            with open(resolved_path) as f:
-                yaml_content = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            return JsonResponse({"error": f"Invalid YAML in file: {e}"}, status=400)
-    else:
-        return JsonResponse(
-            {"error": "Either 'filename' or 'yaml_content' is required"}, status=400
-        )
-
-    # Find test case matching current image
-    test_cases = yaml_content.get("test_cases", [])
-    matching_case = None
-    for tc in test_cases:
-        if tc.get("image") == current_image:
-            matching_case = tc
-            break
-
-    if not matching_case:
-        available_images = [tc.get("image") for tc in test_cases]
-        return JsonResponse({
-            "error": f"No test case found for current image '{current_image}'",
-            "available_images": available_images,
-        }, status=404)
-
-    # Extract annotations - support both formats
-    line_annotations = matching_case.get("line_annotations", [])
-    imported_annotations = []
-
-    for ann in line_annotations:
-        # Check for N-point format (points array)
-        if "points" in ann:
-            points = ann["points"]
-            if len(points) >= 2:
-                imported_annotations.append({
-                    "line_id": ann.get("line_id", ""),
-                    "start_pixel_x": float(points[0][0]),
-                    "start_pixel_y": float(points[0][1]),
-                    "end_pixel_x": float(points[-1][0]),
-                    "end_pixel_y": float(points[-1][1]),
-                    "points": points,  # Keep full points for N-point mode
-                })
-        # Standard 2-point format
-        elif all(k in ann for k in ["start_pixel_x", "start_pixel_y", "end_pixel_x", "end_pixel_y"]):
-            imported_annotations.append({
-                "line_id": ann.get("line_id", ""),
-                "start_pixel_x": float(ann["start_pixel_x"]),
-                "start_pixel_y": float(ann["start_pixel_y"]),
-                "end_pixel_x": float(ann["end_pixel_x"]),
-                "end_pixel_y": float(ann["end_pixel_y"]),
-            })
-
-    # Store imported annotations
+    # Store in session
     all_annotations = get_session_annotations(request)
-    all_annotations[current_image] = imported_annotations
+    all_annotations[current_image] = annotations
     save_session_annotations(request, all_annotations)
 
-    # Extract camera status if available
-    camera_status = matching_case.get("camera_status", {})
-
-    return JsonResponse({
-        "success": True,
-        "annotation_count": len(imported_annotations),
-        "annotations": imported_annotations,
-        "camera_status": camera_status,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "annotations": annotations,
+            "count": len(annotations),
+        }
+    )

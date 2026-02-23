@@ -14,7 +14,7 @@ from poc_homography.calibration.lens_distortion.distortion_solver import (
     straightness_rmse,
 )
 from poc_homography.calibration.lens_distortion.models import CameraLine, PTZPosition
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 from poc_homography.types import Unitless
 
 
@@ -37,10 +37,12 @@ def _make_distorted_line(
     so the line will pass the ``has_edge_curvature()`` check used by
     the solver to filter interpolated lines.
     """
-    undistorted = np.column_stack([
-        np.linspace(x_start, x_end, num_points),
-        np.full(num_points, y_pos),
-    ])
+    undistorted = np.column_stack(
+        [
+            np.linspace(x_start, x_end, num_points),
+            np.full(num_points, y_pos),
+        ]
+    )
     x = (undistorted[:, 0] - cx) / fx
     y = (undistorted[:, 1] - cy) / fy
     r2 = x * x + y * y
@@ -139,7 +141,7 @@ class TestSolverResult:
     def test_is_improved_when_error_reduced(self):
         """Should return True when final error is less than initial."""
         result = SolverResult(
-            distortion=DistortionCoefficients(),
+            distortion=LensDistortion(),
             initial_error=1.0,
             final_error=0.5,
             rmse_per_line=[0.5],
@@ -154,7 +156,7 @@ class TestSolverResult:
     def test_is_improved_false_when_error_increased(self):
         """Should return False when final error is greater than initial."""
         result = SolverResult(
-            distortion=DistortionCoefficients(),
+            distortion=LensDistortion(),
             initial_error=0.5,
             final_error=1.0,
             rmse_per_line=[1.0],
@@ -169,7 +171,7 @@ class TestSolverResult:
     def test_improvement_ratio_half(self):
         """Should return 0.5 when error is halved."""
         result = SolverResult(
-            distortion=DistortionCoefficients(),
+            distortion=LensDistortion(),
             initial_error=1.0,
             final_error=0.5,
             rmse_per_line=[0.5],
@@ -184,7 +186,7 @@ class TestSolverResult:
     def test_improvement_ratio_no_change(self):
         """Should return 1.0 when error unchanged."""
         result = SolverResult(
-            distortion=DistortionCoefficients(),
+            distortion=LensDistortion(),
             initial_error=1.0,
             final_error=1.0,
             rmse_per_line=[1.0],
@@ -199,7 +201,7 @@ class TestSolverResult:
     def test_improvement_ratio_handles_zero_initial(self):
         """Should return 1.0 when initial error is zero (no change possible)."""
         result = SolverResult(
-            distortion=DistortionCoefficients(),
+            distortion=LensDistortion(),
             initial_error=0.0,
             final_error=0.0,
             rmse_per_line=[0.0],
@@ -264,7 +266,7 @@ class TestDistortionSolver:
         result = solver.solve(lines, intrinsic_matrix)
 
         assert isinstance(result, SolverResult)
-        assert isinstance(result.distortion, DistortionCoefficients)
+        assert isinstance(result.distortion, LensDistortion)
         assert result.iterations >= 0
         assert isinstance(result.success, bool)
         assert len(result.rmse_per_line) == 2
@@ -304,7 +306,7 @@ class TestDistortionSolver:
         """Should accept initial guess for coefficients."""
         solver = DistortionSolver()
         lines = [_make_distorted_line("line_1", 300.0, ptz_position)]
-        initial = DistortionCoefficients(
+        initial = LensDistortion(
             k1=Unitless(-0.1),
             k2=Unitless(0.01),
             k3=Unitless(0.0),
@@ -328,9 +330,7 @@ class TestDistortionSolver:
         assert float(result.distortion.p1) == 0.0
         assert float(result.distortion.p2) == 0.0
 
-    def test_solve_rejects_all_interpolated_lines(
-        self, intrinsic_matrix, ptz_position
-    ):
+    def test_solve_rejects_all_interpolated_lines(self, intrinsic_matrix, ptz_position):
         """Should raise ValueError when all lines are interpolated (no curvature)."""
         solver = DistortionSolver()
         lines = [
@@ -365,7 +365,7 @@ class TestDistortionSolver:
                 ptz_position=ptz_position,
             ),
         ]
-        distortion = DistortionCoefficients()  # Zero distortion
+        distortion = LensDistortion()  # Zero distortion
 
         errors = solver.calculate_line_errors(lines, intrinsic_matrix, distortion)
 
@@ -422,7 +422,7 @@ class TestStraightnessRmse:
                 ptz_position=ptz_position,
             ),
         ]
-        zero_distortion = DistortionCoefficients()
+        zero_distortion = LensDistortion()
 
         rmse = straightness_rmse(lines, intrinsic_matrix, distortion=zero_distortion)
 
@@ -439,7 +439,7 @@ class TestStraightnessRmse:
                 ptz_position=ptz_position,
             ),
         ]
-        distortion = DistortionCoefficients(
+        distortion = LensDistortion(
             k1=Unitless(-0.1),
             k2=Unitless(0.05),
             k3=Unitless(0.0),
@@ -495,11 +495,13 @@ class TestRoundTripDistortionRecovery:
 
     @pytest.fixture
     def intrinsic_matrix(self):
-        return np.array([
-            [1000.0, 0.0, 960.0],
-            [0.0, 1000.0, 540.0],
-            [0.0, 0.0, 1.0],
-        ])
+        return np.array(
+            [
+                [1000.0, 0.0, 960.0],
+                [0.0, 1000.0, 540.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
 
     @pytest.fixture
     def ptz_position(self):
@@ -527,13 +529,13 @@ class TestRoundTripDistortionRecovery:
         lines = []
         for y_pos in [200, 400, 600, 800]:
             # Horizontal line
-            undistorted_pts = np.column_stack([
-                np.linspace(200, 1700, 30),
-                np.full(30, float(y_pos)),
-            ])
-            distorted_pts = self._apply_forward_distortion(
-                undistorted_pts, true_k1, fx, fy, cx, cy
+            undistorted_pts = np.column_stack(
+                [
+                    np.linspace(200, 1700, 30),
+                    np.full(30, float(y_pos)),
+                ]
             )
+            distorted_pts = self._apply_forward_distortion(undistorted_pts, true_k1, fx, fy, cx, cy)
             edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted_pts)
             line = CameraLine(
                 line_id=f"h_line_{y_pos}",
@@ -547,13 +549,13 @@ class TestRoundTripDistortionRecovery:
 
         for x_pos in [200, 600, 1400, 1700]:
             # Vertical line
-            undistorted_pts = np.column_stack([
-                np.full(30, float(x_pos)),
-                np.linspace(100, 900, 30),
-            ])
-            distorted_pts = self._apply_forward_distortion(
-                undistorted_pts, true_k1, fx, fy, cx, cy
+            undistorted_pts = np.column_stack(
+                [
+                    np.full(30, float(x_pos)),
+                    np.linspace(100, 900, 30),
+                ]
             )
+            distorted_pts = self._apply_forward_distortion(undistorted_pts, true_k1, fx, fy, cx, cy)
             edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted_pts)
             line = CameraLine(
                 line_id=f"v_line_{x_pos}",
@@ -571,8 +573,6 @@ class TestRoundTripDistortionRecovery:
 
         # The solver should recover k1 approximately
         recovered_k1 = float(result.distortion.k1)
-        assert abs(recovered_k1 - true_k1) < 0.05, (
-            f"Expected k1 ~{true_k1}, got {recovered_k1}"
-        )
+        assert abs(recovered_k1 - true_k1) < 0.05, f"Expected k1 ~{true_k1}, got {recovered_k1}"
         # RMSE should be very low after correction
         assert result.overall_rmse < 1.0

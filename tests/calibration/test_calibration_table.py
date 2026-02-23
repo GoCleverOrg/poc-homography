@@ -14,7 +14,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import (
     ZoomCalibrationEntry,
     load_calibration_for_camera,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 
 
 class TestZoomCalibrationEntry:
@@ -63,7 +63,7 @@ class TestZoomCalibrationEntry:
             )
 
     def test_to_distortion_coefficients(self):
-        """Should convert to DistortionCoefficients correctly."""
+        """Should convert to LensDistortion correctly."""
         entry = ZoomCalibrationEntry(
             zoom_factor=1.0,
             k1=-0.15,
@@ -76,7 +76,7 @@ class TestZoomCalibrationEntry:
 
         coeffs = entry.to_distortion_coefficients()
 
-        assert isinstance(coeffs, DistortionCoefficients)
+        assert isinstance(coeffs, LensDistortion)
         assert float(coeffs.k1) == -0.15
         assert float(coeffs.k2) == 0.08
         assert float(coeffs.k3) == 0.01
@@ -546,7 +546,11 @@ class TestGetIntrinsics:
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=1.0,
-                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.1,
+                k2=0.0,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
             )
         )
@@ -559,9 +563,16 @@ class TestGetIntrinsics:
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=2.0,
-                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.1,
+                k2=0.0,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
-                fx=1500.0, fy=1500.0, cx=960.0, cy=540.0,
+                fx=1500.0,
+                fy=1500.0,
+                cx=960.0,
+                cy=540.0,
             )
         )
 
@@ -579,9 +590,16 @@ class TestGetIntrinsics:
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=2.0,
-                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.1,
+                k2=0.0,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
-                fx=1500.0, fy=1500.0, cx=960.0, cy=540.0,
+                fx=1500.0,
+                fy=1500.0,
+                cx=960.0,
+                cy=540.0,
             )
         )
 
@@ -596,9 +614,16 @@ class TestGetIntrinsics:
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=2.0,
-                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.1,
+                k2=0.0,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
-                fx=1500.0, fy=1500.0, cx=960.0, cy=540.0,
+                fx=1500.0,
+                fy=1500.0,
+                cx=960.0,
+                cy=540.0,
             )
         )
 
@@ -613,17 +638,31 @@ class TestGetIntrinsics:
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=2.0,
-                k1=-0.1, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.1,
+                k2=0.0,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
-                fx=1000.0, fy=1000.0, cx=960.0, cy=540.0,
+                fx=1000.0,
+                fy=1000.0,
+                cx=960.0,
+                cy=540.0,
             )
         )
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=4.0,
-                k1=-0.2, k2=0.0, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.2,
+                k2=0.0,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
-                fx=2000.0, fy=2000.0, cx=960.0, cy=540.0,
+                fx=2000.0,
+                fy=2000.0,
+                cx=960.0,
+                cy=540.0,
             )
         )
 
@@ -639,9 +678,16 @@ class TestGetIntrinsics:
         table.add_entry(
             ZoomCalibrationEntry(
                 zoom_factor=1.0,
-                k1=-0.1, k2=0.05, k3=0.0, p1=0.0, p2=0.0,
+                k1=-0.1,
+                k2=0.05,
+                k3=0.0,
+                p1=0.0,
+                p2=0.0,
                 calibration_date="2024-01-15",
-                fx=1200.0, fy=1200.0, cx=960.0, cy=540.0,
+                fx=1200.0,
+                fy=1200.0,
+                cx=960.0,
+                cy=540.0,
             )
         )
 

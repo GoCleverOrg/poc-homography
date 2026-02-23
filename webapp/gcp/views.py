@@ -1,67 +1,46 @@
 """
 Views for GCP visualization.
 
-Django view wrappers that use MapPointRegistry for persistence.
+Django view wrappers that use the DDD repository for persistence.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.http import require_GET
+from homography_web.frame_utils import (
+    GCPS_DIR,
+    get_default_tenant_id,
+    get_map_repo,
+    get_tenant_repo,
+)
 
-from poc_homography.map_points import MapPoint, MapPointRegistry
-
-# Project root and data directories
-# Path: views.py -> gcp/ -> webapp/ -> project_root/
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-# Default map points file at project root (can also use data/gcps/ for custom files)
-MAP_POINTS_FILE = PROJECT_ROOT / "valte_map_points.yaml"
+from poc_homography.map_points import GCPRegistry, MapPoint
+from poc_homography.map_points.gcp_registry import from_gcp_repo, list_map_ids
 
 
-def _resolve_safe_file_path(filename: str) -> Path | None:
-    """
-    Safely resolve a filename to a path within the allowed gcps directory.
-
-    Prevents path traversal attacks by:
-    1. Extracting only the filename (stripping any directory components)
-    2. Constructing the path within DATA_DIR/gcps
-    3. Validating the resolved path is still within DATA_DIR
+def _load_registry(map_id: str | None = None) -> GCPRegistry:
+    """Load GCPRegistry from repository.
 
     Args:
-        filename: User-provided filename (may contain malicious path components)
+        map_id: Map identifier. If None, uses the first available map.
 
     Returns:
-        Safe resolved Path within gcps directory, or None if invalid
+        Loaded GCPRegistry, or empty registry if no maps exist.
     """
-    # Extract just the filename, stripping any directory components
-    safe_name = Path(filename).name
+    if not GCPS_DIR.exists():
+        return GCPRegistry(map_id="default", points={})
 
-    # Reject empty filenames or hidden files
-    if not safe_name or safe_name.startswith("."):
-        return None
+    if map_id is None:
+        available = list_map_ids(GCPS_DIR)
+        if not available:
+            return GCPRegistry(map_id="default", points={})
+        map_id = available[0]
 
-    # Construct path within allowed directory
-    gcps_dir = DATA_DIR / "gcps"
-    file_path = (gcps_dir / safe_name).resolve()
-
-    # Verify the resolved path is still within DATA_DIR
-    try:
-        file_path.relative_to(DATA_DIR.resolve())
-    except ValueError:
-        return None
-
-    return file_path
-
-
-def _load_registry() -> MapPointRegistry:
-    """Load MapPointRegistry from disk or return empty registry."""
-    if MAP_POINTS_FILE.exists():
-        return MapPointRegistry.load(MAP_POINTS_FILE)
-    return MapPointRegistry(map_id="default", points={})
+    return from_gcp_repo(GCPS_DIR, map_id)
 
 
 def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
@@ -70,29 +49,37 @@ def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    """Landing page with links to tools."""
-    return render(request, "gcp/index.html", {"title": "Homography GCP Tools"})
+    """Landing page with links to tools and tenant selector."""
+    tenants = get_tenant_repo().get_all()
+    current_tenant_id = request.GET.get("tenant_id", get_default_tenant_id())
+
+    # Get maps for the current tenant
+    maps = get_map_repo().get_by_tenant(current_tenant_id)
+
+    tenant_maps = [m.to_dict() for m in maps.values()]
+    return render(
+        request,
+        "gcp/index.html",
+        {
+            "title": "Homography GCP Tools",
+            "tenants": [t.to_dict() for t in tenants],
+            "current_tenant_id": current_tenant_id,
+            "tenant_maps": tenant_maps,
+            "has_maps": bool(tenant_maps),
+        },
+    )
 
 
 def debug_map(request: HttpRequest) -> HttpResponse:
     """
     Debug visualization for MapPoint data.
 
-    Displays MapPoints from storage for verification.
+    Displays MapPoints from repository for verification.
     Since MapPoints use pixel coordinates (not GPS), this shows a
     list view rather than a geographic map.
     """
-    # Load registry from file parameter or default
-    # Uses safe path resolution to prevent path traversal attacks
-    file_param = request.GET.get("file")
-    if file_param:
-        file_path = _resolve_safe_file_path(file_param)
-        if file_path and file_path.exists():
-            registry = MapPointRegistry.load(file_path)
-        else:
-            registry = _load_registry()
-    else:
-        registry = _load_registry()
+    map_id = request.GET.get("map_id")
+    registry = _load_registry(map_id)
 
     points_data = [_point_to_dict(pid, p) for pid, p in registry.points.items()]
 
@@ -103,3 +90,29 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     }
 
     return render(request, "gcp/debug_map.html", context)
+
+
+@require_GET
+def api_tenants(request: HttpRequest) -> JsonResponse:
+    """Return available tenants from the DDD repository."""
+    tenants = get_tenant_repo().get_all()
+    return JsonResponse(
+        {"tenants": [t.to_dict() for t in tenants]},
+    )
+
+
+@require_GET
+def api_tenant_maps(request: HttpRequest, tenant_id: str) -> JsonResponse:
+    """Return maps belonging to a specific tenant."""
+    maps = get_map_repo().get_by_tenant(tenant_id)
+    return JsonResponse(
+        {"maps": [m.to_dict() for m in maps.values()]},
+    )
+
+
+@require_GET
+def api_map_ids(request: HttpRequest) -> JsonResponse:
+    """Return available map IDs from the GCP repository."""
+    if not GCPS_DIR.exists():
+        return JsonResponse({"map_ids": []})
+    return JsonResponse({"map_ids": list_map_ids(GCPS_DIR)})

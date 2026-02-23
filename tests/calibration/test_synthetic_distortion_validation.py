@@ -26,9 +26,7 @@ from poc_homography.calibration.lens_distortion.distortion_solver import (
     SolverConfig,
 )
 from poc_homography.calibration.lens_distortion.models import CameraLine, PTZPosition
-from poc_homography.camera_parameters import DistortionCoefficients
-from poc_homography.types import Unitless
-
+from poc_homography.domain.vo import LensDistortion
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -105,82 +103,94 @@ def _make_lines(
 
     # Horizontal lines
     for y_pos in horizontal_y_positions:
-        undistorted = np.column_stack([
-            np.linspace(margin, IMAGE_W - margin, pts_per_line),
-            np.full(pts_per_line, y_pos),
-        ])
+        undistorted = np.column_stack(
+            [
+                np.linspace(margin, IMAGE_W - margin, pts_per_line),
+                np.full(pts_per_line, y_pos),
+            ]
+        )
         distorted = _forward_distort(undistorted, k1, k2, k3, p1, p2, fx, fy, cx, cy)
         if noise_std > 0:
             distorted += np.random.default_rng(42).normal(0, noise_std, distorted.shape)
         edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
-        lines.append(CameraLine(
-            line_id=f"h_{int(y_pos)}",
-            image_path="synthetic",
-            start_pixel=edge_pixels[0],
-            end_pixel=edge_pixels[-1],
-            ptz_position=ptz,
-            edge_pixels=edge_pixels,
-        ))
-
-    # Vertical lines
-    for x_pos in vertical_x_positions:
-        undistorted = np.column_stack([
-            np.full(pts_per_line, x_pos),
-            np.linspace(margin, IMAGE_H - margin, pts_per_line),
-        ])
-        distorted = _forward_distort(undistorted, k1, k2, k3, p1, p2, fx, fy, cx, cy)
-        if noise_std > 0:
-            distorted += np.random.default_rng(43).normal(0, noise_std, distorted.shape)
-        edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
-        lines.append(CameraLine(
-            line_id=f"v_{int(x_pos)}",
-            image_path="synthetic",
-            start_pixel=edge_pixels[0],
-            end_pixel=edge_pixels[-1],
-            ptz_position=ptz,
-            edge_pixels=edge_pixels,
-        ))
-
-    # Diagonal lines (improve angular diversity)
-    if diagonal:
-        for i, (x_start, y_start) in enumerate([
-            (margin, margin),
-            (IMAGE_W - margin, margin),
-            (margin, IMAGE_H / 2),
-            (IMAGE_W - margin, IMAGE_H / 2),
-        ]):
-            x_end = IMAGE_W - x_start if x_start < IMAGE_W / 2 else margin
-            y_end = IMAGE_H - y_start if y_start < IMAGE_H / 2 else margin
-            undistorted = np.column_stack([
-                np.linspace(x_start, x_end, pts_per_line),
-                np.linspace(y_start, y_end, pts_per_line),
-            ])
-            distorted = _forward_distort(
-                undistorted, k1, k2, k3, p1, p2, fx, fy, cx, cy
-            )
-            if noise_std > 0:
-                distorted += np.random.default_rng(44 + i).normal(
-                    0, noise_std, distorted.shape
-                )
-            edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
-            lines.append(CameraLine(
-                line_id=f"d_{i}",
+        lines.append(
+            CameraLine(
+                line_id=f"h_{int(y_pos)}",
                 image_path="synthetic",
                 start_pixel=edge_pixels[0],
                 end_pixel=edge_pixels[-1],
                 ptz_position=ptz,
                 edge_pixels=edge_pixels,
-            ))
+            )
+        )
+
+    # Vertical lines
+    for x_pos in vertical_x_positions:
+        undistorted = np.column_stack(
+            [
+                np.full(pts_per_line, x_pos),
+                np.linspace(margin, IMAGE_H - margin, pts_per_line),
+            ]
+        )
+        distorted = _forward_distort(undistorted, k1, k2, k3, p1, p2, fx, fy, cx, cy)
+        if noise_std > 0:
+            distorted += np.random.default_rng(43).normal(0, noise_std, distorted.shape)
+        edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
+        lines.append(
+            CameraLine(
+                line_id=f"v_{int(x_pos)}",
+                image_path="synthetic",
+                start_pixel=edge_pixels[0],
+                end_pixel=edge_pixels[-1],
+                ptz_position=ptz,
+                edge_pixels=edge_pixels,
+            )
+        )
+
+    # Diagonal lines (improve angular diversity)
+    if diagonal:
+        for i, (x_start, y_start) in enumerate(
+            [
+                (margin, margin),
+                (IMAGE_W - margin, margin),
+                (margin, IMAGE_H / 2),
+                (IMAGE_W - margin, IMAGE_H / 2),
+            ]
+        ):
+            x_end = IMAGE_W - x_start if x_start < IMAGE_W / 2 else margin
+            y_end = IMAGE_H - y_start if y_start < IMAGE_H / 2 else margin
+            undistorted = np.column_stack(
+                [
+                    np.linspace(x_start, x_end, pts_per_line),
+                    np.linspace(y_start, y_end, pts_per_line),
+                ]
+            )
+            distorted = _forward_distort(undistorted, k1, k2, k3, p1, p2, fx, fy, cx, cy)
+            if noise_std > 0:
+                distorted += np.random.default_rng(44 + i).normal(0, noise_std, distorted.shape)
+            edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
+            lines.append(
+                CameraLine(
+                    line_id=f"d_{i}",
+                    image_path="synthetic",
+                    start_pixel=edge_pixels[0],
+                    end_pixel=edge_pixels[-1],
+                    ptz_position=ptz,
+                    edge_pixels=edge_pixels,
+                )
+            )
 
     return lines
 
 
 def _make_intrinsic_matrix(fx: float, fy: float, cx: float, cy: float) -> np.ndarray:
-    return np.array([
-        [fx, 0.0, cx],
-        [0.0, fy, cy],
-        [0.0, 0.0, 1.0],
-    ])
+    return np.array(
+        [
+            [fx, 0.0, cx],
+            [0.0, fy, cy],
+            [0.0, 0.0, 1.0],
+        ]
+    )
 
 
 def _max_pixel_error(
@@ -189,7 +199,7 @@ def _max_pixel_error(
     true_k3: float,
     true_p1: float,
     true_p2: float,
-    recovered: DistortionCoefficients,
+    recovered: LensDistortion,
     fx: float,
     fy: float,
     cx: float,
@@ -202,8 +212,7 @@ def _max_pixel_error(
     pts = np.column_stack([xx.ravel(), yy.ravel()])
 
     # Distort with true coefficients, then undistort with recovered
-    distorted = _forward_distort(pts, true_k1, true_k2, true_k3,
-                                 true_p1, true_p2, fx, fy, cx, cy)
+    distorted = _forward_distort(pts, true_k1, true_k2, true_k3, true_p1, true_p2, fx, fy, cx, cy)
     undistorted = undistort_points(
         distorted,
         k1=float(recovered.k1),
@@ -211,7 +220,10 @@ def _max_pixel_error(
         k3=float(recovered.k3),
         p1=float(recovered.p1),
         p2=float(recovered.p2),
-        fx=fx, fy=fy, cx=cx, cy=cy,
+        fx=fx,
+        fy=fy,
+        cx=cx,
+        cy=cy,
     )
     errors = np.linalg.norm(undistorted - pts, axis=1)
     return float(np.max(errors))
@@ -233,18 +245,16 @@ class TestPerfectRecovery:
 
     @pytest.fixture
     def K(self):
-        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY,
-                                      self.TRUE_CX, self.TRUE_CY)
+        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
 
     def test_recover_k1_only_barrel(self, K):
         """Recover pure barrel distortion (k1 < 0)."""
         true_k1 = -0.30
-        lines = _make_lines(true_k1, 0, 0, 0, 0,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(
+            true_k1, 0, 0, 0, 0, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
+        )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=2000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=2000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert result.success
@@ -256,12 +266,11 @@ class TestPerfectRecovery:
     def test_recover_k1_only_pincushion(self, K):
         """Recover pure pincushion distortion (k1 > 0)."""
         true_k1 = 0.20
-        lines = _make_lines(true_k1, 0, 0, 0, 0,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(
+            true_k1, 0, 0, 0, 0, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
+        )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=2000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=2000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert result.success
@@ -270,12 +279,11 @@ class TestPerfectRecovery:
     def test_recover_k1_k2(self, K):
         """Recover two radial coefficients (k1, k2)."""
         true_k1, true_k2 = -0.25, 0.08
-        lines = _make_lines(true_k1, true_k2, 0, 0, 0,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(
+            true_k1, true_k2, 0, 0, 0, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
+        )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert result.success
@@ -289,37 +297,45 @@ class TestPerfectRecovery:
     def test_recover_k1_k2_k3(self, K):
         """Recover three radial coefficients (k1, k2, k3)."""
         true_k1, true_k2, true_k3 = -0.30, 0.10, -0.02
-        lines = _make_lines(true_k1, true_k2, true_k3, 0, 0,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(
+            true_k1, true_k2, true_k3, 0, 0, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
+        )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert result.success
         # k3 recovery is harder; check overall pixel error instead of raw coeff
         max_err = _max_pixel_error(
-            true_k1, true_k2, true_k3, 0, 0,
+            true_k1,
+            true_k2,
+            true_k3,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         assert max_err < 2.0, f"Max pixel error {max_err:.2f}px (expected <2)"
 
     def test_recover_full_5_param(self, K):
         """Recover all 5 parameters (k1, k2, k3, p1, p2)."""
         true = (-0.25, 0.06, -0.01, 0.002, -0.003)
-        lines = _make_lines(*true,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(*true, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
 
         config = SolverConfig(num_samples_per_line=50, max_iterations=5000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert result.success
         max_err = _max_pixel_error(
-            *true, result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            *true,
+            result.distortion,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         assert max_err < 3.0, f"Max pixel error {max_err:.2f}px (expected <3)"
 
@@ -327,27 +343,31 @@ class TestPerfectRecovery:
         """Recover coefficients typical of the Hikvision DS-2DF8425IX at zoom 1x."""
         # Values inspired by camera_config.py: k1=-0.341, k2=0.788
         true_k1, true_k2 = -0.34, 0.15
-        lines = _make_lines(true_k1, true_k2, 0, 0, 0,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(
+            true_k1, true_k2, 0, 0, 0, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
+        )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert result.success
         max_err = _max_pixel_error(
-            true_k1, true_k2, 0, 0, 0,
+            true_k1,
+            true_k2,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         assert max_err < 2.0, f"Max pixel error {max_err:.2f}px"
 
     def test_zero_distortion_lines_are_rejected(self, K):
         """Solver should reject undistorted lines (no edge curvature signal)."""
-        lines = _make_lines(0, 0, 0, 0, 0,
-                            self.TRUE_FX, self.TRUE_FY,
-                            self.TRUE_CX, self.TRUE_CY)
+        lines = _make_lines(0, 0, 0, 0, 0, self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
 
         config = SolverConfig(use_radial_only=True, num_samples_per_line=50)
         with pytest.raises(ValueError, match="No lines with edge curvature"):
@@ -373,25 +393,36 @@ class TestWrongIntrinsicsSensitivity:
     def true_lines(self):
         """Lines distorted with true parameters."""
         return _make_lines(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY,
-            self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
 
     def _solve_with_wrong_fx(self, lines, wrong_fx):
-        K_wrong = _make_intrinsic_matrix(wrong_fx, wrong_fx,
-                                         self.TRUE_CX, self.TRUE_CY)
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        K_wrong = _make_intrinsic_matrix(wrong_fx, wrong_fx, self.TRUE_CX, self.TRUE_CY)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         return DistortionSolver(config).solve(lines, K_wrong)
 
     def test_correct_intrinsics_recovers_truth(self, true_lines):
         """Baseline: correct intrinsics → correct coefficients."""
         result = self._solve_with_wrong_fx(true_lines, self.TRUE_FX)
         max_err = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         assert max_err < 2.0, f"Baseline max error: {max_err:.2f}px"
 
@@ -409,9 +440,16 @@ class TestWrongIntrinsicsSensitivity:
         # BUT: when we apply these wrong coefficients with the TRUE intrinsics,
         # the pixel error across the image will be large
         max_err = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         # This SHOULD be large — proving the root cause hypothesis
         assert max_err > 5.0, (
@@ -426,9 +464,16 @@ class TestWrongIntrinsicsSensitivity:
         result = self._solve_with_wrong_fx(true_lines, wrong_fx)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
 
         # With 5% error we might still be OK; with 67% (fx=1000) it's bad
@@ -446,18 +491,25 @@ class TestWrongIntrinsicsSensitivity:
     def test_wrong_principal_point_produces_error(self, true_lines):
         """Wrong cx/cy also corrupts calibration."""
         K_wrong = _make_intrinsic_matrix(
-            self.TRUE_FX, self.TRUE_FY,
+            self.TRUE_FX,
+            self.TRUE_FY,
             self.TRUE_CX + 50,  # 50px off in cx
             self.TRUE_CY + 30,  # 30px off in cy
         )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(true_lines, K_wrong)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         # Principal point error should also degrade quality
         print(f"  cx+50, cy+30 → max_px_err={max_err:.2f}")
@@ -482,14 +534,28 @@ class TestWrongIntrinsicsSensitivity:
 
         # But the actual undistortion quality diverges massively
         err_correct = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result_correct.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         err_wrong = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result_wrong.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         assert err_wrong > 3 * err_correct, (
             f"Wrong intrinsics error ({err_wrong:.2f}px) should be much worse "
@@ -514,17 +580,22 @@ class TestSpatialCoverage:
 
     @pytest.fixture
     def K(self):
-        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY,
-                                      self.TRUE_CX, self.TRUE_CY)
+        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
 
     def test_full_coverage_recovers_k1(self, K):
         """Full image coverage should recover k1 well."""
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         assert abs(float(result.distortion.k1) - self.TRUE_K1) < 0.02
@@ -532,20 +603,33 @@ class TestSpatialCoverage:
     def test_top_third_only_degrades_recovery(self, K):
         """Lines only in top third (y < 360) — simulates real data."""
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             horizontal_y_positions=[100, 150, 200, 250, 300, 350],
             vertical_x_positions=[100, 420, 740, 1060, 1380, 1700],
             diagonal=False,
         )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         recovered_k1 = float(result.distortion.k1)
         print(
@@ -558,43 +642,68 @@ class TestSpatialCoverage:
     def test_horizontal_only_no_verticals(self, K):
         """Only horizontal lines — misses vertical distortion information."""
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             horizontal_y_positions=[100, 270, 440, 610, 780, 950],
             vertical_x_positions=[],  # No verticals
             diagonal=False,
         )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         print(
-            f"  Horiz only: recovered_k1={float(result.distortion.k1):.4f}, "
-            f"max_err={max_err:.2f}px"
+            f"  Horiz only: recovered_k1={float(result.distortion.k1):.4f}, max_err={max_err:.2f}px"
         )
 
     def test_center_strip_misses_periphery(self, K):
         """Lines only in the center strip — periphery distortion unconstrained."""
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             horizontal_y_positions=[400, 480, 540, 600, 680],
             vertical_x_positions=[700, 860, 960, 1060, 1220],
             diagonal=False,
         )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         print(
             f"  Center strip: recovered_k1={float(result.distortion.k1):.4f}, "
@@ -603,50 +712,77 @@ class TestSpatialCoverage:
         # Center lines have small radial distance → weak constraint on k1
         # We expect poor recovery compared to full coverage
         full_lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         result_full = DistortionSolver(config).solve(full_lines, K)
         err_full = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result_full.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         assert max_err > err_full, (
-            f"Center-only ({max_err:.2f}px) should be worse than "
-            f"full coverage ({err_full:.2f}px)"
+            f"Center-only ({max_err:.2f}px) should be worse than full coverage ({err_full:.2f}px)"
         )
 
     def test_minimum_lines_for_reliable_recovery(self, K):
         """Find the minimum number of well-distributed lines needed."""
         configs_and_expected = [
-            (2, False),   # 2 lines — too few
-            (4, False),   # 4 lines — marginal
-            (8, True),    # 8 lines — should work
-            (16, True),   # 16 lines — definitely works
+            (2, False),  # 2 lines — too few
+            (4, False),  # 4 lines — marginal
+            (8, True),  # 8 lines — should work
+            (16, True),  # 16 lines — definitely works
         ]
         for n_lines, expect_good in configs_and_expected:
             # Distribute lines evenly
             h_positions = np.linspace(100, 950, max(1, n_lines // 2)).tolist()
             v_positions = np.linspace(100, 1700, max(1, n_lines - n_lines // 2)).tolist()
             lines = _make_lines(
-                self.TRUE_K1, 0, 0, 0, 0,
-                self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+                self.TRUE_K1,
+                0,
+                0,
+                0,
+                0,
+                self.TRUE_FX,
+                self.TRUE_FY,
+                self.TRUE_CX,
+                self.TRUE_CY,
                 horizontal_y_positions=h_positions,
                 vertical_x_positions=v_positions,
                 diagonal=False,
             )
-            config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                                  max_iterations=3000)
+            config = SolverConfig(
+                use_radial_only=True, num_samples_per_line=50, max_iterations=3000
+            )
             result = DistortionSolver(config).solve(lines, K)
             max_err = _max_pixel_error(
-                self.TRUE_K1, 0, 0, 0, 0,
+                self.TRUE_K1,
+                0,
+                0,
+                0,
+                0,
                 result.distortion,
-                self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+                self.TRUE_FX,
+                self.TRUE_FY,
+                self.TRUE_CX,
+                self.TRUE_CY,
             )
             print(
-                f"  {n_lines} lines: k1={float(result.distortion.k1):.4f}, "
-                f"max_err={max_err:.2f}px"
+                f"  {n_lines} lines: k1={float(result.distortion.k1):.4f}, max_err={max_err:.2f}px"
             )
             if expect_good:
                 assert max_err < 3.0, (
@@ -669,26 +805,38 @@ class TestNoiseSensitivity:
 
     @pytest.fixture
     def K(self):
-        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY,
-                                      self.TRUE_CX, self.TRUE_CY)
+        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
 
     @pytest.mark.parametrize("noise_std", [0.0, 0.5, 1.0, 2.0, 5.0])
     def test_noise_degradation(self, K, noise_std):
         """Recovery quality degrades gracefully with increasing noise."""
         lines = _make_lines(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             noise_std=noise_std,
         )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         print(
             f"  noise_std={noise_std:.1f}px: "
@@ -699,9 +847,7 @@ class TestNoiseSensitivity:
         )
 
         if noise_std <= 1.0:
-            assert max_err < 3.0, (
-                f"With {noise_std}px noise, max error {max_err:.2f}px is too high"
-            )
+            assert max_err < 3.0, f"With {noise_std}px noise, max error {max_err:.2f}px is too high"
 
     def test_more_lines_reduces_noise_impact(self, K):
         """More lines should average out noise for better recovery."""
@@ -709,8 +855,15 @@ class TestNoiseSensitivity:
 
         # Few lines
         few_lines = _make_lines(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             horizontal_y_positions=[200, 500, 800],
             vertical_x_positions=[300, 960, 1600],
             diagonal=False,
@@ -721,28 +874,48 @@ class TestNoiseSensitivity:
         many_h = np.linspace(80, 1000, 12).tolist()
         many_v = np.linspace(80, 1840, 12).tolist()
         many_lines = _make_lines(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             horizontal_y_positions=many_h,
             vertical_x_positions=many_v,
             diagonal=True,
             noise_std=noise_std,
         )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result_few = DistortionSolver(config).solve(few_lines, K)
         result_many = DistortionSolver(config).solve(many_lines, K)
 
         err_few = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result_few.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         err_many = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result_many.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         print(
             f"  {len(few_lines)} lines: max_err={err_few:.2f}px  |  "
@@ -778,14 +951,30 @@ class TestUndistortionConsistency:
 
         # Forward distort
         distorted = _forward_distort(
-            original, k1, k2, k3, p1, p2,
-            self.FX, self.FY, self.CX, self.CY,
+            original,
+            k1,
+            k2,
+            k3,
+            p1,
+            p2,
+            self.FX,
+            self.FY,
+            self.CX,
+            self.CY,
         )
 
         # Undistort
         recovered = undistort_points(
-            distorted, k1, k2, k3, p1, p2,
-            self.FX, self.FY, self.CX, self.CY,
+            distorted,
+            k1,
+            k2,
+            k3,
+            p1,
+            p2,
+            self.FX,
+            self.FY,
+            self.CX,
+            self.CY,
         )
 
         errors = np.linalg.norm(recovered - original, axis=1)
@@ -802,16 +991,27 @@ class TestUndistortionConsistency:
         img = np.zeros((IMAGE_H, IMAGE_W, 3), dtype=np.uint8)
 
         # Place markers at several known positions
-        test_points_undist = np.array([
-            [400, 300],
-            [960, 540],
-            [1500, 800],
-        ], dtype=np.float64)
+        test_points_undist = np.array(
+            [
+                [400, 300],
+                [960, 540],
+                [1500, 800],
+            ],
+            dtype=np.float64,
+        )
 
         # Find where these appear in the distorted image
         distorted_positions = _forward_distort(
-            test_points_undist, k1, k2, k3, p1, p2,
-            self.FX, self.FY, self.CX, self.CY,
+            test_points_undist,
+            k1,
+            k2,
+            k3,
+            p1,
+            p2,
+            self.FX,
+            self.FY,
+            self.CX,
+            self.CY,
         )
 
         # Place bright dots at distorted positions in the distorted image
@@ -819,30 +1019,42 @@ class TestUndistortionConsistency:
             u, v = int(round(dp[0])), int(round(dp[1]))
             if 0 <= u < IMAGE_W and 0 <= v < IMAGE_H:
                 cv2_radius = 3
-                img[max(0, v - cv2_radius):v + cv2_radius + 1,
-                    max(0, u - cv2_radius):u + cv2_radius + 1] = 255
+                img[
+                    max(0, v - cv2_radius) : v + cv2_radius + 1,
+                    max(0, u - cv2_radius) : u + cv2_radius + 1,
+                ] = 255
 
         # Undistort the image
         undistorted_img = undistort_image(
-            img, k1, k2, k3, p1, p2,
-            self.FX, self.FY, self.CX, self.CY,
+            img,
+            k1,
+            k2,
+            k3,
+            p1,
+            p2,
+            self.FX,
+            self.FY,
+            self.CX,
+            self.CY,
         )
 
         # The bright dots should now be near the original undistorted positions
         for pt in test_points_undist:
             u, v = int(round(pt[0])), int(round(pt[1]))
             # Check a small region around expected position
-            region = undistorted_img[max(0, v - 5):v + 6, max(0, u - 5):u + 6]
+            region = undistorted_img[max(0, v - 5) : v + 6, max(0, u - 5) : u + 6]
             assert np.max(region) > 100, (
                 f"Expected bright spot near ({u}, {v}) in undistorted image"
             )
 
     def test_measure_line_straightness_on_perfect_line(self):
         """A perfect straight line should have RMSE ≈ 0."""
-        pts = np.column_stack([
-            np.linspace(100, 1800, 50),
-            np.linspace(200, 800, 50),
-        ])
+        pts = np.column_stack(
+            [
+                np.linspace(100, 1800, 50),
+                np.linspace(200, 800, 50),
+            ]
+        )
         result = measure_line_straightness(pts)
         assert result["rmse_pixels"] < 1e-10
         assert result["r_squared"] > 0.9999
@@ -891,8 +1103,15 @@ class TestProductionScenario:
         """
         # Step 1: Generate what the camera actually captures
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             # Simulate the top-third bias from real annotations
             horizontal_y_positions=[150, 200, 250, 300, 350, 400],
             vertical_x_positions=[200, 500, 800, 1100, 1400, 1700],
@@ -900,90 +1119,116 @@ class TestProductionScenario:
         )
 
         # Step 2: User calibrates with wrong intrinsics
-        K_wrong = _make_intrinsic_matrix(
-            self.WEBAPP_FX, self.WEBAPP_FY, self.TRUE_CX, self.TRUE_CY
-        )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        K_wrong = _make_intrinsic_matrix(self.WEBAPP_FX, self.WEBAPP_FY, self.TRUE_CX, self.TRUE_CY)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K_wrong)
 
         # Step 3: The solver "succeeds" with low training RMSE
         assert result.success
         print(f"  Training RMSE: {result.overall_rmse:.4f}px (looks good!)")
-        print(
-            f"  Recovered k1={float(result.distortion.k1):.4f} "
-            f"(true={self.TRUE_K1})"
-        )
+        print(f"  Recovered k1={float(result.distortion.k1):.4f} (true={self.TRUE_K1})")
 
         # Step 4+5: Apply these coefficients to the FULL image with TRUE camera
         # This measures what actually happens to undistorted images
         max_err = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         print(f"  Actual max pixel error: {max_err:.2f}px")
 
         # This MUST fail — demonstrating the production problem
-        assert max_err > 5.0, (
-            f"Expected large error from production scenario, got {max_err:.2f}px"
-        )
+        assert max_err > 5.0, f"Expected large error from production scenario, got {max_err:.2f}px"
 
     def test_production_fixed_with_correct_intrinsics(self):
         """Same scenario but with correct intrinsics → should work."""
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
             horizontal_y_positions=[150, 200, 250, 300, 350, 400],
             vertical_x_positions=[200, 500, 800, 1100, 1400, 1700],
             diagonal=False,
         )
 
-        K_correct = _make_intrinsic_matrix(
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
-        )
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        K_correct = _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
         result = DistortionSolver(config).solve(lines, K_correct)
 
         max_err = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         print(f"  Fixed intrinsics: max pixel error = {max_err:.2f}px")
-        assert max_err < 3.0, (
-            f"With correct intrinsics, expected <3px error, got {max_err:.2f}px"
-        )
+        assert max_err < 3.0, f"With correct intrinsics, expected <3px error, got {max_err:.2f}px"
 
     def test_computed_vs_default_intrinsics_comparison(self):
         """Direct comparison: computed focal length vs webapp default."""
         lines = _make_lines(
-            self.TRUE_K1, 0, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
 
-        config = SolverConfig(use_radial_only=True, num_samples_per_line=50,
-                              max_iterations=3000)
+        config = SolverConfig(use_radial_only=True, num_samples_per_line=50, max_iterations=3000)
 
         # With computed fx from camera specs
-        K_computed = _make_intrinsic_matrix(
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY
-        )
+        K_computed = _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
         result_good = DistortionSolver(config).solve(lines, K_computed)
         err_good = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result_good.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
 
         # With webapp default fx=1000
         K_default = _make_intrinsic_matrix(1000.0, 1000.0, 960.0, 540.0)
         result_bad = DistortionSolver(config).solve(lines, K_default)
         err_bad = _max_pixel_error(
-            self.TRUE_K1, 0, 0, 0, 0,
+            self.TRUE_K1,
+            0,
+            0,
+            0,
+            0,
             result_bad.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
 
         print(f"  Computed intrinsics (fx={self.TRUE_FX:.0f}): {err_good:.2f}px")
@@ -1021,8 +1266,7 @@ class TestJointIntrinsicsOptimization:
 
     @pytest.fixture
     def K_true(self):
-        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY,
-                                      self.TRUE_CX, self.TRUE_CY)
+        return _make_intrinsic_matrix(self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY)
 
     @pytest.fixture
     def K_wrong(self):
@@ -1033,9 +1277,15 @@ class TestJointIntrinsicsOptimization:
     def true_lines(self):
         """Lines distorted with true parameters."""
         return _make_lines(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY,
-            self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
 
     def test_joint_optimization_refines_principal_point(self):
@@ -1047,8 +1297,15 @@ class TestJointIntrinsicsOptimization:
         """
         true_cx, true_cy = 980.0, 550.0  # Offset from center
         lines = _make_lines(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
-            self.TRUE_FX, self.TRUE_FY, true_cx, true_cy,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            true_cx,
+            true_cy,
         )
 
         # Start with cx/cy at image center (wrong by 20px, 10px)
@@ -1136,15 +1393,28 @@ class TestJointIntrinsicsOptimization:
         assert result_joint.intrinsics is not None
 
         err_fixed = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result_fixed.distortion,
-            self.TRUE_FX, self.TRUE_FY, self.TRUE_CX, self.TRUE_CY,
+            self.TRUE_FX,
+            self.TRUE_FY,
+            self.TRUE_CX,
+            self.TRUE_CY,
         )
         err_joint = _max_pixel_error(
-            self.TRUE_K1, self.TRUE_K2, 0, 0, 0,
+            self.TRUE_K1,
+            self.TRUE_K2,
+            0,
+            0,
+            0,
             result_joint.distortion,
-            result_joint.intrinsics["fx"], result_joint.intrinsics["fy"],
-            result_joint.intrinsics["cx"], result_joint.intrinsics["cy"],
+            result_joint.intrinsics["fx"],
+            result_joint.intrinsics["fy"],
+            result_joint.intrinsics["cx"],
+            result_joint.intrinsics["cy"],
         )
 
         print(f"  Fixed: {err_fixed:.2f}px, Joint: {err_joint:.2f}px")

@@ -7,7 +7,6 @@ Also includes stress testing service for PTZ cameras.
 from __future__ import annotations
 
 import logging
-import os
 import random
 import re
 import socket
@@ -22,7 +21,6 @@ from pathlib import Path
 
 import cv2
 import requests
-import yaml
 from camera_survey.models import PTZPosition
 from camera_survey.ptz import BasePTZCamera, create_ptz_camera
 from django.conf import settings
@@ -1117,77 +1115,29 @@ def get_presets_list(camera_ip: str, username: str, password: str) -> dict:
 # =============================================================================
 
 
-def _is_valid_session_id(session_id: str) -> bool:
-    """Validate that session_id is a valid UUID to prevent path traversal."""
-    try:
-        uuid.UUID(session_id)
-        return True
-    except (ValueError, TypeError):
-        return False
-
-
 def get_diagnostic_storage_dir() -> Path:
     """Get the storage directory for diagnostic sessions."""
     base_dir = getattr(settings, "BASE_DIR", Path.cwd())
     return Path(base_dir).parent / "data" / "diagnostic"
 
 
+def _get_diagnostic_repo():
+    """Return a RepoYamlDiagnosticSession for the default storage directory."""
+    from poc_homography.infrastructure.repositories import RepoYamlDiagnosticSession
+
+    from .models import DiagnosticSession
+
+    return RepoYamlDiagnosticSession(get_diagnostic_storage_dir(), DiagnosticSession.from_dict)
+
+
 def save_diagnostic_session(session) -> bool:
-    """Save diagnostic session to disk.
-
-    Args:
-        session: DiagnosticSession object
-
-    Returns:
-        True if saved successfully, False otherwise
-    """
-    try:
-        storage_dir = get_diagnostic_storage_dir()
-        date_str = session.created_at.strftime("%Y%m%d")
-        session_dir = storage_dir / date_str / session.id
-        session_dir.mkdir(parents=True, exist_ok=True)
-
-        manifest_path = session_dir / "manifest.yaml"
-        with open(manifest_path, "w") as f:
-            yaml.dump(session.to_dict(), f, default_flow_style=False, sort_keys=False)
-
-        return True
-    except Exception as e:
-        logger.error(f"Failed to save diagnostic session {session.id}: {e}")
-        return False
+    """Save diagnostic session to disk via the DDD repository."""
+    return _get_diagnostic_repo().save(session)
 
 
 def load_diagnostic_session(session_id: str):
-    """Load diagnostic session from disk by ID.
-
-    Args:
-        session_id: Session UUID
-
-    Returns:
-        DiagnosticSession or None if not found
-    """
-    from .models import DiagnosticSession
-
-    if not _is_valid_session_id(session_id):
-        return None
-
-    storage_dir = get_diagnostic_storage_dir()
-    if not storage_dir.exists():
-        return None
-
-    for date_dir in storage_dir.iterdir():
-        if date_dir.is_dir():
-            manifest_path = date_dir / session_id / "manifest.yaml"
-            if manifest_path.exists():
-                try:
-                    with open(manifest_path) as f:
-                        data = yaml.safe_load(f)
-                    return DiagnosticSession.from_dict(data)
-                except Exception as e:
-                    logger.warning(f"Failed to load session from {manifest_path}: {e}")
-                    return None
-
-    return None
+    """Load diagnostic session from disk by ID via the DDD repository."""
+    return _get_diagnostic_repo().get(session_id)
 
 
 def list_diagnostic_sessions(
@@ -1195,94 +1145,13 @@ def list_diagnostic_sessions(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list, int]:
-    """List diagnostic sessions with optional filtering.
-
-    Args:
-        tenant_id: Optional tenant ID filter
-        limit: Maximum number of sessions to return
-        offset: Number of sessions to skip
-
-    Returns:
-        Tuple of (sessions_list, total_count)
-    """
-    from .models import DiagnosticSession
-
-    sessions = []
-    storage_dir = get_diagnostic_storage_dir()
-
-    if not storage_dir.exists():
-        return [], 0
-
-    # Find all session directories
-    for date_dir in sorted(storage_dir.iterdir(), reverse=True):
-        if not date_dir.is_dir():
-            continue
-
-        for session_dir in date_dir.iterdir():
-            if not session_dir.is_dir():
-                continue
-
-            manifest_path = session_dir / "manifest.yaml"
-            if not manifest_path.exists():
-                continue
-
-            try:
-                with open(manifest_path) as f:
-                    data = yaml.safe_load(f)
-
-                session = DiagnosticSession.from_dict(data)
-
-                # Apply filter
-                if tenant_id and session.tenant_id != tenant_id:
-                    continue
-
-                sessions.append(session)
-            except Exception as e:
-                logger.warning(f"Failed to load session from {manifest_path}: {e}")
-
-    # Sort by created_at descending
-    sessions.sort(key=lambda s: s.created_at, reverse=True)
-
-    total = len(sessions)
-    return sessions[offset : offset + limit], total
+    """List diagnostic sessions with optional filtering via the DDD repository."""
+    return _get_diagnostic_repo().get_all(tenant_id=tenant_id, limit=limit, offset=offset)
 
 
 def delete_diagnostic_session(session_id: str) -> tuple[bool, str | None]:
-    """Delete a diagnostic session.
-
-    Args:
-        session_id: Session UUID to delete
-
-    Returns:
-        Tuple of (success, error_message)
-    """
-    import shutil
-
-    if not _is_valid_session_id(session_id):
-        return False, "Invalid session ID format"
-
-    storage_dir = get_diagnostic_storage_dir()
-    if not storage_dir.exists():
-        return False, "Session not found"
-
-    for date_dir in storage_dir.iterdir():
-        if date_dir.is_dir():
-            session_dir = date_dir / session_id
-            if session_dir.exists():
-                try:
-                    shutil.rmtree(session_dir)
-
-                    # Clean up empty date directories
-                    if not any(date_dir.iterdir()):
-                        date_dir.rmdir()
-
-                    logger.info(f"Deleted diagnostic session {session_id}")
-                    return True, None
-                except Exception as e:
-                    logger.error(f"Failed to delete session {session_id}: {e}")
-                    return False, str(e)
-
-    return False, "Session not found"
+    """Delete a diagnostic session via the DDD repository."""
+    return _get_diagnostic_repo().delete(session_id)
 
 
 # =============================================================================
@@ -1291,7 +1160,9 @@ def delete_diagnostic_session(session_id: str) -> tuple[bool, str | None]:
 
 # Constants for stress testing
 STRESS_TEST_STABILIZATION_TIMEOUT = 10.0  # Max seconds to wait for position stabilization
-STRESS_TEST_STABILIZATION_THRESHOLD = 0.0  # Seconds of no change to consider stabilized (0 = no wait)
+STRESS_TEST_STABILIZATION_THRESHOLD = (
+    0.0  # Seconds of no change to consider stabilized (0 = no wait)
+)
 STRESS_TEST_POLL_INTERVAL = 0.01  # Polling interval for position checks (minimal for max speed)
 POSITION_TOLERANCE = 0.5  # Position tolerance in degrees for matching
 
@@ -1311,6 +1182,15 @@ def get_stress_test_storage_dir() -> Path:
     """Get the storage directory for stress test results."""
     base_dir = getattr(settings, "BASE_DIR", Path.cwd())
     return Path(base_dir).parent / "data" / "stress_test"
+
+
+def _get_stress_test_repo():
+    """Return a RepoYamlStressTestSession for the default storage directory."""
+    from poc_homography.infrastructure.repositories import RepoYamlStressTestSession
+
+    from .models import StressTestSession
+
+    return RepoYamlStressTestSession(get_stress_test_storage_dir(), StressTestSession.from_dict)
 
 
 class CameraStressTestService:
@@ -1609,9 +1489,21 @@ class CameraStressTestService:
         zoom_diff = target_zoom - start_position["zoom"]
 
         # Determine speed values (-100 to +100)
-        pan_speed = MAX_SPEED if pan_diff > POSITION_THRESHOLD else (-MAX_SPEED if pan_diff < -POSITION_THRESHOLD else 0)
-        tilt_speed = MAX_SPEED if tilt_diff > POSITION_THRESHOLD else (-MAX_SPEED if tilt_diff < -POSITION_THRESHOLD else 0)
-        zoom_speed = MAX_SPEED if zoom_diff > POSITION_THRESHOLD else (-MAX_SPEED if zoom_diff < -POSITION_THRESHOLD else 0)
+        pan_speed = (
+            MAX_SPEED
+            if pan_diff > POSITION_THRESHOLD
+            else (-MAX_SPEED if pan_diff < -POSITION_THRESHOLD else 0)
+        )
+        tilt_speed = (
+            MAX_SPEED
+            if tilt_diff > POSITION_THRESHOLD
+            else (-MAX_SPEED if tilt_diff < -POSITION_THRESHOLD else 0)
+        )
+        zoom_speed = (
+            MAX_SPEED
+            if zoom_diff > POSITION_THRESHOLD
+            else (-MAX_SPEED if zoom_diff < -POSITION_THRESHOLD else 0)
+        )
 
         # Start continuous movement at max speed
         command_sent = datetime.now(timezone.utc)
@@ -1632,16 +1524,16 @@ class CameraStressTestService:
 
             # Check if we've reached or passed the target on each active axis
             reached_pan = pan_speed == 0 or (
-                (pan_speed > 0 and current["pan"] >= target_pan - POSITION_THRESHOLD) or
-                (pan_speed < 0 and current["pan"] <= target_pan + POSITION_THRESHOLD)
+                (pan_speed > 0 and current["pan"] >= target_pan - POSITION_THRESHOLD)
+                or (pan_speed < 0 and current["pan"] <= target_pan + POSITION_THRESHOLD)
             )
             reached_tilt = tilt_speed == 0 or (
-                (tilt_speed > 0 and current["tilt"] >= target_tilt - POSITION_THRESHOLD) or
-                (tilt_speed < 0 and current["tilt"] <= target_tilt + POSITION_THRESHOLD)
+                (tilt_speed > 0 and current["tilt"] >= target_tilt - POSITION_THRESHOLD)
+                or (tilt_speed < 0 and current["tilt"] <= target_tilt + POSITION_THRESHOLD)
             )
             reached_zoom = zoom_speed == 0 or (
-                (zoom_speed > 0 and current["zoom"] >= target_zoom - POSITION_THRESHOLD) or
-                (zoom_speed < 0 and current["zoom"] <= target_zoom + POSITION_THRESHOLD)
+                (zoom_speed > 0 and current["zoom"] >= target_zoom - POSITION_THRESHOLD)
+                or (zoom_speed < 0 and current["zoom"] <= target_zoom + POSITION_THRESHOLD)
             )
 
             if reached_pan and reached_tilt and reached_zoom:
@@ -1949,12 +1841,8 @@ class CameraStressTestService:
         current_zoom = (status.zoom or 0) if status else 0
 
         # Generate waypoints for forward and back sweeps
-        forward_waypoints = cls._generate_sweep_waypoints(
-            axis_config.start, axis_config.end
-        )
-        back_waypoints = cls._generate_sweep_waypoints(
-            axis_config.end, axis_config.start
-        )
+        forward_waypoints = cls._generate_sweep_waypoints(axis_config.start, axis_config.end)
+        back_waypoints = cls._generate_sweep_waypoints(axis_config.end, axis_config.start)
 
         # Calculate total movements: (forward waypoints + back waypoints) * repetitions
         movements_per_rep = len(forward_waypoints) + len(back_waypoints)
@@ -2243,49 +2131,25 @@ class CameraStressTestService:
         offset: int = 0,
     ) -> tuple[list[StressTestSession], int]:
         """List stress test sessions with optional filtering."""
-        sessions = []
+        # Load persisted sessions from the DDD repository
+        repo = _get_stress_test_repo()
+        sessions, _ = repo.get_all(
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            limit=9999,  # Load all, merge with in-memory, then paginate
+            offset=0,
+        )
 
-        # Get sessions from disk
-        storage_dir = get_stress_test_storage_dir()
-        if not storage_dir.exists():
-            return [], 0
-
-        # Find all session directories
-        session_dirs = []
-        for date_dir in sorted(storage_dir.iterdir(), reverse=True):
-            if date_dir.is_dir():
-                for session_dir in date_dir.iterdir():
-                    if session_dir.is_dir():
-                        manifest_path = session_dir / "manifest.yaml"
-                        if manifest_path.exists():
-                            session_dirs.append((session_dir, manifest_path))
-
-        # Load and filter sessions
-        for session_dir, manifest_path in session_dirs:
-            try:
-                session = cls._load_session_from_path(manifest_path)
-                if session:
-                    # Apply filters
-                    if tenant_id and session.tenant_id != tenant_id:
-                        continue
-                    if camera_id and session.camera_id != camera_id:
-                        continue
-                    sessions.append(session)
-            except Exception as e:
-                logger.warning(f"Failed to load session from {manifest_path}: {e}")
-
-        # Add active sessions from memory
+        # Add active in-memory sessions that aren't yet persisted
         with cls._lock:
             for session in cls._active_sessions.values():
                 if tenant_id and session.tenant_id != tenant_id:
                     continue
                 if camera_id and session.camera_id != camera_id:
                     continue
-                # Only add if not already in list
                 if not any(s.id == session.id for s in sessions):
                     sessions.append(session)
 
-        # Sort by created_at descending
         sessions.sort(key=lambda s: s.created_at, reverse=True)
 
         total = len(sessions)
@@ -2295,73 +2159,26 @@ class CameraStressTestService:
 
     @classmethod
     def delete_stress_test_session(cls, session_id: str) -> tuple[bool, str | None]:
-        """Delete a stress test session."""
-        # Validate session_id to prevent path traversal
-        if not _is_valid_session_id(session_id):
-            return False, "Invalid session ID format"
-
+        """Delete a stress test session via the DDD repository."""
         # Remove from memory
         with cls._lock:
             cls._active_sessions.pop(session_id, None)
             cls._session_progress.pop(session_id, None)
             cls._abort_flags.pop(session_id, None)
 
-        # Remove from disk
-        storage_dir = get_stress_test_storage_dir()
-        if storage_dir.exists():
-            for date_dir in storage_dir.iterdir():
-                if date_dir.is_dir():
-                    session_dir = date_dir / session_id
-                    if session_dir.exists():
-                        import shutil
-
-                        shutil.rmtree(session_dir)
-                        return True, None
-
-        return False, "Session not found"
+        # Remove from disk via repo
+        return _get_stress_test_repo().delete(session_id)
 
     # -------------------------------------------------------------------------
-    # Storage Methods
+    # Storage Methods (delegated to DDD repository)
     # -------------------------------------------------------------------------
 
     @classmethod
     def _save_session(cls, session: StressTestSession) -> None:
-        """Save session to disk."""
-        storage_dir = get_stress_test_storage_dir()
-        date_str = session.created_at.strftime("%Y%m%d")
-        session_dir = storage_dir / date_str / session.id
-        session_dir.mkdir(parents=True, exist_ok=True)
-
-        manifest_path = session_dir / "manifest.yaml"
-        with open(manifest_path, "w") as f:
-            yaml.dump(session.to_dict(), f, default_flow_style=False)
+        """Save session to disk via the DDD repository."""
+        _get_stress_test_repo().save(session)
 
     @classmethod
     def _load_session(cls, session_id: str) -> StressTestSession | None:
-        """Load session from disk by ID."""
-        # Validate session_id to prevent path traversal
-        if not _is_valid_session_id(session_id):
-            return None
-
-        storage_dir = get_stress_test_storage_dir()
-        if not storage_dir.exists():
-            return None
-
-        for date_dir in storage_dir.iterdir():
-            if date_dir.is_dir():
-                manifest_path = date_dir / session_id / "manifest.yaml"
-                if manifest_path.exists():
-                    return cls._load_session_from_path(manifest_path)
-
-        return None
-
-    @classmethod
-    def _load_session_from_path(cls, manifest_path: Path) -> StressTestSession | None:
-        """Load session from manifest file."""
-        try:
-            with open(manifest_path) as f:
-                data = yaml.safe_load(f)
-            return StressTestSession.from_dict(data)
-        except Exception as e:
-            logger.warning(f"Failed to load session from {manifest_path}: {e}")
-            return None
+        """Load session from disk by ID via the DDD repository."""
+        return _get_stress_test_repo().get(session_id)

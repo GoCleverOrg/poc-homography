@@ -611,7 +611,7 @@
         <div class="control-group">
             <label>Calibration:</label>
             <select id="calibration-select">
-                <option value="">-- Select calibration file --</option>
+                <option value="">-- Select camera --</option>
             </select>
         </div>
         <div class="control-group">
@@ -963,11 +963,11 @@
                 const resp = await fetch('{% url "distortion_validator:api_calibration_files" %}');
                 const data = await resp.json();
 
-                calibrationSelect.innerHTML = '<option value="">-- Select calibration file --</option>';
-                (data.files || []).forEach(file => {
+                calibrationSelect.innerHTML = '<option value="">-- Select camera --</option>';
+                (data.camera_ids || []).forEach(id => {
                     const option = document.createElement('option');
-                    option.value = file.name;
-                    option.textContent = file.name;
+                    option.value = id;
+                    option.textContent = id;
                     calibrationSelect.appendChild(option);
                 });
             } catch (e) {
@@ -993,13 +993,13 @@
             }
         }
 
-        // Load calibration file
-        async function loadCalibration(filename) {
+        // Load calibration by camera_id
+        async function loadCalibration(cameraId) {
             try {
                 const resp = await fetch('{% url "distortion_validator:api_load_calibration" %}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-                    body: JSON.stringify({ filename })
+                    body: JSON.stringify({ camera_id: cameraId })
                 });
 
                 const data = await resp.json();
@@ -1791,5 +1791,19 @@
         setupCanvasEvents();
         updateIntrinsicsFromInputs();
     </script>
+<script>
+(function() {
+    var tid = new URLSearchParams(window.location.search).get('tenant_id');
+    if (tid) {
+        document.querySelectorAll('a').forEach(function(a) {
+            if (a.textContent.trim().includes('Back to Tools')) {
+                var url = new URL(a.href, window.location.origin);
+                url.searchParams.set('tenant_id', tid);
+                a.href = url.toString();
+            }
+        });
+    }
+})();
+</script>
 </body>
 </html>

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -185,7 +184,18 @@ def _error_response(
 @require_GET
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main camera diagnostic HTML page."""
-    return render(request, "camera_diagnostic/index.html")
+    from homography_web.frame_utils import get_default_tenant_id
+
+    tenant_id = request.GET.get("tenant_id", get_default_tenant_id())
+    tenant = get_tenant_by_id(tenant_id)
+    return render(
+        request,
+        "camera_diagnostic/index.html",
+        {
+            "tenant_id": tenant_id,
+            "tenant_name": tenant.get("name", tenant_id) if tenant else tenant_id,
+        },
+    )
 
 
 @require_GET
@@ -196,10 +206,11 @@ def api_tenants(request: HttpRequest) -> JsonResponse:
         JSON response with tenant list or error.
     """
     try:
-        tenants = get_tenants()
+        from homography_web.frame_utils import get_tenant_repo
+
+        tenant_entities = get_tenant_repo().get_all()
         tenant_list = [
-            {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
-            for t in tenants
+            {"id": t.id, "name": t.name, "description": t.description} for t in tenant_entities
         ]
         return _success_response({"tenants": tenant_list})
     except Exception as e:
@@ -769,12 +780,14 @@ def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
     # Save session
     save_diagnostic_session(session)
 
-    return _success_response({
-        "session_id": session.id,
-        "status": session.status.value,
-        "summary": session.get_summary(),
-        "camera_results": [r.to_dict() for r in session.camera_results],
-    })
+    return _success_response(
+        {
+            "session_id": session.id,
+            "status": session.status.value,
+            "summary": session.get_summary(),
+            "camera_results": [r.to_dict() for r in session.camera_results],
+        }
+    )
 
 
 @csrf_exempt
@@ -873,11 +886,13 @@ def api_save_diagnostic_session(request: HttpRequest) -> JsonResponse:
 
     save_diagnostic_session(session)
 
-    return _success_response({
-        "session_id": session.id,
-        "status": session.status.value,
-        "summary": session.get_summary(),
-    })
+    return _success_response(
+        {
+            "session_id": session.id,
+            "status": session.status.value,
+            "summary": session.get_summary(),
+        }
+    )
 
 
 def _run_rtsp_test(camera_id: str) -> DiagnosticTestResult:
@@ -997,6 +1012,7 @@ def _run_webui_test(
                     pass
 
                 from .services import dismiss_hikvision_warning_dialog
+
                 try:
                     dismiss_hikvision_warning_dialog(page)
                 except Exception:
@@ -1007,7 +1023,9 @@ def _run_webui_test(
             # Detect PTZ controls
             ptz_controls = detect_ptz_controls(page)
 
-            result.status = DiagnosticTestStatus.PASS if login_success else DiagnosticTestStatus.FAIL
+            result.status = (
+                DiagnosticTestStatus.PASS if login_success else DiagnosticTestStatus.FAIL
+            )
             result.details = {
                 "login_attempted": login_attempted,
                 "login_success": login_success,
@@ -1016,6 +1034,7 @@ def _run_webui_test(
 
             if not login_success and login_attempted:
                 from .services import get_login_error_message
+
                 login_error = get_login_error_message(page)
                 if login_error:
                     result.error_message = login_error
@@ -1089,7 +1108,9 @@ def _run_ptz_test(
         # Get presets
         presets_result = get_presets_list(camera_ip, username, password)
 
-        result.status = DiagnosticTestStatus.PASS if tests_failed == 0 else DiagnosticTestStatus.FAIL
+        result.status = (
+            DiagnosticTestStatus.PASS if tests_failed == 0 else DiagnosticTestStatus.FAIL
+        )
         result.details = {
             "initial_position": {
                 "pan": initial_status.get("pan"),
@@ -1144,23 +1165,25 @@ def api_list_sessions(request: HttpRequest) -> JsonResponse:
         offset=offset,
     )
 
-    return _success_response({
-        "sessions": [
-            {
-                "id": s.id,
-                "created_at": s.created_at.isoformat(),
-                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-                "status": s.status.value,
-                "tenant_id": s.tenant_id,
-                "tenant_name": s.tenant_name,
-                "summary": s.get_summary(),
-            }
-            for s in sessions
-        ],
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    })
+    return _success_response(
+        {
+            "sessions": [
+                {
+                    "id": s.id,
+                    "created_at": s.created_at.isoformat(),
+                    "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                    "status": s.status.value,
+                    "tenant_id": s.tenant_id,
+                    "tenant_name": s.tenant_name,
+                    "summary": s.get_summary(),
+                }
+                for s in sessions
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @require_GET
@@ -1219,9 +1242,7 @@ def api_stress_test_presets(request: HttpRequest) -> JsonResponse:
     Returns:
         JsonResponse with list of presets
     """
-    return _success_response({
-        "presets": [preset.to_dict() for preset in STRESS_TEST_PRESETS]
-    })
+    return _success_response({"presets": [preset.to_dict() for preset in STRESS_TEST_PRESETS]})
 
 
 @csrf_exempt
@@ -1334,10 +1355,12 @@ def api_stress_test_start(request: HttpRequest) -> JsonResponse:
             status_code=500,
         )
 
-    return _success_response({
-        "session_id": session_id,
-        "message": "Stress test started",
-    })
+    return _success_response(
+        {
+            "session_id": session_id,
+            "message": "Stress test started",
+        }
+    )
 
 
 @require_GET
@@ -1356,13 +1379,17 @@ def api_stress_test_status(request: HttpRequest, session_id: str) -> JsonRespons
         # Try to get from completed session
         session = CameraStressTestService.get_session(session_id)
         if session:
-            return _success_response({
-                "session_id": session.id,
-                "status": session.status.value,
-                "current_repetition": session.config.repetitions if session.config else 0,
-                "total_repetitions": session.config.repetitions if session.config else 0,
-                "message": "Test completed" if session.status.value == "completed" else session.status.value,
-            })
+            return _success_response(
+                {
+                    "session_id": session.id,
+                    "status": session.status.value,
+                    "current_repetition": session.config.repetitions if session.config else 0,
+                    "total_repetitions": session.config.repetitions if session.config else 0,
+                    "message": "Test completed"
+                    if session.status.value == "completed"
+                    else session.status.value,
+                }
+            )
 
         return _error_response(
             CameraErrorCategory.CAMERA_NOT_FOUND,
@@ -1421,26 +1448,28 @@ def api_stress_test_sessions(request: HttpRequest) -> JsonResponse:
         offset=offset,
     )
 
-    return _success_response({
-        "sessions": [
-            {
-                "id": s.id,
-                "created_at": s.created_at.isoformat(),
-                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-                "status": s.status.value,
-                "tenant_id": s.tenant_id,
-                "camera_id": s.camera_id,
-                "camera_name": s.camera_name,
-                "test_type": s.config.test_type.value if s.config else None,
-                "user_evaluation": s.user_evaluation.value,
-                "result_success": s.result.success if s.result else None,
-            }
-            for s in sessions
-        ],
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    })
+    return _success_response(
+        {
+            "sessions": [
+                {
+                    "id": s.id,
+                    "created_at": s.created_at.isoformat(),
+                    "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                    "status": s.status.value,
+                    "tenant_id": s.tenant_id,
+                    "camera_id": s.camera_id,
+                    "camera_name": s.camera_name,
+                    "test_type": s.config.test_type.value if s.config else None,
+                    "user_evaluation": s.user_evaluation.value,
+                    "result_success": s.result.success if s.result else None,
+                }
+                for s in sessions
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @require_GET
@@ -1504,9 +1533,7 @@ def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonRespo
             status_code=400,
         )
 
-    success, error = CameraStressTestService.update_user_evaluation(
-        session_id, evaluation, notes
-    )
+    success, error = CameraStressTestService.update_user_evaluation(session_id, evaluation, notes)
 
     if not success:
         return _error_response(
@@ -1515,11 +1542,13 @@ def api_stress_test_evaluate(request: HttpRequest, session_id: str) -> JsonRespo
             status_code=404 if "not found" in (error or "").lower() else 500,
         )
 
-    return _success_response({
-        "message": "Evaluation saved",
-        "session_id": session_id,
-        "evaluation": evaluation.value,
-    })
+    return _success_response(
+        {
+            "message": "Evaluation saved",
+            "session_id": session_id,
+            "evaluation": evaluation.value,
+        }
+    )
 
 
 @csrf_exempt

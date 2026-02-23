@@ -22,11 +22,11 @@ def serve(
         exists=True,
         readable=True,
     ),
-    gcp_registry: Path | None = typer.Option(
-        None,
-        "--gcp-registry",
-        "-g",
-        help="Path to GCP registry YAML file (defaults to {image_stem}_gcps.yaml in same directory)",
+    map_id: str = typer.Option(
+        "valte",
+        "--map-id",
+        "-m",
+        help="Map identifier for tagging saved line files",
     ),
     camera: str | None = typer.Option(
         None,
@@ -49,47 +49,18 @@ def serve(
 ) -> None:
     """Launch the line picker web application.
 
-    Opens a web browser to create lines by selecting pairs of existing GCPs.
-    Lines are defined by connecting two GCPs (start_gcp, end_gcp) and get
-    auto-incrementing IDs (L1, L2, L3, ...).
-
-    The GCP registry is loaded from an existing YAML file to display
-    clickable GCP markers on the map.
+    Opens a web browser to create lines on a map using pixel coordinate endpoints.
 
     Example:
         hom line-picker serve path/to/Cartografia_valencia.tif
-        hom line-picker serve map.tif --gcp-registry gcps.yaml --port 8001
+        hom line-picker serve map.tif --map-id valte --port 8001
     """
     # Resolve to absolute path
     image_path = image_path.resolve()
 
-    # Find GCP registry
-    if gcp_registry is None:
-        # Default: look for {image_stem}_gcps.yaml in same directory
-        gcp_registry = image_path.parent / f"{image_path.stem}_gcps.yaml"
-        if not gcp_registry.exists():
-            # Also check test data directory
-            project_root = Path(__file__).parent.parent.parent
-            test_data_path = (
-                project_root / "tests" / "homography" / "test_data" / f"{image_path.stem}_gcps.yaml"
-            )
-            if test_data_path.exists():
-                gcp_registry = test_data_path
-    else:
-        gcp_registry = gcp_registry.resolve()
+    project_root = Path(__file__).parent.parent.parent
 
-    if not gcp_registry.exists():
-        typer.echo(f"Error: GCP registry not found at {gcp_registry}", err=True)
-        typer.echo(
-            "Please specify the GCP registry path with --gcp-registry option",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    typer.echo(f"Loading GCP registry from: {gcp_registry}")
-
-    geotransform = None
-    crs = None
+    geotiff = None
 
     # Load geotransform from camera config if specified
     if camera:
@@ -102,18 +73,31 @@ def serve(
 
         geotiff_params = cam_config.get("geotiff_params")
         if geotiff_params:
-            geotransform = geotiff_params.get("geotransform")
+            gt = geotiff_params.get("geotransform")
             crs = geotiff_params.get("utm_crs")
-            typer.echo(f"Loaded geotransform from camera '{camera}': {geotransform}")
-            typer.echo(f"CRS: {crs}")
+            if gt and crs:
+                from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
+                from poc_homography.types import Easting, Meters, Northing, Unitless
+
+                geotiff = GeoTiff(
+                    geotransform=GeoTransform(
+                        origin_easting=Easting(gt[0]),
+                        pixel_width=Meters(gt[1]),
+                        row_rotation=Unitless(gt[2]),
+                        origin_northing=Northing(gt[3]),
+                        col_rotation=Unitless(gt[4]),
+                        pixel_height=Meters(gt[5]),
+                    ),
+                    crs=crs,
+                )
+                typer.echo(f"Loaded geotransform from camera '{camera}': {gt}")
+                typer.echo(f"CRS: {crs}")
         else:
             typer.echo(f"Warning: Camera '{camera}' has no geotiff_params", err=True)
 
     typer.echo(f"Loading image: {image_path}")
 
     # Find the webapp directory
-    # Path: cli/line_picker.py -> cli/ -> poc_homography/ -> project_root/ -> webapp/
-    project_root = Path(__file__).parent.parent.parent
     webapp_dir = project_root / "webapp"
 
     if not webapp_dir.exists():
@@ -137,9 +121,8 @@ def serve(
 
     initialize_state(
         image_path,
-        gcp_registry_path=gcp_registry,
-        geotransform=geotransform,
-        crs=crs,
+        map_id=map_id,
+        geotiff=geotiff,
     )
 
     typer.echo(f"Starting server at http://{host}:{port}/line-picker/")

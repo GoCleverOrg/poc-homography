@@ -20,7 +20,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import (
     CameraCalibrationTable,
     ZoomCalibrationEntry,
 )
-from poc_homography.camera_parameters import DistortionCoefficients  # noqa: TC001
+from poc_homography.domain.vo import LensDistortion  # noqa: TC001
 
 if TYPE_CHECKING:
     from poc_homography.calibration.lens_distortion.distortion_solver import SolverResult
@@ -306,8 +306,8 @@ class CalibrationApplicationResult:
 
     camera_id: str
     zoom_factor: float
-    previous_coefficients: DistortionCoefficients | None
-    new_coefficients: DistortionCoefficients
+    previous_coefficients: LensDistortion | None
+    new_coefficients: LensDistortion
     calibration_file: str
     success: bool
     message: str
@@ -341,7 +341,7 @@ class CalibrationApplicationResult:
 
 
 def _apply_undistortion(
-    distortion: DistortionCoefficients,
+    distortion: LensDistortion,
     camera_id: str,
     zoom_factor: float,
     calibration_dir: str | Path,
@@ -425,7 +425,7 @@ def apply_solver_result(
 
 
 def apply_distortion_coefficients(
-    distortion: DistortionCoefficients,
+    distortion: LensDistortion,
     camera_id: str,
     zoom_factor: float,
     calibration_dir: str | Path,
@@ -462,11 +462,11 @@ def load_distortion_coefficients(
     camera_id: str,
     zoom_factor: float,
     calibration_dir: str | Path,
-) -> DistortionCoefficients | None:
+) -> LensDistortion | None:
     """Load calibrated distortion coefficients for a camera.
 
     This is the preferred way to load calibration coefficients.  It replaces
-    ``DistortionCoefficients.load_calibration`` to avoid a circular dependency
+    ``LensDistortion.load_calibration`` to avoid a circular dependency
     from the data-model module back into the calibration subsystem.
 
     Loads from a calibration table file and interpolates for the
@@ -478,7 +478,7 @@ def load_distortion_coefficients(
         calibration_dir: Directory containing calibration YAML files.
 
     Returns:
-        DistortionCoefficients if calibration exists, None otherwise.
+        LensDistortion if calibration exists, None otherwise.
     """
     calibration_dir_path = Path(calibration_dir)
     calibration_file = calibration_dir_path / f"{camera_id}_calibration.yaml"
@@ -503,7 +503,7 @@ def get_camera_calibration(
     camera_id: str,
     zoom_factor: float,
     calibration_dir: str | Path,
-) -> DistortionCoefficients | None:
+) -> LensDistortion | None:
     """Get calibration coefficients for a camera at a specific zoom.
 
     Args:
@@ -512,7 +512,7 @@ def get_camera_calibration(
         calibration_dir: Directory containing calibration files.
 
     Returns:
-        DistortionCoefficients if calibration exists, None otherwise.
+        LensDistortion if calibration exists, None otherwise.
     """
     calibration_dir = Path(calibration_dir)
     calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"

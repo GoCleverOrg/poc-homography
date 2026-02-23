@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from django.apps import AppConfig
+from homography_web.frame_utils import get_default_map_id
 
 
 class PointPickerConfig(AppConfig):
@@ -27,16 +28,21 @@ class PointPickerConfig(AppConfig):
         webapp_dir = Path(__file__).resolve().parent.parent
         project_root = webapp_dir.parent
 
-        # Use the Cartografia valencia map and GCPs
-        map_file = project_root / "Cartografia_valencia.tif"
-        gcp_file = (
-            project_root / "tests" / "homography" / "test_data" / "Cartografia_valencia_gcps.yaml"
-        )
+        # Use the default map
+        default_map = get_default_map_id()
+        if default_map is None:
+            return  # No map configured for default tenant
+        map_file = project_root / f"{default_map}.tif"
+        gcps_dir = project_root / "data" / "gcps"
 
         if map_file.exists():
             initialize_state(map_file)
 
-            # Load existing GCPs if available
-            if gcp_file.exists():
-                state = get_state()
-                state.load_registry(gcp_file)
+            # Load existing GCPs from repository if available
+            if gcps_dir.exists():
+                from poc_homography.map_points.gcp_registry import list_map_ids
+
+                available = list_map_ids(gcps_dir)
+                if available:
+                    state = get_state()
+                    state.load_from_repo(gcps_dir, available[0])

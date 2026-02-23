@@ -28,11 +28,10 @@ import numpy as np
 import pytest
 import yaml
 
-from poc_homography.homography.map_points import MapPointHomography, MapPointComputationResult
-from poc_homography.map_points import MapPoint, MapPointRegistry
-from poc_homography.pixel_point import PixelPoint
 from poc_homography.camera_config import get_camera_by_name
-
+from poc_homography.homography.map_points import MapPointHomography
+from poc_homography.map_points import GCPRegistry
+from poc_homography.pixel_point import PixelPoint
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
@@ -44,7 +43,9 @@ ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 # Valte camera geotransform: 0.15 m/pixel in map space
 # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
 VALTE_CONFIG = get_camera_by_name("Valte")
-MAP_METERS_PER_PIXEL = abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
+MAP_METERS_PER_PIXEL = (
+    abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
+)
 
 
 # =============================================================================
@@ -53,7 +54,7 @@ MAP_METERS_PER_PIXEL = abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if
 
 
 @pytest.fixture
-def map_registry() -> MapPointRegistry:
+def map_registry() -> GCPRegistry:
     """
     Load map point registry from file.
 
@@ -63,7 +64,7 @@ def map_registry() -> MapPointRegistry:
     if not MAP_POINTS_FILE.exists():
         pytest.skip(f"Map points file not found: {MAP_POINTS_FILE}")
 
-    return MapPointRegistry.load(MAP_POINTS_FILE)
+    return GCPRegistry.load(MAP_POINTS_FILE)
 
 
 def load_all_test_cases() -> list[dict[str, Any]]:
@@ -139,7 +140,7 @@ def test_image_path(annotations_test_case: dict[str, Any]) -> Path:
 
 
 @pytest.fixture
-def homography_provider(map_registry: MapPointRegistry) -> MapPointHomography:
+def homography_provider(map_registry: GCPRegistry) -> MapPointHomography:
     """Create a MapPointHomography instance."""
     return MapPointHomography(map_id=map_registry.map_id)
 
@@ -152,7 +153,7 @@ def homography_provider(map_registry: MapPointRegistry) -> MapPointHomography:
 def compute_pixel_precision(
     annotations: list[dict[str, Any]],
     homography: MapPointHomography,
-    map_registry: MapPointRegistry,
+    map_registry: GCPRegistry,
 ) -> dict[str, float]:
     """
     Measure pixel precision by reprojecting annotations.
@@ -192,7 +193,7 @@ def compute_pixel_precision(
     return {
         "mean_error": float(np.mean(errors_array)),
         "max_error": float(np.max(errors_array)),
-        "rmse": float(np.sqrt(np.mean(errors_array ** 2))),
+        "rmse": float(np.sqrt(np.mean(errors_array**2))),
         "per_point_errors": errors,
     }
 
@@ -200,7 +201,7 @@ def compute_pixel_precision(
 def compute_metric_precision(
     annotations: list[dict[str, Any]],
     homography: MapPointHomography,
-    map_registry: MapPointRegistry,
+    map_registry: GCPRegistry,
     meters_per_pixel: float = MAP_METERS_PER_PIXEL,
 ) -> dict[str, float]:
     """
@@ -250,20 +251,22 @@ def compute_metric_precision(
 
         errors_map_pixels.append(error_map_px)
         errors_meters.append(error_meters)
-        per_point_details.append({
-            "gcp_id": annotation["gcp_id"],
-            "error_map_px": error_map_px,
-            "error_meters": error_meters,
-            "projected_map": (projected_map.pixel_x, projected_map.pixel_y),
-            "actual_map": (known_map.pixel_x, known_map.pixel_y),
-        })
+        per_point_details.append(
+            {
+                "gcp_id": annotation["gcp_id"],
+                "error_map_px": error_map_px,
+                "error_meters": error_meters,
+                "projected_map": (projected_map.pixel_x, projected_map.pixel_y),
+                "actual_map": (known_map.pixel_x, known_map.pixel_y),
+            }
+        )
 
     errors_array = np.array(errors_meters)
 
     return {
         "mean_error_m": float(np.mean(errors_array)),
         "max_error_m": float(np.max(errors_array)),
-        "rmse_m": float(np.sqrt(np.mean(errors_array ** 2))),
+        "rmse_m": float(np.sqrt(np.mean(errors_array**2))),
         "mean_error_map_px": float(np.mean(errors_map_pixels)),
         "per_point_details": per_point_details,
     }
@@ -280,7 +283,7 @@ class TestMapPointHomographyComputation:
     def test_compute_homography_from_4_annotations(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test computing homography from exactly 4 annotation-GCP correspondences."""
@@ -300,7 +303,7 @@ class TestMapPointHomographyComputation:
     def test_homography_matrix_is_invertible(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test that the homography matrix is invertible."""
@@ -323,7 +326,7 @@ class TestPixelPrecision:
     def test_pixel_precision_with_4_annotations(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test pixel precision when reprojecting annotations."""
@@ -341,7 +344,7 @@ class TestPixelPrecision:
             map_registry=map_registry,
         )
 
-        print(f"\nPixel Precision Metrics:")
+        print("\nPixel Precision Metrics:")
         print(f"  Mean error: {precision['mean_error']:.2f} pixels")
         print(f"  Max error:  {precision['max_error']:.2f} pixels")
         print(f"  RMSE:       {precision['rmse']:.2f} pixels")
@@ -362,7 +365,7 @@ class TestPixelPrecision:
     def test_sub_pixel_precision(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test that homography achieves sub-pixel precision on annotations."""
@@ -395,7 +398,7 @@ class TestMetricPrecision:
     def test_metric_precision_with_all_annotations(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test metric precision when reprojecting all annotations."""
@@ -413,13 +416,15 @@ class TestMetricPrecision:
             map_registry=map_registry,
         )
 
-        print(f"\nMetric Precision (in meters):")
+        print("\nMetric Precision (in meters):")
         print(f"  Mean error: {precision['mean_error_m']:.2f} m")
         print(f"  Max error:  {precision['max_error_m']:.2f} m")
         print(f"  RMSE:       {precision['rmse_m']:.2f} m")
-        print(f"\nPer-point errors:")
+        print("\nPer-point errors:")
         for detail in sorted(precision["per_point_details"], key=lambda x: -x["error_meters"]):
-            print(f"  {detail['gcp_id']}: {detail['error_meters']:.2f} m ({detail['error_map_px']:.1f} map px)")
+            print(
+                f"  {detail['gcp_id']}: {detail['error_meters']:.2f} m ({detail['error_map_px']:.1f} map px)"
+            )
 
         # Assert metric thresholds (sub-meter accuracy is good for surveying)
         assert precision["mean_error_m"] < 2.0, (
@@ -434,7 +439,7 @@ class TestMetricPrecision:
     )
     def test_holdout_metric_precision(
         self,
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
     ):
         """
         Test metric precision using N-1 (leave-one-out) validation.
@@ -465,13 +470,15 @@ class TestMetricPrecision:
         if len(annotations) < 5:
             pytest.skip("Need at least 5 unique annotations for holdout validation")
 
-        print(f"\nUsing {len(annotations)} unique annotations from {len(all_test_cases)} test cases")
+        print(
+            f"\nUsing {len(annotations)} unique annotations from {len(all_test_cases)} test cases"
+        )
 
         holdout_errors = []
 
         for i, holdout_annotation in enumerate(annotations):
             # Train on all annotations except holdout
-            train_annotations = annotations[:i] + annotations[i+1:]
+            train_annotations = annotations[:i] + annotations[i + 1 :]
 
             homography = MapPointHomography(map_id=map_registry.map_id)
             homography.compute_from_gcps(
@@ -487,10 +494,12 @@ class TestMetricPrecision:
                 map_registry=map_registry,
             )
 
-            holdout_errors.append({
-                "gcp_id": holdout_annotation["gcp_id"],
-                "error_m": precision["mean_error_m"],
-            })
+            holdout_errors.append(
+                {
+                    "gcp_id": holdout_annotation["gcp_id"],
+                    "error_m": precision["mean_error_m"],
+                }
+            )
 
         # Sort by error for display
         holdout_errors.sort(key=lambda x: -x["error_m"])
@@ -498,10 +507,10 @@ class TestMetricPrecision:
         mean_error = np.mean([e["error_m"] for e in holdout_errors])
         max_error = max(e["error_m"] for e in holdout_errors)
 
-        print(f"\nN-1 Holdout Validation (Metric):")
+        print("\nN-1 Holdout Validation (Metric):")
         print(f"  Mean holdout error: {mean_error:.2f} m")
         print(f"  Max holdout error:  {max_error:.2f} m")
-        print(f"\nPer-point holdout errors:")
+        print("\nPer-point holdout errors:")
         for e in holdout_errors:
             print(f"  {e['gcp_id']}: {e['error_m']:.2f} m")
 
@@ -516,7 +525,7 @@ class TestRoundTrip:
     def test_round_trip_camera_to_map_to_camera(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test that round-trip projection preserves coordinates."""
@@ -538,8 +547,8 @@ class TestRoundTrip:
 
             # Compare
             error = np.linalg.norm(
-                np.array([recovered_pixel.x, recovered_pixel.y]) -
-                np.array([original_pixel.x, original_pixel.y])
+                np.array([recovered_pixel.x, recovered_pixel.y])
+                - np.array([original_pixel.x, original_pixel.y])
             )
 
             # Round-trip should have low error (tolerance 0.1 pixel for numerical precision)
@@ -552,7 +561,7 @@ class TestReprojectionMetrics:
     def test_computation_result_metrics(
         self,
         annotations_4_points: list[dict[str, Any]],
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
         homography_provider: MapPointHomography,
     ):
         """Test that computation result contains valid metrics."""
@@ -571,7 +580,7 @@ class TestReprojectionMetrics:
         assert result.max_reproj_error >= result.mean_reproj_error
         assert result.rmse >= 0.0
 
-        print(f"\nMapPointHomography Metrics:")
+        print("\nMapPointHomography Metrics:")
         print(f"  Inliers: {result.num_inliers}/{result.num_gcps}")
         print(f"  Mean reproj error: {result.mean_reproj_error:.2f}")
         print(f"  Max reproj error:  {result.max_reproj_error:.2f}")
@@ -597,7 +606,7 @@ class TestAllTestCases:
     def test_homography_computation(
         self,
         test_case_name: str,
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
     ):
         """Test computing homography for each test case."""
         test_case = load_annotations_from_yaml(test_case_name)
@@ -625,7 +634,7 @@ class TestAllTestCases:
     def test_holdout_validation(
         self,
         test_case_name: str,
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
     ):
         """
         Test pixel precision using HOLDOUT validation.
@@ -685,7 +694,7 @@ class TestAllTestCases:
     def test_round_trip(
         self,
         test_case_name: str,
-        map_registry: MapPointRegistry,
+        map_registry: GCPRegistry,
     ):
         """Test round-trip projection for each test case."""
         test_case = load_annotations_from_yaml(test_case_name)
@@ -705,10 +714,8 @@ class TestAllTestCases:
             recovered_pixel = homography.map_to_camera(gcp_as_pixel)
 
             error = np.linalg.norm(
-                np.array([recovered_pixel.x, recovered_pixel.y]) -
-                np.array([original_pixel.x, original_pixel.y])
+                np.array([recovered_pixel.x, recovered_pixel.y])
+                - np.array([original_pixel.x, original_pixel.y])
             )
 
-            assert error < 0.01, (
-                f"[{test_case_name}] Round-trip error too high: {error:.4f} pixels"
-            )
+            assert error < 0.01, f"[{test_case_name}] Round-trip error too high: {error:.4f} pixels"

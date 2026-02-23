@@ -375,6 +375,71 @@ class SurveySession:
 
         return result
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SurveySession:
+        """Construct a SurveySession from a manifest dictionary."""
+        session_data = data.get("session", {})
+        session = cls(
+            id=session_data.get("id", ""),
+            start_time=datetime.fromisoformat(session_data["start_time"])
+            if session_data.get("start_time")
+            else datetime.now(),
+            end_time=datetime.fromisoformat(session_data["end_time"])
+            if session_data.get("end_time")
+            else None,
+            status=SurveyStatus(session_data.get("status", "completed")),
+            abort_reason=session_data.get("abort_reason"),
+        )
+
+        if "tenant" in data:
+            session.tenant = TenantInfo(
+                id=data["tenant"]["id"],
+                name=data["tenant"]["name"],
+            )
+
+        if "camera" in data:
+            session.camera = CameraInfo(
+                id=data["camera"]["id"],
+                name=data["camera"]["name"],
+                ip=data["camera"]["ip"],
+                model=data["camera"].get("model"),
+            )
+
+        if "capture_metadata" in data:
+            session.capture_metadata = CaptureMetadata(
+                resolution=data["capture_metadata"]["resolution"],
+                codec=data["capture_metadata"].get("codec", "h264"),
+            )
+
+        if "device_info" in data:
+            session.device_info = DeviceInfo.from_dict(data["device_info"])
+
+        if "survey_parameters" in data:
+            params = data["survey_parameters"]
+            session.survey_parameters = SurveyConfig(
+                tenant_id=session.tenant.id if session.tenant else "",
+                camera_id=session.camera.id if session.camera else "",
+                axis=SurveyAxis(params["axis"]),
+                start=params["start"],
+                end=params["end"],
+                step=params["step"],
+                restore_ptz=params.get("restore_ptz", True),
+                retry_timeout=params.get("retry_timeout", 60),
+                fixed_pan=params.get("fixed_pan"),
+                fixed_tilt=params.get("fixed_tilt"),
+                fixed_zoom=params.get("fixed_zoom"),
+            )
+
+        if "initial_ptz" in data:
+            session.initial_ptz = PTZPosition.from_dict(data["initial_ptz"])
+        if "final_ptz" in data:
+            session.final_ptz = PTZPosition.from_dict(data["final_ptz"])
+
+        session.session_tags = data.get("session_tags", [])
+        session.captures = [CaptureRecord.from_dict(c) for c in data.get("captures", [])]
+
+        return session
+
 
 @dataclass
 class SurveyProgress:

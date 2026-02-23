@@ -29,7 +29,7 @@ from poc_homography.camera_parameters import CameraParameters
 from poc_homography.types import Degrees, Meters, Millimeters, Pixels, Unitless
 
 if TYPE_CHECKING:
-    from poc_homography.map_points import MapPointRegistry
+    from poc_homography.map_points import GCPRegistry
 
 # OpenCV is optional - not all environments have GUI support
 CV2_AVAILABLE = False
@@ -101,7 +101,7 @@ class CalibrationSession:
         self,
         camera_name: str,
         frame: npt.NDArray[np.uint8],
-        registry: MapPointRegistry,
+        registry: GCPRegistry,
         height_m: Meters,
         pan_offset_deg: Degrees,
         pan_raw: Degrees,

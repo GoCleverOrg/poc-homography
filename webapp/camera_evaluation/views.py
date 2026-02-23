@@ -25,6 +25,7 @@ from django.views.decorators.http import require_GET, require_POST
 from poc_homography.camera_config import (
     get_camera_by_id,
     get_cameras_for_tenant,
+    get_tenant_by_id,
     get_tenants,
 )
 
@@ -61,7 +62,18 @@ def _error_response(
 @require_GET
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main Camera Evaluation Tool HTML page."""
-    return render(request, "camera_evaluation/index.html")
+    from homography_web.frame_utils import get_default_tenant_id
+
+    tenant_id = request.GET.get("tenant_id", get_default_tenant_id())
+    tenant = get_tenant_by_id(tenant_id)
+    return render(
+        request,
+        "camera_evaluation/index.html",
+        {
+            "tenant_id": tenant_id,
+            "tenant_name": tenant.get("name", tenant_id) if tenant else tenant_id,
+        },
+    )
 
 
 # =============================================================================

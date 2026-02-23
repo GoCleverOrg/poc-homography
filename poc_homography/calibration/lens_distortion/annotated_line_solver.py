@@ -35,7 +35,7 @@ from poc_homography.calibration.lens_distortion.apply_calibration import (
 from poc_homography.calibration.lens_distortion.distortion_solver import (
     SolverResult,
 )
-from poc_homography.camera_parameters import DistortionCoefficients
+from poc_homography.domain.vo import LensDistortion
 from poc_homography.types import Unitless
 
 logger = logging.getLogger(__name__)
@@ -210,7 +210,7 @@ class AnnotatedLineSolver:
         self,
         lines: list[CameraLineAnnotation],
         intrinsic_matrix: np.ndarray,
-        initial_guess: DistortionCoefficients | None = None,
+        initial_guess: LensDistortion | None = None,
     ) -> SolverResult:
         """Optimise distortion coefficients to straighten annotated lines.
 
@@ -254,7 +254,7 @@ class AnnotatedLineSolver:
 
         # Initial guess
         if initial_guess is None:
-            initial_guess = DistortionCoefficients()
+            initial_guess = LensDistortion()
 
         if self.config.use_radial_only:
             x0 = np.array(
@@ -314,7 +314,7 @@ class AnnotatedLineSolver:
         else:
             k1, k2, k3, p1, p2 = opt_result.x
 
-        optimised = DistortionCoefficients(
+        optimised = LensDistortion(
             k1=Unitless(float(k1)),
             k2=Unitless(float(k2)),
             k3=Unitless(float(k3)),
@@ -404,7 +404,7 @@ class AnnotatedLineSolver:
     @staticmethod
     def _fail(message: str) -> SolverResult:
         return SolverResult(
-            distortion=DistortionCoefficients(),
+            distortion=LensDistortion(),
             initial_error=0.0,
             final_error=0.0,
             rmse_per_line=[],
@@ -418,7 +418,7 @@ class AnnotatedLineSolver:
     def _compute_validation_rmse(
         self,
         lines: list[CameraLineAnnotation],
-        distortion: DistortionCoefficients,
+        distortion: LensDistortion,
         intrinsic_matrix: np.ndarray,
     ) -> tuple[float, list[dict], list[float]]:
         """Compute line straightness RMSE on lines using N-point traces."""

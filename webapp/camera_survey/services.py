@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-import yaml
 from django.conf import settings
 
 from poc_homography.camera_config import (
@@ -29,7 +28,6 @@ from .models import (
     CameraInfo,
     CaptureMetadata,
     CaptureRecord,
-    DeviceInfo,
     PTZPosition,
     SurveyConfig,
     SurveyPreset,
@@ -52,23 +50,6 @@ _survey_lock = threading.Lock()
 # In-memory storage for active survey progress
 _active_surveys: dict[str, SurveyProgress] = {}
 _active_surveys_lock = threading.Lock()  # Separate lock for _active_surveys access
-
-
-def _is_valid_session_id(session_id: str) -> bool:
-    """Validate that session_id is a valid UUID to prevent path traversal.
-
-    Args:
-        session_id: String to validate
-
-    Returns:
-        True if valid UUID format, False otherwise
-    """
-    try:
-        # Parse as UUID to validate format
-        uuid.UUID(session_id)
-        return True
-    except (ValueError, TypeError):
-        return False
 
 
 def _get_survey_base_path() -> Path:
@@ -212,118 +193,18 @@ def _capture_frame(
             cap.release()
 
 
-def _write_manifest(session: SurveySession, session_path: Path) -> bool:
-    """Write session manifest to YAML file.
+def _get_survey_repo():
+    """Return a RepoYamlSurveySession for the default storage directory."""
+    from poc_homography.infrastructure.repositories import RepoYamlSurveySession
 
-    Args:
-        session: Survey session data
-        session_path: Path to session directory
+    from .models import SurveySession
 
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        manifest_path = session_path / "manifest.yaml"
-        session_path.mkdir(parents=True, exist_ok=True)
-
-        with open(manifest_path, "w") as f:
-            yaml.dump(session.to_dict(), f, default_flow_style=False, sort_keys=False)
-
-        return True
-    except Exception as e:
-        logger.error(f"Failed to write manifest: {e}")
-        return False
+    return RepoYamlSurveySession(_get_survey_base_path(), SurveySession.from_dict)
 
 
-def _load_manifest(session_path: Path) -> SurveySession | None:
-    """Load session manifest from YAML file.
-
-    Args:
-        session_path: Path to session directory
-
-    Returns:
-        SurveySession or None if failed
-    """
-    try:
-        manifest_path = session_path / "manifest.yaml"
-        if not manifest_path.exists():
-            return None
-
-        with open(manifest_path) as f:
-            data = yaml.safe_load(f)
-
-        # Reconstruct SurveySession from dict
-        session_data = data.get("session", {})
-        session = SurveySession(
-            id=session_data.get("id", ""),
-            start_time=datetime.fromisoformat(session_data["start_time"])
-            if session_data.get("start_time")
-            else datetime.now(timezone.utc),
-            end_time=datetime.fromisoformat(session_data["end_time"])
-            if session_data.get("end_time")
-            else None,
-            status=SurveyStatus(session_data.get("status", "completed")),
-            abort_reason=session_data.get("abort_reason"),
-        )
-
-        # Load tenant info
-        if "tenant" in data:
-            session.tenant = TenantInfo(
-                id=data["tenant"]["id"],
-                name=data["tenant"]["name"],
-            )
-
-        # Load camera info
-        if "camera" in data:
-            session.camera = CameraInfo(
-                id=data["camera"]["id"],
-                name=data["camera"]["name"],
-                ip=data["camera"]["ip"],
-                model=data["camera"].get("model"),
-            )
-
-        # Load capture metadata
-        if "capture_metadata" in data:
-            session.capture_metadata = CaptureMetadata(
-                resolution=data["capture_metadata"]["resolution"],
-                codec=data["capture_metadata"].get("codec", "h264"),
-            )
-
-        # Load device info
-        if "device_info" in data:
-            session.device_info = DeviceInfo.from_dict(data["device_info"])
-
-        # Load survey parameters
-        if "survey_parameters" in data:
-            from .models import SurveyAxis
-
-            params = data["survey_parameters"]
-            session.survey_parameters = SurveyConfig(
-                tenant_id=session.tenant.id if session.tenant else "",
-                camera_id=session.camera.id if session.camera else "",
-                axis=SurveyAxis(params["axis"]),
-                start=params["start"],
-                end=params["end"],
-                step=params["step"],
-                restore_ptz=params.get("restore_ptz", True),
-                retry_timeout=params.get("retry_timeout", 60),
-            )
-
-        # Load PTZ positions
-        if "initial_ptz" in data:
-            session.initial_ptz = PTZPosition.from_dict(data["initial_ptz"])
-        if "final_ptz" in data:
-            session.final_ptz = PTZPosition.from_dict(data["final_ptz"])
-
-        # Load tags and captures
-        session.session_tags = data.get("session_tags", [])
-        session.captures = [CaptureRecord.from_dict(c) for c in data.get("captures", [])]
-
-        return session
-
-    except Exception as e:
-        logger.error(f"Failed to load manifest from {session_path}: {e}")
-        return None
+def _write_manifest(session: SurveySession) -> bool:
+    """Write session manifest via the DDD repository."""
+    return _get_survey_repo().save(session)
 
 
 class CameraSurveyService:
@@ -497,15 +378,27 @@ class CameraSurveyService:
                 # Use config's fixed values for non-swept axes, falling back to current_ptz
                 if config.axis.value == "pan":
                     target_pan = axis_value
-                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
-                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    target_tilt = (
+                        config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    )
+                    target_zoom = (
+                        config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    )
                 elif config.axis.value == "tilt":
-                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    target_pan = (
+                        config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    )
                     target_tilt = axis_value
-                    target_zoom = config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    target_zoom = (
+                        config.fixed_zoom if config.fixed_zoom is not None else current_ptz.zoom
+                    )
                 else:  # zoom
-                    target_pan = config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
-                    target_tilt = config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    target_pan = (
+                        config.fixed_pan if config.fixed_pan is not None else current_ptz.pan
+                    )
+                    target_tilt = (
+                        config.fixed_tilt if config.fixed_tilt is not None else current_ptz.tilt
+                    )
                     target_zoom = axis_value
 
                 # Move to target position with retry logic
@@ -562,7 +455,7 @@ class CameraSurveyService:
                         )
 
                 # Write manifest after each step for crash recovery
-                _write_manifest(session, session_path)
+                _write_manifest(session)
 
             # Survey complete or failed
             if session.status == SurveyStatus.RUNNING:
@@ -593,7 +486,7 @@ class CameraSurveyService:
             session.end_time = datetime.now(timezone.utc)
 
             # Write final manifest
-            _write_manifest(session, session_path)
+            _write_manifest(session)
 
             # Update progress
             with _active_surveys_lock:
@@ -605,7 +498,7 @@ class CameraSurveyService:
             session.status = SurveyStatus.FAILED
             session.abort_reason = str(e)
             session.end_time = datetime.now(timezone.utc)
-            _write_manifest(session, session_path)
+            _write_manifest(session)
 
             with _active_surveys_lock:
                 if session.id in _active_surveys:
@@ -701,56 +594,29 @@ class CameraSurveyService:
         Returns:
             Tuple of (sessions_list, total_count)
         """
+        repo = _get_survey_repo()
+        entities, total = repo.get_all(limit=limit, offset=offset)
+
         sessions = []
-        base_path = _get_survey_base_path()
+        for session in entities:
+            sessions.append(
+                {
+                    "id": session.id,
+                    "date": session.start_time.strftime("%Y%m%d") if session.start_time else None,
+                    "tenant_id": session.tenant.id if session.tenant else None,
+                    "tenant_name": session.tenant.name if session.tenant else None,
+                    "camera_id": session.camera.id if session.camera else None,
+                    "camera_name": session.camera.name if session.camera else None,
+                    "axis": session.survey_parameters.axis.value
+                    if session.survey_parameters
+                    else None,
+                    "step_count": len(session.captures),
+                    "status": session.status.value,
+                    "start_time": session.start_time.isoformat() if session.start_time else None,
+                }
+            )
 
-        if not base_path.exists():
-            return [], 0
-
-        # Scan date directories
-        date_dirs = sorted(base_path.iterdir(), reverse=True)
-
-        for date_dir in date_dirs:
-            if not date_dir.is_dir():
-                continue
-
-            # Scan session directories within date
-            session_dirs = sorted(date_dir.iterdir(), reverse=True)
-
-            for session_dir in session_dirs:
-                if not session_dir.is_dir():
-                    continue
-
-                manifest_path = session_dir / "manifest.yaml"
-                if not manifest_path.exists():
-                    continue
-
-                try:
-                    session = _load_manifest(session_dir)
-                    if session:
-                        sessions.append(
-                            {
-                                "id": session.id,
-                                "date": date_dir.name,
-                                "tenant_id": session.tenant.id if session.tenant else None,
-                                "tenant_name": session.tenant.name if session.tenant else None,
-                                "camera_id": session.camera.id if session.camera else None,
-                                "camera_name": session.camera.name if session.camera else None,
-                                "axis": session.survey_parameters.axis.value
-                                if session.survey_parameters
-                                else None,
-                                "step_count": len(session.captures),
-                                "status": session.status.value,
-                                "start_time": session.start_time.isoformat()
-                                if session.start_time
-                                else None,
-                            }
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to load session from {session_dir}: {e}")
-
-        total = len(sessions)
-        return sessions[offset : offset + limit], total
+        return sessions, total
 
     def get_session(self, session_id: str) -> SurveySession | None:
         """Get complete session data.
@@ -761,25 +627,7 @@ class CameraSurveyService:
         Returns:
             SurveySession or None if not found
         """
-        # Validate session_id to prevent path traversal
-        if not _is_valid_session_id(session_id):
-            return None
-
-        base_path = _get_survey_base_path()
-
-        if not base_path.exists():
-            return None
-
-        # Search for session in date directories
-        for date_dir in base_path.iterdir():
-            if not date_dir.is_dir():
-                continue
-
-            session_path = date_dir / session_id
-            if session_path.exists():
-                return _load_manifest(session_path)
-
-        return None
+        return _get_survey_repo().get(session_id)
 
     def get_session_manifest_path(self, session_id: str) -> Path | None:
         """Get path to session manifest file.
@@ -790,24 +638,11 @@ class CameraSurveyService:
         Returns:
             Path to manifest.yaml or None if not found
         """
-        # Validate session_id to prevent path traversal
-        if not _is_valid_session_id(session_id):
+        session_dir = _get_survey_repo().get_session_dir(session_id)
+        if session_dir is None:
             return None
-
-        base_path = _get_survey_base_path()
-
-        if not base_path.exists():
-            return None
-
-        for date_dir in base_path.iterdir():
-            if not date_dir.is_dir():
-                continue
-
-            manifest_path = date_dir / session_id / "manifest.yaml"
-            if manifest_path.exists():
-                return manifest_path
-
-        return None
+        manifest_path = session_dir / "manifest.yaml"
+        return manifest_path if manifest_path.exists() else None
 
     def get_session_image_path(self, session_id: str, filename: str) -> Path | None:
         """Get path to session image file.
@@ -819,28 +654,16 @@ class CameraSurveyService:
         Returns:
             Path to image file or None if not found
         """
-        # Validate session_id to prevent path traversal
-        if not _is_valid_session_id(session_id):
-            return None
-
-        base_path = _get_survey_base_path()
-
-        if not base_path.exists():
-            return None
-
         # Validate filename to prevent path traversal
         if "/" in filename or "\\" in filename or ".." in filename:
             return None
 
-        for date_dir in base_path.iterdir():
-            if not date_dir.is_dir():
-                continue
+        session_dir = _get_survey_repo().get_session_dir(session_id)
+        if session_dir is None:
+            return None
 
-            image_path = date_dir / session_id / filename
-            if image_path.exists():
-                return image_path
-
-        return None
+        image_path = session_dir / filename
+        return image_path if image_path.exists() else None
 
     def delete_session(self, session_id: str) -> tuple[bool, str | None]:
         """Delete a survey session and all its data.
@@ -851,56 +674,20 @@ class CameraSurveyService:
         Returns:
             Tuple of (success, error_message)
         """
-        import shutil
-
-        # Validate session_id to prevent path traversal
-        if not _is_valid_session_id(session_id):
-            return False, "Invalid session ID format"
-
         # Check if session is currently running
         with _active_surveys_lock:
             if session_id in _active_surveys:
                 if _active_surveys[session_id].status == SurveyStatus.RUNNING:
                     return False, "Cannot delete a running survey session"
 
-        base_path = _get_survey_base_path()
+        success, error = _get_survey_repo().delete(session_id)
 
-        if not base_path.exists():
-            return False, "Session not found"
-
-        # Find session directory
-        session_path = None
-        for date_dir in base_path.iterdir():
-            if not date_dir.is_dir():
-                continue
-
-            candidate_path = date_dir / session_id
-            if candidate_path.exists() and candidate_path.is_dir():
-                session_path = candidate_path
-                break
-
-        if session_path is None:
-            return False, "Session not found"
-
-        try:
-            # Remove the session directory and all its contents
-            shutil.rmtree(session_path)
-
-            # Clean up empty date directories
-            date_dir = session_path.parent
-            if date_dir.exists() and not any(date_dir.iterdir()):
-                date_dir.rmdir()
-
-            # Remove from active surveys if present
+        if success:
             with _active_surveys_lock:
                 _active_surveys.pop(session_id, None)
-
             logger.info("Deleted session %s", session_id)
-            return True, None
 
-        except Exception as e:
-            logger.error(f"Failed to delete session {session_id}: {e}")
-            return False, str(e)
+        return success, error
 
 
 def get_survey_presets() -> list[SurveyPreset]:

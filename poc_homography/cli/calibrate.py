@@ -14,34 +14,8 @@ from poc_homography.calibration import (
 )
 from poc_homography.camera_config import get_camera_configs
 from poc_homography.cli.main import calibrate_app
-from poc_homography.coordinates import dms_to_dd
-from poc_homography.map_points import MapPointRegistry
+from poc_homography.map_points import GCPRegistry
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
-
-
-def _get_camera_config(camera_name: str) -> dict[str, float]:
-    """
-    Get camera configuration and convert DMS to decimal degrees.
-
-    Args:
-        camera_name: Name of the camera
-
-    Returns:
-        Dictionary with lat, lon, height_m, pan_offset_deg in decimal degrees
-    """
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
-    if camera_name not in configs:
-        available = ", ".join(configs.keys())
-        raise ValueError(f"Unknown camera: {camera_name}. Available: {available}")
-
-    cam = configs[camera_name]
-
-    return {
-        "lat": dms_to_dd(cam["lat"]),
-        "lon": dms_to_dd(cam["lon"]),
-        "height_m": cam["height_m"],
-        "pan_offset_deg": cam["pan_offset_deg"],
-    }
 
 
 @calibrate_app.command("projection")
@@ -70,18 +44,18 @@ def projection_command(
             --pixel-u 960 --pixel-v 540 --pan-raw 45.0 --tilt 30.0 --zoom 5.0
     """
     # Get camera configuration
-    try:
-        config = _get_camera_config(camera)
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
+    configs = {cam["name"]: cam for cam in get_camera_configs()}
+    if camera not in configs:
+        available = ", ".join(configs.keys())
+        typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
+
+    cam = configs[camera]
 
     # Convert CLI inputs to typed units at the boundary
     result = analyze_projection_error(
-        camera_lat=Degrees(config["lat"]),
-        camera_lon=Degrees(config["lon"]),
-        height_m=Meters(config["height_m"]),
-        pan_offset_deg=Degrees(config["pan_offset_deg"]),
+        height_m=Meters(cam["height_m"]),
+        pan_offset_deg=Degrees(cam["pan_offset_deg"]),
         map_point_x=Meters(map_x),
         map_point_y=Meters(map_y),
         actual_u=PixelsFloat(pixel_u),
@@ -176,7 +150,7 @@ def comprehensive_command(
 
     # Load map point registry
     try:
-        registry = MapPointRegistry.load(registry_file)
+        registry = GCPRegistry.load(registry_file)
     except FileNotFoundError:
         typer.echo(f"Error: Registry file not found: {registry_file}", err=True)
         raise typer.Exit(1)

@@ -188,9 +188,7 @@ class TestLineDetector:
 
         assert len(candidates) > 0
 
-    def test_detect_returns_candidates_with_confidence(
-        self, detector, image_with_horizontal_lines
-    ):
+    def test_detect_returns_candidates_with_confidence(self, detector, image_with_horizontal_lines):
         """Should return candidates with confidence scores."""
         candidates = detector.detect(image_with_horizontal_lines)
 
@@ -267,9 +265,7 @@ class TestLineDetector:
         finally:
             Path(filepath).unlink()
 
-    def test_detect_assigns_cluster_ids_to_parallel_lines(
-        self, image_with_horizontal_lines
-    ):
+    def test_detect_assigns_cluster_ids_to_parallel_lines(self, image_with_horizontal_lines):
         """Should group parallel lines into clusters."""
         config = LineDetectionConfig(parallel_angle_tolerance=10.0)
         detector = LineDetector(config=config)

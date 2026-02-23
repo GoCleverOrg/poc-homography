@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import math
-from pathlib import Path
 
 import numpy as np
 import tifffile
@@ -13,54 +12,10 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
+from homography_web.frame_utils import LINES_DIR, normalize_array
 from PIL import Image
 
-from .state import get_state
-from .validation import (
-    validate_export_request,
-    validate_import_request,
-)
-
-
-def normalize_array(arr: np.ndarray) -> np.ndarray:
-    """Normalize array values to 0-255 range for display.
-
-    Args:
-        arr: Input array.
-
-    Returns:
-        Normalized uint8 array.
-    """
-    if arr.dtype == np.uint8:
-        return arr
-
-    # Handle floating point and other types
-    arr = arr.astype(np.float64)
-    min_val = np.nanmin(arr)
-    max_val = np.nanmax(arr)
-
-    if max_val - min_val > 0:
-        arr = (arr - min_val) / (max_val - min_val) * 255
-    else:
-        arr = np.zeros_like(arr)
-
-    return arr.astype(np.uint8)
-
-
-def get_tag_from_id(point_id: str) -> str:
-    """Extract tag from point ID prefix.
-
-    Args:
-        point_id: Point ID (e.g., "PS1", "AR2").
-
-    Returns:
-        Tag abbreviation (e.g., "PS", "AR").
-    """
-    # Extract prefix by finding where the digits start
-    for i, char in enumerate(point_id):
-        if char.isdigit():
-            return point_id[:i]
-    return point_id
+from .state import from_line_repo, get_state, list_line_map_ids, save_to_line_repo
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -76,8 +31,8 @@ def api_image_info(request: HttpRequest) -> JsonResponse:
         {
             "width": state.width,
             "height": state.height,
-            "geotransform": state.geotransform,
-            "crs": state.crs,
+            "geotransform": state.geotiff.geotransform.to_list() if state.geotiff else None,
+            "crs": state.geotiff.crs if state.geotiff else None,
             "filename": state.geotiff_path.name,
         }
     )
@@ -232,30 +187,6 @@ def api_image_full(request: HttpRequest) -> HttpResponse:
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     return HttpResponse(buffer.getvalue(), content_type="image/png")
-
-
-@require_GET
-def api_gcps(request: HttpRequest) -> JsonResponse:
-    """Get all GCPs from the loaded registry (read-only).
-
-    Returns GCP data with pixel coordinates for displaying as clickable markers.
-    """
-    state = get_state()
-
-    return JsonResponse(
-        {
-            "map_id": state.gcp_registry.map_id,
-            "points": [
-                {
-                    "id": pid,
-                    "pixel_x": p.pixel_x,
-                    "pixel_y": p.pixel_y,
-                    "tag": get_tag_from_id(pid),
-                }
-                for pid, p in state.gcp_registry.points.items()
-            ],
-        }
-    )
 
 
 @csrf_exempt
@@ -422,7 +353,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid coordinate parameters"}, status=400)
 
-    if state.geotransform is None:
+    if state.geotiff is None:
         return JsonResponse(
             {
                 "easting": None,
@@ -432,115 +363,46 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
             }
         )
 
-    # Apply geotransform: [origin_x, pixel_width, rot_x, origin_y, rot_y, pixel_height]
-    gt = state.geotransform
-    easting = gt[0] + pixel_x * gt[1] + pixel_y * gt[2]
-    northing = gt[3] + pixel_x * gt[4] + pixel_y * gt[5]
+    easting, northing = state.geotiff.pixel_to_geo(pixel_x, pixel_y)
 
     return JsonResponse(
         {
-            "easting": easting,
-            "northing": northing,
-            "crs": state.crs,
+            "easting": float(easting),
+            "northing": float(northing),
+            "crs": state.geotiff.crs,
         }
     )
-
-
-def _validate_safe_path(path: Path, allowed_base: Path) -> Path | None:
-    """Validate that a path is within the allowed base directory.
-
-    Args:
-        path: The path to validate (can be relative or absolute).
-        allowed_base: The base directory that the path must be within.
-
-    Returns:
-        The resolved absolute path if safe, None if path traversal detected.
-    """
-    # Resolve to absolute path
-    if not path.is_absolute():
-        resolved = (allowed_base / path).resolve()
-    else:
-        resolved = path.resolve()
-
-    # Check that the resolved path is within the allowed base
-    try:
-        resolved.relative_to(allowed_base.resolve())
-        return resolved
-    except ValueError:
-        return None
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
-    """Export lines to YAML file."""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    error = validate_export_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
-
+    """Save lines to the DDD line repository."""
     state = get_state()
-    path = Path(data.get("path", "")) if data.get("path") else Path(f"{state.map_id}_lines.yaml")
-
-    # Validate path is within allowed directory (same directory as GCP registry or image)
-    allowed_base = (
-        state.gcp_registry_path.parent if state.gcp_registry_path else state.geotiff_path.parent
-    )
-    safe_path = _validate_safe_path(path, allowed_base)
-    if safe_path is None:
-        return JsonResponse(
-            {"error": "Invalid path: path traversal not allowed"},
-            status=400,
-        )
-
-    state.save_lines(safe_path)
-    return JsonResponse({"exported": str(safe_path), "count": len(state.lines)})
+    save_to_line_repo(state.lines, state.map_id, LINES_DIR)
+    return JsonResponse({"saved": True, "count": len(state.lines)})
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def api_import(request: HttpRequest) -> JsonResponse:
-    """Import lines from YAML file."""
+    """Load lines from the DDD line repository for a given map_id."""
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    error = validate_import_request(data)
-    if error:
-        return JsonResponse({"error": error}, status=422)
+    map_id = data.get("map_id")
+    if not map_id:
+        return JsonResponse({"error": "map_id is required"}, status=400)
 
     state = get_state()
-    path = Path(data["path"])
+    repo_lines = from_line_repo(LINES_DIR, map_id)
+    state.lines = repo_lines
+    return JsonResponse({"map_id": map_id, "count": len(state.lines)})
 
-    # Validate path is within allowed directory (same directory as GCP registry or image)
-    allowed_base = (
-        state.gcp_registry_path.parent if state.gcp_registry_path else state.geotiff_path.parent
-    )
-    safe_path = _validate_safe_path(path, allowed_base)
-    if safe_path is None:
-        return JsonResponse(
-            {"error": "Invalid path: path traversal not allowed"},
-            status=400,
-        )
 
-    if not safe_path.exists():
-        return JsonResponse({"error": f"File not found: {safe_path}"}, status=404)
-
-    try:
-        state.load_lines(safe_path)
-        return JsonResponse(
-            {
-                "imported": str(safe_path),
-                "count": len(state.lines),
-                "map_id": state.map_id,
-            }
-        )
-    except ValueError as e:
-        return JsonResponse({"error": str(e)}, status=422)
-    except KeyError as e:
-        return JsonResponse({"error": str(e)}, status=404)
+@require_GET
+def api_registries(request: HttpRequest) -> JsonResponse:
+    """List available map IDs from the line repository."""
+    return JsonResponse({"map_ids": list_line_map_ids(LINES_DIR)})

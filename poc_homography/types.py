@@ -23,18 +23,26 @@ Usage Example:
     >>> fov: Degrees = get_fov(Unitless(5.0), Millimeters(6.78))
 """
 
+import math
 from typing import NewType
 
 # Angular units
 Degrees = NewType("Degrees", float)
-"""Angle in degrees (e.g., pan, tilt, latitude, longitude, bearing)"""
+"""Angle in degrees (e.g., pan, tilt, bearing)"""
 
 Radians = NewType("Radians", float)
 """Angle in radians (e.g., intermediate trigonometric calculations)"""
 
 # Distance/position units
 Meters = NewType("Meters", float)
-"""Distance or position in meters (e.g., X, Y, Z coordinates, camera height, GPS distances)"""
+"""Distance or position in meters (e.g., X, Y, Z coordinates, camera height)"""
+
+# Geographic/projected coordinate units
+Easting = NewType("Easting", float)
+"""X-coordinate in projected CRS (e.g., UTM easting in meters)"""
+
+Northing = NewType("Northing", float)
+"""Y-coordinate in projected CRS (e.g., UTM northing in meters)"""
 
 # Image coordinate units
 Pixels = NewType("Pixels", int)
@@ -50,3 +58,8 @@ Millimeters = NewType("Millimeters", float)
 # Dimensionless quantities
 Unitless = NewType("Unitless", float)
 """Dimensionless scalar (e.g., zoom factor, scale factor, confidence, ratios)"""
+
+
+def degrees_to_radians(degrees: Degrees) -> Radians:
+    """Convert degrees to radians with proper type annotation."""
+    return Radians(math.radians(float(degrees)))
