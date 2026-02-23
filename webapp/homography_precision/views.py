@@ -23,10 +23,10 @@ from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     GCPS_DIR,
     LINES_DIR,
-    PROJECT_ROOT,
     extract_geotiff,
     get_default_map_id,
     get_frame_image_path,
+    get_map_image_path,
     image_filename_to_frame,
     list_frames,
     load_annotations_for_frame,
@@ -67,7 +67,10 @@ def _get_map_geotiff_file() -> Path | None:
     map_id = get_default_map_id()
     if map_id is None:
         return None
-    return PROJECT_ROOT / f"{map_id}.tif"
+    try:
+        return get_map_image_path(map_id)
+    except FileNotFoundError:
+        return None
 
 
 # Cached line registry

@@ -1,9 +1,7 @@
 """Django app configuration for line_picker."""
 
-from pathlib import Path
-
 from django.apps import AppConfig
-from homography_web.frame_utils import get_default_map_id
+from homography_web.frame_utils import get_default_map_id, get_map_entity, get_map_image_path
 
 
 class LinePickerConfig(AppConfig):
@@ -24,15 +22,20 @@ class LinePickerConfig(AppConfig):
         except RuntimeError:
             pass
 
-        # Paths relative to webapp directory
-        webapp_dir = Path(__file__).resolve().parent.parent
-        project_root = webapp_dir.parent
-
         # Use the default map
         default_map = get_default_map_id()
         if default_map is None:
             return  # No map configured for default tenant
-        map_file = project_root / f"{default_map}.tif"
 
-        if map_file.exists():
-            initialize_state(map_file, default_map)
+        try:
+            map_file = get_map_image_path(default_map)
+            map_entity = get_map_entity(default_map)
+        except FileNotFoundError:
+            return
+
+        initialize_state(
+            map_file,
+            default_map,
+            width=int(map_entity.photo.width),
+            height=int(map_entity.photo.height),
+        )

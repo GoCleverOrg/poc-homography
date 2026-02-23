@@ -30,12 +30,17 @@ class PointPickerState:
         self,
         image_path: Path,
         geotiff: GeoTiff | None = None,
+        *,
+        width: int | None = None,
+        height: int | None = None,
     ) -> None:
         """Initialize state with image file.
 
         Args:
             image_path: Path to the image file (PNG, TIFF, etc.).
             geotiff: Optional GeoTiff VO with geotransform and CRS.
+            width: Image width in pixels (avoids file I/O when provided).
+            height: Image height in pixels (avoids file I/O when provided).
         """
         self.geotiff_path = image_path  # Keep name for compatibility
         self.map_id = image_path.stem
@@ -44,21 +49,34 @@ class PointPickerState:
         # Detect file type and load accordingly
         suffix = image_path.suffix.lower()
         if suffix in (".tif", ".tiff"):
-            # Load TIFF metadata using tifffile
-            with tifffile.TiffFile(image_path) as tif:
-                page = tif.pages[0]
-                # type: ignore needed because tifffile types are incomplete
-                self.width: int = page.imagewidth  # type: ignore[union-attr]
-                self.height: int = page.imagelength  # type: ignore[union-attr]
-
-                # Extract GeoTiff VO from TIFF if not provided
+            # Use provided dimensions or read from TIFF
+            if width is not None and height is not None:
+                self.width: int = width
+                self.height: int = height
+                # Still need to extract GeoTiff VO from TIFF if not provided
                 if geotiff is None:
-                    geotiff = extract_geotiff(tif)
+                    with tifffile.TiffFile(image_path) as tif:
+                        geotiff = extract_geotiff(tif)
+            else:
+                # Load TIFF metadata using tifffile
+                with tifffile.TiffFile(image_path) as tif:
+                    page = tif.pages[0]
+                    # type: ignore needed because tifffile types are incomplete
+                    self.width = page.imagewidth  # type: ignore[union-attr]
+                    self.height = page.imagelength  # type: ignore[union-attr]
+
+                    # Extract GeoTiff VO from TIFF if not provided
+                    if geotiff is None:
+                        geotiff = extract_geotiff(tif)
         else:
-            # Load other image formats (PNG, JPG, etc.) using PIL
-            with Image.open(image_path) as img:
-                self.width = img.width
-                self.height = img.height
+            if width is not None and height is not None:
+                self.width = width
+                self.height = height
+            else:
+                # Load other image formats (PNG, JPG, etc.) using PIL
+                with Image.open(image_path) as img:
+                    self.width = img.width
+                    self.height = img.height
 
         self.geotiff = geotiff
 
@@ -183,15 +201,20 @@ _state: PointPickerState | None = None
 def initialize_state(
     image_path: Path,
     geotiff: GeoTiff | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
     """Initialize the module-level state.
 
     Args:
         image_path: Path to the image file (PNG, TIFF, etc.).
         geotiff: Optional GeoTiff VO with geotransform and CRS.
+        width: Image width in pixels (avoids file I/O when provided).
+        height: Image height in pixels (avoids file I/O when provided).
     """
     global _state
-    _state = PointPickerState(image_path, geotiff=geotiff)
+    _state = PointPickerState(image_path, geotiff=geotiff, width=width, height=height)
 
 
 def get_state() -> PointPickerState:

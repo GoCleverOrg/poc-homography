@@ -28,10 +28,13 @@ class TestGetMapGeotiffFile:
         monkeypatch.setattr(views_mod, "get_default_map_id", lambda: None)  # type: ignore[attr-defined]
         assert _get_map_geotiff_file() is None
 
-    def test_returns_path_when_map_exists(self, monkeypatch: object) -> None:
+    def test_returns_path_when_map_exists(self, monkeypatch: object, tmp_path: Path) -> None:
         import homography_precision.views as views_mod
 
+        fake_tif = tmp_path / "testmap.tif"
+        fake_tif.touch()
         monkeypatch.setattr(views_mod, "get_default_map_id", lambda: "testmap")  # type: ignore[attr-defined]
+        monkeypatch.setattr(views_mod, "get_map_image_path", lambda _map_id: fake_tif)  # type: ignore[attr-defined]
         result = _get_map_geotiff_file()
         assert result is not None
         assert result.name == "testmap.tif"

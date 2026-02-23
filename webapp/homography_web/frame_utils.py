@@ -27,10 +27,12 @@ from poc_homography.types import Easting, Meters, Northing, Unitless
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.captured_frame import CapturedFrame
+    from poc_homography.domain.entities.map import Map
 
 # Paths relative to project root
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
+DATA_MAPS_DIR = PROJECT_ROOT / "data" / "maps"
 FRAMES_DIR = PROJECT_ROOT / "data" / "captured_frames"
 ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
 GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
@@ -203,6 +205,48 @@ def get_default_map_id(tenant_id: str | None = None) -> str | None:
     if maps:
         return next(iter(maps.values())).id
     return None
+
+
+def get_map_entity(map_id: str) -> Map:
+    """Return a ``Map`` domain entity by ID.
+
+    Args:
+        map_id: Map identifier (e.g. ``"Cartografia_valencia"``).
+
+    Returns:
+        The Map entity loaded from ``data/maps/``.
+
+    Raises:
+        FileNotFoundError: If no map YAML exists for *map_id*.
+    """
+    entity = get_map_repo().get(map_id)
+    if entity is None:
+        msg = f"Map entity not found for map_id={map_id!r}"
+        raise FileNotFoundError(msg)
+    return entity
+
+
+def get_map_image_path(map_id: str) -> Path:
+    """Return the absolute path to the GeoTIFF (or other image) for a map.
+
+    Resolves ``Map.photo.path`` relative to the ``data/maps/`` directory.
+
+    Args:
+        map_id: Map identifier (e.g. ``"Cartografia_valencia"``).
+
+    Returns:
+        Absolute ``Path`` to the map image file.
+
+    Raises:
+        FileNotFoundError: If the map entity is not found or the resolved path
+            does not exist on disk.
+    """
+    entity = get_map_entity(map_id)
+    resolved = DATA_MAPS_DIR / entity.photo.path
+    if not resolved.exists():
+        msg = f"Map image not found at {resolved} (photo.path={entity.photo.path})"
+        raise FileNotFoundError(msg)
+    return resolved
 
 
 # ---------------------------------------------------------------------------
