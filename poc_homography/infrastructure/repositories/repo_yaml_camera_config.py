@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from poc_homography.domain.entities.camera_config import CameraConfig
 from poc_homography.infrastructure.repositories.base import (
@@ -11,6 +10,9 @@ from poc_homography.infrastructure.repositories.base import (
     MixinRepoTenantFilter,
     RepoYaml,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class RepoYamlCameraConfig(RepoYaml[CameraConfig], MixinRepoMapFilter, MixinRepoTenantFilter):

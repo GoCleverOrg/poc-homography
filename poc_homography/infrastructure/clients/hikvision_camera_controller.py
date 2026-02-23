@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from defusedxml import ElementTree as ET
 from typing import TYPE_CHECKING
 
 import requests
+from defusedxml import ElementTree as ET
 from requests.auth import HTTPDigestAuth
 
 from poc_homography.domain.protocols import CameraControllerError
