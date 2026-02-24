@@ -21,10 +21,11 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
+    DATA_MAPS_DIR,
     GCPS_DIR,
     LINES_DIR,
-    PROJECT_ROOT,
     extract_geotiff,
+    get_default_map,
     get_default_map_id,
     get_frame_image_path,
     image_filename_to_frame,
@@ -64,10 +65,13 @@ def _require_map_id() -> str | None:
 
 def _get_map_geotiff_file() -> Path | None:
     """Return path to the GeoTIFF file for the default map, or None."""
-    map_id = get_default_map_id()
-    if map_id is None:
+    map_entity = get_default_map()
+    if map_entity is None:
         return None
-    return PROJECT_ROOT / f"{map_id}.tif"
+    resolved = DATA_MAPS_DIR / map_entity.photo.path
+    if not resolved.exists():
+        return None
+    return resolved
 
 
 # Cached line registry

@@ -1,9 +1,11 @@
 """Django app configuration for point_picker."""
 
-from pathlib import Path
-
 from django.apps import AppConfig
-from homography_web.frame_utils import get_default_map_id
+from homography_web.frame_utils import (
+    DATA_MAPS_DIR,
+    GCPS_DIR,
+    get_default_map,
+)
 
 
 class PointPickerConfig(AppConfig):
@@ -24,25 +26,26 @@ class PointPickerConfig(AppConfig):
         except RuntimeError:
             pass
 
-        # Paths relative to webapp directory
-        webapp_dir = Path(__file__).resolve().parent.parent
-        project_root = webapp_dir.parent
-
         # Use the default map
-        default_map = get_default_map_id()
-        if default_map is None:
+        map_entity = get_default_map()
+        if map_entity is None:
             return  # No map configured for default tenant
-        map_file = project_root / f"{default_map}.tif"
-        gcps_dir = project_root / "data" / "gcps"
 
-        if map_file.exists():
-            initialize_state(map_file)
+        map_file = DATA_MAPS_DIR / map_entity.photo.path
+        if not map_file.exists():
+            return
 
-            # Load existing GCPs from repository if available
-            if gcps_dir.exists():
-                from poc_homography.map_points.gcp_registry import list_map_ids
+        initialize_state(
+            map_file,
+            width=int(map_entity.photo.width),
+            height=int(map_entity.photo.height),
+        )
 
-                available = list_map_ids(gcps_dir)
-                if available:
-                    state = get_state()
-                    state.load_from_repo(gcps_dir, available[0])
+        # Load existing GCPs from repository if available
+        if GCPS_DIR.exists():
+            from poc_homography.map_points.gcp_registry import list_map_ids
+
+            available = list_map_ids(GCPS_DIR)
+            if available:
+                state = get_state()
+                state.load_from_repo(GCPS_DIR, available[0])

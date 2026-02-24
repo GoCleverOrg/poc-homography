@@ -60,6 +60,9 @@ class LinePickerState:
         image_path: Path,
         map_id: str,
         geotiff: GeoTiff | None = None,
+        *,
+        width: int | None = None,
+        height: int | None = None,
     ) -> None:
         """Initialize state with image file and map identifier.
 
@@ -67,6 +70,8 @@ class LinePickerState:
             image_path: Path to the map image file (PNG, TIFF, etc.).
             map_id: Map identifier for tagging saved line files.
             geotiff: Optional GeoTiff VO with geotransform and CRS.
+            width: Image width in pixels (avoids file I/O when provided).
+            height: Image height in pixels (avoids file I/O when provided).
         """
         self.geotiff_path = image_path  # Keep name for compatibility
         self.map_id = map_id
@@ -75,20 +80,33 @@ class LinePickerState:
         # Detect file type and load accordingly
         suffix = image_path.suffix.lower()
         if suffix in (".tif", ".tiff"):
-            with tifffile.TiffFile(image_path) as tif:
-                page = tif.pages[0]
-                # type: ignore needed because tifffile types are incomplete
-                self.width: int = page.imagewidth  # type: ignore[union-attr]
-                self.height: int = page.imagelength  # type: ignore[union-attr]
-
+            if width is not None and height is not None:
+                self.width: int = width
+                self.height: int = height
                 if geotiff is None:
                     from homography_web.frame_utils import extract_geotiff
 
-                    geotiff = extract_geotiff(tif)
+                    with tifffile.TiffFile(image_path) as tif:
+                        geotiff = extract_geotiff(tif)
+            else:
+                with tifffile.TiffFile(image_path) as tif:
+                    page = tif.pages[0]
+                    # type: ignore needed because tifffile types are incomplete
+                    self.width = page.imagewidth  # type: ignore[union-attr]
+                    self.height = page.imagelength  # type: ignore[union-attr]
+
+                    if geotiff is None:
+                        from homography_web.frame_utils import extract_geotiff
+
+                        geotiff = extract_geotiff(tif)
         else:
-            with Image.open(image_path) as img:
-                self.width = img.width
-                self.height = img.height
+            if width is not None and height is not None:
+                self.width = width
+                self.height = height
+            else:
+                with Image.open(image_path) as img:
+                    self.width = img.width
+                    self.height = img.height
 
         self.geotiff = geotiff
 
@@ -190,6 +208,9 @@ def initialize_state(
     image_path: Path,
     map_id: str,
     geotiff: GeoTiff | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
     """Initialize the module-level state.
 
@@ -197,6 +218,8 @@ def initialize_state(
         image_path: Path to the map image file (PNG, TIFF, etc.).
         map_id: Map identifier for tagging saved line files.
         geotiff: Optional GeoTiff VO with geotransform and CRS.
+        width: Image width in pixels (avoids file I/O when provided).
+        height: Image height in pixels (avoids file I/O when provided).
     """
     global _state
 
@@ -204,6 +227,8 @@ def initialize_state(
         image_path,
         map_id,
         geotiff=geotiff,
+        width=width,
+        height=height,
     )
 
 

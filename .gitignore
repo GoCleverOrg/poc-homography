@@ -157,8 +157,11 @@ cython_debug/
 output/*
 !output/README.md
 
-# Data directories (managed by DVC)
-/data
+# Data folder (YAML configs stored here)
+data/**/*
+!data/**/.gitkeep
+!data/**/*.yaml
+!data/**/
 
 # Worktrees
 .worktrees
