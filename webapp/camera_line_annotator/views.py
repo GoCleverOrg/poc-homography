@@ -13,6 +13,8 @@ from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     LINES_DIR,
     get_frame_image_path,
+    get_map_from_tenant_id,
+    get_tenant_id,
     image_filename_to_frame,
     invalidate_cache,
     list_image_filenames,
@@ -27,54 +29,58 @@ from homography_web.frame_utils import (
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
 SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 
-# Cached repos
-_lines_registry_data: dict | None = None
+# Per-tenant cached line registries
+_lines_registry_cache: dict[str, dict] = {}
 
 
 def _invalidate_lines_cache() -> None:
     """Clear the local line registry cache."""
-    global _lines_registry_data
-    _lines_registry_data = None
+    _lines_registry_cache.clear()
 
 
-def load_lines_registry() -> dict:
-    """Load and cache lines registry from the DDD repo."""
-    global _lines_registry_data
-    if _lines_registry_data is not None:
-        return _lines_registry_data
+def load_lines_registry(tenant_id: str) -> dict:
+    """Load and cache lines registry from the DDD repo.
 
-    from homography_web.frame_utils import get_default_map_id
+    Args:
+        tenant_id: Tenant identifier for map lookup.
+    """
+    if tenant_id in _lines_registry_cache:
+        return _lines_registry_cache[tenant_id]
+
+    from homography_web.frame_utils import get_map_from_tenant_id
     from line_picker.state import from_line_repo
 
     try:
-        map_id = get_default_map_id()
-        if map_id:
-            repo_lines = from_line_repo(LINES_DIR, map_id)
+        map_entity = get_map_from_tenant_id(tenant_id)
+        if map_entity:
+            repo_lines = from_line_repo(LINES_DIR, map_entity.id)
             if repo_lines:
-                _lines_registry_data = {
-                    "map_id": map_id,
+                result = {
+                    "map_id": map_entity.id,
                     "lines": [line.to_dict() for line in repo_lines],
                 }
-                return _lines_registry_data
+                _lines_registry_cache[tenant_id] = result
+                return result
     except OSError:
         pass
 
     return {"map_id": "", "lines": []}
 
 
-def get_available_images() -> list[str]:
+def get_available_images(map_id: str | None = None) -> list[str]:
     """Return available image filenames from the CapturedFrame repo."""
-    return list_image_filenames()
+    return list_image_filenames(map_id)
 
 
-def get_current_image(request: HttpRequest) -> str | None:
+def get_current_image(request: HttpRequest, map_id: str | None = None) -> str | None:
     """Get the current image filename from session, or first available image."""
     session_image = request.session.get(SESSION_IMAGE_KEY)
     if session_image:
-        if image_filename_to_frame(session_image) is not None:
+        frame = image_filename_to_frame(session_image)
+        if frame is not None and (map_id is None or frame.map_id == map_id):
             return session_image
 
-    images = get_available_images()
+    images = get_available_images(map_id)
     if images:
         return images[0]
 
@@ -154,7 +160,7 @@ def load_existing_line_annotations(image_filename: str) -> list[dict]:
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
     current_image = get_current_image(request)
-    registry = load_lines_registry()
+    registry = load_lines_registry(get_tenant_id(request))
     context = {
         "image_filename": current_image or "No images available",
         "registry_filename": "DDD line repo",
@@ -165,9 +171,11 @@ def index(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 def api_images(request: HttpRequest) -> JsonResponse:
-    """Get list of available images."""
+    """Get list of available images for the current tenant."""
     try:
-        images = get_available_images()
+        map_entity = get_map_from_tenant_id(get_tenant_id(request))
+        map_id = map_entity.id if map_entity else None
+        images = get_available_images(map_id)
         return JsonResponse(images, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to get available images: {e}"}, status=500)
@@ -248,7 +256,7 @@ def serve_image(request: HttpRequest) -> HttpResponse:
 def api_line_ids(request: HttpRequest) -> JsonResponse:
     """Get available line IDs from registry."""
     try:
-        registry = load_lines_registry()
+        registry = load_lines_registry(get_tenant_id(request))
         lines = registry.get("lines", [])
         line_ids = [line.get("line_id") for line in lines if line.get("line_id")]
         return JsonResponse(

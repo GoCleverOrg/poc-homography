@@ -26,6 +26,8 @@ from poc_homography.infrastructure.repositories import (
 from poc_homography.types import Easting, Meters, Northing, Unitless
 
 if TYPE_CHECKING:
+    from django.http import HttpRequest
+
     from poc_homography.domain.entities.captured_frame import CapturedFrame
     from poc_homography.domain.entities.map import Map
 
@@ -161,11 +163,22 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
 # ---------------------------------------------------------------------------
 
 
-def get_default_tenant_id() -> str:
-    """Return the default tenant ID from Django settings."""
-    from django.conf import settings
+def get_tenant_id(request: HttpRequest) -> str:
+    """Extract tenant_id from request query string.
 
-    return getattr(settings, "DEFAULT_TENANT_ID", "valte")
+    Args:
+        request: Django HTTP request.
+
+    Returns:
+        Tenant ID string.
+
+    Raises:
+        ValueError: If tenant_id is missing from the request.
+    """
+    tenant_id = request.GET.get("tenant_id")
+    if not tenant_id:
+        raise ValueError("Missing required query parameter: tenant_id")
+    return tenant_id
 
 
 _tenant_repo: RepoYamlTenant | None = None
@@ -188,37 +201,15 @@ def get_map_repo() -> RepoYamlMap:
     return _map_repo
 
 
-def get_default_map_id(tenant_id: str | None = None) -> str | None:
-    """Return the default map ID for a tenant, or None if no maps exist.
+def get_map_from_tenant_id(tenant_id: str) -> Map | None:
+    """Look up the ``Map`` entity that belongs to *tenant_id*.
 
-    Resolves the first map belonging to the given tenant.
-
-    Args:
-        tenant_id: Tenant to look up. Defaults to settings.DEFAULT_TENANT_ID.
-
-    Returns:
-        Map ID string, or None if the tenant has no maps configured.
-    """
-    if tenant_id is None:
-        tenant_id = get_default_tenant_id()
-    maps = get_map_repo().get_by_tenant(tenant_id)
-    if maps:
-        return next(iter(maps.values())).id
-    return None
-
-
-def get_default_map(tenant_id: str | None = None) -> Map | None:
-    """Return the default ``Map`` entity for a tenant, or ``None``.
-
-    Unlike :func:`get_default_map_id` this returns the full entity, which
-    avoids a second repository lookup (the YAML filename may differ from
-    the entity ``id``).
+    Searches the YAML map repository for an exact tenant match and returns
+    the map entity, or ``None`` when no map is configured for the tenant.
 
     Args:
-        tenant_id: Tenant to look up. Defaults to settings.DEFAULT_TENANT_ID.
+        tenant_id: Tenant identifier (must be provided explicitly).
     """
-    if tenant_id is None:
-        tenant_id = get_default_tenant_id()
     maps = get_map_repo().get_by_tenant(tenant_id)
     if maps:
         return next(iter(maps.values()))
@@ -240,8 +231,8 @@ def get_map_image_path(map_id: str) -> Path:
         FileNotFoundError: If the map entity is not found or the resolved path
             does not exist on disk.
     """
-    entity = get_default_map()
-    if entity is None or entity.id != map_id:
+    entity = get_map_repo().get(map_id)
+    if entity is None:
         msg = f"Map entity not found for map_id={map_id!r}"
         raise FileNotFoundError(msg)
     resolved = DATA_MAPS_DIR / entity.photo.path
@@ -287,12 +278,18 @@ def get_frame_repo() -> RepoYamlCapturedFrame:
     return _frame_repo
 
 
-def list_frames() -> list[CapturedFrame]:
-    """Return all captured frames (cached)."""
+def list_frames(map_id: str | None = None) -> list[CapturedFrame]:
+    """Return captured frames (cached).
+
+    Args:
+        map_id: If provided, only return frames belonging to this map.
+    """
     global _frames
     if _frames is None:
         _frames = get_frame_repo().get_all()
-    return _frames
+    if map_id is None:
+        return _frames
+    return [f for f in _frames if f.map_id == map_id]
 
 
 def _get_image_to_frame() -> dict[str, CapturedFrame]:
@@ -308,12 +305,16 @@ def get_frame_image_path(frame: CapturedFrame) -> Path:
     return get_frame_repo().get_image_path(frame)
 
 
-def list_image_filenames() -> list[str]:
+def list_image_filenames(map_id: str | None = None) -> list[str]:
     """Return sorted list of image filenames from the captured-frame repo.
 
-    Backward-compatible with the old ``get_available_images()`` pattern.
+    Args:
+        map_id: If provided, only return filenames for frames belonging to this map.
     """
-    return sorted(_get_image_to_frame())
+    mapping = _get_image_to_frame()
+    if map_id is None:
+        return sorted(mapping)
+    return sorted(fn for fn, frame in mapping.items() if frame.map_id == map_id)
 
 
 def image_filename_to_frame(filename: str) -> CapturedFrame | None:

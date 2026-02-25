@@ -11,9 +11,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     GCPS_DIR,
-    get_default_map_id,
     get_frame_image_path,
     get_frame_repo,
+    get_map_from_tenant_id,
+    get_tenant_id,
     image_filename_to_frame,
     invalidate_cache,
     list_image_filenames,
@@ -25,33 +26,39 @@ from homography_web.frame_utils import (
 SESSION_IMAGE_KEY = "camera_annotator_image"
 
 
-def get_available_images() -> list[str]:
+def get_available_images(map_id: str | None = None) -> list[str]:
     """Return available image filenames from the CapturedFrame repo."""
-    return list_image_filenames()
+    return list_image_filenames(map_id)
 
 
-def get_current_image(request: HttpRequest) -> str | None:
+def get_current_image(request: HttpRequest, map_id: str | None = None) -> str | None:
     """Get the current image filename from session, or first available image."""
     session_image = request.session.get(SESSION_IMAGE_KEY)
     if session_image:
-        if image_filename_to_frame(session_image) is not None:
+        frame = image_filename_to_frame(session_image)
+        if frame is not None and (map_id is None or frame.map_id == map_id):
             return session_image
 
-    images = get_available_images()
+    images = get_available_images(map_id)
     if images:
         return images[0]
 
     return None
 
 
-def load_gcps() -> list[dict]:
-    """Load GCPs from the repository."""
+def load_gcps(tenant_id: str) -> list[dict]:
+    """Load GCPs from the repository.
+
+    Args:
+        tenant_id: Tenant identifier for map lookup.
+    """
     from poc_homography.map_points.gcp_registry import from_gcp_repo
 
-    map_id = get_default_map_id()
-    if map_id is None:
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
         return []
     try:
+        map_id = map_entity.id
         registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError):
         return []
@@ -115,7 +122,7 @@ def index(request: HttpRequest) -> HttpResponse:
 def api_gcps(request: HttpRequest) -> JsonResponse:
     """Get list of available GCPs."""
     try:
-        gcps = load_gcps()
+        gcps = load_gcps(get_tenant_id(request))
         return JsonResponse(gcps, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to load GCPs: {e}"}, status=500)
@@ -137,9 +144,11 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_images(request: HttpRequest) -> JsonResponse:
-    """Get list of available images."""
+    """Get list of available images for the current tenant."""
     try:
-        images = get_available_images()
+        map_entity = get_map_from_tenant_id(get_tenant_id(request))
+        map_id = map_entity.id if map_entity else None
+        images = get_available_images(map_id)
         return JsonResponse(images, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to get available images: {e}"}, status=500)

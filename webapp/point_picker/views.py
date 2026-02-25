@@ -12,7 +12,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-from homography_web.frame_utils import GCPS_DIR, normalize_array
+from homography_web.frame_utils import GCPS_DIR, get_tenant_id, normalize_array
 from PIL import Image
 
 from .state import get_state, get_tag_from_id
@@ -30,7 +30,7 @@ def index(request: HttpRequest) -> HttpResponse:
 @require_GET
 def api_image_info(request: HttpRequest) -> JsonResponse:
     """Get image metadata."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     return JsonResponse(
         {
             "width": state.width,
@@ -61,7 +61,7 @@ def api_image_tile(request: HttpRequest) -> HttpResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid tile parameters"}, status=400)
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     # Calculate max level for the pyramid
     max_level = math.ceil(math.log2(max(state.width, state.height)))
@@ -147,7 +147,7 @@ def api_image_full(request: HttpRequest) -> HttpResponse:
     except (TypeError, ValueError):
         max_size = 2048
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     suffix = state.geotiff_path.suffix.lower()
     if suffix in (".tif", ".tiff"):
@@ -197,7 +197,7 @@ def api_image_full(request: HttpRequest) -> HttpResponse:
 @require_http_methods(["GET", "POST"])
 def api_points(request: HttpRequest) -> JsonResponse:
     """Get all points (GET) or add a new point (POST)."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     if request.method == "GET":
         return JsonResponse(
@@ -247,7 +247,7 @@ def api_points(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["PUT", "DELETE"])
 def api_point_detail(request: HttpRequest, point_id: str) -> JsonResponse:
     """Update (PUT) or delete (DELETE) a specific point."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     if request.method == "DELETE":
         try:
@@ -288,7 +288,7 @@ def api_next_id(request: HttpRequest) -> JsonResponse:
     if not tag:
         return JsonResponse({"error": "Missing required parameter: tag"}, status=400)
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     try:
         next_id = state.get_next_id(tag)
         return JsonResponse({"tag": tag, "next_id": next_id})
@@ -305,7 +305,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid coordinate parameters"}, status=400)
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     coords = state.get_geo_coords(pixel_x, pixel_y)
     if coords:
         return JsonResponse(
@@ -332,7 +332,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
     """Save points to the GCP repository."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     state.save_to_repo(GCPS_DIR)
     return JsonResponse({"saved": True, "count": len(state.registry.points)})
 
@@ -350,7 +350,7 @@ def api_import(request: HttpRequest) -> JsonResponse:
     if not map_id or not isinstance(map_id, str):
         return JsonResponse({"error": "Missing or invalid field: map_id"}, status=422)
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     state.load_from_repo(GCPS_DIR, map_id)
     return JsonResponse(
         {

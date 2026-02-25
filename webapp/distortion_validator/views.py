@@ -44,6 +44,8 @@ from homography_web.frame_utils import (
     CALIBRATIONS_DIR,
     WEBAPP_DIR,
     get_frame_image_path,
+    get_map_from_tenant_id,
+    get_tenant_id,
     image_filename_to_frame,
     list_image_filenames,
 )
@@ -115,8 +117,13 @@ def api_images(request: HttpRequest) -> JsonResponse:
     try:
         images: list[dict[str, str]] = []
 
-        # Images from captured-frame repo
-        for filename in list_image_filenames():
+        # Images from captured-frame repo (filtered by tenant)
+        try:
+            map_entity = get_map_from_tenant_id(get_tenant_id(request))
+            map_id = map_entity.id if map_entity else None
+        except ValueError:
+            map_id = None
+        for filename in list_image_filenames(map_id):
             images.append(
                 {
                     "name": filename,

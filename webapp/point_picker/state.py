@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path  # noqa: TC003 - used at runtime
 
 import tifffile
-from homography_web.frame_utils import extract_geotiff
+from homography_web.frame_utils import (
+    DATA_MAPS_DIR,
+    GCPS_DIR,
+    extract_geotiff,
+    get_map_from_tenant_id,
+)
 from PIL import Image
 
 from poc_homography.domain.vo.geotiff import GeoTiff
@@ -194,34 +199,45 @@ class PointPickerState:
         return None
 
 
-# Module-level state
-_state: PointPickerState | None = None
+# Per-tenant state (lazily initialized)
+_states: dict[str, PointPickerState] = {}
 
 
-def initialize_state(
-    image_path: Path,
-    geotiff: GeoTiff | None = None,
-    *,
-    width: int | None = None,
-    height: int | None = None,
-) -> None:
-    """Initialize the module-level state.
+def get_state(tenant_id: str) -> PointPickerState:
+    """Get or lazily initialize state for a tenant.
 
     Args:
-        image_path: Path to the image file (PNG, TIFF, etc.).
-        geotiff: Optional GeoTiff VO with geotransform and CRS.
-        width: Image width in pixels (avoids file I/O when provided).
-        height: Image height in pixels (avoids file I/O when provided).
+        tenant_id: Tenant identifier.
+
+    Returns:
+        PointPickerState for the given tenant.
+
+    Raises:
+        RuntimeError: If no map is configured for the tenant or map file not found.
     """
-    global _state
-    _state = PointPickerState(image_path, geotiff=geotiff, width=width, height=height)
+    if tenant_id in _states:
+        return _states[tenant_id]
 
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
+        raise RuntimeError(f"No map configured for tenant: {tenant_id}")
 
-def get_state() -> PointPickerState:
-    """Get the current application state."""
-    if _state is None:
-        raise RuntimeError("Application not initialized. Call initialize_state() first.")
-    return _state
+    map_file = DATA_MAPS_DIR / map_entity.photo.path
+    if not map_file.exists():
+        raise RuntimeError(f"Map file not found: {map_file}")
+
+    state = PointPickerState(
+        map_file,
+        width=int(map_entity.photo.width),
+        height=int(map_entity.photo.height),
+    )
+
+    # Load GCPs for this tenant's map only
+    if GCPS_DIR.exists():
+        state.load_from_repo(GCPS_DIR, map_entity.id)
+
+    _states[tenant_id] = state
+    return state
 
 
 def get_tag_from_id(point_id: str) -> str:

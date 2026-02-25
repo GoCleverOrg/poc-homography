@@ -12,7 +12,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-from homography_web.frame_utils import LINES_DIR, normalize_array
+from homography_web.frame_utils import LINES_DIR, get_tenant_id, normalize_array
 from PIL import Image
 
 from .state import from_line_repo, get_state, list_line_map_ids, save_to_line_repo
@@ -26,7 +26,7 @@ def index(request: HttpRequest) -> HttpResponse:
 @require_GET
 def api_image_info(request: HttpRequest) -> JsonResponse:
     """Get image metadata."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     return JsonResponse(
         {
             "width": state.width,
@@ -57,7 +57,7 @@ def api_image_tile(request: HttpRequest) -> HttpResponse:
     except (TypeError, ValueError):
         return JsonResponse({"error": "Invalid tile parameters"}, status=400)
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     # Calculate max level for the pyramid
     max_level = math.ceil(math.log2(max(state.width, state.height)))
@@ -143,7 +143,7 @@ def api_image_full(request: HttpRequest) -> HttpResponse:
     except (TypeError, ValueError):
         max_size = 2048
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     suffix = state.geotiff_path.suffix.lower()
     if suffix in (".tif", ".tiff"):
@@ -196,7 +196,7 @@ def api_lines(request: HttpRequest) -> JsonResponse:
 
     Lines are defined by their own pixel coordinate endpoints, independent of GCPs.
     """
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     if request.method == "GET":
         # Build line data with pixel coordinates
@@ -266,7 +266,7 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     PUT updates the coordinate endpoints of the line.
     DELETE removes the line.
     """
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     if request.method == "DELETE":
         try:
@@ -329,7 +329,7 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
 @require_GET
 def api_next_line_id(request: HttpRequest) -> JsonResponse:
     """Get the next auto-generated line ID."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     next_id = state.get_next_id()
     return JsonResponse({"next_id": next_id})
 
@@ -345,7 +345,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     Returns:
         easting and northing in map coordinates (if geotransform available)
     """
-    state = get_state()
+    state = get_state(get_tenant_id(request))
 
     try:
         pixel_x = float(request.GET.get("pixel_x", 0))
@@ -378,7 +378,7 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
     """Save lines to the DDD line repository."""
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     save_to_line_repo(state.lines, state.map_id, LINES_DIR)
     return JsonResponse({"saved": True, "count": len(state.lines)})
 
@@ -396,7 +396,7 @@ def api_import(request: HttpRequest) -> JsonResponse:
     if not map_id:
         return JsonResponse({"error": "map_id is required"}, status=400)
 
-    state = get_state()
+    state = get_state(get_tenant_id(request))
     repo_lines = from_line_repo(LINES_DIR, map_id)
     state.lines = repo_lines
     return JsonResponse({"map_id": map_id, "count": len(state.lines)})

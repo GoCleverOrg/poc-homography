@@ -13,7 +13,6 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 from homography_web.frame_utils import (
     GCPS_DIR,
-    get_default_tenant_id,
     get_map_repo,
     get_tenant_repo,
 )
@@ -22,23 +21,17 @@ from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.map_points.gcp_registry import from_gcp_repo, list_map_ids
 
 
-def _load_registry(map_id: str | None = None) -> GCPRegistry:
+def _load_registry(map_id: str) -> GCPRegistry:
     """Load GCPRegistry from repository.
 
     Args:
-        map_id: Map identifier. If None, uses the first available map.
+        map_id: Map identifier (required — no cross-tenant fallback).
 
     Returns:
-        Loaded GCPRegistry, or empty registry if no maps exist.
+        Loaded GCPRegistry, or empty registry if directory or map not found.
     """
     if not GCPS_DIR.exists():
-        return GCPRegistry(map_id="default", points={})
-
-    if map_id is None:
-        available = list_map_ids(GCPS_DIR)
-        if not available:
-            return GCPRegistry(map_id="default", points={})
-        map_id = available[0]
+        return GCPRegistry(map_id=map_id, points={})
 
     return from_gcp_repo(GCPS_DIR, map_id)
 
@@ -51,7 +44,7 @@ def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
 def index(request: HttpRequest) -> HttpResponse:
     """Landing page with links to tools and tenant selector."""
     tenants = get_tenant_repo().get_all()
-    current_tenant_id = request.GET.get("tenant_id", get_default_tenant_id())
+    current_tenant_id = request.GET.get("tenant_id") or (tenants[0].id if tenants else "")
 
     # Get maps for the current tenant
     maps = get_map_repo().get_by_tenant(current_tenant_id)
@@ -78,7 +71,9 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     Since MapPoints use pixel coordinates (not GPS), this shows a
     list view rather than a geographic map.
     """
-    map_id = request.GET.get("map_id")
+    map_id = request.GET.get("map_id", "")
+    if not map_id:
+        return render(request, "gcp/debug_map.html", {"map_id": "", "points": [], "point_count": 0})
     registry = _load_registry(map_id)
 
     points_data = [_point_to_dict(pid, p) for pid, p in registry.points.items()]

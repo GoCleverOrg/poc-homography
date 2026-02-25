@@ -1,0 +1,15 @@
+id: icozee_cropped
+tenant_id: icozee
+photo:
+  path: icozee-cropped.tif
+  width: 3327
+  height: 2731
+geotiff:
+  geotransform:
+    origin_easting: 69315.30
+    pixel_width: 0.15
+    row_rotation: 0.0
+    origin_northing: 222999.00
+    col_rotation: 0.0
+    pixel_height: -0.15
+  crs: EPSG:31370

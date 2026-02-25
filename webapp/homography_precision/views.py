@@ -25,9 +25,9 @@ from homography_web.frame_utils import (
     GCPS_DIR,
     LINES_DIR,
     extract_geotiff,
-    get_default_map,
-    get_default_map_id,
     get_frame_image_path,
+    get_map_from_tenant_id,
+    get_tenant_id,
     image_filename_to_frame,
     list_frames,
     load_annotations_for_frame,
@@ -58,14 +58,15 @@ def _no_map_error() -> JsonResponse:
     )
 
 
-def _require_map_id() -> str | None:
-    """Return the default map ID, or None if no map is configured."""
-    return get_default_map_id()
+def _require_map_id(tenant_id: str) -> str | None:
+    """Return the map ID for a tenant, or None if no map is configured."""
+    entity = get_map_from_tenant_id(tenant_id)
+    return entity.id if entity else None
 
 
-def _get_map_geotiff_file() -> Path | None:
-    """Return path to the GeoTIFF file for the default map, or None."""
-    map_entity = get_default_map()
+def _get_map_geotiff_file(tenant_id: str) -> Path | None:
+    """Return path to the GeoTIFF file for the tenant's map, or None."""
+    map_entity = get_map_from_tenant_id(tenant_id)
     if map_entity is None:
         return None
     resolved = DATA_MAPS_DIR / map_entity.photo.path
@@ -74,25 +75,25 @@ def _get_map_geotiff_file() -> Path | None:
     return resolved
 
 
-# Cached line registry
-_line_registry_cache: list[Line] | None = None
+# Per-tenant cached line registry
+_line_registry_cache: dict[str, list[Line]] = {}
 
 
-def _load_line_registry() -> list[Line]:
+def _load_line_registry(tenant_id: str) -> list[Line]:
     """Load and cache line registry from DDD repo."""
-    global _line_registry_cache
-    if _line_registry_cache is None:
-        map_id = get_default_map_id()
-        if map_id is None:
-            return []
-        _line_registry_cache = from_line_repo(LINES_DIR, map_id)
-    return _line_registry_cache
+    if tenant_id in _line_registry_cache:
+        return _line_registry_cache[tenant_id]
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
+        return []
+    lines = from_line_repo(LINES_DIR, map_entity.id)
+    _line_registry_cache[tenant_id] = lines
+    return lines
 
 
 def _invalidate_line_registry_cache() -> None:
     """Clear the local line registry cache."""
-    global _line_registry_cache
-    _line_registry_cache = None
+    _line_registry_cache.clear()
 
 
 # Cache for image dimensions to avoid repeatedly opening files
@@ -193,17 +194,20 @@ def _get_camera_info(test_case_name: str) -> ImageInfoCache | None:
     return info
 
 
-def _get_map_info() -> ImageInfoCache | None:
+def _get_map_info(tenant_id: str) -> ImageInfoCache | None:
     """Get cached map GeoTIFF info, loading if necessary.
+
+    Args:
+        tenant_id: Tenant identifier for map lookup.
 
     Returns:
         Image info dict or None if not found.
     """
-    cache_key = "map:geotiff"
+    cache_key = f"map:geotiff:{tenant_id}"
     if cache_key in _image_info_cache:
         return _image_info_cache[cache_key]
 
-    geotiff_path = _get_map_geotiff_file()
+    geotiff_path = _get_map_geotiff_file(tenant_id)
     if geotiff_path is None or not geotiff_path.exists():
         return None
 
@@ -246,7 +250,9 @@ def api_test_cases(request: HttpRequest) -> JsonResponse:
         {"test_cases": [{"name": "...", "image": "...", "annotation_count": N}, ...]}
     """
     repo = _get_frame_repo()
-    frames = list_frames()
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    map_id = map_entity.id if map_entity else None
+    frames = list_frames(map_id)
     if not frames:
         return JsonResponse({"error": "No captured frames found"}, status=404)
 
@@ -410,7 +416,8 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         )
 
     # Load GCP registry from repository
-    map_id = _require_map_id()
+    tenant_id = get_tenant_id(request)
+    map_id = _require_map_id(tenant_id)
     if map_id is None:
         return _no_map_error()
     try:
@@ -562,7 +569,8 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
         JSON with registry data:
         {"map_id": "...", "points": {"PS1": {"pixel_x": ..., "pixel_y": ...}, ...}}
     """
-    map_id = _require_map_id()
+    tenant_id = get_tenant_id(request)
+    map_id = _require_map_id(tenant_id)
     if map_id is None:
         return _no_map_error()
     try:
@@ -659,7 +667,8 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
         JSON with line registry data:
         {"map_id": "...", "lines": [{"line_id": "L1", "start_x": 100.0, "start_y": 200.0, "end_x": 300.0, "end_y": 400.0}, ...]}
     """
-    lines = _load_line_registry()
+    tenant_id = get_tenant_id(request)
+    lines = _load_line_registry(tenant_id)
     if not lines:
         return JsonResponse(
             {"error": "No lines found in line registry"},
@@ -668,7 +677,7 @@ def api_line_registry(request: HttpRequest) -> JsonResponse:
 
     return JsonResponse(
         {
-            "map_id": _require_map_id(),
+            "map_id": _require_map_id(tenant_id),
             "lines": [line.to_dict() for line in lines],
         }
     )
@@ -731,7 +740,8 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
         )
 
     # Load line registry from DDD repo
-    lines = _load_line_registry()
+    tenant_id = get_tenant_id(request)
+    lines = _load_line_registry(tenant_id)
     if not lines:
         return JsonResponse(
             {"success": False, "error": "No lines found in line registry"},
@@ -741,7 +751,7 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
     line_registry = {line.line_id: line.to_dict() for line in lines}
 
     # Compute homography from lines
-    map_id = _require_map_id()
+    map_id = _require_map_id(tenant_id)
     if map_id is None:
         return _no_map_error()
     try:
@@ -828,7 +838,8 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         )
 
     # Load line registry from DDD repo (needed for both approaches)
-    lines = _load_line_registry()
+    tenant_id = get_tenant_id(request)
+    lines = _load_line_registry(tenant_id)
     if not lines:
         return JsonResponse(
             {"success": False, "error": "No lines found in line registry"},
@@ -851,7 +862,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
 
-        map_id = _require_map_id()
+        map_id = _require_map_id(tenant_id)
         if map_id is None:
             return _no_map_error()
         try:
@@ -901,7 +912,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         # Load GCP registry from repository
-        map_id_for_gcps = _require_map_id()
+        map_id_for_gcps = _require_map_id(tenant_id)
         if map_id_for_gcps is None:
             return _no_map_error()
         try:
@@ -1107,10 +1118,11 @@ def api_map_info(request: HttpRequest) -> JsonResponse:
     Returns:
         JSON with image info: {"width": N, "height": N, "filename": "...", "geotransform": [...], "crs": "..."}
     """
-    info = _get_map_info()
+    tenant_id = get_tenant_id(request)
+    info = _get_map_info(tenant_id)
     if info is None:
         return JsonResponse(
-            {"error": f"Map GeoTIFF not found: {_get_map_geotiff_file()}"},
+            {"error": f"Map GeoTIFF not found: {_get_map_geotiff_file(tenant_id)}"},
             status=404,
         )
 
@@ -1250,10 +1262,11 @@ def api_map_tile(request: HttpRequest) -> HttpResponse:
         return JsonResponse({"error": "Invalid tile parameters"}, status=400)
 
     # Get map info
-    info = _get_map_info()
+    tenant_id = get_tenant_id(request)
+    info = _get_map_info(tenant_id)
     if info is None:
         return JsonResponse(
-            {"error": f"Map GeoTIFF not found: {_get_map_geotiff_file()}"},
+            {"error": f"Map GeoTIFF not found: {_get_map_geotiff_file(tenant_id)}"},
             status=404,
         )
 
@@ -1287,7 +1300,7 @@ def api_map_tile(request: HttpRequest) -> HttpResponse:
         return HttpResponse(buffer.getvalue(), content_type="image/png")
 
     # Read from TIFF using tifffile
-    with tifffile.TiffFile(_get_map_geotiff_file()) as tif:
+    with tifffile.TiffFile(_get_map_geotiff_file(tenant_id)) as tif:
         page = tif.pages[0]
         data = page.asarray()
 

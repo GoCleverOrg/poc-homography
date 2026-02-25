@@ -426,12 +426,22 @@ def api_calibration_ids(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
-    """List available CalibrationLineTraceSet entity names."""
+    """List available line trace sources.
+
+    Merges CalibrationLineTraceSet entity names with LineAnnotation frame
+    groups so that annotations created via camera_line_annotator also appear.
+    """
     try:
         repo = _get_line_trace_set_repo()
         entities = repo.get_all()
         names = sorted(e.name for e in entities)
-        return JsonResponse({"names": names})
+
+        # Also include LineAnnotation entities grouped by frame_id
+        from homography_web.frame_utils import get_line_annotation_repo
+
+        frame_ids = sorted({ann.frame_id for ann in get_line_annotation_repo().get_all()})
+
+        return JsonResponse({"names": names + frame_ids})
     except Exception:
         logger.exception("Failed to list line trace sets")
         return JsonResponse({"error": "Failed to list line trace sets"}, status=500)
@@ -439,23 +449,47 @@ def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_line_trace_set_detail(request: HttpRequest) -> JsonResponse:
-    """Load a CalibrationLineTraceSet by name and return its line traces."""
+    """Load line traces by name.
+
+    First tries CalibrationLineTraceSet entities, then falls back to
+    LineAnnotation entities grouped by frame_id.
+    """
     name = request.GET.get("name", "")
     if not name:
         return JsonResponse({"error": "Missing name"}, status=400)
 
     try:
+        # Try CalibrationLineTraceSet first
         repo = _get_line_trace_set_repo()
         entity = repo.get(name)
-        if entity is None:
-            return JsonResponse({"error": f"Not found: {name}"}, status=404)
+        if entity is not None:
+            return JsonResponse(
+                {
+                    "name": entity.name,
+                    "line_traces": [lt.to_dict() for lt in entity.line_traces],
+                }
+            )
 
-        return JsonResponse(
-            {
-                "name": entity.name,
-                "line_traces": [lt.to_dict() for lt in entity.line_traces],
-            }
-        )
+        # Fall back to LineAnnotation entities matching this frame_id
+        from homography_web.frame_utils import get_line_annotation_repo
+
+        frame_anns = [
+            ann for ann in get_line_annotation_repo().get_all() if ann.frame_id == name
+        ]
+        if frame_anns:
+            line_traces = []
+            for ann in frame_anns:
+                if ann.points is not None:
+                    points = [[float(p.x), float(p.y)] for p in ann.points]
+                else:
+                    points = [
+                        [float(ann.start_pixel.x), float(ann.start_pixel.y)],
+                        [float(ann.end_pixel.x), float(ann.end_pixel.y)],
+                    ]
+                line_traces.append({"line_id": ann.line_id, "points": points})
+            return JsonResponse({"name": name, "line_traces": line_traces})
+
+        return JsonResponse({"error": f"Not found: {name}"}, status=404)
     except Exception:
         logger.exception("Failed to load line trace set %s", name)
         return JsonResponse({"error": "Failed to load line trace set"}, status=500)

@@ -563,6 +563,19 @@
         // API base URL
         const API_BASE = '{% url "camera_line_annotator:index" %}';
 
+        // Tenant-aware URL helper: appends ?tenant_id=... to all API calls
+        const TENANT_ID = new URLSearchParams(window.location.search).get('tenant_id');
+        if (!TENANT_ID) throw new Error('Missing required ?tenant_id= query parameter');
+        function withTenant(url) {
+            const sep = url.includes('?') ? '&' : '?';
+            return `${url}${sep}tenant_id=${encodeURIComponent(TENANT_ID)}`;
+        }
+        const _origFetch = window.fetch;
+        window.fetch = function(input, init) {
+            if (typeof input === 'string') input = withTenant(input);
+            return _origFetch.call(this, input, init);
+        };
+
         // State
         let lineIds = [];
         let annotations = [];
@@ -1704,7 +1717,7 @@
                         updateYamlPreview();
                         updateExportButton();
                     };
-                    img.src = '{% url "camera_line_annotator:serve_image" %}?t=' + Date.now();
+                    img.src = withTenant('{% url "camera_line_annotator:serve_image" %}?t=' + Date.now());
 
                     exportStatus.textContent = '';
                 } else {
@@ -1719,6 +1732,9 @@
         imageSelector.addEventListener('change', (e) => {
             switchImage(e.target.value);
         });
+
+        // Fix initial image src with tenant_id
+        if (TENANT_ID) img.src = withTenant(img.src);
 
         // Initialize
         img.onload = function() {

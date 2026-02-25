@@ -7,6 +7,7 @@ from pathlib import Path  # noqa: TC003 - used at runtime
 from typing import TYPE_CHECKING
 
 import tifffile
+from homography_web.frame_utils import DATA_MAPS_DIR, get_map_from_tenant_id
 from PIL import Image
 
 from poc_homography.infrastructure.repositories import RepoYamlLine
@@ -200,50 +201,41 @@ class LinePickerState:
         return None
 
 
-# Module-level state
-_state: LinePickerState | None = None
+# Per-tenant state (lazily initialized)
+_states: dict[str, LinePickerState] = {}
 
 
-def initialize_state(
-    image_path: Path,
-    map_id: str,
-    geotiff: GeoTiff | None = None,
-    *,
-    width: int | None = None,
-    height: int | None = None,
-) -> None:
-    """Initialize the module-level state.
+def get_state(tenant_id: str) -> LinePickerState:
+    """Get or lazily initialize state for a tenant.
 
     Args:
-        image_path: Path to the map image file (PNG, TIFF, etc.).
-        map_id: Map identifier for tagging saved line files.
-        geotiff: Optional GeoTiff VO with geotransform and CRS.
-        width: Image width in pixels (avoids file I/O when provided).
-        height: Image height in pixels (avoids file I/O when provided).
-    """
-    global _state
-
-    _state = LinePickerState(
-        image_path,
-        map_id,
-        geotiff=geotiff,
-        width=width,
-        height=height,
-    )
-
-
-def get_state() -> LinePickerState:
-    """Get the current application state.
+        tenant_id: Tenant identifier.
 
     Returns:
-        Current LinePickerState instance.
+        LinePickerState for the given tenant.
 
     Raises:
-        RuntimeError: If state has not been initialized.
+        RuntimeError: If no map is configured for the tenant or map file not found.
     """
-    if _state is None:
-        raise RuntimeError("Application not initialized. Call initialize_state() first.")
-    return _state
+    if tenant_id in _states:
+        return _states[tenant_id]
+
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
+        raise RuntimeError(f"No map configured for tenant: {tenant_id}")
+
+    map_file = DATA_MAPS_DIR / map_entity.photo.path
+    if not map_file.exists():
+        raise RuntimeError(f"Map file not found: {map_file}")
+
+    state = LinePickerState(
+        map_file,
+        map_entity.id,
+        width=int(map_entity.photo.width),
+        height=int(map_entity.photo.height),
+    )
+    _states[tenant_id] = state
+    return state
 
 
 # ---------------------------------------------------------------------------
