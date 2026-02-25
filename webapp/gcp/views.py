@@ -74,6 +74,14 @@ def debug_map(request: HttpRequest) -> HttpResponse:
     map_id = request.GET.get("map_id", "")
     if not map_id:
         return render(request, "gcp/debug_map.html", {"map_id": "", "points": [], "point_count": 0})
+
+    # Validate map_id belongs to tenant
+    tenant_id = request.GET.get("tenant_id", "")
+    if tenant_id:
+        tenant_maps = get_map_repo().get_by_tenant(tenant_id)
+        if map_id not in tenant_maps:
+            return render(request, "gcp/debug_map.html", {"map_id": map_id, "points": [], "point_count": 0})
+
     registry = _load_registry(map_id)
 
     points_data = [_point_to_dict(pid, p) for pid, p in registry.points.items()]
@@ -107,7 +115,13 @@ def api_tenant_maps(request: HttpRequest, tenant_id: str) -> JsonResponse:
 
 @require_GET
 def api_map_ids(request: HttpRequest) -> JsonResponse:
-    """Return available map IDs from the GCP repository."""
+    """Return available map IDs from the GCP repository, filtered by tenant."""
     if not GCPS_DIR.exists():
         return JsonResponse({"map_ids": []})
+    tenant_id = request.GET.get("tenant_id", "")
+    if tenant_id:
+        tenant_maps = get_map_repo().get_by_tenant(tenant_id)
+        tenant_map_ids = set(tenant_maps)
+        all_ids = list_map_ids(GCPS_DIR)
+        return JsonResponse({"map_ids": [mid for mid in all_ids if mid in tenant_map_ids]})
     return JsonResponse({"map_ids": list_map_ids(GCPS_DIR)})

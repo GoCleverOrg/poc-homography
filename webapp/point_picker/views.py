@@ -12,7 +12,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-from homography_web.frame_utils import GCPS_DIR, get_tenant_id, normalize_array
+from homography_web.frame_utils import GCPS_DIR, get_map_from_tenant_id, get_tenant_id, normalize_array
 from PIL import Image
 
 from .state import get_state, get_tag_from_id
@@ -350,7 +350,13 @@ def api_import(request: HttpRequest) -> JsonResponse:
     if not map_id or not isinstance(map_id, str):
         return JsonResponse({"error": "Missing or invalid field: map_id"}, status=422)
 
-    state = get_state(get_tenant_id(request))
+    tenant_id = get_tenant_id(request)
+    # Validate map_id belongs to this tenant
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None or map_entity.id != map_id:
+        return JsonResponse({"error": f"map_id {map_id!r} does not belong to this tenant"}, status=403)
+
+    state = get_state(tenant_id)
     state.load_from_repo(GCPS_DIR, map_id)
     return JsonResponse(
         {
@@ -362,9 +368,13 @@ def api_import(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_registries(request: HttpRequest) -> JsonResponse:
-    """Return available map IDs from the GCP repository."""
+    """Return available map IDs from the GCP repository, filtered by tenant."""
     from poc_homography.map_points.gcp_registry import list_map_ids
 
     if not GCPS_DIR.exists():
         return JsonResponse({"map_ids": []})
-    return JsonResponse({"map_ids": list_map_ids(GCPS_DIR)})
+    tenant_id = get_tenant_id(request)
+    map_entity = get_map_from_tenant_id(tenant_id)
+    tenant_map_ids = {map_entity.id} if map_entity else set()
+    all_ids = list_map_ids(GCPS_DIR)
+    return JsonResponse({"map_ids": [mid for mid in all_ids if mid in tenant_map_ids]})
