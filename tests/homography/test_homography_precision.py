@@ -37,13 +37,13 @@ from poc_homography.pixel_point import PixelPoint
 # Test Data Paths - Update these to point to your test data
 # =============================================================================
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
-
-pytestmark = pytest.mark.skipif(
-    not TEST_DATA_DIR.is_dir() or not any(TEST_DATA_DIR.glob("*.yaml")),
-    reason="DVC test data not available (run 'poe dvc-pull')",
-)
 MAP_POINTS_FILE = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
 ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
+
+pytestmark = pytest.mark.skipif(
+    not MAP_POINTS_FILE.exists() or not ANNOTATIONS_FILE.exists(),
+    reason="DVC test data not available (run 'poe dvc-pull')",
+)
 
 # Valte camera geotransform: 0.15 m/pixel in map space
 # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
