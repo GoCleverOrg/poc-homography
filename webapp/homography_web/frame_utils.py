@@ -220,6 +220,29 @@ def get_map_from_tenant_id(tenant_id: str) -> Map | None:
     return None
 
 
+def resolve_map_for_tenant(tenant_id: str) -> tuple[Map, Path]:
+    """Look up the Map entity for *tenant_id* and verify its image file.
+
+    Args:
+        tenant_id: Tenant identifier.
+
+    Returns:
+        Tuple of (Map entity, absolute Path to the map image file).
+
+    Raises:
+        RuntimeError: If no map is configured or the file is missing.
+    """
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
+        raise RuntimeError(f"No map configured for tenant: {tenant_id}")
+
+    map_file = DATA_MAPS_DIR / map_entity.photo.path
+    if not map_file.exists():
+        raise RuntimeError(f"Map file not found: {map_file}")
+
+    return map_entity, map_file
+
+
 def get_map_image_path(map_id: str) -> Path:
     """Return the absolute path to the GeoTIFF (or other image) for a map.
 

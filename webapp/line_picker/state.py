@@ -7,7 +7,7 @@ from pathlib import Path  # noqa: TC003 - used at runtime
 from typing import TYPE_CHECKING
 
 import tifffile
-from homography_web.frame_utils import DATA_MAPS_DIR, get_map_from_tenant_id, register_invalidation_callback
+from homography_web.frame_utils import register_invalidation_callback, resolve_map_for_tenant
 from PIL import Image
 
 from poc_homography.infrastructure.repositories import RepoYamlLine
@@ -220,13 +220,7 @@ def get_state(tenant_id: str) -> LinePickerState:
     if tenant_id in _states:
         return _states[tenant_id]
 
-    map_entity = get_map_from_tenant_id(tenant_id)
-    if map_entity is None:
-        raise RuntimeError(f"No map configured for tenant: {tenant_id}")
-
-    map_file = DATA_MAPS_DIR / map_entity.photo.path
-    if not map_file.exists():
-        raise RuntimeError(f"Map file not found: {map_file}")
+    map_entity, map_file = resolve_map_for_tenant(tenant_id)
 
     state = LinePickerState(
         map_file,

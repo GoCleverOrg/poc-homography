@@ -51,7 +51,6 @@ def load_lines_registry(tenant_id: str) -> dict:
     if tenant_id in _lines_registry_cache:
         return _lines_registry_cache[tenant_id]
 
-    from homography_web.frame_utils import get_map_from_tenant_id
     from line_picker.state import from_line_repo
 
     try:
