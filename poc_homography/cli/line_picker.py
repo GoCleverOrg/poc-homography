@@ -52,7 +52,7 @@ def serve(
     Opens a web browser to create lines on a map using pixel coordinate endpoints.
 
     Example:
-        hom line-picker serve path/to/Cartografia_valencia.tif
+        hom line-picker serve data/maps/Cartografia_valencia.tif
         hom line-picker serve map.tif --map-id valte --port 8001
     """
     # Resolve to absolute path

@@ -140,16 +140,17 @@ def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> floa
     return float(np.linalg.norm(p - proj))
 
 
-def _get_camera_image_path(test_case_name: str) -> Path | None:
+def _get_camera_image_path(test_case_name: str, map_id: str | None = None) -> Path | None:
     """Get the path to the camera image for a test case.
 
     Args:
         test_case_name: Name of the test case.
+        map_id: If provided, only search frames belonging to this map.
 
     Returns:
         Path to the camera image, or None if not found.
     """
-    test_case = _load_test_case_by_name(test_case_name)
+    test_case = _load_test_case_by_name(test_case_name, map_id)
     if test_case is None:
         return None
 
@@ -163,11 +164,12 @@ def _get_camera_image_path(test_case_name: str) -> Path | None:
     return get_frame_image_path(frame)
 
 
-def _get_camera_info(test_case_name: str) -> ImageInfoCache | None:
+def _get_camera_info(test_case_name: str, map_id: str | None = None) -> ImageInfoCache | None:
     """Get cached camera image info, loading if necessary.
 
     Args:
         test_case_name: Name of the test case.
+        map_id: If provided, only search frames belonging to this map.
 
     Returns:
         Image info dict or None if not found.
@@ -176,7 +178,7 @@ def _get_camera_info(test_case_name: str) -> ImageInfoCache | None:
     if cache_key in _image_info_cache:
         return _image_info_cache[cache_key]
 
-    image_path = _get_camera_image_path(test_case_name)
+    image_path = _get_camera_image_path(test_case_name, map_id)
     if image_path is None or not image_path.exists():
         return None
 
@@ -283,7 +285,8 @@ def api_test_case_detail(request: HttpRequest, name: str) -> JsonResponse:
         JSON with full test case data:
         {"name": "...", "image": "...", "annotations": [{...}, ...]}
     """
-    tc = _load_test_case_by_name(name)
+    map_id = _require_map_id(get_tenant_id(request))
+    tc = _load_test_case_by_name(name, map_id)
     if tc is None:
         return JsonResponse(
             {"error": f"Test case not found: {name}"},
@@ -299,18 +302,19 @@ def api_test_case_detail(request: HttpRequest, name: str) -> JsonResponse:
     )
 
 
-def _load_test_case_by_name(name: str) -> dict | None:
+def _load_test_case_by_name(name: str, map_id: str | None = None) -> dict | None:
     """Load a test case by name from the CapturedFrame repo.
 
     Matches ``name`` against each frame's image stem (filename without extension).
 
     Args:
         name: Name of the test case (image filename stem).
+        map_id: If provided, only search frames belonging to this map.
 
     Returns:
         Legacy-format test case dict if found, None otherwise.
     """
-    for frame in list_frames():
+    for frame in list_frames(map_id):
         if frame.image_path.stem != name:
             continue
         annotations = load_annotations_for_frame(frame.id)
@@ -330,7 +334,7 @@ def _load_test_case_by_name(name: str) -> dict | None:
     return None
 
 
-def _load_line_test_case_by_name(name: str) -> dict | None:
+def _load_line_test_case_by_name(name: str, map_id: str | None = None) -> dict | None:
     """Load a line test case by name from the DDD repos.
 
     For line test cases the ``name`` convention is ``{image_stem}_lines``.
@@ -339,6 +343,7 @@ def _load_line_test_case_by_name(name: str) -> dict | None:
 
     Args:
         name: Name of the line test case (e.g. ``valte_102.5_20.7_1_20260115_112639_lines``).
+        map_id: If provided, only search frames belonging to this map.
 
     Returns:
         Legacy-format line test case dict if found, None otherwise.
@@ -346,7 +351,7 @@ def _load_line_test_case_by_name(name: str) -> dict | None:
     # Strip trailing _lines suffix if present
     stem = name.removesuffix("_lines") if name.endswith("_lines") else name
 
-    for frame in list_frames():
+    for frame in list_frames(map_id):
         if frame.image_path.stem != stem:
             continue
         line_anns = load_line_annotations_for_frame(frame.id)
@@ -400,8 +405,12 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
+    # Load GCP registry from repository
+    tenant_id = get_tenant_id(request)
+    map_id = _require_map_id(tenant_id)
+
     # Load test case
-    test_case = _load_test_case_by_name(test_case_name)
+    test_case = _load_test_case_by_name(test_case_name, map_id)
     if test_case is None:
         return JsonResponse(
             {"success": False, "error": f"Test case not found: {test_case_name}"},
@@ -414,10 +423,6 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
             {"success": False, "error": f"Need at least 4 annotations, got {len(annotations)}"},
             status=400,
         )
-
-    # Load GCP registry from repository
-    tenant_id = get_tenant_id(request)
-    map_id = _require_map_id(tenant_id)
     if map_id is None:
         return _no_map_error()
     try:
@@ -606,8 +611,9 @@ def api_line_test_cases(request: HttpRequest) -> JsonResponse:
         JSON with list of line test cases:
         {"test_cases": [{"name": "...", "image": "...", "line_annotation_count": N}, ...]}
     """
+    map_id = _require_map_id(get_tenant_id(request))
     test_cases = []
-    for frame in list_frames():
+    for frame in list_frames(map_id):
         line_anns = load_line_annotations_for_frame(frame.id)
         if not line_anns:
             continue
@@ -639,7 +645,8 @@ def api_line_test_case_detail(request: HttpRequest, name: str) -> JsonResponse:
         JSON with full line test case data including point_annotations_ref:
         {"name": "...", "image": "...", "point_annotations_ref": "...", "line_annotations": [{...}, ...]}
     """
-    tc = _load_line_test_case_by_name(name)
+    map_id = _require_map_id(get_tenant_id(request))
+    tc = _load_line_test_case_by_name(name, map_id)
     if tc is None:
         return JsonResponse(
             {"error": f"Line test case not found: {name}"},
@@ -712,9 +719,13 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
     test_case_name = body.get("test_case_name")
     line_annotations = body.get("line_annotations")
 
+    # Load line registry from DDD repo
+    tenant_id = get_tenant_id(request)
+    map_id = _require_map_id(tenant_id)
+
     if test_case_name:
         # Load line test case
-        line_test_case = _load_line_test_case_by_name(test_case_name)
+        line_test_case = _load_line_test_case_by_name(test_case_name, map_id)
         if line_test_case is None:
             return JsonResponse(
                 {"success": False, "error": f"Line test case not found: {test_case_name}"},
@@ -739,8 +750,6 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    # Load line registry from DDD repo
-    tenant_id = get_tenant_id(request)
     lines = _load_line_registry(tenant_id)
     if not lines:
         return JsonResponse(
@@ -751,7 +760,6 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
     line_registry = {line.line_id: line.to_dict() for line in lines}
 
     # Compute homography from lines
-    map_id = _require_map_id(tenant_id)
     if map_id is None:
         return _no_map_error()
     try:
@@ -823,7 +831,9 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         )
 
     # Load line test case
-    line_test_case = _load_line_test_case_by_name(test_case_name)
+    tenant_id = get_tenant_id(request)
+    map_id = _require_map_id(tenant_id)
+    line_test_case = _load_line_test_case_by_name(test_case_name, map_id)
     if line_test_case is None:
         return JsonResponse(
             {"success": False, "error": f"Line test case not found: {test_case_name}"},
@@ -838,7 +848,6 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         )
 
     # Load line registry from DDD repo (needed for both approaches)
-    tenant_id = get_tenant_id(request)
     lines = _load_line_registry(tenant_id)
     if not lines:
         return JsonResponse(
@@ -891,7 +900,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
         # Load the referenced point test case
-        point_test_case = _load_test_case_by_name(point_annotations_ref)
+        point_test_case = _load_test_case_by_name(point_annotations_ref, map_id)
         if point_test_case is None:
             return JsonResponse(
                 {
@@ -1092,7 +1101,8 @@ def api_camera_info(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    info = _get_camera_info(test_case_name)
+    map_id = _require_map_id(get_tenant_id(request))
+    info = _get_camera_info(test_case_name, map_id)
     if info is None:
         return JsonResponse(
             {"error": f"Test case not found or image missing: {test_case_name}"},
@@ -1175,14 +1185,15 @@ def api_camera_tile(request: HttpRequest) -> HttpResponse:
         return JsonResponse({"error": "Invalid tile parameters"}, status=400)
 
     # Get image info and path
-    info = _get_camera_info(test_case_name)
+    map_id = _require_map_id(get_tenant_id(request))
+    info = _get_camera_info(test_case_name, map_id)
     if info is None:
         return JsonResponse(
             {"error": f"Test case not found or image missing: {test_case_name}"},
             status=404,
         )
 
-    image_path = _get_camera_image_path(test_case_name)
+    image_path = _get_camera_image_path(test_case_name, map_id)
     if image_path is None or not image_path.exists():
         return JsonResponse(
             {"error": f"Camera image not found for test case: {test_case_name}"},
