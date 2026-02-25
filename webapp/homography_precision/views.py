@@ -32,6 +32,7 @@ from homography_web.frame_utils import (
     list_frames,
     load_annotations_for_frame,
     load_line_annotations_for_frame,
+    register_invalidation_callback,
 )
 from homography_web.frame_utils import (
     get_frame_repo as _get_frame_repo,
@@ -108,6 +109,9 @@ class ImageInfoCache(TypedDict):
 
 
 _image_info_cache: dict[str, ImageInfoCache] = {}
+
+register_invalidation_callback(_line_registry_cache.clear)
+register_invalidation_callback(_image_info_cache.clear)
 
 
 def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:

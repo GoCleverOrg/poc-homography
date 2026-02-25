@@ -7,7 +7,7 @@ from pathlib import Path  # noqa: TC003 - used at runtime
 from typing import TYPE_CHECKING
 
 import tifffile
-from homography_web.frame_utils import DATA_MAPS_DIR, get_map_from_tenant_id
+from homography_web.frame_utils import DATA_MAPS_DIR, get_map_from_tenant_id, register_invalidation_callback
 from PIL import Image
 
 from poc_homography.infrastructure.repositories import RepoYamlLine
@@ -314,3 +314,7 @@ def list_line_map_ids(data_dir: Path) -> list[str]:
     repo = _get_line_repo(data_dir)
     all_lines = repo.get_all()
     return sorted({line.map_id for line in all_lines})
+
+
+register_invalidation_callback(_states.clear)
+register_invalidation_callback(_line_repo_cache.clear)

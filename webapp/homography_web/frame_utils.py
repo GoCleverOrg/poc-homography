@@ -25,6 +25,8 @@ from poc_homography.infrastructure.repositories import (
 )
 from poc_homography.types import Easting, Meters, Northing, Unitless
 
+from django.http import HttpResponse
+
 if TYPE_CHECKING:
     from django.http import HttpRequest
 
@@ -372,6 +374,14 @@ def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
     return results
 
 
+_invalidation_callbacks: list = []
+
+
+def register_invalidation_callback(cb) -> None:
+    """Register a callback to be called when caches are invalidated."""
+    _invalidation_callbacks.append(cb)
+
+
 def invalidate_cache() -> None:
     """Clear all module-level caches. Useful after saves."""
     global _annotation_repo, _frame_repo, _frames, _image_to_frame
@@ -384,3 +394,82 @@ def invalidate_cache() -> None:
     _line_anns_by_frame = None
     _tenant_repo = None
     _map_repo = None
+    for cb in _invalidation_callbacks:
+        cb()
+
+
+# ---------------------------------------------------------------------------
+# Shared image utilities (used by camera_annotator & camera_line_annotator)
+# ---------------------------------------------------------------------------
+
+
+def get_available_images(map_id: str | None = None) -> list[str]:
+    """Return available image filenames from the CapturedFrame repo."""
+    return list_image_filenames(map_id)
+
+
+def get_current_image(
+    request: HttpRequest,
+    session_key: str,
+    map_id: str | None = None,
+) -> str | None:
+    """Get the current image filename from session, or first available image.
+
+    Args:
+        request: Django HTTP request.
+        session_key: Session key used to store current image filename.
+        map_id: If provided, only consider images for this map.
+    """
+    session_image = request.session.get(session_key)
+    if session_image:
+        frame = image_filename_to_frame(session_image)
+        if frame is not None and (map_id is None or frame.map_id == map_id):
+            return session_image
+
+    images = get_available_images(map_id)
+    if images:
+        return images[0]
+
+    return None
+
+
+def serve_current_image(
+    request: HttpRequest,
+    session_key: str,
+    map_id: str | None = None,
+) -> HttpResponse:
+    """Serve the current image file for an annotator app.
+
+    Args:
+        request: Django HTTP request.
+        session_key: Session key used to store current image filename.
+        map_id: If provided, only consider images for this map.
+    """
+    import mimetypes
+
+    from django.http import FileResponse
+
+    current_image = get_current_image(request, session_key, map_id)
+    if not current_image:
+        return HttpResponse("No image available", status=404)
+
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return HttpResponse("Image not found", status=404)
+
+    resolved_path = get_frame_image_path(frame)
+    if not resolved_path.exists():
+        return HttpResponse("Image not found", status=404)
+
+    mime_type, _ = mimetypes.guess_type(str(resolved_path))
+    if not mime_type:
+        mime_type = "image/jpeg"
+
+    response = FileResponse(
+        open(resolved_path, "rb"),  # noqa: SIM115
+        content_type=mime_type,
+    )
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response

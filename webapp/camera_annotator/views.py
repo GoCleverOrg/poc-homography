@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import json
-import mimetypes
 
-from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     GCPS_DIR,
-    get_frame_image_path,
+    get_available_images,
+    get_current_image as _get_current_image,
     get_frame_repo,
     get_map_from_tenant_id,
     get_tenant_id,
     image_filename_to_frame,
     invalidate_cache,
-    list_image_filenames,
     load_annotations_for_frame,
+    serve_current_image,
     validate_image_filename,
 )
 
@@ -26,24 +26,9 @@ from homography_web.frame_utils import (
 SESSION_IMAGE_KEY = "camera_annotator_image"
 
 
-def get_available_images(map_id: str | None = None) -> list[str]:
-    """Return available image filenames from the CapturedFrame repo."""
-    return list_image_filenames(map_id)
-
-
 def get_current_image(request: HttpRequest, map_id: str | None = None) -> str | None:
     """Get the current image filename from session, or first available image."""
-    session_image = request.session.get(SESSION_IMAGE_KEY)
-    if session_image:
-        frame = image_filename_to_frame(session_image)
-        if frame is not None and (map_id is None or frame.map_id == map_id):
-            return session_image
-
-    images = get_available_images(map_id)
-    if images:
-        return images[0]
-
-    return None
+    return _get_current_image(request, SESSION_IMAGE_KEY, map_id)
 
 
 def load_gcps(tenant_id: str) -> list[dict]:
@@ -229,27 +214,4 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
 @require_GET
 def serve_image(request: HttpRequest) -> HttpResponse:
     """Serve the current image file."""
-    current_image = get_current_image(request)
-    if not current_image:
-        return HttpResponse("No image available", status=404)
-
-    frame = image_filename_to_frame(current_image)
-    if frame is None:
-        return HttpResponse("Image not found", status=404)
-
-    resolved_path = get_frame_image_path(frame)
-    if not resolved_path.exists():
-        return HttpResponse("Image not found", status=404)
-
-    mime_type, _ = mimetypes.guess_type(str(resolved_path))
-    if not mime_type:
-        mime_type = "image/jpeg"
-
-    response = FileResponse(
-        open(resolved_path, "rb"),
-        content_type=mime_type,
-    )
-    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response["Pragma"] = "no-cache"
-    response["Expires"] = "0"
-    return response
+    return serve_current_image(request, SESSION_IMAGE_KEY)

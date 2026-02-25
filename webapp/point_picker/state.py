@@ -10,6 +10,7 @@ from homography_web.frame_utils import (
     GCPS_DIR,
     extract_geotiff,
     get_map_from_tenant_id,
+    register_invalidation_callback,
 )
 from PIL import Image
 
@@ -253,3 +254,6 @@ def get_tag_from_id(point_id: str) -> str:
         if point_id.startswith(abbrev):
             return tag
     return "extra"
+
+
+register_invalidation_callback(_states.clear)
