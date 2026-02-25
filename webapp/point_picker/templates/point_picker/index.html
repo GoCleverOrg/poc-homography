@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -158,6 +159,7 @@
         </div>
     </div>
 
+    <script src="{% static 'js/tenant.js' %}"></script>
     <script>
         let viewer;
         let imageInfo;
@@ -171,18 +173,6 @@
         // API base URL for Django app
         const API_BASE = '/point-picker';
 
-        // Tenant-aware URL helper: appends ?tenant_id=... to all API calls
-        const TENANT_ID = new URLSearchParams(window.location.search).get('tenant_id');
-        if (!TENANT_ID) throw new Error('Missing required ?tenant_id= query parameter');
-        function withTenant(url) {
-            const sep = url.includes('?') ? '&' : '?';
-            return `${url}${sep}tenant_id=${encodeURIComponent(TENANT_ID)}`;
-        }
-        const _origFetch = window.fetch;
-        window.fetch = function(input, init) {
-            if (typeof input === 'string') input = withTenant(input);
-            return _origFetch.call(this, input, init);
-        };
 
         // Utility: debounce function for rate-limiting
         function debounce(func, wait) {

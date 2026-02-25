@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -690,6 +691,7 @@
     <!-- Hidden element to track current case -->
     <div id="current-case" style="display:none;">No test case loaded</div>
 
+    <script src="{% static 'js/tenant.js' %}"></script>
     <script>
         // Application State
         let cameraViewer = null;
@@ -713,19 +715,6 @@
 
         // API base URL
         const API_BASE = '/homography-precision';
-
-        // Tenant-aware URL helper: appends ?tenant_id=... to all API calls
-        const TENANT_ID = new URLSearchParams(window.location.search).get('tenant_id');
-        if (!TENANT_ID) throw new Error('Missing required ?tenant_id= query parameter');
-        function withTenant(url) {
-            const sep = url.includes('?') ? '&' : '?';
-            return `${url}${sep}tenant_id=${encodeURIComponent(TENANT_ID)}`;
-        }
-        const _origFetch = window.fetch;
-        window.fetch = function(input, init) {
-            if (typeof input === 'string') input = withTenant(input);
-            return _origFetch.call(this, input, init);
-        };
 
         // Utility functions
         function showStatus(message, type = 'info') {

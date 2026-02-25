@@ -61,6 +61,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "homography_web.middleware.TenantIdMiddleware",
 ]
 
 ROOT_URLCONF = "homography_web.urls"

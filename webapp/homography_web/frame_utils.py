@@ -178,6 +178,8 @@ def get_tenant_id(request: HttpRequest) -> str:
     tenant_id = request.GET.get("tenant_id")
     if not tenant_id:
         raise ValueError("Missing required query parameter: tenant_id")
+    if get_tenant_repo().get(tenant_id) is None:
+        raise ValueError(f"Unknown tenant_id: {tenant_id!r}")
     return tenant_id
 
 
