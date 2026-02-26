@@ -11,7 +11,6 @@ from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     GCPS_DIR,
     get_available_images,
-    get_current_image as _get_current_image,
     get_frame_repo,
     get_map_from_tenant_id,
     get_tenant_id,
@@ -20,6 +19,9 @@ from homography_web.frame_utils import (
     load_annotations_for_frame,
     serve_current_image,
     validate_image_filename,
+)
+from homography_web.frame_utils import (
+    get_current_image as _get_current_image,
 )
 
 # Session key for current image
@@ -94,9 +96,15 @@ def save_annotations_to_repo(
     get_frame_repo().save_annotations(frame.id, ann_entities)
 
 
+def _get_tenant_map_id(request: HttpRequest) -> str | None:
+    """Return the map_id for the current tenant, or None."""
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    return map_entity.id if map_entity else None
+
+
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     context = {
         "image_filename": current_image or "No images available",
     }
@@ -116,7 +124,7 @@ def api_gcps(request: HttpRequest) -> JsonResponse:
 @require_GET
 def api_annotations(request: HttpRequest) -> JsonResponse:
     """Get existing annotations for current image from the CapturedFrame repo."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse([], safe=False)
 
@@ -157,6 +165,11 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     if frame is None:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
+    # Validate frame belongs to the current tenant's map
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    if map_entity and frame.map_id != map_entity.id:
+        return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
+
     request.session[SESSION_IMAGE_KEY] = filename
 
     annotations = load_existing_annotations(filename)
@@ -179,7 +192,7 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
@@ -214,4 +227,4 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
 @require_GET
 def serve_image(request: HttpRequest) -> HttpResponse:
     """Serve the current image file."""
-    return serve_current_image(request, SESSION_IMAGE_KEY)
+    return serve_current_image(request, SESSION_IMAGE_KEY, _get_tenant_map_id(request))

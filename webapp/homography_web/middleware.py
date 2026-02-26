@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from django.http import JsonResponse
 
+from homography_web.frame_utils import TenantIdError
+
 
 class TenantIdMiddleware:
-    """Return 400 JSON for ValueError exceptions related to tenant_id."""
+    """Return 400 JSON for TenantIdError exceptions."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -15,6 +17,6 @@ class TenantIdMiddleware:
         return self.get_response(request)
 
     def process_exception(self, request, exception):
-        if isinstance(exception, ValueError) and "tenant_id" in str(exception):
+        if isinstance(exception, TenantIdError):
             return JsonResponse({"error": str(exception)}, status=400)
         return None

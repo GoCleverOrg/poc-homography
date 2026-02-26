@@ -34,7 +34,12 @@ from homography_web.calibration_utils import (
     save_calibration_to_repo,
     serialize_calibration_entry,
 )
-from homography_web.frame_utils import CALIBRATION_LINE_TRACES_DIR, CALIBRATIONS_DIR
+from homography_web.frame_utils import (
+    CALIBRATION_LINE_TRACES_DIR,
+    CALIBRATIONS_DIR,
+    get_map_from_tenant_id,
+    get_tenant_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -436,10 +441,15 @@ def api_line_trace_sets(request: HttpRequest) -> JsonResponse:
         entities = repo.get_all()
         names = sorted(e.name for e in entities)
 
-        # Also include LineAnnotation entities grouped by frame_id
+        # Also include LineAnnotation entities grouped by frame_id (filtered by tenant)
         from homography_web.frame_utils import get_line_annotation_repo
 
-        frame_ids = sorted({ann.frame_id for ann in get_line_annotation_repo().get_all()})
+        map_entity = get_map_from_tenant_id(get_tenant_id(request))
+        map_id = map_entity.id if map_entity else None
+        all_frame_ids = {ann.frame_id for ann in get_line_annotation_repo().get_all()}
+        if map_id:
+            all_frame_ids = {fid for fid in all_frame_ids if fid.startswith(map_id + "/")}
+        frame_ids = sorted(all_frame_ids)
 
         return JsonResponse({"names": names + frame_ids})
     except Exception:
@@ -470,11 +480,15 @@ def api_line_trace_set_detail(request: HttpRequest) -> JsonResponse:
                 }
             )
 
-        # Fall back to LineAnnotation entities matching this frame_id
+        # Fall back to LineAnnotation entities matching this frame_id (tenant-scoped)
         from homography_web.frame_utils import get_line_annotation_repo
 
+        map_entity = get_map_from_tenant_id(get_tenant_id(request))
+        map_id = map_entity.id if map_entity else None
         frame_anns = [
-            ann for ann in get_line_annotation_repo().get_all() if ann.frame_id == name
+            ann
+            for ann in get_line_annotation_repo().get_all()
+            if ann.frame_id == name and (not map_id or name.startswith(map_id + "/"))
         ]
         if frame_anns:
             line_traces = []

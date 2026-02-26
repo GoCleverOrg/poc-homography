@@ -12,7 +12,6 @@ from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     LINES_DIR,
     get_available_images,
-    get_current_image as _get_current_image,
     get_map_from_tenant_id,
     get_tenant_id,
     image_filename_to_frame,
@@ -21,6 +20,9 @@ from homography_web.frame_utils import (
     register_invalidation_callback,
     serve_current_image,
     validate_image_filename,
+)
+from homography_web.frame_utils import (
+    get_current_image as _get_current_image,
 )
 from homography_web.frame_utils import (
     get_line_annotation_repo as _get_line_annotation_repo,
@@ -68,6 +70,12 @@ def load_lines_registry(tenant_id: str) -> dict:
         pass
 
     return {"map_id": "", "lines": []}
+
+
+def _get_tenant_map_id(request: HttpRequest) -> str | None:
+    """Return the map_id for the current tenant, or None."""
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    return map_entity.id if map_entity else None
 
 
 def get_current_image(request: HttpRequest, map_id: str | None = None) -> str | None:
@@ -147,7 +155,7 @@ def load_existing_line_annotations(image_filename: str) -> list[dict]:
 
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     registry = load_lines_registry(get_tenant_id(request))
     context = {
         "image_filename": current_image or "No images available",
@@ -187,6 +195,11 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     if frame is None:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
+    # Validate frame belongs to the current tenant's map
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    if map_entity and frame.map_id != map_entity.id:
+        return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
+
     request.session[SESSION_IMAGE_KEY] = filename
 
     # Always load fresh from repo on image switch; session tracks in-flight edits only
@@ -214,7 +227,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 @require_GET
 def serve_image(request: HttpRequest) -> HttpResponse:
     """Serve the current image file."""
-    return serve_current_image(request, SESSION_IMAGE_KEY)
+    return serve_current_image(request, SESSION_IMAGE_KEY, _get_tenant_map_id(request))
 
 
 @require_GET
@@ -242,7 +255,7 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
     In-flight edits (create/update/delete) are preserved in the session until
     the user explicitly reloads.
     """
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse([], safe=False)
 
@@ -259,7 +272,7 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["POST"])
 def api_annotations_create(request: HttpRequest) -> JsonResponse:
     """Create a new line annotation."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
@@ -310,7 +323,7 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["PUT"])
 def api_annotations_update(request: HttpRequest, index: int) -> JsonResponse:
     """Update an existing line annotation by index."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
@@ -352,7 +365,7 @@ def api_annotations_update(request: HttpRequest, index: int) -> JsonResponse:
 @require_http_methods(["DELETE"])
 def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
     """Delete a line annotation by index."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
@@ -376,7 +389,7 @@ def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
 @require_GET
 def api_camera_status(request: HttpRequest) -> JsonResponse:
     """Get camera status from the CapturedFrame entity."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"pan": None, "tilt": None, "zoom": None})
 
@@ -397,7 +410,7 @@ def api_camera_status(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["POST"])
 def api_export(request: HttpRequest) -> JsonResponse:
     """Save current annotations to the DDD line-annotation repository."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
@@ -415,7 +428,6 @@ def api_export(request: HttpRequest) -> JsonResponse:
 
     _save_line_annotations_to_repo(current_image, image_annotations)
     invalidate_cache()
-    _invalidate_lines_cache()
 
     return JsonResponse(
         {
@@ -429,7 +441,7 @@ def api_export(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["POST"])
 def api_import(request: HttpRequest) -> JsonResponse:
     """Load annotations from the DDD line-annotation repository."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 

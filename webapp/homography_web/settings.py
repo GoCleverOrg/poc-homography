@@ -139,11 +139,6 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Tenant configuration
-# Default tenant used when no tenant is explicitly selected in the UI.
-# Must match a tenant ID in data/tenants/ (e.g., "valte", "setram", "icozee").
-DEFAULT_TENANT_ID = "valte"
-
 # Camera Diagnostic App Settings
 CAMERA_DIAGNOSTIC_SCREENSHOTS_DIR = BASE_DIR / "diagnostic_screenshots"
 # Browser headless mode for WebUI tests (False for Hikvision compatibility, True for server deployment)

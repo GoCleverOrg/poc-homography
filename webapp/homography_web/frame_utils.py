@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import tifffile
+from django.http import HttpResponse
 from numpy.typing import NDArray
 
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
@@ -24,8 +25,6 @@ from poc_homography.infrastructure.repositories import (
     RepoYamlTenant,
 )
 from poc_homography.types import Easting, Meters, Northing, Unitless
-
-from django.http import HttpResponse
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -165,6 +164,10 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
 # ---------------------------------------------------------------------------
 
 
+class TenantIdError(ValueError):
+    """Raised when tenant_id is missing or invalid."""
+
+
 def get_tenant_id(request: HttpRequest) -> str:
     """Extract tenant_id from request query string.
 
@@ -175,13 +178,13 @@ def get_tenant_id(request: HttpRequest) -> str:
         Tenant ID string.
 
     Raises:
-        ValueError: If tenant_id is missing from the request.
+        TenantIdError: If tenant_id is missing or unknown.
     """
     tenant_id = request.GET.get("tenant_id")
     if not tenant_id:
-        raise ValueError("Missing required query parameter: tenant_id")
+        raise TenantIdError("Missing required query parameter: tenant_id")
     if get_tenant_repo().get(tenant_id) is None:
-        raise ValueError(f"Unknown tenant_id: {tenant_id!r}")
+        raise TenantIdError(f"Unknown tenant_id: {tenant_id!r}")
     return tenant_id
 
 

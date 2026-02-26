@@ -92,11 +92,6 @@ def _load_line_registry(tenant_id: str) -> list[Line]:
     return lines
 
 
-def _invalidate_line_registry_cache() -> None:
-    """Clear the local line registry cache."""
-    _line_registry_cache.clear()
-
-
 # Cache for image dimensions to avoid repeatedly opening files
 class ImageInfoCache(TypedDict):
     """Cache entry for image information."""
