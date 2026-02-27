@@ -13,8 +13,10 @@ Starts the Django development server after validating the environment.
 Steps performed:
   1. Check .env file exists (required for camera credentials)
   2. Install/sync Python dependencies (uv sync)
-  3. Pull DVC-tracked test data from Google Drive
-  4. Start Django dev server (webapp/manage.py runserver)
+  3. Patch pydrive2 for Shared Drive folder-level access
+  4. Pull DVC-tracked data from Google Drive (test data + map images)
+  5. Validate map images are present
+  6. Start Django dev server (webapp/manage.py runserver)
 
 First-time setup:
   1. Copy and edit the environment file:
@@ -59,7 +61,10 @@ fi
 # ── 2. Install/sync dependencies ────────────────────────────────────
 uv sync --quiet
 
-# ── 3. Pull DVC-tracked data ────────────────────────────────────────
+# ── 3. Patch pydrive2 for Shared Drive folder-level access ─────────
+uv run python scripts/patch_pydrive2_shared_drive.py
+
+# ── 4. Pull DVC-tracked data ────────────────────────────────────────
 echo "Pulling DVC-tracked data..."
 if ! uv run dvc pull --force 2>&1; then
     echo "WARNING: dvc pull failed."
@@ -79,6 +84,24 @@ if [ ! -d "$DVC_DATA_DIR" ] || [ -z "$(ls -A "$DVC_DATA_DIR" 2>/dev/null)" ]; th
 fi
 echo "DVC data OK ($(ls "$DVC_DATA_DIR" | wc -l | tr -d ' ') files)"
 
-# ── 4. Run Django development server ────────────────────────────────
+# Validate map images are present (DVC-tracked GeoTIFFs)
+MAPS_DIR="data/maps"
+missing_maps=0
+for dvc_file in "$MAPS_DIR"/*.tif.dvc; do
+    tif_file="${dvc_file%.dvc}"
+    if [ ! -f "$tif_file" ]; then
+        echo "ERROR: Map image missing: $tif_file"
+        missing_maps=1
+    fi
+done
+if [ "$missing_maps" -eq 1 ]; then
+    echo ""
+    echo "  poe dvc-pull"
+    echo ""
+    exit 1
+fi
+echo "Map images OK"
+
+# ── 6. Run Django development server ────────────────────────────────
 cd webapp
 exec uv run python manage.py runserver "$@"

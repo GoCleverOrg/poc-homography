@@ -234,7 +234,9 @@ deadcode-fix = "deadcode . --only poc_homography/ --fix"
 test = "pytest tests/ -v"
 test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
-dvc-pull = {cmd = "dvc pull", help = "Pull DVC-tracked test data from remote"}
+patch-pydrive2 = {script = "scripts.patch_pydrive2_shared_drive:main", help = "Patch pydrive2 for Shared Drive folder-level access"}
+dvc-pull = {cmd = "dvc pull", help = "Pull DVC-tracked data from remote (test data + map images)"}
+dvc-push = {cmd = "dvc push", help = "Push DVC-tracked data to remote"}
 
 [tool.poe.tasks.validate]
 sequence = ["lint", "format-check", "typecheck", "pylint", "vulture"]

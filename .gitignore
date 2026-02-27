@@ -161,6 +161,7 @@ output/*
 data/**/*
 !data/**/.gitkeep
 !data/**/*.yaml
+!data/**/*.dvc
 !data/**/
 
 # Worktrees
