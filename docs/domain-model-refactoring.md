@@ -38,7 +38,7 @@ Located in `poc_homography/domain/`:
 |-------|----------|------|--------|
 | `PixelPoint` | `domain/vo/pixel_point.py` | VO | ✅ Done |
 | `MapPoint` | `domain/vo/map_point.py` | VO | ✅ Done |
-| `CameraIntrinsics` | `domain/vo/camera_intrinsics.py` | VO | ✅ Done |
+| `CameraIntrinsics` | ~~`domain/vo/camera_intrinsics.py`~~ | VO | 🗑️ Deleted (vestigial, replaced by `camera/intrinsics.py`) |
 | `PTZState` | `domain/vo/ptz_state.py` | VO | ✅ Renamed from CameraState |
 | `Annotation` | `domain/entities/annotation.py` | Entity | ✅ Moved to entities/ |
 | `GroundControlPoint` | `domain/entities/ground_control_point.py` | Entity | ✅ Moved to entities/ |

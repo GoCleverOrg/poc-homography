@@ -50,8 +50,6 @@ def _get_tenant_repo():
 # Default camera sensor parameters for Hikvision DS-2DF8425IX series
 DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8° FOV at 5.9mm focal length
 DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9  # Minimum focal length at 1x zoom
-DEFAULT_MAX_FOCAL_LENGTH_MM = 147.5  # Maximum focal length at 25x zoom
-DEFAULT_MAX_ZOOM = 25.0  # Maximum optical zoom factor
 
 # =============================================================================
 # CALIBRATION TABLE FORMAT (Optional)
@@ -521,54 +519,6 @@ def get_camera_by_name(camera_name: str) -> dict | None:
             return cameras[0]
 
     return None
-
-
-def get_camera_by_name_safe(camera_name: str) -> dict | None:
-    """
-    Alias for get_camera_by_name().
-
-    This function exists for backwards compatibility. Since credential validation
-    was moved from module-level to get_rtsp_url(), get_camera_by_name() is now
-    safe to call without credentials. Both functions are equivalent.
-
-    Args:
-        camera_name: Name of the camera (e.g., "Valte", "Setram")
-
-    Returns:
-        Camera configuration dict or None if not found
-    """
-    return get_camera_by_name(camera_name)
-
-
-def get_camera_gps(camera_name: str) -> dict | None:
-    """
-    Get GPS coordinates for a camera.
-
-    Args:
-        camera_name: Name of the camera
-
-    Returns:
-        {"lat": "...", "lon": "..."} or None if not found
-    """
-    cam = get_camera_by_name(camera_name)
-    if cam:
-        return {"lat": cam["lat"], "lon": cam["lon"]}
-    return None
-
-
-def get_camera_display_name(camera: dict) -> str:
-    """
-    Get display name for a camera (Tenant - CamXX format).
-
-    Args:
-        camera: Camera configuration dict
-
-    Returns:
-        Display name like "Valte - Cam01"
-    """
-    tenant = get_tenant_by_id(camera.get("tenant_id", ""))
-    tenant_name = tenant["name"] if tenant else "Unknown"
-    return f"{tenant_name} - {camera.get('name', 'Unknown')}"
 
 
 def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:

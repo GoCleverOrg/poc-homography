@@ -15,7 +15,7 @@ Public API modules:
     distortion_solver: Optimization-based distortion coefficient solver
     annotated_line_solver: Annotated-line distortion solver using N-point traces
     calibration_table: Zoom-dependent calibration storage with interpolation
-    apply_calibration: Undistortion utilities and calibration file management
+    apply_calibration: Undistortion and measurement utilities
 """
 
 from poc_homography.calibration.lens_distortion.annotated_line_solver import (

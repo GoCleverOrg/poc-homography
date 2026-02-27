@@ -1,10 +1,4 @@
 DistortionCoefficients  # backward-compat alias (poc_homography/camera_parameters.py:21)
-load_distortion_coefficients  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:461)
-apply_solver_result  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:394)
-apply_distortion_coefficients  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:427)
-get_camera_calibration  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:502)
-export_calibration_summary  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:531)
-merge_calibration_tables  # unused function (poc_homography/calibration/lens_distortion/apply_calibration.py:579)
 _.remove_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:202)
 _.get_zoom_levels  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:373)
 _.get_nearest_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:393)
@@ -17,13 +11,8 @@ _.length_meters  # unused property (poc_homography/calibration/lens_distortion/m
 _.to_points_array  # unused method (poc_homography/calibration/lens_distortion/models.py:220)
 ground_truth_line  # unused variable (poc_homography/calibration/lens_distortion/models.py:266)
 _.to_world_coordinates  # unused method (poc_homography/calibration/lens_distortion/models.py:288)
-_.segment_from_file  # unused method (poc_homography/calibration/lens_distortion/sam3_masking.py:148)
 error_pixels  # unused variable (poc_homography/calibration/projection.py:34)
 best_joint_pan_offset  # unused variable (poc_homography/calibration/projection.py:43)
-DEFAULT_MAX_FOCAL_LENGTH_MM  # unused variable (poc_homography/camera_config.py:33)
-get_camera_by_name_safe  # unused function (poc_homography/camera_config.py:528)
-get_camera_gps  # unused function (poc_homography/camera_config.py:545)
-get_camera_display_name  # unused function (poc_homography/camera_config.py:561)
 _.project_image_to_world  # unused method (poc_homography/camera_geometry.py:564)
 _.project_world_to_image  # unused method (poc_homography/camera_geometry.py:595)
 _.world_to_map  # unused method (poc_homography/camera_geometry.py:623)
@@ -45,9 +34,6 @@ sam3_command  # unused function (poc_homography/cli/test_cmds.py:14)
 HIKVISION_DS_2DF8425IX  # unused variable (poc_homography/domain/enums/camera_spec.py:60)
 _.last_ptz_state  # unused property (poc_homography/domain/protocols/camera_controller.py:24)
 _.move_relative  # unused method (poc_homography/domain/protocols/camera_controller.py:67)
-_.from_K_matrix  # unused method (poc_homography/domain/vo/camera_intrinsics.py:128)
-_.to_K  # unused method (poc_homography/domain/vo/camera_intrinsics.py:198)
-_.try_world_to_image  # unused method (poc_homography/domain/vo/homography.py:138)
 _.writeable  # unused attribute (poc_homography/domain/vo/matrix3x3.py:106)
 _.from_matrix  # unused method (poc_homography/domain/vo/rotation.py:73)
 _.to_matrix  # unused method (poc_homography/domain/vo/rotation.py:88)
@@ -55,21 +41,22 @@ _.writeable  # unused attribute (poc_homography/domain/vo/vector3.py:85)
 _.normalized  # unused method (poc_homography/domain/vo/vector3.py:103)
 _.get_approach_config  # unused method (poc_homography/homography/config.py:270)
 _.save_to_yaml  # unused method (poc_homography/homography/config.py:290)
-GOOD_QUADRANT_COVERAGE  # unused variable (poc_homography/homography/feature_match.py:80)
-_._last_metadata  # unused attribute (poc_homography/homography/feature_match.py:158)
-_._calculate_point_confidence  # unused method (poc_homography/homography/feature_match.py:380)
-_.compute_homography  # unused method (poc_homography/homography/feature_match.py:540)
-_._last_metadata  # unused attribute (poc_homography/homography/feature_match.py:765)
-_.project_points  # unused method (poc_homography/homography/feature_match.py:813)
-_.get_confidence  # unused method (poc_homography/homography/feature_match.py:841)
+FEATURE_MATCH  # unused variable (poc_homography/homography/interface.py:37) - enum value used in tests
 LEARNED  # unused variable (poc_homography/homography/interface.py:38)
 MAP_BASED_ORIGIN  # unused variable (poc_homography/homography/interface.py:45)
 _.identity  # unused method (poc_homography/homography/interface.py:89)
+_.project_point  # unused method (poc_homography/homography/interface.py:205) - abstract interface method
 _.project_points  # unused method (poc_homography/homography/interface.py:218)
+image_points  # unused variable (poc_homography/homography/interface.py:220) - abstract method parameter
+point_id_prefix  # unused variable (poc_homography/homography/interface.py:220) - abstract method parameter
 _.get_confidence  # unused method (poc_homography/homography/interface.py:233)
+EDGE_FACTOR_CENTER  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:119) - class constant
+EDGE_FACTOR_EDGE  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:120) - class constant
 EDGE_FACTOR_CORNER_DECAY  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:121)
+EDGE_FACTOR_MIN  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:122) - class constant
 _.get_distortion_coefficients  # unused method (poc_homography/homography/intrinsic_extrinsic.py:276)
 _.compute_from_config  # unused method (poc_homography/homography/intrinsic_extrinsic.py:481)
+_.project_point  # unused method (poc_homography/homography/intrinsic_extrinsic.py:603) - interface impl
 _.project_points  # unused method (poc_homography/homography/intrinsic_extrinsic.py:626)
 _.get_confidence  # unused method (poc_homography/homography/intrinsic_extrinsic.py:639)
 _.project_point_static  # unused method (poc_homography/homography/intrinsic_extrinsic.py:721)
@@ -195,4 +182,44 @@ validate_export_request  # unused function (webapp/line_picker/validation.py) - 
 validate_import_request  # unused function (webapp/line_picker/validation.py) - used by views
 TenantIdMiddleware  # unused class (webapp/homography_web/middleware.py) - Django MIDDLEWARE setting
 _.process_exception  # unused method (webapp/homography_web/middleware.py) - Django middleware hook
+_.get_coefficients  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:232) - public API
+_.get_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:377) - public API
+straightness_rmse  # unused function (poc_homography/calibration/lens_distortion/distortion_solver.py:474) - utility
+get_rtsp_url  # unused function (poc_homography/camera_config.py:525) - used by webapp views
+_.focal_length_at_zoom  # unused method (poc_homography/domain/enums/camera_spec.py:101) - domain API
+_.delete  # unused method (poc_homography/domain/repositories/repo.py:35) - repository protocol
+_.to_list  # unused method (poc_homography/domain/vo/geotiff.py:38) - VO API
+_.pixel_to_geo  # unused method (poc_homography/domain/vo/geotiff.py:85) - VO API
+_.area  # unused property (poc_homography/domain/vo/image_dimensions.py:46) - VO API
+_.center_x  # unused property (poc_homography/domain/vo/image_dimensions.py:51) - VO API
+_.center_y  # unused property (poc_homography/domain/vo/image_dimensions.py:56) - VO API
+_.has_distortion  # unused property (poc_homography/domain/vo/lens_distortion.py:40) - VO API
+_.inverse  # unused method (poc_homography/domain/vo/matrix3x3.py:128) - VO API
+_.to_list  # unused method (poc_homography/domain/vo/matrix3x3.py:171) - VO API
+_.to_orientation  # unused method (poc_homography/domain/vo/ptz_state.py:30) - VO API
+_.inverse  # unused method (poc_homography/homography/interface.py:98) - interface API
+_.transform  # unused method (poc_homography/homography/interface.py:134) - interface API
+num_gcps  # unused variable (poc_homography/homography/map_points.py:47) - NamedTuple field
+num_lines  # unused variable (poc_homography/homography/map_points.py:72) - NamedTuple field
+mean_perp_error  # unused variable (poc_homography/homography/map_points.py:75) - NamedTuple field
+max_perp_error  # unused variable (poc_homography/homography/map_points.py:76) - NamedTuple field
+_.compute_from_gcps  # unused method (poc_homography/homography/map_points.py:118) - core algorithm
+_.compute_from_lines  # unused method (poc_homography/homography/map_points.py:238) - core algorithm
+_.camera_to_map  # unused method (poc_homography/homography/map_points.py:575) - core algorithm
+_.map_to_camera  # unused method (poc_homography/homography/map_points.py:601) - core algorithm
+_.get_by_tenant  # unused method (poc_homography/infrastructure/repositories/base/mixin_repo_tenant_filter.py:15) - mixin API
+_.delete  # unused method (poc_homography/infrastructure/repositories/base/repo_yaml.py:84) - repository CRUD
+_.image_dir_for  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:35) - repo API
+_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:99) - repo CRUD
+_.get_image_path  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:201) - repo API
+_.get_annotations  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:226) - repo API
+_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_diagnostic_session.py:101) - repo CRUD
+_.get_by_map_id  # unused method (poc_homography/infrastructure/repositories/repo_yaml_line.py:15) - repo query
+_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_stress_test_session.py:80) - repo CRUD
+_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_survey_session.py:86) - repo CRUD
+_.get_session_dir  # unused method (poc_homography/infrastructure/repositories/repo_yaml_survey_session.py:107) - repo API
+from_gcp_repo  # unused function (poc_homography/map_points/gcp_registry.py:172) - legacy bridge
+save_to_gcp_repo  # unused function (poc_homography/map_points/gcp_registry.py:200) - legacy bridge
+list_map_ids  # unused function (poc_homography/map_points/gcp_registry.py:227) - legacy bridge
+error_px  # unused variable (poc_homography/validation/camera_model.py:65) - NamedTuple field
 

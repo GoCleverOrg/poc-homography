@@ -31,26 +31,22 @@ This assessment identifies duplication, missing abstractions, and architectural 
 | `Annotation` | `domain/entities/annotation.py` | GCP to pixel observation link |
 | `CapturedFrame` | `domain/entities/captured_frame.py` | Photo with PTZ state |
 
-### Value Objects (16)
+### Value Objects (12)
 
 | VO | Location | Purpose |
 |----|----------|---------|
-| `CameraIntrinsics` | `domain/vo/camera_intrinsics.py` | Sensor/lens parameters, computes K matrix |
 | `Orientation` | `domain/vo/orientation.py` | Yaw/pitch/roll angles, uses Rotation |
 | `Rotation` | `domain/vo/rotation.py` | 3D rotation matrix (ZYX Euler convention) |
 | `PTZState` | `domain/vo/ptz_state.py` | Pan/tilt/zoom values |
 | `LensDistortion` | `domain/vo/lens_distortion.py` | Distortion coefficients (k1, k2, p1, p2, k3) |
 | `HeightUncertainty` | `domain/vo/height_uncertainty.py` | Height confidence interval for error propagation |
 | `Matrix3x3` | `domain/vo/matrix3x3.py` | Immutable 3x3 matrix with math operations |
-| `Homography` | `domain/vo/homography.py` | Projective transformation using Matrix3x3 |
 | `PixelPoint` | `domain/vo/pixel_point.py` | Pixel coordinates (x, y) |
 | `MapPoint` | `domain/vo/map_point.py` | Point on map (map_id + pixel_point) |
 | `GeoTransform` | `domain/vo/geotiff.py` | Affine transformation (6 parameters) |
 | `GeoTiff` | `domain/vo/geotiff.py` | GeoTIFF metadata with coordinate transforms |
 | `Photo` | `domain/vo/photo.py` | Image file with dimensions |
-| `Mask` | `domain/vo/mask.py` | Binary segmentation mask |
 | `Credential` | `domain/vo/credential.py` | Username/password |
-| `CameraSnapshot` | `domain/vo/camera_snapshot.py` | Combines config + calibration + ptz_state |
 
 ### Enums (2)
 
@@ -110,12 +106,9 @@ PTZState:         pan_raw: float, tilt_deg: float, zoom: float
 
 #### 2. CameraIntrinsics vs intrinsic_matrix
 
-**Problem:** Intrinsic matrix concept exists in three places.
+**Problem:** Intrinsic matrix concept exists in two places.
 
 ```python
-# domain/vo/camera_intrinsics.py
-CameraIntrinsics.K  # Computed property returning 3x3 matrix
-
 # camera_parameters.py
 CameraParameters._intrinsic_matrix_data  # Stored as bytes
 
@@ -125,9 +118,8 @@ CameraGeometry.get_intrinsics()  # Static factory method
 
 **Impact:**
 - No single source of truth for creating intrinsics
-- `CameraGeometry.get_intrinsics()` duplicates what `CameraIntrinsics` should do
 
-**Resolution:** Add `CameraIntrinsics.from_spec_and_zoom()` factory method.
+**Resolution:** Consolidated into `poc_homography/camera/intrinsics.py` (`CameraIntrinsics` dataclass). The domain VO `domain/vo/camera_intrinsics.py` was deleted as vestigial (zero production imports).
 
 ---
 
@@ -488,4 +480,3 @@ poc_homography/
 
 Classes that we need to review because they are code smells:
 * poc_homography/domain/vo/height_uncertainty.py
-* poc_homography/domain/vo/camera_snapshot.py

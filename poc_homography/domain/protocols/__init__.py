@@ -9,16 +9,8 @@ from poc_homography.domain.protocols.camera_controller import (
     CameraController,
     CameraControllerError,
 )
-from poc_homography.domain.protocols.sam3_client import (
-    Sam3ApiError,
-    Sam3Client,
-    Sam3Detection,
-)
 
 __all__ = [
     "CameraController",
     "CameraControllerError",
-    "Sam3ApiError",
-    "Sam3Client",
-    "Sam3Detection",
 ]
