@@ -7,7 +7,6 @@ map coordinates.
 
 Providers:
 - IntrinsicExtrinsicHomography: Uses camera intrinsic/extrinsic parameters
-- FeatureMatchHomography: Uses Ground Control Points (GCPs)
 - MapPointHomography: Uses map point correspondences
 """
 
