@@ -39,6 +39,7 @@ dependencies = [
     "typer>=0.9.0",
     "typing_extensions>=4.0",
     "uvicorn>=0.30.0",
+    "dvc[gdrive]>=3.50",
 ]
 
 [project.scripts]
@@ -233,6 +234,7 @@ deadcode-fix = "deadcode . --only poc_homography/ --fix"
 test = "pytest tests/ -v"
 test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
+dvc-pull = {cmd = "dvc pull", help = "Pull DVC-tracked test data from remote"}
 
 [tool.poe.tasks.validate]
 sequence = ["lint", "format-check", "typecheck", "pylint", "vulture"]

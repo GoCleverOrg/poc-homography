@@ -220,6 +220,7 @@
         </div>
     </div>
 
+    <script src="{% static 'js/tenant.js' %}"></script>
     <script>
         let viewer;
         let imageInfo;
@@ -279,7 +280,7 @@
                         tileSize: 256,
                         getTileUrl: (level, x, y) => {
                             const z = level;
-                            return `${API_BASE}/api/image/tile/?x=${x}&y=${y}&z=${z}`;
+                            return withTenant(`${API_BASE}/api/image/tile/?x=${x}&y=${y}&z=${z}`);
                         }
                     },
                     showNavigator: true,

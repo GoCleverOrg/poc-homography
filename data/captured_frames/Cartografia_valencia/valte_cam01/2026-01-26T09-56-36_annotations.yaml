@@ -1,0 +1,263 @@
+frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+annotations:
+- gcp_id: CW8
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1713.0
+    y: 550.0
+- gcp_id: PS13
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 498.0
+    y: 337.5
+- gcp_id: PS30
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 257.0
+    y: 236.0
+- gcp_id: PS17
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 982.5
+    y: 220.5
+- gcp_id: PS29
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 231.0
+    y: 350.0
+- gcp_id: PS31
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 739.0
+    y: 329.0
+- gcp_id: AR8
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1528.0
+    y: 278.0
+- gcp_id: CW10
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1584.5
+    y: 502.5
+- gcp_id: CW18
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1233.0
+    y: 376.5
+- gcp_id: CW20
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1169.0
+    y: 356.5
+- gcp_id: CW16
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1302.5
+    y: 400.5
+- gcp_id: CW19
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1067.0
+    y: 366.5
+- gcp_id: CW17
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1124.0
+    y: 389.5
+- gcp_id: CW22
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1117.0
+    y: 337.5
+- gcp_id: PS34
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1525.0
+    y: 308.0
+- gcp_id: PS32
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 563.0
+    y: 228.0
+- gcp_id: CW21
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1017.0
+    y: 347.5
+- gcp_id: PS12
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 87.0
+    y: 243.0
+- gcp_id: PS15
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 966.0
+    y: 321.0
+- gcp_id: CW15
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1187.5
+    y: 415.5
+- gcp_id: CW13
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1264.0
+    y: 447.0
+- gcp_id: PS33
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 856.5
+    y: 222.5
+- gcp_id: CW14
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1382.0
+    y: 428.5
+- gcp_id: CW7
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1584.0
+    y: 581.0
+- gcp_id: CW9
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1457.5
+    y: 528.5
+- gcp_id: PS16
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1358.0
+    y: 310.0
+- gcp_id: PS14
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 407.0
+    y: 232.0
+- gcp_id: CW12
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1475.5
+    y: 463.0
+- gcp_id: CW11
+  frame_id: Cartografia_valencia/valte_cam01/2026-01-26T09-56-36
+  camera_pose:
+    pan_raw: 90.0
+    tilt_deg: 15.3
+    zoom: 1.0
+  pixel:
+    x: 1351.0
+    y: 484.0

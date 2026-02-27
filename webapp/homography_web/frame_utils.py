@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import tifffile
+from django.http import HttpResponse
 from numpy.typing import NDArray
 
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
@@ -26,11 +27,15 @@ from poc_homography.infrastructure.repositories import (
 from poc_homography.types import Easting, Meters, Northing, Unitless
 
 if TYPE_CHECKING:
+    from django.http import HttpRequest
+
     from poc_homography.domain.entities.captured_frame import CapturedFrame
+    from poc_homography.domain.entities.map import Map
 
 # Paths relative to project root
 WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
+DATA_MAPS_DIR = PROJECT_ROOT / "data" / "maps"
 FRAMES_DIR = PROJECT_ROOT / "data" / "captured_frames"
 ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
 GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
@@ -159,11 +164,28 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
 # ---------------------------------------------------------------------------
 
 
-def get_default_tenant_id() -> str:
-    """Return the default tenant ID from Django settings."""
-    from django.conf import settings
+class TenantIdError(ValueError):
+    """Raised when tenant_id is missing or invalid."""
 
-    return getattr(settings, "DEFAULT_TENANT_ID", "valte")
+
+def get_tenant_id(request: HttpRequest) -> str:
+    """Extract tenant_id from request query string.
+
+    Args:
+        request: Django HTTP request.
+
+    Returns:
+        Tenant ID string.
+
+    Raises:
+        TenantIdError: If tenant_id is missing or unknown.
+    """
+    tenant_id = request.GET.get("tenant_id")
+    if not tenant_id:
+        raise TenantIdError("Missing required query parameter: tenant_id")
+    if get_tenant_repo().get(tenant_id) is None:
+        raise TenantIdError(f"Unknown tenant_id: {tenant_id!r}")
+    return tenant_id
 
 
 _tenant_repo: RepoYamlTenant | None = None
@@ -186,23 +208,42 @@ def get_map_repo() -> RepoYamlMap:
     return _map_repo
 
 
-def get_default_map_id(tenant_id: str | None = None) -> str | None:
-    """Return the default map ID for a tenant, or None if no maps exist.
+def get_map_from_tenant_id(tenant_id: str) -> Map | None:
+    """Look up the ``Map`` entity that belongs to *tenant_id*.
 
-    Resolves the first map belonging to the given tenant.
+    Searches the YAML map repository for an exact tenant match and returns
+    the map entity, or ``None`` when no map is configured for the tenant.
 
     Args:
-        tenant_id: Tenant to look up. Defaults to settings.DEFAULT_TENANT_ID.
-
-    Returns:
-        Map ID string, or None if the tenant has no maps configured.
+        tenant_id: Tenant identifier (must be provided explicitly).
     """
-    if tenant_id is None:
-        tenant_id = get_default_tenant_id()
     maps = get_map_repo().get_by_tenant(tenant_id)
     if maps:
-        return next(iter(maps.values())).id
+        return next(iter(maps.values()))
     return None
+
+
+def resolve_map_for_tenant(tenant_id: str) -> tuple[Map, Path]:
+    """Look up the Map entity for *tenant_id* and verify its image file.
+
+    Args:
+        tenant_id: Tenant identifier.
+
+    Returns:
+        Tuple of (Map entity, absolute Path to the map image file).
+
+    Raises:
+        RuntimeError: If no map is configured or the file is missing.
+    """
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
+        raise RuntimeError(f"No map configured for tenant: {tenant_id}")
+
+    map_file = DATA_MAPS_DIR / map_entity.photo.path
+    if not map_file.exists():
+        raise RuntimeError(f"Map file not found: {map_file}")
+
+    return map_entity, map_file
 
 
 # ---------------------------------------------------------------------------
@@ -241,12 +282,18 @@ def get_frame_repo() -> RepoYamlCapturedFrame:
     return _frame_repo
 
 
-def list_frames() -> list[CapturedFrame]:
-    """Return all captured frames (cached)."""
+def list_frames(map_id: str | None = None) -> list[CapturedFrame]:
+    """Return captured frames (cached).
+
+    Args:
+        map_id: If provided, only return frames belonging to this map.
+    """
     global _frames
     if _frames is None:
         _frames = get_frame_repo().get_all()
-    return _frames
+    if map_id is None:
+        return _frames
+    return [f for f in _frames if f.map_id == map_id]
 
 
 def _get_image_to_frame() -> dict[str, CapturedFrame]:
@@ -262,12 +309,16 @@ def get_frame_image_path(frame: CapturedFrame) -> Path:
     return get_frame_repo().get_image_path(frame)
 
 
-def list_image_filenames() -> list[str]:
+def list_image_filenames(map_id: str | None = None) -> list[str]:
     """Return sorted list of image filenames from the captured-frame repo.
 
-    Backward-compatible with the old ``get_available_images()`` pattern.
+    Args:
+        map_id: If provided, only return filenames for frames belonging to this map.
     """
-    return sorted(_get_image_to_frame())
+    mapping = _get_image_to_frame()
+    if map_id is None:
+        return sorted(mapping)
+    return sorted(fn for fn, frame in mapping.items() if frame.map_id == map_id)
 
 
 def image_filename_to_frame(filename: str) -> CapturedFrame | None:
@@ -323,6 +374,14 @@ def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
     return results
 
 
+_invalidation_callbacks: list = []
+
+
+def register_invalidation_callback(cb) -> None:
+    """Register a callback to be called when caches are invalidated."""
+    _invalidation_callbacks.append(cb)
+
+
 def invalidate_cache() -> None:
     """Clear all module-level caches. Useful after saves."""
     global _annotation_repo, _frame_repo, _frames, _image_to_frame
@@ -335,3 +394,82 @@ def invalidate_cache() -> None:
     _line_anns_by_frame = None
     _tenant_repo = None
     _map_repo = None
+    for cb in _invalidation_callbacks:
+        cb()
+
+
+# ---------------------------------------------------------------------------
+# Shared image utilities (used by camera_annotator & camera_line_annotator)
+# ---------------------------------------------------------------------------
+
+
+def get_available_images(map_id: str | None = None) -> list[str]:
+    """Return available image filenames from the CapturedFrame repo."""
+    return list_image_filenames(map_id)
+
+
+def get_current_image(
+    request: HttpRequest,
+    session_key: str,
+    map_id: str | None = None,
+) -> str | None:
+    """Get the current image filename from session, or first available image.
+
+    Args:
+        request: Django HTTP request.
+        session_key: Session key used to store current image filename.
+        map_id: If provided, only consider images for this map.
+    """
+    session_image = request.session.get(session_key)
+    if session_image:
+        frame = image_filename_to_frame(session_image)
+        if frame is not None and (map_id is None or frame.map_id == map_id):
+            return session_image
+
+    images = get_available_images(map_id)
+    if images:
+        return images[0]
+
+    return None
+
+
+def serve_current_image(
+    request: HttpRequest,
+    session_key: str,
+    map_id: str | None = None,
+) -> HttpResponse:
+    """Serve the current image file for an annotator app.
+
+    Args:
+        request: Django HTTP request.
+        session_key: Session key used to store current image filename.
+        map_id: If provided, only consider images for this map.
+    """
+    import mimetypes
+
+    from django.http import FileResponse
+
+    current_image = get_current_image(request, session_key, map_id)
+    if not current_image:
+        return HttpResponse("No image available", status=404)
+
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return HttpResponse("Image not found", status=404)
+
+    resolved_path = get_frame_image_path(frame)
+    if not resolved_path.exists():
+        return HttpResponse("Image not found", status=404)
+
+    mime_type, _ = mimetypes.guess_type(str(resolved_path))
+    if not mime_type:
+        mime_type = "image/jpeg"
+
+    response = FileResponse(
+        open(resolved_path, "rb"),  # noqa: SIM115
+        content_type=mime_type,
+    )
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response

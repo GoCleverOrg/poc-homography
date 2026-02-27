@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path  # noqa: TC003 - used at runtime
 
 import tifffile
-from homography_web.frame_utils import extract_geotiff
+from homography_web.frame_utils import (
+    GCPS_DIR,
+    extract_geotiff,
+    register_invalidation_callback,
+    resolve_map_for_tenant,
+)
 from PIL import Image
 
 from poc_homography.domain.vo.geotiff import GeoTiff
@@ -30,12 +35,17 @@ class PointPickerState:
         self,
         image_path: Path,
         geotiff: GeoTiff | None = None,
+        *,
+        width: int | None = None,
+        height: int | None = None,
     ) -> None:
         """Initialize state with image file.
 
         Args:
             image_path: Path to the image file (PNG, TIFF, etc.).
             geotiff: Optional GeoTiff VO with geotransform and CRS.
+            width: Image width in pixels (avoids file I/O when provided).
+            height: Image height in pixels (avoids file I/O when provided).
         """
         self.geotiff_path = image_path  # Keep name for compatibility
         self.map_id = image_path.stem
@@ -44,21 +54,34 @@ class PointPickerState:
         # Detect file type and load accordingly
         suffix = image_path.suffix.lower()
         if suffix in (".tif", ".tiff"):
-            # Load TIFF metadata using tifffile
-            with tifffile.TiffFile(image_path) as tif:
-                page = tif.pages[0]
-                # type: ignore needed because tifffile types are incomplete
-                self.width: int = page.imagewidth  # type: ignore[union-attr]
-                self.height: int = page.imagelength  # type: ignore[union-attr]
-
-                # Extract GeoTiff VO from TIFF if not provided
+            # Use provided dimensions or read from TIFF
+            if width is not None and height is not None:
+                self.width: int = width
+                self.height: int = height
+                # Still need to extract GeoTiff VO from TIFF if not provided
                 if geotiff is None:
-                    geotiff = extract_geotiff(tif)
+                    with tifffile.TiffFile(image_path) as tif:
+                        geotiff = extract_geotiff(tif)
+            else:
+                # Load TIFF metadata using tifffile
+                with tifffile.TiffFile(image_path) as tif:
+                    page = tif.pages[0]
+                    # type: ignore needed because tifffile types are incomplete
+                    self.width = page.imagewidth  # type: ignore[union-attr]
+                    self.height = page.imagelength  # type: ignore[union-attr]
+
+                    # Extract GeoTiff VO from TIFF if not provided
+                    if geotiff is None:
+                        geotiff = extract_geotiff(tif)
         else:
-            # Load other image formats (PNG, JPG, etc.) using PIL
-            with Image.open(image_path) as img:
-                self.width = img.width
-                self.height = img.height
+            if width is not None and height is not None:
+                self.width = width
+                self.height = height
+            else:
+                # Load other image formats (PNG, JPG, etc.) using PIL
+                with Image.open(image_path) as img:
+                    self.width = img.width
+                    self.height = img.height
 
         self.geotiff = geotiff
 
@@ -176,29 +199,39 @@ class PointPickerState:
         return None
 
 
-# Module-level state
-_state: PointPickerState | None = None
+# Per-tenant state (lazily initialized)
+_states: dict[str, PointPickerState] = {}
 
 
-def initialize_state(
-    image_path: Path,
-    geotiff: GeoTiff | None = None,
-) -> None:
-    """Initialize the module-level state.
+def get_state(tenant_id: str) -> PointPickerState:
+    """Get or lazily initialize state for a tenant.
 
     Args:
-        image_path: Path to the image file (PNG, TIFF, etc.).
-        geotiff: Optional GeoTiff VO with geotransform and CRS.
+        tenant_id: Tenant identifier.
+
+    Returns:
+        PointPickerState for the given tenant.
+
+    Raises:
+        RuntimeError: If no map is configured for the tenant or map file not found.
     """
-    global _state
-    _state = PointPickerState(image_path, geotiff=geotiff)
+    if tenant_id in _states:
+        return _states[tenant_id]
 
+    map_entity, map_file = resolve_map_for_tenant(tenant_id)
 
-def get_state() -> PointPickerState:
-    """Get the current application state."""
-    if _state is None:
-        raise RuntimeError("Application not initialized. Call initialize_state() first.")
-    return _state
+    state = PointPickerState(
+        map_file,
+        width=int(map_entity.photo.width),
+        height=int(map_entity.photo.height),
+    )
+
+    # Load GCPs for this tenant's map only
+    if GCPS_DIR.exists():
+        state.load_from_repo(GCPS_DIR, map_entity.id)
+
+    _states[tenant_id] = state
+    return state
 
 
 def get_tag_from_id(point_id: str) -> str:
@@ -214,3 +247,6 @@ def get_tag_from_id(point_id: str) -> str:
         if point_id.startswith(abbrev):
             return tag
     return "extra"
+
+
+register_invalidation_callback(_states.clear)

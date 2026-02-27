@@ -7,6 +7,7 @@ from pathlib import Path  # noqa: TC003 - used at runtime
 from typing import TYPE_CHECKING
 
 import tifffile
+from homography_web.frame_utils import register_invalidation_callback, resolve_map_for_tenant
 from PIL import Image
 
 from poc_homography.infrastructure.repositories import RepoYamlLine
@@ -60,6 +61,9 @@ class LinePickerState:
         image_path: Path,
         map_id: str,
         geotiff: GeoTiff | None = None,
+        *,
+        width: int | None = None,
+        height: int | None = None,
     ) -> None:
         """Initialize state with image file and map identifier.
 
@@ -67,6 +71,8 @@ class LinePickerState:
             image_path: Path to the map image file (PNG, TIFF, etc.).
             map_id: Map identifier for tagging saved line files.
             geotiff: Optional GeoTiff VO with geotransform and CRS.
+            width: Image width in pixels (avoids file I/O when provided).
+            height: Image height in pixels (avoids file I/O when provided).
         """
         self.geotiff_path = image_path  # Keep name for compatibility
         self.map_id = map_id
@@ -75,20 +81,33 @@ class LinePickerState:
         # Detect file type and load accordingly
         suffix = image_path.suffix.lower()
         if suffix in (".tif", ".tiff"):
-            with tifffile.TiffFile(image_path) as tif:
-                page = tif.pages[0]
-                # type: ignore needed because tifffile types are incomplete
-                self.width: int = page.imagewidth  # type: ignore[union-attr]
-                self.height: int = page.imagelength  # type: ignore[union-attr]
-
+            if width is not None and height is not None:
+                self.width: int = width
+                self.height: int = height
                 if geotiff is None:
                     from homography_web.frame_utils import extract_geotiff
 
-                    geotiff = extract_geotiff(tif)
+                    with tifffile.TiffFile(image_path) as tif:
+                        geotiff = extract_geotiff(tif)
+            else:
+                with tifffile.TiffFile(image_path) as tif:
+                    page = tif.pages[0]
+                    # type: ignore needed because tifffile types are incomplete
+                    self.width = page.imagewidth  # type: ignore[union-attr]
+                    self.height = page.imagelength  # type: ignore[union-attr]
+
+                    if geotiff is None:
+                        from homography_web.frame_utils import extract_geotiff
+
+                        geotiff = extract_geotiff(tif)
         else:
-            with Image.open(image_path) as img:
-                self.width = img.width
-                self.height = img.height
+            if width is not None and height is not None:
+                self.width = width
+                self.height = height
+            else:
+                with Image.open(image_path) as img:
+                    self.width = img.width
+                    self.height = img.height
 
         self.geotiff = geotiff
 
@@ -182,43 +201,35 @@ class LinePickerState:
         return None
 
 
-# Module-level state
-_state: LinePickerState | None = None
+# Per-tenant state (lazily initialized)
+_states: dict[str, LinePickerState] = {}
 
 
-def initialize_state(
-    image_path: Path,
-    map_id: str,
-    geotiff: GeoTiff | None = None,
-) -> None:
-    """Initialize the module-level state.
+def get_state(tenant_id: str) -> LinePickerState:
+    """Get or lazily initialize state for a tenant.
 
     Args:
-        image_path: Path to the map image file (PNG, TIFF, etc.).
-        map_id: Map identifier for tagging saved line files.
-        geotiff: Optional GeoTiff VO with geotransform and CRS.
-    """
-    global _state
-
-    _state = LinePickerState(
-        image_path,
-        map_id,
-        geotiff=geotiff,
-    )
-
-
-def get_state() -> LinePickerState:
-    """Get the current application state.
+        tenant_id: Tenant identifier.
 
     Returns:
-        Current LinePickerState instance.
+        LinePickerState for the given tenant.
 
     Raises:
-        RuntimeError: If state has not been initialized.
+        RuntimeError: If no map is configured for the tenant or map file not found.
     """
-    if _state is None:
-        raise RuntimeError("Application not initialized. Call initialize_state() first.")
-    return _state
+    if tenant_id in _states:
+        return _states[tenant_id]
+
+    map_entity, map_file = resolve_map_for_tenant(tenant_id)
+
+    state = LinePickerState(
+        map_file,
+        map_entity.id,
+        width=int(map_entity.photo.width),
+        height=int(map_entity.photo.height),
+    )
+    _states[tenant_id] = state
+    return state
 
 
 # ---------------------------------------------------------------------------
@@ -297,3 +308,7 @@ def list_line_map_ids(data_dir: Path) -> list[str]:
     repo = _get_line_repo(data_dir)
     all_lines = repo.get_all()
     return sorted({line.map_id for line in all_lines})
+
+
+register_invalidation_callback(_states.clear)
+register_invalidation_callback(_line_repo_cache.clear)

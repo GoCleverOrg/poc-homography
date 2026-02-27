@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -364,6 +365,7 @@
 
     <div id="coords-display">Move mouse over image</div>
 
+    <script src="{% static 'js/tenant.js' %}"></script>
     <script>
         // API base URL
         const API_BASE = '{% url "camera_annotator:index" %}';
@@ -694,7 +696,7 @@
                     img.onload = function() {
                         renderMarkers();
                     };
-                    img.src = '{% url "camera_annotator:serve_image" %}?t=' + Date.now();
+                    img.src = withTenant('{% url "camera_annotator:serve_image" %}?t=' + Date.now());
 
                     // Update other UI elements
                     renderAnnotationsList();
@@ -711,6 +713,9 @@
         imageSelector.addEventListener('change', (e) => {
             switchImage(e.target.value);
         });
+
+        // Fix initial image src with tenant_id
+        if (TENANT_ID) img.src = withTenant(img.src);
 
         // Initialize
         loadGcps().then(() => {

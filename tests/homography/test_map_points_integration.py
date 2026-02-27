@@ -23,6 +23,11 @@ from poc_homography.pixel_point import PixelPoint
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
 MAP_POINTS_PATH = TEST_DATA_DIR / "Cartografia_valencia_gcps.yaml"
+
+pytestmark = pytest.mark.skipif(
+    not MAP_POINTS_PATH.exists(),
+    reason="DVC test data not available (run 'poe dvc-pull')",
+)
 ANNOTATIONS_PATH = TEST_DATA_DIR / "valte_annotations.yaml"
 
 

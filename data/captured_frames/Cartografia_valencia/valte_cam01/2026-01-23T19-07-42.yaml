@@ -1,0 +1,9 @@
+id: Cartografia_valencia/valte_cam01/2026-01-23T19-07-42
+map_id: Cartografia_valencia
+camera_name: valte_cam01
+timestamp: '2026-01-23T19:07:42'
+ptz_state:
+  pan_raw: 90.0
+  tilt_deg: 15.3
+  zoom: 1.0
+image_path: valte_valte_cam01_20260123_190742_90.0_15.3_1.0.jpg

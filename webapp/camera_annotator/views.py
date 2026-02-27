@@ -3,55 +3,49 @@
 from __future__ import annotations
 
 import json
-import mimetypes
 
-from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     GCPS_DIR,
-    get_default_map_id,
-    get_frame_image_path,
+    get_available_images,
     get_frame_repo,
+    get_map_from_tenant_id,
+    get_tenant_id,
     image_filename_to_frame,
     invalidate_cache,
-    list_image_filenames,
     load_annotations_for_frame,
+    serve_current_image,
     validate_image_filename,
+)
+from homography_web.frame_utils import (
+    get_current_image as _get_current_image,
 )
 
 # Session key for current image
 SESSION_IMAGE_KEY = "camera_annotator_image"
 
 
-def get_available_images() -> list[str]:
-    """Return available image filenames from the CapturedFrame repo."""
-    return list_image_filenames()
-
-
-def get_current_image(request: HttpRequest) -> str | None:
+def get_current_image(request: HttpRequest, map_id: str | None = None) -> str | None:
     """Get the current image filename from session, or first available image."""
-    session_image = request.session.get(SESSION_IMAGE_KEY)
-    if session_image:
-        if image_filename_to_frame(session_image) is not None:
-            return session_image
-
-    images = get_available_images()
-    if images:
-        return images[0]
-
-    return None
+    return _get_current_image(request, SESSION_IMAGE_KEY, map_id)
 
 
-def load_gcps() -> list[dict]:
-    """Load GCPs from the repository."""
+def load_gcps(tenant_id: str) -> list[dict]:
+    """Load GCPs from the repository.
+
+    Args:
+        tenant_id: Tenant identifier for map lookup.
+    """
     from poc_homography.map_points.gcp_registry import from_gcp_repo
 
-    map_id = get_default_map_id()
-    if map_id is None:
+    map_entity = get_map_from_tenant_id(tenant_id)
+    if map_entity is None:
         return []
     try:
+        map_id = map_entity.id
         registry = from_gcp_repo(GCPS_DIR, map_id)
     except (KeyError, ValueError, OSError):
         return []
@@ -102,9 +96,15 @@ def save_annotations_to_repo(
     get_frame_repo().save_annotations(frame.id, ann_entities)
 
 
+def _get_tenant_map_id(request: HttpRequest) -> str | None:
+    """Return the map_id for the current tenant, or None."""
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    return map_entity.id if map_entity else None
+
+
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main HTML page."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     context = {
         "image_filename": current_image or "No images available",
     }
@@ -115,7 +115,7 @@ def index(request: HttpRequest) -> HttpResponse:
 def api_gcps(request: HttpRequest) -> JsonResponse:
     """Get list of available GCPs."""
     try:
-        gcps = load_gcps()
+        gcps = load_gcps(get_tenant_id(request))
         return JsonResponse(gcps, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to load GCPs: {e}"}, status=500)
@@ -124,7 +124,7 @@ def api_gcps(request: HttpRequest) -> JsonResponse:
 @require_GET
 def api_annotations(request: HttpRequest) -> JsonResponse:
     """Get existing annotations for current image from the CapturedFrame repo."""
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse([], safe=False)
 
@@ -137,9 +137,11 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_images(request: HttpRequest) -> JsonResponse:
-    """Get list of available images."""
+    """Get list of available images for the current tenant."""
     try:
-        images = get_available_images()
+        map_entity = get_map_from_tenant_id(get_tenant_id(request))
+        map_id = map_entity.id if map_entity else None
+        images = get_available_images(map_id)
         return JsonResponse(images, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to get available images: {e}"}, status=500)
@@ -161,6 +163,11 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
     frame = image_filename_to_frame(filename)
     if frame is None:
+        return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
+
+    # Validate frame belongs to the current tenant's map
+    map_entity = get_map_from_tenant_id(get_tenant_id(request))
+    if map_entity and frame.map_id != map_entity.id:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
     request.session[SESSION_IMAGE_KEY] = filename
@@ -185,7 +192,7 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    current_image = get_current_image(request)
+    current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
@@ -220,27 +227,4 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
 @require_GET
 def serve_image(request: HttpRequest) -> HttpResponse:
     """Serve the current image file."""
-    current_image = get_current_image(request)
-    if not current_image:
-        return HttpResponse("No image available", status=404)
-
-    frame = image_filename_to_frame(current_image)
-    if frame is None:
-        return HttpResponse("Image not found", status=404)
-
-    resolved_path = get_frame_image_path(frame)
-    if not resolved_path.exists():
-        return HttpResponse("Image not found", status=404)
-
-    mime_type, _ = mimetypes.guess_type(str(resolved_path))
-    if not mime_type:
-        mime_type = "image/jpeg"
-
-    response = FileResponse(
-        open(resolved_path, "rb"),
-        content_type=mime_type,
-    )
-    response["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response["Pragma"] = "no-cache"
-    response["Expires"] = "0"
-    return response
+    return serve_current_image(request, SESSION_IMAGE_KEY, _get_tenant_map_id(request))

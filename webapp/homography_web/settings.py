@@ -61,6 +61,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "homography_web.middleware.TenantIdMiddleware",
 ]
 
 ROOT_URLCONF = "homography_web.urls"
@@ -137,11 +138,6 @@ STATICFILES_DIRS = [
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# Tenant configuration
-# Default tenant used when no tenant is explicitly selected in the UI.
-# Must match a tenant ID in data/tenants/ (e.g., "valte", "setram", "icozee").
-DEFAULT_TENANT_ID = "valte"
 
 # Camera Diagnostic App Settings
 CAMERA_DIAGNOSTIC_SCREENSHOTS_DIR = BASE_DIR / "diagnostic_screenshots"

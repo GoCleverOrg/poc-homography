@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -805,6 +806,7 @@
         </div>
     </div>
 
+    <script src="{% static 'js/tenant.js' %}"></script>
     <script>
         // CSRF token helper
         function getCsrfToken() {

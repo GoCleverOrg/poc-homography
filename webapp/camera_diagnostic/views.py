@@ -184,9 +184,9 @@ def _error_response(
 @require_GET
 def index(request: HttpRequest) -> HttpResponse:
     """Serve the main camera diagnostic HTML page."""
-    from homography_web.frame_utils import get_default_tenant_id
+    from homography_web.frame_utils import get_tenant_id
 
-    tenant_id = request.GET.get("tenant_id", get_default_tenant_id())
+    tenant_id = get_tenant_id(request)
     tenant = get_tenant_by_id(tenant_id)
     return render(
         request,

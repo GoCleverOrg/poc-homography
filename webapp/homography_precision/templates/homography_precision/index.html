@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -690,6 +691,7 @@
     <!-- Hidden element to track current case -->
     <div id="current-case" style="display:none;">No test case loaded</div>
 
+    <script src="{% static 'js/tenant.js' %}"></script>
     <script>
         // Application State
         let cameraViewer = null;
@@ -980,7 +982,7 @@
                     width: cameraInfo.width,
                     tileSize: 256,
                     getTileUrl: (level, x, y) => {
-                        return `${API_BASE}/api/camera-tile/?case=${encodeURIComponent(currentTestCase)}&x=${x}&y=${y}&z=${level}`;
+                        return withTenant(`${API_BASE}/api/camera-tile/?case=${encodeURIComponent(currentTestCase)}&x=${x}&y=${y}&z=${level}`);
                     }
                 },
                 showNavigator: true,
@@ -1016,7 +1018,7 @@
                     width: mapInfo.width,
                     tileSize: 256,
                     getTileUrl: (level, x, y) => {
-                        return `${API_BASE}/api/map-tile/?x=${x}&y=${y}&z=${level}`;
+                        return withTenant(`${API_BASE}/api/map-tile/?x=${x}&y=${y}&z=${level}`);
                     }
                 },
                 showNavigator: true,

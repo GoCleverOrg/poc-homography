@@ -1,9 +1,6 @@
 """Django app configuration for line_picker."""
 
-from pathlib import Path
-
 from django.apps import AppConfig
-from homography_web.frame_utils import get_default_map_id
 
 
 class LinePickerConfig(AppConfig):
@@ -12,27 +9,3 @@ class LinePickerConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "line_picker"
     verbose_name = "Line Picker"
-
-    def ready(self) -> None:
-        """Initialize line picker state when app loads."""
-        from .state import get_state, initialize_state
-
-        # Check if already initialized (avoid double initialization in runserver)
-        try:
-            get_state()
-            return  # Already initialized
-        except RuntimeError:
-            pass
-
-        # Paths relative to webapp directory
-        webapp_dir = Path(__file__).resolve().parent.parent
-        project_root = webapp_dir.parent
-
-        # Use the default map
-        default_map = get_default_map_id()
-        if default_map is None:
-            return  # No map configured for default tenant
-        map_file = project_root / f"{default_map}.tif"
-
-        if map_file.exists():
-            initialize_state(map_file, default_map)

@@ -1,0 +1,6 @@
+[core]
+    remote = gdrive
+# The GDrive folder ID below is intentionally committed; it identifies the
+# shared read-only folder and contains no secrets.
+['remote "gdrive"']
+    url = gdrive://1_XMtYRl4Zz1keSIeSH0NkDqwiyFgC-8p
