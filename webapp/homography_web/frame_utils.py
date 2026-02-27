@@ -246,32 +246,6 @@ def resolve_map_for_tenant(tenant_id: str) -> tuple[Map, Path]:
     return map_entity, map_file
 
 
-def get_map_image_path(map_id: str) -> Path:
-    """Return the absolute path to the GeoTIFF (or other image) for a map.
-
-    Resolves ``Map.photo.path`` relative to the ``data/maps/`` directory.
-
-    Args:
-        map_id: Map identifier (e.g. ``"Cartografia_valencia"``).
-
-    Returns:
-        Absolute ``Path`` to the map image file.
-
-    Raises:
-        FileNotFoundError: If the map entity is not found or the resolved path
-            does not exist on disk.
-    """
-    entity = get_map_repo().get(map_id)
-    if entity is None:
-        msg = f"Map entity not found for map_id={map_id!r}"
-        raise FileNotFoundError(msg)
-    resolved = DATA_MAPS_DIR / entity.photo.path
-    if not resolved.exists():
-        msg = f"Map image not found at {resolved} (photo.path={entity.photo.path})"
-        raise FileNotFoundError(msg)
-    return resolved
-
-
 # ---------------------------------------------------------------------------
 # Module-level caches
 # ---------------------------------------------------------------------------

@@ -213,4 +213,6 @@ _invalidate_line_registry_cache  # unused function (webapp/homography_precision/
 get_annotation_repo  # unused function (webapp/homography_web/frame_utils.py:220) - public API
 validate_export_request  # unused function (webapp/line_picker/validation.py) - used by views
 validate_import_request  # unused function (webapp/line_picker/validation.py) - used by views
+TenantIdMiddleware  # unused class (webapp/homography_web/middleware.py) - Django MIDDLEWARE setting
+_.process_exception  # unused method (webapp/homography_web/middleware.py) - Django middleware hook
 
