@@ -50,7 +50,6 @@ def _get_tenant_repo():
 # Default camera sensor parameters for Hikvision DS-2DF8425IX series
 DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8° FOV at 5.9mm focal length
 DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9  # Minimum focal length at 1x zoom
-DEFAULT_MAX_ZOOM = 25.0  # Maximum optical zoom factor
 
 # =============================================================================
 # CALIBRATION TABLE FORMAT (Optional)

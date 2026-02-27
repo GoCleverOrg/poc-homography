@@ -239,30 +239,3 @@ class HomographyProvider(ABC):
     def is_valid(self) -> bool:
         """Check if homography is valid and ready for projection."""
         pass
-
-
-def validate_homography_matrix(
-    matrix: np.ndarray | None,
-    confidence: float,
-    confidence_threshold: float,
-    min_det_threshold: float = 1e-15,
-) -> bool:
-    """Validate a homography matrix for projections.
-
-    Checks for None, identity, singularity, and confidence threshold.
-    Default min_det_threshold of 1e-15 accommodates large scale differences
-    between pixel coords (0-2000) and metric coords (0-500m).
-    """
-    if matrix is None:
-        return False
-
-    if np.allclose(matrix, np.eye(3)):
-        return False
-
-    if abs(np.linalg.det(matrix)) < min_det_threshold:
-        return False
-
-    if confidence < confidence_threshold:
-        return False
-
-    return True

@@ -41,21 +41,22 @@ _.writeable  # unused attribute (poc_homography/domain/vo/vector3.py:85)
 _.normalized  # unused method (poc_homography/domain/vo/vector3.py:103)
 _.get_approach_config  # unused method (poc_homography/homography/config.py:270)
 _.save_to_yaml  # unused method (poc_homography/homography/config.py:290)
-GOOD_QUADRANT_COVERAGE  # unused variable (poc_homography/homography/feature_match.py:80)
-_._last_metadata  # unused attribute (poc_homography/homography/feature_match.py:158)
-_._calculate_point_confidence  # unused method (poc_homography/homography/feature_match.py:380)
-_.compute_homography  # unused method (poc_homography/homography/feature_match.py:540)
-_._last_metadata  # unused attribute (poc_homography/homography/feature_match.py:765)
-_.project_points  # unused method (poc_homography/homography/feature_match.py:813)
-_.get_confidence  # unused method (poc_homography/homography/feature_match.py:841)
+FEATURE_MATCH  # unused variable (poc_homography/homography/interface.py:37) - enum value used in tests
 LEARNED  # unused variable (poc_homography/homography/interface.py:38)
 MAP_BASED_ORIGIN  # unused variable (poc_homography/homography/interface.py:45)
 _.identity  # unused method (poc_homography/homography/interface.py:89)
+_.project_point  # unused method (poc_homography/homography/interface.py:205) - abstract interface method
 _.project_points  # unused method (poc_homography/homography/interface.py:218)
+image_points  # unused variable (poc_homography/homography/interface.py:220) - abstract method parameter
+point_id_prefix  # unused variable (poc_homography/homography/interface.py:220) - abstract method parameter
 _.get_confidence  # unused method (poc_homography/homography/interface.py:233)
+EDGE_FACTOR_CENTER  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:119) - class constant
+EDGE_FACTOR_EDGE  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:120) - class constant
 EDGE_FACTOR_CORNER_DECAY  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:121)
+EDGE_FACTOR_MIN  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:122) - class constant
 _.get_distortion_coefficients  # unused method (poc_homography/homography/intrinsic_extrinsic.py:276)
 _.compute_from_config  # unused method (poc_homography/homography/intrinsic_extrinsic.py:481)
+_.project_point  # unused method (poc_homography/homography/intrinsic_extrinsic.py:603) - interface impl
 _.project_points  # unused method (poc_homography/homography/intrinsic_extrinsic.py:626)
 _.get_confidence  # unused method (poc_homography/homography/intrinsic_extrinsic.py:639)
 _.project_point_static  # unused method (poc_homography/homography/intrinsic_extrinsic.py:721)
@@ -184,10 +185,8 @@ _.process_exception  # unused method (webapp/homography_web/middleware.py) - Dja
 _.get_coefficients  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:232) - public API
 _.get_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:377) - public API
 straightness_rmse  # unused function (poc_homography/calibration/lens_distortion/distortion_solver.py:474) - utility
-DEFAULT_MAX_ZOOM  # unused variable (poc_homography/camera_config.py:53) - config constant
 get_rtsp_url  # unused function (poc_homography/camera_config.py:525) - used by webapp views
 _.focal_length_at_zoom  # unused method (poc_homography/domain/enums/camera_spec.py:101) - domain API
-_.segment  # unused method (poc_homography/domain/protocols/sam3_client.py:36) - protocol contract
 _.delete  # unused method (poc_homography/domain/repositories/repo.py:35) - repository protocol
 _.to_list  # unused method (poc_homography/domain/vo/geotiff.py:38) - VO API
 _.pixel_to_geo  # unused method (poc_homography/domain/vo/geotiff.py:85) - VO API
@@ -198,8 +197,6 @@ _.has_distortion  # unused property (poc_homography/domain/vo/lens_distortion.py
 _.inverse  # unused method (poc_homography/domain/vo/matrix3x3.py:128) - VO API
 _.to_list  # unused method (poc_homography/domain/vo/matrix3x3.py:171) - VO API
 _.to_orientation  # unused method (poc_homography/domain/vo/ptz_state.py:30) - VO API
-get_default_config  # unused function (poc_homography/homography/config.py:331) - public API
-FeatureMatchHomography  # unused class (poc_homography/homography/feature_match.py:37) - homography provider
 _.inverse  # unused method (poc_homography/homography/interface.py:98) - interface API
 _.transform  # unused method (poc_homography/homography/interface.py:134) - interface API
 num_gcps  # unused variable (poc_homography/homography/map_points.py:47) - NamedTuple field
@@ -210,8 +207,6 @@ _.compute_from_gcps  # unused method (poc_homography/homography/map_points.py:11
 _.compute_from_lines  # unused method (poc_homography/homography/map_points.py:238) - core algorithm
 _.camera_to_map  # unused method (poc_homography/homography/map_points.py:575) - core algorithm
 _.map_to_camera  # unused method (poc_homography/homography/map_points.py:601) - core algorithm
-build_rtsp_url  # unused function (poc_homography/infrastructure/clients/rtsp.py:31) - infrastructure client
-_.segment  # unused method (poc_homography/infrastructure/clients/sam3_api_client.py:34) - protocol impl
 _.get_by_tenant  # unused method (poc_homography/infrastructure/repositories/base/mixin_repo_tenant_filter.py:15) - mixin API
 _.delete  # unused method (poc_homography/infrastructure/repositories/base/repo_yaml.py:84) - repository CRUD
 _.image_dir_for  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:35) - repo API
