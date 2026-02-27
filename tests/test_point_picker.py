@@ -364,7 +364,9 @@ class TestPointPickerAPI:
 
         # Inject state for the test tenant, clean up after test
         pp_state._states[self.TENANT_ID] = state
-        yield Client()
+        # Bypass tenant repo validation (test tenant doesn't exist in YAML repo)
+        with patch("point_picker.views.get_tenant_id", return_value=self.TENANT_ID):
+            yield Client()
         pp_state._states.pop(self.TENANT_ID, None)
 
     def _url(self, path: str, extra_qs: str = "") -> str:
@@ -593,6 +595,7 @@ class TestPointPickerAPI:
     def test_import_points(self, test_client, tmp_path: Path) -> None:
         """POST /point-picker/api/import/ loads points from GCP repository."""
         import point_picker.views as pp_views
+        from unittest.mock import MagicMock
 
         # Create GCP YAML files in repo format
         gcps_dir = tmp_path / "gcps"
@@ -608,19 +611,24 @@ class TestPointPickerAPI:
         original = pp_views.GCPS_DIR
         pp_views.GCPS_DIR = gcps_dir
 
-        try:
-            resp = test_client.post(
-                self._url("/point-picker/api/import/"),
-                data=json.dumps({"map_id": "test"}),
-                content_type="application/json",
-            )
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["count"] == 2
+        # Mock map entity for tenant validation in api_import
+        mock_map = MagicMock()
+        mock_map.id = "test"
 
-            # Verify points were imported
-            resp = test_client.get(self._url("/point-picker/api/points/"))
-            assert len(resp.json()["points"]) == 2
+        try:
+            with patch("point_picker.views.get_map_from_tenant_id", return_value=mock_map):
+                resp = test_client.post(
+                    self._url("/point-picker/api/import/"),
+                    data=json.dumps({"map_id": "test"}),
+                    content_type="application/json",
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["count"] == 2
+
+                # Verify points were imported
+                resp = test_client.get(self._url("/point-picker/api/points/"))
+                assert len(resp.json()["points"]) == 2
         finally:
             pp_views.GCPS_DIR = original
 
