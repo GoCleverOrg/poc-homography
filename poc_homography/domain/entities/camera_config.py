@@ -58,24 +58,6 @@ class CameraConfig:
             data["ip_address"] = self.ip_address
         return data
 
-    def rtsp_url(self, stream_type: str = "main") -> str:
-        """Build RTSP URL for this camera.
-
-        Delegates to the infrastructure RTSP URL builder.
-
-        Args:
-            stream_type: "main" for high quality or "sub" for low quality
-
-        Returns:
-            Full RTSP URL for the camera stream
-
-        Raises:
-            ValueError: If camera has no IP address configured
-        """
-        from poc_homography.infrastructure.clients.rtsp import build_rtsp_url
-
-        return build_rtsp_url(self, stream_type)
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CameraConfig:
         """Create CameraConfig from dictionary."""

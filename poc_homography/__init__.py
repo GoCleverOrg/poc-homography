@@ -15,19 +15,12 @@ from poc_homography.camera_parameters import (
 )
 from poc_homography.domain.vo import HeightUncertainty, LensDistortion, PixelPoint
 from poc_homography.homography import (
-    CoordinateSystemMode,
-    FeatureMatchHomography,
     HomographyApproach,
-    HomographyConfig,
-    HomographyMatrix,
     HomographyProvider,
-    HomographyResult,
     IntrinsicExtrinsicConfig,
     IntrinsicExtrinsicHomography,
     IntrinsicExtrinsicResult,
-    MapPointComputationResult,
     MapPointHomography,
-    get_default_config,
 )
 from poc_homography.map_points import GCPRegistry, MapPoint
 
@@ -41,9 +34,6 @@ __all__ = [
     # Homography interface
     "HomographyProvider",
     "HomographyApproach",
-    "HomographyMatrix",
-    "HomographyResult",
-    "CoordinateSystemMode",
     # Immutable homography parameter types
     "IntrinsicExtrinsicConfig",
     "IntrinsicExtrinsicResult",
@@ -51,13 +41,9 @@ __all__ = [
     "MapPoint",
     "GCPRegistry",
     "MapPointHomography",
-    "MapPointComputationResult",
     # Other
     "PixelPoint",
     "IntrinsicExtrinsicHomography",
-    "FeatureMatchHomography",
-    "HomographyConfig",
-    "get_default_config",
 ]
 
 # Package metadata
