@@ -377,7 +377,10 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
                 {"success": False, "error": f"Line test case not found: {test_case_name}"},
                 status=404,
             )
-        line_annotations = line_test_case.get("line_annotations", [])
+        line_annotations = [
+            a.to_dict() if hasattr(a, "to_dict") else a
+            for a in line_test_case.get("line_annotations", [])
+        ]
     elif not line_annotations:
         return JsonResponse(
             {

@@ -283,6 +283,45 @@ def get_calibration_by_camera_id(camera_id: str) -> CameraCalibration | None:
     return _get_camera_calibration_repo().get(resolved_id)
 
 
+def build_legacy_camera_dict(
+    camera: CameraConfig,
+    calibration: CameraCalibration | None,
+) -> dict:
+    """Build a legacy camera dict from DDD entities for backward compatibility.
+
+    Used by CLI code that still expects the old dict format with fields
+    like 'height_m', 'pan_offset_deg', 'k1', 'k2', etc.
+    """
+    from typing import Any
+
+    result: dict[str, Any] = {
+        "id": camera.id,
+        "name": camera.name,
+        "ip": camera.ip_address,
+        "tenant_id": camera.tenant_id,
+        "model": camera.spec.model_name,
+        "sensor_width_mm": float(camera.spec.sensor_width),
+        "base_focal_length_mm": float(camera.spec.base_focal_length),
+    }
+    if calibration:
+        result["height_m"] = float(calibration.height)
+        result["pan_offset_deg"] = float(calibration.base_orientation.yaw)
+        result["tilt_offset_deg"] = float(calibration.base_orientation.pitch)
+        result["k1"] = float(calibration.distortion.k1)
+        result["k2"] = float(calibration.distortion.k2)
+        result["p1"] = float(calibration.distortion.p1)
+        result["p2"] = float(calibration.distortion.p2)
+    else:
+        result["height_m"] = 5.0
+        result["pan_offset_deg"] = 0.0
+        result["tilt_offset_deg"] = 0.0
+        result["k1"] = 0.0
+        result["k2"] = 0.0
+        result["p1"] = 0.0
+        result["p2"] = 0.0
+    return result
+
+
 def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     """
     Get RTSP URL for a camera.

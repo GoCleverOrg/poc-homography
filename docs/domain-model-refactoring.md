@@ -608,7 +608,7 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 5: Migration of Existing Code
 
-**Status**: Partially complete (updated Feb 2027 after PR #225 deep cleanup)
+**Status**: Partially complete (updated Feb 2026 after PR #225 deep cleanup)
 
 PR #225 removed 1,289 lines of dead code and vestigial VOs. The `services/` directory
 was deleted entirely. The domain model continues to evolve with new VOs and entities
@@ -622,7 +622,7 @@ Only update legacy code to USE the new domain model.
 
 #### 5.1 Delete Legacy GPS/UTM Code
 - [ ] Remove `lat`, `lon` fields from camera configs (use PixelPoint position instead) -- still present in `camera_config.py`
-- [x] ~~Delete `data/gcps/valte.yaml` UTM coordinates and recreate with pixel coordinates~~ -- `valte.yaml` deleted; GCPs now stored as per-tenant YAML files in `data/gcps/`
+- [x] ~~Delete `data/gcps/valte.yaml` UTM coordinates and recreate with pixel coordinates~~ -- `valte.yaml` removed (UTM entries were invalid); GCPs stored as per-entity YAML files in `data/gcps/<map_id>__<name>.yaml`
 - [x] ~~Remove GPS-to-UTM conversion utilities that are no longer needed~~ -- `geotiff_utils.py` deleted in PR #225
 - [ ] Delete any legacy coordinate transformation code -- `camera_config.py` still contains inline coordinate helpers
 
@@ -660,14 +660,14 @@ Only update legacy code to USE the new domain model.
 - [x] `YamlGroundControlPointRepository` - done (returns dict keyed by id)
 - [x] `YamlCameraConfigRepository` - done (file naming: camera_id with "/" replaced by "__")
 - [x] `YamlCameraCalibrationRepository` - done (file naming: camera_id with "/" replaced by "__")
-- [x] ~~**DATA ISSUE (Phase 5.1)**: GCPs in `data/gcps/valte.yaml` have UTM coordinates~~ -- `valte.yaml` deleted; GCPs now stored as per-tenant YAML files with pixel coordinates.
+- [x] ~~**DATA ISSUE (Phase 5.1)**: GCPs in `data/gcps/valte.yaml` have UTM coordinates~~ -- `valte.yaml` removed (invalid UTM entries); GCPs stored as per-entity YAML files `<map_id>__<name>.yaml` with pixel coordinates.
 - [ ] **DATA ISSUE (Phase 5.1)**: Camera calibration positions in `data/calibrations/` may use estimated pixel values. Needs proper calibration.
 
 ---
 
 ## 6. File Structure
 
-> Updated Feb 2027 to reflect actual codebase after PR #225 deep cleanup.
+> Updated Feb 2026 to reflect actual codebase after PR #225 deep cleanup.
 > The `services/` directory was deleted (domain services removed).
 > Several VOs and entities were added as new features matured.
 
@@ -748,7 +748,7 @@ poc_homography/
 │   ├── maps/
 │   │   └── *.yaml              ✅
 │   ├── gcps/
-│   │   └── <tenant>__<name>.yaml ✅ (per-tenant YAML files; old valte.yaml deleted)
+│   │   └── <map_id>__<name>.yaml ✅ (per-entity YAML files; old valte.yaml removed)
 │   ├── cameras/
 │   │   └── <tenant>__<name>.yaml ✅
 │   └── calibrations/

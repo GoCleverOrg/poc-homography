@@ -10,11 +10,15 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import cv2
 import requests
 from camera_survey.ptz import create_ptz_camera
 from django.conf import settings
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.camera_config import CameraConfig
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -71,7 +75,7 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
-def _validate_camera_for_rtsp(camera_name: str) -> tuple[dict, str] | JsonResponse:
+def _validate_camera_for_rtsp(camera_name: str) -> tuple[CameraConfig, str] | JsonResponse:
     """Validate camera exists and get RTSP URL.
 
     Args:
@@ -102,7 +106,7 @@ def _validate_camera_for_rtsp(camera_name: str) -> tuple[dict, str] | JsonRespon
     return (camera, rtsp_url)
 
 
-def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, str] | JsonResponse:
+def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[CameraConfig, str, str, str] | JsonResponse:
     """Validate camera exists, has IP, and credentials are set.
 
     Args:
