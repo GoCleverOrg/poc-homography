@@ -246,3 +246,6 @@ validate_export_request  # uncertain — validation function with no callers
 validate_import_request  # uncertain — validation function with no callers
 #   NOTE: validate_import_request() is defined but never imported by views.py.
 #   The import endpoint may do inline validation instead.
+_.get_by_frame_id  # uncertain — RepoYamlAnnotation method; class kept as DDD infra, method has no callers
+#   NOTE: RepoYamlAnnotation is a valid DDD repository class exported in __all__.
+#   get_by_frame_id() has no callers in webapp code currently.
