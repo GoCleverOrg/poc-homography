@@ -28,10 +28,9 @@ import numpy as np
 import pytest
 import yaml
 
-from poc_homography.camera_config import get_camera_by_name
+from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points import GCPRegistry
-from poc_homography.domain.vo import PixelPoint
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
@@ -47,10 +46,8 @@ pytestmark = pytest.mark.skipif(
 
 # Valte camera geotransform: 0.15 m/pixel in map space
 # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
-VALTE_CONFIG = get_camera_by_name("Valte")
-MAP_METERS_PER_PIXEL = (
-    abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
-)
+# This is a map-level parameter from data/maps/valte.yaml, not camera config.
+MAP_METERS_PER_PIXEL = 0.15
 
 
 # =============================================================================

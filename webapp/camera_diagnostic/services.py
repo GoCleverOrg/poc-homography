@@ -1218,12 +1218,12 @@ class CameraStressTestService:
         if not camera:
             return None, f"Camera not found: {config.camera_id}"
 
-        camera_ip = camera.get("ip")
+        camera_ip = camera.ip_address
         if not camera_ip:
             return None, f"No IP address for camera: {config.camera_id}"
 
         # Get tenant-specific credentials (falls back to global)
-        tenant_id = camera.get("tenant_id") or config.tenant_id
+        tenant_id = camera.tenant_id or config.tenant_id
         username, password = get_tenant_credentials(tenant_id)
         if not username or not password:
             return None, (
@@ -1242,7 +1242,7 @@ class CameraStressTestService:
             status=StressTestStatus.PENDING,
             tenant_id=config.tenant_id,
             camera_id=config.camera_id,
-            camera_name=camera.get("name", config.camera_id),
+            camera_name=camera.name,
             config=config,
         )
 

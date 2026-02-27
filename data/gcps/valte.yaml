@@ -1,0 +1,13 @@
+# Valte map — ground control points
+#
+# The original entries in this file contained UTM easting/northing values
+# (e.g. 251246, -360159) mislabelled as pixel coordinates.  Those values
+# have been removed because they are NOT valid pixel coordinates and would
+# produce incorrect homography results.
+#
+# TODO: Pixel-coordinate GCPs for the Valte map remain to be calibrated.
+#       Once calibrated, add entries here in the per-entity format used by
+#       the repository (see Cartografia_valencia__*.yaml for examples).
+
+map_id: valte
+points: []

@@ -1,0 +1,11 @@
+# Camera configuration for Icozee Cam06
+
+id: icozee/Cam06
+tenant_id: icozee
+map_id: icozee
+name: Cam06
+spec: HIKVISION_DS_2DF8425IX
+credential:
+  username: admin
+  password: REPLACE_ME
+ip_address: 10.107.50.7

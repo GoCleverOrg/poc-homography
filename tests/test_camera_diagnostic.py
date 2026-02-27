@@ -1216,9 +1216,10 @@ class TestCameraStressTestService:
 
     def test_start_stress_test_no_ip(self, monkeypatch):
         """Should return error when camera has no IP."""
+        fake_camera = MagicMock(name="test", ip_address=None, tenant_id="t1")
         monkeypatch.setattr(
             "webapp.camera_diagnostic.services.get_camera_by_id",
-            lambda x: {"name": "test"},  # No IP
+            lambda x: fake_camera,
         )
 
         config = StressTestConfig(
@@ -1233,9 +1234,10 @@ class TestCameraStressTestService:
 
     def test_start_stress_test_no_credentials(self, monkeypatch):
         """Should return error when credentials not set."""
+        fake_camera = MagicMock(name="test", ip_address="192.168.1.100", tenant_id="t1")
         monkeypatch.setattr(
             "webapp.camera_diagnostic.services.get_camera_by_id",
-            lambda x: {"name": "test", "ip": "192.168.1.100"},
+            lambda x: fake_camera,
         )
         monkeypatch.setenv("CAMERA_USERNAME", "")
         monkeypatch.setenv("CAMERA_PASSWORD", "")

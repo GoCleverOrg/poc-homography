@@ -1,0 +1,11 @@
+# Camera configuration for Icozee Cam11
+
+id: icozee/Cam11
+tenant_id: icozee
+map_id: icozee
+name: Cam11
+spec: HIKVISION_DS_2DF8425IX
+credential:
+  username: admin
+  password: REPLACE_ME
+ip_address: 10.107.50.12

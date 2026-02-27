@@ -246,7 +246,7 @@ class CameraSurveyService:
                 _survey_lock.release()
                 return "", f"Tenant not found: {config.tenant_id}"
 
-            camera_ip = camera.get("ip")
+            camera_ip = camera.ip_address
             if not camera_ip:
                 _survey_lock.release()
                 return "", f"Camera {config.camera_id} has no IP address"
@@ -255,8 +255,8 @@ class CameraSurveyService:
             try:
                 ptz_camera = create_ptz_camera(
                     camera_ip=camera_ip,
-                    camera_name=camera.get("name", config.camera_id),
-                    camera_model=camera.get("model"),
+                    camera_name=camera.name,
+                    camera_model=camera.spec.model_name,
                     tenant_id=config.tenant_id,
                 )
             except ValueError as e:
@@ -296,10 +296,10 @@ class CameraSurveyService:
                 status=SurveyStatus.RUNNING,
                 tenant=TenantInfo(id=tenant["id"], name=tenant["name"]),
                 camera=CameraInfo(
-                    id=camera["id"],
-                    name=camera["name"],
+                    id=camera.id,
+                    name=camera.name,
                     ip=camera_ip,
-                    model=camera.get("model"),
+                    model=camera.spec.model_name,
                 ),
                 device_info=device_info,
                 survey_parameters=config,

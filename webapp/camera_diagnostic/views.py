@@ -29,7 +29,6 @@ from poc_homography.camera_config import (
     get_rtsp_url,
     get_tenant_by_id,
     get_tenant_credentials,
-    get_tenants,
 )
 
 from .models import (
@@ -120,7 +119,7 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
             status_code=404,
         )
 
-    camera_ip = camera.get("ip")
+    camera_ip = camera.ip_address
     if not camera_ip:
         return _error_response(
             CameraErrorCategory.INVALID_RESPONSE,
@@ -128,7 +127,7 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
         )
 
     # Get tenant-specific credentials (falls back to global)
-    tenant_id = camera.get("tenant_id")
+    tenant_id = camera.tenant_id
     username, password = get_tenant_credentials(tenant_id)
 
     if not username or not password:
@@ -238,10 +237,10 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
         # Return camera info including id, name, and ip
         camera_list = [
             {
-                "id": cam["id"],
-                "name": cam["name"],
-                "ip": cam["ip"],
-                "tenant_id": cam.get("tenant_id"),
+                "id": cam.id,
+                "name": cam.name,
+                "ip": cam.ip_address,
+                "tenant_id": cam.tenant_id,
             }
             for cam in cameras
         ]
@@ -744,9 +743,9 @@ def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
 
     # Run tests for each camera
     for camera in cameras:
-        camera_id = camera.get("id")
-        camera_name = camera.get("name", camera_id)
-        camera_ip = camera.get("ip")
+        camera_id = camera.id
+        camera_name = camera.name
+        camera_ip = camera.ip_address
 
         camera_result = CameraDiagnosticResult(
             camera_id=camera_id,

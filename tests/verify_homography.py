@@ -37,7 +37,7 @@ class HomographyVerifier:
 
         # Get camera status
         self.camera = HikvisionPTZ(
-            ip=self.cam_info["ip"], username=USERNAME, password=PASSWORD, name=self.cam_info["name"]
+            ip=self.cam_info.ip_address, username=USERNAME, password=PASSWORD, name=self.cam_info.name
         )
         self.status = self.camera.get_status()
 

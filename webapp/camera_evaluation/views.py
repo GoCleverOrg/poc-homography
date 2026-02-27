@@ -107,7 +107,10 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
 
     try:
         cameras = get_cameras_for_tenant(tenant_id)
-        camera_list = [{"id": cam["id"], "name": cam["name"], "ip": cam["ip"]} for cam in cameras]
+        camera_list = [
+            {"id": cam.id, "name": cam.name, "ip": cam.ip_address}
+            for cam in cameras
+        ]
         return _success_response({"cameras": camera_list})
     except Exception as e:
         logger.exception("Failed to load cameras")
@@ -392,8 +395,8 @@ def api_camera_capabilities(request: HttpRequest) -> JsonResponse:
     if not camera:
         return _error_response(f"Camera not found: {camera_id}", status_code=404)
 
-    camera_ip = camera.get("ip")
-    camera_name = camera.get("name", camera_id)
+    camera_ip = camera.ip_address
+    camera_name = camera.name
 
     if not camera_ip:
         return _error_response(f"Camera IP not configured: {camera_id}", status_code=500)
@@ -457,8 +460,8 @@ def api_camera_position(request: HttpRequest) -> JsonResponse:
     if not camera:
         return _error_response(f"Camera not found: {camera_id}", status_code=404)
 
-    camera_ip = camera.get("ip")
-    camera_name = camera.get("name", camera_id)
+    camera_ip = camera.ip_address
+    camera_name = camera.name
 
     if not camera_ip:
         return _error_response(f"Camera IP not configured: {camera_id}", status_code=500)

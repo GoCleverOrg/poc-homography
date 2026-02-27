@@ -608,32 +608,35 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 5: Migration of Existing Code
 
-**Status**: ❌ Not started
+**Status**: Partially complete (updated Feb 2027 after PR #225 deep cleanup)
+
+PR #225 removed 1,289 lines of dead code and vestigial VOs. The `services/` directory
+was deleted entirely. The domain model continues to evolve with new VOs and entities
+added as features require them.
 
 **CRITICAL**: The new domain model (Phases 1-4, 6) is FROZEN. Do NOT modify any files in:
 - `poc_homography/domain/` (entities, VOs, enums, repositories)
 - `poc_homography/infrastructure/repositories/`
-- `poc_homography/services/`
 
 Only update legacy code to USE the new domain model.
 
 #### 5.1 Delete Legacy GPS/UTM Code
-- [ ] Remove `lat`, `lon` fields from camera configs (use PixelPoint position instead)
-- [ ] Delete `data/gcps/valte.yaml` UTM coordinates and recreate with pixel coordinates
-- [ ] Remove GPS-to-UTM conversion utilities that are no longer needed
-- [ ] Delete any legacy coordinate transformation code
+- [ ] Remove `lat`, `lon` fields from camera configs (use PixelPoint position instead) -- still present in `camera_config.py`
+- [x] ~~Delete `data/gcps/valte.yaml` UTM coordinates and recreate with pixel coordinates~~ -- `valte.yaml` deleted; GCPs now stored as per-tenant YAML files in `data/gcps/`
+- [x] ~~Remove GPS-to-UTM conversion utilities that are no longer needed~~ -- `geotiff_utils.py` deleted in PR #225
+- [ ] Delete any legacy coordinate transformation code -- `camera_config.py` still contains inline coordinate helpers
 
 #### 5.2 Update Legacy Modules
-- [ ] Update `poc_homography/camera_config.py` to use CameraConfig + CameraCalibration entities
-- [ ] Update `poc_homography/camera_geometry.py` to use new domain VOs
-- [ ] Update `poc_homography/homography/` modules to use new domain model
-- [ ] Update `poc_homography/map_points/` to use new domain MapPoint VO
+- [ ] Update `poc_homography/camera_config.py` to use CameraConfig + CameraCalibration entities -- still dict-based legacy module
+- [ ] Update `poc_homography/camera_geometry.py` to use new domain VOs -- still exists, uses raw dicts
+- [ ] Update `poc_homography/homography/` modules to use new domain model -- still exists (`config.py`, `interface.py`, `intrinsic_extrinsic.py`, `map_points.py`, `parameters.py`)
+- [ ] Update `poc_homography/map_points/` to use new domain MapPoint VO -- still exists (`gcp_registry.py`, `map_point.py`)
 
 #### 5.3 Fix Skipped Tests
-- [ ] Fix `tests/calibration/test_annotation.py` - update to new Annotation API
-- [ ] Fix `tests/homography/test_map_points.py` - update data paths and imports
-- [ ] Fix `tests/homography/test_map_points_integration.py` - update data paths and imports
-- [ ] Fix `tests/map_points/test_ground_control_point_collection_serialization.py` - update MapPoint API
+- [x] ~~Fix `tests/calibration/test_annotation.py` - update to new Annotation API~~ -- test file deleted (annotation tests live elsewhere now)
+- [ ] Fix `tests/homography/test_map_points.py` - update data paths and imports -- still skipif-guarded
+- [ ] Fix `tests/homography/test_map_points_integration.py` - update data paths and imports -- still skipif-guarded
+- [x] ~~Fix `tests/map_points/test_ground_control_point_collection_serialization.py` - update MapPoint API~~ -- test file deleted (serialization covered by DDD repo tests)
 
 #### 5.4 Validation
 - [ ] All pyright checks pass
@@ -657,12 +660,16 @@ Only update legacy code to USE the new domain model.
 - [x] `YamlGroundControlPointRepository` - done (returns dict keyed by id)
 - [x] `YamlCameraConfigRepository` - done (file naming: camera_id with "/" replaced by "__")
 - [x] `YamlCameraCalibrationRepository` - done (file naming: camera_id with "/" replaced by "__")
-- [ ] **DATA ISSUE (Phase 5.1)**: GCPs in `data/gcps/valte.yaml` have UTM coordinates (e.g., 251246, -360159). DELETE and recreate with proper pixel coordinates.
-- [ ] **DATA ISSUE (Phase 5.1)**: Camera calibration position in `data/calibrations/valte__Valte.yaml` uses estimated pixel values. Needs proper calibration.
+- [x] ~~**DATA ISSUE (Phase 5.1)**: GCPs in `data/gcps/valte.yaml` have UTM coordinates~~ -- `valte.yaml` deleted; GCPs now stored as per-tenant YAML files with pixel coordinates.
+- [ ] **DATA ISSUE (Phase 5.1)**: Camera calibration positions in `data/calibrations/` may use estimated pixel values. Needs proper calibration.
 
 ---
 
 ## 6. File Structure
+
+> Updated Feb 2027 to reflect actual codebase after PR #225 deep cleanup.
+> The `services/` directory was deleted (domain services removed).
+> Several VOs and entities were added as new features matured.
 
 ```
 poc_homography/
@@ -670,66 +677,84 @@ poc_homography/
 │   ├── __init__.py             ✅
 │   ├── vo/
 │   │   ├── __init__.py         ✅
-│   │   ├── pixel_point.py      ✅
-│   │   ├── map_point.py        ✅
-│   │   ├── camera_intrinsics.py ✅
-│   │   ├── ptz_state.py        ✅
+│   │   ├── credential.py       ✅
 │   │   ├── geotiff.py          ✅
-│   │   ├── orientation.py      ✅
+│   │   ├── height_uncertainty.py ✅
+│   │   ├── image_dimensions.py ✅
 │   │   ├── lens_distortion.py  ✅
-│   │   ├── camera_snapshot.py  ✅
-│   │   └── photo.py            ✅
+│   │   ├── line_trace.py       ✅
+│   │   ├── map_point.py        ✅
+│   │   ├── matrix3x3.py        ✅
+│   │   ├── orientation.py      ✅
+│   │   ├── photo.py            ✅
+│   │   ├── pixel_point.py      ✅
+│   │   ├── ptz_state.py        ✅
+│   │   ├── rotation.py         ✅
+│   │   ├── vector3.py          ✅
+│   │   └── zoom_calibration_entry.py ✅
+│   │   # REMOVED: camera_intrinsics.py (vestigial, deleted in PR #225)
+│   │   # REMOVED: camera_snapshot.py   (vestigial, deleted in PR #225)
+│   │   # REMOVED: homography.py        (vestigial, deleted in PR #225)
+│   │   # REMOVED: mask.py              (vestigial, deleted in PR #225)
 │   ├── entities/
 │   │   ├── __init__.py         ✅
-│   │   ├── map.py              ✅
-│   │   ├── camera_config.py    ✅ (replaced camera.py)
-│   │   ├── camera_calibration.py ✅
 │   │   ├── annotation.py       ✅
-│   │   └── ground_control_point.py ✅
+│   │   ├── calibration_line_trace_set.py ✅
+│   │   ├── camera_calibration.py ✅
+│   │   ├── camera_config.py    ✅ (replaced camera.py)
+│   │   ├── captured_frame.py   ✅
+│   │   ├── entity.py           ✅ (base entity class)
+│   │   ├── ground_control_point.py ✅
+│   │   ├── lens_calibration_table.py ✅
+│   │   ├── line.py             ✅
+│   │   ├── line_annotation.py  ✅
+│   │   ├── map.py              ✅
+│   │   └── tenant.py           ✅
 │   ├── enums/
 │   │   ├── __init__.py         ✅
 │   │   ├── tilt_convention.py  ✅
 │   │   └── camera_spec.py      ✅ (distortion removed)
+│   ├── protocols/
+│   │   ├── __init__.py         ✅
+│   │   └── camera_controller.py ✅
 │   └── repositories/
 │       ├── __init__.py         ✅
-│       ├── map_repository.py   ✅
-│       ├── ground_control_point_repository.py ✅
-│       ├── camera_config_repository.py ✅
-│       └── camera_calibration_repository.py ✅
+│       └── repo.py             ✅ (unified repository protocol)
+│       # REMOVED: individual *_repository.py files consolidated into repo.py
 ├── infrastructure/
 │   ├── __init__.py             ✅
 │   └── repositories/
 │       ├── __init__.py         ✅
-│       ├── yaml_map_repository.py ✅
-│       ├── yaml_ground_control_point_repository.py ✅
-│       ├── yaml_camera_config_repository.py ✅
-│       └── yaml_camera_calibration_repository.py ✅
-├── services/
-│   ├── __init__.py             ✅ (exports strategies only)
-│   ├── README.md               ✅ (naming conventions doc)
-│   ├── service_orientation.py  ✅ (ServiceOrientation class)
-│   ├── service_homography.py   ✅ (ServiceHomography class)
-│   ├── orientation/            # Strategies folder
-│   │   ├── __init__.py         ✅ (exports strategies + service)
-│   │   ├── strategy.py         ✅ (OrientationStrategy protocol)
-│   │   ├── additive_strategy.py ✅ (AdditiveOrientationStrategy)
-│   │   └── rotation_matrix_strategy.py ✅ (RotationMatrixStrategy)
-│   ├── homography/             # Strategies folder
-│   │   ├── __init__.py         ✅ (exports strategies + service)
-│   │   ├── strategy.py         ✅ (HomographyStrategy protocol)
-│   │   └── intrinsic_extrinsic_strategy.py ✅ (IntrinsicExtrinsicStrategy)
-│   ├── service_camera.py       (optional)
-│   └── camera/                 (optional - strategies folder)
+│       ├── base/
+│       │   ├── __init__.py             ✅
+│       │   ├── mixin_repo_map_filter.py    ✅
+│       │   ├── mixin_repo_tenant_filter.py ✅
+│       │   └── repo_yaml.py            ✅ (base YAML repo class)
+│       ├── repo_yaml_annotation.py             ✅
+│       ├── repo_yaml_calibration_line_trace_set.py ✅
+│       ├── repo_yaml_camera_calibration.py     ✅
+│       ├── repo_yaml_camera_config.py          ✅
+│       ├── repo_yaml_captured_frame.py         ✅
+│       ├── repo_yaml_diagnostic_session.py     ✅
+│       ├── repo_yaml_ground_control_point.py   ✅
+│       ├── repo_yaml_lens_calibration_table.py ✅
+│       ├── repo_yaml_line.py                   ✅
+│       ├── repo_yaml_line_annotation.py        ✅
+│       ├── repo_yaml_map.py                    ✅
+│       ├── repo_yaml_stress_test_session.py    ✅
+│       ├── repo_yaml_survey_session.py         ✅
+│       └── repo_yaml_tenant.py                 ✅
 ├── data/
 │   ├── maps/
-│   │   └── valte.yaml          ✅
+│   │   └── *.yaml              ✅
 │   ├── gcps/
-│   │   └── valte.yaml          ✅
+│   │   └── <tenant>__<name>.yaml ✅ (per-tenant YAML files; old valte.yaml deleted)
 │   ├── cameras/
-│   │   └── valte__Valte.yaml   ✅
+│   │   └── <tenant>__<name>.yaml ✅
 │   └── calibrations/
-│       └── valte__Valte.yaml   ✅
+│       └── <tenant>__<name>.yaml ✅
 └── ...
+# REMOVED: services/ directory (deleted in PR #225 — domain services were vestigial)
 ```
 
 ---

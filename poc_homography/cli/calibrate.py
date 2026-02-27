@@ -1,6 +1,9 @@
 """Calibration CLI commands."""
 
-from pathlib import Path
+from __future__ import annotations
+
+from pathlib import Path  # noqa: TC003 – typer reads annotations at runtime
+from typing import TYPE_CHECKING, Any
 
 import typer
 import yaml
@@ -12,10 +15,47 @@ from poc_homography.calibration import (
     print_results,
     run_calibration,
 )
-from poc_homography.camera_config import get_camera_configs
+from poc_homography.camera_config import get_calibration_by_camera_id, get_camera_configs
 from poc_homography.cli.main import calibrate_app
 from poc_homography.map_points import GCPRegistry
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.camera_calibration import CameraCalibration
+    from poc_homography.domain.entities.camera_config import CameraConfig
+
+
+def _build_legacy_camera_dict(
+    camera: CameraConfig,
+    calibration: CameraCalibration | None,
+) -> dict[str, Any]:
+    """Build a legacy camera dict from DDD entities for backward compatibility."""
+    result: dict[str, Any] = {
+        "id": camera.id,
+        "name": camera.name,
+        "ip": camera.ip_address,
+        "tenant_id": camera.tenant_id,
+        "model": camera.spec.model_name,
+        "sensor_width_mm": float(camera.spec.sensor_width),
+        "base_focal_length_mm": float(camera.spec.base_focal_length),
+    }
+    if calibration:
+        result["height_m"] = float(calibration.height)
+        result["pan_offset_deg"] = float(calibration.base_orientation.yaw)
+        result["tilt_offset_deg"] = float(calibration.base_orientation.pitch)
+        result["k1"] = float(calibration.distortion.k1)
+        result["k2"] = float(calibration.distortion.k2)
+        result["p1"] = float(calibration.distortion.p1)
+        result["p2"] = float(calibration.distortion.p2)
+    else:
+        result["height_m"] = 5.0
+        result["pan_offset_deg"] = 0.0
+        result["tilt_offset_deg"] = 0.0
+        result["k1"] = 0.0
+        result["k2"] = 0.0
+        result["p1"] = 0.0
+        result["p2"] = 0.0
+    return result
 
 
 @calibrate_app.command("projection")
@@ -44,13 +84,15 @@ def projection_command(
             --pixel-u 960 --pixel-v 540 --pan-raw 45.0 --tilt 30.0 --zoom 5.0
     """
     # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
+    configs = {cam.name: cam for cam in get_camera_configs()}
     if camera not in configs:
         available = ", ".join(configs.keys())
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    cam = configs[camera]
+    camera_entity = configs[camera]
+    calibration = get_calibration_by_camera_id(camera_entity.id)
+    cam = _build_legacy_camera_dict(camera_entity, calibration)
 
     # Convert CLI inputs to typed units at the boundary
     result = analyze_projection_error(
@@ -112,13 +154,15 @@ def comprehensive_command(
             --registry-file valte_map_points.yaml
     """
     # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
+    configs = {cam.name: cam for cam in get_camera_configs()}
     if camera not in configs:
         available = ", ".join(configs.keys())
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    camera_config = configs[camera]
+    camera_entity = configs[camera]
+    calibration = get_calibration_by_camera_id(camera_entity.id)
+    camera_config = _build_legacy_camera_dict(camera_entity, calibration)
 
     # Load GCPs from YAML file
     try:

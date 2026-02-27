@@ -1,0 +1,34 @@
+# Camera calibration data for Valte camera
+# This file contains data refined during the calibration process
+#
+# NOTE: The position values below are estimates and need proper calibration.
+# The camera's GPS location is 39°38'25.72"N, 0°13'48.63"W which needs
+# to be converted to map pixel coordinates using the GeoTiff transform.
+
+id: valte/Valte
+
+# Camera position on map in pixel coordinates
+# ESTIMATED — requires calibration
+position:
+  x: 4500.0  # ESTIMATED — requires calibration
+  y: 3500.0  # ESTIMATED — requires calibration
+
+# Height above ground in meters (calibrated 2025-12-11)
+height: 4.71
+
+# Base orientation at PTZ home position (PTZ = 0,0)
+# - yaw: pan_offset_deg from original config (bearing from north when pan=0)
+# - pitch: tilt_offset_deg from original config
+# - roll: assumed 0 (camera mount is level)
+base_orientation:
+  yaw: 51.7
+  pitch: -0.25
+  roll: 0.0
+
+# Lens distortion coefficients (OpenCV model)
+# Calibrated using GCP optimization
+distortion:
+  k1: -0.341052  # Radial distortion (negative = barrel)
+  k2: 0.787571   # Secondary radial distortion
+  p1: 0.0        # Tangential distortion (not calibrated)
+  p2: 0.0        # Tangential distortion (not calibrated)

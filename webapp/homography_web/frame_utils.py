@@ -8,6 +8,7 @@ Pattern follows existing ``calibration_utils.py``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,7 +19,6 @@ from numpy.typing import NDArray
 
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.infrastructure.repositories import (
-    RepoYamlAnnotation,
     RepoYamlCapturedFrame,
     RepoYamlLineAnnotation,
     RepoYamlMap,
@@ -37,7 +37,6 @@ WEBAPP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = WEBAPP_DIR.parent
 DATA_MAPS_DIR = PROJECT_ROOT / "data" / "maps"
 FRAMES_DIR = PROJECT_ROOT / "data" / "captured_frames"
-ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "annotations"
 GCPS_DIR = PROJECT_ROOT / "data" / "gcps"
 LINE_ANNOTATIONS_DIR = PROJECT_ROOT / "data" / "line_annotations"
 LINES_DIR = PROJECT_ROOT / "data" / "lines"
@@ -250,20 +249,11 @@ def resolve_map_for_tenant(tenant_id: str) -> tuple[Map, Path]:
 # Module-level caches
 # ---------------------------------------------------------------------------
 
-_annotation_repo: RepoYamlAnnotation | None = None
 _frame_repo: RepoYamlCapturedFrame | None = None
 _line_ann_repo: RepoYamlLineAnnotation | None = None
 _line_anns_by_frame: dict[str, list] | None = None
 _frames: list[CapturedFrame] | None = None
 _image_to_frame: dict[str, CapturedFrame] | None = None
-
-
-def get_annotation_repo() -> RepoYamlAnnotation:
-    """Return a cached Annotation repository instance."""
-    global _annotation_repo
-    if _annotation_repo is None:
-        _annotation_repo = RepoYamlAnnotation(ANNOTATIONS_DIR)
-    return _annotation_repo
 
 
 def get_line_annotation_repo() -> RepoYamlLineAnnotation:
@@ -326,18 +316,65 @@ def image_filename_to_frame(filename: str) -> CapturedFrame | None:
     return _get_image_to_frame().get(filename)
 
 
-def load_annotations_for_frame(frame_id: str) -> list[dict]:
-    """Load point annotations for a frame in legacy dict format.
+@dataclass(frozen=True, slots=True)
+class PointAnnotationDTO:
+    """Typed representation of a point annotation (GCP-to-pixel mapping)."""
 
-    Returns list of ``{gcp_id, pixel_x, pixel_y}`` dicts.
+    gcp_id: str
+    pixel_x: float
+    pixel_y: float
+
+    def to_dict(self) -> dict[str, str | float]:
+        """Serialize to a plain dict (for JSON responses and legacy APIs)."""
+        return {"gcp_id": self.gcp_id, "pixel_x": self.pixel_x, "pixel_y": self.pixel_y}
+
+
+@dataclass(frozen=True, slots=True)
+class LineAnnotationDTO:
+    """Typed representation of a line annotation (line-to-pixel mapping).
+
+    Attributes:
+        line_id: Identifier of the line in the line registry.
+        start_pixel_x: Camera pixel x of the line start.
+        start_pixel_y: Camera pixel y of the line start.
+        end_pixel_x: Camera pixel x of the line end.
+        end_pixel_y: Camera pixel y of the line end.
+        points: Optional polyline vertices as ``[[x, y], ...]`` for n-point lines.
+    """
+
+    line_id: str
+    start_pixel_x: float
+    start_pixel_y: float
+    end_pixel_x: float
+    end_pixel_y: float
+    points: list[list[float]] | None = field(default=None)
+
+    def to_dict(self) -> dict:
+        """Serialize to a plain dict (for JSON responses and legacy APIs)."""
+        d: dict = {
+            "line_id": self.line_id,
+            "start_pixel_x": self.start_pixel_x,
+            "start_pixel_y": self.start_pixel_y,
+            "end_pixel_x": self.end_pixel_x,
+            "end_pixel_y": self.end_pixel_y,
+        }
+        if self.points is not None:
+            d["points"] = self.points
+        return d
+
+
+def load_annotations_for_frame(frame_id: str) -> list[PointAnnotationDTO]:
+    """Load point annotations for a frame.
+
+    Returns list of :class:`PointAnnotationDTO` instances.
     """
     annotations = get_frame_repo().get_annotations(frame_id)
     return [
-        {
-            "gcp_id": ann.gcp_id,
-            "pixel_x": round(float(ann.pixel.x), 1),
-            "pixel_y": round(float(ann.pixel.y), 1),
-        }
+        PointAnnotationDTO(
+            gcp_id=ann.gcp_id,
+            pixel_x=round(float(ann.pixel.x), 1),
+            pixel_y=round(float(ann.pixel.y), 1),
+        )
         for ann in annotations
     ]
 
@@ -353,24 +390,27 @@ def _get_line_anns_by_frame() -> dict[str, list]:
     return _line_anns_by_frame
 
 
-def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
-    """Load line annotations for a frame in legacy dict format.
+def load_line_annotations_for_frame(frame_id: str) -> list[LineAnnotationDTO]:
+    """Load line annotations for a frame.
 
-    Returns list of dicts with ``line_id``, pixel endpoints, and optional
-    ``points`` array for n-point polylines.
+    Returns list of :class:`LineAnnotationDTO` instances with ``line_id``,
+    pixel endpoints, and optional ``points`` list for n-point polylines.
     """
-    results: list[dict] = []
+    results: list[LineAnnotationDTO] = []
     for ann in _get_line_anns_by_frame().get(frame_id, []):
-        entry: dict = {
-            "line_id": ann.line_id,
-            "start_pixel_x": float(ann.start_pixel.x),
-            "start_pixel_y": float(ann.start_pixel.y),
-            "end_pixel_x": float(ann.end_pixel.x),
-            "end_pixel_y": float(ann.end_pixel.y),
-        }
+        points: list[list[float]] | None = None
         if ann.points is not None:
-            entry["points"] = [[float(p.x), float(p.y)] for p in ann.points]
-        results.append(entry)
+            points = [[float(p.x), float(p.y)] for p in ann.points]
+        results.append(
+            LineAnnotationDTO(
+                line_id=ann.line_id,
+                start_pixel_x=float(ann.start_pixel.x),
+                start_pixel_y=float(ann.start_pixel.y),
+                end_pixel_x=float(ann.end_pixel.x),
+                end_pixel_y=float(ann.end_pixel.y),
+                points=points,
+            )
+        )
     return results
 
 
@@ -384,9 +424,8 @@ def register_invalidation_callback(cb) -> None:
 
 def invalidate_cache() -> None:
     """Clear all module-level caches. Useful after saves."""
-    global _annotation_repo, _frame_repo, _frames, _image_to_frame
+    global _frame_repo, _frames, _image_to_frame
     global _line_ann_repo, _line_anns_by_frame, _tenant_repo, _map_repo
-    _annotation_repo = None
     _frame_repo = None
     _frames = None
     _image_to_frame = None
