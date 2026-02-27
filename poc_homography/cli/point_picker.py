@@ -16,18 +16,6 @@ app.add_typer(point_picker_app, name="picker")
 
 @point_picker_app.command("serve")
 def serve(
-    image_path: Path = typer.Argument(
-        ...,
-        help="Path to the image file to annotate (PNG, TIFF, etc.)",
-        exists=True,
-        readable=True,
-    ),
-    camera: str | None = typer.Option(
-        None,
-        "--camera",
-        "-c",
-        help="Camera name to load geotransform from config (e.g., 'Valte')",
-    ),
     host: str = typer.Option(
         "127.0.0.1",
         "--host",
@@ -47,51 +35,12 @@ def serve(
     Points can be tagged as parking_spot (PS), arrows (AR), crosswalk (CW),
     or extra (EX) with auto-incrementing IDs.
 
-    For PNG/JPG images, use --camera to load geotransform from camera config.
+    State is lazily initialized per-tenant when requests arrive.
 
     Example:
-        hom picker serve path/to/image.png --camera Valte
-        hom picker serve image.tif --port 8080
+        hom picker serve
+        hom picker serve --port 8080
     """
-    # Resolve to absolute path
-    image_path = image_path.resolve()
-
-    geotiff = None
-
-    # Load geotiff from camera config if specified
-    if camera:
-        from poc_homography.camera_config import get_camera_by_name
-        from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
-        from poc_homography.types import Easting, Meters, Northing, Unitless
-
-        cam_config = get_camera_by_name(camera)
-        if cam_config is None:
-            typer.echo(f"Error: Camera '{camera}' not found in config", err=True)
-            raise typer.Exit(1)
-
-        geotiff_params = cam_config.get("geotiff_params")
-        if geotiff_params:
-            gt = geotiff_params.get("geotransform")
-            crs = geotiff_params.get("utm_crs")
-            if gt and crs:
-                geotiff = GeoTiff(
-                    geotransform=GeoTransform(
-                        origin_easting=Easting(gt[0]),
-                        pixel_width=Meters(gt[1]),
-                        row_rotation=Unitless(gt[2]),
-                        origin_northing=Northing(gt[3]),
-                        col_rotation=Unitless(gt[4]),
-                        pixel_height=Meters(gt[5]),
-                    ),
-                    crs=crs,
-                )
-                typer.echo(f"Loaded geotiff from camera '{camera}': {gt}")
-                typer.echo(f"CRS: {crs}")
-        else:
-            typer.echo(f"Warning: Camera '{camera}' has no geotiff_params", err=True)
-
-    typer.echo(f"Loading image: {image_path}")
-
     # Find the webapp directory
     # Path: cli/point_picker.py -> cli/ -> poc_homography/ -> project_root/ -> webapp/
     project_root = Path(__file__).parent.parent.parent
@@ -112,11 +61,6 @@ def serve(
     import django
 
     django.setup()
-
-    # Initialize the point picker state
-    from point_picker.state import initialize_state
-
-    initialize_state(image_path, geotiff=geotiff)
 
     typer.echo(f"Starting server at http://{host}:{port}/point-picker/")
     typer.echo("Press Ctrl+C to stop")
