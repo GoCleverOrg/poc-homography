@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.vo import PixelPoint
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class MapPoint:
     @cached_property
     def pixel(self) -> PixelPoint:
         """Get pixel coordinates as a PixelPoint."""
-        return PixelPoint(self.pixel_x, self.pixel_y)
+        return PixelPoint.create(self.pixel_x, self.pixel_y)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert MapPoint to a dictionary for JSON serialization.

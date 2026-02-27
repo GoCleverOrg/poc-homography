@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.vo import PixelPoint
 
 if TYPE_CHECKING:
     from poc_homography.map_points import MapPoint
@@ -147,7 +147,7 @@ class HomographyMatrix:
         result = self.data @ pt
         if abs(result[2]) < 1e-10:
             raise ValueError("Point transforms to infinity (on horizon)")
-        return PixelPoint(float(result[0] / result[2]), float(result[1] / result[2]))
+        return PixelPoint.create(float(result[0] / result[2]), float(result[1] / result[2]))
 
 
 @dataclass(frozen=True)

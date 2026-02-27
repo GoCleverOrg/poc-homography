@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.vo import PixelPoint
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class Annotation:
         pixel_data = data["pixel"]
         return cls(
             gcp_id=str(data["gcp_id"]),
-            pixel=PixelPoint(
+            pixel=PixelPoint.create(
                 x=float(pixel_data["x"]),
                 y=float(pixel_data["y"]),
             ),

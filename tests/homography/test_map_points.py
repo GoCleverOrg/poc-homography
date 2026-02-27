@@ -43,7 +43,7 @@ import yaml
 
 from poc_homography.calibration.annotation import Annotation
 from poc_homography.map_points import GCPRegistry, MapPoint
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.vo import PixelPoint
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
@@ -79,7 +79,7 @@ def valte_annotations():
     # Parse annotations from the first test case
     test_case = data["test_cases"][0]
     annotations = [
-        Annotation(gcp_id=ann["gcp_id"], pixel=PixelPoint(ann["pixel_x"], ann["pixel_y"]))
+        Annotation(gcp_id=ann["gcp_id"], pixel=PixelPoint.create(ann["pixel_x"], ann["pixel_y"]))
         for ann in test_case["annotations"]
     ]
     return annotations

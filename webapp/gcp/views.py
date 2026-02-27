@@ -6,8 +6,6 @@ Django view wrappers that use the DDD repository for persistence.
 
 from __future__ import annotations
 
-from typing import Any
-
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
@@ -18,28 +16,7 @@ from homography_web.frame_utils import (
     get_tenant_repo,
 )
 
-from poc_homography.map_points import GCPRegistry, MapPoint
-from poc_homography.map_points.gcp_registry import from_gcp_repo, list_map_ids
-
-
-def _load_registry(map_id: str) -> GCPRegistry:
-    """Load GCPRegistry from repository.
-
-    Args:
-        map_id: Map identifier (required — no cross-tenant fallback).
-
-    Returns:
-        Loaded GCPRegistry, or empty registry if directory or map not found.
-    """
-    if not GCPS_DIR.exists():
-        return GCPRegistry(map_id=map_id, points={})
-
-    return from_gcp_repo(GCPS_DIR, map_id)
-
-
-def _point_to_dict(point_id: str, point: MapPoint) -> dict[str, Any]:
-    """Convert a MapPoint to dict with its id included."""
-    return {"id": point_id, **point.to_dict()}
+from poc_homography.map_points.gcp_registry import list_map_ids
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -62,37 +39,6 @@ def index(request: HttpRequest) -> HttpResponse:
             "has_maps": bool(tenant_maps),
         },
     )
-
-
-def debug_map(request: HttpRequest) -> HttpResponse:
-    """
-    Debug visualization for MapPoint data.
-
-    Displays MapPoints from repository for verification.
-    Since MapPoints use pixel coordinates (not GPS), this shows a
-    list view rather than a geographic map.
-    """
-    map_id = request.GET.get("map_id", "")
-    if not map_id:
-        return render(request, "gcp/debug_map.html", {"map_id": "", "points": [], "point_count": 0})
-
-    # Validate map_id belongs to tenant
-    tenant_id = get_tenant_id(request)
-    tenant_maps = get_map_repo().get_by_tenant(tenant_id)
-    if map_id not in tenant_maps:
-        return render(request, "gcp/debug_map.html", {"map_id": map_id, "points": [], "point_count": 0})
-
-    registry = _load_registry(map_id)
-
-    points_data = [_point_to_dict(pid, p) for pid, p in registry.points.items()]
-
-    context: dict[str, Any] = {
-        "map_id": registry.map_id,
-        "points": points_data,
-        "point_count": len(points_data),
-    }
-
-    return render(request, "gcp/debug_map.html", context)
 
 
 @require_GET

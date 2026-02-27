@@ -19,8 +19,8 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
+from poc_homography.domain.vo import PixelPoint
 from poc_homography.map_points import GCPRegistry, MapPoint
-from poc_homography.pixel_point import PixelPoint
 
 
 @dataclass(frozen=True)
@@ -613,7 +613,7 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         point = np.array([[[map_coord.x, map_coord.y]]], dtype=np.float32)
         transformed = cv2.perspectiveTransform(point, H_inv)
-        return PixelPoint(float(transformed[0, 0, 0]), float(transformed[0, 0, 1]))
+        return PixelPoint.create(float(transformed[0, 0, 0]), float(transformed[0, 0, 1]))
 
     def camera_to_map_batch(
         self,
@@ -667,7 +667,7 @@ class MapPointHomography:
         transformed_2d: npt.NDArray[np.float64] = np.asarray(transformed, dtype=np.float64).reshape(
             -1, 2
         )
-        return [PixelPoint(float(pt[0]), float(pt[1])) for pt in transformed_2d]
+        return [PixelPoint.create(float(pt[0]), float(pt[1])) for pt in transformed_2d]
 
     def is_valid(self) -> bool:
         """Check if a valid homography has been computed."""

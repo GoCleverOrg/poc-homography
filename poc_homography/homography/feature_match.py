@@ -22,6 +22,7 @@ from typing import Any
 import cv2
 import numpy as np
 
+from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.interface import (
     HomographyApproach,
     HomographyProvider,
@@ -29,7 +30,6 @@ from poc_homography.homography.interface import (
     validate_homography_matrix,
 )
 from poc_homography.map_points import MapPoint
-from poc_homography.pixel_point import PixelPoint
 
 logger = logging.getLogger(__name__)
 
@@ -447,7 +447,7 @@ class FeatureMatchHomography(HomographyProvider):
         pixel_x = map_homogeneous[0] / map_homogeneous[2]
         pixel_y = map_homogeneous[1] / map_homogeneous[2]
 
-        return PixelPoint(float(pixel_x), float(pixel_y))
+        return PixelPoint.create(float(pixel_x), float(pixel_y))
 
     def _compute_homography_with_method(
         self, local_points: np.ndarray, image_points: np.ndarray

@@ -31,7 +31,7 @@ import yaml
 from poc_homography.camera_config import get_camera_by_name
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points import GCPRegistry
-from poc_homography.pixel_point import PixelPoint
+from poc_homography.domain.vo import PixelPoint
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
@@ -183,7 +183,7 @@ def compute_pixel_precision(
         gcp = map_registry.points[annotation["gcp_id"]]
 
         # Project GCP coordinate back to camera pixel
-        gcp_coord = PixelPoint(gcp.pixel_x, gcp.pixel_y)
+        gcp_coord = PixelPoint.create(gcp.pixel_x, gcp.pixel_y)
         projected_pixel = homography.map_to_camera(gcp_coord)
 
         # Compare with original annotation pixel coordinate
@@ -238,7 +238,7 @@ def compute_metric_precision(
 
     for annotation in annotations:
         # Get camera pixel coordinates
-        camera_pixel = PixelPoint(annotation["pixel_x"], annotation["pixel_y"])
+        camera_pixel = PixelPoint.create(annotation["pixel_x"], annotation["pixel_y"])
 
         # Project camera pixel to map space using homography
         projected_map = homography.camera_to_map(camera_pixel)
@@ -541,13 +541,13 @@ class TestRoundTrip:
 
         for annotation in annotations_4_points:
             # Original camera pixel (annotation)
-            original_pixel = PixelPoint(annotation["pixel_x"], annotation["pixel_y"])
+            original_pixel = PixelPoint.create(annotation["pixel_x"], annotation["pixel_y"])
 
             # Camera -> Map (annotation -> GCP space)
             gcp_point = homography_provider.camera_to_map(original_pixel)
 
             # Map -> Camera (GCP space -> annotation)
-            gcp_as_pixel = PixelPoint(gcp_point.pixel_x, gcp_point.pixel_y)
+            gcp_as_pixel = PixelPoint.create(gcp_point.pixel_x, gcp_point.pixel_y)
             recovered_pixel = homography_provider.map_to_camera(gcp_as_pixel)
 
             # Compare
@@ -713,9 +713,9 @@ class TestAllTestCases:
 
         # Round-trip test on training points (should be ~0 error)
         for annotation in annotations[:4]:
-            original_pixel = PixelPoint(annotation["pixel_x"], annotation["pixel_y"])
+            original_pixel = PixelPoint.create(annotation["pixel_x"], annotation["pixel_y"])
             gcp_point = homography.camera_to_map(original_pixel)
-            gcp_as_pixel = PixelPoint(gcp_point.pixel_x, gcp_point.pixel_y)
+            gcp_as_pixel = PixelPoint.create(gcp_point.pixel_x, gcp_point.pixel_y)
             recovered_pixel = homography.map_to_camera(gcp_as_pixel)
 
             error = np.linalg.norm(

@@ -13,7 +13,7 @@ from poc_homography.camera_parameters import (
     CameraGeometryResult,
     CameraParameters,
 )
-from poc_homography.domain.vo import HeightUncertainty, LensDistortion
+from poc_homography.domain.vo import HeightUncertainty, LensDistortion, PixelPoint
 from poc_homography.homography import (
     CoordinateSystemMode,
     FeatureMatchHomography,
@@ -30,7 +30,6 @@ from poc_homography.homography import (
     get_default_config,
 )
 from poc_homography.map_points import GCPRegistry, MapPoint
-from poc_homography.pixel_point import PixelPoint
 
 __all__ = [
     # Core camera geometry (immutable API)

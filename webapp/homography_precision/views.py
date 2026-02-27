@@ -43,9 +43,9 @@ from homography_web.frame_utils import (
 from line_picker.state import Line, from_line_repo
 from PIL import Image
 
+from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
-from poc_homography.pixel_point import PixelPoint
 
 
 def _no_map_error() -> JsonResponse:
@@ -460,7 +460,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         # Get original camera pixel (annotation position)
         camera_x = annotation["pixel_x"]
         camera_y = annotation["pixel_y"]
-        camera_pixel = PixelPoint(camera_x, camera_y)
+        camera_pixel = PixelPoint.create(camera_x, camera_y)
 
         # Get GCP map coordinate from registry
         gcp = registry.points[gcp_id]
@@ -471,7 +471,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
         projected_map = homography.camera_to_map(camera_pixel)
 
         # Reproject GCP back to camera using map_to_camera()
-        gcp_coord = PixelPoint(map_x, map_y)
+        gcp_coord = PixelPoint.create(map_x, map_y)
         reprojected_camera = homography.map_to_camera(gcp_coord)
 
         # Calculate per-point error (Euclidean distance between original annotation
@@ -979,8 +979,8 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         camera_end = np.array([line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]])
 
         # Project camera line endpoints to map
-        projected_start = homography.camera_to_map(PixelPoint(camera_start[0], camera_start[1]))
-        projected_end = homography.camera_to_map(PixelPoint(camera_end[0], camera_end[1]))
+        projected_start = homography.camera_to_map(PixelPoint.create(camera_start[0], camera_start[1]))
+        projected_end = homography.camera_to_map(PixelPoint.create(camera_end[0], camera_end[1]))
         projected_start_map = np.array([projected_start.pixel_x, projected_start.pixel_y])
         projected_end_map = np.array([projected_end.pixel_x, projected_end.pixel_y])
 
@@ -989,8 +989,8 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         end_error = _perpendicular_distance(projected_end_map, map_start, map_end)
 
         # Also compute reverse: project GCP line to camera and compare
-        reprojected_start = homography.map_to_camera(PixelPoint(map_start[0], map_start[1]))
-        reprojected_end = homography.map_to_camera(PixelPoint(map_end[0], map_end[1]))
+        reprojected_start = homography.map_to_camera(PixelPoint.create(map_start[0], map_start[1]))
+        reprojected_end = homography.map_to_camera(PixelPoint.create(map_end[0], map_end[1]))
         reprojected_start_camera = np.array([reprojected_start.x, reprojected_start.y])
         reprojected_end_camera = np.array([reprojected_end.x, reprojected_end.y])
 

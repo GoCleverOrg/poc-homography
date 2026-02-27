@@ -13,7 +13,6 @@ app_name = "gcp"
 # Page views - render HTML templates
 page_patterns = [
     path("", views.index, name="index"),
-    path("debug/", views.debug_map, name="debug_map"),
 ]
 
 # API endpoints
