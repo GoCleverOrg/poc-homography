@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -11,7 +11,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     LINES_DIR,
-    LineAnnotationDTO,
     get_available_images,
     get_map_from_tenant_id,
     get_tenant_id,
@@ -28,6 +27,9 @@ from homography_web.frame_utils import (
 from homography_web.frame_utils import (
     get_line_annotation_repo as _get_line_annotation_repo,
 )
+
+if TYPE_CHECKING:
+    from homography_web.dtos import LineAnnotationDTO
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"

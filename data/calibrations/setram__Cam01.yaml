@@ -4,18 +4,18 @@
 id: setram/Cam01
 
 position:
-  x: 0.0
-  y: 0.0
+  x: 0.0  # ESTIMATED — requires calibration
+  y: 0.0  # ESTIMATED — requires calibration
 
-height: 5.0
+height: 5.0  # ESTIMATED — requires calibration
 
 base_orientation:
-  yaw: 0.0
-  pitch: 0.0
-  roll: 0.0
+  yaw: 0.0  # ESTIMATED — requires calibration
+  pitch: 0.0  # ESTIMATED — requires calibration
+  roll: 0.0  # ESTIMATED — requires calibration
 
 distortion:
-  k1: 0.0
-  k2: 0.0
-  p1: 0.0
-  p2: 0.0
+  k1: 0.0  # ESTIMATED — requires calibration
+  k2: 0.0  # ESTIMATED — requires calibration
+  p1: 0.0  # ESTIMATED — requires calibration
+  p2: 0.0  # ESTIMATED — requires calibration

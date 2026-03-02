@@ -27,11 +27,6 @@ import django
 
 django.setup()
 
-from homography_web.frame_utils import LineAnnotationDTO, PointAnnotationDTO
-
-from poc_homography.homography.map_points import MapPointHomography
-from poc_homography.map_points import GCPRegistry, MapPoint
-
 # Module under test
 from homography_precision.services import (
     LineErrorResult,
@@ -42,7 +37,10 @@ from homography_precision.services import (
     compute_point_homography,
     perpendicular_distance,
 )
+from homography_web.dtos import LineAnnotationDTO, PointAnnotationDTO
 
+from poc_homography.homography.map_points import MapPointHomography
+from poc_homography.map_points import GCPRegistry, MapPoint
 
 # ---------------------------------------------------------------------------
 # Fixtures — synthetic data with a known 2x-scale homography

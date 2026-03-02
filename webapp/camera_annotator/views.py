@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -10,7 +11,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     GCPS_DIR,
-    PointAnnotationDTO,
     get_available_images,
     get_frame_repo,
     get_map_from_tenant_id,
@@ -24,6 +24,9 @@ from homography_web.frame_utils import (
 from homography_web.frame_utils import (
     get_current_image as _get_current_image,
 )
+
+if TYPE_CHECKING:
+    from homography_web.dtos import PointAnnotationDTO
 
 # Session key for current image
 SESSION_IMAGE_KEY = "camera_annotator_image"

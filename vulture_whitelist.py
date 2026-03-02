@@ -232,9 +232,7 @@ satellite_layers_js  # uncertain — template tag function
 
 # ── webapp — views and middleware ──────────────────────────────────────────
 _.modified  # Django boilerplate — request.session.modified = True (Django session API)
-camera_model  # dead local variable — create_ptz_camera parameter (future: brand detection)
-homography_source  # dead local variable — assigned but never read in api_compute_line_errors
-line_result  # dead local variable — compute_from_lines result not used after assignment
+camera_model  # unused function parameter — create_ptz_camera in camera_survey/ptz.py (future: brand detection)
 TenantIdMiddleware  # Django boilerplate — referenced in MIDDLEWARE setting
 _.process_exception  # Django boilerplate — Django middleware hook called by framework
 validate_add_line_request  # uncertain — validation function with no callers

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+from typing import TYPE_CHECKING
 
 import numpy as np
 import tifffile
@@ -18,9 +19,6 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
-    GCPS_DIR,
-    LineAnnotationDTO,
-    PointAnnotationDTO,
     get_map_from_tenant_id,
     get_tenant_id,
 )
@@ -29,9 +27,10 @@ from homography_web.frame_utils import (
 )
 from PIL import Image
 
-from poc_homography.map_points.gcp_registry import from_gcp_repo
-
 from . import services as svc
+
+if TYPE_CHECKING:
+    from homography_web.dtos import LineAnnotationDTO, PointAnnotationDTO
 
 # ---------------------------------------------------------------------------
 # Shared HTTP helpers
@@ -149,21 +148,16 @@ def api_gcp_registry(request: HttpRequest) -> JsonResponse:
     if map_id is None:
         return _no_map_error()
     try:
-        registry = from_gcp_repo(GCPS_DIR, map_id)
+        points_dict = svc.load_gcp_registry(map_id)
     except (KeyError, ValueError, OSError) as e:
         return JsonResponse(
             {"error": f"Failed to load GCP registry: {e}"},
             status=500,
         )
 
-    points_dict = {
-        point_id: {"pixel_x": point.pixel_x, "pixel_y": point.pixel_y}
-        for point_id, point in registry.points.items()
-    }
-
     return JsonResponse(
         {
-            "map_id": registry.map_id,
+            "map_id": map_id,
             "points": points_dict,
         }
     )
@@ -300,6 +294,8 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
 
     tenant_id = get_tenant_id(request)
     map_id = svc.require_map_id(tenant_id)
+    if map_id is None:
+        return _no_map_error()
 
     test_case = svc.load_test_case_by_name(test_case_name, map_id)
     if test_case is None:
@@ -314,8 +310,6 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
             {"success": False, "error": f"Need at least 4 annotations, got {len(annotations)}"},
             status=400,
         )
-    if map_id is None:
-        return _no_map_error()
 
     try:
         result = svc.compute_point_homography(annotations, map_id)
@@ -369,6 +363,8 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
 
     tenant_id = get_tenant_id(request)
     map_id = svc.require_map_id(tenant_id)
+    if map_id is None:
+        return _no_map_error()
 
     if test_case_name:
         line_test_case = svc.load_line_test_case_by_name(test_case_name, map_id)
@@ -408,8 +404,6 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
 
     line_registry = {line.line_id: line.to_dict() for line in lines}
 
-    if map_id is None:
-        return _no_map_error()
     try:
         result = svc.compute_line_homography(line_annotations, line_registry, map_id)
     except (ValueError, RuntimeError) as e:
@@ -466,6 +460,8 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
     tenant_id = get_tenant_id(request)
     map_id = svc.require_map_id(tenant_id)
+    if map_id is None:
+        return _no_map_error()
     line_test_case = svc.load_line_test_case_by_name(test_case_name, map_id)
     if line_test_case is None:
         return JsonResponse(
@@ -504,9 +500,6 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
 
-        map_id = svc.require_map_id(tenant_id)
-        if map_id is None:
-            return _no_map_error()
         try:
             homography = svc.build_homography_from_lines(
                 [a.to_dict() for a in line_annotations], line_registry, map_id
@@ -550,11 +543,8 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
 
-        map_id_for_gcps = svc.require_map_id(tenant_id)
-        if map_id_for_gcps is None:
-            return _no_map_error()
         try:
-            homography = svc.build_homography_from_points(pt_annotations, map_id_for_gcps)
+            homography = svc.build_homography_from_points(pt_annotations, map_id)
         except (KeyError, ValueError, OSError) as e:
             return JsonResponse(
                 {"success": False, "error": f"Failed to load GCP registry: {e}"},
@@ -812,11 +802,7 @@ def api_map_tile(request: HttpRequest) -> HttpResponse:
                     )
                     img = Image.fromarray(_normalize_array(tile_data), mode="RGB")
             else:
-                tile_data = (
-                    data[bounds.y0 : bounds.y1, bounds.x0 : bounds.x1]
-                    if data.ndim == 2
-                    else data[bounds.y0 : bounds.y1, bounds.x0 : bounds.x1, 0]
-                )
+                tile_data = data[bounds.y0 : bounds.y1, bounds.x0 : bounds.x1, 0]
                 img = Image.fromarray(_normalize_array(tile_data), mode="L")
                 img = img.convert("RGB")
 

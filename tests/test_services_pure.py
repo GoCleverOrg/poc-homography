@@ -28,8 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "webapp"))
 # ---------------------------------------------------------------------------
 
 from homography_precision.services import TileBounds, compute_tile_bounds, perpendicular_distance
-from homography_web.frame_utils import LineAnnotationDTO, PointAnnotationDTO
-
+from homography_web.dtos import LineAnnotationDTO, PointAnnotationDTO
 
 # ============================================================================
 # compute_tile_bounds

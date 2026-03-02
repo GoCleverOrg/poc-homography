@@ -608,11 +608,13 @@ Final_Roll  = Base_Roll  (PTZ doesn't change roll)
 
 ### Phase 5: Migration of Existing Code
 
-**Status**: Partially complete (updated Feb 2026 after PR #225 deep cleanup)
+**Status**: Partially complete (updated Mar 2026 after PR #225 deep cleanup and PR #226 project hygiene)
 
 PR #225 removed 1,289 lines of dead code and vestigial VOs. The `services/` directory
-was deleted entirely. The domain model continues to evolve with new VOs and entities
-added as features require them.
+was deleted entirely. PR #226 migrated `camera_config.py` to return DDD entities
+(`CameraConfig`, `CameraCalibration`) via YAML repositories, and removed the hardcoded
+`CAMERAS` list (including legacy `lat`/`lon` fields). The domain model continues to
+evolve with new VOs and entities added as features require them.
 
 **CRITICAL**: The new domain model (Phases 1-4, 6) is FROZEN. Do NOT modify any files in:
 - `poc_homography/domain/` (entities, VOs, enums, repositories)
@@ -621,13 +623,13 @@ added as features require them.
 Only update legacy code to USE the new domain model.
 
 #### 5.1 Delete Legacy GPS/UTM Code
-- [ ] Remove `lat`, `lon` fields from camera configs (use PixelPoint position instead) -- still present in `camera_config.py`
+- [x] ~~Remove `lat`, `lon` fields from camera configs (use PixelPoint position instead)~~ -- `CAMERAS` list deleted in PR #226; remaining `lat`/`lon` in `__main__` block is tenant location data, not camera config
 - [x] ~~Delete `data/gcps/valte.yaml` UTM coordinates and recreate with pixel coordinates~~ -- `valte.yaml` removed (UTM entries were invalid); GCPs stored as per-entity YAML files in `data/gcps/<map_id>__<name>.yaml`
 - [x] ~~Remove GPS-to-UTM conversion utilities that are no longer needed~~ -- `geotiff_utils.py` deleted in PR #225
 - [ ] Delete any legacy coordinate transformation code -- `camera_config.py` still contains inline coordinate helpers
 
 #### 5.2 Update Legacy Modules
-- [ ] Update `poc_homography/camera_config.py` to use CameraConfig + CameraCalibration entities -- still dict-based legacy module
+- [x] ~~Update `poc_homography/camera_config.py` to use CameraConfig + CameraCalibration entities~~ -- migrated in PR #226; functions now return domain entities via YAML repositories
 - [ ] Update `poc_homography/camera_geometry.py` to use new domain VOs -- still exists, uses raw dicts
 - [ ] Update `poc_homography/homography/` modules to use new domain model -- still exists (`config.py`, `interface.py`, `intrinsic_extrinsic.py`, `map_points.py`, `parameters.py`)
 - [ ] Update `poc_homography/map_points/` to use new domain MapPoint VO -- still exists (`gcp_registry.py`, `map_point.py`)

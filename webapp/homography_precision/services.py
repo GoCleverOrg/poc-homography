@@ -16,8 +16,6 @@ import tifffile
 from homography_web.frame_utils import (
     GCPS_DIR,
     LINES_DIR,
-    LineAnnotationDTO,
-    PointAnnotationDTO,
     extract_geotiff,
     get_frame_image_path,
     get_map_from_tenant_id,
@@ -40,6 +38,8 @@ from poc_homography.map_points.gcp_registry import from_gcp_repo
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from homography_web.dtos import LineAnnotationDTO, PointAnnotationDTO
 
 # ---------------------------------------------------------------------------
 # Types
@@ -65,6 +65,14 @@ _image_info_cache: dict[str, ImageInfoCache] = {}
 
 register_invalidation_callback(_line_registry_cache.clear)
 register_invalidation_callback(_image_info_cache.clear)
+
+# ---------------------------------------------------------------------------
+# RANSAC defaults
+# ---------------------------------------------------------------------------
+
+RANSAC_THRESHOLD: float = 50.0
+RANSAC_MIN_INLIER_RATIO_POINTS: float = 0.5
+RANSAC_MIN_INLIER_RATIO_LINES: float = 0.3
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -155,10 +163,10 @@ def compute_tile_bounds(
     max_level = math.ceil(math.log2(max(width, height)))
     level_scale = 2 ** (max_level - z)
 
-    x0 = x * size * level_scale
-    y0 = y * size * level_scale
-    x1 = (x + 1) * size * level_scale
-    y1 = (y + 1) * size * level_scale
+    x0 = int(x * size * level_scale)
+    y0 = int(y * size * level_scale)
+    x1 = int((x + 1) * size * level_scale)
+    y1 = int((y + 1) * size * level_scale)
 
     # Clamp to image bounds
     x0 = max(0, min(x0, width))
@@ -210,6 +218,25 @@ def load_line_registry(tenant_id: str) -> list[Line]:
     lines = from_line_repo(LINES_DIR, map_entity.id)
     _line_registry_cache[tenant_id] = lines
     return lines
+
+
+def load_gcp_registry(map_id: str) -> dict[str, dict[str, float]]:
+    """Load GCP registry and return serialised points dict.
+
+    Args:
+        map_id: Map identifier for the GCP repo lookup.
+
+    Returns:
+        Dict mapping point IDs to ``{"pixel_x": ..., "pixel_y": ...}`` dicts.
+
+    Raises:
+        KeyError, ValueError, OSError: If the registry cannot be loaded.
+    """
+    registry = from_gcp_repo(GCPS_DIR, map_id)
+    return {
+        point_id: {"pixel_x": pt.pixel_x, "pixel_y": pt.pixel_y}
+        for point_id, pt in registry.points.items()
+    }
 
 
 def load_test_case_by_name(name: str, map_id: str | None = None) -> dict | None:
@@ -481,8 +508,8 @@ def compute_point_homography(
     result = homography.compute_from_gcps(
         gcps=[a.to_dict() for a in annotations],
         map_registry=registry,
-        ransac_threshold=50.0,
-        min_inlier_ratio=0.5,
+        ransac_threshold=RANSAC_THRESHOLD,
+        min_inlier_ratio=RANSAC_MIN_INLIER_RATIO_POINTS,
     )
 
     # Compute per-point errors and overlay data
@@ -604,8 +631,8 @@ def compute_line_homography(
     result = homography.compute_from_lines(
         line_annotations=line_annotations,
         line_registry=line_registry,
-        ransac_threshold=50.0,
-        min_inlier_ratio=0.3,
+        ransac_threshold=RANSAC_THRESHOLD,
+        min_inlier_ratio=RANSAC_MIN_INLIER_RATIO_LINES,
     )
 
     return LineHomographyResult(
@@ -800,8 +827,8 @@ def build_homography_from_lines(
     homography.compute_from_lines(
         line_annotations=line_annotations,
         line_registry=line_registry,
-        ransac_threshold=50.0,
-        min_inlier_ratio=0.3,
+        ransac_threshold=RANSAC_THRESHOLD,
+        min_inlier_ratio=RANSAC_MIN_INLIER_RATIO_LINES,
     )
     return homography
 
@@ -830,7 +857,7 @@ def build_homography_from_points(
     homography.compute_from_gcps(
         gcps=[a.to_dict() for a in annotations],
         map_registry=registry,
-        ransac_threshold=50.0,
-        min_inlier_ratio=0.5,
+        ransac_threshold=RANSAC_THRESHOLD,
+        min_inlier_ratio=RANSAC_MIN_INLIER_RATIO_POINTS,
     )
     return homography
