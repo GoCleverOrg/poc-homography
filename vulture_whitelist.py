@@ -121,6 +121,14 @@ app_name  # unused variable (webapp/camera_survey/urls.py:7)
 urlpatterns  # unused variable (webapp/camera_survey/urls.py:9)
 app_name  # unused variable (webapp/distortion_validator/urls.py:7)
 urlpatterns  # unused variable (webapp/distortion_validator/urls.py:9)
+CameraConfig  # unused class (webapp/gcp/models.py) - Django model
+vendor  # unused variable (webapp/gcp/models.py) - Django model field
+subtype  # unused variable (webapp/gcp/models.py) - Django model field
+Meta  # unused class (webapp/gcp/models.py) - Django model Meta
+db_table  # unused variable (webapp/gcp/models.py) - Django model Meta option
+initial  # unused variable (webapp/gcp/migrations/0001_initial.py) - Django migration
+dependencies  # unused variable (webapp/gcp/migrations/0001_initial.py) - Django migration
+operations  # unused variable (webapp/gcp/migrations/0001_initial.py) - Django migration
 GcpConfig  # unused class (webapp/gcp/apps.py:4)
 default_auto_field  # unused variable (webapp/gcp/apps.py:5)
 VALID_LAYERS  # unused variable (webapp/gcp/templatetags/satellite_layers.py:27)
@@ -143,7 +151,12 @@ MIDDLEWARE  # unused variable (webapp/homography_web/settings.py:56)
 ROOT_URLCONF  # unused variable (webapp/homography_web/settings.py:66)
 TEMPLATES  # unused variable (webapp/homography_web/settings.py:68)
 WSGI_APPLICATION  # unused variable (webapp/homography_web/settings.py:83)
-DATABASES  # unused variable (webapp/homography_web/settings.py:89)
+NEON_DB_HOST  # unused variable (webapp/homography_web/settings.py) - Neon config
+NEON_DB_NAME  # unused variable (webapp/homography_web/settings.py) - Neon config
+NEON_DB_PORT  # unused variable (webapp/homography_web/settings.py) - Neon config
+DB_PASSWORD  # unused variable (webapp/homography_web/settings.py) - Neon config
+DB_USER  # unused variable (webapp/homography_web/settings.py) - Neon config
+DATABASES  # unused variable (webapp/homography_web/settings.py)
 AUTH_PASSWORD_VALIDATORS  # unused variable (webapp/homography_web/settings.py:100)
 LANGUAGE_CODE  # unused variable (webapp/homography_web/settings.py:119)
 TIME_ZONE  # unused variable (webapp/homography_web/settings.py:121)
