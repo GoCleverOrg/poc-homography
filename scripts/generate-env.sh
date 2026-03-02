@@ -8,9 +8,8 @@ if [ -z "${BWS_PROJECT_ID:-}" ]; then
     exit 1
 fi
 
-bws run --project-id "$BWS_PROJECT_ID" -- bash -c "cat > .env <<EOF
-DATABASE_PASSWORD=\$HOM_DB_PASSWORD_APP
-DATABASE_USER=hom_app
-EOF"
+bws run --project-id "$BWS_PROJECT_ID" -- bash -c '
+  printf "DATABASE_PASSWORD=%s\nDATABASE_USER=hom_app\n" "$HOM_DB_PASSWORD_APP" > .env
+'
 
 echo ".env file generated successfully."
