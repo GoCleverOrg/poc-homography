@@ -27,7 +27,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "webapp"))
 # We import only pure functions and DTOs (no Django dependency).
 # ---------------------------------------------------------------------------
 
-from homography_precision.services import TileBounds, compute_tile_bounds, perpendicular_distance
+from homography_precision.services import (
+    RANSAC_MIN_INLIER_RATIO_LINES,
+    RANSAC_MIN_INLIER_RATIO_POINTS,
+    RANSAC_THRESHOLD,
+    TileBounds,
+    compute_tile_bounds,
+    perpendicular_distance,
+)
 from homography_web.dtos import LineAnnotationDTO, PointAnnotationDTO
 
 # ============================================================================
@@ -522,3 +529,107 @@ class TestLineAnnotationDTO:
         dto2 = LineAnnotationDTO(**{**base, "line_id": "L2"})
 
         assert dto1 != dto2
+
+
+# ============================================================================
+# compute_tile_bounds — int coercion for z > max_level
+# ============================================================================
+
+
+class TestComputeTileBoundsIntCoercion:
+    """Verify that TileBounds coordinates are always int, even when z > max_level."""
+
+    def test_z_beyond_max_level_returns_ints(self):
+        """When z > max_level, level_scale is fractional but coords must be int."""
+        width, height = 1024, 1024
+        max_level = math.ceil(math.log2(max(width, height)))  # 10
+
+        tb = compute_tile_bounds(width=width, height=height, x=0, y=0, z=max_level + 1)
+
+        assert isinstance(tb.x0, int), f"x0 should be int, got {type(tb.x0)}"
+        assert isinstance(tb.y0, int), f"y0 should be int, got {type(tb.y0)}"
+        assert isinstance(tb.x1, int), f"x1 should be int, got {type(tb.x1)}"
+        assert isinstance(tb.y1, int), f"y1 should be int, got {type(tb.y1)}"
+
+    def test_z_far_beyond_max_level_returns_ints(self):
+        """At z = max_level + 5, level_scale = 2^-5 = 0.03125. Coords must still be int."""
+        width, height = 1024, 1024
+        max_level = math.ceil(math.log2(max(width, height)))  # 10
+
+        tb = compute_tile_bounds(width=width, height=height, x=0, y=0, z=max_level + 5)
+
+        assert isinstance(tb.x0, int)
+        assert isinstance(tb.x1, int)
+        # With level_scale 0.03125 and size 256, raw x1 = 1*256*0.03125 = 8.0
+        assert tb.x1 == 8
+
+    def test_z_at_max_level_returns_ints(self):
+        """At z = max_level exactly, coords should be int (level_scale=1)."""
+        tb = compute_tile_bounds(width=1024, height=1024, x=0, y=0, z=10)
+
+        assert isinstance(tb.x0, int)
+        assert isinstance(tb.x1, int)
+
+    def test_z_beyond_max_level_tile_is_valid_for_numpy_slicing(self):
+        """Verify TileBounds from z > max_level can be used as numpy slice indices."""
+        import numpy as np
+
+        tb = compute_tile_bounds(width=1024, height=1024, x=0, y=0, z=12)
+        data = np.zeros((1024, 1024), dtype=np.uint8)
+
+        # This would raise TypeError if coords are float
+        tile = data[tb.y0 : tb.y1, tb.x0 : tb.x1]
+        assert tile.shape[0] >= 0
+        assert tile.shape[1] >= 0
+
+
+# ============================================================================
+# DTO backward-compatibility re-export from frame_utils
+# ============================================================================
+
+
+class TestDTOBackwardCompat:
+    """Verify DTOs can be imported from both canonical and legacy locations."""
+
+    def test_point_annotation_dto_identity(self):
+        """PointAnnotationDTO from dtos.py is the same class as from frame_utils.py."""
+        from homography_web.dtos import PointAnnotationDTO as CanonicalPoint
+        from homography_web.frame_utils import PointAnnotationDTO as LegacyPoint
+
+        assert CanonicalPoint is LegacyPoint
+
+    def test_line_annotation_dto_identity(self):
+        """LineAnnotationDTO from dtos.py is the same class as from frame_utils.py."""
+        from homography_web.dtos import LineAnnotationDTO as CanonicalLine
+        from homography_web.frame_utils import LineAnnotationDTO as LegacyLine
+
+        assert CanonicalLine is LegacyLine
+
+    def test_instance_from_legacy_import_works(self):
+        """An instance created via the legacy import path behaves identically."""
+        from homography_web.frame_utils import PointAnnotationDTO as LegacyPoint
+
+        dto = LegacyPoint(gcp_id="GCP_1", pixel_x=10.0, pixel_y=20.0)
+        assert dto.to_dict() == {"gcp_id": "GCP_1", "pixel_x": 10.0, "pixel_y": 20.0}
+
+
+# ============================================================================
+# RANSAC constants
+# ============================================================================
+
+
+class TestRANSACConstants:
+    """Verify RANSAC module-level constants exist and have expected values."""
+
+    def test_ransac_threshold_value(self):
+        assert RANSAC_THRESHOLD == 50.0
+
+    def test_ransac_min_inlier_ratio_points_value(self):
+        assert RANSAC_MIN_INLIER_RATIO_POINTS == 0.5
+
+    def test_ransac_min_inlier_ratio_lines_value(self):
+        assert RANSAC_MIN_INLIER_RATIO_LINES == 0.3
+
+    def test_points_ratio_greater_than_lines_ratio(self):
+        """Point-based homography requires stricter inlier ratio than line-based."""
+        assert RANSAC_MIN_INLIER_RATIO_POINTS > RANSAC_MIN_INLIER_RATIO_LINES

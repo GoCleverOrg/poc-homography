@@ -35,6 +35,7 @@ from homography_precision.services import (
     compute_line_errors,
     compute_line_homography,
     compute_point_homography,
+    load_gcp_registry,
     perpendicular_distance,
 )
 from homography_web.dtos import LineAnnotationDTO, PointAnnotationDTO
@@ -666,3 +667,131 @@ class TestPerpendicularDistance:
         a = np.array([0.0, 0.0])
         b = np.array([10.0, 0.0])
         assert perpendicular_distance(p, a, b) == pytest.approx(0.0, abs=1e-10)
+
+
+# ============================================================================
+# load_gcp_registry
+# ============================================================================
+
+
+class TestLoadGCPRegistry:
+    """Tests for the ``load_gcp_registry`` service function."""
+
+    def test_returns_serialised_points(self) -> None:
+        """load_gcp_registry returns dict mapping point IDs to pixel coords."""
+        registry = GCPRegistry(
+            map_id="test_map",
+            points={
+                "PS1": MapPoint(pixel_x=100.0, pixel_y=200.0),
+                "PS2": MapPoint(pixel_x=300.5, pixel_y=400.5),
+            },
+        )
+        with patch("homography_precision.services.from_gcp_repo", return_value=registry):
+            result = load_gcp_registry("test_map")
+
+        assert result == {
+            "PS1": {"pixel_x": 100.0, "pixel_y": 200.0},
+            "PS2": {"pixel_x": 300.5, "pixel_y": 400.5},
+        }
+
+    def test_empty_registry(self) -> None:
+        """An empty registry returns an empty dict."""
+        registry = GCPRegistry(map_id="test_map", points={})
+        with patch("homography_precision.services.from_gcp_repo", return_value=registry):
+            result = load_gcp_registry("test_map")
+
+        assert result == {}
+
+    def test_propagates_key_error(self) -> None:
+        """KeyError from from_gcp_repo propagates to caller."""
+        with patch(
+            "homography_precision.services.from_gcp_repo",
+            side_effect=KeyError("no such map"),
+        ):
+            with pytest.raises(KeyError, match="no such map"):
+                load_gcp_registry("nonexistent_map")
+
+    def test_propagates_os_error(self) -> None:
+        """OSError from missing data dir propagates to caller."""
+        with patch(
+            "homography_precision.services.from_gcp_repo",
+            side_effect=OSError("data dir not found"),
+        ):
+            with pytest.raises(OSError, match="data dir not found"):
+                load_gcp_registry("test_map")
+
+
+# ---------------------------------------------------------------------------
+# View guard ordering — map_id=None must return 422 before loading data
+# ---------------------------------------------------------------------------
+
+from django.test import Client
+
+
+class TestMapIdGuardOrdering:
+    """Verify that views return 422 when tenant has no map configured.
+
+    The fix ensures ``svc.require_map_id()`` is checked *before* any
+    data-loading calls (``load_test_case_by_name``, ``load_line_test_case_by_name``).
+    Without the guard, the view would reach a data-loading call that raises an
+    unrelated error or returns a misleading 404.
+    """
+
+    TENANT_ID = "test_tenant"
+
+    @pytest.fixture()
+    def client(self):
+        """Django test client with tenant_id and require_map_id mocked."""
+        with (
+            patch(
+                "homography_precision.views.get_tenant_id",
+                return_value=self.TENANT_ID,
+            ),
+            patch(
+                "homography_precision.views.svc.require_map_id",
+                return_value=None,
+            ),
+        ):
+            yield Client()
+
+    def test_compute_homography_returns_422_when_no_map(self, client) -> None:
+        """POST /api/compute-homography/ → 422 when map_id is None."""
+        import json
+
+        resp = client.post(
+            "/homography-precision/api/compute-homography/?tenant_id=" + self.TENANT_ID,
+            data=json.dumps({"test_case_name": "anything"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data["success"] is False
+        assert "No map configured" in data["error"]
+
+    def test_compute_homography_from_lines_returns_422_when_no_map(self, client) -> None:
+        """POST /api/compute-homography-from-lines/ → 422 when map_id is None."""
+        import json
+
+        resp = client.post(
+            "/homography-precision/api/compute-homography-from-lines/?tenant_id=" + self.TENANT_ID,
+            data=json.dumps({"test_case_name": "anything"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data["success"] is False
+        assert "No map configured" in data["error"]
+
+    def test_compute_line_errors_returns_422_when_no_map(self, client) -> None:
+        """POST /api/compute-line-errors/ → 422 when map_id is None."""
+        import json
+
+        resp = client.post(
+            "/homography-precision/api/compute-line-errors/?tenant_id=" + self.TENANT_ID,
+            data=json.dumps({"test_case_name": "anything"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data["success"] is False
+        assert "No map configured" in data["error"]
