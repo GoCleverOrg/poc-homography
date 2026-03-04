@@ -71,15 +71,15 @@ def validate_fixed_axis_ranges(
     if not camera:
         return f"Camera not found: {camera_id}"
 
-    camera_ip = camera.get("ip")
+    camera_ip = camera.ip_address
     if not camera_ip:
         return f"Camera {camera_id} has no IP address"
 
     try:
         ptz_camera = create_ptz_camera(
             camera_ip=camera_ip,
-            camera_name=camera.get("name", camera_id),
-            camera_model=camera.get("model"),
+            camera_name=camera.name,
+            camera_model=camera.spec.model_name,
             tenant_id=tenant_id,
         )
         capabilities = ptz_camera.get_capabilities()

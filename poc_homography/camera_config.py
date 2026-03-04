@@ -3,8 +3,8 @@ Camera configuration file.
 Central location for all camera settings and credentials.
 
 Tenant data is loaded from DDD YAML repository (data/tenants/).
-Camera data remains hardcoded here for now (contains calibration
-parameters not yet in the DDD model).
+Camera data is loaded from DDD YAML repository (data/cameras/).
+Calibration data is loaded from DDD YAML repository (data/calibrations/).
 """
 
 from __future__ import annotations
@@ -12,6 +12,11 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.camera_calibration import CameraCalibration
+    from poc_homography.domain.entities.camera_config import CameraConfig
 
 # Legacy global credentials - kept for backwards compatibility
 # Prefer tenant-specific credentials defined in per-tenant env vars
@@ -24,6 +29,59 @@ def _project_root() -> Path:
     return Path(__file__).parent.parent
 
 
+# =============================================================================
+# CAMERA LENS SPECIFICATIONS (Hikvision DS-2DF8425IX-AELW series)
+# =============================================================================
+# Source: Hikvision official datasheet
+# - Sensor: 1/1.8" progressive scan CMOS (diagonal ~8.86mm)
+# - Resolution: 2560x1440 (4MP, 16:9 aspect ratio)
+# - Focal Length: 5.9mm (wide) to 147.5mm (tele)
+# - Optical Zoom: 25x (zoom_factor = focal_length / 5.9)
+# - Horizontal FOV: 59.8 deg (wide) to 3.3 deg (tele)
+# - Aperture: F1.5 (max)
+#
+# Note: The geometric sensor width (6.78mm) differs from the physical sensor
+# because the stated FOV accounts for some lens distortion effects.
+# =============================================================================
+
+# Default camera sensor parameters for Hikvision DS-2DF8425IX series
+DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8 deg FOV at 5.9mm focal length
+DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9  # Minimum focal length at 1x zoom
+
+
+# =============================================================================
+# LEGACY ID MAPPING
+# =============================================================================
+# Maps old hardcoded camera IDs to DDD entity IDs ({tenant_id}/{name}).
+# This provides backward compatibility for callers using the old naming
+# convention. New code should use the DDD IDs directly.
+_LEGACY_ID_MAP: dict[str, str] = {
+    "valte_cam01": "valte/Valte",
+    "setram_cam01": "setram/Cam01",
+    "icozee-camptz-01": "icozee/Cam01",
+    "icozee-camptz-02": "icozee/Cam02",
+    "icozee-camptz-03": "icozee/Cam03",
+    "icozee-camptz-04": "icozee/Cam04",
+    "icozee-camptz-05": "icozee/Cam05",
+    "icozee-camptz-06": "icozee/Cam06",
+    "icozee-camptz-07": "icozee/Cam07",
+    "icozee-camptz-08": "icozee/Cam08",
+    "icozee-camptz-09": "icozee/Cam09",
+    "icozee-camptz-10": "icozee/Cam10",
+    "icozee-camptz-11": "icozee/Cam11",
+    "icozee-camptz-12": "icozee/Cam12",
+    "icozee-camptz-13": "icozee/Cam13",
+    "icozee-camptz-14": "icozee/Cam14",
+    "icozee-camptz-15": "icozee/Cam15",
+    "icozee-camptz-16": "icozee/Cam16",
+}
+
+
+# =============================================================================
+# REPOSITORY SINGLETONS
+# =============================================================================
+
+
 @lru_cache(maxsize=1)
 def _get_tenant_repo():
     """Lazily create the tenant repository (singleton)."""
@@ -32,345 +90,33 @@ def _get_tenant_repo():
     return RepoYamlTenant(_project_root() / "data" / "tenants")
 
 
-# =============================================================================
-# CAMERA LENS SPECIFICATIONS (Hikvision DS-2DF8425IX-AELW series)
-# =============================================================================
-# Source: Hikvision official datasheet
-# - Sensor: 1/1.8" progressive scan CMOS (diagonal ~8.86mm)
-# - Resolution: 2560×1440 (4MP, 16:9 aspect ratio)
-# - Focal Length: 5.9mm (wide) to 147.5mm (tele)
-# - Optical Zoom: 25× (zoom_factor = focal_length / 5.9)
-# - Horizontal FOV: 59.8° (wide) to 3.3° (tele)
-# - Aperture: F1.5 (max)
-#
-# Note: The geometric sensor width (6.78mm) differs from the physical sensor
-# because the stated FOV accounts for some lens distortion effects.
-# =============================================================================
+@lru_cache(maxsize=1)
+def _get_camera_config_repo():
+    """Lazily create the camera config repository (singleton)."""
+    from poc_homography.infrastructure.repositories import RepoYamlCameraConfig
 
-# Default camera sensor parameters for Hikvision DS-2DF8425IX series
-DEFAULT_SENSOR_WIDTH_MM = 6.78  # Calculated from 59.8° FOV at 5.9mm focal length
-DEFAULT_BASE_FOCAL_LENGTH_MM = 5.9  # Minimum focal length at 1x zoom
+    return RepoYamlCameraConfig(_project_root() / "data" / "cameras")
 
-# =============================================================================
-# CALIBRATION TABLE FORMAT (Optional)
-# =============================================================================
-# The calibration_table field allows defining zoom-dependent intrinsic parameters
-# to replace the linear focal length approximation. Real lenses exhibit non-linear
-# zoom-to-focal-length relationships and zoom-dependent distortion coefficients.
-#
-# Format: Dictionary mapping zoom_factor (float) to intrinsic parameters (dict)
-#
-# Example:
-# "calibration_table": {
-#     1.0: {
-#         "fx": 1825.3,      # Focal length in pixels (horizontal)
-#         "fy": 1823.1,      # Focal length in pixels (vertical)
-#         "cx": 1280.0,      # Principal point x-coordinate (pixels)
-#         "cy": 720.0,       # Principal point y-coordinate (pixels)
-#         "k1": -0.341,      # Radial distortion coefficient 1
-#         "k2": 0.788,       # Radial distortion coefficient 2
-#         "p1": 0.0,         # Tangential distortion coefficient 1
-#         "p2": 0.0,         # Tangential distortion coefficient 2
-#         "k3": 0.0          # Radial distortion coefficient 3
-#     },
-#     5.0: {
-#         "fx": 9120.5, "fy": 9115.2, "cx": 1282.1, "cy": 721.3,
-#         "k1": -0.298, "k2": 0.654, "p1": 0.001, "p2": 0.0, "k3": 0.0
-#     },
-#     # ... additional zoom levels
-# }
-#
-# Calibration Procedure:
-# 1. Capture checkerboard images at multiple zoom levels (e.g., 1.0, 5.0, 10.0, 15.0, 20.0, 25.0)
-# 2. Use OpenCV calibrateCamera() for each zoom level to obtain intrinsic matrix and distortion coefficients
-# 3. Populate calibration_table with results
-# 4. IntrinsicExtrinsicHomography will linearly interpolate between discrete zoom levels
-#
-# Interpolation Behavior:
-# - Zoom values between calibrated points: linear interpolation of fx, fy, cx, cy, k1-k3, p1-p2
-# - Zoom values below minimum: uses lowest calibrated zoom level (no extrapolation)
-# - Zoom values above maximum: uses highest calibrated zoom level (no extrapolation)
-# - If calibration_table is None: falls back to linear focal length approximation
-# =============================================================================
 
-# =============================================================================
-# TENANT AND CAMERA CONFIGURATION
-# =============================================================================
-# A Tenant represents a deployment site (e.g., "Valte", "Setram").
-# Each Tenant can have multiple cameras, named CamXX (e.g., Cam01, Cam02).
-# Each camera belongs to exactly one tenant via tenant_id.
-# =============================================================================
+@lru_cache(maxsize=1)
+def _get_camera_calibration_repo():
+    """Lazily create the camera calibration repository (singleton)."""
+    from poc_homography.infrastructure.repositories import RepoYamlCameraCalibration
 
-# Tenant definitions are now loaded from DDD YAML repository (data/tenants/).
-# Credentials are loaded from environment variables: {TENANT_ID}_CAMERA_USERNAME, {TENANT_ID}_CAMERA_PASSWORD
-# Falls back to global CAMERA_USERNAME/CAMERA_PASSWORD if tenant-specific not set
+    return RepoYamlCameraCalibration(_project_root() / "data" / "calibrations")
 
-# Camera configurations - each camera belongs to a tenant
-CAMERAS = [
-    {
-        "id": "valte_cam01",
-        "tenant_id": "valte",
-        "name": "Cam01",
-        "ip": "10.207.99.178",
-        "model": "DS-2DF8425IX-AELW(T5)",
-        "lat": "39°38'25.72\"N",
-        "lon": "0°13'48.63\"W",
-        "height_m": 4.71,  # Calibrated 2025-12-11 with comprehensive_calibration.py
-        # Pan offset: angle from North when camera reports pan=0
-        # True bearing = reported_pan + pan_offset_deg
-        # Calibration: Point camera at known landmark, calculate true bearing,
-        # then pan_offset = true_bearing - reported_pan
-        "pan_offset_deg": 51.7,  # Calibrated 2025-12-11 (was 65°, optimized to 51.7°)
-        # Tilt offset: correction for reported tilt angle
-        # Effective tilt = reported_tilt + tilt_offset_deg
-        # Calibrated by minimizing GCP projection error
-        "tilt_offset_deg": -0.25,  # Calibrated 2025-12-11 (camera reports ~0.25° higher than actual)
-        # Lens distortion coefficients (OpenCV model)
-        # Calibrated using checkerboard or GCP-based optimization
-        "k1": -0.341052,  # Radial distortion (negative = barrel distortion)
-        "k2": 0.787571,  # Secondary radial distortion
-        "p1": 0.0,  # Tangential distortion (not calibrated)
-        "p2": 0.0,  # Tangential distortion (not calibrated)
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        # GeoTIFF reference parameters for georeferencing
-        # Updated to use GDAL 6-parameter GeoTransform format (Issue #133)
-        # GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
-        # For north-up rasters, row_rotation=0 and col_rotation=0
-        "geotiff_params": {
-            "geotransform": [737575.05, 0.15, 0, 4391595.45, 0, -0.15],
-            "utm_crs": "EPSG:25830",
-        },
-        "description": "Valte Cam01 - primary camera",
-    },
-    {
-        "id": "setram_cam01",
-        "tenant_id": "setram",
-        "name": "Cam01",
-        "ip": "10.237.100.15",
-        "model": "DS-2DF8425IX-AELW(T5)",  # Assumed same model
-        "lat": "41°19'46.8\"N",
-        "lon": "2°08'31.3\"E",
-        "height_m": 5.0,  # Default height, calibrate with GPS validation
-        "pan_offset_deg": 0.0,  # Pan=0 points north (default, needs calibration)
-        "tilt_offset_deg": 0.0,  # Default, needs calibration
-        # Distortion not calibrated yet
-        "k1": 0.0,
-        "k2": 0.0,
-        "p1": 0.0,
-        "p2": 0.0,
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        "calibration_table": None,
-        "description": "Setram Cam01 - primary camera",
-    },
-    {
-        "id": "icozee-camptz-01",
-        "tenant_id": "icozee",
-        "name": "Cam01",
-        "ip": "10.107.50.2",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        "description": "Icozee Cam01",
-    },
-    {
-        "id": "icozee-camptz-02",
-        "tenant_id": "icozee",
-        "name": "Cam02",
-        "ip": "10.107.50.3",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        "description": "Icozee Cam02",
-    },
-    {
-        "id": "icozee-camptz-03",
-        "tenant_id": "icozee",
-        "name": "Cam03",
-        "ip": "10.107.50.4",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        "description": "Icozee Cam03",
-    },
-    {
-        "id": "icozee-camptz-04",
-        "tenant_id": "icozee",
-        "name": "Cam04",
-        "ip": "10.107.50.5",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        "description": "Icozee Cam04",
-    },
-    {
-        "id": "icozee-camptz-05",
-        "tenant_id": "icozee",
-        "name": "Cam05",
-        "ip": "10.107.50.6",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        "description": "Icozee Cam05",
-    },
-    {
-        "id": "icozee-camptz-06",
-        "tenant_id": "icozee",
-        "name": "Cam06",
-        "ip": "10.107.50.7",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        # Sensor/lens parameters (use defaults if not specified)
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        # Zoom-dependent intrinsic calibration table (optional)
-        # If None, uses linear focal length approximation
-        # See CALIBRATION TABLE FORMAT documentation above for details
-        "calibration_table": None,
-        "description": "Icozee Cam06",
-    },
-    {
-        "id": "icozee-camptz-07",
-        "tenant_id": "icozee",
-        "name": "Cam07",
-        "ip": "10.107.50.8",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam07",
-    },
-    {
-        "id": "icozee-camptz-08",
-        "tenant_id": "icozee",
-        "name": "Cam08",
-        "ip": "10.107.50.9",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam08",
-    },
-    {
-        "id": "icozee-camptz-09",
-        "tenant_id": "icozee",
-        "name": "Cam09",
-        "ip": "10.107.50.10",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam09",
-    },
-    {
-        "id": "icozee-camptz-10",
-        "tenant_id": "icozee",
-        "name": "Cam10",
-        "ip": "10.107.50.11",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam10",
-    },
-    {
-        "id": "icozee-camptz-11",
-        "tenant_id": "icozee",
-        "name": "Cam11",
-        "ip": "10.107.50.12",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam11",
-    },
-    {
-        "id": "icozee-camptz-12",
-        "tenant_id": "icozee",
-        "name": "Cam12",
-        "ip": "10.107.50.13",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam12",
-    },
-    {
-        "id": "icozee-camptz-13",
-        "tenant_id": "icozee",
-        "name": "Cam13",
-        "ip": "10.107.50.14",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam13",
-    },
-    {
-        "id": "icozee-camptz-14",
-        "tenant_id": "icozee",
-        "name": "Cam14",
-        "ip": "10.107.50.15",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam14",
-    },
-    {
-        "id": "icozee-camptz-15",
-        "tenant_id": "icozee",
-        "name": "Cam15",
-        "ip": "10.107.50.16",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam15",
-    },
-    {
-        "id": "icozee-camptz-16",
-        "tenant_id": "icozee",
-        "name": "Cam16",
-        "ip": "10.107.50.17",
-        "model": "DS-2DF-8425IX-AELW(T5)",
-        "sensor_width_mm": DEFAULT_SENSOR_WIDTH_MM,
-        "base_focal_length_mm": DEFAULT_BASE_FOCAL_LENGTH_MM,
-        "calibration_table": None,
-        "description": "Icozee Cam16",
-    },
-]
+
+def _resolve_camera_id(camera_id: str) -> str:
+    """Resolve a camera ID, mapping legacy IDs to DDD entity IDs.
+
+    Args:
+        camera_id: Either a legacy ID (e.g., "valte_cam01") or a
+            DDD entity ID (e.g., "valte/Valte").
+
+    Returns:
+        The DDD entity ID.
+    """
+    return _LEGACY_ID_MAP.get(camera_id, camera_id)
 
 
 # =============================================================================
@@ -428,7 +174,7 @@ def get_tenant_by_name(tenant_name: str) -> dict | None:
     return None
 
 
-def get_cameras_for_tenant(tenant_id: str) -> list:
+def get_cameras_for_tenant(tenant_id: str) -> list[CameraConfig]:
     """
     Get all cameras belonging to a tenant.
 
@@ -436,9 +182,9 @@ def get_cameras_for_tenant(tenant_id: str) -> list:
         tenant_id: ID of the tenant
 
     Returns:
-        List of camera configuration dicts for the tenant
+        List of CameraConfig entities for the tenant
     """
-    return [cam for cam in CAMERAS if cam.get("tenant_id") == tenant_id]
+    return list(_get_camera_config_repo().get_by_tenant(tenant_id).values())  # type: ignore[return-value]
 
 
 def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
@@ -466,46 +212,48 @@ def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
 # =============================================================================
 
 
-def get_camera_configs() -> list:
+def get_camera_configs() -> list[CameraConfig]:
     """
     Get list of all camera configurations.
 
     Returns:
-        List of camera configuration dicts containing camera parameters,
-        GPS coordinates, and calibration data. Does not require credentials
-        and does not generate RTSP URLs.
+        List of CameraConfig entities loaded from the DDD YAML repo.
     """
-    return CAMERAS
+    return _get_camera_config_repo().get_all()
 
 
-def get_camera_by_id(camera_id: str) -> dict | None:
+def get_camera_by_id(camera_id: str) -> CameraConfig | None:
     """
     Find camera configuration by ID.
 
+    Supports both legacy IDs (e.g., "valte_cam01") and DDD entity IDs
+    (e.g., "valte/Valte").
+
     Args:
-        camera_id: Full camera ID (e.g., "valte_cam01", "setram_cam01")
+        camera_id: Full camera ID
 
     Returns:
-        Camera configuration dict or None if not found
+        CameraConfig entity or None if not found
     """
-    return next((cam for cam in CAMERAS if cam.get("id") == camera_id), None)
+    resolved_id = _resolve_camera_id(camera_id)
+    return _get_camera_config_repo().get(resolved_id)
 
 
-def get_camera_by_name(camera_name: str) -> dict | None:
+def get_camera_by_name(camera_name: str) -> CameraConfig | None:
     """
     Find camera configuration by name.
 
     For backwards compatibility, this searches by:
-    1. Full camera ID (e.g., "valte_cam01")
+    1. Full camera ID (including legacy IDs)
     2. Legacy tenant name (e.g., "Valte" -> finds first camera for that tenant)
 
     Args:
         camera_name: Name/ID of the camera
 
     Returns:
-        Camera configuration dict or None if not found
+        CameraConfig entity or None if not found
     """
-    # First try exact ID match
+    # First try exact ID match (including legacy ID resolution)
     cam = get_camera_by_id(camera_name)
     if cam:
         return cam
@@ -519,6 +267,59 @@ def get_camera_by_name(camera_name: str) -> dict | None:
             return cameras[0]
 
     return None
+
+
+def get_calibration_by_camera_id(camera_id: str) -> CameraCalibration | None:
+    """
+    Get calibration data for a camera.
+
+    Args:
+        camera_id: Camera ID (legacy or DDD format)
+
+    Returns:
+        CameraCalibration entity or None if not found
+    """
+    resolved_id = _resolve_camera_id(camera_id)
+    return _get_camera_calibration_repo().get(resolved_id)
+
+
+def build_legacy_camera_dict(
+    camera: CameraConfig,
+    calibration: CameraCalibration | None,
+) -> dict:
+    """Build a legacy camera dict from DDD entities for backward compatibility.
+
+    Used by CLI code that still expects the old dict format with fields
+    like 'height_m', 'pan_offset_deg', 'k1', 'k2', etc.
+    """
+    from typing import Any
+
+    result: dict[str, Any] = {
+        "id": camera.id,
+        "name": camera.name,
+        "ip": camera.ip_address,
+        "tenant_id": camera.tenant_id,
+        "model": camera.spec.model_name,
+        "sensor_width_mm": float(camera.spec.sensor_width),
+        "base_focal_length_mm": float(camera.spec.base_focal_length),
+    }
+    if calibration:
+        result["height_m"] = float(calibration.height)
+        result["pan_offset_deg"] = float(calibration.base_orientation.yaw)
+        result["tilt_offset_deg"] = float(calibration.base_orientation.pitch)
+        result["k1"] = float(calibration.distortion.k1)
+        result["k2"] = float(calibration.distortion.k2)
+        result["p1"] = float(calibration.distortion.p1)
+        result["p2"] = float(calibration.distortion.p2)
+    else:
+        result["height_m"] = 5.0
+        result["pan_offset_deg"] = 0.0
+        result["tilt_offset_deg"] = 0.0
+        result["k1"] = 0.0
+        result["k2"] = 0.0
+        result["p1"] = 0.0
+        result["p2"] = 0.0
+    return result
 
 
 def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
@@ -543,7 +344,7 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
         return None
 
     # Get tenant-specific credentials (falls back to global)
-    tenant_id = cam.get("tenant_id") or ""
+    tenant_id = cam.tenant_id or ""
     username, password = get_tenant_credentials(tenant_id)
 
     # Validate that credentials are set
@@ -556,8 +357,12 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
             "environment variables, or set global CAMERA_USERNAME/CAMERA_PASSWORD as fallback."
         )
 
+    ip = cam.ip_address
+    if not ip:
+        return None
+
     channel = "101" if stream_type == "main" else "102"
-    return f"rtsp://{username}:{password}@{cam['ip']}:554/Streaming/Channels/{channel}"
+    return f"rtsp://{username}:{password}@{ip}:554/Streaming/Channels/{channel}"
 
 
 # Validation
@@ -578,4 +383,4 @@ if __name__ == "__main__":
         print(f"  Credentials: {username} / {'*' * len(password or '')} ({cred_source})")
         print(f"  Cameras: {len(cameras)}")
         for cam in cameras:
-            print(f"    - {cam['name']} ({cam['id']}): {cam['ip']}")
+            print(f"    - {cam.name} ({cam.id}): {cam.ip_address}")

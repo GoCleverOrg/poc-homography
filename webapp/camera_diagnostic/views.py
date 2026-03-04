@@ -10,11 +10,15 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import cv2
 import requests
 from camera_survey.ptz import create_ptz_camera
 from django.conf import settings
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.camera_config import CameraConfig
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -29,7 +33,6 @@ from poc_homography.camera_config import (
     get_rtsp_url,
     get_tenant_by_id,
     get_tenant_credentials,
-    get_tenants,
 )
 
 from .models import (
@@ -72,7 +75,7 @@ from .services import (
 logger = logging.getLogger(__name__)
 
 
-def _validate_camera_for_rtsp(camera_name: str) -> tuple[dict, str] | JsonResponse:
+def _validate_camera_for_rtsp(camera_name: str) -> tuple[CameraConfig, str] | JsonResponse:
     """Validate camera exists and get RTSP URL.
 
     Args:
@@ -103,7 +106,7 @@ def _validate_camera_for_rtsp(camera_name: str) -> tuple[dict, str] | JsonRespon
     return (camera, rtsp_url)
 
 
-def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, str] | JsonResponse:
+def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[CameraConfig, str, str, str] | JsonResponse:
     """Validate camera exists, has IP, and credentials are set.
 
     Args:
@@ -120,7 +123,7 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
             status_code=404,
         )
 
-    camera_ip = camera.get("ip")
+    camera_ip = camera.ip_address
     if not camera_ip:
         return _error_response(
             CameraErrorCategory.INVALID_RESPONSE,
@@ -128,7 +131,7 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
         )
 
     # Get tenant-specific credentials (falls back to global)
-    tenant_id = camera.get("tenant_id")
+    tenant_id = camera.tenant_id
     username, password = get_tenant_credentials(tenant_id)
 
     if not username or not password:
@@ -238,10 +241,10 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
         # Return camera info including id, name, and ip
         camera_list = [
             {
-                "id": cam["id"],
-                "name": cam["name"],
-                "ip": cam["ip"],
-                "tenant_id": cam.get("tenant_id"),
+                "id": cam.id,
+                "name": cam.name,
+                "ip": cam.ip_address,
+                "tenant_id": cam.tenant_id,
             }
             for cam in cameras
         ]
@@ -744,9 +747,9 @@ def api_run_diagnostic(request: HttpRequest) -> JsonResponse:
 
     # Run tests for each camera
     for camera in cameras:
-        camera_id = camera.get("id")
-        camera_name = camera.get("name", camera_id)
-        camera_ip = camera.get("ip")
+        camera_id = camera.id
+        camera_name = camera.name
+        camera_ip = camera.ip_address
 
         camera_result = CameraDiagnosticResult(
             camera_id=camera_id,

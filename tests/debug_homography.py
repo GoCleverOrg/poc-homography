@@ -24,12 +24,12 @@ def debug_homography(camera_name: str, height: float = 5.0):
     # Get camera info and status
     cam_info = get_camera_by_name(camera_name)
     if not cam_info:
-        available = [cam["name"] for cam in get_camera_configs()]
+        available = [cam.name for cam in get_camera_configs()]
         print(f"Camera '{camera_name}' not found. Available: {', '.join(available)}")
         return
 
     camera = HikvisionPTZ(
-        ip=cam_info["ip"], username=USERNAME, password=PASSWORD, name=cam_info["name"]
+        ip=cam_info.ip_address, username=USERNAME, password=PASSWORD, name=cam_info.name
     )
 
     status = camera.get_status()

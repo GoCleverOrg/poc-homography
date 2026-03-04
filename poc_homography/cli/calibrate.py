@@ -1,6 +1,8 @@
 """Calibration CLI commands."""
 
-from pathlib import Path
+from __future__ import annotations
+
+from pathlib import Path  # noqa: TC003 – typer reads annotations at runtime
 
 import typer
 import yaml
@@ -12,7 +14,11 @@ from poc_homography.calibration import (
     print_results,
     run_calibration,
 )
-from poc_homography.camera_config import get_camera_configs
+from poc_homography.camera_config import (
+    build_legacy_camera_dict,
+    get_calibration_by_camera_id,
+    get_camera_configs,
+)
 from poc_homography.cli.main import calibrate_app
 from poc_homography.map_points import GCPRegistry
 from poc_homography.types import Degrees, Meters, Pixels, PixelsFloat, Unitless
@@ -44,13 +50,15 @@ def projection_command(
             --pixel-u 960 --pixel-v 540 --pan-raw 45.0 --tilt 30.0 --zoom 5.0
     """
     # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
+    configs = {cam.name: cam for cam in get_camera_configs()}
     if camera not in configs:
         available = ", ".join(configs.keys())
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    cam = configs[camera]
+    camera_entity = configs[camera]
+    calibration = get_calibration_by_camera_id(camera_entity.id)
+    cam = build_legacy_camera_dict(camera_entity, calibration)
 
     # Convert CLI inputs to typed units at the boundary
     result = analyze_projection_error(
@@ -112,13 +120,15 @@ def comprehensive_command(
             --registry-file valte_map_points.yaml
     """
     # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
+    configs = {cam.name: cam for cam in get_camera_configs()}
     if camera not in configs:
         available = ", ".join(configs.keys())
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    camera_config = configs[camera]
+    camera_entity = configs[camera]
+    calibration = get_calibration_by_camera_id(camera_entity.id)
+    camera_config = build_legacy_camera_dict(camera_entity, calibration)
 
     # Load GCPs from YAML file
     try:

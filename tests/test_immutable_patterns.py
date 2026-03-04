@@ -12,8 +12,7 @@ Classes tested:
     - IntrinsicExtrinsicConfig (frozen dataclass)
     - IntrinsicExtrinsicResult (frozen dataclass)
     - IntrinsicExtrinsicHomography.compute_from_config() (pure function)
-    - UTMConverter factory methods
-    - GCPCoordinateConverter factory methods
+    - GeoTiff coordinate transforms
 
 Run with: python -m pytest tests/test_immutable_patterns.py -v
 """

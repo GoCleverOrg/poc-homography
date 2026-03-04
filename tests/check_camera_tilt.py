@@ -12,13 +12,13 @@ print("=" * 60)
 
 for cam_info in get_camera_configs():
     camera = HikvisionPTZ(
-        ip=cam_info["ip"], username=USERNAME, password=PASSWORD, name=cam_info["name"]
+        ip=cam_info.ip_address, username=USERNAME, password=PASSWORD, name=cam_info.name
     )
 
     status = camera.get_status()
 
-    print(f"\n{cam_info['name']} Camera:")
-    print(f"  IP: {cam_info['ip']}")
+    print(f"\n{cam_info.name} Camera:")
+    print(f"  IP: {cam_info.ip_address}")
     print(f"  Pan:  {status['pan']:.2f}°")
     print(f"  Tilt: {status['tilt']:.2f}°")
     print(f"  Zoom: {status['zoom']:.2f}x")

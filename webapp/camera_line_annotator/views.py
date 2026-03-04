@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -27,6 +27,9 @@ from homography_web.frame_utils import (
 from homography_web.frame_utils import (
     get_line_annotation_repo as _get_line_annotation_repo,
 )
+
+if TYPE_CHECKING:
+    from homography_web.dtos import LineAnnotationDTO
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
@@ -98,7 +101,7 @@ def save_session_annotations(request: HttpRequest, annotations: dict[str, list[d
     request.session.modified = True
 
 
-def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
+def _load_line_annotations_from_repo(image_filename: str) -> list[LineAnnotationDTO]:
     """Load line annotations from the DDD LineAnnotation repository."""
     frame = image_filename_to_frame(image_filename)
     if frame is None:
@@ -148,7 +151,7 @@ def _save_line_annotations_to_repo(
         repo.save(line_ann)
 
 
-def load_existing_line_annotations(image_filename: str) -> list[dict]:
+def load_existing_line_annotations(image_filename: str) -> list[LineAnnotationDTO]:
     """Load existing line annotations for a specific image from the DDD repo."""
     return _load_line_annotations_from_repo(image_filename)
 
@@ -203,7 +206,8 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     request.session[SESSION_IMAGE_KEY] = filename
 
     # Always load fresh from repo on image switch; session tracks in-flight edits only
-    image_annotations = load_existing_line_annotations(filename)
+    image_annotations_dtos = load_existing_line_annotations(filename)
+    image_annotations = [a.to_dict() for a in image_annotations_dtos]
     all_annotations = get_session_annotations(request)
     all_annotations[filename] = image_annotations
     save_session_annotations(request, all_annotations)
@@ -261,8 +265,8 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
 
     all_annotations = get_session_annotations(request)
     if current_image not in all_annotations:
-        image_annotations = load_existing_line_annotations(current_image)
-        all_annotations[current_image] = image_annotations
+        image_annotations_dtos = load_existing_line_annotations(current_image)
+        all_annotations[current_image] = [a.to_dict() for a in image_annotations_dtos]
         save_session_annotations(request, all_annotations)
 
     return JsonResponse(all_annotations[current_image], safe=False)
@@ -445,7 +449,8 @@ def api_import(request: HttpRequest) -> JsonResponse:
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
-    annotations = _load_line_annotations_from_repo(current_image)
+    annotation_dtos = _load_line_annotations_from_repo(current_image)
+    annotations = [a.to_dict() for a in annotation_dtos]
 
     # Store in session
     all_annotations = get_session_annotations(request)

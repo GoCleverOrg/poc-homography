@@ -288,7 +288,7 @@ def analyze_projection_error(
         print(f"Best achievable error: {best_joint_error:.1f} pixels")
         print("\nPossible issues:")
         print("  - Intrinsic matrix may be wrong (focal length, sensor size)")
-        print("  - Camera GPS position may be inaccurate")
+        print("  - Camera position on map may be inaccurate")
         print("  - Tilt angle may be incorrectly reported by camera")
         print("  - Map point coordinates may be inaccurate")
 

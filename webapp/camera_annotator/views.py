@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -23,6 +24,9 @@ from homography_web.frame_utils import (
 from homography_web.frame_utils import (
     get_current_image as _get_current_image,
 )
+
+if TYPE_CHECKING:
+    from homography_web.dtos import PointAnnotationDTO
 
 # Session key for current image
 SESSION_IMAGE_KEY = "camera_annotator_image"
@@ -56,7 +60,7 @@ def load_gcps(tenant_id: str) -> list[dict]:
     ]
 
 
-def load_existing_annotations(image_filename: str) -> list[dict]:
+def load_existing_annotations(image_filename: str) -> list[PointAnnotationDTO]:
     """Load existing annotations for a specific image from the CapturedFrame repo."""
     frame = image_filename_to_frame(image_filename)
     if frame is None:
@@ -130,7 +134,7 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
 
     try:
         annotations = load_existing_annotations(current_image)
-        return JsonResponse(annotations, safe=False)
+        return JsonResponse([a.to_dict() for a in annotations], safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to load annotations: {e}"}, status=500)
 
@@ -178,7 +182,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
         {
             "success": True,
             "filename": filename,
-            "annotations": annotations,
+            "annotations": [a.to_dict() for a in annotations],
         }
     )
 

@@ -1,0 +1,12 @@
+# Camera configuration for Icozee Cam01
+# This file contains static registration data that rarely changes
+
+id: icozee/Cam01
+tenant_id: icozee
+map_id: icozee
+name: Cam01
+spec: HIKVISION_DS_2DF8425IX
+credential:
+  username: admin
+  password: REPLACE_ME
+ip_address: 10.107.50.2

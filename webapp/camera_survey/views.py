@@ -99,10 +99,10 @@ def api_cameras(request: HttpRequest) -> JsonResponse:
         cameras = get_cameras_for_tenant(tenant_id)
         camera_list = [
             {
-                "id": cam["id"],
-                "name": cam["name"],
-                "ip": cam["ip"],
-                "model": cam.get("model"),
+                "id": cam.id,
+                "name": cam.name,
+                "ip": cam.ip_address,
+                "model": cam.spec.model_name,
             }
             for cam in cameras
         ]
@@ -417,8 +417,8 @@ def api_ptz_status(request: HttpRequest) -> JsonResponse:
     if not camera:
         return _error_response(f"Camera not found: {camera_id}", 404)
 
-    camera_ip = camera.get("ip")
-    camera_name = camera.get("name", camera_id)
+    camera_ip = camera.ip_address
+    camera_name = camera.name
 
     if not camera_ip:
         return _error_response(f"Camera IP not configured: {camera_id}", 500)

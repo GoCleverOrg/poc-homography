@@ -3,7 +3,7 @@
 Homography provider using map points for coordinate transformation.
 
 Implements homography-based transformation between camera image pixels
-and map coordinates using map point references instead of GPS coordinates.
+and map coordinates using map point references.
 
 Coordinate Systems:
     - Camera pixels: (u, v) in image space, origin at top-left
@@ -96,7 +96,6 @@ class MapPointHomography:
         self._H_inv: npt.NDArray[np.float64] | None = None
         self._is_valid: bool = False
         self._result: MapPointComputationResult | None = None
-        self._point_counter: int = 0
 
     def _require_forward_homography(self) -> npt.NDArray[np.float64]:
         """Return forward homography matrix or raise RuntimeError if not computed."""

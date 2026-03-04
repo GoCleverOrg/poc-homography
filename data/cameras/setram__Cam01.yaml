@@ -1,0 +1,12 @@
+# Camera configuration for Setram Cam01
+# This file contains static registration data that rarely changes
+
+id: setram/Cam01
+tenant_id: setram
+map_id: setram
+name: Cam01
+spec: HIKVISION_DS_2DF8425IX
+credential:
+  username: admin
+  password: REPLACE_ME
+ip_address: 10.237.100.15

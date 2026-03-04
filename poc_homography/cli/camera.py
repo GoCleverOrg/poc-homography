@@ -1,8 +1,10 @@
 """Camera intrinsics and validation CLI commands."""
 
+from __future__ import annotations
+
 import json
 from enum import Enum
-from pathlib import Path
+from pathlib import Path  # noqa: TC003 – typer reads annotations at runtime
 
 import typer
 
@@ -13,6 +15,8 @@ from poc_homography.camera_config import (
     DEFAULT_SENSOR_WIDTH_MM,
     PASSWORD,
     USERNAME,
+    build_legacy_camera_dict,
+    get_calibration_by_camera_id,
     get_camera_by_name,
     get_camera_configs,
 )
@@ -73,17 +77,21 @@ def intrinsics_command(
     # Get camera configuration
     cam_info = get_camera_by_name(camera)
     if not cam_info:
-        available = [c["name"] for c in get_camera_configs()]
+        available = [c.name for c in get_camera_configs()]
         typer.echo(
             f"Error: Camera '{camera}' not found. Available cameras: {', '.join(available)}",
             err=True,
         )
         raise typer.Exit(1)
 
+    if not cam_info.ip_address:
+        typer.echo(f"Error: Camera '{camera}' has no IP address configured.", err=True)
+        raise typer.Exit(1)
+
     # Get PTZ status and intrinsics
     try:
         ptz_status, intrinsics = get_camera_intrinsics(
-            camera_ip=cam_info["ip"],
+            camera_ip=cam_info.ip_address,
             username=USERNAME,
             password=PASSWORD,
             image_width=Pixels(image_width),
@@ -97,9 +105,9 @@ def intrinsics_command(
 
     # Format output
     if output_format == OutputFormat.HUMAN:
-        output = _format_human_readable(camera, cam_info["ip"], ptz_status, intrinsics)
+        output = _format_human_readable(camera, cam_info.ip_address or "", ptz_status, intrinsics)
     elif output_format == OutputFormat.JSON:
-        output = _format_json(camera, cam_info["ip"], ptz_status, intrinsics)
+        output = _format_json(camera, cam_info.ip_address or "", ptz_status, intrinsics)
     else:  # YAML
         output = _format_yaml(camera, ptz_status, intrinsics)
 
@@ -235,13 +243,16 @@ def validate_command(
             --registry-file valte_map_points.yaml
     """
     # Get camera configuration
-    configs = {cam["name"]: cam for cam in get_camera_configs()}
+    configs = {cam.name: cam for cam in get_camera_configs()}
     if camera not in configs:
         available = ", ".join(configs.keys())
         typer.echo(f"Error: Unknown camera: {camera}. Available: {available}", err=True)
         raise typer.Exit(1)
 
-    camera_config = configs[camera]
+    camera_entity = configs[camera]
+    calibration = get_calibration_by_camera_id(camera_entity.id)
+    # Build legacy camera_config dict for validate_model compatibility
+    camera_config = build_legacy_camera_dict(camera_entity, calibration)
 
     # Load GCPs from YAML file
     try:

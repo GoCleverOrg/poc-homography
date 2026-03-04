@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TDD tests for homography using map points instead of GPS coordinates.
+TDD tests for homography using map points.
 
 This test suite validates the homography transformation between camera image
 pixels and map point coordinates using the Valte test data. Tests follow TDD

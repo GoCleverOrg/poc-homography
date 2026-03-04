@@ -1,0 +1,11 @@
+# Camera configuration for Icozee Cam07
+
+id: icozee/Cam07
+tenant_id: icozee
+map_id: icozee
+name: Cam07
+spec: HIKVISION_DS_2DF8425IX
+credential:
+  username: admin
+  password: REPLACE_ME
+ip_address: 10.107.50.8

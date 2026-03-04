@@ -1,0 +1,21 @@
+# Camera calibration data for Setram Cam01
+# Default values - needs calibration
+
+id: setram/Cam01
+
+position:
+  x: 0.0  # ESTIMATED — requires calibration
+  y: 0.0  # ESTIMATED — requires calibration
+
+height: 5.0  # ESTIMATED — requires calibration
+
+base_orientation:
+  yaw: 0.0  # ESTIMATED — requires calibration
+  pitch: 0.0  # ESTIMATED — requires calibration
+  roll: 0.0  # ESTIMATED — requires calibration
+
+distortion:
+  k1: 0.0  # ESTIMATED — requires calibration
+  k2: 0.0  # ESTIMATED — requires calibration
+  p1: 0.0  # ESTIMATED — requires calibration
+  p2: 0.0  # ESTIMATED — requires calibration
