@@ -30,7 +30,7 @@ class HomographyConfig:
         approach_specific_config: Dict of approach-specific configuration
         coordinate_system_mode: Mode for setting world coordinate system origin.
             Controls whether camera position is at origin (ORIGIN_AT_CAMERA)
-            or derived from GPS coordinates (GPS_BASED_ORIGIN). Default is
+            or derived from map coordinates (MAP_BASED_ORIGIN). Default is
             ORIGIN_AT_CAMERA for backward compatibility and single-camera use.
     """
 

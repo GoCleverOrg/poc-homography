@@ -663,9 +663,6 @@ class TestGPSProjection:
             f"{dist_from_center:.1f}px from center"
         )
 
-    # NOTE: test_gps_round_trip removed - used deleted standalone functions gps_to_local_xy
-    # and local_xy_to_gps. GPS round-trip accuracy is tested in test_coordinate_converter_dual_systems.py
-    # using GCPCoordinateConverter class methods.
 
 
 class TestEdgeCases:
