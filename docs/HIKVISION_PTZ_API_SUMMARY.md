@@ -127,14 +127,9 @@ print(f"3D command returned {code}")
 
 ### Testing
 
-- See `test_new_commands.py` for a safe test script.
-- By default, the script fetches the camera status and calls `send_ptz_return` with the current position (safe no-op).
-- The 3D command is gated behind an environment variable. To run it, set:
-
-```bash
-export RUN_3D=1
-python ptz_discovery_and_control/hikvision/test_new_commands.py
-```
+To test these commands safely, fetch the current status and call `send_ptz_return`
+with the same position (safe no-op). The 3D command may move the camera — use
+with caution.
 
 ---
     <zoom>0</zoom>
@@ -374,13 +369,10 @@ camera.move(pan=0, tilt=0, zoom=0)
 
 ---
 
-## Files Generated
+## Key Files
 
 1. **hikvision_ptz_discovery.py** - Main discovery and testing script
-2. **ptz_test_results_Camera_1_[timestamp].json** - Detailed test results for Camera 1
-3. **ptz_test_results_Camera_2_[timestamp].json** - Detailed test results for Camera 2
-4. **ptz_discovery_output.log** - Complete console output from testing
-5. **HIKVISION_PTZ_API_SUMMARY.md** - This summary document
+2. **HIKVISION_PTZ_API_SUMMARY.md** - This summary document
 
 ---
 

@@ -763,15 +763,9 @@ poc_homography/
 
 ## 7. Open Questions
 
-1. ~~**Distortion coefficients**: Should they be part of `CameraInstallation` or separate `LensDistortion` VO?~~ **Resolved**: `LensDistortion` VO in `CameraInstallation` (calibrated per-camera).
+1. **Calibration table**: How to model zoom-dependent intrinsics? Separate VO or part of `Camera` entity? (Currently not implemented — using linear focal length approximation)
 
-2. **Calibration table**: How to model zoom-dependent intrinsics? Separate VO or part of `Camera` entity? (Currently not implemented - using linear focal length approximation)
-
-3. **GPS coordinates**: Do we still need GPS lat/lon for cameras, or is MapPoint sufficient?
-
-4. ~~**Map loading**: Should `Map` entity load image dimensions from file, or require them as input?~~ **Resolved**: `Map.get_dimensions()` method computes from photo file on demand.
-
-5. ~~**Mutability**: `Camera.ptz_state` needs to be mutable. Use `@dataclass` without `frozen=True`, or separate mutable state?~~ **Resolved**: PTZState removed from Camera entity. Passed as argument to domain services.
+2. **GPS coordinates**: Do we still need GPS lat/lon for cameras, or is MapPoint sufficient?
 
 ---
 
