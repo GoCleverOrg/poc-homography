@@ -114,9 +114,6 @@ _.merge_calibration_tables  # public API — calibration merger (no prod callers
 # ── poc_homography.homography.map_points ───────────────────────────────────
 inverse_matrix  # dataclass/NT field — MapPointComputationResult field
 inverse_matrix  # dataclass/NT field — LineComputationResult field
-_._point_counter  # uncertain — MapPointHomography internal counter; set but never read
-#   NOTE: _point_counter is assigned in __init__ but never referenced elsewhere.
-#   May be vestigial from a removed feature, but kept as it's harmless.
 iteration  # dead local variable — RANSAC loop variable (intent documentation)
 _.camera_to_map_batch  # public API — batch projection; tested in test_map_points_integration.py
 _.map_to_camera_batch  # public API — batch projection; tested in test_map_points_integration.py
@@ -220,30 +217,15 @@ DATA_DIR  # Django boilerplate — settings.py custom constant
 _.get_overall_status  # uncertain — DiagnosticResult method; not called from templates or views
 #   NOTE: get_overall_status is defined but never invoked. Likely intended for
 #   a diagnostic summary page that hasn't been built yet.
-GOOD  # enum member — DiagnosticTestStatus (may be used in templates via string comparison)
-NEEDS_IMPROVEMENT  # enum member — DiagnosticTestStatus (may be used in templates via string comparison)
-BAD  # enum member — DiagnosticTestStatus (may be used in templates via string comparison)
-VALID_LAYERS  # uncertain — satellite_layers template tag constant
-#   NOTE: VALID_LAYERS is defined but the satellite_layers template tag is not
-#   loaded in any .html template. May be unused dead code.
-satellite_layers_js  # uncertain — template tag function
-#   NOTE: satellite_layers_js template tag is not {% load %}ed in any template.
-#   May be dead code from an earlier GCP picker design.
+GOOD  # enum member — UserEvaluation; deserialized from YAML strings
+NEEDS_IMPROVEMENT  # enum member — UserEvaluation; deserialized from YAML strings
+BAD  # enum member — UserEvaluation; deserialized from YAML strings
 
 # ── webapp — views and middleware ──────────────────────────────────────────
 _.modified  # Django boilerplate — request.session.modified = True (Django session API)
 camera_model  # unused function parameter — create_ptz_camera in camera_survey/ptz.py (future: brand detection)
 TenantIdMiddleware  # Django boilerplate — referenced in MIDDLEWARE setting
 _.process_exception  # Django boilerplate — Django middleware hook called by framework
-validate_add_line_request  # uncertain — validation function with no callers
-#   NOTE: validate_add_line_request() is defined in line_picker/validation.py but
-#   is never imported or called by views.py. May be dead code from an earlier API design.
-validate_export_request  # uncertain — validation function with no callers
-#   NOTE: validate_export_request() is defined but never imported by views.py.
-#   The export endpoint may do inline validation instead.
-validate_import_request  # uncertain — validation function with no callers
-#   NOTE: validate_import_request() is defined but never imported by views.py.
-#   The import endpoint may do inline validation instead.
 _.get_by_frame_id  # uncertain — RepoYamlAnnotation method; class kept as DDD infra, method has no callers
 #   NOTE: RepoYamlAnnotation is a valid DDD repository class exported in __all__.
 #   get_by_frame_id() has no callers in webapp code currently.
