@@ -765,8 +765,6 @@ poc_homography/
 
 1. **Calibration table**: How to model zoom-dependent intrinsics? Separate VO or part of `Camera` entity? (Currently not implemented — using linear focal length approximation)
 
-2. **GPS coordinates**: Do we still need GPS lat/lon for cameras, or is MapPoint sufficient?
-
 ---
 
 ## 8. ~~Pending~~ Completed Code Changes

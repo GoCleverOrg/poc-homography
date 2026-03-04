@@ -554,15 +554,13 @@ class TestHomographyConsistency:
         )
 
 
-class TestGPSProjection:
-    """Test GPS-to-image projection accuracy."""
+class TestCameraProjection:
+    """Test camera-to-image projection accuracy."""
 
     @pytest.fixture
     def valte_config(self):
         # Static test parameters (Valencia region test data, not current camera config)
         return {
-            "camera_lat": 39.640497,
-            "camera_lon": -0.230106,
             "height_m": 3.4,
             "pan_offset_deg": 66.7,
             "pan_raw": 0.0,

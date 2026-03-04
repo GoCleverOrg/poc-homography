@@ -2,8 +2,6 @@
 # This file contains data refined during the calibration process
 #
 # NOTE: The position values below are estimates and need proper calibration.
-# The camera's GPS location is 39°38'25.72"N, 0°13'48.63"W which needs
-# to be converted to map pixel coordinates using the GeoTiff transform.
 
 id: valte/Valte
 

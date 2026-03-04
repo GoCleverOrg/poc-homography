@@ -3,7 +3,7 @@
 Homography provider using map points for coordinate transformation.
 
 Implements homography-based transformation between camera image pixels
-and map coordinates using map point references instead of GPS coordinates.
+and map coordinates using map point references.
 
 Coordinate Systems:
     - Camera pixels: (u, v) in image space, origin at top-left
