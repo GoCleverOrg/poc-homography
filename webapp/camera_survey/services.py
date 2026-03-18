@@ -7,6 +7,7 @@ image capture, and session management.
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 import time
 import uuid
@@ -22,6 +23,9 @@ from poc_homography.camera_config import (
     get_rtsp_url,
     get_tenant_by_id,
 )
+from poc_homography.domain.entities.captured_frame import CapturedFrame
+from poc_homography.domain.vo.ptz_state import PTZState
+from poc_homography.types import Degrees, Unitless
 
 from .models import (
     SURVEY_PRESETS,
@@ -205,6 +209,102 @@ def _get_survey_repo():
 def _write_manifest(session: SurveySession) -> bool:
     """Write session manifest via the DDD repository."""
     return _get_survey_repo().save(session)
+
+
+def import_survey_captures(session: SurveySession) -> int:
+    """Import successful captures from a completed survey as CapturedFrames.
+
+    Copies images to ``data/captured_frames/{map_id}/{camera_name}/`` and
+    persists a ``CapturedFrame`` YAML for each capture via
+    ``RepoYamlCapturedFrame.save()``.  Already-imported captures are silently
+    skipped (idempotent).
+
+    Args:
+        session: A completed ``SurveySession``.
+
+    Returns:
+        Number of newly imported frames.
+    """
+    from webapp.homography_web.frame_utils import (
+        get_frame_repo,
+        get_map_from_tenant_id,
+        invalidate_cache,
+        validate_image_filename,
+    )
+
+    if session.tenant is None:
+        logger.warning("Skipping import: session %s has no tenant", session.id)
+        return 0
+    if session.camera is None:
+        logger.warning("Skipping import: session %s has no camera", session.id)
+        return 0
+
+    map_entity = get_map_from_tenant_id(session.tenant.id)
+    if map_entity is None:
+        logger.warning(
+            "Skipping import: no map configured for tenant %s", session.tenant.id
+        )
+        return 0
+
+    map_id = map_entity.id
+    camera_name = session.camera.name
+
+    repo = get_frame_repo()
+    dest_dir = repo.image_dir_for(map_id, camera_name)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve session image directory
+    session_date = session.start_time.strftime("%Y%m%d")
+    session_path = _get_session_path(session.id, session_date)
+
+    imported = 0
+    for capture in session.captures:
+        if capture.errors:
+            logger.warning(
+                "Skipping capture %s: has errors %s", capture.filename, capture.errors
+            )
+            continue
+
+        # Guard against path traversal in filename
+        if not validate_image_filename(capture.filename):
+            logger.warning("Skipping capture with unsafe filename: %s", capture.filename)
+            continue
+
+        ts = datetime.fromisoformat(capture.timestamp)
+        ptz_state = PTZState(
+            pan_raw=Degrees(capture.ptz.pan if capture.ptz.pan is not None else 0.0),
+            tilt_deg=Degrees(capture.ptz.tilt if capture.ptz.tilt is not None else 0.0),
+            zoom=Unitless(capture.ptz.zoom if capture.ptz.zoom is not None else 0.0),
+        )
+
+        frame = CapturedFrame.create(
+            map_id=map_id,
+            camera_name=camera_name,
+            timestamp=ts,
+            ptz_state=ptz_state,
+            image_path=Path(capture.filename),
+        )
+
+        # Idempotent: skip if already imported
+        if repo.exists(frame.id):
+            continue
+
+        # Copy image — skip entirely if source is missing
+        src_image = session_path / capture.filename
+        dest_image = dest_dir / capture.filename
+        if not src_image.exists():
+            logger.warning("Skipping capture %s: source image not found", capture.filename)
+            continue
+        shutil.copy2(src_image, dest_image)
+
+        repo.save(frame)
+        imported += 1
+
+    if imported:
+        invalidate_cache()
+
+    logger.info("Imported %d frames from session %s", imported, session.id)
+    return imported
 
 
 class CameraSurveyService:
@@ -487,6 +587,13 @@ class CameraSurveyService:
 
             # Write final manifest
             _write_manifest(session)
+
+            # Import captures as CapturedFrames for annotator apps
+            if session.status == SurveyStatus.COMPLETED:
+                try:
+                    import_survey_captures(session)
+                except Exception as e:
+                    logger.exception("Failed to import survey captures: %s", e)
 
             # Update progress
             with _active_surveys_lock:
