@@ -229,6 +229,7 @@ def import_survey_captures(session: SurveySession) -> int:
         get_frame_repo,
         get_map_from_tenant_id,
         invalidate_cache,
+        validate_image_filename,
     )
 
     if session.tenant is None:
@@ -265,15 +266,15 @@ def import_survey_captures(session: SurveySession) -> int:
             continue
 
         # Guard against path traversal in filename
-        if "/" in capture.filename or "\\" in capture.filename or ".." in capture.filename:
+        if not validate_image_filename(capture.filename):
             logger.warning("Skipping capture with unsafe filename: %s", capture.filename)
             continue
 
         ts = datetime.fromisoformat(capture.timestamp)
         ptz_state = PTZState(
-            pan_raw=Degrees(capture.ptz.pan or 0.0),
-            tilt_deg=Degrees(capture.ptz.tilt or 0.0),
-            zoom=Unitless(capture.ptz.zoom or 0.0),
+            pan_raw=Degrees(capture.ptz.pan if capture.ptz.pan is not None else 0.0),
+            tilt_deg=Degrees(capture.ptz.tilt if capture.ptz.tilt is not None else 0.0),
+            zoom=Unitless(capture.ptz.zoom if capture.ptz.zoom is not None else 0.0),
         )
 
         frame = CapturedFrame.create(
@@ -294,8 +295,7 @@ def import_survey_captures(session: SurveySession) -> int:
         if not src_image.exists():
             logger.warning("Skipping capture %s: source image not found", capture.filename)
             continue
-        if not dest_image.exists():
-            shutil.copy2(src_image, dest_image)
+        shutil.copy2(src_image, dest_image)
 
         repo.save(frame)
         imported += 1
