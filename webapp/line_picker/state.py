@@ -7,7 +7,11 @@ from pathlib import Path  # noqa: TC003 - used at runtime
 from typing import TYPE_CHECKING
 
 import tifffile
-from homography_web.frame_utils import register_invalidation_callback, resolve_map_for_tenant
+from homography_web.frame_utils import (
+    LINES_DIR,
+    register_invalidation_callback,
+    resolve_map_for_tenant,
+)
 from PIL import Image
 
 from poc_homography.infrastructure.repositories import RepoYamlLine
@@ -228,6 +232,7 @@ def get_state(tenant_id: str) -> LinePickerState:
         width=int(map_entity.photo.width),
         height=int(map_entity.photo.height),
     )
+    state.lines = from_line_repo(LINES_DIR, map_entity.id)
     _states[tenant_id] = state
     return state
 
@@ -271,6 +276,27 @@ def from_line_repo(data_dir: Path, map_id: str) -> list[Line]:
     ]
 
 
+def save_single_line_to_repo(line: Line, map_id: str, data_dir: Path) -> None:
+    """Persist a single legacy Line to the DDD ``RepoYamlLine`` repository.
+
+    Args:
+        line: Legacy Line object to persist.
+        map_id: Map identifier for the line.
+        data_dir: Directory for per-Line YAML files.
+    """
+    from poc_homography.domain.entities.line import Line as DomainLine
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+
+    repo = _get_line_repo(data_dir)
+    domain_line = DomainLine(
+        name=line.line_id,
+        map_id=map_id,
+        start=PixelPoint.create(line.start_x, line.start_y),
+        end=PixelPoint.create(line.end_x, line.end_y),
+    )
+    repo.save(domain_line)
+
+
 def save_to_line_repo(lines: list[Line], map_id: str, data_dir: Path) -> None:
     """Save legacy Line objects to the DDD ``RepoYamlLine`` repository.
 
@@ -282,18 +308,21 @@ def save_to_line_repo(lines: list[Line], map_id: str, data_dir: Path) -> None:
         map_id: Map identifier for the lines.
         data_dir: Directory for per-Line YAML files.
     """
-    from poc_homography.domain.entities.line import Line as DomainLine
-    from poc_homography.domain.vo.pixel_point import PixelPoint
-
-    repo = _get_line_repo(data_dir)
     for line in lines:
-        domain_line = DomainLine(
-            name=line.line_id,
-            map_id=map_id,
-            start=PixelPoint.create(line.start_x, line.start_y),
-            end=PixelPoint.create(line.end_x, line.end_y),
-        )
-        repo.save(domain_line)
+        save_single_line_to_repo(line, map_id, data_dir)
+
+
+def delete_line_from_repo(line_id: str, map_id: str, data_dir: Path) -> None:
+    """Delete a line from the DDD ``RepoYamlLine`` repository.
+
+    Args:
+        line_id: Line identifier (e.g. "L1").
+        map_id: Map identifier for constructing the entity ID.
+        data_dir: Directory for per-Line YAML files.
+    """
+    repo = _get_line_repo(data_dir)
+    entity_id = f"{map_id}/{line_id}"
+    repo.delete(entity_id)
 
 
 def list_line_map_ids(data_dir: Path) -> list[str]:

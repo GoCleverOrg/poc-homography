@@ -12,10 +12,10 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-from homography_web.frame_utils import LINES_DIR, get_map_from_tenant_id, get_tenant_id, normalize_array
+from homography_web.frame_utils import LINES_DIR, get_tenant_id, normalize_array
 from PIL import Image
 
-from .state import from_line_repo, get_state, list_line_map_ids, save_to_line_repo
+from .state import delete_line_from_repo, get_state, save_single_line_to_repo
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -244,6 +244,8 @@ def api_lines(request: HttpRequest) -> JsonResponse:
 
     try:
         line_id = state.add_line(start_x, start_y, end_x, end_y, line_id=line_id)
+        line = state.get_line(line_id)
+        save_single_line_to_repo(line, state.map_id, LINES_DIR)
 
         return JsonResponse(
             {
@@ -271,6 +273,7 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     if request.method == "DELETE":
         try:
             state.delete_line(line_id)
+            delete_line_from_repo(line_id, state.map_id, LINES_DIR)
             return JsonResponse({"deleted": line_id})
         except KeyError:
             return JsonResponse({"error": f"Line not found: {line_id}"}, status=404)
@@ -314,6 +317,7 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     line.start_y = new_start_y
     line.end_x = new_end_x
     line.end_y = new_end_y
+    save_single_line_to_repo(line, state.map_id, LINES_DIR)
 
     return JsonResponse(
         {
@@ -374,45 +378,3 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
     )
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def api_export(request: HttpRequest) -> JsonResponse:
-    """Save lines to the DDD line repository."""
-    state = get_state(get_tenant_id(request))
-    save_to_line_repo(state.lines, state.map_id, LINES_DIR)
-    return JsonResponse({"saved": True, "count": len(state.lines)})
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def api_import(request: HttpRequest) -> JsonResponse:
-    """Load lines from the DDD line repository for a given map_id."""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    map_id = data.get("map_id")
-    if not map_id:
-        return JsonResponse({"error": "map_id is required"}, status=400)
-
-    tenant_id = get_tenant_id(request)
-    # Validate map_id belongs to this tenant
-    map_entity = get_map_from_tenant_id(tenant_id)
-    if map_entity is None or map_entity.id != map_id:
-        return JsonResponse({"error": f"map_id {map_id!r} does not belong to this tenant"}, status=403)
-
-    state = get_state(tenant_id)
-    repo_lines = from_line_repo(LINES_DIR, map_id)
-    state.lines = repo_lines
-    return JsonResponse({"map_id": map_id, "count": len(state.lines)})
-
-
-@require_GET
-def api_registries(request: HttpRequest) -> JsonResponse:
-    """List available map IDs from the line repository, filtered by tenant."""
-    tenant_id = get_tenant_id(request)
-    map_entity = get_map_from_tenant_id(tenant_id)
-    tenant_map_ids = {map_entity.id} if map_entity else set()
-    all_ids = list_line_map_ids(LINES_DIR)
-    return JsonResponse({"map_ids": [mid for mid in all_ids if mid in tenant_map_ids]})
