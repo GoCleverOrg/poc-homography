@@ -125,7 +125,6 @@ class TestSuccessfulImport:
         assert frame.ptz_state.tilt_deg == Degrees(15.0)
         assert frame.ptz_state.zoom == Unitless(1.0)
 
-    @pytest.mark.usefixtures("_mock_deps")
     def test_invalidates_cache(self, _mock_deps) -> None:
         session = _make_session()
         import_survey_captures(session)
@@ -135,8 +134,10 @@ class TestSuccessfulImport:
 class TestSkipOnErrors:
     @pytest.mark.usefixtures("_mock_deps")
     def test_capture_with_errors_skipped(
-        self, frame_repo: RepoYamlCapturedFrame
+        self, frame_repo: RepoYamlCapturedFrame, session_dir: Path
     ) -> None:
+        # Create "good.jpg" in session dir so it passes the source-image check
+        (session_dir / "good.jpg").write_bytes(b"\xff\xd8fake")
         captures = [
             CaptureRecord(
                 filename="good.jpg",
@@ -174,21 +175,13 @@ class TestIdempotentRerun:
 
 
 class TestSkipOnWrongStatus:
-    """import_survey_captures is only called when status==COMPLETED, but the
-    function itself doesn't check status — the caller (_execute_survey) does.
-    This test documents that the guard lives at the call-site."""
+    """The guard lives at the call-site (_execute_survey), not in import_survey_captures."""
 
-    def test_aborted_session_not_called(self) -> None:
-        """_execute_survey only calls import when COMPLETED."""
-        # This is an integration-level concern; unit test verifies the guard
-        # is in _execute_survey by checking the conditional.
-        import inspect
-
-        from webapp.camera_survey import services
-
-        source = inspect.getsource(services.CameraSurveyService._execute_survey)
-        assert "if session.status == SurveyStatus.COMPLETED" in source
-        assert "import_survey_captures" in source
+    @pytest.mark.usefixtures("_mock_deps")
+    def test_completed_triggers_import(self, frame_repo: RepoYamlCapturedFrame) -> None:
+        session = _make_session(status=SurveyStatus.COMPLETED)
+        assert import_survey_captures(session) == 1
+        assert len(frame_repo.get_by_camera("valte", "cam01")) == 1
 
 
 class TestSkipOnMissingTenant:
@@ -219,8 +212,9 @@ class TestSkipOnMissingMap:
 class TestPtzNoneHandling:
     @pytest.mark.usefixtures("_mock_deps")
     def test_none_ptz_values_become_zero(
-        self, frame_repo: RepoYamlCapturedFrame
+        self, frame_repo: RepoYamlCapturedFrame, session_dir: Path
     ) -> None:
+        (session_dir / "nullptz.jpg").write_bytes(b"\xff\xd8fake")
         captures = [
             CaptureRecord(
                 filename="nullptz.jpg",
@@ -236,3 +230,49 @@ class TestPtzNoneHandling:
         assert frame.ptz_state.pan_raw == Degrees(0.0)
         assert frame.ptz_state.tilt_deg == Degrees(0.0)
         assert frame.ptz_state.zoom == Unitless(0.0)
+
+
+class TestPathTraversalGuard:
+    @pytest.mark.usefixtures("_mock_deps")
+    def test_filename_with_slash_skipped(self, frame_repo: RepoYamlCapturedFrame) -> None:
+        captures = [
+            CaptureRecord(
+                filename="../../etc/passwd",
+                timestamp="2024-01-15T10:30:45+00:00",
+                ptz=PTZPosition(pan=0.0, tilt=0.0, zoom=0.0),
+                step_index=0,
+            ),
+        ]
+        session = _make_session(captures=captures)
+        assert import_survey_captures(session) == 0
+
+    @pytest.mark.usefixtures("_mock_deps")
+    def test_filename_with_dotdot_skipped(self, frame_repo: RepoYamlCapturedFrame) -> None:
+        captures = [
+            CaptureRecord(
+                filename="..evil.jpg",
+                timestamp="2024-01-15T10:30:45+00:00",
+                ptz=PTZPosition(pan=0.0, tilt=0.0, zoom=0.0),
+                step_index=0,
+            ),
+        ]
+        session = _make_session(captures=captures)
+        assert import_survey_captures(session) == 0
+
+
+class TestMissingSourceImage:
+    @pytest.mark.usefixtures("_mock_deps")
+    def test_missing_source_skips_without_saving(
+        self, frame_repo: RepoYamlCapturedFrame
+    ) -> None:
+        captures = [
+            CaptureRecord(
+                filename="nonexistent.jpg",
+                timestamp="2024-01-15T10:30:45+00:00",
+                ptz=PTZPosition(pan=0.0, tilt=0.0, zoom=0.0),
+                step_index=0,
+            ),
+        ]
+        session = _make_session(captures=captures)
+        assert import_survey_captures(session) == 0
+        assert len(frame_repo.get_by_camera("valte", "cam01")) == 0

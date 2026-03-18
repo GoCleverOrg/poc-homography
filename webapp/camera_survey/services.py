@@ -264,6 +264,11 @@ def import_survey_captures(session: SurveySession) -> int:
             )
             continue
 
+        # Guard against path traversal in filename
+        if "/" in capture.filename or "\\" in capture.filename or ".." in capture.filename:
+            logger.warning("Skipping capture with unsafe filename: %s", capture.filename)
+            continue
+
         ts = datetime.fromisoformat(capture.timestamp)
         ptz_state = PTZState(
             pan_raw=Degrees(capture.ptz.pan or 0.0),
@@ -283,10 +288,13 @@ def import_survey_captures(session: SurveySession) -> int:
         if repo.exists(frame.id):
             continue
 
-        # Copy image
+        # Copy image — skip entirely if source is missing
         src_image = session_path / capture.filename
         dest_image = dest_dir / capture.filename
-        if src_image.exists() and not dest_image.exists():
+        if not src_image.exists():
+            logger.warning("Skipping capture %s: source image not found", capture.filename)
+            continue
+        if not dest_image.exists():
             shutil.copy2(src_image, dest_image)
 
         repo.save(frame)
@@ -585,7 +593,7 @@ class CameraSurveyService:
                 try:
                     import_survey_captures(session)
                 except Exception as e:
-                    logger.error("Failed to import survey captures: %s", e)
+                    logger.exception("Failed to import survey captures: %s", e)
 
             # Update progress
             with _active_surveys_lock:
