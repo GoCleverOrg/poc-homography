@@ -276,11 +276,26 @@ def from_line_repo(data_dir: Path, map_id: str) -> list[Line]:
     ]
 
 
-def save_single_line_to_repo(line: Line, map_id: str, data_dir: Path) -> None:
-    """Persist a single legacy Line to the DDD ``RepoYamlLine`` repository.
+def save_line_to_repo(
+    line_id: str,
+    start_x: float,
+    start_y: float,
+    end_x: float,
+    end_y: float,
+    map_id: str,
+    data_dir: Path,
+) -> None:
+    """Persist a line to the DDD ``RepoYamlLine`` repository.
+
+    Accepts raw coordinates so callers can write to disk *before* mutating
+    in-memory state, keeping the two in sync even when the write fails.
 
     Args:
-        line: Legacy Line object to persist.
+        line_id: Line identifier (e.g. "L1").
+        start_x: Start X coordinate.
+        start_y: Start Y coordinate.
+        end_x: End X coordinate.
+        end_y: End Y coordinate.
         map_id: Map identifier for the line.
         data_dir: Directory for per-Line YAML files.
     """
@@ -289,10 +304,10 @@ def save_single_line_to_repo(line: Line, map_id: str, data_dir: Path) -> None:
 
     repo = _get_line_repo(data_dir)
     domain_line = DomainLine(
-        name=line.line_id,
+        name=line_id,
         map_id=map_id,
-        start=PixelPoint.create(line.start_x, line.start_y),
-        end=PixelPoint.create(line.end_x, line.end_y),
+        start=PixelPoint.create(start_x, start_y),
+        end=PixelPoint.create(end_x, end_y),
     )
     repo.save(domain_line)
 
@@ -309,7 +324,7 @@ def save_to_line_repo(lines: list[Line], map_id: str, data_dir: Path) -> None:
         data_dir: Directory for per-Line YAML files.
     """
     for line in lines:
-        save_single_line_to_repo(line, map_id, data_dir)
+        save_line_to_repo(line.line_id, line.start_x, line.start_y, line.end_x, line.end_y, map_id, data_dir)
 
 
 def delete_line_from_repo(line_id: str, map_id: str, data_dir: Path) -> None:
@@ -320,8 +335,13 @@ def delete_line_from_repo(line_id: str, map_id: str, data_dir: Path) -> None:
         map_id: Map identifier for constructing the entity ID.
         data_dir: Directory for per-Line YAML files.
     """
+    from poc_homography.domain.entities.line import Line as DomainLine
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+
     repo = _get_line_repo(data_dir)
-    entity_id = f"{map_id}/{line_id}"
+    # Use DomainLine.id to derive the entity ID rather than duplicating the format.
+    _zero = PixelPoint.create(0, 0)
+    entity_id = DomainLine(name=line_id, map_id=map_id, start=_zero, end=_zero).id
     repo.delete(entity_id)
 
 

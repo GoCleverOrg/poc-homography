@@ -15,7 +15,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import LINES_DIR, get_tenant_id, normalize_array
 from PIL import Image
 
-from .state import delete_line_from_repo, get_state, save_single_line_to_repo
+from .state import delete_line_from_repo, get_state, save_line_to_repo
 
 
 def index(request: HttpRequest) -> HttpResponse:
@@ -243,13 +243,15 @@ def api_lines(request: HttpRequest) -> JsonResponse:
     line_id = data.get("line_id")
 
     try:
-        line_id = state.add_line(start_x, start_y, end_x, end_y, line_id=line_id)
-        line = state.get_line(line_id)
-        save_single_line_to_repo(line, state.map_id, LINES_DIR)
+        # Persist to YAML repo before mutating in-memory state so a failed
+        # write never leaves state and disk out of sync.
+        resolved_id = line_id if line_id is not None else state.get_next_id()
+        save_line_to_repo(resolved_id, start_x, start_y, end_x, end_y, state.map_id, LINES_DIR)
+        state.add_line(start_x, start_y, end_x, end_y, line_id=resolved_id)
 
         return JsonResponse(
             {
-                "line_id": line_id,
+                "line_id": resolved_id,
                 "start_x": start_x,
                 "start_y": start_y,
                 "end_x": end_x,
@@ -272,8 +274,10 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
 
     if request.method == "DELETE":
         try:
-            state.delete_line(line_id)
+            # Delete from YAML repo before mutating in-memory state so a failed
+            # write never leaves state and disk out of sync.
             delete_line_from_repo(line_id, state.map_id, LINES_DIR)
+            state.delete_line(line_id)
             return JsonResponse({"deleted": line_id})
         except KeyError:
             return JsonResponse({"error": f"Line not found: {line_id}"}, status=404)
@@ -312,12 +316,13 @@ def api_line_detail(request: HttpRequest, line_id: str) -> JsonResponse:
     if new_start_x == new_end_x and new_start_y == new_end_y:
         return JsonResponse({"error": "Start and end points must be different"}, status=422)
 
-    # Update the line in place
+    # Persist to YAML repo before mutating in-memory state so a failed
+    # write never leaves state and disk out of sync.
+    save_line_to_repo(line_id, new_start_x, new_start_y, new_end_x, new_end_y, state.map_id, LINES_DIR)
     line.start_x = new_start_x
     line.start_y = new_start_y
     line.end_x = new_end_x
     line.end_y = new_end_y
-    save_single_line_to_repo(line, state.map_id, LINES_DIR)
 
     return JsonResponse(
         {
