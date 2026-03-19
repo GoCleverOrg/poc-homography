@@ -19,9 +19,4 @@ urlpatterns = [
     path("api/points/<str:point_id>/", views.api_point_detail, name="api_point_detail"),
     # Coordinate API
     path("api/geo-coords/", views.api_geo_coords, name="api_geo_coords"),
-    # Import/Export API
-    path("api/export/", views.api_export, name="api_export"),
-    path("api/import/", views.api_import, name="api_import"),
-    # Repository API
-    path("api/registries/", views.api_registries, name="api_registries"),
 ]

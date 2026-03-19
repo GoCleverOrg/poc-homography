@@ -14,6 +14,7 @@ from homography_web.frame_utils import (
 from PIL import Image
 
 from poc_homography.domain.vo.geotiff import GeoTiff
+from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
 from poc_homography.map_points.gcp_registry import GCPRegistry
 from poc_homography.map_points.map_point import MapPoint
 
@@ -162,28 +163,6 @@ class PointPickerState:
         del new_points[point_id]
         self.registry = GCPRegistry(map_id=self.map_id, points=new_points)
 
-    def load_from_repo(self, data_dir: Path, map_id: str) -> None:
-        """Load points from the DDD GCP repository.
-
-        Args:
-            data_dir: Directory containing per-GCP YAML files.
-            map_id: Map identifier to load.
-        """
-        from poc_homography.map_points.gcp_registry import from_gcp_repo
-
-        self.registry = from_gcp_repo(data_dir, map_id)
-        self.map_id = self.registry.map_id
-
-    def save_to_repo(self, data_dir: Path) -> None:
-        """Save points to the DDD GCP repository.
-
-        Args:
-            data_dir: Directory for per-GCP YAML files.
-        """
-        from poc_homography.map_points.gcp_registry import save_to_gcp_repo
-
-        save_to_gcp_repo(self.registry, data_dir)
-
     def get_geo_coords(self, pixel_x: float, pixel_y: float) -> tuple[float, float] | None:
         """Convert pixel coordinates to geographic coordinates.
 
@@ -228,7 +207,10 @@ def get_state(tenant_id: str) -> PointPickerState:
 
     # Load GCPs for this tenant's map only
     if GCPS_DIR.exists():
-        state.load_from_repo(GCPS_DIR, map_entity.id)
+        from poc_homography.map_points.gcp_registry import from_gcp_repo
+
+        state.registry = from_gcp_repo(GCPS_DIR, map_entity.id)
+        state.map_id = state.registry.map_id
 
     _states[tenant_id] = state
     return state
@@ -249,4 +231,67 @@ def get_tag_from_id(point_id: str) -> str:
     return "extra"
 
 
+# ---------------------------------------------------------------------------
+# Repository adapter functions (bridge legacy MapPoint <-> DDD repos)
+# ---------------------------------------------------------------------------
+
+_gcp_repo_cache: dict[str, RepoYamlGroundControlPoint] = {}
+
+
+def _get_gcp_repo(data_dir: Path) -> RepoYamlGroundControlPoint:
+    """Return a cached RepoYamlGroundControlPoint for *data_dir*."""
+    key = str(data_dir)
+    if key not in _gcp_repo_cache:
+        _gcp_repo_cache[key] = RepoYamlGroundControlPoint(data_dir)
+    return _gcp_repo_cache[key]
+
+
+def save_gcp_to_repo(
+    point_id: str,
+    pixel_x: float,
+    pixel_y: float,
+    map_id: str,
+    data_dir: Path,
+) -> None:
+    """Persist a single GCP to the DDD ``RepoYamlGroundControlPoint`` repository.
+
+    Accepts raw coordinates so callers can write to disk *before* mutating
+    in-memory state, keeping the two in sync even when the write fails.
+
+    Args:
+        point_id: Point identifier (e.g. "PS1").
+        pixel_x: X pixel coordinate.
+        pixel_y: Y pixel coordinate.
+        map_id: Map identifier for the GCP.
+        data_dir: Directory for per-GCP YAML files.
+    """
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint as DomainMapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+
+    repo = _get_gcp_repo(data_dir)
+    gcp = GroundControlPoint(
+        name=point_id,
+        map_point=DomainMapPoint(
+            map_id=map_id,
+            pixel_point=PixelPoint.create(pixel_x, pixel_y),
+        ),
+    )
+    repo.save(gcp)
+
+
+def delete_gcp_from_repo(point_id: str, map_id: str, data_dir: Path) -> None:
+    """Delete a GCP from the DDD ``RepoYamlGroundControlPoint`` repository.
+
+    Args:
+        point_id: Point identifier (e.g. "PS1").
+        map_id: Map identifier for constructing the entity ID.
+        data_dir: Directory for per-GCP YAML files.
+    """
+    repo = _get_gcp_repo(data_dir)
+    # Entity ID format is {map_id}/{point_id} per GroundControlPoint.id
+    repo.delete(f"{map_id}/{point_id}")
+
+
 register_invalidation_callback(_states.clear)
+register_invalidation_callback(_gcp_repo_cache.clear)
