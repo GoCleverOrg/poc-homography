@@ -1,0 +1,140 @@
+session:
+  id: 5ec182da-5034-4d24-bafc-b59891842df0
+  created_at: '2026-01-26T19:33:57.044555+00:00'
+  completed_at: '2026-01-26T19:35:35.929765+00:00'
+  status: completed
+tenant:
+  id: icozee
+  name: Icozee
+summary:
+  total_cameras: 3
+  tests_passed: 6
+  tests_failed: 3
+  tests_pending: 0
+camera_results:
+- camera_id: icozee-camptz-01
+  camera_name: Cam01
+  camera_ip: 10.247.99.10
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535656
+    mac_address: 74:3f:c2:fc:a1:d6
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1734.64
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: null
+    error_message: Connection timeout
+    error_category: TIMEOUT
+    details: {}
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 270.65
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-02
+  camera_name: Cam02
+  camera_ip: 10.247.99.13
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535687
+    mac_address: 74:3f:c2:fc:a1:f5
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1825.42
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: null
+    error_message: Connection timeout
+    error_category: TIMEOUT
+    details: {}
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 247.12
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-03
+  camera_name: Cam03
+  camera_ip: 10.247.99.14
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535623
+    mac_address: 74:3f:c2:fc:a1:b5
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1763.01
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: null
+    error_message: Connection timeout
+    error_category: TIMEOUT
+    details: {}
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 255.85
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29

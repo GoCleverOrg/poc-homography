@@ -1,0 +1,795 @@
+camera_id: valte_cam01
+camera_name: Cam01
+completed_at: '2026-01-22T12:24:37.669930+00:00'
+config:
+  camera_id: valte_cam01
+  pan_config: null
+  repetitions: 20
+  tenant_id: valte
+  test_type: oscillation
+  tilt_config:
+    axis: tilt
+    end: 5
+    start: 0
+    step: 5
+    step_max: 15
+    step_min: 5
+    use_random_steps: false
+  zoom_config: null
+created_at: '2026-01-22T12:23:37.315031+00:00'
+id: 0e96e7c0-4230-440d-be74-54ac65373a7e
+result:
+  error_message: null
+  movements:
+  - command_sent: '2026-01-22T12:23:37.650015+00:00'
+    duration_ms: 1249.858
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:38.899873+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:39.000847+00:00'
+    duration_ms: 1399.508
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:40.400355+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:40.499912+00:00'
+    duration_ms: 1350.684
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:41.850596+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:41.999971+00:00'
+    duration_ms: 1450.357
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:43.450328+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:43.550912+00:00'
+    duration_ms: 1432.998
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:44.983910+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:45.099956+00:00'
+    duration_ms: 1400.2740000000001
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:46.500230+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:46.600482+00:00'
+    duration_ms: 1449.36
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:48.049842+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:48.150429+00:00'
+    duration_ms: 1400.081
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:49.550510+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:49.650004+00:00'
+    duration_ms: 1399.923
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:51.049927+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:51.150248+00:00'
+    duration_ms: 1400.39
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:52.550638+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:52.650424+00:00'
+    duration_ms: 1399.454
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:54.049878+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:54.151032+00:00'
+    duration_ms: 1455.124
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:55.606156+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:55.700503+00:00'
+    duration_ms: 1449.675
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:57.150178+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:57.250758+00:00'
+    duration_ms: 1400.358
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:23:58.651116+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:23:58.750695+00:00'
+    duration_ms: 1449.303
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:00.199998+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:00.300295+00:00'
+    duration_ms: 1399.753
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:01.700048+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:01.799989+00:00'
+    duration_ms: 1554.712
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:03.354701+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:03.452861+00:00'
+    duration_ms: 1401.337
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:04.854198+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:04.953751+00:00'
+    duration_ms: 1301.791
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:06.255542+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:06.355821+00:00'
+    duration_ms: 1401.756
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:07.757577+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:07.857553+00:00'
+    duration_ms: 1451.327
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:09.308880+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:09.408324+00:00'
+    duration_ms: 1401.105
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:10.809429+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:10.916896+00:00'
+    duration_ms: 1293.666
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:12.210562+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:12.311179+00:00'
+    duration_ms: 1400.935
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:13.712114+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:13.812112+00:00'
+    duration_ms: 1251.265
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:15.063377+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:15.162843+00:00'
+    duration_ms: 1450.612
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:16.613455+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:16.720638+00:00'
+    duration_ms: 1449.5880000000002
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:18.170226+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:18.264320+00:00'
+    duration_ms: 1400.851
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:19.665171+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:19.765078+00:00'
+    duration_ms: 1551.017
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:21.316095+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:21.416064+00:00'
+    duration_ms: 1400.6080000000002
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:22.816672+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:22.916082+00:00'
+    duration_ms: 1301.597
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:24.217679+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:24.316697+00:00'
+    duration_ms: 1350.9070000000002
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:25.667604+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:25.767415+00:00'
+    duration_ms: 1250.615
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:27.018030+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:27.117657+00:00'
+    duration_ms: 1451.0069999999998
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:28.568664+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:28.668101+00:00'
+    duration_ms: 1400.51
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:30.068611+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:30.168960+00:00'
+    duration_ms: 1400.1619999999998
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:31.569122+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:31.668762+00:00'
+    duration_ms: 1366.4050000000002
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:33.035167+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:33.119128+00:00'
+    duration_ms: 1415.8139999999999
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:34.534942+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:34.619989+00:00'
+    duration_ms: 1400.042
+    end_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:36.020031+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+  - command_sent: '2026-01-22T12:24:36.119592+00:00'
+    duration_ms: 1450.763
+    end_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-22T12:24:37.570355+00:00'
+    start_position:
+      pan: 102.5
+      tilt: 25.7
+      zoom: 1.0
+    target_position:
+      pan: 102.5
+      tilt: 20.7
+      zoom: 1.0
+  position_error:
+    pan: 0.0
+    tilt: 0.0
+    zoom: 0.0
+  position_match: true
+  success: true
+  total_duration_ms: 60354.21895980835
+started_at: '2026-01-22T12:23:37.315678+00:00'
+status: completed
+tenant_id: valte
+user_evaluation: not_evaluated
+user_notes: ''

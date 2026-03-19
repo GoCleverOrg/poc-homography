@@ -1,0 +1,18 @@
+camera_id: valte_cam01
+created_date: '2026-02-02T18:33:50.096766'
+last_modified: '2026-02-02T18:33:50.096789'
+entries:
+- zoom_factor: 1.0
+  k1: -0.142578473376
+  k2: -0.075324877083
+  k3: 0.231109795821
+  p1: -0.002494896402
+  p2: -0.008090950449
+  calibration_date: '2026-02-02T18:33:50.096780'
+  source_images: []
+  validation_rmse: 160.3262
+  num_lines_used: 43
+  fx: 1670.796460176991
+  fy: 1670.796460176991
+  cx: 960.0
+  cy: 540.0

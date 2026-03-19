@@ -1,0 +1,36 @@
+camera_id: icozee-camptz-01
+camera_name: Cam01
+completed_at: '2026-01-26T19:33:36.009269+00:00'
+config:
+  camera_id: icozee-camptz-01
+  pan_config:
+    axis: pan
+    end: 10
+    start: 0
+    step: 10
+    step_max: 15
+    step_min: 5
+    use_random_steps: false
+  repetitions: 20
+  tenant_id: icozee
+  test_type: oscillation
+  tilt_config: null
+  zoom_config: null
+created_at: '2026-01-26T19:33:35.460452+00:00'
+device_info: null
+id: 2c420ae7-0b50-453c-ba57-5a03e7adcf70
+result:
+  error_message: Failed to get initial camera position
+  movements: []
+  position_error:
+    pan: 0
+    tilt: 0
+    zoom: 0
+  position_match: false
+  success: false
+  total_duration_ms: 548.6140251159668
+started_at: '2026-01-26T19:33:35.460606+00:00'
+status: failed
+tenant_id: icozee
+user_evaluation: not_evaluated
+user_notes: ''

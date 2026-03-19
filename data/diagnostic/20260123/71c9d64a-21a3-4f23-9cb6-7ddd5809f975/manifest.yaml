@@ -1,0 +1,59 @@
+session:
+  id: 71c9d64a-21a3-4f23-9cb6-7ddd5809f975
+  created_at: '2026-01-23T16:54:55.093675+00:00'
+  completed_at: '2026-01-23T16:55:23.679555+00:00'
+  status: completed
+tenant:
+  id: valte
+  name: Valte
+summary:
+  total_cameras: 1
+  tests_passed: 3
+  tests_failed: 0
+  tests_pending: 0
+camera_results:
+- camera_id: valte_cam01
+  camera_name: Cam01
+  camera_ip: 10.207.99.178
+  device_info:
+    model: DS-2DF8242IX-AELW
+    serial_number: DS-2DF8242IX-AELW20220909CCWRK45230237
+    mac_address: c0:6d:ed:ae:0c:ca
+    firmware_version: V5.7.9
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1766.71
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 1920
+        height: 1080
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 3647.18
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 118.16
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 92.3
+        tilt: 15.3
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 30

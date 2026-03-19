@@ -1,0 +1,717 @@
+session:
+  id: dff1fdd5-63f3-4b86-809f-010d758db839
+  created_at: '2026-01-30T14:55:49.698476+00:00'
+  completed_at: '2026-01-30T15:26:09.632923+00:00'
+  status: completed
+tenant:
+  id: icozee
+  name: Icozee
+summary:
+  total_cameras: 16
+  tests_passed: 45
+  tests_failed: 3
+  tests_pending: 0
+camera_results:
+- camera_id: icozee-camptz-01
+  camera_name: Cam01
+  camera_ip: 192.168.7.2
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535604
+    mac_address: 74:3f:c2:fc:a1:a2
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1670.43
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 7530.05
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 196.04
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 305.3
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-02
+  camera_name: Cam02
+  camera_ip: 192.168.7.3
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535645
+    mac_address: 74:3f:c2:fc:a1:cb
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1603.57
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5298.68
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 181.76
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-03
+  camera_name: Cam03
+  camera_ip: 192.168.7.4
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535653
+    mac_address: 74:3f:c2:fc:a1:d3
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1602.44
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5429.68
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 197.65
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 246.1
+        tilt: 63.3
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-04
+  camera_name: Cam04
+  camera_ip: 192.168.7.5
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535597
+    mac_address: 74:3f:c2:fc:a1:9b
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1614.52
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5264.33
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 203.98
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-05
+  camera_name: Cam05
+  camera_ip: 192.168.7.6
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240713CCWRFH3535588
+    mac_address: 74:3f:c2:fc:a1:92
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1628.07
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5484.29
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 189.58
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-06
+  camera_name: Cam06
+  camera_ip: 192.168.7.8
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535577
+    mac_address: 74:3f:c2:fc:a1:87
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1721.59
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5497.0
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 195.43
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-07
+  camera_name: Cam07
+  camera_ip: 192.168.7.8
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535577
+    mac_address: 74:3f:c2:fc:a1:87
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1632.68
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5361.93
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 196.01
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-08
+  camera_name: Cam08
+  camera_ip: 192.168.7.9
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535579
+    mac_address: 74:3f:c2:fc:a1:89
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1595.76
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5627.51
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 191.25
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-09
+  camera_name: Cam09
+  camera_ip: 192.168.7.10
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535656
+    mac_address: 74:3f:c2:fc:a1:d6
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1631.6
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5224.55
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 194.04
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: -15.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-10
+  camera_name: Cam10
+  camera_ip: 192.168.7.11
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240713CCWRFH3535560
+    mac_address: 74:3f:c2:fc:a1:76
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1618.08
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5637.17
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 190.79
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-11
+  camera_name: Cam11
+  camera_ip: 192.168.7.12
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535616
+    mac_address: 74:3f:c2:fc:a1:ae
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1634.27
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5445.9
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 192.07
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-12
+  camera_name: Cam12
+  camera_ip: 192.168.7.13
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535687
+    mac_address: 74:3f:c2:fc:a1:f5
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1578.72
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5693.9
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 1208.67
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-13
+  camera_name: Cam13
+  camera_ip: 192.168.7.14
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535623
+    mac_address: 74:3f:c2:fc:a1:b5
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1602.7
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5424.09
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 368.14
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 322.0
+        tilt: -12.4
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-14
+  camera_name: Cam14
+  camera_ip: 192.168.7.15
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535601
+    mac_address: 74:3f:c2:fc:a1:9f
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1620.86
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5175.13
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 3
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 176.13
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-15
+  camera_name: Cam15
+  camera_ip: 192.168.7.16
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535671
+    mac_address: 74:3f:c2:fc:a1:e5
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1577.31
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 5656.34
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 191.9
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 350.0
+        tilt: 45.0
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29
+- camera_id: icozee-camptz-16
+  camera_name: Cam16
+  camera_ip: 192.168.7.17
+  device_info: null
+  rtsp_test:
+    test_type: rtsp
+    status: fail
+    response_time_ms: null
+    error_message: Failed to connect to RTSP stream
+    error_category: CAMERA_OFFLINE
+    details: {}
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: 2442.39
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: false
+      login_success: false
+      ptz_controls_found: 0
+  ptz_test:
+    test_type: ptz
+    status: fail
+    response_time_ms: 176.04
+    error_message: Failed to get PTZ status
+    error_category: API_ERROR
+    details: {}

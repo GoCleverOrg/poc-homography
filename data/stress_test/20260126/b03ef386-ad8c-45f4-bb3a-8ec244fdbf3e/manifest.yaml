@@ -1,0 +1,239 @@
+camera_id: icozee-camptz-02
+camera_name: Cam02
+completed_at: '2026-01-26T19:57:21.837977+00:00'
+config:
+  camera_id: icozee-camptz-02
+  pan_config:
+    axis: pan
+    end: 45
+    start: 0
+    step: 15
+    step_max: 15
+    step_min: 5
+    use_random_steps: false
+  repetitions: 5
+  tenant_id: icozee
+  test_type: combined_axis_load
+  tilt_config:
+    axis: tilt
+    end: 30
+    start: 0
+    step: 10
+    step_max: 15
+    step_min: 5
+    use_random_steps: false
+  zoom_config: null
+created_at: '2026-01-26T19:57:02.326396+00:00'
+device_info:
+  device_name: IP DOME
+  device_type: IPDome
+  firmware_version: V5.8.0
+  mac_address: 74:3f:c2:fc:a1:f5
+  model: DS-2DF8425IX-AELW
+  serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535687
+id: b03ef386-ad8c-45f4-bb3a-8ec244fdbf3e
+result:
+  error_message: null
+  movements:
+  - command_sent: '2026-01-26T19:57:03.097902+00:00'
+    duration_ms: 1621.2279999999998
+    end_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    position_error:
+      pan: 395.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:04.719130+00:00'
+    start_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    target_position:
+      pan: 395.0
+      tilt: 75.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:04.897916+00:00'
+    duration_ms: 1730.0739999999998
+    end_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:06.627990+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    target_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:06.797790+00:00'
+    duration_ms: 1540.434
+    end_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    position_error:
+      pan: 395.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:08.338224+00:00'
+    start_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    target_position:
+      pan: 395.0
+      tilt: 75.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:08.541110+00:00'
+    duration_ms: 1816.8
+    end_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:10.357910+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    target_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:10.548914+00:00'
+    duration_ms: 1529.2930000000001
+    end_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    position_error:
+      pan: 395.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:12.078207+00:00'
+    start_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    target_position:
+      pan: 395.0
+      tilt: 75.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:12.288192+00:00'
+    duration_ms: 1749.6490000000001
+    end_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:14.037841+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    target_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:14.198345+00:00'
+    duration_ms: 1749.557
+    end_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    position_error:
+      pan: 395.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:15.947902+00:00'
+    start_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    target_position:
+      pan: 395.0
+      tilt: 75.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:16.158741+00:00'
+    duration_ms: 1979.696
+    end_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:18.138437+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    target_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:18.357739+00:00'
+    duration_ms: 1540.7379999999998
+    end_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    position_error:
+      pan: 395.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:19.898477+00:00'
+    start_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    target_position:
+      pan: 395.0
+      tilt: 75.0
+      zoom: 1.0
+  - command_sent: '2026-01-26T19:57:20.108713+00:00'
+    duration_ms: 1559.345
+    end_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-26T19:57:21.668058+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 75.0
+      zoom: 1.0
+    target_position:
+      pan: 350.0
+      tilt: 45.0
+      zoom: 1.0
+  position_error:
+    pan: 0.0
+    tilt: 0.0
+    zoom: 0.0
+  position_match: true
+  success: true
+  total_duration_ms: 19511.404991149902
+started_at: '2026-01-26T19:57:02.326532+00:00'
+status: completed
+tenant_id: icozee
+user_evaluation: not_evaluated
+user_notes: ''

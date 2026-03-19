@@ -1,0 +1,7 @@
+id: test/PS1
+name: PS1
+map_point:
+  map_id: test
+  pixel_point:
+    x: 100.0
+    y: 200.0

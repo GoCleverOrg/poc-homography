@@ -1,0 +1,152 @@
+session:
+  id: 17140905-11f1-4c2b-ab01-3fb0f1267890
+  created_at: '2026-01-26T19:22:59.285289+00:00'
+  completed_at: '2026-01-26T19:23:07.982592+00:00'
+  status: completed
+tenant:
+  id: icozee
+  name: Icozee
+summary:
+  total_cameras: 3
+  tests_passed: 3
+  tests_failed: 6
+  tests_pending: 0
+camera_results:
+- camera_id: icozee-camptz-01
+  camera_name: Cam01
+  camera_ip: 10.247.99.10
+  device_info: null
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1803.98
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: null
+    error_message: "BrowserType.launch: Executable doesn't exist at /Users/nuno.monteiro/Library/Caches/ms-playwright/chromium-1200/chrome-mac-x64/Google\
+      \ Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing\n\u2554\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n\u2551 Looks like Playwright\
+      \ was just installed or updated.       \u2551\n\u2551 Please run the following\
+      \ command to download new browsers: \u2551\n\u2551                         \
+      \                                   \u2551\n\u2551     playwright install  \
+      \                                   \u2551\n\u2551                         \
+      \                                   \u2551\n\u2551 <3 Playwright Team      \
+      \                                   \u2551\n\u255A\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u255D"
+    error_category: INVALID_RESPONSE
+    details: {}
+  ptz_test:
+    test_type: ptz
+    status: fail
+    response_time_ms: 260.01
+    error_message: Failed to get PTZ status
+    error_category: API_ERROR
+    details: {}
+- camera_id: icozee-camptz-02
+  camera_name: Cam02
+  camera_ip: 10.247.99.13
+  device_info: null
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1711.23
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: null
+    error_message: "BrowserType.launch: Executable doesn't exist at /Users/nuno.monteiro/Library/Caches/ms-playwright/chromium-1200/chrome-mac-x64/Google\
+      \ Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing\n\u2554\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n\u2551 Looks like Playwright\
+      \ was just installed or updated.       \u2551\n\u2551 Please run the following\
+      \ command to download new browsers: \u2551\n\u2551                         \
+      \                                   \u2551\n\u2551     playwright install  \
+      \                                   \u2551\n\u2551                         \
+      \                                   \u2551\n\u2551 <3 Playwright Team      \
+      \                                   \u2551\n\u255A\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u255D"
+    error_category: INVALID_RESPONSE
+    details: {}
+  ptz_test:
+    test_type: ptz
+    status: fail
+    response_time_ms: 256.43
+    error_message: Failed to get PTZ status
+    error_category: API_ERROR
+    details: {}
+- camera_id: icozee-camptz-03
+  camera_name: Cam03
+  camera_ip: 10.247.99.14
+  device_info: null
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1726.09
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: fail
+    response_time_ms: null
+    error_message: "BrowserType.launch: Executable doesn't exist at /Users/nuno.monteiro/Library/Caches/ms-playwright/chromium-1200/chrome-mac-x64/Google\
+      \ Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing\n\u2554\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n\u2551 Looks like Playwright\
+      \ was just installed or updated.       \u2551\n\u2551 Please run the following\
+      \ command to download new browsers: \u2551\n\u2551                         \
+      \                                   \u2551\n\u2551     playwright install  \
+      \                                   \u2551\n\u2551                         \
+      \                                   \u2551\n\u2551 <3 Playwright Team      \
+      \                                   \u2551\n\u255A\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\
+      \u2550\u2550\u2550\u255D"
+    error_category: INVALID_RESPONSE
+    details: {}
+  ptz_test:
+    test_type: ptz
+    status: fail
+    response_time_ms: 262.49
+    error_message: Failed to get PTZ status
+    error_category: API_ERROR
+    details: {}

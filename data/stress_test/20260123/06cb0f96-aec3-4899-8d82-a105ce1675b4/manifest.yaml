@@ -1,0 +1,149 @@
+camera_id: valte_cam01
+camera_name: Cam01
+completed_at: '2026-01-23T16:03:24.146310+00:00'
+config:
+  camera_id: valte_cam01
+  pan_config:
+    axis: pan
+    end: 360
+    start: 0
+    step: 36
+    step_max: 15
+    step_min: 5
+    use_random_steps: false
+  repetitions: 3
+  tenant_id: valte
+  test_type: full_range_sweep
+  tilt_config: null
+  zoom_config: null
+created_at: '2026-01-23T16:03:15.163900+00:00'
+id: 06cb0f96-aec3-4899-8d82-a105ce1675b4
+result:
+  error_message: null
+  movements:
+  - command_sent: '2026-01-23T16:03:15.470897+00:00'
+    duration_ms: 2904.093
+    end_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    position_error:
+      pan: 360.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-23T16:03:18.374990+00:00'
+    start_position:
+      pan: 92.3
+      tilt: 15.3
+      zoom: 1.0
+    target_position:
+      pan: 360
+      tilt: 15.3
+      zoom: 1.0
+  - command_sent: '2026-01-23T16:03:18.475070+00:00'
+    duration_ms: 1049.4170000000001
+    end_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-23T16:03:19.524487+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    target_position:
+      pan: 0
+      tilt: 15.3
+      zoom: 1.0
+  - command_sent: '2026-01-23T16:03:19.623233+00:00'
+    duration_ms: 1007.4970000000001
+    end_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    position_error:
+      pan: 360.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-23T16:03:20.630730+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    target_position:
+      pan: 360
+      tilt: 15.3
+      zoom: 1.0
+  - command_sent: '2026-01-23T16:03:20.735768+00:00'
+    duration_ms: 1043.618
+    end_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-23T16:03:21.779386+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    target_position:
+      pan: 0
+      tilt: 15.3
+      zoom: 1.0
+  - command_sent: '2026-01-23T16:03:21.875061+00:00'
+    duration_ms: 1101.0169999999998
+    end_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    position_error:
+      pan: 360.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-23T16:03:22.976078+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    target_position:
+      pan: 360
+      tilt: 15.3
+      zoom: 1.0
+  - command_sent: '2026-01-23T16:03:23.075386+00:00'
+    duration_ms: 1000.1960000000001
+    end_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    position_error:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 0.0
+    stabilized: '2026-01-23T16:03:24.075582+00:00'
+    start_position:
+      pan: 0.0
+      tilt: 15.3
+      zoom: 1.0
+    target_position:
+      pan: 0
+      tilt: 15.3
+      zoom: 1.0
+  position_error:
+    pan: 92.3
+    tilt: 0.0
+    zoom: 0.0
+  position_match: false
+  success: false
+  total_duration_ms: 8982.212781906128
+started_at: '2026-01-23T16:03:15.164053+00:00'
+status: completed
+tenant_id: valte
+user_evaluation: not_evaluated
+user_notes: ''

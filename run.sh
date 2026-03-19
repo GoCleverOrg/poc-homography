@@ -16,7 +16,9 @@ Steps performed:
   3. Patch pydrive2 for Shared Drive folder-level access
   4. Pull DVC-tracked data from Google Drive (test data + map images)
   5. Validate map images are present
-  6. Start Django dev server (webapp/manage.py runserver)
+  6. Kill stale Django server on target port (if running)
+  7. Apply Django migrations
+  8. Start Django dev server (webapp/manage.py runserver)
 
 First-time setup:
   1. Copy and edit the environment file:
@@ -92,7 +94,7 @@ if [ ! -d "$DVC_DATA_DIR" ] || [ -z "$(ls -A "$DVC_DATA_DIR" 2>/dev/null)" ]; th
 fi
 echo "DVC data OK ($(ls "$DVC_DATA_DIR" | wc -l | tr -d ' ') files)"
 
-# Validate map images are present (DVC-tracked GeoTIFFs)
+# ── 5. Validate map images are present (DVC-tracked GeoTIFFs) ─────
 MAPS_DIR="data/maps"
 missing_maps=0
 for dvc_file in "$MAPS_DIR"/*.tif.dvc; do
@@ -110,9 +112,36 @@ if [ "$missing_maps" -eq 1 ]; then
 fi
 echo "Map images OK"
 
-# ── 6. Apply Django migrations (creates db.sqlite3 if missing) ─────
+# ── 6. Kill stale Django server on target port ──────────────────────
+# Parse port from args (default: 8000)
+_port=8000
+for _arg in "$@"; do
+    case "$_arg" in
+        *:*) _port="${_arg##*:}" ;;
+        [0-9]*) _port="$_arg" ;;
+    esac
+done
+
+_pid=$(lsof -ti :"$_port" 2>/dev/null || true)
+if [ -n "$_pid" ]; then
+    # Only kill if it's a Python process (i.e. another Django runserver)
+    _cmd=$(ps -o comm= -p "$_pid" 2>/dev/null || true)
+    if [[ "$_cmd" == *Python* || "$_cmd" == *python* ]]; then
+        echo "Killing existing server on port $_port (PID $_pid)..."
+        kill "$_pid"
+        # Wait up to 3s for clean shutdown
+        for _ in 1 2 3; do
+            kill -0 "$_pid" 2>/dev/null || break
+            sleep 1
+        done
+        # Force kill if still running
+        kill -0 "$_pid" 2>/dev/null && kill -9 "$_pid" 2>/dev/null || true
+    fi
+fi
+
+# ── 7. Apply Django migrations (creates db.sqlite3 if missing) ─────
 cd webapp
 uv run python manage.py migrate --verbosity 0
 
-# ── 7. Run Django development server ────────────────────────────────
+# ── 8. Run Django development server ────────────────────────────────
 exec uv run python manage.py runserver "$@"

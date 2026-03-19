@@ -1,0 +1,7 @@
+id: test/AR1
+name: AR1
+map_point:
+  map_id: test
+  pixel_point:
+    x: 300.0
+    y: 400.0

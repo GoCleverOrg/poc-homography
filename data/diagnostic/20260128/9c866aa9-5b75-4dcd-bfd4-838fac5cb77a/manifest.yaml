@@ -1,0 +1,59 @@
+session:
+  id: 9c866aa9-5b75-4dcd-bfd4-838fac5cb77a
+  created_at: '2026-01-28T23:15:59.576532+00:00'
+  completed_at: '2026-01-28T23:17:06.625735+00:00'
+  status: completed
+tenant:
+  id: icozee
+  name: Icozee
+summary:
+  total_cameras: 1
+  tests_passed: 3
+  tests_failed: 0
+  tests_pending: 0
+camera_results:
+- camera_id: icozee-camptz-03
+  camera_name: Cam03
+  camera_ip: 10.247.99.4
+  device_info:
+    model: DS-2DF8425IX-AELW
+    serial_number: DS-2DF8425IX-AELW20240712CCWRFH3535653
+    mac_address: 74:3f:c2:fc:a1:d3
+    firmware_version: V5.8.0
+    device_name: IP DOME
+    device_type: IPDome
+  rtsp_test:
+    test_type: rtsp
+    status: pass
+    response_time_ms: 1653.06
+    error_message: null
+    error_category: null
+    details:
+      resolution:
+        width: 2560
+        height: 1440
+      fps: 25.0
+  webui_test:
+    test_type: webui
+    status: pass
+    response_time_ms: 6105.84
+    error_message: null
+    error_category: null
+    details:
+      login_attempted: true
+      login_success: true
+      ptz_controls_found: 4
+  ptz_test:
+    test_type: ptz
+    status: pass
+    response_time_ms: 199.4
+    error_message: null
+    error_category: null
+    details:
+      initial_position:
+        pan: 246.1
+        tilt: 63.3
+        zoom: 1.0
+      movement_tests_passed: 4
+      movement_tests_failed: 0
+      presets_count: 29

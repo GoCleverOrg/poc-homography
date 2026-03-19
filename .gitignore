@@ -160,6 +160,7 @@ output/*
 # Data folder (YAML configs stored here)
 data/**/*
 !data/**/.gitkeep
+!data/**/.gitignore
 !data/**/*.yaml
 !data/**/*.dvc
 !data/**/
@@ -177,6 +178,9 @@ ptz_discovery_and_control/hikvision/ptz_test_results_*.json
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Playwright MCP artifacts
+.playwright-mcp/
 
 # Ralph runtime files
 .ralph_cache/
