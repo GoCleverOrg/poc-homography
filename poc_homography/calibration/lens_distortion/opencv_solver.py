@@ -124,8 +124,10 @@ def build_camera_line_annotations(
             end_x = ann.get("end_pixel_x")
             end_y = ann.get("end_pixel_y")
             if (
-                start_x is not None and start_y is not None
-                and end_x is not None and end_y is not None
+                start_x is not None
+                and start_y is not None
+                and end_x is not None
+                and end_y is not None
             ):
                 points = [
                     (float(start_x), float(start_y)),
@@ -231,9 +233,7 @@ class AnnotatedLineSolver:
         # Filter to lines with >= 3 points (2-point lines give zero error)
         usable = [la for la in lines if len(la.points) >= 3]
         if not usable:
-            return self._fail(
-                "No usable line annotations (need lines with >= 3 points)"
-            )
+            return self._fail("No usable line annotations (need lines with >= 3 points)")
 
         # Split into training / validation
         split = split_lines(usable, self.config.train_split_ratio)
@@ -252,40 +252,47 @@ class AnnotatedLineSolver:
         cy = float(intrinsic_matrix[1, 2])
 
         # Prepare training line point arrays
-        train_arrays = [
-            np.array(la.points, dtype=np.float64) for la in training_lines
-        ]
+        train_arrays = [np.array(la.points, dtype=np.float64) for la in training_lines]
 
         # Initial guess
         if initial_guess is None:
             initial_guess = DistortionCoefficients()
 
         if self.config.use_radial_only:
-            x0 = np.array([
-                float(initial_guess.k1),
-                float(initial_guess.k2),
-                float(initial_guess.k3),
-            ])
+            x0 = np.array(
+                [
+                    float(initial_guess.k1),
+                    float(initial_guess.k2),
+                    float(initial_guess.k3),
+                ]
+            )
             bounds = [(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)]
         else:
-            x0 = np.array([
-                float(initial_guess.k1),
-                float(initial_guess.k2),
-                float(initial_guess.k3),
-                float(initial_guess.p1),
-                float(initial_guess.p2),
-            ])
+            x0 = np.array(
+                [
+                    float(initial_guess.k1),
+                    float(initial_guess.k2),
+                    float(initial_guess.k3),
+                    float(initial_guess.p1),
+                    float(initial_guess.p2),
+                ]
+            )
             bounds = [
-                (-1.0, 1.0),   # k1
-                (-1.0, 1.0),   # k2
-                (-1.0, 1.0),   # k3
-                (-0.1, 0.1),   # p1
-                (-0.1, 0.1),   # p2
+                (-1.0, 1.0),  # k1
+                (-1.0, 1.0),  # k2
+                (-1.0, 1.0),  # k3
+                (-0.1, 0.1),  # p1
+                (-0.1, 0.1),  # p2
             ]
 
         # Compute initial error
         initial_error = self._total_straightness_error(
-            x0, train_arrays, fx, fy, cx, cy,
+            x0,
+            train_arrays,
+            fx,
+            fy,
+            cx,
+            cy,
         )
         logger.info("Initial straightness error: %.6f", initial_error)
 
@@ -320,7 +327,9 @@ class AnnotatedLineSolver:
         # Compute validation RMSE on all lines (training + validation)
         all_lines = training_lines + validation_lines
         validation_rmse, line_errors, rmse_per_line = self._compute_validation_rmse(
-            all_lines, optimised, intrinsic_matrix,
+            all_lines,
+            optimised,
+            intrinsic_matrix,
         )
 
         n_train = len(training_lines)
@@ -377,7 +386,16 @@ class AnnotatedLineSolver:
         total = 0.0
         for pts in line_arrays:
             undistorted = self._undistort_points_fast(
-                pts, k1, k2, k3, p1, p2, fx, fy, cx, cy,
+                pts,
+                k1,
+                k2,
+                k3,
+                p1,
+                p2,
+                fx,
+                fy,
+                cx,
+                cy,
             )
             total += self._line_straightness_error(undistorted)
 
@@ -403,9 +421,15 @@ class AnnotatedLineSolver:
     @staticmethod
     def _undistort_points_fast(
         points: np.ndarray,
-        k1: float, k2: float, k3: float,
-        p1: float, p2: float,
-        fx: float, fy: float, cx: float, cy: float,
+        k1: float,
+        k2: float,
+        k3: float,
+        p1: float,
+        p2: float,
+        fx: float,
+        fy: float,
+        cx: float,
+        cy: float,
     ) -> np.ndarray:
         """Undistort points using iterative fixed-point inversion."""
         x = (points[:, 0] - cx) / fx
@@ -494,17 +518,28 @@ class AnnotatedLineSolver:
                 continue
 
             undistorted = self._undistort_points_fast(
-                pts, k1, k2, k3, p1, p2, fx, fy, cx, cy,
+                pts,
+                k1,
+                k2,
+                k3,
+                p1,
+                p2,
+                fx,
+                fy,
+                cx,
+                cy,
             )
             err = self._line_straightness_error(undistorted)
             num_samples = len(pts)
             rmse = float(np.sqrt(err / num_samples))
             rmse_per_line.append(rmse)
-            line_errors.append({
-                "line_id": la.line_id,
-                "rmse_pixels": rmse,
-                "num_samples": num_samples,
-            })
+            line_errors.append(
+                {
+                    "line_id": la.line_id,
+                    "rmse_pixels": rmse,
+                    "num_samples": num_samples,
+                }
+            )
             total_error += err
             total_samples += num_samples
 
