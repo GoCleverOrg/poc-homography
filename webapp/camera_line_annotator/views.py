@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -30,7 +31,6 @@ from homography_web.frame_utils import (
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
-SESSION_ANNOTATIONS_KEY = "camera_line_annotator_annotations"
 
 # Per-tenant cached line registries
 _lines_registry_cache: dict[str, dict] = {}
@@ -83,19 +83,12 @@ def get_current_image(request: HttpRequest, map_id: str | None = None) -> str | 
     return _get_current_image(request, SESSION_IMAGE_KEY, map_id)
 
 
-def get_session_annotations(request: HttpRequest) -> dict[str, list[dict]]:
-    """Get annotations from session storage."""
-    annotations = request.session.get(SESSION_ANNOTATIONS_KEY)
-    if annotations is None:
-        annotations = {}
-        request.session[SESSION_ANNOTATIONS_KEY] = annotations
-    return annotations
+_LINE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
-def save_session_annotations(request: HttpRequest, annotations: dict[str, list[dict]]) -> None:
-    """Save annotations to session storage."""
-    request.session[SESSION_ANNOTATIONS_KEY] = annotations
-    request.session.modified = True
+def _validate_line_id(line_id: str) -> bool:
+    """Return True if line_id matches the expected format."""
+    return bool(line_id and _LINE_ID_RE.fullmatch(line_id))
 
 
 def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
@@ -202,11 +195,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
     request.session[SESSION_IMAGE_KEY] = filename
 
-    # Always load fresh from repo on image switch; session tracks in-flight edits only
     image_annotations = load_existing_line_annotations(filename)
-    all_annotations = get_session_annotations(request)
-    all_annotations[filename] = image_annotations
-    save_session_annotations(request, all_annotations)
 
     camera_status = {
         "pan": float(frame.ptz_state.pan_raw),
@@ -249,23 +238,12 @@ def api_line_ids(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 def api_annotations(request: HttpRequest) -> JsonResponse:
-    """Get line annotations for current image.
-
-    Loads from the DDD repo only when the session has no data for this image.
-    In-flight edits (create/update/delete) are preserved in the session until
-    the user explicitly reloads.
-    """
+    """Get line annotations for current image from the YAML repo."""
     current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse([], safe=False)
 
-    all_annotations = get_session_annotations(request)
-    if current_image not in all_annotations:
-        image_annotations = load_existing_line_annotations(current_image)
-        all_annotations[current_image] = image_annotations
-        save_session_annotations(request, all_annotations)
-
-    return JsonResponse(all_annotations[current_image], safe=False)
+    return JsonResponse(load_existing_line_annotations(current_image), safe=False)
 
 
 @csrf_exempt
@@ -287,10 +265,15 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     if missing:
         return JsonResponse({"error": f"Missing required fields: {missing}"}, status=422)
 
+    # Validate line_id format
+    raw_line_id = str(data["line_id"])
+    if not _validate_line_id(raw_line_id):
+        return JsonResponse({"error": "Invalid line_id format"}, status=400)
+
     # Validate coordinate types
     try:
         annotation = {
-            "line_id": str(data["line_id"]),
+            "line_id": raw_line_id,
             "start_pixel_x": float(data["start_pixel_x"]),
             "start_pixel_y": float(data["start_pixel_y"]),
             "end_pixel_x": float(data["end_pixel_x"]),
@@ -303,85 +286,80 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
         annotation["points"] = [[float(p[0]), float(p[1])] for p in data["points"]]
 
-    # Store annotation
-    all_annotations = get_session_annotations(request)
-    if current_image not in all_annotations:
-        all_annotations[current_image] = []
-    all_annotations[current_image].append(annotation)
-    save_session_annotations(request, all_annotations)
+    # Persist directly to YAML repo
+    _save_line_annotations_to_repo(current_image, [annotation])
+    invalidate_cache()
 
     return JsonResponse(
         {
             "success": True,
             "annotation": annotation,
-            "index": len(all_annotations[current_image]) - 1,
         }
     )
 
 
 @csrf_exempt
-@require_http_methods(["PUT"])
-def api_annotations_update(request: HttpRequest, index: int) -> JsonResponse:
-    """Update an existing line annotation by index."""
+@require_http_methods(["PUT", "DELETE"])
+def api_annotation_detail(request: HttpRequest, line_id: str) -> JsonResponse:
+    """Update (PUT) or delete (DELETE) a line annotation by line_id."""
+    if not _validate_line_id(line_id):
+        return JsonResponse({"error": "Invalid line_id format"}, status=400)
+
     current_image = get_current_image(request, _get_tenant_map_id(request))
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
+
+    frame = image_filename_to_frame(current_image)
+    if frame is None:
+        return JsonResponse({"error": "Current image not found"}, status=404)
+
+    repo = _get_line_annotation_repo()
+    entity_id = f"{frame.id}/{line_id}"
+
+    if request.method == "DELETE":
+        deleted = repo.delete(entity_id)
+        if not deleted:
+            return JsonResponse({"error": f"Annotation not found: {line_id}"}, status=404)
+
+        invalidate_cache()
+
+        return JsonResponse(
+            {
+                "success": True,
+                "deleted_line_id": line_id,
+            }
+        )
+
+    # PUT — update
+    if not repo.exists(entity_id):
+        return JsonResponse({"error": f"Annotation not found: {line_id}"}, status=404)
 
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(current_image, [])
-
-    if index < 0 or index >= len(image_annotations):
-        return JsonResponse({"error": f"Invalid annotation index: {index}"}, status=404)
-
-    # Build updated annotation
-    updated: dict[str, Any] = {
-        "line_id": str(data.get("line_id", image_annotations[index].get("line_id", ""))),
-        "start_pixel_x": float(data["start_pixel_x"]),
-        "start_pixel_y": float(data["start_pixel_y"]),
-        "end_pixel_x": float(data["end_pixel_x"]),
-        "end_pixel_y": float(data["end_pixel_y"]),
-    }
+    try:
+        updated: dict[str, Any] = {
+            "line_id": line_id,
+            "start_pixel_x": float(data["start_pixel_x"]),
+            "start_pixel_y": float(data["start_pixel_y"]),
+            "end_pixel_x": float(data["end_pixel_x"]),
+            "end_pixel_y": float(data["end_pixel_y"]),
+        }
+    except (TypeError, ValueError, KeyError):
+        return JsonResponse({"error": "Invalid coordinate values"}, status=422)
 
     if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
         updated["points"] = [[float(p[0]), float(p[1])] for p in data["points"]]
 
-    image_annotations[index] = updated
-    save_session_annotations(request, all_annotations)
+    _save_line_annotations_to_repo(current_image, [updated])
+    invalidate_cache()
 
     return JsonResponse(
         {
             "success": True,
             "annotation": updated,
-        }
-    )
-
-
-@csrf_exempt
-@require_http_methods(["DELETE"])
-def api_annotations_delete(request: HttpRequest, index: int) -> JsonResponse:
-    """Delete a line annotation by index."""
-    current_image = get_current_image(request, _get_tenant_map_id(request))
-    if not current_image:
-        return JsonResponse({"error": "No image selected"}, status=400)
-
-    all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(current_image, [])
-
-    if index < 0 or index >= len(image_annotations):
-        return JsonResponse({"error": f"Invalid annotation index: {index}"}, status=404)
-
-    deleted = image_annotations.pop(index)
-    save_session_annotations(request, all_annotations)
-
-    return JsonResponse(
-        {
-            "success": True,
-            "deleted": deleted,
         }
     )
 
@@ -406,56 +384,3 @@ def api_camera_status(request: HttpRequest) -> JsonResponse:
     )
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def api_export(request: HttpRequest) -> JsonResponse:
-    """Save current annotations to the DDD line-annotation repository."""
-    current_image = get_current_image(request, _get_tenant_map_id(request))
-    if not current_image:
-        return JsonResponse({"error": "No image selected"}, status=400)
-
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    # Get annotations
-    all_annotations = get_session_annotations(request)
-    image_annotations = all_annotations.get(current_image, [])
-
-    if not image_annotations:
-        return JsonResponse({"error": "No annotations to save"}, status=400)
-
-    _save_line_annotations_to_repo(current_image, image_annotations)
-    invalidate_cache()
-
-    return JsonResponse(
-        {
-            "success": True,
-            "count": len(image_annotations),
-        }
-    )
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def api_import(request: HttpRequest) -> JsonResponse:
-    """Load annotations from the DDD line-annotation repository."""
-    current_image = get_current_image(request, _get_tenant_map_id(request))
-    if not current_image:
-        return JsonResponse({"error": "No image selected"}, status=400)
-
-    annotations = _load_line_annotations_from_repo(current_image)
-
-    # Store in session
-    all_annotations = get_session_annotations(request)
-    all_annotations[current_image] = annotations
-    save_session_annotations(request, all_annotations)
-
-    return JsonResponse(
-        {
-            "success": True,
-            "annotations": annotations,
-            "count": len(annotations),
-        }
-    )

@@ -309,57 +309,6 @@
             font-size: 14px;
         }
 
-        /* Export Section */
-        #export-section {
-            padding: 16px;
-            background: #e8f5e9;
-        }
-
-        #export-btn {
-            width: 100%;
-            padding: 12px;
-            background: #4caf50;
-            color: #fff;
-            border: none;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-
-        #export-btn:hover {
-            background: #43a047;
-        }
-
-        #export-btn:disabled {
-            background: #9e9e9e;
-            cursor: not-allowed;
-        }
-
-        #export-status {
-            margin-top: 8px;
-            font-size: 12px;
-            color: #2e7d32;
-        }
-
-        /* Import button */
-        #import-btn {
-            width: 100%;
-            padding: 10px;
-            background: #2196f3;
-            color: #fff;
-            border: none;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-bottom: 8px;
-        }
-
-        #import-btn:hover {
-            background: #1976d2;
-        }
-
         /* Instructions */
         #instructions {
             padding: 12px;
@@ -551,11 +500,6 @@
             </div>
         </div>
 
-        <div id="export-section">
-            <button id="export-btn" disabled>Save to Repo</button>
-            <button id="import-btn">Load from Repo</button>
-            <div id="export-status"></div>
-        </div>
     </div>
 
     <div id="coords-display">Move mouse over image</div>
@@ -610,9 +554,6 @@
         const panInput = document.getElementById('pan-input');
         const tiltInput = document.getElementById('tilt-input');
         const zoomInput = document.getElementById('zoom-input');
-        const exportBtn = document.getElementById('export-btn');
-        const exportStatus = document.getElementById('export-status');
-        const importBtn = document.getElementById('import-btn');
         const qualityIndicator = document.getElementById('quality-indicator');
         const modeBtns = document.querySelectorAll('.mode-btn');
         const instructions = document.getElementById('instructions');
@@ -760,12 +701,12 @@
             if (editPoints.length > 2) {
                 ann.points = editPoints.map(p => [p[0], p[1]]);
             } else {
-                ann.points = editPoints.map(p => [p[0], p[1]]);
+                ann.points = null;
             }
 
             // Persist via API
             try {
-                await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${editingIndex}/update/`, {
+                const resp = await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${ann.line_id}/`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -777,8 +718,13 @@
                         points: editPoints,
                     })
                 });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    alert(`Failed to save edit: ${err.error || resp.statusText}`);
+                }
             } catch (e) {
                 console.error('Failed to save annotation edit:', e);
+                alert('Failed to save annotation edit (network error).');
             }
 
             editingIndex = -1;
@@ -1197,7 +1143,6 @@
             renderLines();
             renderAnnotationsList();
             updateYamlPreview();
-            updateExportButton();
         }
 
         // Render annotations list
@@ -1228,11 +1173,48 @@
                 annotationsList.appendChild(div);
             });
 
-            // Add line ID change handlers
+            // Add line ID change handlers — persist rename (delete old + create new)
             annotationsList.querySelectorAll('.line-id-select').forEach(select => {
                 select.addEventListener('change', async (e) => {
                     const idx = parseInt(e.target.dataset.index);
+                    const ann = annotations[idx];
+                    const oldLineId = ann.line_id;
                     const newLineId = e.target.value;
+
+                    // Delete old annotation from repo
+                    const delResp = await fetch(
+                        `{% url "camera_line_annotator:index" %}api/annotations/${oldLineId}/`,
+                        { method: 'DELETE' }
+                    );
+                    if (!delResp.ok) {
+                        alert('Failed to rename annotation (delete step).');
+                        e.target.value = oldLineId;
+                        return;
+                    }
+
+                    // Create new annotation with the new line_id
+                    const payload = {
+                        line_id: newLineId,
+                        start_pixel_x: ann.start_pixel_x,
+                        start_pixel_y: ann.start_pixel_y,
+                        end_pixel_x: ann.end_pixel_x,
+                        end_pixel_y: ann.end_pixel_y,
+                    };
+                    if (ann.points) payload.points = ann.points;
+
+                    const createResp = await fetch(
+                        `{% url "camera_line_annotator:api_annotations_create" %}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        }
+                    );
+                    if (!createResp.ok) {
+                        alert('Failed to rename annotation (create step).');
+                        return;
+                    }
+
                     annotations[idx].line_id = newLineId;
                     renderLines();
                     updateYamlPreview();
@@ -1256,33 +1238,32 @@
             annotationsList.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     const idx = parseInt(e.target.dataset.index);
-                    await deleteAnnotation(idx);
+                    const ann = annotations[idx];
+                    if (ann) await deleteAnnotation(ann.line_id);
                 });
             });
         }
 
         // Delete annotation
-        async function deleteAnnotation(index) {
-            const resp = await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${index}/`, {
+        async function deleteAnnotation(lineId) {
+            const resp = await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${lineId}/`, {
                 method: 'DELETE'
             });
 
             if (resp.ok) {
-                annotations.splice(index, 1);
+                if (editingIndex >= 0 && annotations[editingIndex]?.line_id === lineId) {
+                    editingIndex = -1;
+                    editPoints = [];
+                }
+                annotations = annotations.filter(a => a.line_id !== lineId);
                 renderLines();
                 renderAnnotationsList();
                 updateYamlPreview();
-                updateExportButton();
             }
         }
 
         // Placeholder for removed YAML preview — no-op to avoid breaking callers
         function updateYamlPreview() {}
-
-        // Update export button state
-        function updateExportButton() {
-            exportBtn.disabled = annotations.length === 0;
-        }
 
         // Event: Click on image
         img.addEventListener('click', (e) => {
@@ -1549,70 +1530,6 @@
             });
         });
 
-        // Event: Load from Repo button
-        importBtn.addEventListener('click', async () => {
-            exportStatus.textContent = 'Loading...';
-            try {
-                const resp = await fetch('{% url "camera_line_annotator:api_import" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
-                });
-
-                const data = await resp.json();
-                if (data.success) {
-                    annotations = data.annotations || [];
-                    renderLines();
-                    renderAnnotationsList();
-                    updateYamlPreview();
-                    updateExportButton();
-
-                    exportStatus.textContent = `Loaded ${data.count} annotations`;
-                    exportStatus.style.color = '#2e7d32';
-                } else {
-                    exportStatus.textContent = `Load error: ${data.error}`;
-                    exportStatus.style.color = '#c62828';
-                }
-            } catch (err) {
-                exportStatus.textContent = `Load error: ${err.message}`;
-                exportStatus.style.color = '#c62828';
-            }
-        });
-
-        // Event: Save to Repo button
-        exportBtn.addEventListener('click', async () => {
-            exportStatus.textContent = 'Saving...';
-            exportBtn.disabled = true;
-
-            try {
-                const resp = await fetch('{% url "camera_line_annotator:api_export" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        camera_status: {
-                            pan: parseFloat(panInput.value) || 0,
-                            tilt: parseFloat(tiltInput.value) || 0,
-                            zoom: parseInt(zoomInput.value) || 1
-                        }
-                    })
-                });
-
-                const data = await resp.json();
-                if (data.success) {
-                    exportStatus.textContent = `Saved ${data.count} annotations`;
-                    exportStatus.style.color = '#2e7d32';
-                } else {
-                    exportStatus.textContent = `Error: ${data.error}`;
-                    exportStatus.style.color = '#c62828';
-                }
-            } catch (e) {
-                exportStatus.textContent = `Error: ${e.message}`;
-                exportStatus.style.color = '#c62828';
-            }
-
-            updateExportButton();
-        });
-
         // Event: Camera status input changes
         [panInput, tiltInput, zoomInput].forEach(input => {
             input.addEventListener('input', updateYamlPreview);
@@ -1628,7 +1545,6 @@
                     renderLines();
                     renderAnnotationsList();
                     updateYamlPreview();
-                    updateExportButton();
                 }
             } catch (e) {
                 console.error('Failed to load existing annotations:', e);
@@ -1747,11 +1663,8 @@
                         setupCanvas();
                         renderAnnotationsList();
                         updateYamlPreview();
-                        updateExportButton();
                     };
                     img.src = withTenant('{% url "camera_line_annotator:serve_image" %}?t=' + Date.now());
-
-                    exportStatus.textContent = '';
                 } else {
                     alert('Failed to switch image: ' + (data.error || 'Unknown error'));
                 }
