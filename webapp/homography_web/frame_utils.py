@@ -408,6 +408,33 @@ def get_available_images(map_id: str | None = None) -> list[str]:
     return list_image_filenames(map_id)
 
 
+def get_available_images_fresh(map_id: str | None = None) -> list[str]:
+    """Return available image filenames by reading directly from disk.
+
+    Creates a fresh ``RepoYamlCapturedFrame`` to bypass the module-level
+    cache, ensuring newly written YAML files are always reflected.  The
+    module-level globals are **not** mutated.
+    """
+    repo = RepoYamlCapturedFrame(FRAMES_DIR, create_dir=False)
+    frames = repo.get_all()
+    if map_id is not None:
+        frames = [f for f in frames if f.map_id == map_id]
+    return sorted(f.image_path.name for f in frames)
+
+
+def _fresh_frame_by_filename(filename: str) -> CapturedFrame | None:
+    """Look up a CapturedFrame by filename using a fresh disk read.
+
+    Used as a fallback when the module-level cache does not contain a
+    recently written frame.
+    """
+    repo = RepoYamlCapturedFrame(FRAMES_DIR, create_dir=False)
+    for frame in repo.get_all():
+        if frame.image_path.name == filename:
+            return frame
+    return None
+
+
 def get_current_image(
     request: HttpRequest,
     session_key: str,
@@ -424,6 +451,9 @@ def get_current_image(
     if session_image:
         frame = image_filename_to_frame(session_image)
         if frame is not None and (map_id is None or frame.map_id == map_id):
+            return session_image
+        # Cache miss — check disk in case the frame was recently added
+        if session_image in get_available_images_fresh(map_id):
             return session_image
 
     images = get_available_images(map_id)
@@ -454,6 +484,8 @@ def serve_current_image(
         return HttpResponse("No image available", status=404)
 
     frame = image_filename_to_frame(current_image)
+    if frame is None:
+        frame = _fresh_frame_by_filename(current_image)
     if frame is None:
         return HttpResponse("Image not found", status=404)
 

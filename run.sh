@@ -110,6 +110,9 @@ if [ "$missing_maps" -eq 1 ]; then
 fi
 echo "Map images OK"
 
-# ── 6. Run Django development server ────────────────────────────────
+# ── 6. Apply Django migrations (creates db.sqlite3 if missing) ─────
 cd webapp
+uv run python manage.py migrate --verbosity 0
+
+# ── 7. Run Django development server ────────────────────────────────
 exec uv run python manage.py runserver "$@"
