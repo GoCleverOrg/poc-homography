@@ -11,7 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
     LINES_DIR,
-    get_available_images,
+    get_available_images_fresh,
     get_map_from_tenant_id,
     get_tenant_id,
     image_filename_to_frame,
@@ -171,7 +171,7 @@ def api_images(request: HttpRequest) -> JsonResponse:
     try:
         map_entity = get_map_from_tenant_id(get_tenant_id(request))
         map_id = map_entity.id if map_entity else None
-        images = get_available_images(map_id)
+        images = get_available_images_fresh(map_id)
         return JsonResponse(images, safe=False)
     except Exception as e:
         return JsonResponse({"error": f"Failed to get available images: {e}"}, status=500)

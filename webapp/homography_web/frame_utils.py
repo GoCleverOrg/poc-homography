@@ -408,6 +408,20 @@ def get_available_images(map_id: str | None = None) -> list[str]:
     return list_image_filenames(map_id)
 
 
+def get_available_images_fresh(map_id: str | None = None) -> list[str]:
+    """Return available image filenames by reading directly from disk.
+
+    Creates a fresh ``RepoYamlCapturedFrame`` to bypass the module-level
+    cache, ensuring newly written YAML files are always reflected.  The
+    module-level globals are **not** mutated.
+    """
+    repo = RepoYamlCapturedFrame(FRAMES_DIR, create_dir=False)
+    frames = repo.get_all()
+    if map_id is not None:
+        frames = [f for f in frames if f.map_id == map_id]
+    return sorted(f.image_path.name for f in frames)
+
+
 def get_current_image(
     request: HttpRequest,
     session_key: str,
