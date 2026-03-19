@@ -265,10 +265,15 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
     if missing:
         return JsonResponse({"error": f"Missing required fields: {missing}"}, status=422)
 
+    # Validate line_id format
+    raw_line_id = str(data["line_id"])
+    if not _validate_line_id(raw_line_id):
+        return JsonResponse({"error": "Invalid line_id format"}, status=400)
+
     # Validate coordinate types
     try:
         annotation = {
-            "line_id": str(data["line_id"]),
+            "line_id": raw_line_id,
             "start_pixel_x": float(data["start_pixel_x"]),
             "start_pixel_y": float(data["start_pixel_y"]),
             "end_pixel_x": float(data["end_pixel_x"]),
@@ -294,9 +299,9 @@ def api_annotations_create(request: HttpRequest) -> JsonResponse:
 
 
 @csrf_exempt
-@require_http_methods(["PUT"])
-def api_annotations_update(request: HttpRequest, line_id: str) -> JsonResponse:
-    """Update an existing line annotation by line_id."""
+@require_http_methods(["PUT", "DELETE"])
+def api_annotation_detail(request: HttpRequest, line_id: str) -> JsonResponse:
+    """Update (PUT) or delete (DELETE) a line annotation by line_id."""
     if not _validate_line_id(line_id):
         return JsonResponse({"error": "Invalid line_id format"}, status=400)
 
@@ -308,9 +313,24 @@ def api_annotations_update(request: HttpRequest, line_id: str) -> JsonResponse:
     if frame is None:
         return JsonResponse({"error": "Current image not found"}, status=404)
 
-    # Verify annotation exists before overwriting
     repo = _get_line_annotation_repo()
     entity_id = f"{frame.id}/{line_id}"
+
+    if request.method == "DELETE":
+        deleted = repo.delete(entity_id)
+        if not deleted:
+            return JsonResponse({"error": f"Annotation not found: {line_id}"}, status=404)
+
+        invalidate_cache()
+
+        return JsonResponse(
+            {
+                "success": True,
+                "deleted_line_id": line_id,
+            }
+        )
+
+    # PUT — update
     if not repo.exists(entity_id):
         return JsonResponse({"error": f"Annotation not found: {line_id}"}, status=404)
 
@@ -319,7 +339,6 @@ def api_annotations_update(request: HttpRequest, line_id: str) -> JsonResponse:
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # Validate coordinate types
     try:
         updated: dict[str, Any] = {
             "line_id": line_id,
@@ -334,7 +353,6 @@ def api_annotations_update(request: HttpRequest, line_id: str) -> JsonResponse:
     if "points" in data and isinstance(data["points"], list) and len(data["points"]) >= 2:
         updated["points"] = [[float(p[0]), float(p[1])] for p in data["points"]]
 
-    # Persist directly to YAML repo (save overwrites by entity_id)
     _save_line_annotations_to_repo(current_image, [updated])
     invalidate_cache()
 
@@ -342,37 +360,6 @@ def api_annotations_update(request: HttpRequest, line_id: str) -> JsonResponse:
         {
             "success": True,
             "annotation": updated,
-        }
-    )
-
-
-@csrf_exempt
-@require_http_methods(["DELETE"])
-def api_annotations_delete(request: HttpRequest, line_id: str) -> JsonResponse:
-    """Delete a line annotation by line_id."""
-    if not _validate_line_id(line_id):
-        return JsonResponse({"error": "Invalid line_id format"}, status=400)
-
-    current_image = get_current_image(request, _get_tenant_map_id(request))
-    if not current_image:
-        return JsonResponse({"error": "No image selected"}, status=400)
-
-    frame = image_filename_to_frame(current_image)
-    if frame is None:
-        return JsonResponse({"error": "Current image not found"}, status=404)
-
-    repo = _get_line_annotation_repo()
-    entity_id = f"{frame.id}/{line_id}"
-    deleted = repo.delete(entity_id)
-    if not deleted:
-        return JsonResponse({"error": f"Annotation not found: {line_id}"}, status=404)
-
-    invalidate_cache()
-
-    return JsonResponse(
-        {
-            "success": True,
-            "deleted_line_id": line_id,
         }
     )
 

@@ -701,12 +701,12 @@
             if (editPoints.length > 2) {
                 ann.points = editPoints.map(p => [p[0], p[1]]);
             } else {
-                ann.points = editPoints.map(p => [p[0], p[1]]);
+                ann.points = null;
             }
 
             // Persist via API
             try {
-                await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${ann.line_id}/update/`, {
+                const resp = await fetch(`{% url "camera_line_annotator:index" %}api/annotations/${ann.line_id}/`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -718,8 +718,13 @@
                         points: editPoints,
                     })
                 });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    alert(`Failed to save edit: ${err.error || resp.statusText}`);
+                }
             } catch (e) {
                 console.error('Failed to save annotation edit:', e);
+                alert('Failed to save annotation edit (network error).');
             }
 
             editingIndex = -1;
@@ -1168,11 +1173,48 @@
                 annotationsList.appendChild(div);
             });
 
-            // Add line ID change handlers
+            // Add line ID change handlers — persist rename (delete old + create new)
             annotationsList.querySelectorAll('.line-id-select').forEach(select => {
                 select.addEventListener('change', async (e) => {
                     const idx = parseInt(e.target.dataset.index);
+                    const ann = annotations[idx];
+                    const oldLineId = ann.line_id;
                     const newLineId = e.target.value;
+
+                    // Delete old annotation from repo
+                    const delResp = await fetch(
+                        `{% url "camera_line_annotator:index" %}api/annotations/${oldLineId}/`,
+                        { method: 'DELETE' }
+                    );
+                    if (!delResp.ok) {
+                        alert('Failed to rename annotation (delete step).');
+                        e.target.value = oldLineId;
+                        return;
+                    }
+
+                    // Create new annotation with the new line_id
+                    const payload = {
+                        line_id: newLineId,
+                        start_pixel_x: ann.start_pixel_x,
+                        start_pixel_y: ann.start_pixel_y,
+                        end_pixel_x: ann.end_pixel_x,
+                        end_pixel_y: ann.end_pixel_y,
+                    };
+                    if (ann.points) payload.points = ann.points;
+
+                    const createResp = await fetch(
+                        `{% url "camera_line_annotator:api_annotations_create" %}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        }
+                    );
+                    if (!createResp.ok) {
+                        alert('Failed to rename annotation (create step).');
+                        return;
+                    }
+
                     annotations[idx].line_id = newLineId;
                     renderLines();
                     updateYamlPreview();
@@ -1209,6 +1251,10 @@
             });
 
             if (resp.ok) {
+                if (editingIndex >= 0 && annotations[editingIndex]?.line_id === lineId) {
+                    editingIndex = -1;
+                    editPoints = [];
+                }
                 annotations = annotations.filter(a => a.line_id !== lineId);
                 renderLines();
                 renderAnnotationsList();
