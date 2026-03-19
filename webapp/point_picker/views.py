@@ -254,14 +254,13 @@ def api_point_detail(request: HttpRequest, point_id: str) -> JsonResponse:
     state = get_state(get_tenant_id(request))
 
     if request.method == "DELETE":
-        try:
-            # Delete from YAML repo before mutating in-memory state so a failed
-            # write never leaves state and disk out of sync.
-            delete_gcp_from_repo(point_id, state.map_id, GCPS_DIR)
-            state.delete_point(point_id)
-            return JsonResponse({"deleted": point_id})
-        except KeyError:
+        if point_id not in state.registry.points:
             return JsonResponse({"error": f"Point not found: {point_id}"}, status=404)
+        # Delete from YAML repo before mutating in-memory state so a failed
+        # write never leaves state and disk out of sync.
+        delete_gcp_from_repo(point_id, state.map_id, GCPS_DIR)
+        state.delete_point(point_id)
+        return JsonResponse({"deleted": point_id})
 
     # PUT - update point coordinates
     try:
@@ -273,13 +272,14 @@ def api_point_detail(request: HttpRequest, point_id: str) -> JsonResponse:
     if error:
         return JsonResponse({"error": error}, status=422)
 
+    px = float(data["pixel_x"])
+    py = float(data["pixel_y"])
+
     try:
         # Persist to YAML repo before mutating in-memory state so a failed
         # write never leaves state and disk out of sync.
-        save_gcp_to_repo(
-            point_id, float(data["pixel_x"]), float(data["pixel_y"]), state.map_id, GCPS_DIR
-        )
-        state.update_point(point_id, float(data["pixel_x"]), float(data["pixel_y"]))
+        save_gcp_to_repo(point_id, px, py, state.map_id, GCPS_DIR)
+        state.update_point(point_id, px, py)
         point = state.registry.points[point_id]
         return JsonResponse(
             {

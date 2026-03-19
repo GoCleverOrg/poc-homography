@@ -288,9 +288,17 @@ def delete_gcp_from_repo(point_id: str, map_id: str, data_dir: Path) -> None:
         map_id: Map identifier for constructing the entity ID.
         data_dir: Directory for per-GCP YAML files.
     """
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint as DomainMapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+
     repo = _get_gcp_repo(data_dir)
-    # Entity ID format is {map_id}/{point_id} per GroundControlPoint.id
-    repo.delete(f"{map_id}/{point_id}")
+    # Use GroundControlPoint.id to derive the entity ID rather than duplicating the format.
+    _zero = PixelPoint.create(0, 0)
+    entity_id = GroundControlPoint(
+        name=point_id, map_point=DomainMapPoint(map_id=map_id, pixel_point=_zero)
+    ).id
+    repo.delete(entity_id)
 
 
 register_invalidation_callback(_states.clear)
