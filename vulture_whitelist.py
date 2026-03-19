@@ -165,7 +165,6 @@ verbose_name  # unused variable (webapp/line_picker/apps.py:14)
 _.ready  # unused method (webapp/line_picker/apps.py:16)
 app_name  # unused variable (webapp/line_picker/urls.py:7)
 urlpatterns  # unused variable (webapp/line_picker/urls.py:9)
-validate_add_line_request  # unused function (webapp/line_picker/validation.py:8)
 default_app_config  # unused variable (webapp/point_picker/__init__.py:3)
 PointPickerConfig  # unused class (webapp/point_picker/apps.py:9)
 default_auto_field  # unused variable (webapp/point_picker/apps.py:12)
@@ -178,8 +177,8 @@ invalidate_cache  # unused function (webapp/homography_web/frame_utils.py) - pub
 _.get_by_frame_id  # unused method (poc_homography/infrastructure/repositories/repo_yaml_annotation.py:15) - repository query API
 _invalidate_line_registry_cache  # unused function (webapp/homography_precision/views.py:88) - cache management
 get_annotation_repo  # unused function (webapp/homography_web/frame_utils.py:220) - public API
-validate_export_request  # unused function (webapp/line_picker/validation.py) - used by views
-validate_import_request  # unused function (webapp/line_picker/validation.py) - used by views
+save_to_line_repo  # unused function (webapp/line_picker/state.py) - used by tests
+list_line_map_ids  # unused function (webapp/line_picker/state.py) - used by tests
 TenantIdMiddleware  # unused class (webapp/homography_web/middleware.py) - Django MIDDLEWARE setting
 _.process_exception  # unused method (webapp/homography_web/middleware.py) - Django middleware hook
 _.get_coefficients  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:232) - public API

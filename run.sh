@@ -46,6 +46,9 @@ EOF
     exit 0
 fi
 
+# ── 0. Worktree setup (symlink .env, DVC config, map images) ────────
+bash scripts/worktree-setup.sh
+
 # ── 1. Check .env file ──────────────────────────────────────────────
 if [ ! -f .env ]; then
     echo "ERROR: .env file not found."
@@ -64,13 +67,18 @@ uv sync --quiet
 # ── 3. Patch pydrive2 for Shared Drive folder-level access ─────────
 uv run python scripts/patch_pydrive2_shared_drive.py
 
-# ── 4. Pull DVC-tracked data ────────────────────────────────────────
-echo "Pulling DVC-tracked data..."
-if ! uv run dvc pull --force 2>&1; then
-    echo "WARNING: dvc pull failed."
-    echo "  Possible causes:"
-    echo "    - Missing GDrive auth: configure .dvc/config.local with gdrive_client_id/secret"
-    echo "    - First run: 'poe dvc-pull' will open a browser for Google Drive OAuth"
+# ── 4. Pull DVC-tracked data (skip in worktrees — data comes via setup) ─
+_git_common_dir="$(git rev-parse --git-common-dir)"
+if [ "$_git_common_dir" = ".git" ]; then
+    echo "Pulling DVC-tracked data..."
+    if ! uv run dvc pull --force 2>&1; then
+        echo "WARNING: dvc pull failed."
+        echo "  Possible causes:"
+        echo "    - Missing GDrive auth: configure .dvc/config.local with gdrive_client_id/secret"
+        echo "    - First run: 'poe dvc-pull' will open a browser for Google Drive OAuth"
+    fi
+else
+    echo "Worktree detected — skipping dvc pull (data provided by worktree-setup)"
 fi
 
 DVC_DATA_DIR="tests/homography/test_data"
