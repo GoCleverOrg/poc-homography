@@ -16,16 +16,14 @@ urlpatterns = [
     path("api/annotations/", views.api_annotations, name="api_annotations"),
     path("api/annotations/create/", views.api_annotations_create, name="api_annotations_create"),
     path(
-        "api/annotations/<int:index>/", views.api_annotations_delete, name="api_annotations_delete"
+        "api/annotations/<str:line_id>/", views.api_annotations_delete, name="api_annotations_delete"
     ),
     path(
-        "api/annotations/<int:index>/update/",
+        "api/annotations/<str:line_id>/update/",
         views.api_annotations_update,
         name="api_annotations_update",
     ),
     path("api/camera-status/", views.api_camera_status, name="api_camera_status"),
-    path("api/export/", views.api_export, name="api_export"),
-    path("api/import/", views.api_import, name="api_import"),
     # Image serving
     path("image/", views.serve_image, name="serve_image"),
 ]
