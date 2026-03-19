@@ -1665,13 +1665,21 @@
                 const existing = new Set(
                     Array.from(imageSelector.options).map(o => o.value)
                 );
-                images.forEach(filename => {
-                    if (!existing.has(filename)) {
-                        const option = document.createElement('option');
-                        option.value = filename;
-                        option.textContent = filename;
-                        imageSelector.appendChild(option);
-                    }
+                const newImages = images.filter(f => !existing.has(f));
+                if (newImages.length === 0) return;
+                // Rebuild in sorted order to keep the list consistent
+                const allImages = Array.from(imageSelector.options)
+                    .map(o => o.value)
+                    .concat(newImages)
+                    .sort();
+                const selected = imageSelector.value;
+                imageSelector.innerHTML = '';
+                allImages.forEach(filename => {
+                    const option = document.createElement('option');
+                    option.value = filename;
+                    option.textContent = filename;
+                    if (filename === selected) option.selected = true;
+                    imageSelector.appendChild(option);
                 });
             } catch (e) {
                 console.error('Failed to poll available images:', e);
