@@ -96,22 +96,6 @@
         .marker.selected::before { border-color: #ffeb3b; box-shadow: 0 0 8px #ffeb3b; }
         .marker.selected::after { background: #ffeb3b; }
         #filename { font-size: 12px; color: #888; word-break: break-all; }
-        .modal {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
-            z-index: 1000;
-        }
-        .modal.active { display: flex; }
-        .modal-content {
-            background: white; padding: 24px; border-radius: 12px;
-            min-width: 300px; max-width: 400px;
-        }
-        .modal-title { font-size: 18px; margin-bottom: 16px; }
-        .modal input {
-            width: 100%; padding: 10px; border: 1px solid #ddd;
-            border-radius: 6px; margin-bottom: 16px; font-size: 14px;
-        }
-        .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
     </style>
 </head>
 <body>
@@ -137,27 +121,8 @@
             <div class="section-title">Points</div>
             <div id="point-list"></div>
         </div>
-        <div class="section">
-            <div class="btn-group">
-                <button class="btn btn-primary" id="export-btn">Save to Repo</button>
-                <button class="btn btn-secondary" id="import-btn">Load from Repo</button>
-            </div>
-        </div>
     </div>
     <div id="viewer"></div>
-
-    <div id="import-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-title">Load from Repository</div>
-            <select id="import-map-id" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;margin-bottom:16px;font-size:14px;">
-                <option value="">Loading...</option>
-            </select>
-            <div class="modal-buttons">
-                <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="doImport()">Load</button>
-            </div>
-        </div>
-    </div>
 
     <script src="{% static 'js/tenant.js' %}"></script>
     <script>
@@ -258,13 +223,6 @@
                 // Setup tag buttons
                 document.querySelectorAll('.tag-btn').forEach(btn => {
                     btn.addEventListener('click', () => selectTag(btn.dataset.tag));
-                });
-
-                // Setup export/import
-                document.getElementById('export-btn').addEventListener('click', () => doExport());
-                document.getElementById('import-btn').addEventListener('click', () => {
-                    populateRegistryDropdown();
-                    openModal('import-modal');
                 });
 
                 // Initial setup
@@ -539,74 +497,6 @@
                 updateNextId();
             } catch (e) {
                 showError(`Failed to delete point: ${e.message}`);
-            }
-        }
-
-        function openModal(id) {
-            document.getElementById(id).classList.add('active');
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-        }
-
-        async function populateRegistryDropdown() {
-            const select = document.getElementById('import-map-id');
-            try {
-                const resp = await fetch(`${API_BASE}/api/registries/`);
-                if (!resp.ok) return;
-                const data = await resp.json();
-                select.innerHTML = '';
-                (data.map_ids || []).forEach(id => {
-                    const opt = document.createElement('option');
-                    opt.value = id;
-                    opt.textContent = id;
-                    select.appendChild(opt);
-                });
-            } catch (e) {
-                select.innerHTML = '<option value="">Error loading</option>';
-            }
-        }
-
-        async function doExport() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/export/`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: '{}'
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                    showError(`Save failed: ${err.error || err.detail || 'Unknown error'}`);
-                    return;
-                }
-                const result = await resp.json();
-                alert(`Saved ${result.count} points to repository`);
-            } catch (e) {
-                showError(`Save failed: ${e.message}`);
-            }
-        }
-
-        async function doImport() {
-            const mapId = document.getElementById('import-map-id').value;
-            if (!mapId) return;
-            try {
-                const resp = await fetch(`${API_BASE}/api/import/`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ map_id: mapId })
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                    showError(`Load failed: ${err.error || err.detail || 'Unknown error'}`);
-                    return;
-                }
-                const result = await resp.json();
-                alert(`Loaded ${result.count} points for map "${result.map_id}"`);
-                closeModal('import-modal');
-                await loadPoints();
-            } catch (e) {
-                showError(`Load failed: ${e.message}`);
             }
         }
 

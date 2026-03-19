@@ -18,13 +18,13 @@ if str(WEBAPP_DIR) not in sys.path:
     sys.path.insert(0, str(WEBAPP_DIR))
 
 # Import from the new Django app location
+from homography_web.frame_utils import normalize_array
 from point_picker.state import (
     ABBREVIATION_TO_TAG,
     TAG_ABBREVIATIONS,
     PointPickerState,
     get_tag_from_id,
 )
-from homography_web.frame_utils import normalize_array
 
 
 class TestTagAbbreviations:
@@ -247,27 +247,22 @@ class TestPointPickerState:
         with pytest.raises(KeyError):
             mock_state.delete_point("PS999")
 
-    def test_save_and_load_repo(self, mock_state: PointPickerState, tmp_path: Path) -> None:
-        """Save and load via GCP repo preserves points."""
-        mock_state.add_point("parking_spot", 100, 200)
-        mock_state.add_point("arrows", 300, 400)
+    def test_save_and_delete_gcp_via_repo_helpers(
+        self, mock_state: PointPickerState, tmp_path: Path
+    ) -> None:
+        """save_gcp_to_repo writes YAML; delete_gcp_from_repo removes it."""
+        from point_picker.state import delete_gcp_from_repo, save_gcp_to_repo
 
         gcps_dir = tmp_path / "gcps"
         gcps_dir.mkdir()
-        mock_state.save_to_repo(gcps_dir)
 
-        # Load into a new state
-        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
-            mock_tif.return_value = MockTiffFile()
-            geotiff_path = tmp_path / "test2.tif"
-            geotiff_path.touch()
-            new_state = PointPickerState(geotiff_path)
+        save_gcp_to_repo("PS1", 100.0, 200.0, mock_state.map_id, gcps_dir)
+        yaml_files = list(gcps_dir.glob("*.yaml"))
+        assert len(yaml_files) == 1
 
-        new_state.load_from_repo(gcps_dir, mock_state.map_id)
-
-        assert len(new_state.registry.points) == 2
-        assert "PS1" in new_state.registry.points
-        assert "AR1" in new_state.registry.points
+        delete_gcp_from_repo("PS1", mock_state.map_id, gcps_dir)
+        yaml_files = list(gcps_dir.glob("*.yaml"))
+        assert len(yaml_files) == 0
 
 
 class TestPointPickerStateGeoCoords:
@@ -364,8 +359,12 @@ class TestPointPickerAPI:
 
         # Inject state for the test tenant, clean up after test
         pp_state._states[self.TENANT_ID] = state
-        # Bypass tenant repo validation (test tenant doesn't exist in YAML repo)
-        with patch("point_picker.views.get_tenant_id", return_value=self.TENANT_ID):
+        # Bypass tenant repo validation and YAML persistence (test tenant has no repo dir)
+        with (
+            patch("point_picker.views.get_tenant_id", return_value=self.TENANT_ID),
+            patch("point_picker.views.save_gcp_to_repo"),
+            patch("point_picker.views.delete_gcp_from_repo"),
+        ):
             yield Client()
         pp_state._states.pop(self.TENANT_ID, None)
 
@@ -567,79 +566,28 @@ class TestPointPickerAPI:
         assert data["easting"] is None
         assert data["northing"] is None
 
-    def test_export_points(self, test_client, tmp_path: Path) -> None:
-        """POST /point-picker/api/export/ saves points to YAML file."""
-        # Add some points
-        test_client.post(
-            self._url("/point-picker/api/points/"),
-            data=json.dumps({"tag": "parking_spot", "pixel_x": 100, "pixel_y": 200}),
-            content_type="application/json",
-        )
-        test_client.post(
-            self._url("/point-picker/api/points/"),
-            data=json.dumps({"tag": "arrows", "pixel_x": 300, "pixel_y": 400}),
-            content_type="application/json",
-        )
-
-        # Export (saves to repository)
+    def test_export_endpoint_removed(self, test_client) -> None:
+        """POST /point-picker/api/export/ returns 404 (endpoint removed)."""
         resp = test_client.post(
             self._url("/point-picker/api/export/"),
             data=json.dumps({}),
             content_type="application/json",
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["count"] == 2
-        assert data["saved"] is True
+        assert resp.status_code == 404
 
-    def test_import_points(self, test_client, tmp_path: Path) -> None:
-        """POST /point-picker/api/import/ loads points from GCP repository."""
-        import point_picker.views as pp_views
-        from unittest.mock import MagicMock
-
-        # Create GCP YAML files in repo format
-        gcps_dir = tmp_path / "gcps"
-        gcps_dir.mkdir()
-        (gcps_dir / "test__PS1.yaml").write_text(
-            "id: test/PS1\nname: PS1\nmap_point:\n  map_id: test\n  pixel_point:\n    x: 100.0\n    y: 200.0\n"
-        )
-        (gcps_dir / "test__AR1.yaml").write_text(
-            "id: test/AR1\nname: AR1\nmap_point:\n  map_id: test\n  pixel_point:\n    x: 300.0\n    y: 400.0\n"
-        )
-
-        # Monkeypatch GCPS_DIR to use tmp directory
-        original = pp_views.GCPS_DIR
-        pp_views.GCPS_DIR = gcps_dir
-
-        # Mock map entity for tenant validation in api_import
-        mock_map = MagicMock()
-        mock_map.id = "test"
-
-        try:
-            with patch("point_picker.views.get_map_from_tenant_id", return_value=mock_map):
-                resp = test_client.post(
-                    self._url("/point-picker/api/import/"),
-                    data=json.dumps({"map_id": "test"}),
-                    content_type="application/json",
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["count"] == 2
-
-                # Verify points were imported
-                resp = test_client.get(self._url("/point-picker/api/points/"))
-                assert len(resp.json()["points"]) == 2
-        finally:
-            pp_views.GCPS_DIR = original
-
-    def test_import_missing_map_id_returns_422(self, test_client) -> None:
-        """POST /point-picker/api/import/ without map_id returns 422."""
+    def test_import_endpoint_removed(self, test_client) -> None:
+        """POST /point-picker/api/import/ returns 404 (endpoint removed)."""
         resp = test_client.post(
             self._url("/point-picker/api/import/"),
-            data=json.dumps({}),
+            data=json.dumps({"map_id": "test"}),
             content_type="application/json",
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 404
+
+    def test_registries_endpoint_removed(self, test_client) -> None:
+        """GET /point-picker/api/registries/ returns 404 (endpoint removed)."""
+        resp = test_client.get(self._url("/point-picker/api/registries/"))
+        assert resp.status_code == 404
 
     def test_full_point_lifecycle(self, test_client) -> None:
         """Test complete point lifecycle: create -> read -> update -> delete."""

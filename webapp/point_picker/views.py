@@ -12,10 +12,10 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
-from homography_web.frame_utils import GCPS_DIR, get_map_from_tenant_id, get_tenant_id, normalize_array
+from homography_web.frame_utils import GCPS_DIR, get_tenant_id, normalize_array
 from PIL import Image
 
-from .state import get_state, get_tag_from_id
+from .state import delete_gcp_from_repo, get_state, get_tag_from_id, save_gcp_to_repo
 from .validation import (
     validate_add_point_request,
     validate_update_point_request,
@@ -230,7 +230,11 @@ def api_points(request: HttpRequest) -> JsonResponse:
     pixel_y = float(data["pixel_y"])
     point_id = data.get("id")
 
-    point_id = state.add_point(tag, pixel_x, pixel_y, point_id=point_id)
+    # Persist to YAML repo before mutating in-memory state so a failed
+    # write never leaves state and disk out of sync.
+    resolved_id = point_id if point_id is not None else state.get_next_id(tag)
+    save_gcp_to_repo(resolved_id, pixel_x, pixel_y, state.map_id, GCPS_DIR)
+    point_id = state.add_point(tag, pixel_x, pixel_y, point_id=resolved_id)
     point = state.registry.points[point_id]
 
     return JsonResponse(
@@ -250,11 +254,13 @@ def api_point_detail(request: HttpRequest, point_id: str) -> JsonResponse:
     state = get_state(get_tenant_id(request))
 
     if request.method == "DELETE":
-        try:
-            state.delete_point(point_id)
-            return JsonResponse({"deleted": point_id})
-        except KeyError:
+        if point_id not in state.registry.points:
             return JsonResponse({"error": f"Point not found: {point_id}"}, status=404)
+        # Delete from YAML repo before mutating in-memory state so a failed
+        # write never leaves state and disk out of sync.
+        delete_gcp_from_repo(point_id, state.map_id, GCPS_DIR)
+        state.delete_point(point_id)
+        return JsonResponse({"deleted": point_id})
 
     # PUT - update point coordinates
     try:
@@ -266,8 +272,14 @@ def api_point_detail(request: HttpRequest, point_id: str) -> JsonResponse:
     if error:
         return JsonResponse({"error": error}, status=422)
 
+    px = float(data["pixel_x"])
+    py = float(data["pixel_y"])
+
     try:
-        state.update_point(point_id, float(data["pixel_x"]), float(data["pixel_y"]))
+        # Persist to YAML repo before mutating in-memory state so a failed
+        # write never leaves state and disk out of sync.
+        save_gcp_to_repo(point_id, px, py, state.map_id, GCPS_DIR)
+        state.update_point(point_id, px, py)
         point = state.registry.points[point_id]
         return JsonResponse(
             {
@@ -326,55 +338,3 @@ def api_geo_coords(request: HttpRequest) -> JsonResponse:
             "crs": None,
         }
     )
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def api_export(request: HttpRequest) -> JsonResponse:
-    """Save points to the GCP repository."""
-    state = get_state(get_tenant_id(request))
-    state.save_to_repo(GCPS_DIR)
-    return JsonResponse({"saved": True, "count": len(state.registry.points)})
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def api_import(request: HttpRequest) -> JsonResponse:
-    """Import points from the GCP repository by map_id."""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    map_id = data.get("map_id")
-    if not map_id or not isinstance(map_id, str):
-        return JsonResponse({"error": "Missing or invalid field: map_id"}, status=422)
-
-    tenant_id = get_tenant_id(request)
-    # Validate map_id belongs to this tenant
-    map_entity = get_map_from_tenant_id(tenant_id)
-    if map_entity is None or map_entity.id != map_id:
-        return JsonResponse({"error": f"map_id {map_id!r} does not belong to this tenant"}, status=403)
-
-    state = get_state(tenant_id)
-    state.load_from_repo(GCPS_DIR, map_id)
-    return JsonResponse(
-        {
-            "map_id": state.registry.map_id,
-            "count": len(state.registry.points),
-        }
-    )
-
-
-@require_GET
-def api_registries(request: HttpRequest) -> JsonResponse:
-    """Return available map IDs from the GCP repository, filtered by tenant."""
-    from poc_homography.map_points.gcp_registry import list_map_ids
-
-    if not GCPS_DIR.exists():
-        return JsonResponse({"map_ids": []})
-    tenant_id = get_tenant_id(request)
-    map_entity = get_map_from_tenant_id(tenant_id)
-    tenant_map_ids = {map_entity.id} if map_entity else set()
-    all_ids = list_map_ids(GCPS_DIR)
-    return JsonResponse({"map_ids": [mid for mid in all_ids if mid in tenant_map_ids]})
