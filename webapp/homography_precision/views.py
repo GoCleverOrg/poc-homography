@@ -70,19 +70,32 @@ def _require_map_id(tenant_id: str) -> str | None:
     return entity.id if entity else None
 
 
-def _load_distortion_params(camera_name: str, zoom_factor: float) -> dict[str, float] | None:
-    """Load interpolated distortion + intrinsic params for a camera at a zoom level.
+def _distortion_kwargs(test_case: dict) -> dict[str, float]:
+    """Build distortion kwargs for MapPointHomography from a test case.
 
-    Returns dict with keys k1,k2,k3,p1,p2,fx,fy,cx,cy or None if unavailable.
+    Extracts camera_name and zoom from the test case, loads the calibration
+    table, and returns interpolated distortion + intrinsic parameters as a dict
+    with keys k1,k2,k3,p1,p2,fx,fy,cx,cy.  Returns empty dict if any piece
+    is unavailable.
     """
+    image_filename = test_case.get("image")
+    if not image_filename:
+        return {}
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
+        return {}
+    zoom = test_case.get("camera_status", {}).get("zoom")
+    if zoom is None:
+        return {}
+
     try:
-        table = load_calibration_for_camera(camera_name, CALIBRATIONS_DIR)
+        table = load_calibration_for_camera(frame.camera_name, CALIBRATIONS_DIR)
         if table is None:
-            return None
-        coeffs = table.get_coefficients(zoom_factor)
-        intrinsics = table.get_intrinsics(zoom_factor)
+            return {}
+        coeffs = table.get_coefficients(zoom)
+        intrinsics = table.get_intrinsics(zoom)
         if intrinsics is None:
-            return None
+            return {}
         return {
             "k1": float(coeffs.k1),
             "k2": float(coeffs.k2),
@@ -92,41 +105,8 @@ def _load_distortion_params(camera_name: str, zoom_factor: float) -> dict[str, f
             **intrinsics,
         }
     except Exception:
-        logger.debug("Failed to load distortion params for %s", camera_name, exc_info=True)
-        return None
-
-
-def _get_camera_context(test_case: dict) -> tuple[str, float] | None:
-    """Extract camera_name and zoom_factor from a test case dict.
-
-    Returns (camera_name, zoom_factor) or None if not available.
-    """
-    image_filename = test_case.get("image")
-    if not image_filename:
-        return None
-    frame = image_filename_to_frame(image_filename)
-    if frame is None:
-        return None
-    camera_name = frame.camera_name
-    zoom = test_case.get("camera_status", {}).get("zoom")
-    if zoom is None:
-        return None
-    return (camera_name, zoom)
-
-
-def _distortion_kwargs(test_case: dict) -> dict[str, float]:
-    """Build distortion kwargs for MapPointHomography from a test case.
-
-    Returns empty dict if distortion context is unavailable.
-    """
-    ctx = _get_camera_context(test_case)
-    if ctx is None:
+        logger.debug("Failed to load distortion params for %s", frame.camera_name, exc_info=True)
         return {}
-    camera_name, zoom_factor = ctx
-    params = _load_distortion_params(camera_name, zoom_factor)
-    if params is None:
-        return {}
-    return params
 
 
 def _get_map_geotiff_file(tenant_id: str) -> Path | None:

@@ -134,15 +134,22 @@ class MapPointHomography:
                 "All nine distortion/intrinsic parameters must be provided together, or all omitted"
             )
 
-        self._k1 = k1
-        self._k2 = k2
-        self._k3 = k3
-        self._p1 = p1
-        self._p2 = p2
-        self._fx = fx
-        self._fy = fy
-        self._cx = cx
-        self._cy = cy
+        # Store as a single kwargs dict so _undistort/_distort can forward it
+        # without repeating nine type-ignore annotations in each method.
+        if all_set:
+            self._dist_kwargs: dict[str, float] = {
+                "k1": k1,  # type: ignore[dict-item]
+                "k2": k2,  # type: ignore[dict-item]
+                "k3": k3,  # type: ignore[dict-item]
+                "p1": p1,  # type: ignore[dict-item]
+                "p2": p2,  # type: ignore[dict-item]
+                "fx": fx,  # type: ignore[dict-item]
+                "fy": fy,  # type: ignore[dict-item]
+                "cx": cx,  # type: ignore[dict-item]
+                "cy": cy,  # type: ignore[dict-item]
+            }
+        else:
+            self._dist_kwargs = {}
         self._has_distortion: bool = all_set
 
     def _undistort_camera_pixels(self, pixels: np.ndarray) -> np.ndarray:
@@ -152,19 +159,7 @@ class MapPointHomography:
         """
         if not self._has_distortion:
             return pixels
-        # All params are guaranteed non-None when _has_distortion is True
-        return undistort_points(
-            pixels,
-            k1=self._k1,  # type: ignore[arg-type]
-            k2=self._k2,  # type: ignore[arg-type]
-            k3=self._k3,  # type: ignore[arg-type]
-            p1=self._p1,  # type: ignore[arg-type]
-            p2=self._p2,  # type: ignore[arg-type]
-            fx=self._fx,  # type: ignore[arg-type]
-            fy=self._fy,  # type: ignore[arg-type]
-            cx=self._cx,  # type: ignore[arg-type]
-            cy=self._cy,  # type: ignore[arg-type]
-        )
+        return undistort_points(pixels, **self._dist_kwargs)
 
     def _distort_camera_pixels(self, pixels: np.ndarray) -> np.ndarray:
         """Apply forward distortion to camera pixel array if distortion params are set.
@@ -173,18 +168,7 @@ class MapPointHomography:
         """
         if not self._has_distortion:
             return pixels
-        return distort_points(
-            pixels,
-            k1=self._k1,  # type: ignore[arg-type]
-            k2=self._k2,  # type: ignore[arg-type]
-            k3=self._k3,  # type: ignore[arg-type]
-            p1=self._p1,  # type: ignore[arg-type]
-            p2=self._p2,  # type: ignore[arg-type]
-            fx=self._fx,  # type: ignore[arg-type]
-            fy=self._fy,  # type: ignore[arg-type]
-            cx=self._cx,  # type: ignore[arg-type]
-            cy=self._cy,  # type: ignore[arg-type]
-        )
+        return distort_points(pixels, **self._dist_kwargs)
 
     def _require_forward_homography(self) -> npt.NDArray[np.float64]:
         """Return forward homography matrix or raise RuntimeError if not computed."""

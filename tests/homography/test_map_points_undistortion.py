@@ -49,6 +49,18 @@ DISTORTION_PARAMS: dict[str, float] = {
     "cy": 540.0,
 }
 
+ZERO_DISTORTION_PARAMS: dict[str, float] = {
+    "k1": 0.0,
+    "k2": 0.0,
+    "k3": 0.0,
+    "p1": 0.0,
+    "p2": 0.0,
+    "fx": 1000.0,
+    "fy": 1000.0,
+    "cx": 960.0,
+    "cy": 540.0,
+}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -65,8 +77,7 @@ def _make_gcps() -> list[dict[str, object]]:
 def _make_registry() -> GCPRegistry:
     """Build a GCPRegistry with the synthetic map coords."""
     points = {
-        f"P{i + 1}": MapPoint(pixel_x=mc[0], pixel_y=mc[1])
-        for i, mc in enumerate(MAP_COORDS)
+        f"P{i + 1}": MapPoint(pixel_x=mc[0], pixel_y=mc[1]) for i, mc in enumerate(MAP_COORDS)
     }
     return GCPRegistry(map_id="test", points=points)
 
@@ -185,9 +196,9 @@ class TestDifferentHomographyWithDistortion:
         mph_dist = MapPointHomography(map_id="test", **DISTORTION_PARAMS)
         result_dist = mph_dist.compute_from_gcps(gcps, registry)
 
-        assert not np.allclose(
-            result_no.homography_matrix, result_dist.homography_matrix
-        ), "Homography matrices should differ when distortion is applied"
+        assert not np.allclose(result_no.homography_matrix, result_dist.homography_matrix), (
+            "Homography matrices should differ when distortion is applied"
+        )
 
 
 # ===================================================================
@@ -224,43 +235,19 @@ class TestConstructorValidation:
             "missing-cx-cy",
         ],
     )
-    def test_partial_params_raise_value_error(
-        self, partial_kwargs: dict[str, float]
-    ) -> None:
+    def test_partial_params_raise_value_error(self, partial_kwargs: dict[str, float]) -> None:
         with pytest.raises(ValueError, match="All nine"):
             MapPointHomography(map_id="test", **partial_kwargs)
 
     def test_all_zero_counts_as_provided(self) -> None:
         """All-zero distortion still sets _has_distortion = True."""
-        zero_params = {
-            "k1": 0.0,
-            "k2": 0.0,
-            "k3": 0.0,
-            "p1": 0.0,
-            "p2": 0.0,
-            "fx": 1000.0,
-            "fy": 1000.0,
-            "cx": 960.0,
-            "cy": 540.0,
-        }
-        mph = MapPointHomography(map_id="test", **zero_params)
+        mph = MapPointHomography(map_id="test", **ZERO_DISTORTION_PARAMS)
 
         assert mph._has_distortion is True
 
     def test_all_zero_undistort_still_called(self) -> None:
         """Even with zero coefficients the undistort path is taken (not identity)."""
-        zero_params = {
-            "k1": 0.0,
-            "k2": 0.0,
-            "k3": 0.0,
-            "p1": 0.0,
-            "p2": 0.0,
-            "fx": 1000.0,
-            "fy": 1000.0,
-            "cx": 960.0,
-            "cy": 540.0,
-        }
-        mph = MapPointHomography(map_id="test", **zero_params)
+        mph = MapPointHomography(map_id="test", **ZERO_DISTORTION_PARAMS)
 
         raw = np.array(CAMERA_PIXELS, dtype=np.float32)
         result = mph._undistort_camera_pixels(raw)
@@ -296,9 +283,9 @@ class TestLineUndistortion:
         mph_dist = MapPointHomography(map_id="test", **DISTORTION_PARAMS)
         result_dist = mph_dist.compute_from_lines(annotations, registry)
 
-        assert not np.allclose(
-            result_no.homography_matrix, result_dist.homography_matrix
-        ), "Line homography should change when distortion is applied"
+        assert not np.allclose(result_no.homography_matrix, result_dist.homography_matrix), (
+            "Line homography should change when distortion is applied"
+        )
 
     def test_line_computation_succeeds_with_distortion(self) -> None:
         """compute_from_lines with distortion should produce valid results."""
