@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 from typing import TYPE_CHECKING, TypedDict
 
@@ -49,6 +50,8 @@ from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 
+logger = logging.getLogger(__name__)
+
 
 def _no_map_error() -> JsonResponse:
     """Create a fresh 'no map configured' error response."""
@@ -89,6 +92,7 @@ def _load_distortion_params(camera_name: str, zoom_factor: float) -> dict[str, f
             **intrinsics,
         }
     except Exception:
+        logger.debug("Failed to load distortion params for %s", camera_name, exc_info=True)
         return None
 
 

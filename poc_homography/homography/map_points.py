@@ -19,7 +19,10 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from poc_homography.calibration.lens_distortion.apply_calibration import undistort_points
+from poc_homography.calibration.lens_distortion.apply_calibration import (
+    distort_points,
+    undistort_points,
+)
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.map_points import GCPRegistry, MapPoint
 
@@ -151,6 +154,26 @@ class MapPointHomography:
             return pixels
         # All params are guaranteed non-None when _has_distortion is True
         return undistort_points(
+            pixels,
+            k1=self._k1,  # type: ignore[arg-type]
+            k2=self._k2,  # type: ignore[arg-type]
+            k3=self._k3,  # type: ignore[arg-type]
+            p1=self._p1,  # type: ignore[arg-type]
+            p2=self._p2,  # type: ignore[arg-type]
+            fx=self._fx,  # type: ignore[arg-type]
+            fy=self._fy,  # type: ignore[arg-type]
+            cx=self._cx,  # type: ignore[arg-type]
+            cy=self._cy,  # type: ignore[arg-type]
+        )
+
+    def _distort_camera_pixels(self, pixels: np.ndarray) -> np.ndarray:
+        """Apply forward distortion to camera pixel array if distortion params are set.
+
+        Returns the array unchanged if no distortion parameters were provided.
+        """
+        if not self._has_distortion:
+            return pixels
+        return distort_points(
             pixels,
             k1=self._k1,  # type: ignore[arg-type]
             k2=self._k2,  # type: ignore[arg-type]
@@ -662,8 +685,10 @@ class MapPointHomography:
             RuntimeError: If no valid homography has been computed
         """
         H = self._require_forward_homography()
-        point = np.array([[[camera_pixel.x, camera_pixel.y]]], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(point, H)
+        point = np.array([[camera_pixel.x, camera_pixel.y]], dtype=np.float32)
+        point = self._undistort_camera_pixels(point)
+        point_cv = point.reshape(1, 1, 2)
+        transformed = cv2.perspectiveTransform(point_cv, H)
 
         return MapPoint(
             pixel_x=float(transformed[0, 0, 0]),
@@ -677,7 +702,7 @@ class MapPointHomography:
             map_coord: Pixel coordinates on the map
 
         Returns:
-            Pixel coordinates in camera image
+            Pixel coordinates in camera image (distorted space)
 
         Raises:
             RuntimeError: If no valid homography has been computed
@@ -685,7 +710,9 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         point = np.array([[[map_coord.x, map_coord.y]]], dtype=np.float32)
         transformed = cv2.perspectiveTransform(point, H_inv)
-        return PixelPoint.create(float(transformed[0, 0, 0]), float(transformed[0, 0, 1]))
+        undistorted = np.array([[transformed[0, 0, 0], transformed[0, 0, 1]]], dtype=np.float32)
+        distorted = self._distort_camera_pixels(undistorted)
+        return PixelPoint.create(float(distorted[0, 0]), float(distorted[0, 1]))
 
     def camera_to_map_batch(
         self,
@@ -705,8 +732,10 @@ class MapPointHomography:
             RuntimeError: If no valid homography has been computed
         """
         H = self._require_forward_homography()
-        points = np.array([[[p.x, p.y]] for p in camera_pixels], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(points, H)
+        points_2d = np.array([[p.x, p.y] for p in camera_pixels], dtype=np.float32)
+        points_2d = self._undistort_camera_pixels(points_2d)
+        points_cv = points_2d.reshape(-1, 1, 2)
+        transformed = cv2.perspectiveTransform(points_cv, H)
         transformed_2d: npt.NDArray[np.float64] = np.asarray(transformed, dtype=np.float64).reshape(
             -1, 2
         )
@@ -728,7 +757,7 @@ class MapPointHomography:
             map_coords: List of pixel coordinates on the map
 
         Returns:
-            List of pixel coordinates in camera image
+            List of pixel coordinates in camera image (distorted space)
 
         Raises:
             RuntimeError: If no valid homography has been computed
@@ -736,10 +765,9 @@ class MapPointHomography:
         H_inv = self._require_inverse_homography()
         points = np.array([[[c.x, c.y]] for c in map_coords], dtype=np.float32)
         transformed = cv2.perspectiveTransform(points, H_inv)
-        transformed_2d: npt.NDArray[np.float64] = np.asarray(transformed, dtype=np.float64).reshape(
-            -1, 2
-        )
-        return [PixelPoint.create(float(pt[0]), float(pt[1])) for pt in transformed_2d]
+        transformed_2d = np.asarray(transformed, dtype=np.float32).reshape(-1, 2)
+        distorted_2d = self._distort_camera_pixels(transformed_2d)
+        return [PixelPoint.create(float(pt[0]), float(pt[1])) for pt in distorted_2d]
 
     def is_valid(self) -> bool:
         """Check if a valid homography has been computed."""
