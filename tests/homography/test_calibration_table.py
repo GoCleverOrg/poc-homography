@@ -2,8 +2,8 @@
 """
 Unit tests for calibration table functionality in IntrinsicExtrinsicHomography.
 
-Tests zoom-dependent intrinsic parameter interpolation and distortion coefficient
-retrieval from calibration tables, with fallback to linear approximation.
+Tests zoom-dependent intrinsic parameter interpolation from calibration tables,
+with fallback to linear approximation.
 
 Run with: python -m pytest tests/test_calibration_table.py -v
 """
@@ -231,175 +231,6 @@ class TestCalibrationTableInterpolation:
         assert K[0, 0] == pytest.approx(expected_f_px, abs=1e-2)
 
 
-class TestDistortionCoefficientRetrieval:
-    """Tests for get_distortion_coefficients() method."""
-
-    def test_exact_zoom_match_returns_distortion_coefficients(self):
-        """When zoom exactly matches a calibrated value, return distortion coefficients."""
-        calibration_table = {
-            1.0: {
-                "fx": 1825.3,
-                "fy": 1823.1,
-                "cx": 1280.0,
-                "cy": 720.0,
-                "k1": -0.341,
-                "k2": 0.788,
-                "p1": 0.001,
-                "p2": 0.002,
-                "k3": -0.5,
-            },
-            5.0: {
-                "fx": 9120.5,
-                "fy": 9115.2,
-                "cx": 1282.1,
-                "cy": 721.3,
-                "k1": -0.298,
-                "k2": 0.654,
-                "p1": 0.003,
-                "p2": 0.004,
-                "k3": -0.3,
-            },
-        }
-
-        homography = IntrinsicExtrinsicHomography(
-            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
-        )
-
-        # Exact match at zoom=1.0
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=1.0)
-        expected = np.array([-0.341, 0.788, 0.001, 0.002, -0.5])
-        np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
-
-        # Exact match at zoom=5.0
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=5.0)
-        expected = np.array([-0.298, 0.654, 0.003, 0.004, -0.3])
-        np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
-
-    def test_interpolation_of_distortion_coefficients(self):
-        """When zoom is between calibrated values, linearly interpolate distortion coefficients."""
-        calibration_table = {
-            1.0: {
-                "fx": 1000.0,
-                "fy": 1000.0,
-                "cx": 1280.0,
-                "cy": 720.0,
-                "k1": -0.3,
-                "k2": 0.7,
-                "p1": 0.0,
-                "p2": 0.0,
-                "k3": 0.0,
-            },
-            5.0: {
-                "fx": 5000.0,
-                "fy": 5000.0,
-                "cx": 1290.0,
-                "cy": 730.0,
-                "k1": -0.2,
-                "k2": 0.6,
-                "p1": 0.004,
-                "p2": 0.002,
-                "k3": -0.1,
-            },
-        }
-
-        homography = IntrinsicExtrinsicHomography(
-            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
-        )
-
-        # Zoom at midpoint (3.0)
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=3.0)
-
-        # Expected: linear interpolation at 50% (t=0.5)
-        # k1: -0.3 + (-0.2 - (-0.3)) * 0.5 = -0.3 + 0.1 * 0.5 = -0.25
-        # k2: 0.7 + (0.6 - 0.7) * 0.5 = 0.7 - 0.05 = 0.65
-        # p1: 0.0 + (0.004 - 0.0) * 0.5 = 0.002
-        # p2: 0.0 + (0.002 - 0.0) * 0.5 = 0.001
-        # k3: 0.0 + (-0.1 - 0.0) * 0.5 = -0.05
-        expected = np.array([-0.25, 0.65, 0.002, 0.001, -0.05])
-        np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
-
-    def test_distortion_coefficients_clamp_below_minimum_zoom(self):
-        """When zoom is below minimum, use lowest calibrated zoom's distortion coefficients."""
-        calibration_table = {
-            1.0: {
-                "fx": 1000.0,
-                "fy": 1000.0,
-                "cx": 1280.0,
-                "cy": 720.0,
-                "k1": -0.3,
-                "k2": 0.7,
-                "p1": 0.0,
-                "p2": 0.0,
-                "k3": 0.0,
-            },
-            5.0: {
-                "fx": 5000.0,
-                "fy": 5000.0,
-                "cx": 1290.0,
-                "cy": 730.0,
-                "k1": -0.2,
-                "k2": 0.6,
-                "p1": 0.004,
-                "p2": 0.002,
-                "k3": -0.1,
-            },
-        }
-
-        homography = IntrinsicExtrinsicHomography(
-            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
-        )
-
-        # Zoom below minimum
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=0.5)
-        expected = np.array([-0.3, 0.7, 0.0, 0.0, 0.0])
-        np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
-
-    def test_distortion_coefficients_clamp_above_maximum_zoom(self):
-        """When zoom is above maximum, use highest calibrated zoom's distortion coefficients."""
-        calibration_table = {
-            1.0: {
-                "fx": 1000.0,
-                "fy": 1000.0,
-                "cx": 1280.0,
-                "cy": 720.0,
-                "k1": -0.3,
-                "k2": 0.7,
-                "p1": 0.0,
-                "p2": 0.0,
-                "k3": 0.0,
-            },
-            5.0: {
-                "fx": 5000.0,
-                "fy": 5000.0,
-                "cx": 1290.0,
-                "cy": 730.0,
-                "k1": -0.2,
-                "k2": 0.6,
-                "p1": 0.004,
-                "p2": 0.002,
-                "k3": -0.1,
-            },
-        }
-
-        homography = IntrinsicExtrinsicHomography(
-            map_id="test_map", width=2560, height=1440, calibration_table=calibration_table
-        )
-
-        # Zoom above maximum
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=10.0)
-        expected = np.array([-0.2, 0.6, 0.004, 0.002, -0.1])
-        np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
-
-    def test_no_calibration_table_returns_none(self):
-        """When calibration_table is None, return None (no distortion from table)."""
-        homography = IntrinsicExtrinsicHomography(
-            map_id="test_map", width=2560, height=1440, calibration_table=None
-        )
-
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=5.0)
-        assert dist_coeffs is None
-
-
 class TestMultipleZoomLevels:
     """Tests for calibration tables with more than 2 zoom levels."""
 
@@ -454,13 +285,6 @@ class TestMultipleZoomLevels:
         assert K[0, 0] == pytest.approx(7500.0, abs=1e-6)
         assert K[0, 2] == pytest.approx(1295.0, abs=1e-6)
         assert K[1, 2] == pytest.approx(735.0, abs=1e-6)
-
-        # Check distortion interpolation
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=7.5)
-        # k1: -0.2 + (-0.1 - (-0.2)) * 0.5 = -0.15
-        # k2: 0.6 + (0.5 - 0.6) * 0.5 = 0.55
-        expected = np.array([-0.15, 0.55, 0.006, 0.003, -0.15])
-        np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
 
     def test_six_zoom_levels_realistic_scenario(self):
         """Test realistic scenario with 6 calibrated zoom levels (1x, 5x, 10x, 15x, 20x, 25x)."""
@@ -575,10 +399,6 @@ class TestEdgeCases:
             assert K[0, 0] == pytest.approx(5000.0, abs=1e-6)
             assert K[1, 1] == pytest.approx(5000.0, abs=1e-6)
 
-            dist_coeffs = homography.get_distortion_coefficients(zoom_factor=zoom)
-            expected = np.array([-0.2, 0.6, 0.0, 0.0, 0.0])
-            np.testing.assert_array_almost_equal(dist_coeffs, expected, decimal=6)
-
     def test_empty_calibration_table_falls_back_to_linear(self):
         """Empty calibration table {} falls back to linear approximation."""
         homography = IntrinsicExtrinsicHomography(
@@ -595,10 +415,6 @@ class TestEdgeCases:
         # Should use linear approximation
         expected_f_px = 5.9 * 5.0 * (2560 / 6.78)
         assert K[0, 0] == pytest.approx(expected_f_px, abs=1e-2)
-
-        # No distortion coefficients available
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=5.0)
-        assert dist_coeffs is None
 
     def test_calibration_table_with_non_numeric_zoom_keys_raises_error(self):
         """Calibration table with non-numeric zoom keys should raise TypeError."""
@@ -643,10 +459,6 @@ class TestBackwardCompatibility:
         K = homography.get_intrinsics(zoom_factor=10.0)
         expected_f_px = 5.9 * 10.0 * (1920 / 7.18)
         assert K[0, 0] == pytest.approx(expected_f_px, abs=1e-2)
-
-        # get_distortion_coefficients should return None when no calibration table
-        dist_coeffs = homography.get_distortion_coefficients(zoom_factor=10.0)
-        assert dist_coeffs is None
 
     def test_compute_from_config_still_works_with_calibration_table(self):
         """compute_from_config() works correctly when calibration_table is used for intrinsics."""
