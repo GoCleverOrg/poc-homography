@@ -2,7 +2,6 @@ DistortionCoefficients  # backward-compat alias (poc_homography/camera_parameter
 _.remove_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:202)
 _.get_zoom_levels  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:373)
 _.get_nearest_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:393)
-load_calibration_for_camera  # unused function (poc_homography/calibration/lens_distortion/calibration_table.py:516)
 merge_distance_threshold  # unused variable (poc_homography/calibration/lens_distortion/line_detection.py:61)
 _.length_pixels  # unused property (poc_homography/calibration/lens_distortion/models.py:76)
 _.angle_degrees  # unused property (poc_homography/calibration/lens_distortion/models.py:83)
@@ -54,7 +53,6 @@ EDGE_FACTOR_CENTER  # unused variable (poc_homography/homography/intrinsic_extri
 EDGE_FACTOR_EDGE  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:120) - class constant
 EDGE_FACTOR_CORNER_DECAY  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:121)
 EDGE_FACTOR_MIN  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:122) - class constant
-_.get_distortion_coefficients  # unused method (poc_homography/homography/intrinsic_extrinsic.py:276)
 _.compute_from_config  # unused method (poc_homography/homography/intrinsic_extrinsic.py:481)
 _.project_point  # unused method (poc_homography/homography/intrinsic_extrinsic.py:603) - interface impl
 _.project_points  # unused method (poc_homography/homography/intrinsic_extrinsic.py:626)

@@ -21,6 +21,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 from homography_web.frame_utils import (
+    CALIBRATIONS_DIR,
     DATA_MAPS_DIR,
     GCPS_DIR,
     LINES_DIR,
@@ -43,6 +44,7 @@ from homography_web.frame_utils import (
 from line_picker.state import Line, from_line_repo
 from PIL import Image
 
+from poc_homography.calibration.lens_distortion.calibration_table import load_calibration_for_camera
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
@@ -63,6 +65,64 @@ def _require_map_id(tenant_id: str) -> str | None:
     """Return the map ID for a tenant, or None if no map is configured."""
     entity = get_map_from_tenant_id(tenant_id)
     return entity.id if entity else None
+
+
+def _load_distortion_params(camera_name: str, zoom_factor: float) -> dict[str, float] | None:
+    """Load interpolated distortion + intrinsic params for a camera at a zoom level.
+
+    Returns dict with keys k1,k2,k3,p1,p2,fx,fy,cx,cy or None if unavailable.
+    """
+    try:
+        table = load_calibration_for_camera(camera_name, CALIBRATIONS_DIR)
+        if table is None:
+            return None
+        coeffs = table.get_coefficients(zoom_factor)
+        intrinsics = table.get_intrinsics(zoom_factor)
+        if intrinsics is None:
+            return None
+        return {
+            "k1": float(coeffs.k1),
+            "k2": float(coeffs.k2),
+            "k3": float(coeffs.k3),
+            "p1": float(coeffs.p1),
+            "p2": float(coeffs.p2),
+            **intrinsics,
+        }
+    except Exception:
+        return None
+
+
+def _get_camera_context(test_case: dict) -> tuple[str, float] | None:
+    """Extract camera_name and zoom_factor from a test case dict.
+
+    Returns (camera_name, zoom_factor) or None if not available.
+    """
+    image_filename = test_case.get("image")
+    if not image_filename:
+        return None
+    frame = image_filename_to_frame(image_filename)
+    if frame is None:
+        return None
+    camera_name = frame.camera_name
+    zoom = test_case.get("camera_status", {}).get("zoom")
+    if zoom is None:
+        return None
+    return (camera_name, zoom)
+
+
+def _distortion_kwargs(test_case: dict) -> dict[str, float]:
+    """Build distortion kwargs for MapPointHomography from a test case.
+
+    Returns empty dict if distortion context is unavailable.
+    """
+    ctx = _get_camera_context(test_case)
+    if ctx is None:
+        return {}
+    camera_name, zoom_factor = ctx
+    params = _load_distortion_params(camera_name, zoom_factor)
+    if params is None:
+        return {}
+    return params
 
 
 def _get_map_geotiff_file(tenant_id: str) -> Path | None:
@@ -434,7 +494,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
 
     # Compute homography
     try:
-        homography = MapPointHomography(map_id=registry.map_id)
+        homography = MapPointHomography(map_id=registry.map_id, **_distortion_kwargs(test_case))
         result = homography.compute_from_gcps(
             gcps=annotations,
             map_registry=registry,
@@ -762,7 +822,8 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
     if map_id is None:
         return _no_map_error()
     try:
-        homography = MapPointHomography(map_id=map_id)
+        dist_kw = _distortion_kwargs(line_test_case) if test_case_name else {}
+        homography = MapPointHomography(map_id=map_id, **dist_kw)
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
             line_registry=line_registry,
@@ -874,7 +935,7 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         if map_id is None:
             return _no_map_error()
         try:
-            homography = MapPointHomography(map_id=map_id)
+            homography = MapPointHomography(map_id=map_id, **_distortion_kwargs(line_test_case))
             line_result = homography.compute_from_lines(
                 line_annotations=line_annotations,
                 line_registry=line_registry,
@@ -933,7 +994,9 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
 
         # Compute homography from point annotations
         try:
-            homography = MapPointHomography(map_id=gcp_registry.map_id)
+            homography = MapPointHomography(
+                map_id=gcp_registry.map_id, **_distortion_kwargs(line_test_case)
+            )
             homography.compute_from_gcps(
                 gcps=annotations,
                 map_registry=gcp_registry,
@@ -979,7 +1042,9 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
         camera_end = np.array([line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]])
 
         # Project camera line endpoints to map
-        projected_start = homography.camera_to_map(PixelPoint.create(camera_start[0], camera_start[1]))
+        projected_start = homography.camera_to_map(
+            PixelPoint.create(camera_start[0], camera_start[1])
+        )
         projected_end = homography.camera_to_map(PixelPoint.create(camera_end[0], camera_end[1]))
         projected_start_map = np.array([projected_start.pixel_x, projected_start.pixel_y])
         projected_end_map = np.array([projected_end.pixel_x, projected_end.pixel_y])
