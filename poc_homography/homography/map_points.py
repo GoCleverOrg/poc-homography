@@ -136,18 +136,18 @@ class MapPointHomography:
 
         self._has_distortion: bool = all_set
         # Store params once so _undistort/_distort can forward them.
+        # float() casts are no-ops but let pyright narrow from float|None.
         if all_set:
-            assert k1 is not None  # help pyright narrow from float|None
             self._dist_kwargs: dict[str, float] = {
-                "k1": k1,
-                "k2": k2,  # type: ignore[dict-item]
-                "k3": k3,  # type: ignore[dict-item]
-                "p1": p1,  # type: ignore[dict-item]
-                "p2": p2,  # type: ignore[dict-item]
-                "fx": fx,  # type: ignore[dict-item]
-                "fy": fy,  # type: ignore[dict-item]
-                "cx": cx,  # type: ignore[dict-item]
-                "cy": cy,  # type: ignore[dict-item]
+                "k1": float(k1),  # type: ignore[arg-type]
+                "k2": float(k2),  # type: ignore[arg-type]
+                "k3": float(k3),  # type: ignore[arg-type]
+                "p1": float(p1),  # type: ignore[arg-type]
+                "p2": float(p2),  # type: ignore[arg-type]
+                "fx": float(fx),  # type: ignore[arg-type]
+                "fy": float(fy),  # type: ignore[arg-type]
+                "cx": float(cx),  # type: ignore[arg-type]
+                "cy": float(cy),  # type: ignore[arg-type]
             }
         else:
             self._dist_kwargs = {}
