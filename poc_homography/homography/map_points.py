@@ -134,11 +134,12 @@ class MapPointHomography:
                 "All nine distortion/intrinsic parameters must be provided together, or all omitted"
             )
 
-        # Store as a single kwargs dict so _undistort/_distort can forward it
-        # without repeating nine type-ignore annotations in each method.
+        self._has_distortion: bool = all_set
+        # Store params once so _undistort/_distort can forward them.
         if all_set:
+            assert k1 is not None  # help pyright narrow from float|None
             self._dist_kwargs: dict[str, float] = {
-                "k1": k1,  # type: ignore[dict-item]
+                "k1": k1,
                 "k2": k2,  # type: ignore[dict-item]
                 "k3": k3,  # type: ignore[dict-item]
                 "p1": p1,  # type: ignore[dict-item]
@@ -150,7 +151,6 @@ class MapPointHomography:
             }
         else:
             self._dist_kwargs = {}
-        self._has_distortion: bool = all_set
 
     def _undistort_camera_pixels(self, pixels: np.ndarray) -> np.ndarray:
         """Apply lens undistortion to camera pixel array if distortion params are set.
@@ -159,7 +159,7 @@ class MapPointHomography:
         """
         if not self._has_distortion:
             return pixels
-        return undistort_points(pixels, **self._dist_kwargs)
+        return undistort_points(pixels, **self._dist_kwargs)  # type: ignore[arg-type]
 
     def _distort_camera_pixels(self, pixels: np.ndarray) -> np.ndarray:
         """Apply forward distortion to camera pixel array if distortion params are set.
@@ -168,7 +168,7 @@ class MapPointHomography:
         """
         if not self._has_distortion:
             return pixels
-        return distort_points(pixels, **self._dist_kwargs)
+        return distort_points(pixels, **self._dist_kwargs)  # type: ignore[arg-type]
 
     def _require_forward_homography(self) -> npt.NDArray[np.float64]:
         """Return forward homography matrix or raise RuntimeError if not computed."""
