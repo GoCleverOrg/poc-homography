@@ -33,6 +33,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import (
     CameraCalibrationTable,
     ZoomCalibrationEntry,
 )
+from poc_homography.calibration.lens_distortion.ddd_sync import sync_to_ddd_repo
 from poc_homography.calibration.lens_distortion.distortion_solver import (
     DistortionSolver,
     SolverConfig,
@@ -330,9 +331,8 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         if len(result.line_errors) > 10:
             print(f"  ... and {len(result.line_errors) - 10} more")
 
-    # Save results if requested
-    if args.output:
-        output_path = Path(args.output)
+    # Persist results only on successful calibration
+    if result.success and result.is_improved():
         camera_id = args.camera_id or "unknown_camera"
         zoom = args.zoom or 1.0
 
@@ -341,12 +341,19 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
             zoom_factor=zoom,
             distortion=result.distortion,
             validation_rmse=result.overall_rmse,
-            source_images=[str(p) for p in images[:10]],  # First 10 as reference
+            source_images=[str(p) for p in images[:10]],
             num_lines_used=len(all_lines),
         )
         table.add_entry(entry)
-        table.save(output_path)
-        logger.info(f"Saved calibration to {output_path}")
+        try:
+            sync_to_ddd_repo(table)
+        except Exception:
+            logger.warning("Failed to sync to DDD repo", exc_info=True)
+
+        if args.output:
+            output_path = Path(args.output)
+            table.save(output_path)
+            logger.info(f"Saved calibration to {output_path}")
 
     # Also output JSON for programmatic use
     if args.json:
@@ -564,6 +571,10 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
         return 1
 
     # Save results (including partial success)
+    try:
+        sync_to_ddd_repo(table)
+    except Exception:
+        logger.warning("Failed to sync to DDD repo", exc_info=True)
     if args.output:
         output_path = Path(args.output)
         table.save(output_path)
