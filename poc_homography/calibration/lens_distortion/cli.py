@@ -331,28 +331,29 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         if len(result.line_errors) > 10:
             print(f"  ... and {len(result.line_errors) - 10} more")
 
-    # Persist results
-    camera_id = args.camera_id or "unknown_camera"
-    zoom = args.zoom or 1.0
+    # Persist results only on successful calibration
+    if result.success and result.is_improved():
+        camera_id = args.camera_id or "unknown_camera"
+        zoom = args.zoom or 1.0
 
-    table = CameraCalibrationTable(camera_id=camera_id)
-    entry = ZoomCalibrationEntry.from_solver_result(
-        zoom_factor=zoom,
-        distortion=result.distortion,
-        validation_rmse=result.overall_rmse,
-        source_images=[str(p) for p in images[:10]],
-        num_lines_used=len(all_lines),
-    )
-    table.add_entry(entry)
-    try:
-        sync_to_ddd_repo(table)
-    except Exception:
-        logger.warning("Failed to sync to DDD repo", exc_info=True)
+        table = CameraCalibrationTable(camera_id=camera_id)
+        entry = ZoomCalibrationEntry.from_solver_result(
+            zoom_factor=zoom,
+            distortion=result.distortion,
+            validation_rmse=result.overall_rmse,
+            source_images=[str(p) for p in images[:10]],
+            num_lines_used=len(all_lines),
+        )
+        table.add_entry(entry)
+        try:
+            sync_to_ddd_repo(table)
+        except Exception:
+            logger.warning("Failed to sync to DDD repo", exc_info=True)
 
-    if args.output:
-        output_path = Path(args.output)
-        table.save(output_path)
-        logger.info(f"Saved calibration to {output_path}")
+        if args.output:
+            output_path = Path(args.output)
+            table.save(output_path)
+            logger.info(f"Saved calibration to {output_path}")
 
     # Also output JSON for programmatic use
     if args.json:

@@ -14,7 +14,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "lens_calibrations"
+def _find_project_root() -> Path:
+    """Walk up from this file to find the project root (contains pyproject.toml)."""
+    current = Path(__file__).resolve().parent
+    for parent in (current, *current.parents):
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return current.parents[2]  # fallback: assume standard layout
+
+
+DEFAULT_DATA_DIR = _find_project_root() / "data" / "lens_calibrations"
 
 
 def sync_to_ddd_repo(
