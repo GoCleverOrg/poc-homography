@@ -589,15 +589,9 @@ def load_lens_distortion_as_table(
         Dictionary mapping zoom_factor to ``{k1, k2, k3, p1, p2}`` dicts,
         or ``None`` if no calibration file exists.
     """
-    calibration_dir = Path(calibration_dir)
-    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
-
-    if not calibration_file.exists():
-        return None
-
     try:
-        table = CameraCalibrationTable.load(calibration_file)
-        if not table.entries:
+        table = load_calibration_for_camera(camera_id, calibration_dir)
+        if table is None or not table.entries:
             return None
 
         result: dict[float, dict[str, float]] = {}

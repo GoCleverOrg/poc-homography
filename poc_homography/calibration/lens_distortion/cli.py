@@ -331,23 +331,27 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         if len(result.line_errors) > 10:
             print(f"  ... and {len(result.line_errors) - 10} more")
 
-    # Save results if requested
+    # Persist results
+    camera_id = args.camera_id or "unknown_camera"
+    zoom = args.zoom or 1.0
+
+    table = CameraCalibrationTable(camera_id=camera_id)
+    entry = ZoomCalibrationEntry.from_solver_result(
+        zoom_factor=zoom,
+        distortion=result.distortion,
+        validation_rmse=result.overall_rmse,
+        source_images=[str(p) for p in images[:10]],
+        num_lines_used=len(all_lines),
+    )
+    table.add_entry(entry)
+    try:
+        sync_to_ddd_repo(table)
+    except Exception:
+        logger.warning("Failed to sync to DDD repo", exc_info=True)
+
     if args.output:
         output_path = Path(args.output)
-        camera_id = args.camera_id or "unknown_camera"
-        zoom = args.zoom or 1.0
-
-        table = CameraCalibrationTable(camera_id=camera_id)
-        entry = ZoomCalibrationEntry.from_solver_result(
-            zoom_factor=zoom,
-            distortion=result.distortion,
-            validation_rmse=result.overall_rmse,
-            source_images=[str(p) for p in images[:10]],  # First 10 as reference
-            num_lines_used=len(all_lines),
-        )
-        table.add_entry(entry)
         table.save(output_path)
-        sync_to_ddd_repo(table)
         logger.info(f"Saved calibration to {output_path}")
 
     # Also output JSON for programmatic use
@@ -566,7 +570,10 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
         return 1
 
     # Save results (including partial success)
-    sync_to_ddd_repo(table)
+    try:
+        sync_to_ddd_repo(table)
+    except Exception:
+        logger.warning("Failed to sync to DDD repo", exc_info=True)
     if args.output:
         output_path = Path(args.output)
         table.save(output_path)
