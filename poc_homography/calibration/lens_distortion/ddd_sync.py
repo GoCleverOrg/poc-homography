@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 def _find_project_root() -> Path:
     """Walk up from this file to find the project root (contains pyproject.toml)."""
     current = Path(__file__).resolve().parent
