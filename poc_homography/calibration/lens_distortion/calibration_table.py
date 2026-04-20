@@ -519,7 +519,8 @@ def load_calibration_for_camera(
 ) -> CameraCalibrationTable | None:
     """Load calibration table for a camera from standard location.
 
-    Looks for file named '{camera_id}_calibration.yaml' in calibration_dir.
+    Checks for both legacy (``{camera_id}_calibration.yaml``) and DDD repo
+    (``{camera_id}.yaml``) file naming conventions.
 
     Args:
         camera_id: Camera identifier.
@@ -529,13 +530,45 @@ def load_calibration_for_camera(
         CameraCalibrationTable if found, None otherwise.
     """
     calibration_dir = Path(calibration_dir)
-    calibration_file = calibration_dir / f"{camera_id}_calibration.yaml"
 
-    if calibration_file.exists():
-        return CameraCalibrationTable.load(calibration_file)
+    # Legacy format: {camera_id}_calibration.yaml
+    legacy_file = calibration_dir / f"{camera_id}_calibration.yaml"
+    if legacy_file.exists():
+        return CameraCalibrationTable.load(legacy_file)
+
+    # DDD repo format: {camera_id}.yaml (entries have nested 'distortion' dict)
+    ddd_file = calibration_dir / f"{camera_id}.yaml"
+    if ddd_file.exists():
+        return _load_from_ddd_format(ddd_file)
 
     logger.debug(f"No calibration file found for camera {camera_id}")
     return None
+
+
+def _load_from_ddd_format(path: Path) -> CameraCalibrationTable:
+    """Load a CameraCalibrationTable from a DDD-repo YAML file.
+
+    DDD files use ``id`` instead of ``camera_id`` and nest distortion
+    coefficients under an ``entries[].distortion`` dict.
+    """
+    with open(path) as f:
+        data = yaml.safe_load(f)
+
+    if data is None:
+        raise ValueError(f"Calibration file is empty: {path}")
+
+    # Normalize DDD schema → legacy schema
+    data.setdefault("camera_id", data.pop("id", path.stem))
+    for entry in data.get("entries", []):
+        distortion = entry.pop("distortion", None)
+        if distortion and "k1" not in entry:
+            entry["k1"] = distortion.get("k1", 0.0)
+            entry["k2"] = distortion.get("k2", 0.0)
+            entry["k3"] = distortion.get("k3", 0.0)
+            entry["p1"] = distortion.get("p1", 0.0)
+            entry["p2"] = distortion.get("p2", 0.0)
+
+    return CameraCalibrationTable.from_dict(data)
 
 
 def load_lens_distortion_as_table(

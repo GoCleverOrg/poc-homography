@@ -33,6 +33,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import (
     CameraCalibrationTable,
     ZoomCalibrationEntry,
 )
+from poc_homography.calibration.lens_distortion.ddd_sync import sync_to_ddd_repo
 from poc_homography.calibration.lens_distortion.distortion_solver import (
     DistortionSolver,
     SolverConfig,
@@ -346,6 +347,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         )
         table.add_entry(entry)
         table.save(output_path)
+        sync_to_ddd_repo(table)
         logger.info(f"Saved calibration to {output_path}")
 
     # Also output JSON for programmatic use
@@ -564,6 +566,7 @@ def cmd_calibrate_batch(args: argparse.Namespace) -> int:
         return 1
 
     # Save results (including partial success)
+    sync_to_ddd_repo(table)
     if args.output:
         output_path = Path(args.output)
         table.save(output_path)
