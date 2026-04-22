@@ -39,10 +39,25 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 
-from poc_homography.infrastructure.database import get_session  # noqa: E402
+from camera_diagnostic.models import DiagnosticSession, StressTestSession  # noqa: E402
+from camera_survey.models import SurveySession  # noqa: E402
 
-# -- YAML repositories -----------------------------------------------------
+from poc_homography.infrastructure.database import get_session  # noqa: E402
 from poc_homography.infrastructure.repositories import (  # noqa: E402
+    RepoPostgresAnnotation,
+    RepoPostgresCalibrationLineTraceSet,
+    RepoPostgresCameraCalibration,
+    RepoPostgresCameraConfig,
+    RepoPostgresCapturedFrame,
+    RepoPostgresDiagnosticSession,
+    RepoPostgresGroundControlPoint,
+    RepoPostgresLensCalibrationTable,
+    RepoPostgresLine,
+    RepoPostgresLineAnnotation,
+    RepoPostgresMap,
+    RepoPostgresStressTestSession,
+    RepoPostgresSurveySession,
+    RepoPostgresTenant,
     RepoYamlAnnotation,
     RepoYamlCalibrationLineTraceSet,
     RepoYamlCameraCalibration,
@@ -58,54 +73,6 @@ from poc_homography.infrastructure.repositories import (  # noqa: E402
     RepoYamlSurveySession,
     RepoYamlTenant,
 )
-
-# -- Postgres repositories --------------------------------------------------
-from poc_homography.infrastructure.repositories.repo_postgres_annotation import (  # noqa: E402
-    RepoPostgresAnnotation,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_calibration_line_trace_set import (  # noqa: E402
-    RepoPostgresCalibrationLineTraceSet,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_camera_calibration import (  # noqa: E402
-    RepoPostgresCameraCalibration,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_camera_config import (  # noqa: E402
-    RepoPostgresCameraConfig,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_captured_frame import (  # noqa: E402
-    RepoPostgresCapturedFrame,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_diagnostic_session import (  # noqa: E402
-    RepoPostgresDiagnosticSession,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_ground_control_point import (  # noqa: E402
-    RepoPostgresGroundControlPoint,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_lens_calibration_table import (  # noqa: E402
-    RepoPostgresLensCalibrationTable,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_line import (  # noqa: E402
-    RepoPostgresLine,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_line_annotation import (  # noqa: E402
-    RepoPostgresLineAnnotation,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_map import (  # noqa: E402
-    RepoPostgresMap,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_stress_test_session import (  # noqa: E402
-    RepoPostgresStressTestSession,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_survey_session import (  # noqa: E402
-    RepoPostgresSurveySession,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_tenant import (  # noqa: E402
-    RepoPostgresTenant,
-)
-
-# -- Session entity factories (webapp-layer models) -------------------------
-from camera_diagnostic.models import DiagnosticSession, StressTestSession  # noqa: E402
-from camera_survey.models import SurveySession  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,

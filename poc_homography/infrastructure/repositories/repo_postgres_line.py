@@ -9,7 +9,7 @@ from sqlalchemy import select
 from poc_homography.domain.entities.line import Line
 from poc_homography.infrastructure.models.line import LineModel
 from poc_homography.infrastructure.repositories.base import (
-    MixinRepoMapFilterPostgres,
+    MixinRepoMapFilter,
     RepoPostgres,
 )
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class RepoPostgresLine(
-    MixinRepoMapFilterPostgres,
+    MixinRepoMapFilter,
     RepoPostgres[Line],
 ):
     """Repository for Line entities stored in PostgreSQL.

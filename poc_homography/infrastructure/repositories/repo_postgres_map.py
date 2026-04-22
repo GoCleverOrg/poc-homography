@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from poc_homography.domain.entities.map import Map
 from poc_homography.infrastructure.models.map import MapModel
 from poc_homography.infrastructure.repositories.base import (
-    MixinRepoTenantFilterPostgres,
+    MixinRepoTenantFilter,
     RepoPostgres,
 )
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-class RepoPostgresMap(MixinRepoTenantFilterPostgres, RepoPostgres[Map]):
+class RepoPostgresMap(MixinRepoTenantFilter, RepoPostgres[Map]):
     """Repository for Map entities stored in PostgreSQL.
 
     The ``photo`` and ``geotiff`` value objects are stored as JSONB columns.

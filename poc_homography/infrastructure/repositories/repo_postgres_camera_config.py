@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 from poc_homography.domain.entities.camera_config import CameraConfig
 from poc_homography.infrastructure.models.camera_config import CameraConfigModel
 from poc_homography.infrastructure.repositories.base import (
-    MixinRepoMapFilterPostgres,
-    MixinRepoTenantFilterPostgres,
+    MixinRepoMapFilter,
+    MixinRepoTenantFilter,
     RepoPostgres,
 )
 
@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
 
 class RepoPostgresCameraConfig(
-    MixinRepoTenantFilterPostgres,
-    MixinRepoMapFilterPostgres,
+    MixinRepoTenantFilter,
+    MixinRepoMapFilter,
     RepoPostgres[CameraConfig],
 ):
     """Repository for CameraConfig entities stored in PostgreSQL.

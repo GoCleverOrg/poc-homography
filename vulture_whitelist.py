@@ -220,6 +220,9 @@ save_to_gcp_repo  # unused function (poc_homography/map_points/gcp_registry.py:2
 list_map_ids  # unused function (poc_homography/map_points/gcp_registry.py:227) - legacy bridge
 error_px  # unused variable (poc_homography/validation/camera_model.py:65) - NamedTuple field
 
+# -- PostgreSQL session repository base class (abstract hooks called by base CRUD) --
+_.get_session_dir  # unused method (infrastructure/repositories/repo_postgres_survey_session.py) - YAML compat API
+
 # -- SQLAlchemy ORM relationship attributes (used by SA for joins/back_populates) --
 _.map  # unused attribute - SA relationship (infrastructure/models/camera_config.py)
 _.camera_calibration  # unused attribute - SA relationship (infrastructure/models/camera_config.py)

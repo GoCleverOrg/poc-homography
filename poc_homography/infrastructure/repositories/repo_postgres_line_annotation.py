@@ -24,7 +24,7 @@ class RepoPostgresLineAnnotation(RepoPostgres[LineAnnotation]):
         super().__init__(session, LineAnnotationModel, LineAnnotation)
 
     def _entity_to_row(self, entity: LineAnnotation) -> dict[str, Any]:
-        d: dict[str, Any] = {
+        return {
             "id": entity.id,
             "line_id": entity.line_id,
             "frame_id": entity.frame_id,
@@ -37,4 +37,3 @@ class RepoPostgresLineAnnotation(RepoPostgres[LineAnnotation]):
                 else None
             ),
         }
-        return d

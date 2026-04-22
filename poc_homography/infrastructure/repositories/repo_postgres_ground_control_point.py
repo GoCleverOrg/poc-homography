@@ -9,7 +9,7 @@ from poc_homography.infrastructure.models.ground_control_point import (
     GroundControlPointModel,
 )
 from poc_homography.infrastructure.repositories.base import (
-    MixinRepoMapFilterPostgres,
+    MixinRepoMapFilter,
     RepoPostgres,
 )
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class RepoPostgresGroundControlPoint(
-    MixinRepoMapFilterPostgres,
+    MixinRepoMapFilter,
     RepoPostgres[GroundControlPoint],
 ):
     """Repository for GroundControlPoint entities stored in PostgreSQL.
