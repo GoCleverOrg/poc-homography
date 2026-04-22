@@ -72,11 +72,6 @@ class RepoPostgresStressTestSession:
             return datetime.fromisoformat(str(raw))
         return datetime.now()
 
-    @staticmethod
-    def _extract_session_id(data: dict[str, Any]) -> str:
-        """Extract the session id from the manifest dict."""
-        return str(data.get("id", ""))
-
     def _row_to_entity(self, row: StressTestSessionModel) -> Any:
         return self._entity_factory(row.data)
 
