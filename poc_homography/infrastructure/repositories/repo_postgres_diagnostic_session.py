@@ -10,7 +10,7 @@ indexed columns for tenant_id, camera_id, and created_date.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
@@ -66,7 +66,7 @@ class RepoPostgresDiagnosticSession:
         raw = data.get("session", {}).get("created_at")
         if raw:
             return datetime.fromisoformat(str(raw))
-        return datetime.now()
+        return datetime.now(tz=timezone.utc)
 
     def _row_to_entity(self, row: DiagnosticSessionModel) -> Any:
         return self._entity_factory(row.data)

@@ -36,4 +36,7 @@ class RepoPostgresCameraConfig(
         data = entity.to_dict()
         # Persist actual credential (to_dict masks the password by default).
         data["credential"] = entity.credential.to_dict(include_secret=True)
+        # to_dict() omits ip_address when None/falsy; always include it so
+        # UPDATE statements can clear a previously-set value.
+        data["ip_address"] = entity.ip_address
         return data

@@ -29,8 +29,9 @@ class RepoPostgresCapturedFrame(RepoPostgres[CapturedFrame]):
     queries.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, frames_dir: Path | None = None) -> None:
         super().__init__(session, CapturedFrameModel, CapturedFrame)
+        self._frames_dir = frames_dir
 
     # -- serialisation overrides -------------------------------------------
 
@@ -131,16 +132,21 @@ class RepoPostgresCapturedFrame(RepoPostgres[CapturedFrame]):
 
     # -- filesystem helpers (thin wrappers) --------------------------------
 
-    @staticmethod
-    def get_image_path(entity: CapturedFrame, frames_dir: Path) -> Path:
+    def get_image_path(self, entity: CapturedFrame) -> Path:
         """Return the absolute path to a frame's image file.
 
         Args:
             entity: The captured frame entity.
-            frames_dir: Root directory where frame images are stored
-                        (typically ``data/frames/``).
 
         Returns:
             Absolute path to the image file.
+
+        Raises:
+            ValueError: If *frames_dir* was not provided at construction time.
         """
-        return frames_dir / entity.map_id / entity.camera_name / str(entity.image_path)
+        if self._frames_dir is None:
+            raise ValueError(
+                "Cannot resolve image path: 'frames_dir' was not provided "
+                "when constructing RepoPostgresCapturedFrame."
+            )
+        return self._frames_dir / entity.map_id / entity.camera_name / str(entity.image_path)
