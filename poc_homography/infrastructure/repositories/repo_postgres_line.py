@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
 
 class RepoPostgresLine(
-    MixinRepoMapFilter,
     RepoPostgres[Line],
+    MixinRepoMapFilter,
 ):
     """Repository for Line entities stored in PostgreSQL.
 

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-class RepoPostgresMap(MixinRepoTenantFilter, RepoPostgres[Map]):
+class RepoPostgresMap(RepoPostgres[Map], MixinRepoTenantFilter):
     """Repository for Map entities stored in PostgreSQL.
 
     The ``photo`` and ``geotiff`` value objects are stored as JSONB columns.

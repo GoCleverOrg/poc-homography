@@ -118,6 +118,7 @@ def _migrate_domain_entities(
     label: str,
     yaml_repo: Any,
     pg_repo: Any,
+    session: Any,
 ) -> _MigrationStats:
     """Migrate entities that follow the standard RepoYaml / RepoPostgres pattern.
 
@@ -134,8 +135,10 @@ def _migrate_domain_entities(
                 stats.skipped += 1
                 continue
             pg_repo.save(entity)
+            session.commit()
             stats.migrated += 1
         except Exception:
+            session.rollback()
             stats.errors += 1
             logger.exception("[%s] Failed to migrate entity %s", label, entity.id)
 
@@ -147,6 +150,7 @@ def _migrate_session_entities(
     label: str,
     yaml_repo: Any,
     pg_repo: Any,
+    session: Any,
 ) -> _MigrationStats:
     """Migrate date-partitioned session entities.
 
@@ -165,8 +169,10 @@ def _migrate_session_entities(
                 stats.skipped += 1
                 continue
             pg_repo.save(entity)
+            session.commit()
             stats.migrated += 1
         except Exception:
+            session.rollback()
             stats.errors += 1
             logger.exception("[%s] Failed to migrate session %s", label, entity.id)
 
@@ -199,6 +205,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="Tenants",
                 yaml_repo=RepoYamlTenant(tenants_dir),
                 pg_repo=RepoPostgresTenant(session),
+                session=session,
             )
         else:
             logger.warning("Skipping Tenants: directory %s not found", tenants_dir)
@@ -212,6 +219,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="Maps",
                 yaml_repo=RepoYamlMap(maps_dir),
                 pg_repo=RepoPostgresMap(session),
+                session=session,
             )
         else:
             logger.warning("Skipping Maps: directory %s not found", maps_dir)
@@ -225,6 +233,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="CameraConfigs",
                 yaml_repo=RepoYamlCameraConfig(cameras_dir),
                 pg_repo=RepoPostgresCameraConfig(session),
+                session=session,
             )
         else:
             logger.warning("Skipping CameraConfigs: directory %s not found", cameras_dir)
@@ -241,6 +250,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="CameraCalibrations",
                 yaml_repo=RepoYamlCameraCalibration(camera_calibrations_dir),
                 pg_repo=RepoPostgresCameraCalibration(session),
+                session=session,
             )
         else:
             logger.info(
@@ -257,6 +267,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="LensCalibrationTables",
                 yaml_repo=RepoYamlLensCalibrationTable(lens_dir),
                 pg_repo=RepoPostgresLensCalibrationTable(session),
+                session=session,
             )
         else:
             logger.warning(
@@ -272,6 +283,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="CapturedFrames",
                 yaml_repo=RepoYamlCapturedFrame(frames_dir, create_dir=False),
                 pg_repo=RepoPostgresCapturedFrame(session),
+                session=session,
             )
         else:
             logger.warning(
@@ -287,6 +299,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="Annotations",
                 yaml_repo=RepoYamlAnnotation(annotations_dir),
                 pg_repo=RepoPostgresAnnotation(session),
+                session=session,
             )
         else:
             logger.info(
@@ -303,6 +316,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="GroundControlPoints",
                 yaml_repo=RepoYamlGroundControlPoint(gcps_dir),
                 pg_repo=RepoPostgresGroundControlPoint(session),
+                session=session,
             )
         else:
             logger.warning(
@@ -318,6 +332,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="Lines",
                 yaml_repo=RepoYamlLine(lines_dir),
                 pg_repo=RepoPostgresLine(session),
+                session=session,
             )
         else:
             logger.warning("Skipping Lines: directory %s not found", lines_dir)
@@ -331,6 +346,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="LineAnnotations",
                 yaml_repo=RepoYamlLineAnnotation(line_ann_dir),
                 pg_repo=RepoPostgresLineAnnotation(session),
+                session=session,
             )
         else:
             logger.warning(
@@ -346,6 +362,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 label="CalibrationLineTraceSets",
                 yaml_repo=RepoYamlCalibrationLineTraceSet(cal_traces_dir),
                 pg_repo=RepoPostgresCalibrationLineTraceSet(session),
+                session=session,
             )
         else:
             logger.info(
@@ -366,6 +383,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 pg_repo=RepoPostgresDiagnosticSession(
                     session, DiagnosticSession.from_dict,
                 ),
+                session=session,
             )
         else:
             logger.warning(
@@ -385,6 +403,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 pg_repo=RepoPostgresSurveySession(
                     session, SurveySession.from_dict,
                 ),
+                session=session,
             )
         else:
             logger.info(
@@ -405,6 +424,7 @@ def run_migration(data_dir: Path) -> dict[str, _MigrationStats]:
                 pg_repo=RepoPostgresStressTestSession(
                     session, StressTestSession.from_dict,
                 ),
+                session=session,
             )
         else:
             logger.warning(
