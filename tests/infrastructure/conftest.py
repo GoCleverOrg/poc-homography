@@ -26,7 +26,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     if not os.environ.get("DATABASE_URL"):
         skip = pytest.mark.skip(reason="DATABASE_URL not set")
         for item in items:
-            if "test_repo_postgres" in str(item.fspath):
+            if item.get_closest_marker("integration"):
                 item.add_marker(skip)
 
 

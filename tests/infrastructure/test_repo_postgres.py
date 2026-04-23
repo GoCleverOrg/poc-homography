@@ -255,16 +255,6 @@ def _persist_map(session: Session, tenant_id: str, map_id: str | None = None) ->
     return m
 
 
-def _persist_camera_config(
-    session: Session,
-    tenant_id: str,
-    map_id: str,
-    name: str | None = None,
-) -> CameraConfig:
-    cc = _make_camera_config(tenant_id, map_id, name)
-    RepoPostgresCameraConfig(session).save(cc)
-    return cc
-
 
 def _persist_frame(
     session: Session,
