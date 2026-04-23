@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -86,13 +87,48 @@ WSGI_APPLICATION = "homography_web.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+#
+# Database users (principle of least privilege):
+#   - hom_migrate: DDL + DML (for migrations, CI only)
+#   - hom_app: DML on all tables, camera_configs is read-only (runtime)
+#   - hom_infra: Only camera_configs table (for infra project)
+#
+# Non-sensitive config is hardcoded below. Only password comes from env.
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+# Neon PostgreSQL connection config (non-sensitive, committed to source)
+NEON_DB_HOST = "ep-broad-rice-ag826foj-pooler.c-2.eu-central-1.aws.neon.tech"
+NEON_DB_NAME = "hom"
+NEON_DB_PORT = 5432
+
+# Check for database password (sensitive, from environment)
+DB_PASSWORD = os.getenv("DATABASE_PASSWORD")
+
+# For migrations, use hom_migrate user (set DATABASE_USER=hom_migrate in CI)
+DB_USER = os.getenv("DATABASE_USER", "hom_app")
+
+if DB_PASSWORD:
+    # PostgreSQL with Neon (production/CI)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": NEON_DB_NAME,
+            "USER": DB_USER,
+            "PASSWORD": DB_PASSWORD,
+            "HOST": NEON_DB_HOST,
+            "PORT": NEON_DB_PORT,
+            "OPTIONS": {
+                "sslmode": "require",
+            },
+        }
     }
-}
+else:
+    # Fallback to SQLite for local development (no DATABASE_PASSWORD set)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 # Password validation
