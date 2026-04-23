@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 
 
 class RepoPostgresCameraConfig(
+    RepoPostgres[CameraConfig],
     MixinRepoTenantFilter,
     MixinRepoMapFilter,
-    RepoPostgres[CameraConfig],
 ):
     """Repository for CameraConfig entities stored in PostgreSQL.
 

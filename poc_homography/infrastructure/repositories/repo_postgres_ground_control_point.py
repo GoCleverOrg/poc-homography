@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
 
 class RepoPostgresGroundControlPoint(
-    MixinRepoMapFilter,
     RepoPostgres[GroundControlPoint],
+    MixinRepoMapFilter,
 ):
     """Repository for GroundControlPoint entities stored in PostgreSQL.
 
