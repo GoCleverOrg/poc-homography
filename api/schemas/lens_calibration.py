@@ -160,18 +160,6 @@ class LoadCalibrationRequest(BaseModel):
     camera_id: str
 
 
-class CalibrationEntryOut(BaseModel):
-    """Serialised zoom-calibration entry."""
-
-    zoom_factor: float
-    coefficients: DistortionCoefficients
-    calibration_date: str | None = None
-    validation_rmse: float | None = None
-    num_lines_used: int | None = None
-    intrinsics: IntrinsicsOut | None = None
-    reprojection_error_px: float | None = None
-
-
 class LoadCalibrationResponse(BaseModel):
     """Response for ``POST /api/load/``."""
 
@@ -229,13 +217,6 @@ class LineTraceSetsResponse(BaseModel):
     """Response for ``GET /api/line-trace-sets/``."""
 
     names: list[str]
-
-
-class LineTraceOut(BaseModel):
-    """Single line trace in a set."""
-
-    line_id: str
-    points: list[list[float]]
 
 
 class LineTraceSetDetailResponse(BaseModel):

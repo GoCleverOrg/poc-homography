@@ -35,9 +35,8 @@ def _read_tiff_as_rgb(image_path: Path, region: tuple[int, int, int, int] | None
         # Apply region crop first (operates on the numpy array).
         if region is not None:
             x0, y0, x1, y1 = region
-            if data.ndim == 2:  # noqa: PLR2004
-                data = data[y0:y1, x0:x1]
-            elif data.ndim == 3:  # noqa: PLR2004
+            if data.ndim <= 3:  # noqa: PLR2004
+                # (H, W) or (H, W, C) -- spatial dims are the first two
                 data = data[y0:y1, x0:x1]
             else:
                 # Channel-first layout (C, H, W)
@@ -54,19 +53,11 @@ def _read_tiff_as_rgb(image_path: Path, region: tuple[int, int, int, int] | None
             return img.convert("RGB")
 
         # ndim > 3 -- channel-first layout
-        if data.shape[0] in (1, 3, 4):
-            if data.shape[0] == 1:
-                img = Image.fromarray(normalize_array(data[0]), mode="L")
-                return img.convert("RGB")
-            img_array = np.transpose(data[:3], (1, 2, 0))
-            return Image.fromarray(normalize_array(img_array), mode="RGB")
-
-        # Fallback
-        if data.ndim == 2:  # noqa: PLR2004
-            img = Image.fromarray(normalize_array(data), mode="L")
-        else:
-            img = Image.fromarray(normalize_array(data[..., 0] if data.ndim == 3 else data[0]), mode="L")  # noqa: PLR2004
-        return img.convert("RGB")
+        if data.shape[0] == 1:
+            img = Image.fromarray(normalize_array(data[0]), mode="L")
+            return img.convert("RGB")
+        img_array = np.transpose(data[:3], (1, 2, 0))
+        return Image.fromarray(normalize_array(img_array), mode="RGB")
 
 
 def render_tile(
