@@ -1,0 +1,9 @@
+.venv
+.git
+__pycache__
+.worktrees
+*.pyc
+.ruff_cache
+.mypy_cache
+.pytest_cache
+node_modules
