@@ -5,9 +5,7 @@ Ported from ``webapp/homography_precision/views.py``.
 
 from __future__ import annotations
 
-import io
 import logging
-import math
 from pathlib import Path
 from typing import TypedDict
 
@@ -27,7 +25,6 @@ from homography_web.frame_utils import (
     list_frames,
     load_annotations_for_frame,
     load_line_annotations_for_frame,
-    normalize_array,
     register_invalidation_callback,
 )
 from homography_web.frame_utils import (
@@ -37,6 +34,7 @@ from line_picker.state import Line, from_line_repo
 from PIL import Image
 
 from api.deps import get_current_user
+from api.utils.tiles import render_tile
 from api.schemas.homography_precision import (
     CameraInfoResponse,
     ComputeHomographyFromLinesRequest,
@@ -318,47 +316,6 @@ def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> floa
     b_param = c1 / c2
     proj = a + b_param * v
     return float(np.linalg.norm(p - proj))
-
-
-# ---------------------------------------------------------------------------
-# Tile helper (shared between camera and map tiles)
-# ---------------------------------------------------------------------------
-
-
-def _compute_tile_bounds(
-    width: int,
-    height: int,
-    x: int,
-    y: int,
-    z: int,
-    size: int,
-) -> tuple[int, int, int, int]:
-    """Compute clamped tile bounds in original image coordinates.
-
-    Returns (x0, y0, x1, y1).
-    """
-    max_level = math.ceil(math.log2(max(width, height)))
-    level_scale = 2 ** (max_level - z)
-
-    x0 = x * size * level_scale
-    y0 = y * size * level_scale
-    x1 = (x + 1) * size * level_scale
-    y1 = (y + 1) * size * level_scale
-
-    x0 = max(0, min(x0, width))
-    y0 = max(0, min(y0, height))
-    x1 = max(0, min(x1, width))
-    y1 = max(0, min(y1, height))
-
-    return x0, y0, x1, y1
-
-
-def _transparent_tile(size: int) -> bytes:
-    """Return a transparent PNG tile of the given size."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    return buffer.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -1020,7 +977,7 @@ def api_camera_tile(
     x: int = Query(0),
     y: int = Query(0),
     z: int = Query(0),
-    size: int = Query(256),
+    size: int = Query(256, ge=1, le=4096),
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
 ) -> Response:
@@ -1044,24 +1001,13 @@ def api_camera_tile(
             detail=f"Camera image not found for test case: {case}",
         )
 
-    width = info["width"]
-    height = info["height"]
-
-    x0, y0, x1, y1 = _compute_tile_bounds(width, height, x, y, z, size)
-
-    if x1 <= x0 or y1 <= y0:
-        return Response(content=_transparent_tile(size), media_type="image/png")
-
-    with Image.open(image_path) as full_img:
-        img = full_img.crop((x0, y0, x1, y1))
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-
-    img = img.resize((size, size), Image.Resampling.LANCZOS)
-
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    return Response(content=buffer.getvalue(), media_type="image/png")
+    png_bytes = render_tile(
+        image_path=image_path,
+        width=info["width"],
+        height=info["height"],
+        x=x, y=y, z=z, size=size,
+    )
+    return Response(content=png_bytes, media_type="image/png")
 
 
 @router.get("/api/map-tile/")
@@ -1069,7 +1015,7 @@ def api_map_tile(
     x: int = Query(0),
     y: int = Query(0),
     z: int = Query(0),
-    size: int = Query(256),
+    size: int = Query(256, ge=1, le=4096),
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
 ) -> Response:
@@ -1078,58 +1024,26 @@ def api_map_tile(
     OpenSeadragon uses a pyramid where level 0 is most zoomed out and
     the max level is full resolution.
     """
+    # Resolve the file path once to avoid TOCTOU race between info lookup
+    # and the actual tile read.
+    geotiff_path = _get_map_geotiff_file(tenant_id)
+    if geotiff_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Map GeoTIFF not found for tenant",
+        )
+
     info = _get_map_info(tenant_id)
     if info is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Map GeoTIFF not found: {_get_map_geotiff_file(tenant_id)}",
+            detail=f"Map GeoTIFF info unavailable: {geotiff_path}",
         )
 
-    width = info["width"]
-    height = info["height"]
-
-    x0, y0, x1, y1 = _compute_tile_bounds(width, height, x, y, z, size)
-
-    if x1 <= x0 or y1 <= y0:
-        return Response(content=_transparent_tile(size), media_type="image/png")
-
-    geotiff_path = _get_map_geotiff_file(tenant_id)
-    with tifffile.TiffFile(geotiff_path) as tif:
-        page = tif.pages[0]
-        data = page.asarray()
-
-        if data.ndim == 2:  # noqa: PLR2004
-            tile_data = data[y0:y1, x0:x1]
-            img = Image.fromarray(normalize_array(tile_data), mode="L")
-            img = img.convert("RGB")
-        elif data.ndim == 3:  # noqa: PLR2004
-            if data.shape[2] >= 3:  # noqa: PLR2004
-                tile_data = data[y0:y1, x0:x1, :3]
-                img = Image.fromarray(normalize_array(tile_data), mode="RGB")
-            else:
-                tile_data = data[y0:y1, x0:x1, 0]
-                img = Image.fromarray(normalize_array(tile_data), mode="L")
-                img = img.convert("RGB")
-        else:
-            if data.shape[0] in (1, 3, 4):
-                if data.shape[0] == 1:
-                    tile_data = data[0, y0:y1, x0:x1]
-                    img = Image.fromarray(normalize_array(tile_data), mode="L")
-                    img = img.convert("RGB")
-                else:
-                    tile_data = np.transpose(data[:3, y0:y1, x0:x1], (1, 2, 0))
-                    img = Image.fromarray(normalize_array(tile_data), mode="RGB")
-            else:
-                tile_data = (
-                    data[y0:y1, x0:x1]
-                    if data.ndim == 2  # noqa: PLR2004
-                    else data[y0:y1, x0:x1, 0]
-                )
-                img = Image.fromarray(normalize_array(tile_data), mode="L")
-                img = img.convert("RGB")
-
-    img = img.resize((size, size), Image.Resampling.LANCZOS)
-
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    return Response(content=buffer.getvalue(), media_type="image/png")
+    png_bytes = render_tile(
+        image_path=geotiff_path,
+        width=info["width"],
+        height=info["height"],
+        x=x, y=y, z=z, size=size,
+    )
+    return Response(content=png_bytes, media_type="image/png")
