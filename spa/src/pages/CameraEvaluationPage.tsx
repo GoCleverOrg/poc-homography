@@ -8,6 +8,8 @@ import {
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
+import { useApiFetch, useApiJson } from '../hooks/useAuthFetch';
+import { usePolling } from '../hooks/usePolling';
 import styles from './CameraEvaluationPage.module.css';
 
 // ------------------------------------------------------------------ types
@@ -90,12 +92,7 @@ export default function CameraEvaluationPage() {
   const { credentials } = useAuth();
   const { selectedTenantId } = useTenant();
 
-  // Auth header builder
-  const authHeaders = useMemo((): Record<string, string> => {
-    if (!credentials) return {};
-    const encoded = btoa(`${credentials.username}:${credentials.password}`);
-    return { Authorization: `Basic ${encoded}` };
-  }, [credentials]);
+  // Auth helpers (shared hook)
 
   // ---- Camera state ----
   const [cameras, setCameras] = useState<Camera[]>([]);
@@ -133,8 +130,6 @@ export default function CameraEvaluationPage() {
   const [progressPct, setProgressPct] = useState(0);
   const [surveyPtz, setSurveyPtz] = useState<PTZPosition>({ pan: null, tilt: null, zoom: null });
   const [lastCaptureUrl, setLastCaptureUrl] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollStatusRef = useRef<(sessionId: string) => Promise<void>>(async () => {});
 
   // ---- Sessions ----
   const [sessions, setSessions] = useState<SurveySession[]>([]);
@@ -146,32 +141,19 @@ export default function CameraEvaluationPage() {
   const [detailData, setDetailData] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // ============================================================ API helpers
+  // ============================================================ API helpers (shared hooks)
 
+  const _apiFetch = useApiFetch();
+  const _apiJson = useApiJson();
+
+  // Wrap shared hooks to prepend API_BASE for this page's endpoints
   const apiFetch = useCallback(
-    async (path: string, options?: RequestInit) => {
-      const res = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers: {
-          ...authHeaders,
-          ...(options?.headers ?? {}),
-        },
-      });
-      return res;
-    },
-    [authHeaders],
+    (path: string, options?: RequestInit) => _apiFetch(`${API_BASE}${path}`, options),
+    [_apiFetch],
   );
-
   const apiJson = useCallback(
-    async (path: string, options?: RequestInit) => {
-      const res = await apiFetch(path, options);
-      const data = await res.json();
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'API error');
-      }
-      return data.data;
-    },
-    [apiFetch],
+    <T,>(path: string, options?: RequestInit) => _apiJson<T>(`${API_BASE}${path}`, options),
+    [_apiJson],
   );
 
   // ============================================================ Load cameras
@@ -186,7 +168,7 @@ export default function CameraEvaluationPage() {
     let cancelled = false;
     setCamerasLoading(true);
 
-    apiJson(`/cameras/?tenant_id=${encodeURIComponent(selectedTenantId)}`)
+    apiJson<{ cameras: Camera[] }>(`/cameras/?tenant_id=${encodeURIComponent(selectedTenantId)}`)
       .then((data) => {
         if (cancelled) return;
         setCameras(data.cameras);
@@ -207,7 +189,7 @@ export default function CameraEvaluationPage() {
     if (!credentials) return;
     let cancelled = false;
 
-    apiJson('/survey/presets/')
+    apiJson<{ presets: Preset[] }>('/survey/presets/')
       .then((data) => {
         if (!cancelled) setPresets(data.presets);
       })
@@ -224,7 +206,7 @@ export default function CameraEvaluationPage() {
     setSessionsLoading(true);
     setSessionsError('');
     try {
-      const data = await apiJson('/survey/sessions/');
+      const data = await apiJson<{ sessions: SurveySession[] }>('/survey/sessions/');
       setSessions(data.sessions);
     } catch (e) {
       setSessionsError(e instanceof Error ? e.message : 'Failed to load sessions');
@@ -257,7 +239,7 @@ export default function CameraEvaluationPage() {
     const qs = `?tenant_id=${encodeURIComponent(selectedTenantId)}&camera_id=${encodeURIComponent(selectedCameraId)}`;
 
     // Fetch capabilities
-    apiJson(`/camera/capabilities/${qs}`)
+    apiJson<{ capabilities: Capabilities }>(`/camera/capabilities/${qs}`)
       .then((data) => {
         if (!cancelled) setCapabilities(data.capabilities);
       })
@@ -266,7 +248,7 @@ export default function CameraEvaluationPage() {
       });
 
     // Fetch position
-    apiJson(`/camera/position/${qs}`)
+    apiJson<PTZPosition>(`/camera/position/${qs}`)
       .then((data) => {
         if (!cancelled) {
           setCurrentPosition(data);
@@ -360,7 +342,7 @@ export default function CameraEvaluationPage() {
     try {
       const tags = sessionTags.split(',').map((t) => t.trim()).filter(Boolean);
 
-      const data = await apiJson('/survey/start/', {
+      const data = await apiJson<{ session_id: string }>('/survey/start/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -389,7 +371,7 @@ export default function CameraEvaluationPage() {
       setLastCaptureUrl(null);
 
       // Start polling
-      pollRef.current = setInterval(() => pollStatusRef.current(sessionId), 1000);
+      startPolling(sessionId);
     } catch (e) {
       alert(`Failed to start survey: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -403,10 +385,13 @@ export default function CameraEvaluationPage() {
 
   // ============================================================ Poll status
 
+  const stopPollingRef = useRef<() => void>(() => {});
+
   const pollStatus = useCallback(
     async (sessionId: string) => {
       try {
-        const data = await apiJson(`/survey/${sessionId}/status/`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = await apiJson<any>(`/survey/${sessionId}/status/`);
         const pct = data.total_steps > 0
           ? (data.step_count / data.total_steps) * 100
           : 0;
@@ -431,10 +416,7 @@ export default function CameraEvaluationPage() {
 
         if (data.status === 'completed' || data.status === 'aborted' || data.status === 'failed') {
           setProgressStatus(data.status.charAt(0).toUpperCase() + data.status.slice(1));
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-          }
+          stopPollingRef.current();
           setSurveySessionId(null);
           setSurveyRunning(false);
           loadSessions();
@@ -448,19 +430,8 @@ export default function CameraEvaluationPage() {
     [apiJson, loadSessions],
   );
 
-  useEffect(() => {
-    pollStatusRef.current = pollStatus;
-  }, [pollStatus]);
-
-  // Cleanup poll on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, []);
+  const { startPolling, stopPolling } = usePolling(pollStatus);
+  stopPollingRef.current = stopPolling;
 
   // ============================================================ Abort survey
 
@@ -481,7 +452,7 @@ export default function CameraEvaluationPage() {
       setDetailLoading(true);
       setDetailSessionId(sessionId);
       try {
-        const data = await apiJson(`/survey/sessions/${sessionId}/`);
+        const data = await apiJson<SessionDetail>(`/survey/sessions/${sessionId}/`);
         setDetailData(data);
       } catch (e) {
         alert(`Failed to load session: ${e instanceof Error ? e.message : e}`);

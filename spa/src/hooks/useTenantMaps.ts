@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTenant } from '../contexts/TenantContext';
-import { useAuth } from '../contexts/AuthContext';
+import client from '../api/client';
 
 interface UseTenantMapsResult {
   mapIds: string[] | null;
@@ -9,12 +9,11 @@ interface UseTenantMapsResult {
 
 export function useTenantMaps(): UseTenantMapsResult {
   const { selectedTenantId } = useTenant();
-  const { credentials } = useAuth();
   const [mapIds, setMapIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!selectedTenantId || !credentials) {
+    if (!selectedTenantId) {
       setMapIds(null);
       return;
     }
@@ -22,17 +21,19 @@ export function useTenantMaps(): UseTenantMapsResult {
     const controller = new AbortController();
     setLoading(true);
 
-    const encoded = btoa(`${credentials.username}:${credentials.password}`);
-    fetch(`/gcp/api/map-ids/?tenant_id=${encodeURIComponent(selectedTenantId)}`, {
-      headers: { Authorization: `Basic ${encoded}` },
-      signal: controller.signal,
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to load map IDs (${res.status})`);
-        return res.json() as Promise<{ map_ids: string[] }>;
+    client
+      .GET('/gcp/api/map-ids/', {
+        params: { query: { tenant_id: selectedTenantId } },
+        signal: controller.signal,
       })
-      .then(({ map_ids }) => {
-        if (!controller.signal.aborted) setMapIds(map_ids);
+      .then(({ data, error }) => {
+        if (controller.signal.aborted) return;
+        if (error) {
+          console.error('Failed to load map IDs:', error);
+          setMapIds(null);
+        } else if (data) {
+          setMapIds((data as { map_ids: string[] }).map_ids);
+        }
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
@@ -47,7 +48,7 @@ export function useTenantMaps(): UseTenantMapsResult {
     return () => {
       controller.abort();
     };
-  }, [selectedTenantId, credentials]);
+  }, [selectedTenantId]);
 
   return { mapIds, loading };
 }

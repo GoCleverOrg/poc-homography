@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
+import { useApiJson } from '../hooks/useAuthFetch';
+import { usePolling } from '../hooks/usePolling';
 import styles from './CameraSurveyPage.module.css';
 
 // ---------------------------------------------------------------------------
@@ -70,32 +72,7 @@ export default function CameraSurveyPage() {
 
   // ---------- helpers ----------
 
-  const authHeaders = useCallback((): HeadersInit => {
-    if (!credentials) return {};
-    const encoded = btoa(`${credentials.username}:${credentials.password}`);
-    return { Authorization: `Basic ${encoded}` };
-  }, [credentials]);
-
-  const apiFetch = useCallback(
-    async (url: string, init?: RequestInit) => {
-      const res = await fetch(url, {
-        ...init,
-        headers: { ...authHeaders(), ...init?.headers },
-      });
-      return res;
-    },
-    [authHeaders],
-  );
-
-  const apiJson = useCallback(
-    async <T,>(url: string, init?: RequestInit): Promise<T> => {
-      const res = await apiFetch(url, init);
-      const json = (await res.json()) as { status: string; data: T; message?: string };
-      if (json.status !== 'success') throw new Error(json.message ?? 'Request failed');
-      return json.data;
-    },
-    [apiFetch],
-  );
+  const apiJson = useApiJson();
 
   // ---------- state: cameras ----------
 
@@ -153,10 +130,8 @@ export default function CameraSurveyPage() {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
 
-  // ---------- refs for polling ----------
+  // ---------- polling ----------
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollStatusRef = useRef<(sessionId: string) => Promise<void>>(async () => {});
   const currentSessionRef = useRef<string | null>(null);
 
   // Keep ref in sync
@@ -325,9 +300,7 @@ export default function CameraSurveyPage() {
       setLastCaptureUrl(null);
 
       // Start polling
-      pollRef.current = setInterval(() => {
-        pollStatusRef.current(data.session_id);
-      }, 1000);
+      startPolling(data.session_id);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('credentials')) {
@@ -354,6 +327,8 @@ export default function CameraSurveyPage() {
   ]);
 
   // ---------- poll status ----------
+
+  const stopPollingRef = useRef<() => void>(() => {});
 
   const pollStatus = useCallback(
     async (sessionId: string) => {
@@ -383,10 +358,7 @@ export default function CameraSurveyPage() {
 
         if (data.status === 'completed' || data.status === 'aborted' || data.status === 'failed') {
           setProgressStatus(data.status.charAt(0).toUpperCase() + data.status.slice(1));
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-          }
+          stopPollingRef.current();
           setCurrentSessionId(null);
           setAbortDisabled(true);
           loadSessions();
@@ -400,19 +372,8 @@ export default function CameraSurveyPage() {
     [apiJson, loadSessions],
   );
 
-  useEffect(() => {
-    pollStatusRef.current = pollStatus;
-  }, [pollStatus]);
-
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, []);
+  const { startPolling, stopPolling } = usePolling(pollStatus);
+  stopPollingRef.current = stopPolling;
 
   // ---------- abort survey ----------
 

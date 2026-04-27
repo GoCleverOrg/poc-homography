@@ -6,8 +6,8 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import client from '../api/client';
-import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
+import { useImageBlob } from '../hooks/useImageBlob';
 import styles from './CameraLineAnnotatorPage.module.css';
 
 /* ------------------------------------------------------------------ */
@@ -89,8 +89,8 @@ function getQuality(totalPoints: number) {
 /* ------------------------------------------------------------------ */
 
 export default function CameraLineAnnotatorPage() {
-  const { credentials } = useAuth();
   const { selectedTenantId } = useTenant();
+  const { imageUrl: imageSrc, loadImage: loadImageBlobHook } = useImageBlob();
 
   /* ---- Refs ---- */
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -100,7 +100,6 @@ export default function CameraLineAnnotatorPage() {
   /* ---- Core state ---- */
   const [images, setImages] = useState<string[]>([]);
   const [currentFilename, setCurrentFilename] = useState<string>('');
-  const [imageSrc, setImageSrc] = useState<string>('');
   const [imageLoaded, setImageLoaded] = useState(false);
   const [lineIds, setLineIds] = useState<string[]>([]);
   const [mapId, setMapId] = useState<string>('');
@@ -167,49 +166,14 @@ export default function CameraLineAnnotatorPage() {
     .filter((id) => !usedIds.has(id));
 
   /* ---------------------------------------------------------------- */
-  /* Image loading via authenticated fetch                             */
+  /* Image loading via shared hook                                     */
   /* ---------------------------------------------------------------- */
 
   const loadImageBlob = useCallback(
-    async (filename: string, bust?: number) => {
-      if (!selectedTenantId || !filename) return;
-      const params = new URLSearchParams({
-        tenant_id: selectedTenantId,
-        image_filename: filename,
-      });
-      if (bust) params.set('t', String(bust));
-      const url = `/camera-line-annotator/image/?${params}`;
-
-      const headers: Record<string, string> = {};
-      if (credentials) {
-        headers['Authorization'] = `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
-      }
-
-      try {
-        const resp = await fetch(url, { headers });
-        if (!resp.ok) return;
-        const blob = await resp.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        setImageSrc((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return objectUrl;
-        });
-      } catch {
-        // ignore
-      }
-    },
-    [selectedTenantId, credentials],
+    (filename: string, bust?: number) =>
+      loadImageBlobHook('/camera-line-annotator/image/', filename, !!bust),
+    [loadImageBlobHook],
   );
-
-  // Cleanup blob URL on unmount
-  useEffect(() => {
-    return () => {
-      setImageSrc((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return '';
-      });
-    };
-  }, []);
 
   /* ---------------------------------------------------------------- */
   /* Canvas drawing                                                    */
@@ -828,21 +792,8 @@ export default function CameraLineAnnotatorPage() {
 
   useEffect(() => {
     if (!selectedTenantId) return;
-
-    let cancelled = false;
-
-    async function init() {
-      await loadImages();
-      await loadLineIds();
-    }
-
-    if (!cancelled) {
-      init();
-    }
-
-    return () => {
-      cancelled = true;
-    };
+    loadImages();
+    loadLineIds();
   }, [selectedTenantId, loadImages, loadLineIds]);
 
   // Load image, annotations, and camera status when filename changes

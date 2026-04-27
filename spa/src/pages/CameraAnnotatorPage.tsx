@@ -7,8 +7,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import client from '../api/client';
-import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
+import { useImageBlob } from '../hooks/useImageBlob';
 import styles from './CameraAnnotatorPage.module.css';
 
 /* ------------------------------------------------------------------ */
@@ -41,15 +41,14 @@ interface DragState {
 /* ------------------------------------------------------------------ */
 
 export default function CameraAnnotatorPage() {
-  const { credentials } = useAuth();
   const { selectedTenantId } = useTenant();
+  const { imageUrl, loadImage: loadImageBlob } = useImageBlob();
 
   /* ---- data state ---- */
   const [gcps, setGcps] = useState<Gcp[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [currentFilename, setCurrentFilename] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   /* ---- UI state ---- */
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null);
@@ -82,36 +81,13 @@ export default function CameraAnnotatorPage() {
         : -1;
 
   /* ================================================================ */
-  /*  Image loading via authenticated fetch                           */
+  /*  Image loading via authenticated fetch (shared hook)             */
   /* ================================================================ */
 
   const loadImage = useCallback(
-    async (filename: string) => {
-      if (!credentials || !selectedTenantId) return;
-      const encoded = btoa(
-        `${credentials.username}:${credentials.password}`,
-      );
-      const params = new URLSearchParams({
-        tenant_id: selectedTenantId,
-        image_filename: filename,
-        t: String(Date.now()),
-      });
-      try {
-        const resp = await fetch(
-          `/camera-annotator/image/?${params.toString()}`,
-          { headers: { Authorization: `Basic ${encoded}` } },
-        );
-        if (!resp.ok) return;
-        const blob = await resp.blob();
-        setImageUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return URL.createObjectURL(blob);
-        });
-      } catch {
-        /* ignore network errors */
-      }
-    },
-    [credentials, selectedTenantId],
+    (filename: string) =>
+      loadImageBlob('/camera-annotator/image/', filename, true),
+    [loadImageBlob],
   );
 
   /* ================================================================ */
@@ -195,15 +171,7 @@ export default function CameraAnnotatorPage() {
     };
   }, [selectedTenantId, currentFilename, loadImage]);
 
-  /* Revoke object URL on unmount */
-  useEffect(() => {
-    return () => {
-      setImageUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-    };
-  }, []);
+  /* Blob URL cleanup is handled by useImageBlob hook */
 
   /* ================================================================ */
   /*  Image click -> pending point                                    */
