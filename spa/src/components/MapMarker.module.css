@@ -1,0 +1,96 @@
+/*
+ * CSS-only pin marker used as an OSD overlay.
+ *
+ * The parent adds the rendered DOM element to the viewer via
+ * `viewer.addOverlay()`.  The marker is positioned at its tip
+ * (Placement.BOTTOM) so the pin points at the exact pixel.
+ */
+
+.marker {
+  width: 24px;
+  height: 32px;
+  cursor: move;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  color: white;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
+}
+
+/* Pin head -- rotated square with rounded corners */
+.marker::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid white;
+}
+
+/* Pin tail dot */
+.marker::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+}
+
+/* Label text sits above the pin head */
+.label {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  z-index: 1;
+}
+
+/* ---------- tag colours ---------- */
+
+.parkingSpot::before {
+  background: #e63946;
+}
+.parkingSpot::after {
+  background: #e63946;
+}
+
+.arrows::before {
+  background: #2a9d8f;
+}
+.arrows::after {
+  background: #2a9d8f;
+}
+
+.crosswalk::before {
+  background: #f4a261;
+}
+.crosswalk::after {
+  background: #f4a261;
+}
+
+.extra::before {
+  background: #9c27b0;
+}
+.extra::after {
+  background: #9c27b0;
+}
+
+/* ---------- selected state ---------- */
+
+.selected::before {
+  border-color: #ffeb3b;
+  box-shadow: 0 0 8px #ffeb3b;
+}
+.selected::after {
+  background: #ffeb3b;
+}

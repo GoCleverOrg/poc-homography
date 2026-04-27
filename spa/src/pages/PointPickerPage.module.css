@@ -1,0 +1,182 @@
+/*
+ * PointPickerPage layout: sidebar (280px) + OSD viewer (fills rest).
+ *
+ * The page fills the entire content area provided by AppLayout
+ * (flex: 1 column inside a 100vh layout).
+ */
+
+.page {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- Sidebar */
+
+.sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: #f5f5f5;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+}
+
+.backLink {
+  color: #0066cc;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.title {
+  font-size: 18px;
+  color: #333;
+  margin: 0;
+}
+
+.filename {
+  font-size: 12px;
+  color: #888;
+  word-break: break-all;
+}
+
+/* ---------------------------------------------------------------- Section */
+
+.section {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #666;
+}
+
+/* ------------------------------------------------------------ Tag buttons */
+
+.tagButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tagBtn {
+  padding: 10px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.tagBtn:hover {
+  border-color: #999;
+}
+
+.tagBtnActive {
+  border-color: #0066cc;
+  background: #e6f0ff;
+}
+
+/* Per-tag active colours */
+.tagBtnParkingSpot {
+  border-color: #e63946;
+  background: #fde2e4;
+}
+
+.tagBtnArrows {
+  border-color: #2a9d8f;
+  background: #d8f3dc;
+}
+
+.tagBtnCrosswalk {
+  border-color: #f4a261;
+  background: #fff3e0;
+}
+
+.tagBtnExtra {
+  border-color: #9c27b0;
+  background: #f3e5f5;
+}
+
+/* -------------------------------------------------------------- Next ID */
+
+.nextId {
+  font-size: 16px;
+  font-weight: bold;
+  color: #333;
+  text-align: center;
+  padding: 8px;
+}
+
+/* ----------------------------------------------------------- Coordinates */
+
+.coords {
+  font-family: monospace;
+  font-size: 12px;
+  color: #666;
+  background: #fff;
+  padding: 8px;
+  border-radius: 4px;
+  white-space: pre-line;
+}
+
+/* ------------------------------------------------------------ Point list */
+
+.pointList {
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.pointItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.pointItem:hover {
+  background: #f0f0f0;
+}
+
+.pointItemSelected {
+  background: #e6f0ff;
+}
+
+.deleteBtn {
+  background: #ff4444;
+  color: white;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.deleteBtn:hover {
+  background: #cc0000;
+}
+
+/* -------------------------------------------------------------- Viewer */
+
+.viewer {
+  flex: 1;
+  background: #222;
+  min-width: 0;
+}

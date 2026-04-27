@@ -1,0 +1,717 @@
+/* ---------- Root layout ---------- */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1a1a;
+  color: #fff;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- Controls bar ---------- */
+.controlsBar {
+  background: #37474f;
+  padding: 12px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controlGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.controlGroup label {
+  font-size: 12px;
+  color: #b0bec5;
+}
+
+.controlGroup select,
+.controlGroup input {
+  padding: 6px 10px;
+  border: 1px solid #546e7a;
+  border-radius: 4px;
+  background: #263238;
+  color: #fff;
+  font-size: 13px;
+}
+
+.controlGroup select:focus,
+.controlGroup input:focus {
+  border-color: #2196f3;
+  outline: none;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btnPrimary {
+  composes: btn;
+  background: #2196f3;
+  color: white;
+}
+
+.btnPrimary:hover {
+  background: #1976d2;
+}
+
+.btnPrimary:disabled {
+  background: #546e7a;
+  cursor: not-allowed;
+}
+
+.btnDanger {
+  composes: btn;
+  background: #f44336;
+  color: white;
+}
+
+.btnDanger:hover {
+  background: #d32f2f;
+}
+
+.btnSuccess {
+  composes: btn;
+  background: #4caf50;
+  color: white;
+}
+
+.btnSuccess:hover {
+  background: #388e3c;
+}
+
+.btnSuccess:disabled {
+  background: #546e7a;
+  cursor: not-allowed;
+}
+
+.btnSmall {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* ---------- Main content ---------- */
+.mainContent {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---------- Unified image panel ---------- */
+.imagePanelUnified {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.imagePanelHeader {
+  background: #263238;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #37474f;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panelControls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ---------- View mode buttons ---------- */
+.viewModeGroup {
+  display: flex;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #546e7a;
+}
+
+.viewModeBtn {
+  padding: 4px 12px;
+  background: #37474f;
+  border: none;
+  color: #b0bec5;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-right: 1px solid #546e7a;
+}
+
+.viewModeBtn:last-child {
+  border-right: none;
+}
+
+.viewModeBtn:hover {
+  background: #455a64;
+  color: #fff;
+}
+
+.viewModeBtnActive {
+  background: #2196f3;
+  color: #fff;
+}
+
+.viewModeBtnOriginal {
+  background: #ff9800;
+  color: #fff;
+}
+
+.viewModeBtnUndistorted {
+  background: #4caf50;
+  color: #fff;
+}
+
+/* ---------- Zoom controls ---------- */
+.zoomControls {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.zoomControls button {
+  padding: 2px 6px;
+  background: #37474f;
+  border: 1px solid #546e7a;
+  color: #fff;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.zoomControls button:hover {
+  background: #455a64;
+}
+
+.zoomDisplay {
+  font-size: 11px;
+  min-width: 40px;
+  text-align: center;
+  color: #b0bec5;
+}
+
+/* ---------- Image wrapper ---------- */
+.imageWrapper {
+  flex: 1;
+  overflow: scroll;
+  position: relative;
+  background: #0d0d0d;
+}
+
+.imageScroller {
+  min-width: 100%;
+  min-height: 100%;
+  display: inline-block;
+}
+
+.imageContainer {
+  position: relative;
+  display: inline-block;
+  transform-origin: top left;
+  cursor: grab;
+}
+
+.imageContainer:active {
+  cursor: grabbing;
+}
+
+.imageContainer img {
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.imgStacked {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.drawCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  cursor: crosshair;
+}
+
+/* ---------- Overlay slider bar ---------- */
+.overlaySliderBar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(38, 50, 56, 0.92);
+  border: 1px solid #546e7a;
+  border-radius: 8px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.overlaySliderBarHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.overlaySliderBar label {
+  font-size: 11px;
+  color: #ff9800;
+  white-space: nowrap;
+}
+
+.sliderValue {
+  font-size: 11px;
+  color: #4caf50;
+  white-space: nowrap;
+  min-width: 65px;
+  text-align: right;
+}
+
+.overlaySlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 300px;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #ff9800, #4caf50);
+  outline: none;
+  cursor: pointer;
+}
+
+.overlaySlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #2196f3;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.overlaySlider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #2196f3;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- Empty state ---------- */
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #546e7a;
+  font-size: 14px;
+  text-align: center;
+  padding: 40px;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 350px;
+  background: #263238;
+  border-left: 1px solid #37474f;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebarSection {
+  padding: 16px;
+  border-bottom: 1px solid #37474f;
+}
+
+.sidebarSection h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #b0bec5;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ---------- Coefficients display ---------- */
+.coefficientsGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.coefItem {
+  background: #37474f;
+  padding: 6px 4px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.coefName {
+  font-size: 10px;
+  color: #78909c;
+}
+
+.coefValue {
+  font-size: 11px;
+  font-family: monospace;
+  color: #fff;
+  margin-top: 2px;
+}
+
+.coefRadial {
+  border-top: 2px solid #2196f3;
+}
+
+.coefTangential {
+  border-top: 2px solid #9c27b0;
+}
+
+/* ---------- Calibration info ---------- */
+.calInfoGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.calInfoBox {
+  background: #37474f;
+  padding: 8px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.calInfoLabel {
+  font-size: 9px;
+  color: #78909c;
+  text-transform: uppercase;
+}
+
+.calInfoValue {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+/* ---------- Intrinsics ---------- */
+.intrinsicsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.intrinsicsWarning {
+  font-size: 11px;
+  color: #ff9800;
+  margin-bottom: 8px;
+}
+
+.intrinsicsFieldGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.intrinsicsFieldGroup label {
+  font-size: 10px;
+  color: #b0bec5;
+}
+
+.intrinsicsFieldGroup input {
+  padding: 6px 10px;
+  border: 1px solid #546e7a;
+  border-radius: 4px;
+  background: #263238;
+  color: #fff;
+  font-size: 13px;
+  width: 100%;
+}
+
+.intrinsicsFieldGroup input:focus {
+  border-color: #2196f3;
+  outline: none;
+}
+
+.intrinsicsActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btnIntrinsicsUpdate {
+  composes: btn;
+  composes: btnSmall;
+  background: #455a64;
+  color: #fff;
+}
+
+.btnIntrinsicsCompute {
+  composes: btn;
+  composes: btnSmall;
+  background: #1565c0;
+  color: #fff;
+}
+
+.intrinsicsSource {
+  font-size: 10px;
+  color: #78909c;
+  margin-top: 4px;
+}
+
+/* ---------- Comparison table ---------- */
+.comparisonTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.comparisonTable thead tr {
+  background: #37474f;
+}
+
+.comparisonTable th {
+  padding: 6px;
+  text-align: left;
+  color: #b0bec5;
+}
+
+.comparisonTable th:nth-child(n + 3) {
+  text-align: right;
+}
+
+.comparisonTable td {
+  padding: 6px;
+  border-bottom: 1px solid #37474f;
+}
+
+/* ---------- Instructions ---------- */
+.instructions {
+  background: #37474f;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #b0bec5;
+  line-height: 1.5;
+}
+
+.instructions strong {
+  color: #fff;
+}
+
+.key {
+  display: inline-block;
+  background: #546e7a;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 10px;
+}
+
+/* ---------- Status ---------- */
+.status {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.statusInfo {
+  background: rgba(33, 150, 243, 0.2);
+  color: #64b5f6;
+}
+
+.statusSuccess {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.statusError {
+  background: rgba(244, 67, 54, 0.2);
+  color: #e57373;
+}
+
+/* ---------- Lines comparison ---------- */
+.linesComparison {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.lineComparisonItem {
+  background: #37474f;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.lineComparisonHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: #455a64;
+}
+
+.lineName {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deleteBtn {
+  background: none;
+  border: none;
+  color: #f44336;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.lineComparisonBody {
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rmseBox {
+  text-align: center;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.rmseBoxOriginal {
+  background: rgba(255, 152, 0, 0.2);
+  border: 1px solid #ff9800;
+}
+
+.rmseBoxUndistorted {
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid #4caf50;
+}
+
+.rmseLabel {
+  font-size: 9px;
+  color: #b0bec5;
+  text-transform: uppercase;
+}
+
+.rmseValue {
+  font-size: 16px;
+  font-weight: 600;
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+.rmseQuality {
+  font-size: 9px;
+  margin-top: 2px;
+}
+
+.improvementIndicator {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.improvementImproved {
+  background: rgba(76, 175, 80, 0.3);
+  color: #81c784;
+}
+
+.improvementWorse {
+  background: rgba(244, 67, 54, 0.3);
+  color: #e57373;
+}
+
+.improvementSame {
+  background: rgba(158, 158, 158, 0.3);
+  color: #bdbdbd;
+}
+
+/* ---------- Summary stats ---------- */
+.summaryStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.statItem {
+  background: #37474f;
+  padding: 10px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.statLabel {
+  font-size: 9px;
+  color: #78909c;
+  text-transform: uppercase;
+}
+
+.statValue {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.statGood {
+  color: #4caf50;
+}
+
+.statWarning {
+  color: #ff9800;
+}
+
+.statBad {
+  color: #f44336;
+}
+
+/* ---------- Lines section flex container ---------- */
+.linesSectionFlex {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.emptyLines {
+  color: #546e7a;
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+}
+
+.calMethodInfo {
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.calMethodLabel {
+  color: #78909c;
+}
