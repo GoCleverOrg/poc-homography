@@ -1,0 +1,49 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; }
+html, body, #root { height: 100%; }
+
+/* ---- OSD overlay: line endpoint markers (imperative DOM) ---- */
+
+.endpoint-marker {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  cursor: grab;
+  background: #2196f3;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  transition: transform 0.1s;
+}
+.endpoint-marker:hover { transform: scale(1.3); }
+.endpoint-marker.start { background: #4caf50; }
+.endpoint-marker.end   { background: #f44336; }
+.endpoint-marker.selected-line { box-shadow: 0 0 8px #ff9800; }
+.endpoint-marker.pending { background: #9c27b0; }
+.endpoint-marker.adjusting {
+  background: #ff9800;
+  transform: scale(1.5);
+  box-shadow: 0 0 12px #ff9800;
+  animation: endpoint-pulse 0.5s infinite alternate;
+}
+@keyframes endpoint-pulse {
+  from { transform: scale(1.3); }
+  to   { transform: scale(1.6); }
+}
+
+/* ---- OSD overlay: line labels (imperative DOM) ---- */
+
+.line-label {
+  background: rgba(33, 150, 243, 0.9);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  z-index: 20;
+  position: relative;
+}
+.line-label:hover { background: rgba(33, 150, 243, 1); }
+.line-label.selected { background: rgba(255, 152, 0, 0.95); }

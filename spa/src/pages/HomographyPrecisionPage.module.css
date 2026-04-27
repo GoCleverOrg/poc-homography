@@ -1,0 +1,423 @@
+/* Homography Precision Page -- two-panel OSD layout */
+
+/* ------------------------------------------------------------------ top bar */
+
+.topBar {
+  background: #f5f5f5;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid #ddd;
+  flex-wrap: wrap;
+}
+
+.topBar h1 {
+  font-size: 16px;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.controlGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.controlGroup select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  min-width: 200px;
+}
+
+.btn {
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btnPrimary {
+  composes: btn;
+  background: #0066cc;
+  color: white;
+}
+
+.btnPrimary:hover {
+  background: #0052a3;
+}
+
+.btnPrimary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------- summary metrics */
+
+.summaryMetrics {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.summaryMetric {
+  text-align: center;
+}
+
+.metricLabel {
+  font-size: 10px;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.metricValue {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.good {
+  color: #2e7d32;
+}
+.medium {
+  color: #f57c00;
+}
+.bad {
+  color: #c62828;
+}
+
+.lineMetrics {
+  display: none;
+}
+
+.lineMetricsVisible {
+  display: flex;
+  gap: 16px;
+}
+
+/* ------------------------------------------------------------ status banner */
+
+.statusMessage {
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  display: none;
+}
+
+.statusError {
+  composes: statusMessage;
+  display: block;
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+.statusSuccess {
+  composes: statusMessage;
+  display: block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.statusInfo {
+  composes: statusMessage;
+  display: block;
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+}
+
+/* -------------------------------------------------------- main two-col grid */
+
+.mainContent {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #222;
+  min-height: 0;
+}
+
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #f5f5f5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.panelTitle {
+  background: #333;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legendDotBlue {
+  composes: legendDot;
+  background: #2196f3;
+}
+
+.legendDotGreen {
+  composes: legendDot;
+  background: #4caf50;
+}
+
+.legendDotRed {
+  composes: legendDot;
+  background: #f44336;
+}
+
+.legendDotYellow {
+  composes: legendDot;
+  background: #ffeb3b;
+}
+
+/* --------------------------------------------------------- viewer container */
+
+.viewerWrap {
+  flex: 1;
+  position: relative;
+  background: #111;
+  min-height: 300px;
+}
+
+.loadingPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------ stats section */
+
+.statsSection {
+  padding: 12px;
+  background: #f5f5f5;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.tableSection {
+  margin-bottom: 16px;
+}
+
+.tableSectionHidden {
+  display: none;
+}
+
+.tableSectionTitle {
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.axisSummary {
+  font-size: 11px;
+  font-weight: normal;
+  color: #666;
+  margin-left: 8px;
+}
+
+.axisSummaryXBiased {
+  composes: axisSummary;
+  color: #e65100;
+}
+
+.axisSummaryYBiased {
+  composes: axisSummary;
+  color: #1565c0;
+}
+
+/* -------------------------------------------------------------- error table */
+
+.errorTableContainer {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.errorTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.errorTable th {
+  background: #e0e0e0;
+  padding: 8px;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  cursor: pointer;
+}
+
+.errorTable th:hover {
+  background: #d0d0d0;
+}
+
+.errorTable td {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.errorTable tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.errorTable tbody tr:hover {
+  background: #e3f2fd;
+}
+
+.selected {
+  background: #bbdefb;
+}
+
+.errorLow {
+  color: #2e7d32;
+}
+.errorMedium {
+  color: #f57c00;
+}
+.errorHigh {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.positive {
+  color: #c62828;
+}
+.negative {
+  color: #1565c0;
+}
+
+.noData {
+  text-align: center;
+  color: #999;
+}
+
+/* -------------------------------------------------- page root (flex column) */
+
+.pageRoot {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #1a1a1a;
+}
+
+.backLink {
+  color: #0066cc;
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------- OSD pin markers (inline) */
+
+.marker {
+  width: 24px;
+  height: 32px;
+  cursor: default;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: bold;
+  color: white;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+}
+
+.marker::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid white;
+}
+
+.marker::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  background: white;
+  border-radius: 50%;
+}
+
+.marker span {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  z-index: 1;
+}
+
+.markerBlue::before {
+  background: #2196f3;
+}
+.markerGreen::before {
+  background: #4caf50;
+}
+.markerRed::before {
+  background: #f44336;
+}
+
+.markerHighlighted::before {
+  border-color: #ffeb3b;
+  box-shadow: 0 0 12px #ffeb3b;
+}
+.markerHighlighted::after {
+  background: #ffeb3b;
+}

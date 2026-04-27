@@ -1,0 +1,997 @@
+/* ==========================================================================
+   Camera Diagnostic Tool -- dark theme CSS module
+   Ported from: webapp/camera_diagnostic/templates/camera_diagnostic/index.html
+   ========================================================================== */
+
+/* ---------- Layout ---------- */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  color: #e0e0e0;
+}
+
+/* ---------- Back link ---------- */
+
+.backLink {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.backLink:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ---------- Header ---------- */
+
+.header {
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.header p {
+  color: #888;
+  font-size: 14px;
+}
+
+/* ---------- Tabs ---------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 12px 24px;
+  background: #252525;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  color: #888;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  color: #ccc;
+  background: #2a2a2a;
+}
+
+.tabActive {
+  background: #333;
+  color: #fff;
+}
+
+/* ---------- Buttons ---------- */
+
+.btnPrimary {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #667eea;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnPrimary:hover {
+  background: #5a6fd6;
+  transform: translateY(-1px);
+}
+
+.btnPrimary:disabled {
+  background: #444;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btnSecondary {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #4a5568;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnSecondary:hover {
+  background: #5a6878;
+  transform: translateY(-1px);
+}
+
+.btnSecondary:disabled {
+  background: #333;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btnWarning {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #d97706;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnWarning:hover {
+  background: #f59e0b;
+  transform: translateY(-1px);
+}
+
+.btnWarning:disabled {
+  background: #78350f;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btnDanger {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnDanger:hover {
+  background: #c82333;
+}
+
+.btnDanger:disabled {
+  background: #444;
+  cursor: not-allowed;
+}
+
+/* ---------- Selector panel ---------- */
+
+.selectorPanel {
+  background: #252525;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.selectorLabel {
+  font-weight: 600;
+  color: #ccc;
+}
+
+.select {
+  min-width: 200px;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  cursor: pointer;
+}
+
+.select:hover {
+  border-color: #667eea;
+}
+
+.select:focus {
+  border-color: #667eea;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+.numberInput {
+  width: 100px;
+  min-width: 100px;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+}
+
+.numberInput:hover {
+  border-color: #667eea;
+}
+
+.numberInput:focus {
+  border-color: #667eea;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+.numberInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Credentials warning ---------- */
+
+.credentialsWarning {
+  background: #4a3000;
+  border: 1px solid #ff9800;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  color: #ffcc80;
+}
+
+.credentialsWarning strong {
+  color: #ff9800;
+  font-size: 16px;
+}
+
+.credentialsWarning p {
+  margin: 8px 0 0 0;
+  font-size: 14px;
+}
+
+.credentialsWarning code {
+  display: block;
+  background: #2a2a2a;
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin-top: 8px;
+  font-family: Monaco, Menlo, 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  color: #81c784;
+}
+
+/* ---------- Summary report ---------- */
+
+.summaryReport {
+  background: #252525;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.summaryHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.summaryHeader h2 {
+  font-size: 18px;
+  color: #fff;
+}
+
+.summaryStats {
+  display: flex;
+  gap: 16px;
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.statPass {
+  background: #1b4332;
+  color: #4caf50;
+}
+
+.statFail {
+  background: #4a1c1c;
+  color: #f44336;
+}
+
+.statPending {
+  background: #333;
+  color: #888;
+}
+
+/* ---------- Progress bar ---------- */
+
+.progressBar {
+  width: 100%;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: #667eea;
+  transition: width 0.3s ease;
+}
+
+/* ---------- Camera results ---------- */
+
+.cameraResults {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.cameraResultItem {
+  background: #1e1e1e;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cameraResultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.cameraResultHeader:hover {
+  background: #2a2a2a;
+}
+
+.cameraResultTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cameraResultTitle h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.testBadges {
+  display: flex;
+  gap: 8px;
+}
+
+.testBadge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.testBadgePass {
+  background: #1b4332;
+  color: #4caf50;
+}
+
+.testBadgeFail {
+  background: #4a1c1c;
+  color: #f44336;
+}
+
+.testBadgePending {
+  background: #333;
+  color: #666;
+}
+
+.testBadgeRunning {
+  background: #1e3a5f;
+  color: #64b5f6;
+}
+
+.expandIcon {
+  color: #666;
+  transition: transform 0.2s;
+}
+
+.expandIconRotated {
+  transform: rotate(180deg);
+}
+
+.cameraResultDetails {
+  padding: 16px;
+  border-top: 1px solid #333;
+  background: #181818;
+}
+
+/* ---------- Test sections within camera details ---------- */
+
+.testSectionMini {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.testSectionMini:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.testSectionMini h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.logOutput {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  background: #111;
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #aaa;
+}
+
+/* ---------- Video preview ---------- */
+
+.videoPreviewContainer {
+  background: #252525;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.videoPreviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.videoPreviewHeader h3 {
+  color: #fff;
+  font-size: 16px;
+}
+
+.videoContainer {
+  background: #111;
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.videoContainer img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ---------- Spinner ---------- */
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #444;
+  border-top-color: #64b5f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Empty state ---------- */
+
+.emptyState {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+.emptyState p {
+  margin-bottom: 16px;
+}
+
+/* ---------- Session list ---------- */
+
+.sessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sessionItem {
+  background: #252525;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.sessionItem:hover {
+  background: #2a2a2a;
+}
+
+.sessionInfo {
+  flex: 1;
+}
+
+.sessionInfo h3 {
+  font-size: 15px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.sessionInfo p {
+  font-size: 13px;
+  color: #888;
+}
+
+.sessionStats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.sessionStat {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sessionStatPass {
+  background: #1b4332;
+  color: #4caf50;
+}
+
+.sessionStatFail {
+  background: #4a1c1c;
+  color: #f44336;
+}
+
+/* ---------- Stress testing panels ---------- */
+
+.stressPanel {
+  background: #252525;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.stressPanel h2 {
+  font-size: 18px;
+  color: #fff;
+  margin-bottom: 16px;
+}
+
+.stressPanel h3 {
+  font-size: 16px;
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.stressFormRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.stressFormRow:last-child {
+  margin-bottom: 0;
+}
+
+.stressFormGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stressFormGroup label {
+  font-weight: 600;
+  color: #ccc;
+  font-size: 13px;
+}
+
+.stressFormGroup select,
+.stressFormGroup input {
+  min-width: 200px;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+}
+
+.stressFormGroup input[type='number'] {
+  width: 100px;
+  min-width: 100px;
+}
+
+.stressFormGroup input[type='checkbox'] {
+  width: auto;
+  min-width: auto;
+  cursor: pointer;
+}
+
+.stressFormGroup select:hover,
+.stressFormGroup input:hover {
+  border-color: #667eea;
+}
+
+.stressFormGroup select:focus,
+.stressFormGroup input:focus {
+  border-color: #667eea;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+/* ---------- Stress video ---------- */
+
+.stressVideoContainer {
+  background: #111;
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stressVideoContainer img {
+  max-width: 100%;
+  max-height: 400px;
+  display: block;
+}
+
+/* ---------- Stress presets grid ---------- */
+
+.stressPresetsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stressPresetBtn {
+  padding: 12px 16px;
+  background: #333;
+  border: 2px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  color: #e0e0e0;
+}
+
+.stressPresetBtn:hover {
+  border-color: #667eea;
+  background: #3a3a3a;
+}
+
+.stressPresetBtnSelected {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.2);
+}
+
+.presetName {
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.presetDesc {
+  font-size: 12px;
+  color: #888;
+}
+
+/* ---------- Stress axis config ---------- */
+
+.stressAxisConfig {
+  background: #1e1e1e;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.stressAxisConfig h4 {
+  color: #fff;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+/* ---------- Stress progress ---------- */
+
+.stressProgressText {
+  font-size: 13px;
+  color: #888;
+  margin-top: 8px;
+}
+
+/* ---------- Stress PTZ display ---------- */
+
+.stressPtzDisplay {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  background: #1e1e1e;
+  border-radius: 6px;
+  margin-top: 12px;
+}
+
+.stressPtzAxis {
+  text-align: center;
+}
+
+.stressPtzLabel {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.stressPtzValue {
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+/* ---------- Stress results panel ---------- */
+
+.stressResultsPanel {
+  background: #1e1e1e;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.stressResultItem {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.stressResultItem:last-child {
+  border-bottom: none;
+}
+
+.stressResultLabel {
+  color: #888;
+}
+
+.stressResultValue {
+  color: #fff;
+  font-weight: 600;
+}
+
+.stressResultSuccess {
+  color: #4caf50;
+}
+
+.stressResultFail {
+  color: #f44336;
+}
+
+/* ---------- Stress evaluation buttons ---------- */
+
+.stressEvalBtns {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.stressEvalBtn {
+  flex: 1;
+  padding: 16px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.stressEvalGood {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  border-color: #4caf50;
+}
+
+.stressEvalGood:hover,
+.stressEvalGood.stressEvalSelected {
+  background: rgba(76, 175, 80, 0.4);
+}
+
+.stressEvalNeedsImprovement {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+  border-color: #ff9800;
+}
+
+.stressEvalNeedsImprovement:hover,
+.stressEvalNeedsImprovement.stressEvalSelected {
+  background: rgba(255, 152, 0, 0.4);
+}
+
+.stressEvalBad {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border-color: #f44336;
+}
+
+.stressEvalBad:hover,
+.stressEvalBad.stressEvalSelected {
+  background: rgba(244, 67, 54, 0.4);
+}
+
+.stressEvalBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stressEvalSelected {
+  /* selector combined with color variants above */
+}
+
+/* ---------- Stress notes textarea ---------- */
+
+.stressNotesTextarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  margin-top: 12px;
+  box-sizing: border-box;
+}
+
+.stressNotesTextarea:focus {
+  border-color: #667eea;
+  outline: none;
+}
+
+/* ---------- Stress sessions table ---------- */
+
+.stressSessionsTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stressSessionsTable th,
+.stressSessionsTable td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #333;
+}
+
+.stressSessionsTable th {
+  color: #888;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.stressSessionsTable td {
+  color: #e0e0e0;
+  font-size: 14px;
+}
+
+.stressSessionsTable tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.stressSessionActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------- Stress status badges ---------- */
+
+.stressStatusBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stressStatus_completed {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.stressStatus_running {
+  background: rgba(33, 150, 243, 0.2);
+  color: #2196f3;
+}
+
+.stressStatus_failed {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+.stressStatus_aborted {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+}
+
+.stressStatus_pending {
+  background: rgba(150, 150, 150, 0.2);
+  color: #888;
+}
+
+/* ---------- Stress evaluation badges ---------- */
+
+.stressEvalBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stressEval_good {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.stressEval_needs_improvement {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+}
+
+.stressEval_bad {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+.stressEval_not_evaluated {
+  background: rgba(150, 150, 150, 0.2);
+  color: #888;
+}

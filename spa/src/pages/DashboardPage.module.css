@@ -1,0 +1,154 @@
+/* ---------- Hero container ---------- */
+.hero {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.2);
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 40px;
+}
+
+.heroTitle {
+  font-size: 32px;
+  margin: 0 0 12px;
+  color: #333;
+}
+
+.subtitle {
+  color: #666;
+  margin: 0 0 32px;
+  font-size: 16px;
+}
+
+/* ---------- Maps info bar ---------- */
+.mapsInfo {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f0f2ff;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.mapsInfoLabel {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+/* ---------- No-map warning ---------- */
+.noMapWarning {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  color: #856404;
+}
+
+.noMapWarning strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.noMapWarning code {
+  background: rgb(0 0 0 / 0.08);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.noMapWarning ol {
+  margin: 10px 0 0 20px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.noMapWarning pre {
+  margin: 6px 0;
+  padding: 8px;
+  background: rgb(0 0 0 / 0.05);
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* ---------- Tool grid ---------- */
+.toolGrid {
+  display: grid;
+  gap: 16px;
+}
+
+/* ---------- Tool card (link) ---------- */
+.toolCard {
+  display: block;
+  padding: 24px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #333;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.toolCard:hover {
+  background: #e9ecef;
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgb(102 126 234 / 0.2);
+}
+
+.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.disabled:hover {
+  background: #f8f9fa;
+  border-color: transparent;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ---------- Card internals ---------- */
+.toolTitle {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.toolDescription {
+  color: #666;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---------- Badges ---------- */
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #667eea;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-left: 8px;
+}
+
+/* ---------- Footer ---------- */
+.footer {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+}
+
+.footerSub {
+  margin-top: 8px;
+  font-size: 12px;
+}
