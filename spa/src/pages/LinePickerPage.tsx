@@ -88,7 +88,6 @@ export default function LinePickerPage() {
 
   const selectLineRef = useRef<(lineId: string) => void>(() => {});
 
-
   // ================================================================ API calls
 
   const fetchImageInfo = useCallback(async () => {

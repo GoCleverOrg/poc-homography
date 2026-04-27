@@ -156,6 +156,7 @@ export default function CameraSurveyPage() {
   // ---------- refs for polling ----------
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStatusRef = useRef<(sessionId: string) => Promise<void>>(async () => {});
   const currentSessionRef = useRef<string | null>(null);
 
   // Keep ref in sync
@@ -325,7 +326,7 @@ export default function CameraSurveyPage() {
 
       // Start polling
       pollRef.current = setInterval(() => {
-        pollStatus(data.session_id);
+        pollStatusRef.current(data.session_id);
       }, 1000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -398,6 +399,10 @@ export default function CameraSurveyPage() {
     },
     [apiJson, loadSessions],
   );
+
+  useEffect(() => {
+    pollStatusRef.current = pollStatus;
+  }, [pollStatus]);
 
   // Cleanup interval on unmount
   useEffect(() => {
