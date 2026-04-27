@@ -86,6 +86,9 @@ export default function LinePickerPage() {
     selectedLineIdRef.current = selectedLineId;
   }, [selectedLineId]);
 
+  const selectLineRef = useRef<(lineId: string) => void>(() => {});
+
+
   // ================================================================ API calls
 
   const fetchImageInfo = useCallback(async () => {
@@ -243,7 +246,7 @@ export default function LinePickerPage() {
       });
       labelEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        selectLine(line.line_id);
+        selectLineRef.current(line.line_id);
       });
       labelRefs.current[line.line_id] = labelEl;
 
@@ -293,7 +296,6 @@ export default function LinePickerPage() {
         end: endTracker,
       };
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [viewer, imageInfo, apiUpdateLine, fetchLines],
   );
 
@@ -405,6 +407,10 @@ export default function LinePickerPage() {
     },
     [viewer],
   );
+
+  useEffect(() => {
+    selectLineRef.current = selectLine;
+  }, [selectLine]);
 
   /** Cancel line-creation mode, removing the pending marker. */
   const cancelCreation = useCallback(() => {

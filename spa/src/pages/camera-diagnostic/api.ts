@@ -152,13 +152,20 @@ export interface StressSessionDetail {
 
 /* ------------------------------------------------------------------ */
 /* Diagnostic tab endpoints                                           */
+/*                                                                    */
+/* NOTE: The OpenAPI spec types don't reflect the envelope pattern    */
+/* used by camera-diagnostic endpoints, so `data` is typed as the    */
+/* raw response schema (or undefined). We use `(data ?? {}) as`      */
+/* to assert the actual envelope shape. This is a single-step cast   */
+/* (data is already `unknown`-ish from the client) and is preferable */
+/* to the double-cast `as unknown as` anti-pattern.                  */
 /* ------------------------------------------------------------------ */
 
 export async function fetchCameras(tenantId: string) {
   const { data } = await client.GET('/camera-diagnostic/api/cameras/', {
     params: { query: { tenant_id: tenantId } },
   });
-  return data as unknown as ApiEnvelope<{ cameras: Camera[] }>;
+  return (data ?? {}) as ApiEnvelope<{ cameras: Camera[] }>;
 }
 
 export async function fetchTestRtsp(cameraName: string, signal?: AbortSignal) {
@@ -166,7 +173,7 @@ export async function fetchTestRtsp(cameraName: string, signal?: AbortSignal) {
     '/camera-diagnostic/api/test-rtsp/{camera_name}/',
     { params: { path: { camera_name: cameraName } }, signal },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 export async function fetchTestWebui(
@@ -177,7 +184,7 @@ export async function fetchTestWebui(
     '/camera-diagnostic/api/test-webui/{camera_name}/',
     { params: { path: { camera_name: cameraName } }, signal },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 export async function fetchTestPtz(cameraName: string, signal?: AbortSignal) {
@@ -185,7 +192,7 @@ export async function fetchTestPtz(cameraName: string, signal?: AbortSignal) {
     '/camera-diagnostic/api/test-ptz/{camera_name}/',
     { params: { path: { camera_name: cameraName } }, signal },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 export async function saveDiagnosticSession(
@@ -195,13 +202,16 @@ export async function saveDiagnosticSession(
   const { data } = await client.POST(
     '/camera-diagnostic/api/diagnostic/save/',
     {
+      // `as never` — the OpenAPI spec doesn't define a request body for these
+      // endpoints, so the generated types reject any body. The cast is required
+      // until the spec is updated.
       body: {
         tenant_id: tenantId,
         camera_results: cameraResults,
       } as never,
     },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 export async function fetchDiagnosticSessions(tenantId: string) {
@@ -209,7 +219,7 @@ export async function fetchDiagnosticSessions(tenantId: string) {
     '/camera-diagnostic/api/diagnostic/sessions/',
     { params: { query: { tenant_id: tenantId } } },
   );
-  return data as unknown as ApiEnvelope<{
+  return (data ?? {}) as ApiEnvelope<{
     sessions: DiagnosticSessionSummary[];
     total: number;
   }>;
@@ -220,7 +230,7 @@ export async function fetchDiagnosticSessionDetail(sessionId: string) {
     '/camera-diagnostic/api/diagnostic/sessions/{session_id}/',
     { params: { path: { session_id: sessionId } } },
   );
-  return data as unknown as ApiEnvelope<DiagnosticSessionDetail>;
+  return (data ?? {}) as ApiEnvelope<DiagnosticSessionDetail>;
 }
 
 export async function deleteDiagnosticSession(sessionId: string) {
@@ -228,7 +238,7 @@ export async function deleteDiagnosticSession(sessionId: string) {
     '/camera-diagnostic/api/diagnostic/sessions/{session_id}/delete/',
     { params: { path: { session_id: sessionId } } },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,7 +249,7 @@ export async function fetchStressPresets() {
   const { data } = await client.GET(
     '/camera-diagnostic/api/stress-test/presets/',
   );
-  return data as unknown as ApiEnvelope<{ presets: StressPreset[] }>;
+  return (data ?? {}) as ApiEnvelope<{ presets: StressPreset[] }>;
 }
 
 export async function startStressTest(body: {
@@ -254,9 +264,10 @@ export async function startStressTest(body: {
 }) {
   const { data } = await client.POST(
     '/camera-diagnostic/api/stress-test/start/',
+    // `as never` — see saveDiagnosticSession for rationale.
     { body: body as never },
   );
-  return data as unknown as ApiEnvelope<{
+  return (data ?? {}) as ApiEnvelope<{
     session_id: string;
     message: string;
   }>;
@@ -267,7 +278,7 @@ export async function fetchStressStatus(sessionId: string) {
     '/camera-diagnostic/api/stress-test/status/{session_id}/',
     { params: { path: { session_id: sessionId } } },
   );
-  return data as unknown as ApiEnvelope<StressProgress>;
+  return (data ?? {}) as ApiEnvelope<StressProgress>;
 }
 
 export async function abortStressTest(sessionId: string) {
@@ -275,7 +286,7 @@ export async function abortStressTest(sessionId: string) {
     '/camera-diagnostic/api/stress-test/abort/{session_id}/',
     { params: { path: { session_id: sessionId } } },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 export async function fetchStressSessions(
@@ -289,7 +300,7 @@ export async function fetchStressSessions(
     '/camera-diagnostic/api/stress-test/sessions/',
     { params: { query } },
   );
-  return data as unknown as ApiEnvelope<{
+  return (data ?? {}) as ApiEnvelope<{
     sessions: StressSessionSummary[];
     total: number;
   }>;
@@ -300,7 +311,7 @@ export async function fetchStressSessionDetail(sessionId: string) {
     '/camera-diagnostic/api/stress-test/sessions/{session_id}/',
     { params: { path: { session_id: sessionId } } },
   );
-  return data as unknown as ApiEnvelope<StressSessionDetail>;
+  return (data ?? {}) as ApiEnvelope<StressSessionDetail>;
 }
 
 export async function submitStressEvaluation(
@@ -312,10 +323,11 @@ export async function submitStressEvaluation(
     '/camera-diagnostic/api/stress-test/sessions/{session_id}/evaluate/',
     {
       params: { path: { session_id: sessionId } },
+      // `as never` — see saveDiagnosticSession for rationale.
       body: { evaluation, notes } as never,
     },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 export async function deleteStressSession(sessionId: string) {
@@ -323,7 +335,7 @@ export async function deleteStressSession(sessionId: string) {
     '/camera-diagnostic/api/stress-test/sessions/{session_id}/delete/',
     { params: { path: { session_id: sessionId } } },
   );
-  return data as unknown as ApiEnvelope;
+  return (data ?? {}) as ApiEnvelope;
 }
 
 /* ------------------------------------------------------------------ */

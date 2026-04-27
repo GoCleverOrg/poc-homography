@@ -11,7 +11,6 @@ import OpenSeadragonViewer, {
   type TileSourceConfig,
 } from '../components/OpenSeadragonViewer';
 import LineOverlay, { type LineData } from '../components/LineOverlay';
-import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
 import client from '../api/client';
 import styles from './HomographyPrecisionPage.module.css';
@@ -136,29 +135,19 @@ function getMetricClass(
 }
 
 /**
- * Build a tile URL that includes tenant_id and HTTP-Basic credentials so that
- * OpenSeadragon (which loads tiles as bare `<img>` elements) passes auth.
+ * Build a tile URL that includes tenant_id. Tiles are loaded via same-origin
+ * requests and proxied by Vite dev server, so no explicit credentials needed.
  */
 function buildTileUrl(
   base: string,
   params: Record<string, string | number>,
   tenantId: string | null,
-  credentials: { username: string; password: string } | null,
 ): string {
   const qs = Object.entries(params)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&');
   let url = `${base}?${qs}`;
   if (tenantId) url += `&tenant_id=${encodeURIComponent(tenantId)}`;
-
-  // Embed credentials into the URL for OSD image requests.
-  if (credentials) {
-    const origin = window.location.origin;
-    const full = new URL(url, origin);
-    full.username = credentials.username;
-    full.password = credentials.password;
-    return full.toString();
-  }
   return url;
 }
 
@@ -411,7 +400,6 @@ function LineErrorTable({
 // ---------------------------------------------------------------------------
 
 export default function HomographyPrecisionPage() {
-  const { credentials } = useAuth();
   const { selectedTenantId } = useTenant();
 
   // --- test case lists ---
@@ -512,10 +500,9 @@ export default function HomographyPrecisionPage() {
           `${API}/api/camera-tile/`,
           { case: currentCaseRef.current, x, y, z: level },
           selectedTenantId,
-          credentials,
         ),
     };
-  }, [cameraInfo, selectedTenantId, credentials]);
+  }, [cameraInfo, selectedTenantId]);
 
   const mapTileSource: TileSourceConfig | null = useMemo(() => {
     if (!mapInfo) return null;
@@ -528,10 +515,9 @@ export default function HomographyPrecisionPage() {
           `${API}/api/map-tile/`,
           { x, y, z: level },
           selectedTenantId,
-          credentials,
         ),
     };
-  }, [mapInfo, selectedTenantId, credentials]);
+  }, [mapInfo, selectedTenantId]);
 
   // -----------------------------------------------------------------------
   // OSD overlay management -- add pin markers whenever viewer + data change

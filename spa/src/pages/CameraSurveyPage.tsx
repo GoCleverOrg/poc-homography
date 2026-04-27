@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTenant } from '../contexts/TenantContext';
 import styles from './CameraSurveyPage.module.css';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface TenantInfo {
-  id: string;
-  name: string;
-  description?: string;
-}
 
 interface CameraInfo {
   id: string;
@@ -71,6 +66,7 @@ const API = '/camera-evaluation/api';
 
 export default function CameraSurveyPage() {
   const { credentials } = useAuth();
+  const { tenants: ctxTenants, selectedTenantId, setSelectedTenantId } = useTenant();
 
   // ---------- helpers ----------
 
@@ -101,10 +97,9 @@ export default function CameraSurveyPage() {
     [apiFetch],
   );
 
-  // ---------- state: tenants / cameras ----------
+  // ---------- state: cameras ----------
 
-  const [tenants, setTenants] = useState<TenantInfo[]>([]);
-  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const tenants = ctxTenants ?? [];
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
   const [selectedCameraData, setSelectedCameraData] = useState<CameraInfo | null>(null);
@@ -167,21 +162,6 @@ export default function CameraSurveyPage() {
   useEffect(() => {
     currentSessionRef.current = currentSessionId;
   }, [currentSessionId]);
-
-  // ---------- load tenants on mount ----------
-
-  useEffect(() => {
-    if (!credentials) return;
-    let cancelled = false;
-
-    apiJson<{ tenants: TenantInfo[] }>(`${API}/tenants/`).then((data) => {
-      if (!cancelled) setTenants(data.tenants);
-    }).catch((e: unknown) => {
-      console.error('Failed to load tenants:', e);
-    });
-
-    return () => { cancelled = true; };
-  }, [credentials, apiJson]);
 
   // ---------- load presets on mount ----------
 
@@ -269,7 +249,7 @@ export default function CameraSurveyPage() {
     setSelectedCameraId('');
     setSelectedCameraData(null);
     setCameras([]);
-  }, []);
+  }, [setSelectedTenantId]);
 
   const handleCameraChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -576,7 +556,7 @@ export default function CameraSurveyPage() {
             <select
               id="survey-tenant-select"
               className={styles.select}
-              value={selectedTenantId}
+              value={selectedTenantId ?? ''}
               onChange={handleTenantChange}
             >
               <option value="">-- Select a tenant --</option>

@@ -149,14 +149,8 @@ geotiff:
             .filter(Boolean)
             .join(' ');
 
-          return (
-            <Link
-              key={card.to}
-              to={card.to}
-              className={className}
-              aria-disabled={disabled || undefined}
-              tabIndex={disabled ? -1 : undefined}
-            >
+          const content = (
+            <>
               <div className={styles.toolTitle}>
                 {card.title}
                 {card.badge && (
@@ -164,6 +158,24 @@ geotiff:
                 )}
               </div>
               <div className={styles.toolDescription}>{card.description}</div>
+            </>
+          );
+
+          return disabled ? (
+            <div
+              key={card.to}
+              className={className}
+              aria-disabled
+            >
+              {content}
+            </div>
+          ) : (
+            <Link
+              key={card.to}
+              to={card.to}
+              className={className}
+            >
+              {content}
             </Link>
           );
         })}

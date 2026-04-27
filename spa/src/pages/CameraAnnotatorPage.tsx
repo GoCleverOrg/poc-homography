@@ -121,39 +121,45 @@ export default function CameraAnnotatorPage() {
   /* Load GCPs */
   useEffect(() => {
     if (!selectedTenantId) return;
-    let cancelled = false;
+    const controller = new AbortController();
 
     (async () => {
       const { data } = await client.GET('/camera-annotator/api/gcps/', {
         params: { query: { tenant_id: selectedTenantId } },
+        signal: controller.signal,
       });
-      if (!cancelled && data) setGcps(data);
-    })();
+      if (!controller.signal.aborted && data) setGcps(data);
+    })().catch((err: unknown) => {
+      if (!controller.signal.aborted) console.error('Failed to load GCPs:', err);
+    });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [selectedTenantId]);
 
   /* Load available images */
   useEffect(() => {
     if (!selectedTenantId) return;
-    let cancelled = false;
+    const controller = new AbortController();
 
     (async () => {
       const { data } = await client.GET('/camera-annotator/api/images/', {
         params: { query: { tenant_id: selectedTenantId } },
+        signal: controller.signal,
       });
-      if (!cancelled && data) {
+      if (!controller.signal.aborted && data) {
         setImages(data);
         if (data.length > 0 && !currentFilename) {
           setCurrentFilename(data[0]);
         }
       }
-    })();
+    })().catch((err: unknown) => {
+      if (!controller.signal.aborted) console.error('Failed to load images:', err);
+    });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
     // currentFilename intentionally omitted — we only auto-select on first load
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,7 +168,7 @@ export default function CameraAnnotatorPage() {
   /* Load annotations + image when currentFilename changes */
   useEffect(() => {
     if (!selectedTenantId || !currentFilename) return;
-    let cancelled = false;
+    const controller = new AbortController();
 
     (async () => {
       const { data } = await client.GET(
@@ -174,15 +180,18 @@ export default function CameraAnnotatorPage() {
               image_filename: currentFilename,
             },
           },
+          signal: controller.signal,
         },
       );
-      if (!cancelled && data) setAnnotations(data);
-    })();
+      if (!controller.signal.aborted && data) setAnnotations(data);
+    })().catch((err: unknown) => {
+      if (!controller.signal.aborted) console.error('Failed to load annotations:', err);
+    });
 
     loadImage(currentFilename);
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [selectedTenantId, currentFilename, loadImage]);
 
@@ -290,8 +299,8 @@ export default function CameraAnnotatorPage() {
         const ann = annotationsRef.current[idx];
         if (!ann) return;
 
-        const clampedX = Math.max(0, Math.min(img.naturalWidth, x));
-        const clampedY = Math.max(0, Math.min(img.naturalHeight, y));
+        const clampedX = Math.max(0, Math.min(img.naturalWidth - 1, x));
+        const clampedY = Math.max(0, Math.min(img.naturalHeight - 1, y));
 
         // Update annotation in place and re-render
         setAnnotations((prev) =>

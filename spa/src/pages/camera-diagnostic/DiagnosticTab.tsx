@@ -44,12 +44,6 @@ const TEST_TIMEOUTS: Record<string, number> = {
   ptz: 120_000,
 };
 
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 function formatTestLogs(test: Record<string, unknown>): string {
   const lines: string[] = [];
   if (test.response_time_ms != null)
@@ -687,13 +681,9 @@ export default function DiagnosticTab({ tenantId, tenantName }: Props) {
                           </span>{' '}
                           RTSP Streaming
                         </h4>
-                        <div
-                          className={styles.logOutput}
-                          dangerouslySetInnerHTML={{
-                            __html:
-                              escapeHtml(result.rtspLogs) || 'No logs yet',
-                          }}
-                        />
+                        <div className={styles.logOutput}>
+                          {result.rtspLogs || 'No logs yet'}
+                        </div>
                       </div>
                       <div className={styles.testSectionMini}>
                         <h4>
@@ -702,13 +692,9 @@ export default function DiagnosticTab({ tenantId, tenantName }: Props) {
                           </span>{' '}
                           Web Interface
                         </h4>
-                        <div
-                          className={styles.logOutput}
-                          dangerouslySetInnerHTML={{
-                            __html:
-                              escapeHtml(result.webuiLogs) || 'No logs yet',
-                          }}
-                        />
+                        <div className={styles.logOutput}>
+                          {result.webuiLogs || 'No logs yet'}
+                        </div>
                       </div>
                       <div className={styles.testSectionMini}>
                         <h4>
@@ -717,13 +703,9 @@ export default function DiagnosticTab({ tenantId, tenantName }: Props) {
                           </span>{' '}
                           PTZ API
                         </h4>
-                        <div
-                          className={styles.logOutput}
-                          dangerouslySetInnerHTML={{
-                            __html:
-                              escapeHtml(result.ptzLogs) || 'No logs yet',
-                          }}
-                        />
+                        <div className={styles.logOutput}>
+                          {result.ptzLogs || 'No logs yet'}
+                        </div>
                       </div>
                     </div>
                   )}

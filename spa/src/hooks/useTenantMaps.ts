@@ -19,29 +19,33 @@ export function useTenantMaps(): UseTenantMapsResult {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
 
     const encoded = btoa(`${credentials.username}:${credentials.password}`);
     fetch(`/gcp/api/map-ids/?tenant_id=${encodeURIComponent(selectedTenantId)}`, {
       headers: { Authorization: `Basic ${encoded}` },
+      signal: controller.signal,
     })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Failed to load map IDs (${res.status})`);
         return res.json() as Promise<{ map_ids: string[] }>;
       })
       .then(({ map_ids }) => {
-        if (!cancelled) setMapIds(map_ids);
+        if (!controller.signal.aborted) setMapIds(map_ids);
       })
-      .catch(() => {
-        if (!cancelled) setMapIds(null);
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) {
+          console.error('Failed to load map IDs:', err);
+          setMapIds(null);
+        }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [selectedTenantId, credentials]);
 

@@ -134,6 +134,7 @@ export default function CameraEvaluationPage() {
   const [surveyPtz, setSurveyPtz] = useState<PTZPosition>({ pan: null, tilt: null, zoom: null });
   const [lastCaptureUrl, setLastCaptureUrl] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStatusRef = useRef<(sessionId: string) => Promise<void>>(async () => {});
 
   // ---- Sessions ----
   const [sessions, setSessions] = useState<SurveySession[]>([]);
@@ -388,7 +389,7 @@ export default function CameraEvaluationPage() {
       setLastCaptureUrl(null);
 
       // Start polling
-      pollRef.current = setInterval(() => pollStatus(sessionId), 1000);
+      pollRef.current = setInterval(() => pollStatusRef.current(sessionId), 1000);
     } catch (e) {
       alert(`Failed to start survey: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -446,6 +447,10 @@ export default function CameraEvaluationPage() {
     },
     [apiJson, loadSessions],
   );
+
+  useEffect(() => {
+    pollStatusRef.current = pollStatus;
+  }, [pollStatus]);
 
   // Cleanup poll on unmount
   useEffect(() => {
