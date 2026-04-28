@@ -220,6 +220,18 @@ save_to_gcp_repo  # unused function (poc_homography/map_points/gcp_registry.py:2
 list_map_ids  # unused function (poc_homography/map_points/gcp_registry.py:227) - legacy bridge
 error_px  # unused variable (poc_homography/validation/camera_model.py:65) - NamedTuple field
 
+# -- PostgreSQL _pg adapter functions (called from api/ routers, not scanned by vulture) --
+sync_to_ddd_repo_pg  # unused function (poc_homography/calibration/lens_distortion/ddd_sync.py) - used by api/routers/lens_calibration.py
+get_tenants_pg  # unused function (poc_homography/camera_config.py) - used by api/routers
+get_tenant_by_id_pg  # unused function (poc_homography/camera_config.py) - used by api/routers
+get_tenant_by_name_pg  # unused function (poc_homography/camera_config.py) - used by api/routers
+save_to_gcp_repo_pg  # unused function (poc_homography/map_points/gcp_registry.py) - used by api/routers/point_picker.py
+list_map_ids_pg  # unused function (poc_homography/map_points/gcp_registry.py) - used by api/routers/point_picker.py
+save_line_to_repo_pg  # unused function (webapp/line_picker/state.py) - used by api/routers/line_picker.py
+delete_line_from_repo_pg  # unused function (webapp/line_picker/state.py) - used by api/routers/line_picker.py
+save_gcp_to_repo_pg  # unused function (webapp/point_picker/state.py) - used by api/routers/point_picker.py
+delete_gcp_from_repo_pg  # unused function (webapp/point_picker/state.py) - used by api/routers/point_picker.py
+
 # -- PostgreSQL session repository base class (abstract hooks called by base CRUD) --
 _.get_session_dir  # unused method (infrastructure/repositories/repo_postgres_survey_session.py) - YAML compat API
 
