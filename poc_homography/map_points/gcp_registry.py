@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+
 import yaml
 
 from poc_homography.map_points.map_point import MapPoint
@@ -259,8 +261,6 @@ def from_gcp_repo_pg(session: Session, map_id: str) -> GCPRegistry:
         GCPRegistry populated with the legacy MapPoint representation.
     """
     from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
-
-    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
 
     repo = RepoPostgresGroundControlPoint(session)
     gcps_by_id: dict[str, GroundControlPoint] = repo.get_by_map(map_id)  # type: ignore[assignment]
