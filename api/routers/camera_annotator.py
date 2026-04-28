@@ -6,8 +6,9 @@ import mimetypes
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
 from homography_web.frame_utils import (
-    GCPS_DIR,
     get_available_images,
     get_frame_image_path,
     get_frame_repo,
@@ -18,7 +19,7 @@ from homography_web.frame_utils import (
     validate_image_filename,
 )
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.schemas.camera_annotator import (
     AnnotationOut,
     GcpOut,
@@ -30,7 +31,7 @@ from api.schemas.camera_annotator import (
 from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.infrastructure.models.user import UserModel
-from poc_homography.map_points.gcp_registry import from_gcp_repo
+from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
 # ---------------------------------------------------------------------------
 # Router
@@ -60,13 +61,14 @@ def _resolve_map_id(tenant_id: str) -> str:
 def list_gcps(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> list[GcpOut]:
     """List GCPs for a tenant."""
     map_entity = get_map_from_tenant_id(tenant_id)
     if map_entity is None:
         return []
     try:
-        registry = from_gcp_repo(GCPS_DIR, map_entity.id)
+        registry = from_gcp_repo_pg(session, map_entity.id)
     except (KeyError, ValueError, OSError):
         return []
 

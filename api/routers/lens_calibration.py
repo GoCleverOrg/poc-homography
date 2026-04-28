@@ -18,13 +18,14 @@ from homography_web.calibration_utils import (
     serialize_calibration_entry,
 )
 from homography_web.frame_utils import (
-    CALIBRATION_LINE_TRACES_DIR,
     CALIBRATIONS_DIR,
     get_line_annotation_repo,
     get_map_from_tenant_id,
 )
 
-from api.deps import get_current_user
+from sqlalchemy.orm import Session
+
+from api.deps import get_current_user, get_db_session
 from api.schemas.lens_calibration import (
     CalibrateAnnotatedLinesRequest,
     CalibrateAnnotatedLinesResponse,
@@ -41,26 +42,9 @@ from api.schemas.lens_calibration import (
     ValidateResponse,
 )
 from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.infrastructure.repositories import RepoPostgresCalibrationLineTraceSet
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Cached repo
-# ---------------------------------------------------------------------------
-
-_line_trace_set_repo = None
-
-
-def _get_line_trace_set_repo():
-    """Return a cached ``RepoYamlCalibrationLineTraceSet`` instance."""
-    global _line_trace_set_repo
-    if _line_trace_set_repo is None:
-        from poc_homography.infrastructure.repositories import (
-            RepoYamlCalibrationLineTraceSet,
-        )
-
-        _line_trace_set_repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
-    return _line_trace_set_repo
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +450,7 @@ def compute_intrinsics(
 @router.get("/api/line-trace-sets/", response_model=LineTraceSetsResponse)
 def line_trace_sets(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineTraceSetsResponse:
     """List available line trace sources.
@@ -474,7 +459,7 @@ def line_trace_sets(
     groups so that annotations created via camera_line_annotator also appear.
     """
     try:
-        repo = _get_line_trace_set_repo()
+        repo = RepoPostgresCalibrationLineTraceSet(session)
         entities = repo.get_all()
         names = sorted(e.name for e in entities)
 
@@ -495,6 +480,7 @@ def line_trace_sets(
 def line_trace_set_detail(
     name: str = Query(...),
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineTraceSetDetailResponse:
     """Load line traces by name.
@@ -504,7 +490,7 @@ def line_trace_set_detail(
     """
     try:
         # Try CalibrationLineTraceSet first
-        repo = _get_line_trace_set_repo()
+        repo = RepoPostgresCalibrationLineTraceSet(session)
         entity = repo.get(name)
         if entity is not None:
             return LineTraceSetDetailResponse(

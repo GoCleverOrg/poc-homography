@@ -13,10 +13,11 @@ import numpy as np
 import tifffile
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+
 from homography_web.frame_utils import (
     CALIBRATIONS_DIR,
     DATA_MAPS_DIR,
-    GCPS_DIR,
     LINES_DIR,
     extract_geotiff,
     get_frame_image_path,
@@ -33,7 +34,7 @@ from homography_web.frame_utils import (
 from line_picker.state import Line, from_line_repo
 from PIL import Image
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.utils.tiles import render_tile
 from api.schemas.homography_precision import (
     CameraInfoResponse,
@@ -64,7 +65,7 @@ from poc_homography.calibration.lens_distortion.calibration_table import load_ca
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.infrastructure.models.user import UserModel
-from poc_homography.map_points.gcp_registry import from_gcp_repo
+from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
 logger = logging.getLogger(__name__)
 
@@ -376,6 +377,7 @@ def api_compute_homography(
     body: ComputeHomographyRequest,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> ComputeHomographyResponse | JSONResponse:
     """Compute point-based homography with metrics, per-point errors, and overlays."""
     test_case_name = body.test_case_name
@@ -399,7 +401,7 @@ def api_compute_homography(
     if map_id is None:
         return _no_map_error()
     try:
-        registry = from_gcp_repo(GCPS_DIR, map_id)
+        registry = from_gcp_repo_pg(session, map_id)
     except (KeyError, ValueError, OSError) as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to load GCP registry: {e}"
@@ -519,13 +521,14 @@ def api_compute_homography(
 def api_gcp_registry(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> GCPRegistryResponse | JSONResponse:
     """Get the GCP registry for the tenant's map."""
     map_id = _require_map_id(tenant_id)
     if map_id is None:
         return _no_map_error()
     try:
-        registry = from_gcp_repo(GCPS_DIR, map_id)
+        registry = from_gcp_repo_pg(session, map_id)
     except (KeyError, ValueError, OSError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to load GCP registry: {e}")
 
@@ -687,6 +690,7 @@ def api_compute_line_errors(
     body: ComputeLineErrorsRequest,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> ComputeLineErrorsResponse | JSONResponse:
     """Compute line errors from a line test case.
 
@@ -771,7 +775,7 @@ def api_compute_line_errors(
         if map_id_for_gcps is None:
             return _no_map_error()
         try:
-            gcp_registry = from_gcp_repo(GCPS_DIR, map_id_for_gcps)
+            gcp_registry = from_gcp_repo_pg(session, map_id_for_gcps)
         except (KeyError, ValueError, OSError) as e:
             raise HTTPException(
                 status_code=500, detail=f"Failed to load GCP registry: {e}"

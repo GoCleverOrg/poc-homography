@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 import yaml
 
@@ -236,5 +239,79 @@ def list_map_ids(data_dir: Path) -> list[str]:
     from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
 
     repo = RepoYamlGroundControlPoint(data_dir)
+    all_gcps = repo.get_all()
+    return sorted({gcp.map_id for gcp in all_gcps})
+
+
+# ---------------------------------------------------------------------------
+# PostgreSQL-backed adapter functions
+# ---------------------------------------------------------------------------
+
+
+def from_gcp_repo_pg(session: Session, map_id: str) -> GCPRegistry:
+    """Load a GCPRegistry from the ``RepoPostgresGroundControlPoint`` repository.
+
+    Args:
+        session: SQLAlchemy session.
+        map_id: Map identifier to filter GCPs by.
+
+    Returns:
+        GCPRegistry populated with the legacy MapPoint representation.
+    """
+    from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
+
+    repo = RepoPostgresGroundControlPoint(session)
+    gcps_by_id = repo.get_by_map(map_id)
+
+    points: dict[str, MapPoint] = {}
+    for gcp in gcps_by_id.values():
+        mp = gcp.map_point
+        points[gcp.name] = MapPoint(
+            pixel_x=float(mp.pixel_point.x),
+            pixel_y=float(mp.pixel_point.y),
+        )
+
+    return GCPRegistry(map_id=map_id, points=points)
+
+
+def save_to_gcp_repo_pg(registry: GCPRegistry, session: Session) -> None:
+    """Save a GCPRegistry to the ``RepoPostgresGroundControlPoint`` repository.
+
+    Each point in the registry is converted to a ``GroundControlPoint`` entity
+    and persisted via the PostgreSQL repository.
+
+    Args:
+        registry: The legacy registry to persist.
+        session: SQLAlchemy session.
+    """
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint as DomainMapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
+
+    repo = RepoPostgresGroundControlPoint(session)
+    for name, point in registry.points.items():
+        gcp = GroundControlPoint(
+            name=name,
+            map_point=DomainMapPoint(
+                map_id=registry.map_id,
+                pixel_point=PixelPoint.create(point.pixel_x, point.pixel_y),
+            ),
+        )
+        repo.save(gcp)
+
+
+def list_map_ids_pg(session: Session) -> list[str]:
+    """Return sorted unique map IDs found in the PostgreSQL GCP repository.
+
+    Args:
+        session: SQLAlchemy session.
+
+    Returns:
+        Sorted list of unique map_id strings.
+    """
+    from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
+
+    repo = RepoPostgresGroundControlPoint(session)
     all_gcps = repo.get_all()
     return sorted({gcp.map_id for gcp in all_gcps})
