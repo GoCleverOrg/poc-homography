@@ -70,12 +70,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/homography-precision", tags=["homography-precision"])
 
 # ---------------------------------------------------------------------------
-# Caches
+# Types
 # ---------------------------------------------------------------------------
 
 
-class ImageInfoCache(TypedDict):
-    """Cache entry for image information."""
+class ImageInfo(TypedDict):
+    """Image metadata returned by info helpers."""
 
     width: int
     height: int
@@ -83,9 +83,6 @@ class ImageInfoCache(TypedDict):
     geotransform: list[float] | None
     crs: str | None
 
-
-_line_registry_cache: dict[str, list[Line]] = {}
-_image_info_cache: dict[str, ImageInfoCache] = {}
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -160,15 +157,11 @@ def _get_map_geotiff_file(tenant_id: str, session: Session) -> Path | None:
 
 
 def _load_line_registry(tenant_id: str, session: Session) -> list[Line]:
-    """Load and cache line registry from DDD repo."""
-    if tenant_id in _line_registry_cache:
-        return _line_registry_cache[tenant_id]
+    """Load line registry from the PG repo."""
     map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity is None:
         return []
-    lines = from_line_repo_pg(session, map_entity.id)
-    _line_registry_cache[tenant_id] = lines
-    return lines
+    return from_line_repo_pg(session, map_entity.id)
 
 
 def _load_test_case_by_name(name: str, map_id: str | None, session: Session) -> dict | None:
@@ -243,18 +236,14 @@ def _get_camera_image_path(test_case_name: str, map_id: str | None, session: Ses
     return get_frame_image_path(frame)
 
 
-def _get_camera_info(test_case_name: str, map_id: str | None, session: Session) -> ImageInfoCache | None:
-    """Get cached camera image info, loading if necessary."""
-    cache_key = f"camera:{test_case_name}"
-    if cache_key in _image_info_cache:
-        return _image_info_cache[cache_key]
-
+def _get_camera_info(test_case_name: str, map_id: str | None, session: Session) -> ImageInfo | None:
+    """Get camera image metadata."""
     image_path = _get_camera_image_path(test_case_name, map_id, session)
     if image_path is None or not image_path.exists():
         return None
 
     with Image.open(image_path) as img:
-        info: ImageInfoCache = {
+        return {
             "width": img.width,
             "height": img.height,
             "filename": image_path.name,
@@ -262,16 +251,9 @@ def _get_camera_info(test_case_name: str, map_id: str | None, session: Session) 
             "crs": None,
         }
 
-    _image_info_cache[cache_key] = info
-    return info
 
-
-def _get_map_info(tenant_id: str, session: Session) -> ImageInfoCache | None:
-    """Get cached map GeoTIFF info, loading if necessary."""
-    cache_key = f"map:geotiff:{tenant_id}"
-    if cache_key in _image_info_cache:
-        return _image_info_cache[cache_key]
-
+def _get_map_info(tenant_id: str, session: Session) -> ImageInfo | None:
+    """Get map GeoTIFF metadata."""
     geotiff_path = _get_map_geotiff_file(tenant_id, session)
     if geotiff_path is None or not geotiff_path.exists():
         return None
@@ -282,16 +264,13 @@ def _get_map_info(tenant_id: str, session: Session) -> ImageInfoCache | None:
         height: int = page.imagelength  # type: ignore[union-attr]
         geotiff = extract_geotiff(tif)
 
-        info: ImageInfoCache = {
+        return {
             "width": width,
             "height": height,
             "filename": geotiff_path.name,
             "geotransform": geotiff.geotransform.to_list() if geotiff else None,
             "crs": geotiff.crs if geotiff else None,
         }
-
-    _image_info_cache[cache_key] = info
-    return info
 
 
 def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:

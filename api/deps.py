@@ -26,10 +26,14 @@ _http_basic = HTTPBasic()
 
 
 def get_db_session() -> Generator[Session, None, None]:
-    """Yield a read-only SQLAlchemy session for authentication queries."""
+    """Yield an SQLAlchemy session, committing on success or rolling back on error."""
     session = get_sessionmaker()()
     try:
         yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
