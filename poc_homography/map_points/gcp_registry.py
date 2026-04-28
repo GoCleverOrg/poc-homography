@@ -260,8 +260,10 @@ def from_gcp_repo_pg(session: Session, map_id: str) -> GCPRegistry:
     """
     from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
 
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+
     repo = RepoPostgresGroundControlPoint(session)
-    gcps_by_id = repo.get_by_map(map_id)
+    gcps_by_id: dict[str, GroundControlPoint] = repo.get_by_map(map_id)  # type: ignore[assignment]
 
     points: dict[str, MapPoint] = {}
     for gcp in gcps_by_id.values():
