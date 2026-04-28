@@ -17,6 +17,8 @@ from PIL import Image
 from poc_homography.infrastructure.repositories import RepoYamlLine
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from poc_homography.domain.vo.geotiff import GeoTiff
 
 
@@ -209,11 +211,13 @@ class LinePickerState:
 _states: dict[str, LinePickerState] = {}
 
 
-def get_state(tenant_id: str) -> LinePickerState:
+def get_state(tenant_id: str, session: Session | None = None) -> LinePickerState:
     """Get or lazily initialize state for a tenant.
 
     Args:
         tenant_id: Tenant identifier.
+        session: Optional SQLAlchemy session. When provided, lines and map
+            resolution use PostgreSQL instead of YAML files.
 
     Returns:
         LinePickerState for the given tenant.
@@ -224,7 +228,12 @@ def get_state(tenant_id: str) -> LinePickerState:
     if tenant_id in _states:
         return _states[tenant_id]
 
-    map_entity, map_file = resolve_map_for_tenant(tenant_id)
+    if session is not None:
+        from api.utils.frame_helpers import resolve_map_for_tenant as resolve_pg
+
+        map_entity, map_file = resolve_pg(tenant_id, session)
+    else:
+        map_entity, map_file = resolve_map_for_tenant(tenant_id)
 
     state = LinePickerState(
         map_file,
@@ -232,7 +241,12 @@ def get_state(tenant_id: str) -> LinePickerState:
         width=int(map_entity.photo.width),
         height=int(map_entity.photo.height),
     )
-    state.lines = from_line_repo(LINES_DIR, map_entity.id)
+
+    if session is not None:
+        state.lines = from_line_repo_pg(session, map_entity.id)
+    else:
+        state.lines = from_line_repo(LINES_DIR, map_entity.id)
+
     _states[tenant_id] = state
     return state
 
@@ -357,6 +371,59 @@ def list_line_map_ids(data_dir: Path) -> list[str]:
     repo = _get_line_repo(data_dir)
     all_lines = repo.get_all()
     return sorted({line.map_id for line in all_lines})
+
+
+def from_line_repo_pg(session: Session, map_id: str) -> list[Line]:
+    """Load lines from ``RepoPostgresLine``."""
+    from poc_homography.infrastructure.repositories import RepoPostgresLine
+
+    repo = RepoPostgresLine(session)
+    return [
+        Line(
+            line_id=dl.name,
+            start_x=float(dl.start.x),
+            start_y=float(dl.start.y),
+            end_x=float(dl.end.x),
+            end_y=float(dl.end.y),
+        )
+        for dl in repo.get_by_map_id(map_id)
+    ]
+
+
+def save_line_to_repo_pg(
+    line_id: str,
+    start_x: float,
+    start_y: float,
+    end_x: float,
+    end_y: float,
+    map_id: str,
+    session: Session,
+) -> None:
+    """Persist a line via ``RepoPostgresLine``."""
+    from poc_homography.domain.entities.line import Line as DomainLine
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoPostgresLine
+
+    repo = RepoPostgresLine(session)
+    domain_line = DomainLine(
+        name=line_id,
+        map_id=map_id,
+        start=PixelPoint.create(start_x, start_y),
+        end=PixelPoint.create(end_x, end_y),
+    )
+    repo.save(domain_line)
+
+
+def delete_line_from_repo_pg(line_id: str, map_id: str, session: Session) -> None:
+    """Delete a line via ``RepoPostgresLine``."""
+    from poc_homography.domain.entities.line import Line as DomainLine
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoPostgresLine
+
+    repo = RepoPostgresLine(session)
+    _zero = PixelPoint.create(0, 0)
+    entity_id = DomainLine(name=line_id, map_id=map_id, start=_zero, end=_zero).id
+    repo.delete(entity_id)
 
 
 register_invalidation_callback(_states.clear)

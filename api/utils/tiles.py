@@ -13,8 +13,9 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
-from homography_web.frame_utils import normalize_array
 from PIL import Image
+
+from api.utils.frame_helpers import normalize_array
 
 
 def _read_tiff_as_rgb(image_path: Path, region: tuple[int, int, int, int] | None = None) -> Image.Image:
@@ -35,19 +36,19 @@ def _read_tiff_as_rgb(image_path: Path, region: tuple[int, int, int, int] | None
         # Apply region crop first (operates on the numpy array).
         if region is not None:
             x0, y0, x1, y1 = region
-            if data.ndim <= 3:  # noqa: PLR2004
+            if data.ndim <= 3:
                 # (H, W) or (H, W, C) -- spatial dims are the first two
                 data = data[y0:y1, x0:x1]
             else:
                 # Channel-first layout (C, H, W)
                 data = data[:, y0:y1, x0:x1]
 
-        if data.ndim == 2:  # noqa: PLR2004
+        if data.ndim == 2:
             img = Image.fromarray(normalize_array(data), mode="L")
             return img.convert("RGB")
 
-        if data.ndim == 3:  # noqa: PLR2004
-            if data.shape[2] >= 3:  # noqa: PLR2004
+        if data.ndim == 3:
+            if data.shape[2] >= 3:
                 return Image.fromarray(normalize_array(data[:, :, :3]), mode="RGB")
             img = Image.fromarray(normalize_array(data[:, :, 0]), mode="L")
             return img.convert("RGB")

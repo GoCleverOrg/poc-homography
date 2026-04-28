@@ -17,22 +17,10 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from homography_web.calibration_utils import (
-    list_calibration_ids,
-    load_calibration_from_repo,
-    serialize_calibration_entry,
-)
-from homography_web.frame_utils import (
-    CALIBRATIONS_DIR,
-    WEBAPP_DIR,
-    get_frame_image_path,
-    get_map_from_tenant_id,
-    image_filename_to_frame,
-    list_image_filenames,
-    validate_image_filename,
-)
+from homography_web.calibration_utils import serialize_calibration_entry
+from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.schemas.distortion_validator import (
     CalibrationFilesResponse,
     ComputeIntrinsicsRequest,
@@ -46,6 +34,14 @@ from api.schemas.distortion_validator import (
     TransformPointsResponse,
     UndistortRequest,
     UndistortResponse,
+)
+from api.utils.frame_helpers import (
+    WEBAPP_DIR,
+    get_frame_image_path,
+    get_map_for_tenant,
+    image_filename_to_frame,
+    list_image_filenames,
+    validate_image_filename,
 )
 from poc_homography.infrastructure.models.user import UserModel
 
@@ -71,10 +67,10 @@ router = APIRouter(prefix="/distortion-validator", tags=["distortion-validator"]
 MAX_POINTS = 10_000  # Prevent DoS via excessive input
 
 
-def _resolve_image_path(image_path: str) -> Path | None:
+def _resolve_image_path(image_path: str, session: Session) -> Path | None:
     """Resolve an image path safely against known directories."""
     # Try as filename in the CapturedFrame repo
-    frame = image_filename_to_frame(image_path)
+    frame = image_filename_to_frame(image_path, session)
     if frame is not None:
         fp = get_frame_image_path(frame)
         if fp.exists():
@@ -133,11 +129,15 @@ def _encode_image(img: np.ndarray) -> str:
 
 @router.get("/api/calibration-files/", response_model=CalibrationFilesResponse)
 def calibration_files(
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> CalibrationFilesResponse:
     """List available camera_ids in the calibration repo."""
+    from poc_homography.infrastructure.repositories import RepoPostgresLensCalibrationTable
+
     try:
-        camera_ids = list_calibration_ids(CALIBRATIONS_DIR)
+        repo = RepoPostgresLensCalibrationTable(session)
+        camera_ids = sorted(entity.id for entity in repo.get_all())
         return CalibrationFilesResponse(camera_ids=camera_ids)
     except Exception:
         logger.exception("Failed to list calibrations")
@@ -147,14 +147,18 @@ def calibration_files(
 @router.post("/api/load-calibration/", response_model=LoadCalibrationResponse)
 def load_calibration(
     body: LoadCalibrationRequest,
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LoadCalibrationResponse:
     """Load a calibration by camera_id from the DDD repo."""
+    from poc_homography.infrastructure.repositories import RepoPostgresLensCalibrationTable
+
     if not body.camera_id:
         raise HTTPException(status_code=400, detail="Missing camera_id")
 
     try:
-        entity = load_calibration_from_repo(body.camera_id, CALIBRATIONS_DIR)
+        repo = RepoPostgresLensCalibrationTable(session)
+        entity = repo.get(body.camera_id)
         if entity is None:
             raise HTTPException(
                 status_code=404,
@@ -175,6 +179,7 @@ def load_calibration(
 def images(
     tenant_id: str = Query(None),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> ImagesResponse:
     """List available test images."""
     try:
@@ -184,12 +189,12 @@ def images(
         map_id: str | None = None
         if tenant_id:
             try:
-                map_entity = get_map_from_tenant_id(tenant_id)
+                map_entity = get_map_for_tenant(tenant_id, session)
                 map_id = map_entity.id if map_entity else None
             except ValueError:
                 map_id = None
 
-        for filename in list_image_filenames(map_id):
+        for filename in list_image_filenames(session, map_id):
             result.append(ImageItem(name=filename, source="captured_frame"))
 
         # Survey images
@@ -219,6 +224,7 @@ def images(
 def undistort(
     body: UndistortRequest,
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> UndistortResponse:
     """Undistort an image using provided coefficients.
 
@@ -228,7 +234,7 @@ def undistort(
     if not body.image_path:
         raise HTTPException(status_code=400, detail="Missing image_path")
 
-    img_path = _resolve_image_path(body.image_path)
+    img_path = _resolve_image_path(body.image_path, session)
     if img_path is None:
         raise HTTPException(status_code=404, detail="Image not found")
 

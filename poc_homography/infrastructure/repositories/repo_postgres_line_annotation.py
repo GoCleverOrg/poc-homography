@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import select
+
 from poc_homography.domain.entities.line_annotation import LineAnnotation
 from poc_homography.infrastructure.models.line_annotation import LineAnnotationModel
 from poc_homography.infrastructure.repositories.base import RepoPostgres
@@ -37,3 +39,9 @@ class RepoPostgresLineAnnotation(RepoPostgres[LineAnnotation]):
                 else None
             ),
         }
+
+    def get_by_frame_id(self, frame_id: str) -> list[LineAnnotation]:
+        """Return all line annotations belonging to *frame_id*."""
+        stmt = select(self._model_cls).where(LineAnnotationModel.frame_id == frame_id)
+        rows = self._session.execute(stmt).scalars().all()
+        return [self._row_to_entity(row) for row in rows]

@@ -7,20 +7,10 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from homography_web.frame_utils import (
-    LINES_DIR,
-    get_available_images_fresh,
-    get_frame_image_path,
-    get_line_annotation_repo,
-    get_map_from_tenant_id,
-    image_filename_to_frame,
-    invalidate_cache,
-    load_line_annotations_for_frame,
-    validate_image_filename,
-)
-from line_picker.state import from_line_repo
+from line_picker.state import from_line_repo_pg
+from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.schemas.camera_line_annotator import (
     CameraStatusOut,
     CreateAnnotationRequest,
@@ -33,9 +23,18 @@ from api.schemas.camera_line_annotator import (
     UpdateAnnotationRequest,
     UpdateAnnotationResponse,
 )
+from api.utils.frame_helpers import (
+    get_frame_image_path,
+    get_map_for_tenant,
+    image_filename_to_frame,
+    list_image_filenames,
+    load_line_annotations_for_frame,
+    validate_image_filename,
+)
 from poc_homography.domain.entities.line_annotation import LineAnnotation
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.infrastructure.repositories import RepoPostgresLineAnnotation
 
 # ---------------------------------------------------------------------------
 # Router
@@ -54,9 +53,9 @@ _LINE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 # ---------------------------------------------------------------------------
 
 
-def _resolve_map_id(tenant_id: str) -> str:
+def _resolve_map_id(tenant_id: str, session: Session) -> str:
     """Return the map_id for *tenant_id*, raising 404 when missing."""
-    map_entity = get_map_from_tenant_id(tenant_id)
+    map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity is None:
         raise HTTPException(status_code=404, detail=f"No map found for tenant: {tenant_id}")
     return map_entity.id
@@ -68,12 +67,12 @@ def _validate_line_id(line_id: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid line_id format")
 
 
-def _validate_and_get_frame(image_filename: str):
+def _validate_and_get_frame(image_filename: str, session: Session):
     """Validate *image_filename* and return the CapturedFrame, or raise."""
     if not validate_image_filename(image_filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    frame = image_filename_to_frame(image_filename)
+    frame = image_filename_to_frame(image_filename, session)
     if frame is None:
         raise HTTPException(status_code=404, detail=f"Image not found: {image_filename}")
     return frame
@@ -99,28 +98,30 @@ def _annotation_dict_to_out(ann: dict) -> LineAnnotationOut:
 @router.get("/api/images/", response_model=list[str])
 def list_images(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> list[str]:
     """List available images for a tenant."""
-    map_id = _resolve_map_id(tenant_id)
-    return get_available_images_fresh(map_id)
+    map_id = _resolve_map_id(tenant_id, session)
+    return list_image_filenames(session, map_id)
 
 
 @router.post("/api/switch-image/", response_model=SwitchImageResponse)
 def switch_image(
     body: SwitchImageRequest,
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> SwitchImageResponse:
     """Validate an image and return its line annotations and camera status (stateless)."""
-    frame = _validate_and_get_frame(body.filename)
+    frame = _validate_and_get_frame(body.filename, session)
 
     # Ensure the frame belongs to the tenant's map
-    map_entity = get_map_from_tenant_id(tenant_id)
+    map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity and frame.map_id != map_entity.id:
         raise HTTPException(status_code=404, detail=f"Image not found: {body.filename}")
 
-    annotations = load_line_annotations_for_frame(frame.id)
+    annotations = load_line_annotations_for_frame(frame.id, session)
 
     camera_status = CameraStatusOut(
         pan=float(frame.ptz_state.pan_raw),
@@ -140,10 +141,11 @@ def switch_image(
 def serve_image(
     tenant_id: str = Query(...),
     image_filename: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> FileResponse:
     """Serve a camera image file from disk."""
-    frame = _validate_and_get_frame(image_filename)
+    frame = _validate_and_get_frame(image_filename, session)
 
     resolved_path = get_frame_image_path(frame)
     if not resolved_path.exists():
@@ -167,17 +169,15 @@ def serve_image(
 @router.get("/api/line-ids/", response_model=LineIdsResponse)
 def list_line_ids(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineIdsResponse:
     """Get available line IDs from the lines registry."""
-    map_entity = get_map_from_tenant_id(tenant_id)
+    map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity is None:
         raise HTTPException(status_code=404, detail=f"No map found for tenant: {tenant_id}")
 
-    try:
-        repo_lines = from_line_repo(LINES_DIR, map_entity.id)
-    except OSError:
-        repo_lines = []
+    repo_lines = from_line_repo_pg(session, map_entity.id)
 
     line_ids = [line.line_id for line in repo_lines if line.line_id]
     return LineIdsResponse(map_id=map_entity.id, line_ids=line_ids)
@@ -187,11 +187,12 @@ def list_line_ids(
 def get_annotations(
     tenant_id: str = Query(...),
     image_filename: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> list[LineAnnotationOut]:
     """Get line annotations for a specific image."""
-    frame = _validate_and_get_frame(image_filename)
-    annotations = load_line_annotations_for_frame(frame.id)
+    frame = _validate_and_get_frame(image_filename, session)
+    annotations = load_line_annotations_for_frame(frame.id, session)
     return [_annotation_dict_to_out(ann) for ann in annotations]
 
 
@@ -199,14 +200,15 @@ def get_annotations(
 def create_annotation(
     body: CreateAnnotationRequest,
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> CreateAnnotationResponse:
     """Create a new line annotation."""
     _validate_line_id(body.line_id)
 
-    frame = _validate_and_get_frame(body.image_filename)
+    frame = _validate_and_get_frame(body.image_filename, session)
 
-    repo = get_line_annotation_repo()
+    repo = RepoPostgresLineAnnotation(session)
 
     points_tuple: tuple[PixelPoint, ...] | None = None
     if body.points and len(body.points) >= 2:
@@ -221,7 +223,6 @@ def create_annotation(
         points=points_tuple,
     )
     repo.save(line_ann)
-    invalidate_cache()
 
     annotation_out = LineAnnotationOut(
         line_id=body.line_id,
@@ -240,14 +241,15 @@ def update_annotation(
     line_id: str,
     body: UpdateAnnotationRequest,
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> UpdateAnnotationResponse:
     """Update an existing line annotation."""
     _validate_line_id(line_id)
 
-    frame = _validate_and_get_frame(body.image_filename)
+    frame = _validate_and_get_frame(body.image_filename, session)
 
-    repo = get_line_annotation_repo()
+    repo = RepoPostgresLineAnnotation(session)
     entity_id = f"{frame.id}/{line_id}"
 
     if not repo.exists(entity_id):
@@ -266,7 +268,6 @@ def update_annotation(
         points=points_tuple,
     )
     repo.save(line_ann)
-    invalidate_cache()
 
     annotation_out = LineAnnotationOut(
         line_id=line_id,
@@ -285,21 +286,20 @@ def delete_annotation(
     line_id: str,
     tenant_id: str = Query(...),
     image_filename: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> DeleteAnnotationResponse:
     """Delete a line annotation."""
     _validate_line_id(line_id)
 
-    frame = _validate_and_get_frame(image_filename)
+    frame = _validate_and_get_frame(image_filename, session)
 
-    repo = get_line_annotation_repo()
+    repo = RepoPostgresLineAnnotation(session)
     entity_id = f"{frame.id}/{line_id}"
 
     deleted = repo.delete(entity_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Annotation not found: {line_id}")
-
-    invalidate_cache()
 
     return DeleteAnnotationResponse(success=True, deleted_line_id=line_id)
 
@@ -308,10 +308,11 @@ def delete_annotation(
 def camera_status(
     tenant_id: str = Query(...),
     image_filename: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> CameraStatusOut:
     """Get camera PTZ status for a specific image."""
-    frame = _validate_and_get_frame(image_filename)
+    frame = _validate_and_get_frame(image_filename, session)
 
     return CameraStatusOut(
         pan=float(frame.ptz_state.pan_raw),

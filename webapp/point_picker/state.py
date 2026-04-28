@@ -203,7 +203,12 @@ def get_state(tenant_id: str, session: Session | None = None) -> PointPickerStat
     if tenant_id in _states:
         return _states[tenant_id]
 
-    map_entity, map_file = resolve_map_for_tenant(tenant_id)
+    if session is not None:
+        from api.utils.frame_helpers import resolve_map_for_tenant as resolve_pg
+
+        map_entity, map_file = resolve_pg(tenant_id, session)
+    else:
+        map_entity, map_file = resolve_map_for_tenant(tenant_id)
 
     state = PointPickerState(
         map_file,

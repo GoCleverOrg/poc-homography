@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from homography_web.frame_utils import LINES_DIR
+from sqlalchemy.orm import Session
 from webapp.line_picker.state import (
-    delete_line_from_repo,
+    delete_line_from_repo_pg,
     get_state,
-    save_line_to_repo,
+    save_line_to_repo_pg,
 )
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.schemas.line_picker import (
     AddLineRequest,
     DeleteLineResponse,
@@ -38,10 +38,11 @@ router = APIRouter(prefix="/line-picker", tags=["line-picker"])
 @router.get("/api/image/info/", response_model=ImageInfoResponse)
 def image_info(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> ImageInfoResponse:
     """Return image metadata (dimensions, geotransform, CRS, filename)."""
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
     return ImageInfoResponse(
         width=state.width,
         height=state.height,
@@ -58,13 +59,14 @@ def image_tile(
     y: int = Query(0),
     z: int = Query(0),
     size: int = Query(256, ge=1, le=4096),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> Response:
     """Return an OpenSeadragon tile as a PNG image.
 
     At level *z* the image appears at resolution ``original / 2^(max_level - z)``.
     """
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
     png_bytes = render_tile(
         image_path=state.geotiff_path,
         width=state.width,
@@ -78,10 +80,11 @@ def image_tile(
 def image_full(
     tenant_id: str = Query(...),
     max_size: int = Query(2048, ge=1, le=8192),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> Response:
     """Return the full image scaled to *max_size* as a PNG."""
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
     png_bytes = render_full_image(image_path=state.geotiff_path, max_size=max_size)
     return Response(content=png_bytes, media_type="image/png")
 
@@ -94,10 +97,11 @@ def image_full(
 @router.get("/api/lines/", response_model=LineListResponse)
 def list_lines(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineListResponse:
     """List all lines for the tenant's map."""
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
     return LineListResponse(
         map_id=state.map_id,
         lines=[
@@ -117,23 +121,24 @@ def list_lines(
 def add_line(
     body: AddLineRequest,
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineOut:
     """Add a new line.
 
-    Persists to the YAML repo before mutating in-memory state so a failed
-    write never leaves state and disk out of sync.
+    Persists to the database before mutating in-memory state so a failed
+    write never leaves state and DB out of sync.
     """
     start_x = float(body.start_x)
     start_y = float(body.start_y)
     end_x = float(body.end_x)
     end_y = float(body.end_y)
 
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
 
     try:
         resolved_id = body.line_id if body.line_id is not None else state.get_next_id()
-        save_line_to_repo(resolved_id, start_x, start_y, end_x, end_y, state.map_id, LINES_DIR)
+        save_line_to_repo_pg(resolved_id, start_x, start_y, end_x, end_y, state.map_id, session)
         state.add_line(start_x, start_y, end_x, end_y, line_id=resolved_id)
 
         return LineOut(
@@ -152,13 +157,14 @@ def update_line(
     line_id: str,
     body: UpdateLineRequest,
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineOut:
     """Update the coordinate endpoints of an existing line.
 
     Supports partial updates -- only provided fields are changed.
     """
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
 
     line = state.get_line(line_id)
     if line is None:
@@ -174,8 +180,8 @@ def update_line(
     if new_start_x == new_end_x and new_start_y == new_end_y:
         raise HTTPException(status_code=422, detail="Start and end points must be different")
 
-    # Persist to YAML repo before mutating in-memory state
-    save_line_to_repo(line_id, new_start_x, new_start_y, new_end_x, new_end_y, state.map_id, LINES_DIR)
+    # Persist to DB before mutating in-memory state
+    save_line_to_repo_pg(line_id, new_start_x, new_start_y, new_end_x, new_end_y, state.map_id, session)
     line.start_x = new_start_x
     line.start_y = new_start_y
     line.end_x = new_end_x
@@ -194,14 +200,15 @@ def update_line(
 def delete_line(
     line_id: str,
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> DeleteLineResponse:
     """Delete a line."""
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
 
     try:
-        # Persist to YAML repo before mutating in-memory state
-        delete_line_from_repo(line_id, state.map_id, LINES_DIR)
+        # Persist to DB before mutating in-memory state
+        delete_line_from_repo_pg(line_id, state.map_id, session)
         state.delete_line(line_id)
         return DeleteLineResponse(deleted=line_id)
     except KeyError:
@@ -216,10 +223,11 @@ def delete_line(
 @router.get("/api/lines/next-id/", response_model=NextLineIdResponse)
 def next_line_id(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> NextLineIdResponse:
     """Return the next auto-incremented line ID."""
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
     return NextLineIdResponse(next_id=state.get_next_id())
 
 
@@ -228,10 +236,11 @@ def geo_coords(
     tenant_id: str = Query(...),
     pixel_x: float = Query(...),
     pixel_y: float = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> GeoCoordsResponse:
     """Convert pixel coordinates to geographic coordinates."""
-    state = get_state(tenant_id)
+    state = get_state(tenant_id, session)
 
     if state.geotiff is None:
         return GeoCoordsResponse(easting=None, northing=None, crs=None)

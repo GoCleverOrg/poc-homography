@@ -53,8 +53,9 @@ from camera_survey.ptz import create_ptz_camera
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
+from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.schemas.camera_diagnostic import (
     CameraOut,
     CameraResultIn,
@@ -386,12 +387,13 @@ def _run_ptz_test(
 @router.get("/api/tenants/")
 def api_tenants(
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> JSONResponse:
     """List all tenants."""
     try:
-        from homography_web.frame_utils import get_tenant_repo
+        from poc_homography.infrastructure.repositories import RepoPostgresTenant
 
-        tenant_entities = get_tenant_repo().get_all()
+        tenant_entities = RepoPostgresTenant(session).get_all()
         tenant_list = [
             TenantOut(id=t.id, name=t.name, description=t.description).model_dump()
             for t in tenant_entities
