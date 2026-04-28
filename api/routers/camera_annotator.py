@@ -18,18 +18,17 @@ from api.schemas.camera_annotator import (
     SwitchImageResponse,
 )
 from api.utils.frame_helpers import (
-    FRAMES_DIR,
     get_frame_image_path,
     get_map_for_tenant,
     image_filename_to_frame,
     list_image_filenames,
     load_annotations_for_frame,
+    save_annotations_for_frame,
     validate_image_filename,
 )
 from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.infrastructure.models.user import UserModel
-from poc_homography.infrastructure.repositories import RepoPostgresCapturedFrame
 from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
 # ---------------------------------------------------------------------------
@@ -160,9 +159,7 @@ def save_annotations(
         for ann in body.annotations
     ]
 
-    RepoPostgresCapturedFrame(session, frames_dir=FRAMES_DIR).save_annotations(
-        frame.id, ann_entities
-    )
+    save_annotations_for_frame(frame.id, ann_entities, session)
 
     return SaveAnnotationsResponse(success=True, saved=len(ann_entities))
 

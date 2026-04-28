@@ -11,11 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from homography_web.frame_utils import (
-    CALIBRATION_LINE_TRACES_DIR,
     CALIBRATIONS_DIR,
     DATA_MAPS_DIR,
     FRAMES_DIR,
-    LINES_DIR,
     WEBAPP_DIR,
     extract_geotiff,
     normalize_array,
@@ -31,15 +29,14 @@ from poc_homography.infrastructure.repositories import (
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from poc_homography.domain.entities.annotation import Annotation
     from poc_homography.domain.entities.captured_frame import CapturedFrame
     from poc_homography.domain.entities.map import Map
 
 __all__ = [
     "CALIBRATIONS_DIR",
-    "CALIBRATION_LINE_TRACES_DIR",
     "DATA_MAPS_DIR",
     "FRAMES_DIR",
-    "LINES_DIR",
     "WEBAPP_DIR",
     "extract_geotiff",
     "get_frame_image_path",
@@ -51,6 +48,7 @@ __all__ = [
     "load_line_annotations_for_frame",
     "normalize_array",
     "resolve_map_for_tenant",
+    "save_annotations_for_frame",
     "validate_image_filename",
 ]
 
@@ -128,6 +126,13 @@ def load_annotations_for_frame(frame_id: str, session: Session) -> list[dict]:
         }
         for ann in annotations
     ]
+
+
+def save_annotations_for_frame(
+    frame_id: str, annotations: list[Annotation], session: Session
+) -> None:
+    """Persist point annotations for *frame_id*."""
+    _frame_repo(session).save_annotations(frame_id, annotations)
 
 
 def load_line_annotations_for_frame(frame_id: str, session: Session) -> list[dict]:

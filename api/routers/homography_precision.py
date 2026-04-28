@@ -196,7 +196,7 @@ def _load_line_test_case_by_name(name: str, map_id: str | None, session: Session
     We strip the ``_lines`` suffix to find the frame, then load line
     annotations from the LineAnnotation repo.
     """
-    stem = name.removesuffix("_lines") if name.endswith("_lines") else name
+    stem = name.removesuffix("_lines")
 
     for frame in list_frames(session, map_id):
         if frame.image_path.stem != stem:
@@ -566,12 +566,13 @@ def api_line_registry(
     session: Session = Depends(get_db_session),
 ) -> LineRegistryResponse:
     """Get the line registry for the tenant's map."""
-    lines = _load_line_registry(tenant_id, session)
+    map_id = _require_map_id(tenant_id, session)
+    lines = from_line_repo_pg(session, map_id) if map_id else []
     if not lines:
         raise HTTPException(status_code=404, detail="No lines found in line registry")
 
     return LineRegistryResponse(
-        map_id=_require_map_id(tenant_id, session),
+        map_id=map_id,
         lines=[
             LineOut(
                 line_id=line.line_id,
@@ -746,11 +747,10 @@ def api_compute_line_errors(
                 detail=f"Need at least 4 point annotations, got {len(annotations)}",
             )
 
-        map_id_for_gcps = _require_map_id(tenant_id, session)
-        if map_id_for_gcps is None:
+        if map_id is None:
             return _no_map_error()
         try:
-            gcp_registry = from_gcp_repo_pg(session, map_id_for_gcps)
+            gcp_registry = from_gcp_repo_pg(session, map_id)
         except (KeyError, ValueError, OSError) as e:
             raise HTTPException(
                 status_code=500, detail=f"Failed to load GCP registry: {e}"
@@ -940,7 +940,7 @@ def api_map_info(
     if info is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Map GeoTIFF not found: {_get_map_geotiff_file(tenant_id, session)}",
+            detail="Map GeoTIFF not found for tenant",
         )
 
     return MapInfoResponse(

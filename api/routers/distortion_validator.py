@@ -44,6 +44,7 @@ from api.utils.frame_helpers import (
     validate_image_filename,
 )
 from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.infrastructure.repositories import RepoPostgresLensCalibrationTable
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +134,6 @@ def calibration_files(
     user: UserModel = Depends(get_current_user),
 ) -> CalibrationFilesResponse:
     """List available camera_ids in the calibration repo."""
-    from poc_homography.infrastructure.repositories import RepoPostgresLensCalibrationTable
-
     try:
         repo = RepoPostgresLensCalibrationTable(session)
         camera_ids = sorted(entity.id for entity in repo.get_all())
@@ -151,8 +150,6 @@ def load_calibration(
     user: UserModel = Depends(get_current_user),
 ) -> LoadCalibrationResponse:
     """Load a calibration by camera_id from the DDD repo."""
-    from poc_homography.infrastructure.repositories import RepoPostgresLensCalibrationTable
-
     if not body.camera_id:
         raise HTTPException(status_code=400, detail="Missing camera_id")
 
