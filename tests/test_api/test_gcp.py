@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from poc_homography.domain.entities.map import Map
 from poc_homography.domain.entities.tenant import Tenant
@@ -46,7 +46,7 @@ def _make_map(mid: str = "acme-map", tenant_id: str = "acme") -> Map:
 class TestGetTenants:
     """Tests for ``GET /gcp/api/tenants/``."""
 
-    @patch("api.routers.gcp.RepoYamlTenant")
+    @patch("api.routers.gcp.RepoPostgresTenant")
     def test_returns_tenant_list(
         self, mock_repo_cls: object, client: TestClient
     ) -> None:
@@ -64,7 +64,7 @@ class TestGetTenants:
         assert data["tenants"][0]["id"] == "t1"
         assert data["tenants"][1]["name"] == "Tenant Two"
 
-    @patch("api.routers.gcp.RepoYamlTenant")
+    @patch("api.routers.gcp.RepoPostgresTenant")
     def test_returns_empty_list(
         self, mock_repo_cls: object, client: TestClient
     ) -> None:
@@ -85,7 +85,7 @@ class TestGetTenants:
 class TestGetTenantMaps:
     """Tests for ``GET /gcp/api/tenants/{tenant_id}/maps/``."""
 
-    @patch("api.routers.gcp.RepoYamlMap")
+    @patch("api.routers.gcp.RepoPostgresMap")
     def test_returns_maps_for_tenant(
         self, mock_repo_cls: object, client: TestClient
     ) -> None:
@@ -101,7 +101,7 @@ class TestGetTenantMaps:
         assert data["maps"][0]["id"] == "map-1"
         assert data["maps"][0]["tenant_id"] == "acme"
 
-    @patch("api.routers.gcp.RepoYamlMap")
+    @patch("api.routers.gcp.RepoPostgresMap")
     def test_returns_empty_when_no_maps(
         self, mock_repo_cls: object, client: TestClient
     ) -> None:
@@ -122,20 +122,27 @@ class TestGetTenantMaps:
 class TestGetMapIds:
     """Tests for ``GET /gcp/api/map-ids/?tenant_id=…``."""
 
-    @patch("api.routers.gcp.list_map_ids")
-    @patch("api.routers.gcp.RepoYamlMap")
+    @patch("api.routers.gcp.RepoPostgresGroundControlPoint")
+    @patch("api.routers.gcp.RepoPostgresMap")
     def test_returns_filtered_map_ids(
         self,
-        mock_repo_cls: object,
-        mock_list_ids: object,
+        mock_map_cls: object,
+        mock_gcp_cls: object,
         client: TestClient,
     ) -> None:
-        mock_instance = mock_repo_cls.return_value  # type: ignore[union-attr]
-        mock_instance.get_by_tenant.return_value = {
+        mock_map_instance = mock_map_cls.return_value  # type: ignore[union-attr]
+        mock_map_instance.get_by_tenant.return_value = {
             "map-a": _make_map("map-a"),
             "map-b": _make_map("map-b"),
         }
-        mock_list_ids.return_value = ["map-a", "map-c"]  # type: ignore[union-attr]
+
+        # Mock GCPs: map-a and map-c have GCPs; map-b does not.
+        gcp_a = MagicMock()
+        gcp_a.map_id = "map-a"
+        gcp_c = MagicMock()
+        gcp_c.map_id = "map-c"
+        mock_gcp_instance = mock_gcp_cls.return_value  # type: ignore[union-attr]
+        mock_gcp_instance.get_all.return_value = [gcp_a, gcp_c]
 
         resp = client.get("/gcp/api/map-ids/", params={"tenant_id": "acme"})
 

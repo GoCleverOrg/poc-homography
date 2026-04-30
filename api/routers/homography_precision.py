@@ -13,28 +13,11 @@ import numpy as np
 import tifffile
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
-from homography_web.frame_utils import (
-    CALIBRATIONS_DIR,
-    DATA_MAPS_DIR,
-    GCPS_DIR,
-    LINES_DIR,
-    extract_geotiff,
-    get_frame_image_path,
-    get_map_from_tenant_id,
-    image_filename_to_frame,
-    list_frames,
-    load_annotations_for_frame,
-    load_line_annotations_for_frame,
-    register_invalidation_callback,
-)
-from homography_web.frame_utils import (
-    get_frame_repo as _get_frame_repo,
-)
-from line_picker.state import Line, from_line_repo
+from line_picker.state import Line, from_line_repo_pg
 from PIL import Image
+from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
-from api.utils.tiles import render_tile
+from api.deps import get_current_user, get_db_session
 from api.schemas.homography_precision import (
     CameraInfoResponse,
     ComputeHomographyFromLinesRequest,
@@ -60,11 +43,23 @@ from api.schemas.homography_precision import (
     TestCaseListResponse,
     TestCaseSummary,
 )
+from api.utils.frame_helpers import (
+    CALIBRATIONS_DIR,
+    DATA_MAPS_DIR,
+    extract_geotiff,
+    get_frame_image_path,
+    get_map_for_tenant,
+    image_filename_to_frame,
+    list_frames,
+    load_annotations_for_frame,
+    load_line_annotations_for_frame,
+)
+from api.utils.tiles import render_tile
 from poc_homography.calibration.lens_distortion.calibration_table import load_calibration_for_camera
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.infrastructure.models.user import UserModel
-from poc_homography.map_points.gcp_registry import from_gcp_repo
+from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +70,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/homography-precision", tags=["homography-precision"])
 
 # ---------------------------------------------------------------------------
-# Caches
+# Types
 # ---------------------------------------------------------------------------
 
 
-class ImageInfoCache(TypedDict):
-    """Cache entry for image information."""
+class ImageInfo(TypedDict):
+    """Image metadata returned by info helpers."""
 
     width: int
     height: int
@@ -88,12 +83,6 @@ class ImageInfoCache(TypedDict):
     geotransform: list[float] | None
     crs: str | None
 
-
-_line_registry_cache: dict[str, list[Line]] = {}
-_image_info_cache: dict[str, ImageInfoCache] = {}
-
-register_invalidation_callback(_line_registry_cache.clear)
-register_invalidation_callback(_image_info_cache.clear)
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -111,13 +100,13 @@ def _no_map_error() -> JSONResponse:
     )
 
 
-def _require_map_id(tenant_id: str) -> str | None:
+def _require_map_id(tenant_id: str, session: Session) -> str | None:
     """Return the map ID for a tenant, or None if no map is configured."""
-    entity = get_map_from_tenant_id(tenant_id)
+    entity = get_map_for_tenant(tenant_id, session)
     return entity.id if entity else None
 
 
-def _distortion_kwargs(test_case: dict) -> dict[str, float]:
+def _distortion_kwargs(test_case: dict, session: Session) -> dict[str, float]:
     """Build distortion kwargs for MapPointHomography from a test case.
 
     Extracts camera_name and zoom from the test case, loads the calibration
@@ -128,7 +117,7 @@ def _distortion_kwargs(test_case: dict) -> dict[str, float]:
     image_filename = test_case.get("image")
     if not image_filename:
         return {}
-    frame = image_filename_to_frame(image_filename)
+    frame = image_filename_to_frame(image_filename, session)
     if frame is None:
         return {}
     zoom = test_case.get("camera_status", {}).get("zoom")
@@ -156,9 +145,9 @@ def _distortion_kwargs(test_case: dict) -> dict[str, float]:
         return {}
 
 
-def _get_map_geotiff_file(tenant_id: str) -> Path | None:
+def _get_map_geotiff_file(tenant_id: str, session: Session) -> Path | None:
     """Return path to the GeoTIFF file for the tenant's map, or None."""
-    map_entity = get_map_from_tenant_id(tenant_id)
+    map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity is None:
         return None
     resolved = DATA_MAPS_DIR / map_entity.photo.path
@@ -167,27 +156,23 @@ def _get_map_geotiff_file(tenant_id: str) -> Path | None:
     return resolved
 
 
-def _load_line_registry(tenant_id: str) -> list[Line]:
-    """Load and cache line registry from DDD repo."""
-    if tenant_id in _line_registry_cache:
-        return _line_registry_cache[tenant_id]
-    map_entity = get_map_from_tenant_id(tenant_id)
+def _load_line_registry(tenant_id: str, session: Session) -> list[Line]:
+    """Load line registry from the PG repo."""
+    map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity is None:
         return []
-    lines = from_line_repo(LINES_DIR, map_entity.id)
-    _line_registry_cache[tenant_id] = lines
-    return lines
+    return from_line_repo_pg(session, map_entity.id)
 
 
-def _load_test_case_by_name(name: str, map_id: str | None = None) -> dict | None:
+def _load_test_case_by_name(name: str, map_id: str | None, session: Session) -> dict | None:
     """Load a test case by name from the CapturedFrame repo.
 
     Matches ``name`` against each frame's image stem (filename without extension).
     """
-    for frame in list_frames(map_id):
+    for frame in list_frames(session, map_id):
         if frame.image_path.stem != name:
             continue
-        annotations = load_annotations_for_frame(frame.id)
+        annotations = load_annotations_for_frame(frame.id, session)
         if not annotations:
             continue
         tc: dict = {
@@ -204,22 +189,22 @@ def _load_test_case_by_name(name: str, map_id: str | None = None) -> dict | None
     return None
 
 
-def _load_line_test_case_by_name(name: str, map_id: str | None = None) -> dict | None:
+def _load_line_test_case_by_name(name: str, map_id: str | None, session: Session) -> dict | None:
     """Load a line test case by name from the DDD repos.
 
     For line test cases the ``name`` convention is ``{image_stem}_lines``.
     We strip the ``_lines`` suffix to find the frame, then load line
     annotations from the LineAnnotation repo.
     """
-    stem = name.removesuffix("_lines") if name.endswith("_lines") else name
+    stem = name.removesuffix("_lines")
 
-    for frame in list_frames(map_id):
+    for frame in list_frames(session, map_id):
         if frame.image_path.stem != stem:
             continue
-        line_anns = load_line_annotations_for_frame(frame.id)
+        line_anns = load_line_annotations_for_frame(frame.id, session)
         if not line_anns:
             continue
-        point_anns = load_annotations_for_frame(frame.id)
+        point_anns = load_annotations_for_frame(frame.id, session)
         point_annotations_ref = frame.image_path.stem if point_anns else ""
         return {
             "name": name,
@@ -235,9 +220,9 @@ def _load_line_test_case_by_name(name: str, map_id: str | None = None) -> dict |
     return None
 
 
-def _get_camera_image_path(test_case_name: str, map_id: str | None = None) -> Path | None:
+def _get_camera_image_path(test_case_name: str, map_id: str | None, session: Session) -> Path | None:
     """Get the path to the camera image for a test case."""
-    test_case = _load_test_case_by_name(test_case_name, map_id)
+    test_case = _load_test_case_by_name(test_case_name, map_id, session)
     if test_case is None:
         return None
 
@@ -245,24 +230,20 @@ def _get_camera_image_path(test_case_name: str, map_id: str | None = None) -> Pa
     if not image_filename:
         return None
 
-    frame = image_filename_to_frame(image_filename)
+    frame = image_filename_to_frame(image_filename, session)
     if frame is None:
         return None
     return get_frame_image_path(frame)
 
 
-def _get_camera_info(test_case_name: str, map_id: str | None = None) -> ImageInfoCache | None:
-    """Get cached camera image info, loading if necessary."""
-    cache_key = f"camera:{test_case_name}"
-    if cache_key in _image_info_cache:
-        return _image_info_cache[cache_key]
-
-    image_path = _get_camera_image_path(test_case_name, map_id)
+def _get_camera_info(test_case_name: str, map_id: str | None, session: Session) -> ImageInfo | None:
+    """Get camera image metadata."""
+    image_path = _get_camera_image_path(test_case_name, map_id, session)
     if image_path is None or not image_path.exists():
         return None
 
     with Image.open(image_path) as img:
-        info: ImageInfoCache = {
+        return {
             "width": img.width,
             "height": img.height,
             "filename": image_path.name,
@@ -270,17 +251,10 @@ def _get_camera_info(test_case_name: str, map_id: str | None = None) -> ImageInf
             "crs": None,
         }
 
-    _image_info_cache[cache_key] = info
-    return info
 
-
-def _get_map_info(tenant_id: str) -> ImageInfoCache | None:
-    """Get cached map GeoTIFF info, loading if necessary."""
-    cache_key = f"map:geotiff:{tenant_id}"
-    if cache_key in _image_info_cache:
-        return _image_info_cache[cache_key]
-
-    geotiff_path = _get_map_geotiff_file(tenant_id)
+def _get_map_info(tenant_id: str, session: Session) -> ImageInfo | None:
+    """Get map GeoTIFF metadata."""
+    geotiff_path = _get_map_geotiff_file(tenant_id, session)
     if geotiff_path is None or not geotiff_path.exists():
         return None
 
@@ -290,16 +264,13 @@ def _get_map_info(tenant_id: str) -> ImageInfoCache | None:
         height: int = page.imagelength  # type: ignore[union-attr]
         geotiff = extract_geotiff(tif)
 
-        info: ImageInfoCache = {
+        return {
             "width": width,
             "height": height,
             "filename": geotiff_path.name,
             "geotransform": geotiff.geotransform.to_list() if geotiff else None,
             "crs": geotiff.crs if geotiff else None,
         }
-
-    _image_info_cache[cache_key] = info
-    return info
 
 
 def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
@@ -327,18 +298,18 @@ def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> floa
 def api_test_cases(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> TestCaseListResponse:
     """List all available test cases with annotation counts."""
-    repo = _get_frame_repo()
-    map_entity = get_map_from_tenant_id(tenant_id)
+    map_entity = get_map_for_tenant(tenant_id, session)
     map_id = map_entity.id if map_entity else None
-    frames = list_frames(map_id)
+    frames = list_frames(session, map_id)
     if not frames:
         raise HTTPException(status_code=404, detail="No captured frames found")
 
     test_cases: list[TestCaseSummary] = []
     for frame in frames:
-        annotations = repo.get_annotations(frame.id)
+        annotations = load_annotations_for_frame(frame.id, session)
         if not annotations:
             continue
         test_cases.append(
@@ -357,10 +328,11 @@ def api_test_case_detail(
     name: str,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> TestCaseDetailResponse:
     """Get a specific test case by name."""
-    map_id = _require_map_id(tenant_id)
-    tc = _load_test_case_by_name(name, map_id)
+    map_id = _require_map_id(tenant_id, session)
+    tc = _load_test_case_by_name(name, map_id, session)
     if tc is None:
         raise HTTPException(status_code=404, detail=f"Test case not found: {name}")
 
@@ -376,22 +348,23 @@ def api_compute_homography(
     body: ComputeHomographyRequest,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> ComputeHomographyResponse | JSONResponse:
     """Compute point-based homography with metrics, per-point errors, and overlays."""
     test_case_name = body.test_case_name
 
     # Load GCP registry from repository
-    map_id = _require_map_id(tenant_id)
+    map_id = _require_map_id(tenant_id, session)
 
     # Load test case
-    test_case = _load_test_case_by_name(test_case_name, map_id)
+    test_case = _load_test_case_by_name(test_case_name, map_id, session)
     if test_case is None:
         raise HTTPException(
             status_code=404, detail=f"Test case not found: {test_case_name}"
         )
 
     annotations = test_case.get("annotations", [])
-    if len(annotations) < 4:  # noqa: PLR2004
+    if len(annotations) < 4:
         raise HTTPException(
             status_code=400,
             detail=f"Need at least 4 annotations, got {len(annotations)}",
@@ -399,7 +372,7 @@ def api_compute_homography(
     if map_id is None:
         return _no_map_error()
     try:
-        registry = from_gcp_repo(GCPS_DIR, map_id)
+        registry = from_gcp_repo_pg(session, map_id)
     except (KeyError, ValueError, OSError) as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to load GCP registry: {e}"
@@ -407,7 +380,7 @@ def api_compute_homography(
 
     # Compute homography
     try:
-        homography = MapPointHomography(map_id=registry.map_id, **_distortion_kwargs(test_case))
+        homography = MapPointHomography(map_id=registry.map_id, **_distortion_kwargs(test_case, session))
         result = homography.compute_from_gcps(
             gcps=annotations,
             map_registry=registry,
@@ -519,13 +492,14 @@ def api_compute_homography(
 def api_gcp_registry(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> GCPRegistryResponse | JSONResponse:
     """Get the GCP registry for the tenant's map."""
-    map_id = _require_map_id(tenant_id)
+    map_id = _require_map_id(tenant_id, session)
     if map_id is None:
         return _no_map_error()
     try:
-        registry = from_gcp_repo(GCPS_DIR, map_id)
+        registry = from_gcp_repo_pg(session, map_id)
     except (KeyError, ValueError, OSError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to load GCP registry: {e}")
 
@@ -541,12 +515,13 @@ def api_gcp_registry(
 def api_line_test_cases(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> LineTestCaseListResponse:
     """List all available line test cases."""
-    map_id = _require_map_id(tenant_id)
+    map_id = _require_map_id(tenant_id, session)
     test_cases: list[LineTestCaseSummary] = []
-    for frame in list_frames(map_id):
-        line_anns = load_line_annotations_for_frame(frame.id)
+    for frame in list_frames(session, map_id):
+        line_anns = load_line_annotations_for_frame(frame.id, session)
         if not line_anns:
             continue
         test_cases.append(
@@ -568,10 +543,11 @@ def api_line_test_case_detail(
     name: str,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> LineTestCaseDetailResponse:
     """Get a specific line test case by name."""
-    map_id = _require_map_id(tenant_id)
-    tc = _load_line_test_case_by_name(name, map_id)
+    map_id = _require_map_id(tenant_id, session)
+    tc = _load_line_test_case_by_name(name, map_id, session)
     if tc is None:
         raise HTTPException(status_code=404, detail=f"Line test case not found: {name}")
 
@@ -587,14 +563,16 @@ def api_line_test_case_detail(
 def api_line_registry(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> LineRegistryResponse:
     """Get the line registry for the tenant's map."""
-    lines = _load_line_registry(tenant_id)
+    map_id = _require_map_id(tenant_id, session)
+    lines = from_line_repo_pg(session, map_id) if map_id else []
     if not lines:
         raise HTTPException(status_code=404, detail="No lines found in line registry")
 
     return LineRegistryResponse(
-        map_id=_require_map_id(tenant_id),
+        map_id=map_id,
         lines=[
             LineOut(
                 line_id=line.line_id,
@@ -616,16 +594,17 @@ def api_compute_homography_from_lines(
     body: ComputeHomographyFromLinesRequest,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> ComputeHomographyFromLinesResponse | JSONResponse:
     """Compute line-based homography from line correspondences."""
     test_case_name = body.test_case_name
     line_annotations = body.line_annotations
 
-    map_id = _require_map_id(tenant_id)
+    map_id = _require_map_id(tenant_id, session)
 
     line_test_case: dict | None = None
     if test_case_name:
-        line_test_case = _load_line_test_case_by_name(test_case_name, map_id)
+        line_test_case = _load_line_test_case_by_name(test_case_name, map_id, session)
         if line_test_case is None:
             raise HTTPException(
                 status_code=404,
@@ -638,13 +617,13 @@ def api_compute_homography_from_lines(
             detail="Missing required field: test_case_name or line_annotations",
         )
 
-    if len(line_annotations) < 2:  # noqa: PLR2004
+    if len(line_annotations) < 2:
         raise HTTPException(
             status_code=400,
             detail=f"Need at least 2 line annotations, got {len(line_annotations)}",
         )
 
-    lines = _load_line_registry(tenant_id)
+    lines = _load_line_registry(tenant_id, session)
     if not lines:
         raise HTTPException(status_code=500, detail="No lines found in line registry")
 
@@ -653,7 +632,7 @@ def api_compute_homography_from_lines(
     if map_id is None:
         return _no_map_error()
     try:
-        dist_kw = _distortion_kwargs(line_test_case) if test_case_name and line_test_case else {}
+        dist_kw = _distortion_kwargs(line_test_case, session) if test_case_name and line_test_case else {}
         homography = MapPointHomography(map_id=map_id, **dist_kw)
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
@@ -687,6 +666,7 @@ def api_compute_line_errors(
     body: ComputeLineErrorsRequest,
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> ComputeLineErrorsResponse | JSONResponse:
     """Compute line errors from a line test case.
 
@@ -697,8 +677,8 @@ def api_compute_line_errors(
     use_line_homography = body.use_line_homography
 
     # Load line test case
-    map_id = _require_map_id(tenant_id)
-    line_test_case = _load_line_test_case_by_name(test_case_name, map_id)
+    map_id = _require_map_id(tenant_id, session)
+    line_test_case = _load_line_test_case_by_name(test_case_name, map_id, session)
     if line_test_case is None:
         raise HTTPException(
             status_code=404, detail=f"Line test case not found: {test_case_name}"
@@ -711,7 +691,7 @@ def api_compute_line_errors(
         )
 
     # Load line registry (needed for both approaches)
-    lines = _load_line_registry(tenant_id)
+    lines = _load_line_registry(tenant_id, session)
     if not lines:
         raise HTTPException(
             status_code=500, detail="No lines found in line registry"
@@ -721,7 +701,7 @@ def api_compute_line_errors(
 
     # Compute homography - either from lines or from referenced point annotations
     if use_line_homography:
-        if len(line_annotations) < 2:  # noqa: PLR2004
+        if len(line_annotations) < 2:
             raise HTTPException(
                 status_code=400,
                 detail=f"Need at least 2 line annotations for line-based homography, got {len(line_annotations)}",
@@ -731,7 +711,7 @@ def api_compute_line_errors(
             return _no_map_error()
         try:
             homography = MapPointHomography(
-                map_id=map_id, **_distortion_kwargs(line_test_case)
+                map_id=map_id, **_distortion_kwargs(line_test_case, session)
             )
             homography.compute_from_lines(
                 line_annotations=line_annotations,
@@ -753,7 +733,7 @@ def api_compute_line_errors(
                 detail="No point_annotations_ref found in line test case. Use use_line_homography=true for line-based homography.",
             )
 
-        point_test_case = _load_test_case_by_name(point_annotations_ref, map_id)
+        point_test_case = _load_test_case_by_name(point_annotations_ref, map_id, session)
         if point_test_case is None:
             raise HTTPException(
                 status_code=404,
@@ -761,17 +741,16 @@ def api_compute_line_errors(
             )
 
         annotations = point_test_case.get("annotations", [])
-        if len(annotations) < 4:  # noqa: PLR2004
+        if len(annotations) < 4:
             raise HTTPException(
                 status_code=400,
                 detail=f"Need at least 4 point annotations, got {len(annotations)}",
             )
 
-        map_id_for_gcps = _require_map_id(tenant_id)
-        if map_id_for_gcps is None:
+        if map_id is None:
             return _no_map_error()
         try:
-            gcp_registry = from_gcp_repo(GCPS_DIR, map_id_for_gcps)
+            gcp_registry = from_gcp_repo_pg(session, map_id)
         except (KeyError, ValueError, OSError) as e:
             raise HTTPException(
                 status_code=500, detail=f"Failed to load GCP registry: {e}"
@@ -779,7 +758,7 @@ def api_compute_line_errors(
 
         try:
             homography = MapPointHomography(
-                map_id=gcp_registry.map_id, **_distortion_kwargs(line_test_case)
+                map_id=gcp_registry.map_id, **_distortion_kwargs(line_test_case, session)
             )
             homography.compute_from_gcps(
                 gcps=annotations,
@@ -932,10 +911,11 @@ def api_camera_info(
     case: str = Query(...),
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> CameraInfoResponse:
     """Get camera image metadata (width, height, filename)."""
-    map_id = _require_map_id(tenant_id)
-    info = _get_camera_info(case, map_id)
+    map_id = _require_map_id(tenant_id, session)
+    info = _get_camera_info(case, map_id, session)
     if info is None:
         raise HTTPException(
             status_code=404,
@@ -953,13 +933,14 @@ def api_camera_info(
 def api_map_info(
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> MapInfoResponse:
     """Get map GeoTIFF metadata (width, height, filename, geotransform, CRS)."""
-    info = _get_map_info(tenant_id)
+    info = _get_map_info(tenant_id, session)
     if info is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Map GeoTIFF not found: {_get_map_geotiff_file(tenant_id)}",
+            detail="Map GeoTIFF not found for tenant",
         )
 
     return MapInfoResponse(
@@ -980,21 +961,22 @@ def api_camera_tile(
     size: int = Query(256, ge=1, le=4096),
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> Response:
     """Get a camera image tile at specified coordinates and zoom level.
 
     OpenSeadragon uses a pyramid where level 0 is most zoomed out and
     the max level is full resolution.
     """
-    map_id = _require_map_id(tenant_id)
-    info = _get_camera_info(case, map_id)
+    map_id = _require_map_id(tenant_id, session)
+    info = _get_camera_info(case, map_id, session)
     if info is None:
         raise HTTPException(
             status_code=404,
             detail=f"Test case not found or image missing: {case}",
         )
 
-    image_path = _get_camera_image_path(case, map_id)
+    image_path = _get_camera_image_path(case, map_id, session)
     if image_path is None or not image_path.exists():
         raise HTTPException(
             status_code=404,
@@ -1018,6 +1000,7 @@ def api_map_tile(
     size: int = Query(256, ge=1, le=4096),
     tenant_id: str = Query(...),
     user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
 ) -> Response:
     """Get a map GeoTIFF tile at specified coordinates and zoom level.
 
@@ -1026,14 +1009,14 @@ def api_map_tile(
     """
     # Resolve the file path once to avoid TOCTOU race between info lookup
     # and the actual tile read.
-    geotiff_path = _get_map_geotiff_file(tenant_id)
+    geotiff_path = _get_map_geotiff_file(tenant_id, session)
     if geotiff_path is None:
         raise HTTPException(
             status_code=404,
             detail="Map GeoTIFF not found for tenant",
         )
 
-    info = _get_map_info(tenant_id)
+    info = _get_map_info(tenant_id, session)
     if info is None:
         raise HTTPException(
             status_code=404,

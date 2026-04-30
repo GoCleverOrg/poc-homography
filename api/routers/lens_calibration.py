@@ -11,20 +11,10 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from homography_web.calibration_utils import (
-    list_calibration_ids,
-    load_calibration_from_repo,
-    save_calibration_to_repo,
-    serialize_calibration_entry,
-)
-from homography_web.frame_utils import (
-    CALIBRATION_LINE_TRACES_DIR,
-    CALIBRATIONS_DIR,
-    get_line_annotation_repo,
-    get_map_from_tenant_id,
-)
+from homography_web.calibration_utils import serialize_calibration_entry
+from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
+from api.deps import get_current_user, get_db_session
 from api.schemas.lens_calibration import (
     CalibrateAnnotatedLinesRequest,
     CalibrateAnnotatedLinesResponse,
@@ -40,27 +30,15 @@ from api.schemas.lens_calibration import (
     ValidateRequest,
     ValidateResponse,
 )
+from api.utils.frame_helpers import get_map_for_tenant
 from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.infrastructure.repositories import (
+    RepoPostgresCalibrationLineTraceSet,
+    RepoPostgresLensCalibrationTable,
+    RepoPostgresLineAnnotation,
+)
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Cached repo
-# ---------------------------------------------------------------------------
-
-_line_trace_set_repo = None
-
-
-def _get_line_trace_set_repo():
-    """Return a cached ``RepoYamlCalibrationLineTraceSet`` instance."""
-    global _line_trace_set_repo
-    if _line_trace_set_repo is None:
-        from poc_homography.infrastructure.repositories import (
-            RepoYamlCalibrationLineTraceSet,
-        )
-
-        _line_trace_set_repo = RepoYamlCalibrationLineTraceSet(CALIBRATION_LINE_TRACES_DIR)
-    return _line_trace_set_repo
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +290,7 @@ def validate_calibration(
 @router.post("/api/save/", response_model=SaveCalibrationResponse)
 def save_calibration(
     body: SaveCalibrationRequest,
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> SaveCalibrationResponse:
     """Save calibration results via the DDD repo."""
@@ -320,6 +299,7 @@ def save_calibration(
             CameraCalibrationTable,
             ZoomCalibrationEntry,
         )
+        from poc_homography.calibration.lens_distortion.ddd_sync import sync_to_ddd_repo_pg
         from poc_homography.domain.vo import LensDistortion
         from poc_homography.types import Unitless
 
@@ -346,7 +326,7 @@ def save_calibration(
         )
         table.add_entry(entry)
 
-        save_calibration_to_repo(table, CALIBRATIONS_DIR)
+        sync_to_ddd_repo_pg(table, session)
 
         return SaveCalibrationResponse(success=True, camera_id=body.camera_id)
 
@@ -363,6 +343,7 @@ def save_calibration(
 @router.post("/api/load/", response_model=LoadCalibrationResponse)
 def load_calibration(
     body: LoadCalibrationRequest,
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LoadCalibrationResponse:
     """Load calibration from DDD repo by camera_id."""
@@ -370,7 +351,8 @@ def load_calibration(
         raise HTTPException(status_code=400, detail="Missing camera_id")
 
     try:
-        entity = load_calibration_from_repo(body.camera_id, CALIBRATIONS_DIR)
+        repo = RepoPostgresLensCalibrationTable(session)
+        entity = repo.get(body.camera_id)
         if entity is None:
             raise HTTPException(
                 status_code=404,
@@ -381,9 +363,6 @@ def load_calibration(
 
         return LoadCalibrationResponse(camera_id=entity.id, entries=entries)
 
-    except ImportError:
-        logger.exception("Calibration module not available")
-        raise HTTPException(status_code=500, detail="Calibration module not available")
     except HTTPException:
         raise
     except Exception:
@@ -393,11 +372,13 @@ def load_calibration(
 
 @router.get("/api/calibration-ids/", response_model=CalibrationIdsResponse)
 def calibration_ids(
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> CalibrationIdsResponse:
     """List available camera_ids in the calibration repo."""
     try:
-        camera_ids = list_calibration_ids(CALIBRATIONS_DIR)
+        repo = RepoPostgresLensCalibrationTable(session)
+        camera_ids = sorted(entity.id for entity in repo.get_all())
         return CalibrationIdsResponse(camera_ids=camera_ids)
     except Exception:
         logger.exception("Failed to list calibration IDs")
@@ -466,6 +447,7 @@ def compute_intrinsics(
 @router.get("/api/line-trace-sets/", response_model=LineTraceSetsResponse)
 def line_trace_sets(
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineTraceSetsResponse:
     """List available line trace sources.
@@ -474,13 +456,14 @@ def line_trace_sets(
     groups so that annotations created via camera_line_annotator also appear.
     """
     try:
-        repo = _get_line_trace_set_repo()
+        repo = RepoPostgresCalibrationLineTraceSet(session)
         entities = repo.get_all()
         names = sorted(e.name for e in entities)
 
-        map_entity = get_map_from_tenant_id(tenant_id)
+        map_entity = get_map_for_tenant(tenant_id, session)
         map_id = map_entity.id if map_entity else None
-        all_frame_ids = {ann.frame_id for ann in get_line_annotation_repo().get_all()}
+        line_ann_repo = RepoPostgresLineAnnotation(session)
+        all_frame_ids = {ann.frame_id for ann in line_ann_repo.get_all()}
         if map_id:
             all_frame_ids = {fid for fid in all_frame_ids if fid.startswith(map_id + "/")}
         frame_ids = sorted(all_frame_ids)
@@ -495,6 +478,7 @@ def line_trace_sets(
 def line_trace_set_detail(
     name: str = Query(...),
     tenant_id: str = Query(...),
+    session: Session = Depends(get_db_session),
     user: UserModel = Depends(get_current_user),
 ) -> LineTraceSetDetailResponse:
     """Load line traces by name.
@@ -504,7 +488,7 @@ def line_trace_set_detail(
     """
     try:
         # Try CalibrationLineTraceSet first
-        repo = _get_line_trace_set_repo()
+        repo = RepoPostgresCalibrationLineTraceSet(session)
         entity = repo.get(name)
         if entity is not None:
             return LineTraceSetDetailResponse(
@@ -513,11 +497,12 @@ def line_trace_set_detail(
             )
 
         # Fall back to LineAnnotation entities matching this frame_id (tenant-scoped)
-        map_entity = get_map_from_tenant_id(tenant_id)
+        map_entity = get_map_for_tenant(tenant_id, session)
         map_id = map_entity.id if map_entity else None
+        line_ann_repo = RepoPostgresLineAnnotation(session)
         frame_anns = [
             ann
-            for ann in get_line_annotation_repo().get_all()
+            for ann in line_ann_repo.get_all()
             if ann.frame_id == name and (not map_id or name.startswith(map_id + "/"))
         ]
         if frame_anns:

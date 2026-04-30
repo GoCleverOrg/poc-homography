@@ -109,35 +109,13 @@ export default function DashboardPage() {
       {!loading && !hasMaps && selectedTenantId && (
         <div className={styles.noMapWarning}>
           <strong>
-            No map configured for tenant &ldquo;{selectedTenantId}&rdquo;
+            No map data available for tenant &ldquo;{selectedTenantId}&rdquo;
           </strong>
-          Map-dependent tools are disabled. To set up a map for this tenant:
-          <ol>
-            <li>
-              Place a GeoTIFF file in the project root (e.g.{' '}
-              <code>my_map.tif</code>)
-            </li>
-            <li>
-              Create a map YAML file at <code>data/maps/&lt;name&gt;.yaml</code>{' '}
-              with:
-              <pre>{`id: my_map          # must match the .tif filename (without extension)
-tenant_id: ${selectedTenantId}
-photo:
-  path: my_map.png
-  width: ...         # image width in pixels
-  height: ...        # image height in pixels
-geotiff:
-  geotransform:
-    origin_easting: ...
-    pixel_width: ...
-    row_rotation: 0.0
-    origin_northing: ...
-    col_rotation: 0.0
-    pixel_height: ...
-  crs: EPSG:25830`}</pre>
-            </li>
-            <li>Restart the server</li>
-          </ol>
+          <p>
+            Map-dependent tools require GCP data to be configured for this
+            tenant&apos;s map. Contact an administrator to set up map and GCP
+            data.
+          </p>
         </div>
       )}
 

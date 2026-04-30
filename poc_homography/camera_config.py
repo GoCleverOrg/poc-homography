@@ -12,6 +12,12 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from poc_homography.infrastructure.repositories import RepoPostgresTenant
 
 # Legacy global credentials - kept for backwards compatibility
 # Prefer tenant-specific credentials defined in per-tenant env vars
@@ -30,6 +36,18 @@ def _get_tenant_repo():
     from poc_homography.infrastructure.repositories import RepoYamlTenant
 
     return RepoYamlTenant(_project_root() / "data" / "tenants")
+
+
+def _get_tenant_repo_pg(session: Session) -> RepoPostgresTenant:
+    """Create a PostgreSQL-backed tenant repository for the given session.
+
+    Unlike the YAML variant this is *not* cached because the repository is
+    bound to a specific SQLAlchemy session whose lifetime is managed by the
+    caller.
+    """
+    from poc_homography.infrastructure.repositories import RepoPostgresTenant as _Cls
+
+    return _Cls(session)
 
 
 # =============================================================================
@@ -423,6 +441,48 @@ def get_tenant_by_name(tenant_name: str) -> dict | None:
         Tenant configuration dict or None if not found
     """
     for tenant in _get_tenant_repo().get_all():
+        if tenant.name == tenant_name:
+            return _tenant_to_dict(tenant)
+    return None
+
+
+def get_tenants_pg(session: Session) -> list:
+    """Get list of all tenant configurations (PostgreSQL-backed).
+
+    Args:
+        session: SQLAlchemy session.
+
+    Returns:
+        List of tenant configuration dicts.
+    """
+    return [_tenant_to_dict(t) for t in _get_tenant_repo_pg(session).get_all()]
+
+
+def get_tenant_by_id_pg(session: Session, tenant_id: str) -> dict | None:
+    """Find tenant configuration by ID (PostgreSQL-backed).
+
+    Args:
+        session: SQLAlchemy session.
+        tenant_id: ID of the tenant (e.g., "valte", "setram").
+
+    Returns:
+        Tenant configuration dict or None if not found.
+    """
+    tenant = _get_tenant_repo_pg(session).get(tenant_id)
+    return _tenant_to_dict(tenant) if tenant else None
+
+
+def get_tenant_by_name_pg(session: Session, tenant_name: str) -> dict | None:
+    """Find tenant configuration by name (PostgreSQL-backed).
+
+    Args:
+        session: SQLAlchemy session.
+        tenant_name: Name of the tenant (e.g., "Valte", "Setram").
+
+    Returns:
+        Tenant configuration dict or None if not found.
+    """
+    for tenant in _get_tenant_repo_pg(session).get_all():
         if tenant.name == tenant_name:
             return _tenant_to_dict(tenant)
     return None

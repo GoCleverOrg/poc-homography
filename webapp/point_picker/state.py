@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 - used at runtime
+from typing import TYPE_CHECKING
 
 import tifffile
 from homography_web.frame_utils import (
@@ -17,6 +18,9 @@ from poc_homography.domain.vo.geotiff import GeoTiff
 from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
 from poc_homography.map_points.gcp_registry import GCPRegistry
 from poc_homography.map_points.map_point import MapPoint
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # Tag abbreviation mapping
 TAG_ABBREVIATIONS = {
@@ -182,11 +186,13 @@ class PointPickerState:
 _states: dict[str, PointPickerState] = {}
 
 
-def get_state(tenant_id: str) -> PointPickerState:
+def get_state(tenant_id: str, session: Session | None = None) -> PointPickerState:
     """Get or lazily initialize state for a tenant.
 
     Args:
         tenant_id: Tenant identifier.
+        session: Optional SQLAlchemy session. When provided, GCPs are loaded
+            from PostgreSQL instead of YAML files.
 
     Returns:
         PointPickerState for the given tenant.
@@ -197,7 +203,12 @@ def get_state(tenant_id: str) -> PointPickerState:
     if tenant_id in _states:
         return _states[tenant_id]
 
-    map_entity, map_file = resolve_map_for_tenant(tenant_id)
+    if session is not None:
+        from api.utils.frame_helpers import resolve_map_for_tenant as resolve_pg
+
+        map_entity, map_file = resolve_pg(tenant_id, session)
+    else:
+        map_entity, map_file = resolve_map_for_tenant(tenant_id)
 
     state = PointPickerState(
         map_file,
@@ -205,8 +216,12 @@ def get_state(tenant_id: str) -> PointPickerState:
         height=int(map_entity.photo.height),
     )
 
-    # Load GCPs for this tenant's map only
-    if GCPS_DIR.exists():
+    if session is not None:
+        from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
+
+        state.registry = from_gcp_repo_pg(session, map_entity.id)
+        state.map_id = state.registry.map_id
+    elif GCPS_DIR.exists():
         from poc_homography.map_points.gcp_registry import from_gcp_repo
 
         state.registry = from_gcp_repo(GCPS_DIR, map_entity.id)
@@ -294,6 +309,45 @@ def delete_gcp_from_repo(point_id: str, map_id: str, data_dir: Path) -> None:
 
     repo = _get_gcp_repo(data_dir)
     # Use GroundControlPoint.id to derive the entity ID rather than duplicating the format.
+    _zero = PixelPoint.create(0, 0)
+    entity_id = GroundControlPoint(
+        name=point_id, map_point=DomainMapPoint(map_id=map_id, pixel_point=_zero)
+    ).id
+    repo.delete(entity_id)
+
+
+def save_gcp_to_repo_pg(
+    point_id: str,
+    pixel_x: float,
+    pixel_y: float,
+    map_id: str,
+    session: Session,
+) -> None:
+    """Persist a single GCP via ``RepoPostgresGroundControlPoint``."""
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint as DomainMapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
+
+    repo = RepoPostgresGroundControlPoint(session)
+    gcp = GroundControlPoint(
+        name=point_id,
+        map_point=DomainMapPoint(
+            map_id=map_id,
+            pixel_point=PixelPoint.create(pixel_x, pixel_y),
+        ),
+    )
+    repo.save(gcp)
+
+
+def delete_gcp_from_repo_pg(point_id: str, map_id: str, session: Session) -> None:
+    """Delete a GCP via ``RepoPostgresGroundControlPoint``."""
+    from poc_homography.domain.entities.ground_control_point import GroundControlPoint
+    from poc_homography.domain.vo.map_point import MapPoint as DomainMapPoint
+    from poc_homography.domain.vo.pixel_point import PixelPoint
+    from poc_homography.infrastructure.repositories import RepoPostgresGroundControlPoint
+
+    repo = RepoPostgresGroundControlPoint(session)
     _zero = PixelPoint.create(0, 0)
     entity_id = GroundControlPoint(
         name=point_id, map_point=DomainMapPoint(map_id=map_id, pixel_point=_zero)
