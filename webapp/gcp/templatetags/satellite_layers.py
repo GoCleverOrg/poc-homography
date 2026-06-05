@@ -13,6 +13,8 @@ Usage in templates:
 
 from __future__ import annotations
 
+from typing import cast
+
 from django import template
 from django.utils.safestring import SafeString, mark_safe
 
@@ -146,4 +148,4 @@ def satellite_layers_js(
 
         L.control.layers(baseLayers).addTo(map);""")
 
-    return mark_safe("\n".join(js_parts))
+    return cast("SafeString", mark_safe("\n".join(js_parts)))

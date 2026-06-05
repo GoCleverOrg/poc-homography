@@ -464,7 +464,7 @@ def api_line_trace_set_detail(request: HttpRequest) -> JsonResponse:
     First tries CalibrationLineTraceSet entities, then falls back to
     LineAnnotation entities grouped by frame_id.
     """
-    name = request.GET.get("name", "")
+    name: str = request.GET.get("name", "")
     if not name:
         return JsonResponse({"error": "Missing name"}, status=400)
 

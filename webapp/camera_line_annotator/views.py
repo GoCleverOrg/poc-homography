@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -193,7 +193,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     if map_entity and frame.map_id != map_entity.id:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
-    request.session[SESSION_IMAGE_KEY] = filename
+    request.session[SESSION_IMAGE_KEY] = filename  # pyright: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
 
     image_annotations = load_existing_line_annotations(filename)
 
@@ -214,7 +214,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
 
 @require_GET
-def serve_image(request: HttpRequest) -> HttpResponse:
+def serve_image(request: HttpRequest) -> HttpResponse | FileResponse:
     """Serve the current image file."""
     return serve_current_image(request, SESSION_IMAGE_KEY, _get_tenant_map_id(request))
 
@@ -382,5 +382,3 @@ def api_camera_status(request: HttpRequest) -> JsonResponse:
             "zoom": float(frame.ptz_state.zoom),
         }
     )
-
-

@@ -9,12 +9,10 @@ Pattern follows existing ``calibration_utils.py``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
-import tifffile
-from django.http import HttpResponse
-from numpy.typing import NDArray
+from django.http import FileResponse, HttpResponse
 
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.infrastructure.repositories import (
@@ -27,7 +25,9 @@ from poc_homography.infrastructure.repositories import (
 from poc_homography.types import Easting, Meters, Northing, Unitless
 
 if TYPE_CHECKING:
+    import tifffile
     from django.http import HttpRequest
+    from numpy.typing import NDArray
 
     from poc_homography.domain.entities.captured_frame import CapturedFrame
     from poc_homography.domain.entities.map import Map
@@ -180,7 +180,7 @@ def get_tenant_id(request: HttpRequest) -> str:
     Raises:
         TenantIdError: If tenant_id is missing or unknown.
     """
-    tenant_id = request.GET.get("tenant_id")
+    tenant_id: str | None = request.GET.get("tenant_id")
     if not tenant_id:
         raise TenantIdError("Missing required query parameter: tenant_id")
     if get_tenant_repo().get(tenant_id) is None:
@@ -219,7 +219,7 @@ def get_map_from_tenant_id(tenant_id: str) -> Map | None:
     """
     maps = get_map_repo().get_by_tenant(tenant_id)
     if maps:
-        return next(iter(maps.values()))
+        return cast("Map", next(iter(maps.values())))
     return None
 
 
@@ -447,7 +447,7 @@ def get_current_image(
         session_key: Session key used to store current image filename.
         map_id: If provided, only consider images for this map.
     """
-    session_image = request.session.get(session_key)
+    session_image = request.session.get(session_key)  # pyright: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
     if session_image:
         frame = image_filename_to_frame(session_image)
         if frame is not None and (map_id is None or frame.map_id == map_id):
@@ -467,7 +467,7 @@ def serve_current_image(
     request: HttpRequest,
     session_key: str,
     map_id: str | None = None,
-) -> HttpResponse:
+) -> HttpResponse | FileResponse:
     """Serve the current image file for an annotator app.
 
     Args:
@@ -498,7 +498,7 @@ def serve_current_image(
         mime_type = "image/jpeg"
 
     response = FileResponse(
-        open(resolved_path, "rb"),  # noqa: SIM115
+        open(resolved_path, "rb"),
         content_type=mime_type,
     )
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"

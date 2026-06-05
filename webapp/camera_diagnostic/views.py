@@ -28,7 +28,6 @@ from poc_homography.camera_config import (
     get_rtsp_url,
     get_tenant_by_id,
     get_tenant_credentials,
-    get_tenants,
 )
 from poc_homography.infrastructure.clients.hikvision import HikvisionISAPIClient
 
@@ -133,10 +132,11 @@ def _validate_camera_for_webui_ptz(camera_name: str) -> tuple[dict, str, str, st
     username, password = get_tenant_credentials(tenant_id)
 
     if not username or not password:
+        tenant_label = (tenant_id or "").upper()
         return _error_response(
             CameraErrorCategory.CREDENTIALS_NOT_SET,
             f"Camera credentials not set for tenant '{tenant_id}'. "
-            f"Set {tenant_id.upper()}_CAMERA_USERNAME and {tenant_id.upper()}_CAMERA_PASSWORD, "
+            f"Set {tenant_label}_CAMERA_USERNAME and {tenant_label}_CAMERA_PASSWORD, "
             "or global CAMERA_USERNAME/CAMERA_PASSWORD as fallback.",
         )
 

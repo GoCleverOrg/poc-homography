@@ -310,7 +310,7 @@ def api_session_detail(request: HttpRequest, session_id: str) -> JsonResponse:
 
 
 @require_GET
-def api_session_manifest(request: HttpRequest, session_id: str) -> HttpResponse:
+def api_session_manifest(request: HttpRequest, session_id: str) -> HttpResponse | FileResponse:
     """Get session manifest YAML file.
 
     Args:
@@ -333,7 +333,9 @@ def api_session_manifest(request: HttpRequest, session_id: str) -> HttpResponse:
 
 
 @require_GET
-def api_session_image(request: HttpRequest, session_id: str, filename: str) -> HttpResponse:
+def api_session_image(
+    request: HttpRequest, session_id: str, filename: str
+) -> HttpResponse | FileResponse:
     """Serve session image file.
 
     Args:
