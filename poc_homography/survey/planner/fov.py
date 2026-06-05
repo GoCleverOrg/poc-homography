@@ -17,24 +17,38 @@ if TYPE_CHECKING:
     from poc_homography.domain.enums.camera_spec import CameraSpec
 
 
-def horizontal_fov_degrees(spec: CameraSpec, zoom: float) -> Degrees:
-    """Compute the horizontal field of view in degrees at a zoom level.
+def _focal_length_px(spec: CameraSpec, zoom: float) -> float:
+    """Return the focal length in pixels at a *clamped* zoom level.
 
-    Args:
-        spec: Camera specification supplying sensor/optics dimensions.
-        zoom: Zoom factor (1.0 = wide).
-
-    Returns:
-        Horizontal field of view in degrees.
+    Routes through :meth:`CameraSpec.focal_length_at_zoom` so the zoom is
+    clamped to ``[1.0, max_zoom]`` (matching the optics model used elsewhere),
+    then reuses :func:`compute_intrinsics` for the millimetre→pixel conversion.
     """
+    # ``focal_length_at_zoom`` applies the [1.0, max_zoom] clamp; recover the
+    # clamped zoom factor and feed it through the shared intrinsics routine.
+    clamped_focal = spec.focal_length_at_zoom(zoom)
+    clamped_zoom = clamped_focal / spec.base_focal_length
     intrinsics = compute_intrinsics(
-        Unitless(zoom),
+        Unitless(clamped_zoom),
         spec.image_width,
         spec.image_height,
         spec.sensor_width,
         spec.base_focal_length,
     )
-    f_px = float(intrinsics.focal_length_px)
+    return float(intrinsics.focal_length_px)
+
+
+def horizontal_fov_degrees(spec: CameraSpec, zoom: float) -> Degrees:
+    """Compute the horizontal field of view in degrees at a zoom level.
+
+    Args:
+        spec: Camera specification supplying sensor/optics dimensions.
+        zoom: Zoom factor (clamped to ``[1.0, max_zoom]``; 1.0 = wide).
+
+    Returns:
+        Horizontal field of view in degrees.
+    """
+    f_px = _focal_length_px(spec, zoom)
     return Degrees(math.degrees(2.0 * math.atan(spec.image_width / (2.0 * f_px))))
 
 
@@ -43,19 +57,12 @@ def vertical_fov_degrees(spec: CameraSpec, zoom: float) -> Degrees:
 
     Args:
         spec: Camera specification supplying sensor/optics dimensions.
-        zoom: Zoom factor (1.0 = wide).
+        zoom: Zoom factor (clamped to ``[1.0, max_zoom]``; 1.0 = wide).
 
     Returns:
         Vertical field of view in degrees.
     """
-    intrinsics = compute_intrinsics(
-        Unitless(zoom),
-        spec.image_width,
-        spec.image_height,
-        spec.sensor_width,
-        spec.base_focal_length,
-    )
-    f_px = float(intrinsics.focal_length_px)
+    f_px = _focal_length_px(spec, zoom)
     return Degrees(math.degrees(2.0 * math.atan(spec.image_height / (2.0 * f_px))))
 
 

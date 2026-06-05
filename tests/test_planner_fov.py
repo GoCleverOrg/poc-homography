@@ -50,3 +50,21 @@ class TestHorizontalFov:
     def test_vertical_smaller_than_horizontal(self):
         # 16:9 sensor -> vertical FOV is smaller.
         assert vertical_fov_degrees(SPEC, 1.0) < horizontal_fov_degrees(SPEC, 1.0)
+
+
+class TestFovZoomClamping:
+    """FOV must route through CameraSpec.focal_length_at_zoom (clamped zoom)."""
+
+    def test_below_min_zoom_clamps_to_wide(self):
+        # zoom < 1.0 must be clamped up to 1.0, not produce a wider-than-physical FOV.
+        assert horizontal_fov_degrees(SPEC, 0.5) == pytest.approx(horizontal_fov_degrees(SPEC, 1.0))
+
+    def test_zoom_zero_does_not_crash_and_clamps(self):
+        # Without clamping this divides by zero; clamping to 1.0 makes it the wide FOV.
+        assert horizontal_fov_degrees(SPEC, 0.0) == pytest.approx(horizontal_fov_degrees(SPEC, 1.0))
+
+    def test_above_max_zoom_clamps_to_tele(self):
+        # zoom beyond max_zoom must be clamped down to max_zoom.
+        assert horizontal_fov_degrees(SPEC, SPEC.max_zoom * 2) == pytest.approx(
+            horizontal_fov_degrees(SPEC, SPEC.max_zoom)
+        )
