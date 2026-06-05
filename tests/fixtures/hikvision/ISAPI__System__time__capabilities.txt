@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<Time xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <timeMode opt="NTP,manual"/>
+
+
+  <timeType opt="UTC"/>
+
+
+</Time>

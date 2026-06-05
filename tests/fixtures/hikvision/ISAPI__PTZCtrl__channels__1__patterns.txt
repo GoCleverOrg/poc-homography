@@ -1,0 +1,65 @@
+<?xml version="1.0" ?>
+<PTZPatternList xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <PTZPattern xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>1</id>
+
+
+    <space>100</space>
+
+
+  </PTZPattern>
+
+
+  <PTZPattern xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>2</id>
+
+
+    <space>100</space>
+
+
+  </PTZPattern>
+
+
+  <PTZPattern xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>3</id>
+
+
+    <space>100</space>
+
+
+  </PTZPattern>
+
+
+  <PTZPattern xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>4</id>
+
+
+    <space>100</space>
+
+
+  </PTZPattern>
+
+
+</PTZPatternList>

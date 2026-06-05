@@ -1,3 +1,4 @@
+# ruff: noqa: B018  # bare-name references are intentional in a vulture whitelist
 DistortionCoefficients  # backward-compat alias (poc_homography/camera_parameters.py:21)
 _.remove_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:202)
 _.get_zoom_levels  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:373)
@@ -253,3 +254,34 @@ _.hashed_password  # unused attribute - SA column (infrastructure/models/user.py
 _.is_active  # unused attribute - SA column (infrastructure/models/user.py)
 _.updated_at  # unused attribute - SA column (infrastructure/models/user.py)
 
+
+# -- Hikvision ISAPI adapter Phase A public surface (consumed by Phase C client) --
+# Endpoint path builders (poc_homography/infrastructure/clients/hikvision/isapi_endpoints.py)
+ptz_capabilities  # unused function - ISAPI endpoint builder
+ptz_absolute_ex_capabilities  # unused function - ISAPI endpoint builder
+ptz_absolute  # unused function - ISAPI endpoint builder
+ptz_relative  # unused function - ISAPI endpoint builder
+ptz_continuous  # unused function - ISAPI endpoint builder
+ptz_momentary  # unused function - ISAPI endpoint builder
+ptz_position3d  # unused function - ISAPI endpoint builder
+ptz_presets  # unused function - ISAPI endpoint builder
+ptz_preset_goto  # unused function - ISAPI endpoint builder
+ptz_home_goto  # unused function - ISAPI endpoint builder
+system_status  # unused function - ISAPI endpoint builder
+streaming_channel  # unused function - ISAPI endpoint builder
+streaming_picture  # unused function - ISAPI endpoint builder
+image_focus_configuration  # unused function - ISAPI endpoint builder
+image_iris  # unused function - ISAPI endpoint builder
+image_exposure  # unused function - ISAPI endpoint builder
+image_white_balance  # unused function - ISAPI endpoint builder
+image_capabilities  # unused function - ISAPI endpoint builder
+# Unit conversions (poc_homography/infrastructure/clients/hikvision/isapi_units.py)
+raw_to_degrees  # unused function - PTZ unit conversion
+degrees_to_raw  # unused function - PTZ unit conversion
+raw_to_zoom  # unused function - PTZ unit conversion
+zoom_to_raw  # unused function - PTZ unit conversion
+# Transport public API (poc_homography/infrastructure/clients/hikvision/isapi_transport.py)
+_.get_xml  # unused method - IsapiTransport public API
+_.put_xml  # unused method - IsapiTransport public API
+_.get_bytes  # unused method - IsapiTransport public API
+_.auth  # unused attribute - requests.Session.auth assignment

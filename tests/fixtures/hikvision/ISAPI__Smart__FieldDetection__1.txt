@@ -1,0 +1,122 @@
+<?xml version="1.0" ?>
+<FieldDetection xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <id>1</id>
+
+
+  <enabled>false</enabled>
+
+
+  <startTriggerTime>500</startTriggerTime>
+
+
+  <endTriggerTime>500</endTriggerTime>
+
+
+  <normalizedScreenSize>
+
+
+    <normalizedScreenWidth>1000</normalizedScreenWidth>
+
+
+    <normalizedScreenHeight>1000</normalizedScreenHeight>
+
+
+  </normalizedScreenSize>
+
+
+  <FieldDetectionRegionList size="4">
+
+
+    <FieldDetectionRegion xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <id>1</id>
+
+
+      <enabled>false</enabled>
+
+
+      <sensitivityLevel>50</sensitivityLevel>
+
+
+      <timeThreshold>0</timeThreshold>
+
+
+      <detectionTarget> </detectionTarget>
+
+
+    </FieldDetectionRegion>
+
+
+    <FieldDetectionRegion xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <id>2</id>
+
+
+      <enabled>false</enabled>
+
+
+      <sensitivityLevel>50</sensitivityLevel>
+
+
+      <timeThreshold>0</timeThreshold>
+
+
+      <detectionTarget> </detectionTarget>
+
+
+    </FieldDetectionRegion>
+
+
+    <FieldDetectionRegion xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <id>3</id>
+
+
+      <enabled>false</enabled>
+
+
+      <sensitivityLevel>50</sensitivityLevel>
+
+
+      <timeThreshold>0</timeThreshold>
+
+
+      <detectionTarget> </detectionTarget>
+
+
+    </FieldDetectionRegion>
+
+
+    <FieldDetectionRegion xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <id>4</id>
+
+
+      <enabled>false</enabled>
+
+
+      <sensitivityLevel>50</sensitivityLevel>
+
+
+      <timeThreshold>0</timeThreshold>
+
+
+      <detectionTarget> </detectionTarget>
+
+
+    </FieldDetectionRegion>
+
+
+  </FieldDetectionRegionList>
+
+
+  <isSupportMultiScene>true</isSupportMultiScene>
+
+
+</FieldDetection>

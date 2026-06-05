@@ -1,0 +1,80 @@
+<?xml version="1.0" ?>
+<PTZChannel xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <id>1</id>
+
+
+  <enabled>true</enabled>
+
+
+  <videoInputID>1</videoInputID>
+
+
+  <panMaxSpeed>400</panMaxSpeed>
+
+
+  <tiltMaxSpeed>200</tiltMaxSpeed>
+
+
+  <presetSpeed>4</presetSpeed>
+
+
+  <autoPatrolSpeed>70</autoPatrolSpeed>
+
+
+  <keyBoardControlSpeed>normal</keyBoardControlSpeed>
+
+
+  <controlProtocol>PELCO-D</controlProtocol>
+
+
+  <controlAddress>
+
+
+    <enabled>true</enabled>
+
+
+    <Address>0</Address>
+
+
+  </controlAddress>
+
+
+  <defaultPresetID>1</defaultPresetID>
+
+
+  <PTZRs485Para>
+
+
+    <baudRate>9600</baudRate>
+
+
+    <dataBits>8</dataBits>
+
+
+    <parityType>none</parityType>
+
+
+    <stopBits>1</stopBits>
+
+
+    <flowCtrl>none</flowCtrl>
+
+
+  </PTZRs485Para>
+
+
+  <panSupport>true</panSupport>
+
+
+  <tiltSupport>true</tiltSupport>
+
+
+  <zoomSupport>true</zoomSupport>
+
+
+  <manualControlSpeed>selfadaptive</manualControlSpeed>
+
+
+</PTZChannel>

@@ -1,0 +1,23 @@
+<?xml version="1.0" ?>
+<ParkAction xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <enabled>false</enabled>
+
+
+  <Parktime>5</Parktime>
+
+
+  <Action>
+
+
+    <ActionType>autoscan</ActionType>
+
+
+    <ActionNum>0</ActionNum>
+
+
+  </Action>
+
+
+</ParkAction>

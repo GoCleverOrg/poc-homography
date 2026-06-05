@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<WDR xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <mode>close</mode>
+
+
+  <WDRLevel>50</WDRLevel>
+
+
+</WDR>

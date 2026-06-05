@@ -1,0 +1,197 @@
+<?xml version="1.0" ?>
+<DeviceStatus xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <currentDeviceTime>2026-06-05T02:04:41+01:00</currentDeviceTime>
+
+
+  <deviceUpTime>126519</deviceUpTime>
+
+
+  <CPUList>
+
+
+    <CPU>
+
+
+      <cpuDescription>ARM926EJ-Sid(wb) [41069265] revision 5 (ARMv5TEJ)</cpuDescription>
+
+
+      <cpuUtilization>56</cpuUtilization>
+
+
+    </CPU>
+
+
+  </CPUList>
+
+
+  <MemoryList>
+
+
+    <Memory>
+
+
+      <memoryDescription>DDR Memory</memoryDescription>
+
+
+      <memoryUsage>43</memoryUsage>
+
+
+      <memoryAvailable>290912</memoryAvailable>
+
+
+    </Memory>
+
+
+  </MemoryList>
+
+
+  <CameraList>
+
+
+    <Camera>
+
+
+      <zoomReverseTimes>724</zoomReverseTimes>
+
+
+      <zoomTotalSteps>621</zoomTotalSteps>
+
+
+      <focusReverseTimes>4811</focusReverseTimes>
+
+
+      <focusTotalSteps>310</focusTotalSteps>
+
+
+      <irisShiftTimes>3951</irisShiftTimes>
+
+
+      <irisTotalSteps>27</irisTotalSteps>
+
+
+      <icrShiftTimes>0</icrShiftTimes>
+
+
+      <icrTotalSteps>0</icrTotalSteps>
+
+
+      <lensIntirTimes>11</lensIntirTimes>
+
+
+      <cameraRunTotalTime>182826</cameraRunTotalTime>
+
+
+    </Camera>
+
+
+  </CameraList>
+
+
+  <DomeInfoList>
+
+
+    <DomeInfo>
+
+
+      <domeRunTotalTime>182826</domeRunTotalTime>
+
+
+      <runTimeUnderNegativetwenty>0</runTimeUnderNegativetwenty>
+
+
+      <runTimeBetweenNtwentyPforty>182826</runTimeBetweenNtwentyPforty>
+
+
+      <runtimeOverPositiveforty>0</runtimeOverPositiveforty>
+
+
+      <panTotalRounds>206</panTotalRounds>
+
+
+      <tiltTotalRounds>134</tiltTotalRounds>
+
+
+      <heatState>0</heatState>
+
+
+      <fanState>1</fanState>
+
+
+      <panFrecRecord>1564</panFrecRecord>
+
+
+      <tiltFrecRecord>1405</tiltFrecRecord>
+
+
+    </DomeInfo>
+
+
+  </DomeInfoList>
+
+
+  <totalRebootCount>12</totalRebootCount>
+
+
+  <AlarmInfoList>
+
+
+    <AlarmInfo>
+
+
+      <channelId>1</channelId>
+
+
+      <FaceAlarm>
+
+
+        <faceSnapRecvAlarm>0</faceSnapRecvAlarm>
+
+
+        <faceSnapSendAlarm>0</faceSnapSendAlarm>
+
+
+      </FaceAlarm>
+
+
+      <MixTargetAlarm>
+
+
+        <mixTargetRecvAlarm>0</mixTargetRecvAlarm>
+
+
+        <mixTargetSendAlarm>0</mixTargetSendAlarm>
+
+
+      </MixTargetAlarm>
+
+
+    </AlarmInfo>
+
+
+  </AlarmInfoList>
+
+
+  <AlertStreamServerList>
+
+
+    <AlertStreamServer>
+
+
+      <id>1</id>
+
+
+      <protocolType>SDK</protocolType>
+
+
+      <ipAddress>192.168.7.99</ipAddress>
+
+
+    </AlertStreamServer>
+
+
+  </AlertStreamServerList>
+
+
+</DeviceStatus>

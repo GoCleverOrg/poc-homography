@@ -1,0 +1,218 @@
+<?xml version="1.0" ?>
+<StreamingChannel xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <id>102</id>
+
+
+  <channelName>IPdome</channelName>
+
+
+  <enabled>true</enabled>
+
+
+  <Transport>
+
+
+    <maxPacketSize>1000</maxPacketSize>
+
+
+    <ControlProtocolList>
+
+
+      <ControlProtocol>
+
+
+        <streamingTransport>RTSP</streamingTransport>
+
+
+      </ControlProtocol>
+
+
+      <ControlProtocol>
+
+
+        <streamingTransport>HTTP</streamingTransport>
+
+
+      </ControlProtocol>
+
+
+      <ControlProtocol>
+
+
+        <streamingTransport>SHTTP</streamingTransport>
+
+
+      </ControlProtocol>
+
+
+      <ControlProtocol>
+
+
+        <streamingTransport>SRTP</streamingTransport>
+
+
+      </ControlProtocol>
+
+
+    </ControlProtocolList>
+
+
+    <Unicast>
+
+
+      <enabled>true</enabled>
+
+
+      <rtpTransportType>RTP/TCP</rtpTransportType>
+
+
+    </Unicast>
+
+
+    <Multicast>
+
+
+      <enabled>true</enabled>
+
+
+      <destIPAddress>0.0.0.0</destIPAddress>
+
+
+      <videoDestPortNo>8866</videoDestPortNo>
+
+
+      <audioDestPortNo>8868</audioDestPortNo>
+
+
+    </Multicast>
+
+
+    <Security>
+
+
+      <enabled>true</enabled>
+
+
+      <certificateType>digest</certificateType>
+
+
+      <SecurityAlgorithm>
+
+
+        <algorithmType>MD5</algorithmType>
+
+
+      </SecurityAlgorithm>
+
+
+    </Security>
+
+
+    <SRTPMulticast>
+
+
+      <SRTPVideoDestPortNo>18868</SRTPVideoDestPortNo>
+
+
+      <SRTPAudioDestPortNo>18866</SRTPAudioDestPortNo>
+
+
+    </SRTPMulticast>
+
+
+  </Transport>
+
+
+  <Video>
+
+
+    <enabled>true</enabled>
+
+
+    <videoInputChannelID>1</videoInputChannelID>
+
+
+    <videoCodecType>H.264</videoCodecType>
+
+
+    <videoScanType>progressive</videoScanType>
+
+
+    <videoResolutionWidth>704</videoResolutionWidth>
+
+
+    <videoResolutionHeight>576</videoResolutionHeight>
+
+
+    <videoQualityControlType>VBR</videoQualityControlType>
+
+
+    <constantBitRate>1024</constantBitRate>
+
+
+    <fixedQuality>60</fixedQuality>
+
+
+    <vbrUpperCap>1024</vbrUpperCap>
+
+
+    <vbrLowerCap>32</vbrLowerCap>
+
+
+    <maxFrameRate>2500</maxFrameRate>
+
+
+    <keyFrameInterval>2000</keyFrameInterval>
+
+
+    <snapShotImageType>JPEG</snapShotImageType>
+
+
+    <H264Profile>Main</H264Profile>
+
+
+    <GovLength>50</GovLength>
+
+
+    <SVC>
+
+
+      <enabled>false</enabled>
+
+
+    </SVC>
+
+
+    <PacketType>PS</PacketType>
+
+
+    <PacketType>RTP</PacketType>
+
+
+    <smoothing>50</smoothing>
+
+
+    <H265Profile>Main</H265Profile>
+
+
+  </Video>
+
+
+  <Audio>
+
+
+    <enabled>false</enabled>
+
+
+    <audioInputChannelID>1</audioInputChannelID>
+
+
+    <audioCompressionType>G.711ulaw</audioCompressionType>
+
+
+  </Audio>
+
+
+</StreamingChannel>

@@ -1,0 +1,80 @@
+<?xml version="1.0" ?>
+<DeviceInfo xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <deviceName>icozee-camptz-04</deviceName>
+
+
+  <deviceID>099f4000-4d50-11b4-82c8-743fc2fca19b</deviceID>
+
+
+  <deviceDescription>IPDome</deviceDescription>
+
+
+  <deviceLocation>hangzhou</deviceLocation>
+
+
+  <systemContact>Hikvision.China</systemContact>
+
+
+  <model>DS-2DF8425IX-AELW</model>
+
+
+  <serialNumber>DS-2DF8425IX-AELW20240712CCWRFH3535597</serialNumber>
+
+
+  <macAddress>74:3f:c2:fc:a1:9b</macAddress>
+
+
+  <firmwareVersion>V5.8.0</firmwareVersion>
+
+
+  <firmwareReleasedDate>build 230208</firmwareReleasedDate>
+
+
+  <encoderVersion>V7.3</encoderVersion>
+
+
+  <encoderReleasedDate>build 221103</encoderReleasedDate>
+
+
+  <bootVersion>V1.3.4</bootVersion>
+
+
+  <bootReleasedDate>100316</bootReleasedDate>
+
+
+  <hardwareVersion>0x0</hardwareVersion>
+
+
+  <deviceType>IPDome</deviceType>
+
+
+  <telecontrolID>88</telecontrolID>
+
+
+  <supportBeep>true</supportBeep>
+
+
+  <supportVideoLoss>false</supportVideoLoss>
+
+
+  <firmwareVersionInfo>B-R-H8-0</firmwareVersionInfo>
+
+
+  <manufacturer>hikvision</manufacturer>
+
+
+  <subSerialNumber>FH3535597</subSerialNumber>
+
+
+  <OEMCode>1</OEMCode>
+
+
+  <firmware>opdevsdk mediaDrv:v2.0.0</firmware>
+
+
+  <platformName>H8</platformName>
+
+
+</DeviceInfo>
