@@ -447,7 +447,7 @@ def get_current_image(
         session_key: Session key used to store current image filename.
         map_id: If provided, only consider images for this map.
     """
-    session_image = request.session.get(session_key)  # type: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
+    session_image = request.session.get(session_key)  # pyright: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
     if session_image:
         frame = image_filename_to_frame(session_image)
         if frame is not None and (map_id is None or frame.map_id == map_id):

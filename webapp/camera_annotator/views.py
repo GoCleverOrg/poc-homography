@@ -170,7 +170,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
     if map_entity and frame.map_id != map_entity.id:
         return JsonResponse({"error": f"Image not found: {filename}"}, status=404)
 
-    request.session[SESSION_IMAGE_KEY] = filename  # type: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
+    request.session[SESSION_IMAGE_KEY] = filename  # pyright: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
 
     annotations = load_existing_annotations(filename)
 
