@@ -388,14 +388,22 @@ def api_camera_capabilities(
             "pan": {
                 "min": capabilities.pan_min,
                 "max": capabilities.pan_max,
+                "speed_min": capabilities.pan_speed_min,
+                "speed_max": capabilities.pan_speed_max,
             },
             "tilt": {
                 "min": capabilities.tilt_min,
                 "max": capabilities.tilt_max,
+                "speed_min": capabilities.tilt_speed_min,
+                "speed_max": capabilities.tilt_speed_max,
             },
             "zoom": {
                 "min": capabilities.zoom_min,
                 "max": capabilities.zoom_max,
+            },
+            "focus": {
+                "min": capabilities.focus_min,
+                "max": capabilities.focus_max,
             },
             "min_step": 0.1,
         }
@@ -435,16 +443,16 @@ def api_camera_position(
             camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id
         )
 
-        position = ptz_camera.get_status()
-
-        if position is None:
-            return _error_response("Failed to get camera position", status_code=502)
+        # Read directly from the underlying adapter to surface the richer
+        # PTZState (which exposes focus alongside pan/tilt/zoom).
+        state = ptz_camera.client.get_ptz_status()
 
         return _success_response(
             {
-                "pan": position.pan,
-                "tilt": position.tilt,
-                "zoom": position.zoom,
+                "pan": float(state.pan_raw),
+                "tilt": float(state.tilt_deg),
+                "zoom": float(state.zoom),
+                "focus": int(state.focus) if state.focus is not None else None,
             }
         )
 

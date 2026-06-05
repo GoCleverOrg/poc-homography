@@ -19,7 +19,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpRe
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
 from poc_homography.camera_config import (
     get_camera_by_id,
@@ -31,6 +30,7 @@ from poc_homography.camera_config import (
     get_tenant_credentials,
     get_tenants,
 )
+from poc_homography.infrastructure.clients.hikvision import HikvisionISAPIClient
 
 from .models import (
     STRESS_TEST_PRESETS,
@@ -50,6 +50,7 @@ from .services import (
     WEBUI_CONNECTION_TIMEOUT_SEC,
     CameraErrorCategory,
     CameraStressTestService,
+    _ptz_state_to_status_dict,
     _sanitize_camera_name,
     attempt_login,
     check_login_success,
@@ -574,7 +575,7 @@ def api_test_ptz(request: HttpRequest, camera_name: str) -> JsonResponse:
     camera, camera_ip, username, password = validation_result
 
     # Initialize PTZ controller
-    ptz = HikvisionPTZ(ip=camera_ip, username=username, password=password, name=camera_name)
+    ptz = HikvisionISAPIClient(camera_ip, username, password)
 
     response_data = {
         "camera_name": camera_name,
@@ -584,7 +585,7 @@ def api_test_ptz(request: HttpRequest, camera_name: str) -> JsonResponse:
         "tests": {},
     }
 
-    initial_status = None
+    initial_status: dict | None = None
 
     try:
         # Test 1: Get status endpoint
@@ -597,20 +598,17 @@ def api_test_ptz(request: HttpRequest, camera_name: str) -> JsonResponse:
 
         try:
             start_time = time.time()
-            initial_status = ptz.get_status()
+            initial_status = _ptz_state_to_status_dict(ptz.get_ptz_status())
             response_time = (time.time() - start_time) * 1000
             status_result["response_time_ms"] = round(response_time, 2)
 
-            if initial_status:
-                status_result["success"] = True
-                status_result["data"] = {
-                    "pan": initial_status.get("pan"),
-                    "tilt": initial_status.get("tilt"),
-                    "zoom": initial_status.get("zoom"),
-                }
-                response_data["initial_position"] = status_result["data"].copy()
-            else:
-                status_result["error"] = "Failed to get PTZ status"
+            status_result["success"] = True
+            status_result["data"] = {
+                "pan": initial_status["pan"],
+                "tilt": initial_status["tilt"],
+                "zoom": initial_status["zoom"],
+            }
+            response_data["initial_position"] = status_result["data"].copy()
 
         except requests.exceptions.Timeout:
             status_result["error"] = "Network timeout"
@@ -652,11 +650,14 @@ def api_test_ptz(request: HttpRequest, camera_name: str) -> JsonResponse:
         # Always try to restore original position if we got initial status
         if initial_status:
             try:
-                restore_success = ptz.send_ptz_return(initial_status)
-                if restore_success:
-                    # Wait for camera to reach restored position
-                    wait_for_stabilization(ptz)
-                    response_data["position_restored"] = True
+                ptz.move_absolute(
+                    pan=initial_status["pan"],
+                    tilt=initial_status["tilt"],
+                    zoom=initial_status["zoom"],
+                )
+                # Wait for camera to reach restored position
+                wait_for_stabilization(ptz)
+                response_data["position_restored"] = True
             except Exception as e:
                 logger.warning(f"Failed to restore PTZ position for {camera_name}: {e}")
                 response_data["position_restored"] = False
@@ -1072,19 +1073,13 @@ def _run_ptz_test(
         result.error_category = CameraErrorCategory.INVALID_RESPONSE.value
         return result
 
-    ptz = HikvisionPTZ(ip=camera_ip, username=username, password=password, name=camera_name)
-    initial_status = None
+    ptz = HikvisionISAPIClient(camera_ip, username, password)
+    initial_status: dict | None = None
 
     try:
         start_time = time.time()
-        initial_status = ptz.get_status()
+        initial_status = _ptz_state_to_status_dict(ptz.get_ptz_status())
         result.response_time_ms = round((time.time() - start_time) * 1000, 2)
-
-        if not initial_status:
-            result.status = DiagnosticTestStatus.FAIL
-            result.error_message = "Failed to get PTZ status"
-            result.error_category = CameraErrorCategory.API_ERROR.value
-            return result
 
         # Run movement tests
         tests_passed = 0
@@ -1113,9 +1108,9 @@ def _run_ptz_test(
         )
         result.details = {
             "initial_position": {
-                "pan": initial_status.get("pan"),
-                "tilt": initial_status.get("tilt"),
-                "zoom": initial_status.get("zoom"),
+                "pan": initial_status["pan"],
+                "tilt": initial_status["tilt"],
+                "zoom": initial_status["zoom"],
             },
             "movement_tests_passed": tests_passed,
             "movement_tests_failed": tests_failed,
@@ -1135,7 +1130,11 @@ def _run_ptz_test(
         # Restore original position
         if initial_status:
             try:
-                ptz.send_ptz_return(initial_status)
+                ptz.move_absolute(
+                    pan=initial_status["pan"],
+                    tilt=initial_status["tilt"],
+                    zoom=initial_status["zoom"],
+                )
                 wait_for_stabilization(ptz)
             except Exception as e:
                 logger.warning(f"Failed to restore PTZ position: {e}")
