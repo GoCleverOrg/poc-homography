@@ -844,7 +844,22 @@ def classify_ptz_error(exception: Exception) -> CameraErrorCategory:
     """
     error_str = str(exception).lower()
 
-    # Network timeout errors
+    # Typed adapter errors (HikvisionISAPIClient wraps all transport/HTTP/parse
+    # failures into this hierarchy, so prefer type checks over string matching).
+    if isinstance(exception, HikvisionHTTPError):
+        if exception.status_code == 401:
+            return CameraErrorCategory.AUTH_FAILED
+        return CameraErrorCategory.API_ERROR
+    if isinstance(exception, HikvisionParseError):
+        return CameraErrorCategory.INVALID_XML
+    if isinstance(exception, HikvisionTransportError):
+        # Transport wraps timeouts and connection failures alike; distinguish
+        # timeouts by message since the original exception type is not retained.
+        if "timeout" in error_str or "timed out" in error_str:
+            return CameraErrorCategory.TIMEOUT
+        return CameraErrorCategory.API_ERROR
+
+    # Network timeout errors (raw requests exceptions, for non-adapter callers)
     if isinstance(exception, requests.exceptions.Timeout):
         return CameraErrorCategory.TIMEOUT
     if "timeout" in error_str or "timed out" in error_str:

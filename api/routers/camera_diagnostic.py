@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime, timezone
 
 import cv2
-import requests
 from camera_diagnostic.models import (
     STRESS_TEST_PRESETS,
     AxisMovementConfig,
@@ -74,7 +73,10 @@ from poc_homography.camera_config import (
     get_tenant_by_id,
     get_tenant_credentials,
 )
-from poc_homography.infrastructure.clients.hikvision import HikvisionISAPIClient
+from poc_homography.infrastructure.clients.hikvision import (
+    HikvisionISAPIClient,
+    HikvisionTransportError,
+)
 from poc_homography.infrastructure.models.user import UserModel
 
 logger = logging.getLogger(__name__)
@@ -357,10 +359,10 @@ def _run_ptz_test(
             "movement_tests_failed": tests_failed,
             "presets_count": presets_result.get("count", 0),
         }
-    except requests.exceptions.Timeout:
+    except HikvisionTransportError as e:
         result.status = DiagnosticTestStatus.FAIL
-        result.error_message = "Network timeout"
-        result.error_category = CameraErrorCategory.TIMEOUT.value
+        result.error_message = str(e)
+        result.error_category = classify_ptz_error(e).value
     except Exception as e:
         result.status = DiagnosticTestStatus.FAIL
         result.error_message = str(e)
@@ -712,9 +714,9 @@ def api_test_ptz(
                 "zoom": initial_status["zoom"],
             }
             response_data["initial_position"] = status_result["data"].copy()
-        except requests.exceptions.Timeout:
-            status_result["error"] = "Network timeout"
-            status_result["error_category"] = CameraErrorCategory.TIMEOUT.value
+        except HikvisionTransportError as e:
+            status_result["error"] = str(e)
+            status_result["error_category"] = classify_ptz_error(e).value
         except Exception as e:
             status_result["error"] = str(e)
             status_result["error_category"] = classify_ptz_error(e).value

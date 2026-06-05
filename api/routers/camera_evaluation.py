@@ -443,9 +443,9 @@ def api_camera_position(
             camera_ip=camera_ip, camera_name=camera_name, tenant_id=tenant_id
         )
 
-        # Read directly from the underlying adapter to surface the richer
-        # PTZState (which exposes focus alongside pan/tilt/zoom).
-        state = ptz_camera.client.get_ptz_status()
+        # Read the full PTZState (pan/tilt/zoom plus focus) through the wrapper
+        # pass-through rather than reaching into the concrete adapter.
+        state = ptz_camera.get_ptz_state()
 
         return _success_response(
             {

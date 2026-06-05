@@ -20,6 +20,7 @@ from poc_homography.infrastructure.clients.hikvision.isapi_errors import Hikvisi
 from .models import CameraCapabilities, DeviceInfo, PTZPosition
 
 if TYPE_CHECKING:
+    from poc_homography.domain.vo.camera_preset import CameraPreset
     from poc_homography.domain.vo.device_health import DeviceHealth
     from poc_homography.domain.vo.image_optics import ImageOptics
     from poc_homography.domain.vo.ptz_state import PTZState
@@ -115,6 +116,18 @@ class HikvisionPTZCamera(BasePTZCamera):
         except HikvisionError as e:
             logger.error("Failed to get PTZ status for %s: %s", self.camera_name, e)
             return None
+
+    def get_ptz_state(self) -> PTZState:
+        """Get the raw adapter :class:`PTZState` (pan/tilt/zoom, plus focus).
+
+        Unlike :meth:`get_status`, this preserves the full domain value object
+        so callers can read fields (e.g. ``focus``) that :class:`PTZPosition`
+        does not carry, without reaching into ``self.client``.
+
+        Raises:
+            HikvisionError: If the adapter call fails.
+        """
+        return self.client.get_ptz_status()
 
     def move_to_position(self, pan: float | None, tilt: float | None, zoom: float | None) -> bool:
         """Move the camera to an absolute position.
@@ -239,7 +252,7 @@ class HikvisionPTZCamera(BasePTZCamera):
         """
         return self.client.capture_snapshot()
 
-    def list_presets(self):
+    def list_presets(self) -> list[CameraPreset]:
         """List stored PTZ presets.
 
         Returns:

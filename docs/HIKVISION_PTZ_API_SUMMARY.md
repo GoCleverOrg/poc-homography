@@ -156,15 +156,19 @@ Returns the current absolute position as a `PTZStatus` document with an
 </PTZStatus>
 ```
 
-`status` does **not** carry a focus value; live focus is read from
-`absoluteEx/capabilities` (see below).
+`status` does **not** carry a focus value. The probe confirms the hardware
+exposes **no live focus position** on any endpoint (see `absoluteEx` below).
 Source: [`ISAPI__PTZCtrl__channels__1__status.txt`](../tests/fixtures/hikvision/ISAPI__PTZCtrl__channels__1__status.txt).
 
 #### `GET /ISAPI/PTZCtrl/channels/1/absoluteEx/capabilities`
 
 The authoritative, **degree-based** capabilities source. Values are in
-engineering units; min/max are XML attributes. The element text is the current
-live reading, including the current **focus position in steps**.
+engineering units; min/max are XML attributes. The element text of
+`<elevation>`, `<azimuth>`, and `<absoluteZoom>` is the current live reading.
+The `<focus>` element, however, is **self-closing on cam-04** — it carries only
+the `min`/`max` step **range** (`min="4096" max="2576990208"`) and **no live
+focus value**. The adapter therefore leaves `PTZState.focus` as `None`; a live
+focus position is not available from this firmware.
 
 ```xml
 <PTZAbsoluteEx version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">

@@ -304,3 +304,4 @@ _.list_presets  # unused method - CameraDevice / adapter API
 _.capture_snapshot  # unused method - CameraDevice / adapter API
 _assert_camera_device  # unused function - TYPE_CHECKING structural conformance check
 _.discover_endpoints  # adapter endpoint-probe used by ptz_discovery_and_control/hikvision/discover.py CLI (outside vulture scan paths) [#256]
+_.get_ptz_state  # HikvisionPTZCamera pass-through consumed by api/routers/camera_evaluation.py (outside vulture scan paths) [#256]

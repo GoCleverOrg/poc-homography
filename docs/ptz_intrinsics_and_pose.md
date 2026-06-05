@@ -6,10 +6,14 @@ Here is the breakdown for the Hikvision DS-2DF8425IX-AELW(T5).
 > [endpoint catalog](./HIKVISION_PTZ_API_SUMMARY.md) and the
 > [capability matrix](./hikvision_isapi_capability_matrix.md).
 >
-> - **Live focus position is now available.** The
+> - **A live focus position is NOT exposed by this firmware.** The
 >   `PTZCtrl/channels/1/absoluteEx/capabilities` response carries a `<focus>`
->   element with `min="4096" max="2576990208"` and a live step reading. The
->   adapter surfaces this as `PTZState.focus` (`FocusSteps`).
+>   element with the step **range only** (`min="4096" max="2576990208"`) and no
+>   text value — it is self-closing on cam-04. The adapter models the field as
+>   the optional `PTZState.focus` (`FocusSteps`), but the hardware leaves it
+>   unpopulated (`None`). The only focus-related per-frame datum the camera
+>   reports is the focus *configuration* (`focusStyle`, near limit) from
+>   `Image/channels/1/focusConfiguration`.
 > - **Focal length (mm) and field of view are NOT exposed by the hardware.**
 >   No probed ISAPI document — `deviceInfo`, PTZ capabilities, image
 >   capabilities, or streaming config — reports either value. They MUST remain
