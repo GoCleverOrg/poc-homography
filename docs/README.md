@@ -14,6 +14,11 @@ Reference documentation for the PTZ homography project.
 - [hikvision_improvement_assessment.md](./hikvision_improvement_assessment.md)
   — review of the prior four-implementation duplication, the wrong tilt
   default, and the applied-vs-deferred improvements.
+- **Live camera tests** —
+  [`../tests/infrastructure/test_hikvision_isapi_live.py`](../tests/infrastructure/test_hikvision_isapi_live.py)
+  exercises a real PTZ camera. Gated on `ICO_CAMERA_IP` alone (no database
+  required); see the [README run-tests section](../README.md#live-camera-tests)
+  for the `ICO_CAMERA_*` env-var contract.
 
 ## Camera intrinsics and pose
 

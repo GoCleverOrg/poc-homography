@@ -22,6 +22,7 @@ from poc_homography.infrastructure.clients.hikvision.isapi_client import Hikvisi
 
 pytestmark = [
     pytest.mark.integration,
+    pytest.mark.live_camera,
     pytest.mark.skipif(
         not os.getenv("ICO_CAMERA_IP"),
         reason="ICO_CAMERA_IP not set (live camera unavailable)",
