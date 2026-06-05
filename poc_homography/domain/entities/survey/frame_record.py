@@ -344,6 +344,46 @@ class ImageData:
         )
 
 
+@dataclass(frozen=True)
+class SurveyContext:
+    """Planner-derived survey context attached to a frame by the phase layer.
+
+    These fields originate in the C3 planner pose (and the C4 phase that drives
+    it), not in the C2 capture engine: ``region_id`` groups cross-zoom
+    observations of the same ground region (Phase 6), ``approach_direction``
+    records the direction a pose was approached from (Phases 3/7), and
+    ``sequence_index`` is the visit index within a repeat group (Phase 7). All
+    are optional and default to ``None`` so frames captured outside a phase
+    context (and pre-existing serialised frames) round-trip unchanged.
+    """
+
+    region_id: str | None = None
+    approach_direction: str | None = None
+    sequence_index: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "region_id": self.region_id,
+            "approach_direction": self.approach_direction,
+            "sequence_index": self.sequence_index,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SurveyContext:
+        """Create :class:`SurveyContext` from a dictionary."""
+        region_id = data.get("region_id")
+        approach_direction = data.get("approach_direction")
+        sequence_index = data.get("sequence_index")
+        return cls(
+            region_id=str(region_id) if region_id is not None else None,
+            approach_direction=(
+                str(approach_direction) if approach_direction is not None else None
+            ),
+            sequence_index=int(sequence_index) if sequence_index is not None else None,
+        )
+
+
 @dataclass(frozen=True, eq=False)
 class FrameRecord:
     """The full optical + mechanical state captured at a single survey frame.
@@ -360,6 +400,7 @@ class FrameRecord:
     movement: MovementContext
     pipeline: ImagePipelineState
     image_data: ImageData
+    survey_context: SurveyContext = field(default_factory=SurveyContext)
     schema_version: str = field(default=SURVEY_SCHEMA_VERSION)
 
     @property
@@ -386,6 +427,7 @@ class FrameRecord:
             "movement": self.movement.to_dict(),
             "pipeline": self.pipeline.to_dict(),
             "image_data": self.image_data.to_dict(),
+            "survey_context": self.survey_context.to_dict(),
         }
 
     @classmethod
@@ -404,5 +446,6 @@ class FrameRecord:
             movement=MovementContext.from_dict(data["movement"]),
             pipeline=ImagePipelineState.from_dict(data["pipeline"]),
             image_data=ImageData.from_dict(data["image_data"]),
+            survey_context=SurveyContext.from_dict(data.get("survey_context") or {}),
             schema_version=version,
         )
