@@ -65,7 +65,8 @@ def find_all(elem: Element, *path: str) -> list[Element]:
 
     The path locates a container element; the last name selects its matching
     children. For example ``find_all(root, "CameraList", "Camera")`` returns
-    every ``<Camera>`` under ``<CameraList>``.
+    every ``<Camera>`` under ``<CameraList>``. With a single name the container
+    is ``elem`` itself, so matching direct children of ``elem`` are returned.
 
     Args:
         elem: Root element to search from.
