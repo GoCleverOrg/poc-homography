@@ -1,0 +1,88 @@
+"""YAML-backed SurveyRun repository with per-frame grouping queries.
+
+Run manifests live at ``data/survey_runs/{run_id}.yaml`` (one file per run).
+Individual :class:`FrameRecord` files are partitioned under
+``data/survey/{run_id}/{camera_id}/frames/*.yaml``; the grouping queries scan
+that layout and filter in Python, mirroring ``RepoYaml._filter_by``.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from poc_homography.domain.entities.survey.frame_record import FrameRecord
+from poc_homography.domain.entities.survey.survey_run import SurveyRun
+from poc_homography.infrastructure.repositories.base.repo_yaml import RepoYaml
+
+if TYPE_CHECKING:
+    from poc_homography.domain.enums.survey_phase import SurveyPhase
+    from poc_homography.types import Unitless
+
+logger = logging.getLogger(__name__)
+
+_FRAME_GLOB = "*/*/frames/*.yaml"
+
+
+class RepoYamlSurveyRun(RepoYaml[SurveyRun]):
+    """Repository for :class:`SurveyRun` manifests plus frame grouping queries."""
+
+    def __init__(
+        self,
+        data_dir: Path,
+        frames_dir: Path | None = None,
+        *,
+        create_dir: bool = True,
+    ) -> None:
+        super().__init__(data_dir, SurveyRun, create_dir=create_dir)
+        self._frames_dir = (
+            Path(frames_dir) if frames_dir is not None else self._data_dir.parent / "survey"
+        )
+
+    # ------------------------------------------------------------------
+    # Frame loading
+    # ------------------------------------------------------------------
+
+    def _all_frames(self) -> list[FrameRecord]:
+        """Load every :class:`FrameRecord` under the frame layout.
+
+        Malformed or unreadable frame files are skipped with a warning so a
+        single bad file does not break a grouping query.
+        """
+        frames: list[FrameRecord] = []
+        if not self._frames_dir.exists():
+            return frames
+        for path in sorted(self._frames_dir.glob(_FRAME_GLOB)):
+            data = self._read_yaml(path)
+            if data is None:
+                continue
+            try:
+                frames.append(FrameRecord.from_dict(data))
+            except (KeyError, ValueError):
+                logger.warning("Skipping malformed frame record at %s", path, exc_info=True)
+        return frames
+
+    # ------------------------------------------------------------------
+    # Grouping queries
+    # ------------------------------------------------------------------
+
+    def get_frames_by_run(self, run_id: str) -> list[FrameRecord]:
+        """Return all frames captured in ``run_id``."""
+        return [f for f in self._all_frames() if f.capture.run_id == run_id]
+
+    def get_frames_by_phase(self, phase: SurveyPhase) -> list[FrameRecord]:
+        """Return all frames captured during ``phase``."""
+        return [f for f in self._all_frames() if f.capture.phase == phase]
+
+    def get_frames_by_camera(self, camera_id: str) -> list[FrameRecord]:
+        """Return all frames captured by ``camera_id``."""
+        return [f for f in self._all_frames() if f.camera.camera_id == camera_id]
+
+    def get_frames_by_zoom_range(self, min_zoom: Unitless, max_zoom: Unitless) -> list[FrameRecord]:
+        """Return all frames whose reported zoom is within ``[min, max]``."""
+        return [f for f in self._all_frames() if min_zoom <= f.reported.reported_zoom <= max_zoom]
+
+    def get_frames_by_burst(self, burst_id: str) -> list[FrameRecord]:
+        """Return all frames belonging to ``burst_id``."""
+        return [f for f in self._all_frames() if f.capture.burst_id == burst_id]

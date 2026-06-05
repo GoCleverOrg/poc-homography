@@ -63,6 +63,13 @@ Unitless = NewType("Unitless", float)
 FocusSteps = NewType("FocusSteps", int)
 """Hikvision focus position in raw lens steps (e.g., focus_min/focus_max)."""
 
+# Temporal units
+Seconds = NewType("Seconds", float)
+"""Duration in seconds (e.g., settling delay, video burst length)."""
+
+FPS = NewType("FPS", float)
+"""Frame rate in frames per second."""
+
 
 def degrees_to_radians(degrees: Degrees) -> Radians:
     """Convert degrees to radians with proper type annotation."""
