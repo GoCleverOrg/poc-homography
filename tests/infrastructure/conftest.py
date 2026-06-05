@@ -22,11 +22,17 @@ if TYPE_CHECKING:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip all postgres integration tests if DATABASE_URL is not set."""
+    """Skip postgres integration tests if DATABASE_URL is not set.
+
+    Live camera tests (marked ``live_camera``) need no database and are gated
+    independently on ``ICO_CAMERA_IP``, so they are exempt from this DB gate.
+    """
     if not os.environ.get("DATABASE_URL"):
         skip = pytest.mark.skip(reason="DATABASE_URL not set")
         for item in items:
-            if item.get_closest_marker("integration"):
+            if item.get_closest_marker("integration") and not item.get_closest_marker(
+                "live_camera"
+            ):
                 item.add_marker(skip)
 
 

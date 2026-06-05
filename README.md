@@ -92,6 +92,33 @@ uv run poe test          # Run all tests
 uv run poe test-cov      # With coverage
 ```
 
+#### Live camera tests
+
+The Hikvision live integration suite
+(`tests/infrastructure/test_hikvision_isapi_live.py`) talks to a real PTZ
+camera and is **skipped by default**. It is gated solely on `ICO_CAMERA_IP`
+(independent of `DATABASE_URL`), so it runs whenever a camera is reachable:
+
+| Env var               | Required | Purpose                                                        |
+| --------------------- | -------- | -------------------------------------------------------------- |
+| `ICO_CAMERA_IP`       | yes      | Camera host/IP. Its presence enables the read tests.           |
+| `ICO_CAMERA_USERNAME` | no       | Login (defaults to `admin`).                                   |
+| `ICO_CAMERA_PASSWORD` | no       | Login password (defaults to empty).                            |
+| `ICO_CAMERA_WRITE`    | no       | Set to any value to enable the move/restore test (moves PTZ).  |
+
+```bash
+# Read-only suite against cam-04
+ICO_CAMERA_IP=10.107.50.5 ICO_CAMERA_USERNAME=admin ICO_CAMERA_PASSWORD=... \
+  uv run pytest tests/infrastructure/test_hikvision_isapi_live.py
+
+# Include the physical move/restore test
+ICO_CAMERA_IP=10.107.50.5 ICO_CAMERA_WRITE=1 ICO_CAMERA_USERNAME=admin ICO_CAMERA_PASSWORD=... \
+  uv run pytest tests/infrastructure/test_hikvision_isapi_live.py
+```
+
+No `DATABASE_URL` is needed; the Postgres integration tests remain gated
+separately on `DATABASE_URL`.
+
 ### Code Quality
 
 ```bash
