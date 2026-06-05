@@ -10,9 +10,23 @@ from poc_homography.domain.protocols.camera_controller import (
     CameraControllerError,
 )
 from poc_homography.domain.protocols.camera_device import CameraDevice
+from poc_homography.domain.protocols.survey_orchestrator import (
+    CameraStatus,
+    ConcurrentSurveyOrchestrator,
+    ProgressEvent,
+    RunHandle,
+    RunSummary,
+)
+from poc_homography.domain.protocols.survey_run_repository import SurveyRunRepository
 
 __all__ = [
     "CameraController",
     "CameraControllerError",
     "CameraDevice",
+    "CameraStatus",
+    "ConcurrentSurveyOrchestrator",
+    "ProgressEvent",
+    "RunHandle",
+    "RunSummary",
+    "SurveyRunRepository",
 ]

@@ -12,8 +12,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
+
 from poc_homography.domain.entities.survey.frame_record import FrameRecord
 from poc_homography.domain.entities.survey.survey_run import SurveyRun
+from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
 from poc_homography.infrastructure.repositories.base.repo_yaml import RepoYaml
 
 if TYPE_CHECKING:
@@ -86,3 +89,38 @@ class RepoYamlSurveyRun(RepoYaml[SurveyRun]):
     def get_frames_by_burst(self, burst_id: str) -> list[FrameRecord]:
         """Return all frames belonging to ``burst_id``."""
         return [f for f in self._all_frames() if f.capture.burst_id == burst_id]
+
+    # ------------------------------------------------------------------
+    # Plan-config sidecar
+    # ------------------------------------------------------------------
+
+    def _plan_config_path(self, run_id: str) -> Path:
+        return self._frames_dir / run_id / "plan_config.yaml"
+
+    def save_plan_config(self, run_id: str, config: SurveyPlanConfig) -> bool:
+        """Persist ``config`` as a ``plan_config.yaml`` sidecar for ``run_id``.
+
+        Returns ``True`` on success, ``False`` (logged) on any failure.
+        """
+        path = self._plan_config_path(run_id)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.dump(config.to_dict(), f, default_flow_style=False, sort_keys=False)
+        except Exception:
+            logger.exception("Failed to save plan config for run %s", run_id)
+            return False
+        return True
+
+    def load_plan_config(self, run_id: str) -> SurveyPlanConfig:
+        """Load the ``plan_config.yaml`` sidecar for ``run_id``.
+
+        Raises:
+            KeyError: If no sidecar exists for ``run_id``.
+        """
+        path = self._plan_config_path(run_id)
+        if not path.exists():
+            raise KeyError(run_id)
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return SurveyPlanConfig.from_dict(data)

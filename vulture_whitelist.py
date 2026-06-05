@@ -336,3 +336,12 @@ _.header  # PlannedSurveyRun -> C1 SurveyRun persistence bridge (poc_homography/
 
 # -- Survey phases C4 (#261); consumed by C5 (CLI/endpoints) + tests (outside vulture scan paths) --
 YamlPhaseSink  # YAML PhaseSink adapter; wired by C5 + survey-phase tests (poc_homography/infrastructure/survey/yaml_phase_sink.py)
+
+# -- Survey operator surface C5 (#262); typer commands + plan-config repo contract --
+run_command  # typer survey command (poc_homography/cli/survey.py)
+status_command  # typer survey command (poc_homography/cli/survey.py)
+abort_command  # typer survey command (poc_homography/cli/survey.py)
+list_command  # typer survey command (poc_homography/cli/survey.py)
+browse_command  # typer survey command (poc_homography/cli/survey.py)
+_.save_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
+_.load_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)

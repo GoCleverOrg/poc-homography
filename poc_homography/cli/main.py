@@ -10,10 +10,12 @@ app = typer.Typer(
 # Subcommand groups - will be populated as tools are migrated
 calibrate_app = typer.Typer(help="Calibration commands")
 camera_app = typer.Typer(help="Camera intrinsics and validation commands")
+survey_app = typer.Typer(help="Survey commands")
 test_app = typer.Typer(help="Testing and data generation commands")
 
 app.add_typer(calibrate_app, name="calibrate")
 app.add_typer(camera_app, name="camera")
+app.add_typer(survey_app, name="survey")
 app.add_typer(test_app, name="test")
 
 
@@ -31,6 +33,7 @@ def _register_commands() -> None:
         interactive,
         line_picker,
         point_picker,
+        survey,
         test_cmds,
     )
 
@@ -40,6 +43,7 @@ def _register_commands() -> None:
     _ = interactive
     _ = line_picker
     _ = point_picker
+    _ = survey
     _ = test_cmds
 
 

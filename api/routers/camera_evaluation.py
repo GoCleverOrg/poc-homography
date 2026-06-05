@@ -16,16 +16,23 @@ from camera_survey.services import CameraSurveyService, get_survey_presets
 from camera_survey.validation import parse_fixed_axis_values, validate_fixed_axis_ranges
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from webapp.camera_evaluation.services import generate_mjpeg_frames
 
 from api.deps import get_current_user
-from api.schemas.camera_evaluation import SurveyStartRequest
+from api.schemas.camera_evaluation import (  # noqa: TC001 — runtime-resolved by FastAPI body model
+    SurveyRunStartRequest,
+    SurveyStartRequest,
+)
 from poc_homography.camera_config import (
     get_camera_by_id,
     get_cameras_for_tenant,
     get_tenants,
 )
-from poc_homography.infrastructure.models.user import UserModel
-from webapp.camera_evaluation.services import generate_mjpeg_frames
+from poc_homography.domain.vo import SurveyPlanConfig
+from poc_homography.infrastructure.models.user import (  # noqa: TC001 — runtime-resolved by FastAPI Depends
+    UserModel,
+)
+from poc_homography.survey.run_service import build_survey_run_service
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _survey_service = CameraSurveyService()
+_survey_run_service = build_survey_run_service()
 
 # ---------------------------------------------------------------------------
 # Router
@@ -462,3 +470,96 @@ def api_camera_position(
     except Exception as e:
         logger.exception("Error getting position for %s", camera_id)
         return _error_response(f"Failed to get camera position: {e}", status_code=502)
+
+
+# =============================================================================
+# Multi-camera survey-run API endpoints (issue #262)
+# =============================================================================
+
+
+@router.post("/survey/run/start/")
+def api_survey_run_start(
+    body: SurveyRunStartRequest,
+    user: UserModel = Depends(get_current_user),
+) -> JSONResponse:
+    """Launch a multi-camera survey run.
+
+    SPA-hook: POST /camera-evaluation/survey/run/start/ — body
+    ``{"plan_config", "camera_ids"}``; returns ``{"run_id", "session_ids"}``.
+    """
+    try:
+        cfg = SurveyPlanConfig.from_dict(body.plan_config)
+    except ValueError as e:
+        return _error_response(str(e), status_code=400)
+
+    result = _survey_run_service.start_run(cfg, body.camera_ids)
+    return _success_response(
+        {
+            "run_id": result["run_id"],
+            "session_ids": result["session_ids"],
+        }
+    )
+
+
+@router.get("/survey/run/{run_id}/status/")
+def api_survey_run_status(
+    run_id: str,
+    user: UserModel = Depends(get_current_user),
+) -> JSONResponse:
+    """Get per-camera status for a survey run.
+
+    SPA-hook: GET /camera-evaluation/survey/run/{run_id}/status/ — returns
+    ``{"run_id", "cameras": {camera_id: {phase, frame_count, ...}}}``.
+    """
+    status = _survey_run_service.get_status(run_id)
+    if status is None:
+        return _error_response("Run not found", status_code=404)
+    return _success_response(status)
+
+
+@router.post("/survey/run/{run_id}/abort/")
+def api_survey_run_abort(
+    run_id: str,
+    user: UserModel = Depends(get_current_user),
+) -> JSONResponse:
+    """Request graceful abort of a survey run.
+
+    SPA-hook: POST /camera-evaluation/survey/run/{run_id}/abort/ — returns
+    ``{"run_id", "message"}``.
+    """
+    result = _survey_run_service.abort_run(run_id)
+    if result is None:
+        return _error_response("Run not found", status_code=404)
+    return _success_response(result)
+
+
+@router.get("/survey/runs/")
+def api_survey_runs(
+    limit: int = Query(20),
+    offset: int = Query(0),
+    user: UserModel = Depends(get_current_user),
+) -> JSONResponse:
+    """List survey-run summaries (newest first).
+
+    SPA-hook: GET /camera-evaluation/survey/runs/ — returns
+    ``{"runs", "limit", "offset"}``.
+    """
+    runs = _survey_run_service.list_runs(limit=limit)
+    return _success_response({"runs": runs, "limit": limit, "offset": offset})
+
+
+@router.get("/survey/runs/{run_id}/groups/")
+def api_survey_run_groups(
+    run_id: str,
+    phase: int | None = Query(None),
+    camera: str | None = Query(None),
+    zoom: float | None = Query(None),
+    user: UserModel = Depends(get_current_user),
+) -> JSONResponse:
+    """Browse dataset grouping keys with frame counts for a survey run.
+
+    SPA-hook: GET /camera-evaluation/survey/runs/{run_id}/groups/ — optional
+    ``phase``/``camera``/``zoom`` filters; returns ``{"groups": [...]}``.
+    """
+    groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    return _success_response({"groups": groups})
