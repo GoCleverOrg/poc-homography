@@ -255,6 +255,28 @@ class TestPhase8Jitter:
                 zoom_levels=(1.0, 8.0, 16.0),
             )
 
+    def test_short_achieved_burst_rejected(
+        self,
+        camera: FakeCamera,
+        clock: IncrementingClock,
+        uuid_factory: CountingUuid,
+        tmp_path: Path,
+        patch_rtsp,
+    ) -> None:
+        # A stream that ends after a single frame yields a burst far shorter
+        # than the 10s minimum; the achieved-target guard must reject it.
+        patch_rtsp(1)
+        with pytest.raises(executors.JitterTargetError):
+            executors.run_jitter(
+                _engine(camera, clock, uuid_factory),
+                run_id="run-1",
+                camera_id="cam01",
+                output_dir=tmp_path,
+                rtsp_url="rtsp://fake/stream",
+                poses=((10.0, -15.0), (90.0, -20.0), (200.0, -30.0)),
+                zoom_levels=(1.0, 8.0, 16.0),
+            )
+
     def test_too_short_duration_rejected(
         self,
         camera: FakeCamera,

@@ -634,11 +634,34 @@ def _assert_jitter_target(
 
 
 def _assert_burst_complete(burst: VideoBurstRecord) -> None:
-    """Confirm a burst persisted both its segment and its per-frame references."""
+    """Confirm a burst meets the jitter target and persisted its data.
+
+    Validates the *achieved* burst, not just the requested configuration: the
+    C2 engine stops recording early when the RTSP stream ends, so a burst can
+    come back shorter than the requested ``burst_duration_s``. The DoD requires
+    every burst to *meet* the minimum target (10 s, 5 fps) with both the segment
+    and addressable per-frame references stored, so a short or empty burst fails
+    loudly here rather than being silently marked complete.
+
+    Raises:
+        CaptureEngineError: If the segment path or frame references are missing.
+        JitterTargetError: If the realized duration or stream fps is below the
+            minimum jitter target.
+    """
     if not burst.frame_refs:
         raise CaptureEngineError(f"jitter burst {burst.burst_id} has no frame references")
     if str(burst.segment_path) == "":
         raise CaptureEngineError(f"jitter burst {burst.burst_id} has no segment path")
+    if float(burst.duration_s) < JITTER_MIN_DURATION_S:
+        raise JitterTargetError(
+            f"jitter burst {burst.burst_id} achieved {float(burst.duration_s):.2f}s, "
+            f"below the {JITTER_MIN_DURATION_S}s minimum"
+        )
+    if float(burst.fps) < JITTER_MIN_FPS:
+        raise JitterTargetError(
+            f"jitter burst {burst.burst_id} fps {float(burst.fps):.2f} is below the "
+            f"{JITTER_MIN_FPS} minimum"
+        )
 
 
 def _assert_disjoint(
