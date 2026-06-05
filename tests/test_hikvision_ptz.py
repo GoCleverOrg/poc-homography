@@ -64,7 +64,7 @@ def test_move_absolute_builds_raw_x10_xml() -> None:
     client.move_absolute(pan=60.0, tilt=-2.0, zoom=3.2)
 
     path, body = transport.put_calls[0]
-    assert path.endswith("/ISAPI/PTZCtrl/channels/1/absolute")
+    assert path == ep.ptz_absolute()
     assert "<azimuth>600</azimuth>" in body
     assert "<elevation>-20</elevation>" in body
     assert "<absoluteZoom>32</absoluteZoom>" in body
@@ -103,7 +103,7 @@ def test_position3d_builds_expected_xml() -> None:
     client.position3d(0.1, 0.2, 0.3, 0.4)
 
     path, body = transport.put_calls[0]
-    assert path.endswith("/ISAPI/PTZCtrl/channels/1/position3D")
+    assert path == ep.ptz_position3d()
     assert "<positionX>0.1</positionX>" in body
     assert "<positionY>0.2</positionY>" in body
     assert "<positionX>0.3</positionX>" in body
