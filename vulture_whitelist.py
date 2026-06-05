@@ -333,3 +333,6 @@ _.remaining_poses  # PlannedSurveyRun resume iterator (poc_homography/survey/pla
 _.advance  # PlannedSurveyRun cursor advance (poc_homography/survey/planner/run.py)
 _.with_status  # PlannedSurveyRun status transition helper (poc_homography/survey/planner/run.py)
 _.header  # PlannedSurveyRun -> C1 SurveyRun persistence bridge (poc_homography/survey/planner/run.py)
+
+# -- Survey phases C4 (#261); consumed by C5 (CLI/endpoints) + tests (outside vulture scan paths) --
+YamlPhaseSink  # YAML PhaseSink adapter; wired by C5 + survey-phase tests (poc_homography/infrastructure/survey/yaml_phase_sink.py)
