@@ -73,6 +73,7 @@ class TestSurveyRunStatusEnum:
         assert {s.value for s in SurveyRunStatus} == {
             "pending",
             "running",
+            "paused",
             "completed",
             "failed",
             "aborted",

@@ -26,6 +26,7 @@ from poc_homography.camera_config import (
 )
 from poc_homography.domain.entities.captured_frame import CapturedFrame
 from poc_homography.domain.vo.ptz_state import PTZState
+from poc_homography.survey.planner import CameraLockRegistry
 from poc_homography.types import Degrees, Unitless
 
 from .models import (
@@ -50,8 +51,8 @@ logger = logging.getLogger(__name__)
 RTSP_CONNECTION_TIMEOUT_SEC = 10
 JPEG_QUALITY = 90
 
-# Survey execution lock (only one survey at a time)
-_survey_lock = threading.Lock()
+# Survey execution locks (one survey at a time per camera)
+_camera_lock_registry = CameraLockRegistry()
 
 # In-memory storage for active survey progress
 _active_surveys: dict[str, SurveyProgress] = {}
@@ -358,9 +359,11 @@ class CameraSurveyService:
             Tuple of (session_id, error_message)
             error_message is None on success
         """
-        # Check if another survey is running
-        if not _survey_lock.acquire(blocking=False):
-            return "", "Another survey is already running"
+        # Check if another survey is running for this specific camera. Locking
+        # one camera must not block surveys on other cameras.
+        camera_lock = _camera_lock_registry.get(config.camera_id)
+        if not camera_lock.acquire(blocking=False):
+            return "", f"Another survey is already running for camera {config.camera_id}"
 
         try:
             # Generate session ID and path
@@ -372,17 +375,17 @@ class CameraSurveyService:
             # Get camera and tenant info
             camera = get_camera_by_id(config.camera_id)
             if not camera:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", f"Camera not found: {config.camera_id}"
 
             tenant = get_tenant_by_id(config.tenant_id)
             if not tenant:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", f"Tenant not found: {config.tenant_id}"
 
             camera_ip = camera.get("ip")
             if not camera_ip:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", f"Camera {config.camera_id} has no IP address"
 
             # Create PTZ camera instance
@@ -394,30 +397,30 @@ class CameraSurveyService:
                     tenant_id=config.tenant_id,
                 )
             except ValueError as e:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", str(e)
 
             # Get RTSP URL - use camera_id which is the full ID like "valte_cam01"
             try:
                 rtsp_url = get_rtsp_url(config.camera_id)
                 if not rtsp_url:
-                    _survey_lock.release()
+                    camera_lock.release()
                     return "", f"No RTSP URL configured for camera: {config.camera_id}"
             except ValueError as e:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", str(e)
 
             # Get initial PTZ position
             initial_ptz = ptz_camera.get_status()
             if initial_ptz is None:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", "Failed to get initial PTZ position"
 
             # Validate survey range against the camera's real capabilities.
             try:
                 capabilities = ptz_camera.get_capabilities()
             except Exception as e:
-                _survey_lock.release()
+                camera_lock.release()
                 logger.exception("Failed to query capabilities for %s", config.camera_id)
                 return "", f"Failed to get camera capabilities: {e}"
 
@@ -425,7 +428,7 @@ class CameraSurveyService:
                 capabilities, config.axis, config.start, config.end
             )
             if not is_valid:
-                _survey_lock.release()
+                camera_lock.release()
                 return "", error
 
             # Get device info from camera API
@@ -485,7 +488,7 @@ class CameraSurveyService:
             # Execute survey in background thread
             survey_thread = threading.Thread(
                 target=self._execute_survey,
-                args=(session, session_path, ptz_camera, rtsp_url, steps, config),
+                args=(session, session_path, ptz_camera, rtsp_url, steps, config, camera_lock),
                 daemon=True,
             )
             survey_thread.start()
@@ -494,7 +497,7 @@ class CameraSurveyService:
 
         except Exception as e:
             logger.error(f"Failed to start survey: {e}")
-            _survey_lock.release()
+            camera_lock.release()
             return "", str(e)
 
     def _execute_survey(
@@ -505,6 +508,7 @@ class CameraSurveyService:
         rtsp_url: str,
         steps: list[float],
         config: SurveyConfig,
+        camera_lock: threading.Lock,
     ) -> None:
         """Execute survey loop in background thread.
 
@@ -515,6 +519,7 @@ class CameraSurveyService:
             rtsp_url: RTSP stream URL
             steps: List of axis values to survey
             config: Survey configuration
+            camera_lock: Per-camera execution lock to release when done
         """
         try:
             resolution = None
@@ -694,7 +699,7 @@ class CameraSurveyService:
                     # Keep progress for a while for status queries
                     _active_surveys[session.id].status = session.status
 
-            _survey_lock.release()
+            camera_lock.release()
 
     @staticmethod
     def _read_optics(

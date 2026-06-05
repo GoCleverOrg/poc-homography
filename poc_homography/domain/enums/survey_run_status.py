@@ -15,6 +15,7 @@ class SurveyRunStatus(str, Enum):
     Members:
         PENDING: Run created but not yet started.
         RUNNING: Run is actively capturing.
+        PAUSED: Run was paused and can be resumed.
         COMPLETED: Run finished successfully.
         FAILED: Run terminated due to an error.
         ABORTED: Run was deliberately aborted.
@@ -22,6 +23,7 @@ class SurveyRunStatus(str, Enum):
 
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
     ABORTED = "aborted"
