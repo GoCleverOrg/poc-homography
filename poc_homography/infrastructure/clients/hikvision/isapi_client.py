@@ -32,7 +32,10 @@ from poc_homography.domain.vo.ptz_state import PTZState
 from poc_homography.domain.vo.stream_profile import StreamProfile
 from poc_homography.infrastructure.clients.hikvision import isapi_endpoints as ep
 from poc_homography.infrastructure.clients.hikvision import isapi_units as units
-from poc_homography.infrastructure.clients.hikvision.isapi_errors import HikvisionError
+from poc_homography.infrastructure.clients.hikvision.isapi_errors import (
+    HikvisionError,
+    HikvisionHTTPError,
+)
 from poc_homography.infrastructure.clients.hikvision.isapi_transport import (
     IsapiTransport,
     find,
@@ -388,6 +391,50 @@ class HikvisionISAPIClient:
     def capture_snapshot(self) -> bytes:
         """Capture a JPEG still from the primary streaming channel."""
         return self._transport.get_bytes(ep.streaming_picture(101))
+
+    # --- Diagnostics -------------------------------------------------------
+
+    def discover_endpoints(self) -> dict[str, int]:
+        """Probe the well-known ISAPI endpoints and report their status codes.
+
+        Issues a lightweight GET (read endpoints) or empty-body PUT (control
+        endpoints) against each known path and records the resulting HTTP
+        status. Non-2xx responses are captured from the raised
+        :class:`HikvisionHTTPError`; an unreachable host records ``-1``. This
+        replaces the legacy standalone discovery script with an adapter method
+        that reuses the shared transport and endpoint catalog.
+
+        Returns:
+            A mapping of ISAPI path to its HTTP status code (``-1`` on a
+            transport failure).
+        """
+        ch = self.channel
+        probes: list[tuple[str, str]] = [
+            (ep.ptz_status(ch), "GET"),
+            (ep.ptz_capabilities(ch), "GET"),
+            (ep.ptz_absolute_ex_capabilities(ch), "GET"),
+            (ep.ptz_continuous(ch), "PUT"),
+            (ep.ptz_momentary(ch), "PUT"),
+            (ep.ptz_relative(ch), "PUT"),
+            (ep.ptz_absolute(ch), "PUT"),
+            (ep.ptz_presets(ch), "GET"),
+            (ep.ptz_preset_goto(1, ch), "PUT"),
+            (ep.ptz_home_goto(ch), "PUT"),
+        ]
+
+        results: dict[str, int] = {}
+        for path, method in probes:
+            try:
+                if method == "PUT":
+                    self._transport.put_xml(path, self._xml(""))
+                else:
+                    self._transport.get_xml(path)
+                results[path] = 200
+            except HikvisionHTTPError as exc:
+                results[path] = exc.status_code
+            except HikvisionError:
+                results[path] = -1
+        return results
 
 
 if TYPE_CHECKING:

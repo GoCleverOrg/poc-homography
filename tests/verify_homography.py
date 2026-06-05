@@ -8,11 +8,12 @@ Usage:
 Click on known ground points in the video window to see their projected world coordinates.
 """
 
+from __future__ import annotations
+
 import sys
 
 import cv2
 import numpy as np
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
 from poc_homography.camera_config import (
     PASSWORD,
@@ -23,6 +24,9 @@ from poc_homography.camera_config import (
 )
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraGeometryResult, CameraParameters
+from poc_homography.infrastructure.clients.hikvision.isapi_client import (
+    HikvisionISAPIClient,
+)
 from poc_homography.types import Degrees, Pixels, Unitless
 
 
@@ -36,10 +40,8 @@ class HomographyVerifier:
             raise ValueError(f"Camera '{camera_name}' not found")
 
         # Get camera status
-        self.camera = HikvisionPTZ(
-            ip=self.cam_info["ip"], username=USERNAME, password=PASSWORD, name=self.cam_info["name"]
-        )
-        self.status = self.camera.get_status()
+        self.camera = HikvisionISAPIClient(self.cam_info["ip"], USERNAME, PASSWORD)
+        self.status = self.camera.get_ptz_status()
 
         # RTSP setup
         self.rtsp_url = get_rtsp_url(camera_name)
@@ -66,7 +68,7 @@ class HomographyVerifier:
         self.current_frame = frame
 
         # Get intrinsics and create parameters
-        K = CameraGeometry.get_intrinsics(zoom_factor=self.status["zoom"], W_px=w, H_px=h)
+        K = CameraGeometry.get_intrinsics(zoom_factor=self.status.zoom, W_px=w, H_px=h)
         w_pos = np.array([0.0, 0.0, height])
 
         # Create parameters and compute homography using immutable API
@@ -75,8 +77,8 @@ class HomographyVerifier:
             image_height=Pixels(h),
             intrinsic_matrix=K,
             camera_position=w_pos,
-            pan_deg=Degrees(self.status["pan"]),
-            tilt_deg=Degrees(self.status["tilt"]),
+            pan_deg=Degrees(self.status.pan_raw),
+            tilt_deg=Degrees(self.status.tilt_deg),
             roll_deg=Degrees(0.0),
             map_width=Pixels(w),
             map_height=Pixels(h),
@@ -87,7 +89,7 @@ class HomographyVerifier:
 
         print(f"\n[OK] Geometry initialized for {self.camera_name}")
         print(
-            f"  Pan: {self.status['pan']:.1f}, Tilt: {self.status['tilt']:.1f}, Zoom: {self.status['zoom']:.2f}"
+            f"  Pan: {self.status.pan_raw:.1f}, Tilt: {self.status.tilt_deg:.1f}, Zoom: {self.status.zoom:.2f}"
         )
         print(f"  Height: {height}m\n")
 
@@ -208,7 +210,7 @@ class HomographyVerifier:
             f.write("Homography Verification Results\n")
             f.write(f"Camera: {self.camera_name}\n")
             f.write(
-                f"Pan: {self.status['pan']:.1f}, Tilt: {self.status['tilt']:.1f}, Zoom: {self.status['zoom']:.2f}\n\n"
+                f"Pan: {self.status.pan_raw:.1f}, Tilt: {self.status.tilt_deg:.1f}, Zoom: {self.status.zoom:.2f}\n\n"
             )
             f.write(f"{'Point':<8} {'Image (px)':<20} {'World (m)':<25} {'Distance (m)':<15}\n")
             f.write("-" * 70 + "\n")

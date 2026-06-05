@@ -3,14 +3,18 @@
 Debug homography calculations with detailed output.
 """
 
+from __future__ import annotations
+
 import sys
 
 import numpy as np
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
 
 from poc_homography.camera_config import PASSWORD, USERNAME, get_camera_by_name, get_camera_configs
 from poc_homography.camera_geometry import CameraGeometry
 from poc_homography.camera_parameters import CameraParameters
+from poc_homography.infrastructure.clients.hikvision.isapi_client import (
+    HikvisionISAPIClient,
+)
 from poc_homography.types import Degrees, Pixels, Unitless
 
 
@@ -28,21 +32,19 @@ def debug_homography(camera_name: str, height: float = 5.0):
         print(f"Camera '{camera_name}' not found. Available: {', '.join(available)}")
         return
 
-    camera = HikvisionPTZ(
-        ip=cam_info["ip"], username=USERNAME, password=PASSWORD, name=cam_info["name"]
-    )
+    camera = HikvisionISAPIClient(cam_info["ip"], USERNAME, PASSWORD)
 
-    status = camera.get_status()
+    status = camera.get_ptz_status()
     print("\n1. CAMERA STATUS:")
-    print(f"   Pan:  {status['pan']:.2f}")
-    print(f"   Tilt: {status['tilt']:.2f}")
-    print(f"   Zoom: {status['zoom']:.2f}x")
+    print(f"   Pan:  {status.pan_raw:.2f}")
+    print(f"   Tilt: {status.tilt_deg:.2f}")
+    print(f"   Zoom: {status.zoom:.2f}x")
 
     # Setup geometry
     W_px, H_px = 2560, 1440
 
     # Calculate intrinsics
-    K = CameraGeometry.get_intrinsics(zoom_factor=status["zoom"], W_px=W_px, H_px=H_px)
+    K = CameraGeometry.get_intrinsics(zoom_factor=status.zoom, W_px=W_px, H_px=H_px)
 
     print("\n2. INTRINSIC MATRIX K:")
     print(f"   Focal length: {K[0, 0]:.2f} pixels")
@@ -61,8 +63,8 @@ def debug_homography(camera_name: str, height: float = 5.0):
         image_height=Pixels(H_px),
         intrinsic_matrix=K,
         camera_position=w_pos,
-        pan_deg=Degrees(status["pan"]),
-        tilt_deg=Degrees(status["tilt"]),
+        pan_deg=Degrees(status.pan_raw),
+        tilt_deg=Degrees(status.tilt_deg),
         roll_deg=Degrees(0.0),
         map_width=Pixels(640),
         map_height=Pixels(480),
@@ -73,7 +75,7 @@ def debug_homography(camera_name: str, height: float = 5.0):
 
     print("\n4. ROTATION MATRIX R:")
     R = CameraGeometry._get_rotation_matrix_static(
-        Degrees(status["pan"]), Degrees(status["tilt"]), Degrees(0.0)
+        Degrees(status.pan_raw), Degrees(status.tilt_deg), Degrees(0.0)
     )
     print(f"{R}")
     print(f"   det(R) = {np.linalg.det(R):.6f} (should be ~1.0)")
@@ -129,10 +131,10 @@ def debug_homography(camera_name: str, height: float = 5.0):
     print("=" * 70)
 
     # Calculate expected distance for center point at given tilt
-    tilt_rad = np.radians(status["tilt"])
-    if status["tilt"] > 0:  # Camera pointing down (positive tilt)
+    tilt_rad = np.radians(status.tilt_deg)
+    if status.tilt_deg > 0:  # Camera pointing down (positive tilt)
         expected_center_dist = height / np.tan(tilt_rad)
-        print(f"\nFor tilt={status['tilt']:.1f} and height={height}m:")
+        print(f"\nFor tilt={status.tilt_deg:.1f} and height={height}m:")
         print(f"  Expected center distance: ~{expected_center_dist:.2f}m")
         print("  (Using formula: distance = height / tan(tilt))")
 
@@ -151,7 +153,7 @@ def debug_homography(camera_name: str, height: float = 5.0):
     center_u, center_v = W_px // 2, H_px // 2
     pt_center = np.array([[center_u], [center_v], [1.0]])
     pt_world_center = H_inv @ pt_center
-    if abs(pt_world_center[2, 0]) > 1e-6 and status["tilt"] > 0:
+    if abs(pt_world_center[2, 0]) > 1e-6 and status.tilt_deg > 0:
         Xw_center = pt_world_center[0, 0] / pt_world_center[2, 0]
         Yw_center = pt_world_center[1, 0] / pt_world_center[2, 0]
         actual_center_dist = np.sqrt(Xw_center**2 + Yw_center**2)
