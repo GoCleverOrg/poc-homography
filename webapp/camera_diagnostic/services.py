@@ -14,19 +14,17 @@ import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
-from collections.abc import Generator
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import requests
-from camera_survey.models import PTZPosition
-from camera_survey.ptz import BasePTZCamera, create_ptz_camera
+from camera_survey.ptz import HikvisionPTZCamera, create_ptz_camera
 from django.conf import settings
 
 from poc_homography.camera_config import get_camera_by_id, get_rtsp_url, get_tenant_credentials
-from poc_homography.domain.vo.ptz_state import PTZState
 from poc_homography.infrastructure.clients.hikvision import (
     HikvisionError,
     HikvisionHTTPError,
@@ -34,6 +32,13 @@ from poc_homography.infrastructure.clients.hikvision import (
     HikvisionParseError,
     HikvisionTransportError,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from camera_survey.models import PTZPosition
+
+    from poc_homography.domain.vo.ptz_state import PTZState
 
 from .models import (
     MovementTiming,
@@ -1280,8 +1285,8 @@ class CameraStressTestService:
         cls,
         session_id: str,
         camera_ip: str,
-        username: str,
-        password: str,
+        username: str,  # noqa: ARG003  # part of the stable internal signature; unused here
+        password: str,  # noqa: ARG003  # part of the stable internal signature; unused here
     ) -> None:
         """Execute stress test in background thread."""
         session = cls._active_sessions.get(session_id)
@@ -1422,7 +1427,7 @@ class CameraStressTestService:
     @classmethod
     def _measure_movement(
         cls,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         target_pan: float,
         target_tilt: float,
         target_zoom: float,
@@ -1467,7 +1472,7 @@ class CameraStressTestService:
     @classmethod
     def _measure_movement_max_speed(
         cls,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         target_pan: float,
         target_tilt: float,
         target_zoom: float,
@@ -1577,7 +1582,7 @@ class CameraStressTestService:
     @classmethod
     def _wait_for_stabilization(
         cls,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         max_wait: float = STRESS_TEST_STABILIZATION_TIMEOUT,
     ) -> dict[str, float]:
         """Wait for PTZ position to stabilize."""
@@ -1653,7 +1658,7 @@ class CameraStressTestService:
     def _execute_oscillation_test(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute oscillation test - back and forth movement."""
@@ -1723,7 +1728,7 @@ class CameraStressTestService:
     def _execute_random_step_accuracy_test(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute random step accuracy test."""
@@ -1831,7 +1836,7 @@ class CameraStressTestService:
     def _execute_full_range_sweep(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute full range sweep test."""
@@ -1922,7 +1927,7 @@ class CameraStressTestService:
     def _execute_tilt_stress_test(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute tilt stress test - rapid tilt movements."""
@@ -1933,7 +1938,7 @@ class CameraStressTestService:
     def _execute_combined_axis_load(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute combined axis load test - simultaneous pan and tilt."""
@@ -1998,7 +2003,7 @@ class CameraStressTestService:
     def _execute_position_repeatability(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute position repeatability test - same position multiple times."""
@@ -2061,7 +2066,7 @@ class CameraStressTestService:
     def _execute_speed_test(
         cls,
         session_id: str,
-        ptz: BasePTZCamera,
+        ptz: HikvisionPTZCamera,
         config: StressTestConfig,
     ) -> list[MovementTiming]:
         """Execute speed test - measure degrees per second."""

@@ -317,7 +317,9 @@ def api_survey_session_detail(request: HttpRequest, session_id: str) -> JsonResp
 
 
 @require_GET
-def api_survey_session_manifest(request: HttpRequest, session_id: str) -> HttpResponse:
+def api_survey_session_manifest(
+    request: HttpRequest, session_id: str
+) -> HttpResponse | FileResponse:
     """Get session manifest YAML file."""
     manifest_path = _survey_service.get_session_manifest_path(session_id)
 
@@ -333,7 +335,9 @@ def api_survey_session_manifest(request: HttpRequest, session_id: str) -> HttpRe
 
 
 @require_GET
-def api_survey_session_image(request: HttpRequest, session_id: str, filename: str) -> HttpResponse:
+def api_survey_session_image(
+    request: HttpRequest, session_id: str, filename: str
+) -> HttpResponse | FileResponse:
     """Serve session image file."""
     image_path = _survey_service.get_session_image_path(session_id, filename)
 
