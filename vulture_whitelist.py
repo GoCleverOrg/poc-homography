@@ -305,3 +305,22 @@ _.capture_snapshot  # unused method - CameraDevice / adapter API
 _assert_camera_device  # unused function - TYPE_CHECKING structural conformance check
 _.discover_endpoints  # adapter endpoint-probe used by ptz_discovery_and_control/hikvision/discover.py CLI (outside vulture scan paths) [#256]
 _.get_ptz_state  # HikvisionPTZCamera pass-through consumed by api/routers/camera_evaluation.py (outside vulture scan paths) [#256]
+
+# -- Survey dataset schema (#258); consumed by capture/planner/phase issues C2-C5 --
+# SurveyPhase enum members (poc_homography/domain/enums/survey_phase.py)
+CAMERA_INVENTORY  # unused enum member - SurveyPhase value used by planner/phases
+PTZ_CHARACTERIZATION  # unused enum member - SurveyPhase value used by planner/phases
+ZOOM_CHARACTERIZATION  # unused enum member - SurveyPhase value used by planner/phases
+DENSE_NADIR  # unused enum member - SurveyPhase value used by planner/phases
+MAIN_SURVEY  # unused enum member - SurveyPhase value used by planner/phases
+CROSS_ZOOM  # unused enum member - SurveyPhase value used by planner/phases
+REPEATABILITY  # unused enum member - SurveyPhase value used by planner/phases
+STATIC_JITTER  # unused enum member - SurveyPhase value used by planner/phases
+VALIDATION  # unused enum member - SurveyPhase value used by planner/phases
+# VideoBurstRecord + RepoYamlSurveyRun grouping query surface
+_.frame_by_index  # unused method - VideoBurstRecord offline-processing accessor (#258)
+_.get_frames_by_run  # unused method - RepoYamlSurveyRun grouping query (#258)
+_.get_frames_by_phase  # unused method - RepoYamlSurveyRun grouping query (#258)
+_.get_frames_by_camera  # unused method - RepoYamlSurveyRun grouping query (#258)
+_.get_frames_by_zoom_range  # unused method - RepoYamlSurveyRun grouping query (#258)
+_.get_frames_by_burst  # unused method - RepoYamlSurveyRun grouping query (#258)

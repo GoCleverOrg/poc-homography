@@ -1,0 +1,48 @@
+session:
+  id: 11111111-1111-4111-8111-111111111111
+  start_time: '2026-01-01T10:00:00+00:00'
+  end_time: '2026-01-01T10:05:00+00:00'
+  status: completed
+tenant:
+  id: test_tenant
+  name: Test Tenant
+camera:
+  id: cam01
+  name: Cam01
+  ip: 192.168.1.100
+  model: DS-2DF8425IX-AELW
+capture_metadata:
+  resolution: 2560x1440
+  codec: h264
+survey_parameters:
+  axis: pan
+  start: 0
+  end: 360
+  step: 10
+  restore_ptz: true
+  retry_timeout: 60
+initial_ptz:
+  pan: 0.0
+  tilt: 0.0
+  zoom: 1.0
+final_ptz:
+  pan: 350.0
+  tilt: 0.0
+  zoom: 1.0
+session_tags:
+  - backward-compat
+captures:
+  - filename: frame_0000.jpg
+    timestamp: '2026-01-01T10:00:05+00:00'
+    ptz:
+      pan: 0.0
+      tilt: 0.0
+      zoom: 1.0
+    step_index: 0
+  - filename: frame_0001.jpg
+    timestamp: '2026-01-01T10:00:15+00:00'
+    ptz:
+      pan: 10.0
+      tilt: 0.0
+      zoom: 1.0
+    step_index: 1

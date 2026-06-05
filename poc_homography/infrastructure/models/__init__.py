@@ -20,6 +20,7 @@ from poc_homography.infrastructure.models.line import LineModel
 from poc_homography.infrastructure.models.line_annotation import LineAnnotationModel
 from poc_homography.infrastructure.models.map import MapModel
 from poc_homography.infrastructure.models.stress_test_session import StressTestSessionModel
+from poc_homography.infrastructure.models.survey_run import SurveyRunModel
 from poc_homography.infrastructure.models.survey_session import SurveySessionModel
 from poc_homography.infrastructure.models.tenant import TenantModel
 from poc_homography.infrastructure.models.user import UserModel
@@ -37,6 +38,7 @@ __all__ = [
     "LineModel",
     "MapModel",
     "StressTestSessionModel",
+    "SurveyRunModel",
     "SurveySessionModel",
     "TenantModel",
     "UserModel",

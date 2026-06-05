@@ -41,6 +41,9 @@ from poc_homography.infrastructure.repositories.repo_postgres_map import (
 from poc_homography.infrastructure.repositories.repo_postgres_stress_test_session import (
     RepoPostgresStressTestSession,
 )
+from poc_homography.infrastructure.repositories.repo_postgres_survey_run import (
+    RepoPostgresSurveyRun,
+)
 from poc_homography.infrastructure.repositories.repo_postgres_survey_session import (
     RepoPostgresSurveySession,
 )
@@ -81,6 +84,9 @@ from poc_homography.infrastructure.repositories.repo_yaml_map import RepoYamlMap
 from poc_homography.infrastructure.repositories.repo_yaml_stress_test_session import (
     RepoYamlStressTestSession,
 )
+from poc_homography.infrastructure.repositories.repo_yaml_survey_run import (
+    RepoYamlSurveyRun,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_survey_session import (
     RepoYamlSurveySession,
 )
@@ -105,6 +111,7 @@ __all__ = [
     # Concrete repositories (Postgres) — session repos
     "RepoPostgresDiagnosticSession",
     "RepoPostgresStressTestSession",
+    "RepoPostgresSurveyRun",
     "RepoPostgresSurveySession",
     # Concrete repositories (YAML)
     "RepoYamlAnnotation",
@@ -120,5 +127,6 @@ __all__ = [
     "RepoYamlMap",
     "RepoYamlTenant",
     "RepoYamlStressTestSession",
+    "RepoYamlSurveyRun",
     "RepoYamlSurveySession",
 ]
