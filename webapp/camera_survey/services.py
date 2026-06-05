@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import numpy as np
 from django.conf import settings
 
 from poc_homography.camera_config import (
@@ -40,7 +41,8 @@ from .models import (
     SurveyStatus,
     TenantInfo,
 )
-from .ptz import BasePTZCamera, create_ptz_camera
+from .ptz import HikvisionPTZCamera, create_ptz_camera
+from .validation import validate_axis_range
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +199,42 @@ def _capture_frame(
             cap.release()
 
 
+def _capture_snapshot_frame(
+    ptz_camera: HikvisionPTZCamera, output_path: Path
+) -> tuple[bool, str | None, tuple[int, int] | None]:
+    """Capture a JPEG still via the ISAPI snapshot endpoint.
+
+    This is the primary capture path: it pulls a JPEG directly from the
+    camera (``/picture``) and writes the bytes to ``output_path``, decoding
+    once to report resolution.
+
+    Args:
+        ptz_camera: Wrapper exposing ``capture_snapshot()``.
+        output_path: Path to save the JPEG image.
+
+    Returns:
+        Tuple of (success, error_message, (width, height)).
+    """
+    try:
+        jpeg_bytes = ptz_camera.capture_snapshot()
+        if not jpeg_bytes:
+            return False, "Snapshot returned no data", None
+
+        resolution: tuple[int, int] | None = None
+        decoded = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if decoded is not None:
+            height, width = decoded.shape[:2]
+            resolution = (width, height)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(jpeg_bytes)
+
+        return True, None, resolution
+    except Exception as e:
+        return False, str(e), None
+
+
 def _get_survey_repo():
     """Return a RepoYamlSurveySession for the default storage directory."""
     from poc_homography.infrastructure.repositories import RepoYamlSurveySession
@@ -241,9 +279,7 @@ def import_survey_captures(session: SurveySession) -> int:
 
     map_entity = get_map_from_tenant_id(session.tenant.id)
     if map_entity is None:
-        logger.warning(
-            "Skipping import: no map configured for tenant %s", session.tenant.id
-        )
+        logger.warning("Skipping import: no map configured for tenant %s", session.tenant.id)
         return 0
 
     map_id = map_entity.id
@@ -260,9 +296,7 @@ def import_survey_captures(session: SurveySession) -> int:
     imported = 0
     for capture in session.captures:
         if capture.errors:
-            logger.warning(
-                "Skipping capture %s: has errors %s", capture.filename, capture.errors
-            )
+            logger.warning("Skipping capture %s: has errors %s", capture.filename, capture.errors)
             continue
 
         # Guard against path traversal in filename
@@ -379,15 +413,36 @@ class CameraSurveyService:
                 _survey_lock.release()
                 return "", "Failed to get initial PTZ position"
 
-            # Validate survey range
-            capabilities = ptz_camera.get_capabilities()
-            is_valid, error = capabilities.validate_range(config.axis, config.start, config.end)
+            # Validate survey range against the camera's real capabilities.
+            try:
+                capabilities = ptz_camera.get_capabilities()
+            except Exception as e:
+                _survey_lock.release()
+                logger.exception("Failed to query capabilities for %s", config.camera_id)
+                return "", f"Failed to get camera capabilities: {e}"
+
+            is_valid, error = validate_axis_range(
+                capabilities, config.axis, config.start, config.end
+            )
             if not is_valid:
                 _survey_lock.release()
                 return "", error
 
             # Get device info from camera API
             device_info = ptz_camera.get_device_info()
+
+            # Per-session health/odometry + stream-profile snapshot (best-effort).
+            device_health = None
+            try:
+                device_health = ptz_camera.get_health()
+            except Exception as e:
+                logger.warning("Failed to read device health for %s: %s", config.camera_id, e)
+
+            stream_profiles = []
+            try:
+                stream_profiles = ptz_camera.get_stream_profiles()
+            except Exception as e:
+                logger.warning("Failed to read stream profiles for %s: %s", config.camera_id, e)
 
             # Initialize session
             session = SurveySession(
@@ -402,6 +457,9 @@ class CameraSurveyService:
                     model=camera.get("model"),
                 ),
                 device_info=device_info,
+                capabilities=capabilities,
+                device_health=device_health,
+                stream_profiles=stream_profiles,
                 survey_parameters=config,
                 initial_ptz=initial_ptz,
                 session_tags=config.session_tags,
@@ -443,7 +501,7 @@ class CameraSurveyService:
         self,
         session: SurveySession,
         session_path: Path,
-        ptz_camera: BasePTZCamera,
+        ptz_camera: HikvisionPTZCamera,
         rtsp_url: str,
         steps: list[float],
         config: SurveyConfig,
@@ -516,6 +574,9 @@ class CameraSurveyService:
                 if final_pos is None:
                     final_pos = PTZPosition(pan=target_pan, tilt=target_tilt, zoom=target_zoom)
 
+                # Read per-frame optics after the camera has settled (best-effort).
+                focus_val, iris_val, exposure_val = self._read_optics(ptz_camera, step_index)
+
                 # Capture frame
                 timestamp = datetime.now(timezone.utc)
                 filename = _generate_image_filename(
@@ -523,12 +584,23 @@ class CameraSurveyService:
                 )
                 image_path = session_path / filename
 
-                capture_success, capture_error, frame_resolution = _capture_frame(
-                    rtsp_url, image_path
+                # Primary capture path: ISAPI snapshot JPEG. Fall back to the
+                # RTSP + OpenCV decode path only if the snapshot fails.
+                capture_success, capture_error, frame_resolution = _capture_snapshot_frame(
+                    ptz_camera, image_path
                 )
+                if not capture_success:
+                    logger.warning(
+                        "Snapshot capture failed at step %s (%s); falling back to RTSP",
+                        step_index,
+                        capture_error,
+                    )
+                    capture_success, capture_error, frame_resolution = _capture_frame(
+                        rtsp_url, image_path
+                    )
 
                 # Track resolution from first successful capture
-                if capture_success and resolution is None:
+                if capture_success and resolution is None and frame_resolution is not None:
                     resolution = frame_resolution
 
                 # Create capture record
@@ -537,6 +609,9 @@ class CameraSurveyService:
                     timestamp=timestamp.isoformat(),
                     ptz=final_pos,
                     step_index=step_index,
+                    focus=focus_val,
+                    iris=iris_val,
+                    exposure=exposure_val,
                 )
 
                 if not capture_success:
@@ -621,9 +696,35 @@ class CameraSurveyService:
 
             _survey_lock.release()
 
+    @staticmethod
+    def _read_optics(
+        ptz_camera: HikvisionPTZCamera, step_index: int
+    ) -> tuple[float | None, int | None, str | None]:
+        """Read per-frame optics (focus/iris/exposure), tolerating errors.
+
+        Args:
+            ptz_camera: PTZ camera wrapper exposing ``get_optics()``.
+            step_index: Current survey step (for log context).
+
+        Returns:
+            ``(focus, iris, exposure)`` with ``None`` entries when unavailable.
+        """
+        try:
+            optics = ptz_camera.get_optics()
+        except Exception as e:
+            logger.warning("Failed to read optics at step %s: %s", step_index, e)
+            return None, None, None
+
+        focus_limited = optics.focus.focus_limited
+        return (
+            float(focus_limited) if focus_limited is not None else None,
+            optics.iris.level,
+            optics.exposure.exposure_type or None,
+        )
+
     def _move_with_retry(
         self,
-        ptz_camera: BasePTZCamera,
+        ptz_camera: HikvisionPTZCamera,
         pan: float | None,
         tilt: float | None,
         zoom: float | None,

@@ -4,12 +4,57 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import TYPE_CHECKING
 
 from poc_homography.camera_config import get_camera_by_id
 
+from .models import SurveyAxis
 from .ptz import create_ptz_camera
 
+if TYPE_CHECKING:
+    from poc_homography.domain.vo.camera_capabilities import CameraCapabilities
+
 logger = logging.getLogger(__name__)
+
+
+def validate_axis_range(
+    capabilities: CameraCapabilities,
+    axis: SurveyAxis,
+    start: float,
+    end: float,
+) -> tuple[bool, str | None]:
+    """Validate that ``start``/``end`` fall within the axis range.
+
+    Replaces the former ``CameraCapabilities.validate_range`` method; the DDD
+    capabilities VO is a pure data object, so the range check lives here.
+
+    Args:
+        capabilities: Real camera capabilities (degrees-based).
+        axis: Survey axis being swept.
+        start: Sweep start value.
+        end: Sweep end value.
+
+    Returns:
+        ``(is_valid, error_message)``; ``error_message`` is ``None`` if valid.
+    """
+    if axis == SurveyAxis.PAN:
+        min_val, max_val = float(capabilities.pan_min), float(capabilities.pan_max)
+    elif axis == SurveyAxis.TILT:
+        min_val, max_val = float(capabilities.tilt_min), float(capabilities.tilt_max)
+    else:  # ZOOM
+        min_val, max_val = float(capabilities.zoom_min), float(capabilities.zoom_max)
+
+    if not (min_val <= start <= max_val):
+        return (
+            False,
+            f"Start value {start} outside valid {axis.value} range [{min_val}, {max_val}]",
+        )
+    if not (min_val <= end <= max_val):
+        return (
+            False,
+            f"End value {end} outside valid {axis.value} range [{min_val}, {max_val}]",
+        )
+    return True, None
 
 
 def parse_optional_float(data: dict, field: str) -> tuple[float | None, str | None]:
