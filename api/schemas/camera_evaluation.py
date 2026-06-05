@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Survey request schemas
 # ---------------------------------------------------------------------------
@@ -25,3 +24,10 @@ class SurveyStartRequest(BaseModel):
     fixed_pan: float | None = None
     fixed_tilt: float | None = None
     fixed_zoom: float | None = None
+
+
+class SurveyRunStartRequest(BaseModel):
+    """Body for ``POST /camera-evaluation/survey/run/start/``."""
+
+    plan_config: dict
+    camera_ids: list[str]

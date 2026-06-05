@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
 from poc_homography.infrastructure.models.survey_run import SurveyRunModel
 from poc_homography.infrastructure.repositories.base import RepoPostgresSession
 
@@ -95,3 +96,31 @@ class RepoPostgresSurveyRun(RepoPostgresSession):
         except Exception:
             logger.exception("Failed to save SurveyRun %s", entity.id)
             return False
+
+    def save_plan_config(self, run_id: str, config: SurveyPlanConfig) -> bool:
+        """Persist ``config`` under the ``plan_config`` JSONB key of ``run_id``.
+
+        The run row must already exist; returns ``False`` if it does not.
+        Returns ``True`` on success, ``False`` (logged) on any failure.
+        """
+        try:
+            row = self._session.get(self._model_cls, run_id)
+            if row is None:
+                return False
+            row.data = {**row.data, "plan_config": config.to_dict()}  # type: ignore[attr-defined]
+            self._session.flush()
+            return True
+        except Exception:
+            logger.exception("Failed to save plan config for run %s", run_id)
+            return False
+
+    def load_plan_config(self, run_id: str) -> SurveyPlanConfig:
+        """Load the ``plan_config`` JSONB payload for ``run_id``.
+
+        Raises:
+            KeyError: If the run row is missing or has no ``plan_config`` key.
+        """
+        row = self._session.get(self._model_cls, run_id)
+        if row is None or "plan_config" not in row.data:  # type: ignore[attr-defined]
+            raise KeyError(run_id)
+        return SurveyPlanConfig.from_dict(row.data["plan_config"])  # type: ignore[attr-defined]

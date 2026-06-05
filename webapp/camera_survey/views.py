@@ -18,6 +18,8 @@ from poc_homography.camera_config import (
     get_cameras_for_tenant,
     get_tenants,
 )
+from poc_homography.domain.vo import SurveyPlanConfig
+from poc_homography.survey.run_service import build_survey_run_service
 
 from .models import SurveyAxis, SurveyConfig
 from .ptz import create_ptz_camera
@@ -28,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Singleton service instance
 _survey_service = CameraSurveyService()
+
+# Singleton concurrent multi-camera survey run orchestrator (issue #262).
+# Tests monkeypatch this with a fake/MagicMock to exercise views without cameras.
+_survey_run_service = build_survey_run_service()
 
 
 def _success_response(data: dict) -> JsonResponse:
@@ -454,3 +460,142 @@ def api_ptz_status(request: HttpRequest) -> JsonResponse:
     except Exception as e:
         logger.exception(f"Error getting PTZ status for {camera_id}")
         return _error_response(f"Failed to get camera position: {e}", 500)
+
+
+@require_POST
+def api_survey_run_start(request: HttpRequest) -> JsonResponse:
+    """Start a concurrent multi-camera survey run (issue #262).
+
+    Request body (JSON):
+        plan_config: SurveyPlanConfig dict (see SurveyPlanConfig.from_dict)
+        camera_ids: list of camera ID strings
+
+    Returns:
+        JSON response with run_id and per-camera session_ids.
+
+    # SPA: uses run_id + session_ids to poll /status/ and render per-camera progress.
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return _error_response("Invalid JSON body")
+
+    plan_config = body.get("plan_config")
+    if not isinstance(plan_config, dict):
+        return _error_response("plan_config is required and must be an object")
+
+    camera_ids = body.get("camera_ids")
+    if not isinstance(camera_ids, list) or not all(isinstance(c, str) for c in camera_ids):
+        return _error_response("camera_ids is required and must be a list of strings")
+    if not camera_ids:
+        return _error_response("camera_ids must not be empty")
+
+    try:
+        cfg = SurveyPlanConfig.from_dict(plan_config)
+    except ValueError as e:
+        return _error_response(f"Invalid plan_config: {e}")
+
+    result = _survey_run_service.start_run(cfg, camera_ids)
+    return _success_response({"run_id": result["run_id"], "session_ids": result["session_ids"]})
+
+
+@require_GET
+def api_survey_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
+    """Get per-camera progress for a survey run (issue #262).
+
+    Args:
+        run_id: Survey run ID
+
+    Returns:
+        JSON response with run_id and a cameras map keyed by camera ID.
+
+    # SPA: renders each camera's phase + frame_count + status for live progress bars.
+    """
+    result = _survey_run_service.get_status(run_id)
+    if result is None:
+        return _error_response("Run not found", 404)
+    return _success_response(result)
+
+
+@require_POST
+def api_survey_run_abort(request: HttpRequest, run_id: str) -> JsonResponse:
+    """Request graceful abort of a survey run (issue #262).
+
+    Args:
+        run_id: Survey run ID
+
+    Returns:
+        JSON response with run_id and an abort message.
+
+    # SPA: calls this on the operator's "Abort run" button, then re-polls /status/.
+    """
+    result = _survey_run_service.abort_run(run_id)
+    if result is None:
+        return _error_response("Run not found", 404)
+    return _success_response(result)
+
+
+@require_GET
+def api_survey_runs_list(request: HttpRequest) -> JsonResponse:
+    """List survey runs, newest first (issue #262).
+
+    Query params:
+        limit: Maximum number to return (default 20)
+        offset: Number to skip (default 0)
+
+    Returns:
+        JSON response with runs list plus echoed limit/offset.
+
+    # SPA: renders the run history table and drives pagination via limit/offset.
+    """
+    try:
+        limit = int(request.GET.get("limit", 20))
+        offset = int(request.GET.get("offset", 0))
+    except ValueError:
+        return _error_response("limit and offset must be integers")
+
+    runs = _survey_run_service.list_runs(limit=limit, offset=offset)
+    return _success_response({"runs": runs, "limit": limit, "offset": offset})
+
+
+@require_GET
+def api_survey_run_groups(request: HttpRequest, run_id: str) -> JsonResponse:
+    """Browse dataset grouping keys with frame counts for a run (issue #262).
+
+    Args:
+        run_id: Survey run ID
+
+    Query params:
+        phase: Optional 1..9 phase number filter
+        camera: Optional camera ID filter
+        zoom: Optional reported zoom factor filter
+
+    Returns:
+        JSON response with groups list, each carrying the (phase, camera, zoom)
+        grouping key and its frame_count.
+
+    # SPA: renders the dataset browser grouped by phase/camera/zoom with frame_count badges.
+    """
+    phase: int | None = None
+    phase_raw = request.GET.get("phase")
+    if phase_raw is not None:
+        try:
+            phase = int(phase_raw)
+        except ValueError:
+            return _error_response("phase must be an integer")
+
+    camera = request.GET.get("camera")
+
+    zoom: float | None = None
+    zoom_raw = request.GET.get("zoom")
+    if zoom_raw is not None:
+        try:
+            zoom = float(zoom_raw)
+        except ValueError:
+            return _error_response("zoom must be numeric")
+
+    try:
+        groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    except ValueError as e:
+        return _error_response(str(e))
+    return _success_response({"groups": groups})

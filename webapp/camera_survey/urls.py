@@ -39,4 +39,22 @@ urlpatterns = [
     ),
     # Presets
     path("api/survey/presets/", views.api_presets, name="api_presets"),
+    # Concurrent multi-camera survey runs (issue #262)
+    path("survey/run/start/", views.api_survey_run_start, name="api_survey_run_start"),
+    path(
+        "survey/run/<str:run_id>/status/",
+        views.api_survey_run_status,
+        name="api_survey_run_status",
+    ),
+    path(
+        "survey/run/<str:run_id>/abort/",
+        views.api_survey_run_abort,
+        name="api_survey_run_abort",
+    ),
+    path("survey/runs/", views.api_survey_runs_list, name="api_survey_runs_list"),
+    path(
+        "survey/runs/<str:run_id>/groups/",
+        views.api_survey_run_groups,
+        name="api_survey_run_groups",
+    ),
 ]
