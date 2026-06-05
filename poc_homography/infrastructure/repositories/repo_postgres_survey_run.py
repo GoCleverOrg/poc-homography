@@ -22,8 +22,10 @@ class RepoPostgresSurveyRun(RepoPostgresSession):
 
     ``SurveyRun`` has no tenant, so :meth:`save` is overridden to persist the
     ``camera_id``, ``status``, and ``created_date`` indexed columns plus the
-    full JSONB ``data`` blob. The inherited ``get`` / ``delete`` / ``exists`` /
-    ``get_all`` operate unchanged.
+    full JSONB ``data`` blob. The inherited ``get`` / ``delete`` / ``exists``
+    operate unchanged. :meth:`get_all` is overridden to drop the tenant filter,
+    since ``survey_runs`` has no ``tenant_id`` column (the inherited
+    implementation would raise ``AttributeError`` for a truthy ``tenant_id``).
     """
 
     def __init__(
@@ -49,6 +51,21 @@ class RepoPostgresSurveyRun(RepoPostgresSession):
     @staticmethod
     def _extract_status(data: dict[str, Any]) -> str:
         return str(data.get("status", ""))
+
+    def get_all(
+        self,
+        *,
+        tenant_id: str | None = None,  # tenant-less; accepted for LSP, ignored
+        camera_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Any], int]:
+        """List survey runs, newest first. ``tenant_id`` is ignored.
+
+        ``survey_runs`` has no ``tenant_id`` column, so the base filter is
+        forced off to avoid an ``AttributeError`` on ``SurveyRunModel``.
+        """
+        return super().get_all(tenant_id=None, camera_id=camera_id, limit=limit, offset=offset)
 
     def save(self, entity: Any) -> bool:
         """Persist a :class:`SurveyRun`, upserting by id. Returns success.
