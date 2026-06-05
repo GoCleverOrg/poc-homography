@@ -1,8 +1,7 @@
 """Hikvision ISAPI adapter package.
 
-Public surface for Phase A: the error hierarchy, the HTTP transport, and the
-endpoint / unit-conversion helper modules. The ``HikvisionISAPIClient`` adapter
-is added in Phase C and will be exported here then.
+Public surface: the error hierarchy, the HTTP transport, the endpoint /
+unit-conversion helper modules, and the ``HikvisionISAPIClient`` adapter.
 """
 
 from __future__ import annotations
@@ -10,6 +9,9 @@ from __future__ import annotations
 from poc_homography.infrastructure.clients.hikvision import (
     isapi_endpoints,
     isapi_units,
+)
+from poc_homography.infrastructure.clients.hikvision.isapi_client import (
+    HikvisionISAPIClient,
 )
 from poc_homography.infrastructure.clients.hikvision.isapi_errors import (
     HikvisionError,
@@ -26,6 +28,7 @@ from poc_homography.infrastructure.clients.hikvision.isapi_transport import (
 )
 
 __all__ = [
+    "HikvisionISAPIClient",
     "HikvisionError",
     "HikvisionHTTPError",
     "HikvisionParseError",

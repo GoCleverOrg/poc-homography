@@ -9,8 +9,10 @@ from poc_homography.domain.protocols.camera_controller import (
     CameraController,
     CameraControllerError,
 )
+from poc_homography.domain.protocols.camera_device import CameraDevice
 
 __all__ = [
     "CameraController",
     "CameraControllerError",
+    "CameraDevice",
 ]

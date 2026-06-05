@@ -285,3 +285,21 @@ _.get_xml  # unused method - IsapiTransport public API
 _.put_xml  # unused method - IsapiTransport public API
 _.get_bytes  # unused method - IsapiTransport public API
 _.auth  # unused attribute - requests.Session.auth assignment
+
+# -- Hikvision ISAPI adapter Phase C public surface --
+# CameraDevice protocol (poc_homography/domain/protocols/camera_device.py) +
+# HikvisionISAPIClient adapter (.../hikvision/isapi_client.py); consumed by
+# Phase D tests and Phase E callers.
+_.from_config  # unused method - HikvisionISAPIClient factory
+_.get_health  # unused method - CameraDevice / adapter API
+_.get_stream_profiles  # unused method - CameraDevice / adapter API
+_.stop  # unused method - CameraDevice / adapter API
+_.goto_preset  # unused method - CameraDevice / adapter API
+_.position3d  # unused method - CameraDevice / adapter API
+_.get_optics  # unused method - CameraDevice / adapter API
+_.set_focus  # unused method - CameraDevice / adapter API
+_.set_iris  # unused method - CameraDevice / adapter API
+_.set_exposure  # unused method - CameraDevice / adapter API
+_.list_presets  # unused method - CameraDevice / adapter API
+_.capture_snapshot  # unused method - CameraDevice / adapter API
+_assert_camera_device  # unused function - TYPE_CHECKING structural conformance check
