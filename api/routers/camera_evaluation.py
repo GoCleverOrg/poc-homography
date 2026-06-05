@@ -492,7 +492,10 @@ def api_survey_run_start(
     except ValueError as e:
         return _error_response(str(e), status_code=400)
 
-    result = _survey_run_service.start_run(cfg, body.camera_ids)
+    try:
+        result = _survey_run_service.start_run(cfg, body.camera_ids)
+    except ValueError as e:
+        return _error_response(str(e), status_code=400)
     return _success_response(
         {
             "run_id": result["run_id"],
@@ -544,7 +547,7 @@ def api_survey_runs(
     SPA-hook: GET /camera-evaluation/survey/runs/ — returns
     ``{"runs", "limit", "offset"}``.
     """
-    runs = _survey_run_service.list_runs(limit=limit)
+    runs = _survey_run_service.list_runs(limit=limit, offset=offset)
     return _success_response({"runs": runs, "limit": limit, "offset": offset})
 
 
@@ -561,5 +564,8 @@ def api_survey_run_groups(
     SPA-hook: GET /camera-evaluation/survey/runs/{run_id}/groups/ — optional
     ``phase``/``camera``/``zoom`` filters; returns ``{"groups": [...]}``.
     """
-    groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    try:
+        groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    except ValueError as e:
+        return _error_response(str(e), status_code=400)
     return _success_response({"groups": groups})

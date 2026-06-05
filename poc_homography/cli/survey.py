@@ -113,7 +113,11 @@ def browse_command(
     zoom: float | None = typer.Option(None, help="Filter by reported zoom factor"),
 ) -> None:
     """Browse dataset groupings (phase, camera, zoom) with frame counts."""
-    groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    try:
+        groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
     if not groups:
         typer.echo("No groupings found")
         return

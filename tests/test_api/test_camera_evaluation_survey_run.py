@@ -64,6 +64,17 @@ class TestSurveyRunStart:
 
         assert resp.status_code == 422
 
+    def test_empty_camera_ids_returns_400(self, client: TestClient) -> None:
+        mock_service = MagicMock()
+        mock_service.start_run.side_effect = ValueError("camera_ids must not be empty")
+        body = {"plan_config": SurveyPlanConfig().to_dict(), "camera_ids": []}
+
+        with patch(_TARGET, mock_service):
+            resp = client.post("/camera-evaluation/survey/run/start/", json=body)
+
+        assert resp.status_code == 400
+        assert resp.json()["status"] == "error"
+
 
 # ---------------------------------------------------------------------------
 # GET /camera-evaluation/survey/run/{run_id}/status/
@@ -166,7 +177,7 @@ class TestSurveyRuns:
         assert data["limit"] == 5
         assert data["offset"] == 0
         assert data["runs"][0]["run_id"] == "run-1"
-        mock_service.list_runs.assert_called_once_with(limit=5)
+        mock_service.list_runs.assert_called_once_with(limit=5, offset=0)
 
 
 # ---------------------------------------------------------------------------
@@ -194,3 +205,16 @@ class TestSurveyRunGroups:
         mock_service.browse_groups.assert_called_once_with(
             "run-1", phase=5, camera="cam-a", zoom=1.0
         )
+
+    def test_out_of_range_phase_returns_400(self, client: TestClient) -> None:
+        mock_service = MagicMock()
+        mock_service.browse_groups.side_effect = ValueError("phase must be a 1..9 phase number")
+
+        with patch(_TARGET, mock_service):
+            resp = client.get(
+                "/camera-evaluation/survey/runs/run-1/groups/",
+                params={"phase": 99},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json()["status"] == "error"

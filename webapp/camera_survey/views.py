@@ -487,6 +487,8 @@ def api_survey_run_start(request: HttpRequest) -> JsonResponse:
     camera_ids = body.get("camera_ids")
     if not isinstance(camera_ids, list) or not all(isinstance(c, str) for c in camera_ids):
         return _error_response("camera_ids is required and must be a list of strings")
+    if not camera_ids:
+        return _error_response("camera_ids must not be empty")
 
     try:
         cfg = SurveyPlanConfig.from_dict(plan_config)
@@ -552,8 +554,7 @@ def api_survey_runs_list(request: HttpRequest) -> JsonResponse:
     except ValueError:
         return _error_response("limit and offset must be integers")
 
-    runs = _survey_run_service.list_runs(limit=limit)
-    runs = runs[offset:]
+    runs = _survey_run_service.list_runs(limit=limit, offset=offset)
     return _success_response({"runs": runs, "limit": limit, "offset": offset})
 
 
@@ -593,5 +594,8 @@ def api_survey_run_groups(request: HttpRequest, run_id: str) -> JsonResponse:
         except ValueError:
             return _error_response("zoom must be numeric")
 
-    groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    try:
+        groups = _survey_run_service.browse_groups(run_id, phase=phase, camera=camera, zoom=zoom)
+    except ValueError as e:
+        return _error_response(str(e))
     return _success_response({"groups": groups})

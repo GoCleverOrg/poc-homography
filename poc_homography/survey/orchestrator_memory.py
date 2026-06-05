@@ -124,11 +124,17 @@ class InMemorySurveyOrchestrator:
 
     def iter_progress(self, run_id: str) -> Iterator[ProgressEvent]:
         """Advance every camera through each enabled phase, yielding one event each."""
-        run = self._runs.get(run_id)
+        with self._lock:
+            run = self._runs.get(run_id)
+            phases = run.phases if run is not None else ()
         if run is None:
             return
-        for phase in run.phases:
-            for camera_id, cam in run.cameras.items():
+        for phase in phases:
+            with self._lock:
+                if run.status == SurveyRunStatus.ABORTED.value:
+                    return
+                camera_items = list(run.cameras.items())
+            for camera_id, cam in camera_items:
                 with self._lock:
                     if run.status == SurveyRunStatus.ABORTED.value:
                         return

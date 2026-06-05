@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
+import pytest
+
 from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
 from poc_homography.survey.orchestrator_memory import InMemorySurveyOrchestrator
 from poc_homography.survey.run_service import SurveyRunService, build_survey_run_service
@@ -117,6 +119,24 @@ class TestSurveyRunService:
         assert runs[0]["run_id"] == "id-0"
         assert runs[0]["camera_count"] == 1
 
+    def test_start_run_rejects_empty_camera_ids(self) -> None:
+        service = SurveyRunService(_orchestrator())
+        with pytest.raises(ValueError, match="camera_ids"):
+            service.start_run(SurveyPlanConfig(), [])
+
+    def test_list_runs_offset_windows_results(self) -> None:
+        service = SurveyRunService(_orchestrator())
+        # Three runs created newest-last; list_runs returns newest-first.
+        for _ in range(3):
+            service.start_run(SurveyPlanConfig(), ["cam-a"])
+        first_page = service.list_runs(limit=2, offset=0)
+        second_page = service.list_runs(limit=2, offset=2)
+        assert len(first_page) == 2
+        assert len(second_page) == 1
+        # No overlap between the windowed pages.
+        ids = {r["run_id"] for r in first_page} | {r["run_id"] for r in second_page}
+        assert len(ids) == 3
+
 
 class _FakeRunRepo:
     """Minimal SurveyRunRepository fake returning duck-typed frame records."""
@@ -171,6 +191,18 @@ class TestBrowseGroups:
         groups = service.browse_groups("run-1", phase=5)  # 5 -> main_survey
         assert len(groups) == 1
         assert groups[0]["phase"] == "main_survey"
+
+    @pytest.mark.parametrize("bad_phase", [0, 10, -1])
+    def test_out_of_range_phase_raises_valueerror(self, bad_phase: int) -> None:
+        service = SurveyRunService(_orchestrator(), run_repo=_FakeRunRepo([]))
+        with pytest.raises(ValueError, match="phase"):
+            service.browse_groups("run-1", phase=bad_phase)
+
+    def test_out_of_range_phase_raises_even_without_repo(self) -> None:
+        # The range guard runs before the no-repo short-circuit.
+        service = SurveyRunService(_orchestrator())
+        with pytest.raises(ValueError, match="phase"):
+            service.browse_groups("run-1", phase=99)
 
 
 def test_build_survey_run_service_default_wiring() -> None:

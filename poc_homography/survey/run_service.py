@@ -41,7 +41,13 @@ class SurveyRunService:
         self._run_repo = run_repo
 
     def start_run(self, plan_config: SurveyPlanConfig, camera_ids: list[str]) -> dict[str, object]:
-        """Launch a run; return ``{"run_id", "session_ids"}``."""
+        """Launch a run; return ``{"run_id", "session_ids"}``.
+
+        Raises:
+            ValueError: If ``camera_ids`` is empty (a run needs at least one camera).
+        """
+        if not camera_ids:
+            raise ValueError("camera_ids must not be empty")
         handle = self._orchestrator.start(plan_config, camera_ids)
         return {"run_id": handle.run_id, "session_ids": dict(handle.session_ids)}
 
@@ -69,8 +75,15 @@ class SurveyRunService:
             return None
         return {"run_id": run_id, "message": "Run abort requested"}
 
-    def list_runs(self, limit: int = 20) -> list[dict[str, object]]:
-        """Return run summaries (newest first) as JSON-friendly dicts."""
+    def list_runs(self, limit: int = 20, offset: int = 0) -> list[dict[str, object]]:
+        """Return up to ``limit`` run summaries (newest first), skipping ``offset``.
+
+        The orchestrator only knows ``limit``, so fetch ``limit + offset`` newest
+        runs and drop the leading ``offset`` here — giving correct windowed
+        pagination across every transport from one place.
+        """
+        offset = max(offset, 0)
+        summaries = self._orchestrator.list_runs(limit + offset)[offset:]
         return [
             {
                 "run_id": summary.run_id,
@@ -79,7 +92,7 @@ class SurveyRunService:
                 "total_frame_count": summary.total_frame_count,
                 "status": summary.status,
             }
-            for summary in self._orchestrator.list_runs(limit)
+            for summary in summaries
         ]
 
     def iter_progress(self, run_id: str) -> Iterator[dict[str, object]]:
@@ -106,7 +119,12 @@ class SurveyRunService:
         Optional filters narrow the result: ``phase`` is a 1..9 phase number,
         ``camera`` a camera id, and ``zoom`` a reported zoom factor (matched to
         one decimal place). Returns an empty list when no run repository is wired.
+
+        Raises:
+            ValueError: If ``phase`` is not a valid 1..9 phase number.
         """
+        if phase is not None and phase not in _PHASE_BY_NUMBER:
+            raise ValueError(f"phase must be a 1..9 phase number, got {phase}")
         if self._run_repo is None:
             return []
         phase_value = _PHASE_BY_NUMBER[phase].value if phase is not None else None

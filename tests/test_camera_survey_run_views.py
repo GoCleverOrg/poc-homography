@@ -126,6 +126,17 @@ def test_start_run_camera_ids_not_strings(client, mock_service) -> None:
     assert resp.status_code == 400
 
 
+def test_start_run_empty_camera_ids(client, mock_service) -> None:
+    """POST with an empty camera_ids list returns 400 (no run started)."""
+    resp = client.post(
+        f"{PREFIX}/survey/run/start/",
+        data=json.dumps({"plan_config": SurveyPlanConfig().to_dict(), "camera_ids": []}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    mock_service.start_run.assert_not_called()
+
+
 def test_start_run_bad_plan_config(client, mock_service) -> None:
     """POST with a plan_config that fails validation returns 400."""
     resp = client.post(
@@ -200,7 +211,7 @@ def test_runs_list_success(client, mock_service) -> None:
     assert data["runs"][0]["run_id"] == "run-1"
     assert data["limit"] == 20
     assert data["offset"] == 0
-    mock_service.list_runs.assert_called_once_with(limit=20)
+    mock_service.list_runs.assert_called_once_with(limit=20, offset=0)
 
 
 def test_runs_list_bad_limit(client, mock_service) -> None:
@@ -237,4 +248,11 @@ def test_groups_bad_phase(client, mock_service) -> None:
 def test_groups_bad_zoom(client, mock_service) -> None:
     """GET groups/ with a non-numeric zoom returns 400."""
     resp = client.get(f"{PREFIX}/survey/runs/run-1/groups/?zoom=xyz")
+    assert resp.status_code == 400
+
+
+def test_groups_out_of_range_phase(client, mock_service) -> None:
+    """GET groups/ with an out-of-range phase maps the service ValueError to 400."""
+    mock_service.browse_groups.side_effect = ValueError("phase must be a 1..9 phase number")
+    resp = client.get(f"{PREFIX}/survey/runs/run-1/groups/?phase=99")
     assert resp.status_code == 400
