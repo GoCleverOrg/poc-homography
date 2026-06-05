@@ -1,5 +1,31 @@
 Here is the breakdown for the Hikvision DS-2DF8425IX-AELW(T5).
 
+> **What the hardware exposes vs. what is computed (cam-04, V5.8.0).**
+> A live ISAPI probe of the DS-2DF8425IX-AELW confirms what the camera
+> reports natively and what must be derived. See the
+> [endpoint catalog](./HIKVISION_PTZ_API_SUMMARY.md) and the
+> [capability matrix](./hikvision_isapi_capability_matrix.md).
+>
+> - **A live focus position is NOT exposed by this firmware.** The
+>   `PTZCtrl/channels/1/absoluteEx/capabilities` response carries a `<focus>`
+>   element with the step **range only** (`min="4096" max="2576990208"`) and no
+>   text value — it is self-closing on cam-04. The adapter models the field as
+>   the optional `PTZState.focus` (`FocusSteps`), but the hardware leaves it
+>   unpopulated (`None`). The only focus-related per-frame datum the camera
+>   reports is the focus *configuration* (`focusStyle`, near limit) from
+>   `Image/channels/1/focusConfiguration`.
+> - **Focal length (mm) and field of view are NOT exposed by the hardware.**
+>   No probed ISAPI document — `deviceInfo`, PTZ capabilities, image
+>   capabilities, or streaming config — reports either value. They MUST remain
+>   **computed**, not read, via
+>   `poc_homography/camera/intrinsics.py::compute_intrinsics` together with
+>   `poc_homography/domain/enums/camera_spec.py::focal_length_at_zoom`. The
+>   live zoom factor (from `absoluteEx`/`status`) is the only camera-sourced
+>   input to that computation; the sensor width and base focal length come
+>   from the datasheet-backed `CameraSpec.HIKVISION_DS_2DF8425IX`.
+> - The focus step value is a lens-encoder position, **not** a focal length;
+>   it cannot substitute for the computed `focal_length_mm`.
+
 ### 1\. Computing Intrinsics ($K$)
 
 The Intrinsic matrix maps 3D camera coordinates to 2D pixel coordinates.

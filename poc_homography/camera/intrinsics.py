@@ -1,18 +1,23 @@
 """
 Camera intrinsics computation from PTZ status.
 
-This module provides functions to query a camera's current PTZ position and
-compute the intrinsic matrix based on zoom level and sensor parameters.
+This module computes a camera's intrinsic matrix from a zoom level and sensor
+parameters. Querying the live PTZ position is delegated to
+:class:`poc_homography.infrastructure.clients.hikvision.isapi_client.HikvisionISAPIClient`;
+this module no longer talks to camera hardware directly.
 """
 
-import xml.etree.ElementTree as ET
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
-import requests
-from requests.auth import HTTPDigestAuth
 
 from poc_homography.types import Degrees, Millimeters, Pixels, PixelsFloat, Unitless
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 
 @dataclass
@@ -57,70 +62,8 @@ class CameraIntrinsics:
     image_height: Pixels
     """Image height in pixels"""
 
-    K: np.ndarray
+    K: NDArray[np.float64]
     """Intrinsic matrix (3x3 numpy array)"""
-
-
-def get_ptz_status(
-    ip: str,
-    username: str,
-    password: str,
-    timeout: float = 5.0,
-) -> PTZStatus:
-    """
-    Get current PTZ status from camera.
-
-    Args:
-        ip: Camera IP address
-        username: Camera username
-        password: Camera password
-        timeout: Request timeout in seconds
-
-    Returns:
-        PTZ status with pan, tilt, and zoom
-
-    Raises:
-        RuntimeError: If cannot connect or parse response
-    """
-    url = f"http://{ip}/ISAPI/PTZCtrl/channels/1/status"
-
-    try:
-        response = requests.get(
-            url,
-            auth=HTTPDigestAuth(username, password),
-            timeout=timeout,
-        )
-    except requests.RequestException as e:
-        raise RuntimeError(f"Failed to connect to camera: {e}") from e
-
-    if response.status_code != 200:
-        raise RuntimeError(f"Camera returned status {response.status_code}")
-
-    try:
-        root = ET.fromstring(response.text)
-        ns = {"h": "http://www.hikvision.com/ver20/XMLSchema"}
-
-        azimuth = root.find(".//h:azimuth", ns)
-        elevation = root.find(".//h:elevation", ns)
-        abs_zoom = root.find(".//h:absoluteZoom", ns)
-
-        if (
-            azimuth is None
-            or elevation is None
-            or abs_zoom is None
-            or azimuth.text is None
-            or elevation.text is None
-            or abs_zoom.text is None
-        ):
-            raise RuntimeError("Failed to parse PTZ status XML")
-
-        return PTZStatus(
-            pan=Degrees(float(azimuth.text) / 10),
-            tilt=Degrees(float(elevation.text) / 10),
-            zoom=Unitless(float(abs_zoom.text) / 10),
-        )
-    except ET.ParseError as e:
-        raise RuntimeError(f"Failed to parse XML response: {e}") from e
 
 
 def compute_intrinsics(
@@ -165,47 +108,3 @@ def compute_intrinsics(
         image_height=image_height,
         K=K,
     )
-
-
-def get_camera_intrinsics(
-    camera_ip: str,
-    username: str,
-    password: str,
-    image_width: Pixels,
-    image_height: Pixels,
-    sensor_width_mm: Millimeters,
-    base_focal_length_mm: Millimeters,
-    timeout: float = 5.0,
-) -> tuple[PTZStatus, CameraIntrinsics]:
-    """
-    Get current intrinsics for a camera.
-
-    Args:
-        camera_ip: Camera IP address
-        username: Camera username
-        password: Camera password
-        image_width: Image width in pixels
-        image_height: Image height in pixels
-        sensor_width_mm: Sensor width in millimeters
-        base_focal_length_mm: Base focal length in millimeters (at 1x zoom)
-        timeout: Request timeout in seconds
-
-    Returns:
-        Tuple of (PTZ status, camera intrinsics)
-
-    Raises:
-        RuntimeError: If cannot connect to camera or parse response
-    """
-    # Get PTZ status
-    ptz_status = get_ptz_status(camera_ip, username, password, timeout)
-
-    # Compute intrinsics
-    intrinsics = compute_intrinsics(
-        zoom=ptz_status.zoom,
-        image_width=image_width,
-        image_height=image_height,
-        sensor_width_mm=sensor_width_mm,
-        base_focal_length_mm=base_focal_length_mm,
-    )
-
-    return ptz_status, intrinsics

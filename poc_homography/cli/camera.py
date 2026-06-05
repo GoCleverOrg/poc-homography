@@ -1,25 +1,33 @@
 """Camera intrinsics and validation CLI commands."""
 
+from __future__ import annotations
+
 import json
 from enum import Enum
-from pathlib import Path
+from pathlib import Path  # noqa: TC003 (runtime type used by typer.Option)
+from typing import TYPE_CHECKING
 
 import typer
 
 from poc_homography.calibration import TARGET_ERROR_THRESHOLD_PX
-from poc_homography.camera import CameraIntrinsics, PTZStatus, get_camera_intrinsics
+from poc_homography.camera import CameraIntrinsics, PTZStatus, compute_intrinsics
 from poc_homography.camera_config import (
     DEFAULT_BASE_FOCAL_LENGTH_MM,
     DEFAULT_SENSOR_WIDTH_MM,
-    PASSWORD,
-    USERNAME,
     get_camera_by_name,
     get_camera_configs,
+    get_tenant_credentials,
 )
 from poc_homography.cli.main import camera_app
+from poc_homography.domain.protocols.camera_controller import CameraControllerError
+from poc_homography.infrastructure.clients.hikvision.isapi_client import HikvisionISAPIClient
 from poc_homography.map_points import GCPRegistry
-from poc_homography.types import Millimeters, Pixels
+from poc_homography.types import Degrees, Millimeters, Pixels, Unitless
 from poc_homography.validation import load_gcps_from_yaml, validate_model
+
+if TYPE_CHECKING:
+    from poc_homography.domain.vo.camera_capabilities import CameraCapabilities
+    from poc_homography.domain.vo.ptz_state import PTZState
 
 
 class OutputFormat(str, Enum):
@@ -61,15 +69,6 @@ def intrinsics_command(
         hom camera intrinsics --camera Valte --format json
         hom camera intrinsics --camera Valte --format yaml
     """
-    # Validate credentials
-    if not USERNAME or not PASSWORD:
-        typer.echo(
-            "Error: Camera credentials not set. "
-            "Set CAMERA_USERNAME and CAMERA_PASSWORD environment variables.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
     # Get camera configuration
     cam_info = get_camera_by_name(camera)
     if not cam_info:
@@ -80,24 +79,49 @@ def intrinsics_command(
         )
         raise typer.Exit(1)
 
-    # Get PTZ status and intrinsics
-    try:
-        ptz_status, intrinsics = get_camera_intrinsics(
-            camera_ip=cam_info["ip"],
-            username=USERNAME,
-            password=PASSWORD,
-            image_width=Pixels(image_width),
-            image_height=Pixels(image_height),
-            sensor_width_mm=Millimeters(sensor_width_mm),
-            base_focal_length_mm=Millimeters(base_focal_length_mm),
+    # Resolve tenant-specific credentials (falls back to global env vars)
+    tenant_id = cam_info.get("tenant_id") or ""
+    username, password = get_tenant_credentials(tenant_id)
+    if not username or not password:
+        typer.echo(
+            f"Error: Camera credentials not set for tenant '{tenant_id}'. "
+            f"Set {tenant_id.upper()}_CAMERA_USERNAME / {tenant_id.upper()}_CAMERA_PASSWORD "
+            "(or global CAMERA_USERNAME / CAMERA_PASSWORD) environment variables.",
+            err=True,
         )
-    except RuntimeError as e:
+        raise typer.Exit(1)
+
+    # Query live PTZ state (and optics/capabilities) via the ISAPI adapter
+    client = HikvisionISAPIClient(cam_info["ip"], username, password)
+    try:
+        ptz_state = client.get_ptz_status()
+    except CameraControllerError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
+    # Capabilities are best-effort: some firmware does not expose them.
+    capabilities: CameraCapabilities | None = None
+    try:
+        capabilities = client.get_capabilities()
+    except CameraControllerError:
+        capabilities = None
+
+    # Compute intrinsics from the live zoom level
+    intrinsics = compute_intrinsics(
+        zoom=ptz_state.zoom,
+        image_width=Pixels(image_width),
+        image_height=Pixels(image_height),
+        sensor_width_mm=Millimeters(sensor_width_mm),
+        base_focal_length_mm=Millimeters(base_focal_length_mm),
+    )
+
+    ptz_status = _ptz_status_from_state(ptz_state)
+
     # Format output
     if output_format == OutputFormat.HUMAN:
-        output = _format_human_readable(camera, cam_info["ip"], ptz_status, intrinsics)
+        output = _format_human_readable(
+            camera, cam_info["ip"], ptz_status, intrinsics, ptz_state.focus, capabilities
+        )
     elif output_format == OutputFormat.JSON:
         output = _format_json(camera, cam_info["ip"], ptz_status, intrinsics)
     else:  # YAML
@@ -106,11 +130,22 @@ def intrinsics_command(
     typer.echo(output)
 
 
+def _ptz_status_from_state(state: PTZState) -> PTZStatus:
+    """Adapt the domain :class:`PTZState` to the local ``PTZStatus`` view."""
+    return PTZStatus(
+        pan=Degrees(state.pan_raw),
+        tilt=Degrees(state.tilt_deg),
+        zoom=Unitless(state.zoom),
+    )
+
+
 def _format_human_readable(
     camera_name: str,
     camera_ip: str,
     ptz: PTZStatus,
     intr: CameraIntrinsics,
+    focus: int | None = None,
+    capabilities: CameraCapabilities | None = None,
 ) -> str:
     """Format result for human-readable output."""
     K = intr.K
@@ -124,6 +159,18 @@ def _format_human_readable(
         f"  Pan (azimuth):    {ptz.pan:.1f}°",
         f"  Tilt (elevation): {ptz.tilt:.1f}° (Hikvision: positive = down)",
         f"  Zoom factor:      {ptz.zoom:.1f}x",
+    ]
+    if focus is not None:
+        lines.append(f"  Focus position:   {focus} steps")
+    if capabilities is not None:
+        lines += [
+            "",
+            "Camera Capabilities:",
+            f"  Pan range:  {capabilities.pan_min:.1f}° .. {capabilities.pan_max:.1f}°",
+            f"  Tilt range: {capabilities.tilt_min:.1f}° .. {capabilities.tilt_max:.1f}°",
+            f"  Zoom range: {capabilities.zoom_min:.1f}x .. {capabilities.zoom_max:.1f}x",
+        ]
+    lines += [
         "",
         "Camera Intrinsics:",
         f"  Sensor width:       {intr.sensor_width_mm} mm",

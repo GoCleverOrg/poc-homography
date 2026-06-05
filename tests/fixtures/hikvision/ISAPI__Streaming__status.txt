@@ -1,0 +1,44 @@
+<?xml version="1.0" ?>
+<StreamingStatus xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <totalStreamingSessions>2</totalStreamingSessions>
+
+
+  <StreamingSessionStatusList xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <StreamingSessionStatus>
+
+
+      <clientAddress>
+
+
+        <ipAddress>192.168.7.9</ipAddress>
+
+
+      </clientAddress>
+
+
+    </StreamingSessionStatus>
+
+
+    <StreamingSessionStatus>
+
+
+      <clientAddress>
+
+
+        <ipAddress>10.107.250.24</ipAddress>
+
+
+      </clientAddress>
+
+
+    </StreamingSessionStatus>
+
+
+  </StreamingSessionStatusList>
+
+
+</StreamingStatus>

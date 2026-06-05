@@ -1,413 +1,348 @@
-# Hikvision PTZ Camera ISAPI - Discovery Summary
+# Hikvision ISAPI Endpoint Catalog
 
-## Camera Information
+This document catalogs the Hikvision ISAPI surface used by the adapter
+(`poc_homography/infrastructure/clients/hikvision/`). Every endpoint, sample
+value, and range below is grounded in a live probe of camera `cam-04`
+(`icozee-camptz-04`), a **DS-2DF8425IX-AELW** running firmware **V5.8.0**.
 
-Tested on two Hikvision PTZ cameras:
-- **Camera 1**: 10.207.99.178
-- **Camera 2**: 10.237.100.15
-- **Credentials**: admin / CameraLab01*
+The raw probe responses are committed as fixtures under
+[`tests/fixtures/hikvision/`](../tests/fixtures/hikvision/) and are referenced
+per-endpoint below. The companion
+[capability matrix](./hikvision_isapi_capability_matrix.md) records, per
+endpoint, whether the live hardware returns data, rejects writes, or is absent.
 
-## ISAPI Endpoints Discovered
+## Probed Device
 
-### 1. PTZ Status Endpoint (GET Current Position)
+| Field | Value | Source tag |
+|-------|-------|------------|
+| Device name | `icozee-camptz-04` | `deviceName` |
+| Model | `DS-2DF8425IX-AELW` | `model` |
+| Device type | `IPDome` | `deviceType` |
+| Serial number | `DS-2DF8425IX-AELW20240712CCWRFH3535597` | `serialNumber` |
+| MAC address | `74:3f:c2:fc:a1:9b` | `macAddress` |
+| Firmware | `V5.8.0` (build 230208) | `firmwareVersion` |
+| Encoder | `V7.3` | `encoderVersion` |
+| Boot | `V1.3.4` | `bootVersion` |
+| Hardware | `0x0` | `hardwareVersion` |
+| Platform | `H8` | `platformName` |
+| Manufacturer | `hikvision` | `manufacturer` |
 
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/status`
+Source: [`ISAPI__System__deviceInfo.txt`](../tests/fixtures/hikvision/ISAPI__System__deviceInfo.txt).
 
-**Method**: `GET`
+## Transport and Conventions
 
-**Status**: ✓ Working (200)
+- **Base URL**: `http(s)://<host>/ISAPI/...`. All paths are produced by
+  `isapi_endpoints.py`; no other module hardcodes `/ISAPI/` literals.
+- **Authentication**: HTTP Digest (`HTTPDigestAuth`).
+- **Content type**: XML, namespace
+  `http://www.hikvision.com/ver20/XMLSchema`. The namespace string is defined
+  once, in `isapi_endpoints.py::HIKVISION_XML_NS`. Parsing uses `defusedxml`.
+- **Channels**: PTZ and Image controls default to channel `1`; streaming
+  defaults to `101` (main stream).
 
-**Description**: Returns the current absolute position of the PTZ camera (pan, tilt, zoom)
+### Unit conventions
 
-**Response Format**:
+Hikvision encodes pan, tilt, and zoom as integers **scaled by ×10**. The
+adapter centralizes this in `isapi_units.py`.
+
+| Quantity | Encoding | Example (from `status`) |
+|----------|----------|-------------------------|
+| Pan (azimuth) | raw = degrees × 10 | `3202` → `320.2°` |
+| Tilt (elevation) | raw = degrees × 10 | `182` → `18.2°` |
+| Zoom (absoluteZoom) | raw = factor × 10 | `172` → `17.2×` |
+
+- The decode is `value = raw / 10`; the encode is `raw = round(value * 10)`.
+  `round()` keeps the round-trip symmetric for multiples of `0.1`
+  (`raw_to_degrees(degrees_to_raw(18.2)) == 18.2`).
+- **Raw tilt is positive = down.** A positive elevation in a raw ISAPI
+  response means the lens points below the horizon. Downstream pose code
+  accounts for this via `TiltConvention.POSITIVE_DOWN` on
+  `CameraSpec.HIKVISION_DS_2DF8425IX`.
+- The `absoluteEx/capabilities` response is the exception: it reports values
+  **already in degrees** (e.g. `<elevation>18.2</elevation>`) and carries the
+  authoritative min/max as XML attributes.
+
+### Position-space ranges (cam-04, in engineering units)
+
+| Axis | Min | Max | Unit | Source |
+|------|-----|-----|------|--------|
+| Pan (azimuth) | 0 | 360 | degrees | `absoluteEx/capabilities` |
+| Tilt (elevation) | −50 | +60 | degrees | `absoluteEx/capabilities` |
+| Zoom (absoluteZoom) | 1 | 25 | × | `absoluteEx/capabilities` |
+| Focus | 4096 | 2576990208 | steps | `absoluteEx/capabilities` |
+| Horizontal speed | 0.2 | 210.8 | °/s | `absoluteEx/capabilities` |
+| Vertical speed | 0.2 | 151.8 | °/s | `absoluteEx/capabilities` |
+
+> The legacy `PTZCtrl/channels/1/capabilities` response reports the same axes
+> in **raw ×10 space** (pan `0..3600`, tilt `-500..600`, zoom `10..250`). The
+> degree-based `absoluteEx/capabilities` is the preferred source because it
+> needs no scaling and is unambiguous.
+
+### HTTP status semantics
+
+| Status | Meaning for this surface |
+|--------|--------------------------|
+| `200 OK` | Endpoint is readable; body parsed into a value object. |
+| `403 Forbidden` + `subStatusCode == methodNotAllowed` | The endpoint exists but the **method is not allowed** (typically a PUT-only setter probed with GET, or a setter the firmware does not expose). This is **not** an authentication or access-denied failure. The adapter maps it to `HikvisionUnsupportedError`. |
+| `404 Not Found` | The endpoint is **absent** on this firmware/model. |
+
+The `403 methodNotAllowed` body is exactly:
+
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
+<ResponseStatus version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<requestURL>/ISAPI/System/Video/inputs/channels/1/focus</requestURL>
+<statusCode>6</statusCode>
+<statusString>Invalid Operation</statusString>
+<subStatusCode>methodNotAllowed</subStatusCode>
+</ResponseStatus>
+```
+
+Source: [`ISAPI__403__methodNotAllowed.txt`](../tests/fixtures/hikvision/ISAPI__403__methodNotAllowed.txt).
+Classification keys on `statusString == "Invalid Operation"` and
+`subStatusCode == "methodNotAllowed"`.
+
+## Endpoint Catalog
+
+### Identity and health
+
+#### `GET /ISAPI/System/deviceInfo`
+
+Returns device identity (`DeviceInfo` value object). Sample values are in the
+[Probed Device](#probed-device) table above.
+Source: [`ISAPI__System__deviceInfo.txt`](../tests/fixtures/hikvision/ISAPI__System__deviceInfo.txt).
+
+#### `GET /ISAPI/System/status`
+
+Returns a `DeviceStatus` document combining health and **lens odometry**
+(`DeviceHealth` + `LensOdometry`). Sample values from cam-04:
+
+| Field | Tag | cam-04 value |
+|-------|-----|--------------|
+| Uptime (s) | `deviceUpTime` | 126519 |
+| CPU utilization (%) | `CPUList/CPU/cpuUtilization` | 56 |
+| Memory usage (%) | `MemoryList/Memory/memoryUsage` | 43 |
+| Total reboot count | `totalRebootCount` | 12 |
+| Fan state | `DomeInfoList/DomeInfo/fanState` | 1 |
+| Heat state | `DomeInfoList/DomeInfo/heatState` | 0 |
+| Zoom reverse times | `CameraList/Camera/zoomReverseTimes` | 724 |
+| Zoom total steps | `zoomTotalSteps` | 621 |
+| Focus reverse times | `focusReverseTimes` | 4811 |
+| Focus total steps | `focusTotalSteps` | 310 |
+| Iris shift times | `irisShiftTimes` | 3951 |
+| Iris total steps | `irisTotalSteps` | 27 |
+| ICR shift times | `icrShiftTimes` | 0 |
+| Lens interior times | `lensIntirTimes` | 11 |
+| Camera run total time | `cameraRunTotalTime` | 182826 |
+| Pan total rounds | `DomeInfo/panTotalRounds` | 206 |
+| Tilt total rounds | `DomeInfo/tiltTotalRounds` | 134 |
+
+These counters are the basis for **lens odometry** and session-health capture.
+Source: [`ISAPI__System__status.txt`](../tests/fixtures/hikvision/ISAPI__System__status.txt).
+
+### PTZ read
+
+#### `GET /ISAPI/PTZCtrl/channels/1/status`
+
+Returns the current absolute position as a `PTZStatus` document with an
+`AbsoluteHigh` block of **raw ×10** integers.
+
+```xml
 <PTZStatus version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <AbsoluteHigh>
-    <elevation>121</elevation>
-    <azimuth>1117</azimuth>
-    <absoluteZoom>209</absoluteZoom>
+    <elevation>182</elevation>     <!-- 18.2°, positive = down -->
+    <azimuth>3202</azimuth>        <!-- 320.2° pan -->
+    <absoluteZoom>172</absoluteZoom> <!-- 17.2x -->
   </AbsoluteHigh>
 </PTZStatus>
 ```
 
-**Value Interpretation**:
-- **Pan (Azimuth)**: Raw value divided by 10 = degrees (e.g., 1117 → 111.7°)
-- **Tilt (Elevation)**: Raw value divided by 10 = degrees (e.g., 121 → 12.1°)
-- **Zoom (AbsoluteZoom)**: Raw value divided by 10 = zoom level (e.g., 209 → 20.9)
+`status` does **not** carry a focus value. The probe confirms the hardware
+exposes **no live focus position** on any endpoint (see `absoluteEx` below).
+Source: [`ISAPI__PTZCtrl__channels__1__status.txt`](../tests/fixtures/hikvision/ISAPI__PTZCtrl__channels__1__status.txt).
 
-**Note**: Values use the namespace `http://www.hikvision.com/ver20/XMLSchema`, so XML parsing requires namespace handling.
+#### `GET /ISAPI/PTZCtrl/channels/1/absoluteEx/capabilities`
 
----
+The authoritative, **degree-based** capabilities source. Values are in
+engineering units; min/max are XML attributes. The element text of
+`<elevation>`, `<azimuth>`, and `<absoluteZoom>` is the current live reading.
+The `<focus>` element, however, is **self-closing on cam-04** — it carries only
+the `min`/`max` step **range** (`min="4096" max="2576990208"`) and **no live
+focus value**. The adapter therefore leaves `PTZState.focus` as `None`; a live
+focus position is not available from this firmware.
 
-### 2. PTZ Control Endpoints (Movement)
-
-#### 2.1 Continuous Movement
-
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/continuous`
-
-**Method**: `PUT`
-
-**Status**: ✓ Working (200)
-
-**Description**: Moves the camera continuously until stopped. This is the **primary endpoint for PTZ control**.
-
-**Request Format**:
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
+<PTZAbsoluteEx version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <elevation min="-50" max="60">18.2</elevation>
+  <azimuth min="0" max="360">320.2</azimuth>
+  <absoluteZoom min="1" max="25">17.2</absoluteZoom>
+  <focus min="4096" max="2576990208"/>
+  <horizontalSpeed min="0.2" max="210.8"/>
+  <verticalSpeed min="0.2" max="151.8"/>
+</PTZAbsoluteEx>
+```
+
+This response is the source for the `CameraCapabilities` value object.
+Source: [`ISAPI__PTZCtrl__channels__1__absoluteEx__capabilities.txt`](../tests/fixtures/hikvision/ISAPI__PTZCtrl__channels__1__absoluteEx__capabilities.txt).
+
+#### `GET /ISAPI/PTZCtrl/channels/1/capabilities`
+
+Legacy capabilities document (`PTZChanelCap`) reporting position spaces in
+**raw ×10** units, plus feature flags. cam-04 ranges:
+
+| Space | Axis | Min | Max |
+|-------|------|-----|-----|
+| `AbsolutePanTiltPositionSpace` | XRange (pan) | 0 | 3600 |
+| `AbsolutePanTiltPositionSpace` | YRange (tilt) | −500 | 600 |
+| `AbsoluteZoomPositionSpace` | ZRange (zoom) | 10 | 250 |
+| `ContinuousPanTiltSpace` | XRange / YRange | −100 | 100 |
+| `ContinuousZoomSpace` | ZRange | −100 | 100 |
+
+Feature flags include `isSupportPosition3D=true`, `maxPresetNum=300`,
+`controlProtocol=PELCO-D`. Prefer `absoluteEx/capabilities` for ranges.
+Source: [`ISAPI__PTZCtrl__channels__1__capabilities.txt`](../tests/fixtures/hikvision/ISAPI__PTZCtrl__channels__1__capabilities.txt).
+
+### PTZ write
+
+The following endpoints accept `PUT` of a `PTZData` (or position) body. They
+are setters: a `GET` probe returns `403 methodNotAllowed`.
+
+| Endpoint | Method | Body | Notes |
+|----------|--------|------|-------|
+| `/ISAPI/PTZCtrl/channels/1/absolute` | PUT | `PTZData/AbsoluteHigh` (raw ×10) | Move to absolute pan/tilt/zoom. |
+| `/ISAPI/PTZCtrl/channels/1/relative` | PUT | `PTZData/Relative` | Adapter implements relative as a delta on the current absolute position. |
+| `/ISAPI/PTZCtrl/channels/1/continuous` | PUT | `PTZData/pan,tilt,zoom` (−100..100) | Primary jog control. Send `0,0,0` to stop. |
+| `/ISAPI/PTZCtrl/channels/1/momentary` | PUT | `PTZData` + duration | Timed jog. |
+| `/ISAPI/PTZCtrl/channels/1/position3D` | PUT | `position3D` (0..255 box) | Drag-zoom. `isSupportPosition3D=true`. |
+| `/ISAPI/PTZCtrl/channels/1/presets/{id}/goto` | PUT | empty | Recall preset `{id}`. |
+| `/ISAPI/PTZCtrl/channels/1/homeposition/goto` | PUT | empty | Recall home position. |
+
+The continuous-jog body shape:
+
+```xml
 <PTZData>
-  <pan>30</pan>
-  <tilt>0</tilt>
-  <zoom>0</zoom>
+  <pan>30</pan>   <!-- -100..100; negative = left -->
+  <tilt>0</tilt>  <!-- -100..100; negative = down -->
+  <zoom>0</zoom>  <!-- -100..100; negative = zoom out -->
 </PTZData>
 ```
 
-**Parameters**:
-- **pan**: -100 to +100 (negative = left, positive = right, 0 = stop)
-- **tilt**: -100 to +100 (negative = down, positive = up, 0 = stop)
-- **zoom**: -100 to +100 (negative = zoom out, positive = zoom in, 0 = stop)
+### Presets
 
-**To Stop Movement**: Send all values as 0
+#### `GET /ISAPI/PTZCtrl/channels/1/presets`
 
-**Example Usage**:
-```python
-import requests
-from requests.auth import HTTPDigestAuth
+Returns a `PTZPresetList` of `PTZPreset` elements. cam-04 reports **36
+presets**. Each preset carries an `AbsoluteHigh` block in **raw ×10** units:
 
-url = "http://10.207.99.178/ISAPI/PTZCtrl/channels/1/continuous"
-xml_data = '''<?xml version="1.0" encoding="UTF-8"?>
-<PTZData>
-    <pan>30</pan>
-    <tilt>0</tilt>
-
----
-
-## Advanced PTZ Commands (Python)
-
-The following helper methods are available in `HikvisionPTZ` (see `hikvision_ptz_discovery.py`):
-
-- `send_3d_zoom_command(x_start, y_start, x_end, y_end)` — sends a PUT to `/ISAPI/PTZCtrl/channels/1/position3D`.
-    This command is the endpoint called when you do a square zoom via the website when looking into the camera view
-    the coordinates space is 0-255 on both axis
-
-    the endpoint operates in 2 different ways:
-        BR,TL
-        x_start, y_start corresponds to the BR coordinate of the rectangle
-        x_end, y_end corresponds to the TL coordinate of the rectangle
-        the camera only changes tilt and pan
-
-        TL, BR
-        x_start, y_start corresponds to the TL coordinate of the rectangle
-        x_end, y_end corresponds to the BR coordinate of the rectangle
-        the camera changes tilt and pan and then zooms to conform the square dimensions to the best fit possible
-
-    the origin 0,0 is BL
-- `send_ptz_return(status)` — sends an absolute PTZ command to `/ISAPI/PTZCtrl/channels/1/absolute` using the status dict returned by `get_status()`.
-
-### Example: Return to a Saved Position
-
-```python
-status = camera.get_status()
-camera.send_ptz_return(status)  # Returns to the same pan/tilt/zoom
+```xml
+<PTZPreset>
+  <enabled>true</enabled>
+  <id>1</id>
+  <presetName>Preset 1</presetName>
+  <AbsoluteHigh>
+    <elevation>511</elevation>      <!-- 51.1° -->
+    <azimuth>2099</azimuth>         <!-- 209.9° -->
+    <absoluteZoom>10</absoluteZoom> <!-- 1.0x -->
+  </AbsoluteHigh>
+</PTZPreset>
 ```
 
-### Example: 3D Zoom/Position Command
+Source: [`ISAPI__PTZCtrl__channels__1__presets.txt`](../tests/fixtures/hikvision/ISAPI__PTZCtrl__channels__1__presets.txt).
 
-```python
-# WARNING: This may move the camera. Use with caution.
-code, resp = camera.send_3d_zoom_command(0.1, 0.2, 0.3, 0.4)
-print(f"3D command returned {code}")
-```
+### Optics
 
-### Implementation Notes
+Each optics endpoint is `GET`-readable and parsed into a sub-VO of
+`ImageOptics`.
 
-- The PTZ helper methods are now named in English (no Spanish aliases).
-- The `send_ptz_return` method multiplies parsed pan/tilt/zoom by 10 to match the integer units used in the camera status XML (the code in `get_status()` divides by 10 when parsing).
-- The 3D command may require valid coordinates and camera support; test with care.
+#### `GET /ISAPI/Image/channels/1/focusConfiguration`
 
-### Testing
+| Field | Tag | cam-04 value |
+|-------|-----|--------------|
+| Focus style | `focusStyle` | `SEMIAUTOMATIC` |
+| Focus limited | `focusLimited` | 600 |
 
-- See `test_new_commands.py` for a safe test script.
-- By default, the script fetches the camera status and calls `send_ptz_return` with the current position (safe no-op).
-- The 3D command is gated behind an environment variable. To run it, set:
+Source: [`ISAPI__Image__channels__1__focusConfiguration.txt`](../tests/fixtures/hikvision/ISAPI__Image__channels__1__focusConfiguration.txt).
 
-```bash
-export RUN_3D=1
-python ptz_discovery_and_control/hikvision/test_new_commands.py
-```
+#### `GET /ISAPI/Image/channels/1/iris`
 
----
-    <zoom>0</zoom>
-</PTZData>'''
+| Field | Tag | cam-04 value |
+|-------|-----|--------------|
+| Iris level | `IrisLevel` | 160 |
+| Min level limit | `minIrisLevelLimit` | 0 |
+| Max level limit | `maxIrisLevelLimit` | 100 |
 
-response = requests.put(url,
-                       auth=HTTPDigestAuth("admin", "CameraLab01*"),
-                       data=xml_data,
-                       headers={'Content-Type': 'application/xml'})
-```
+Source: [`ISAPI__Image__channels__1__iris.txt`](../tests/fixtures/hikvision/ISAPI__Image__channels__1__iris.txt).
 
-#### 2.2 Momentary Movement
+#### `GET /ISAPI/Image/channels/1/exposure`
 
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/momentary`
+| Field | Tag | cam-04 value |
+|-------|-----|--------------|
+| Exposure type | `ExposureType` | `auto` |
+| Overexpose suppress | `OverexposeSuppress/enabled` | `false` |
 
-**Method**: `PUT`
+Source: [`ISAPI__Image__channels__1__exposure.txt`](../tests/fixtures/hikvision/ISAPI__Image__channels__1__exposure.txt).
 
-**Status**: ⚠ Exists (400 - needs proper XML data structure)
+#### `GET /ISAPI/Image/channels/1/whiteBalance`
 
-**Description**: Performs timed/momentary PTZ movements
+| Field | Tag | cam-04 value |
+|-------|-----|--------------|
+| White-balance style | `WhiteBalanceStyle` | `auto` |
+| Red gain | `WhiteBalanceRed` | 50 |
+| Blue gain | `WhiteBalanceBlue` | 50 |
 
-#### 2.3 Absolute Positioning
+Source: [`ISAPI__Image__channels__1__whiteBalance.txt`](../tests/fixtures/hikvision/ISAPI__Image__channels__1__whiteBalance.txt).
 
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/absolute`
+#### `GET /ISAPI/Image/channels/1/capabilities`
 
-**Method**: `PUT`
+Returns the image-capabilities document enumerating supported optics ranges.
+Source: [`ISAPI__Image__channels__1__capabilities.txt`](../tests/fixtures/hikvision/ISAPI__Image__channels__1__capabilities.txt).
 
-**Status**: ⚠ Exists (400 - needs proper XML data structure)
+> **Optics setters.** Writing focus through
+> `PUT /ISAPI/System/Video/inputs/channels/1/focus` returns
+> `403 methodNotAllowed` on cam-04 (see the 403 fixture). Treat optics writes
+> as best-effort; `HikvisionUnsupportedError` is the expected result when a
+> setter is not exposed.
 
-**Description**: Moves camera to absolute position coordinates
+### Streaming
 
-#### 2.4 Relative Movement
+#### `GET /ISAPI/Streaming/channels/101`
 
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/relative`
+Returns the main-stream `StreamingChannel` configuration (`StreamProfile` VO).
+cam-04 main stream:
 
-**Method**: `PUT`
+| Field | Tag | cam-04 value |
+|-------|-----|--------------|
+| Channel ID | `id` | 101 |
+| Codec | `videoCodecType` | `H.264` |
+| Resolution | `videoResolutionWidth` × `videoResolutionHeight` | 2560 × 1440 |
+| Frame rate | `maxFrameRate` ÷ 100 | 2500 → **25 fps** |
+| Quality control | `videoQualityControlType` | `VBR` |
+| Bitrate cap (kbps) | `vbrUpperCap` | 6144 |
+| Transports | `Transport/ControlProtocolList/.../streamingTransport` | `RTSP`, `HTTP`, `SHTTP`, `SRTP` |
 
-**Status**: ✗ Not Found (404)
+Note `maxFrameRate` is centi-fps: `2500 / 100 = 25.0 fps`.
+Source: [`ISAPI__Streaming__channels__101.txt`](../tests/fixtures/hikvision/ISAPI__Streaming__channels__101.txt).
 
-**Description**: Not available on these camera models
+### Snapshot
 
----
+#### `GET /ISAPI/Streaming/channels/101/picture`
 
-### 3. Preset Management Endpoints
+Returns a single JPEG frame (not XML). On cam-04 this is a **2560 × 1440
+JPEG, ~222 KB** (`snapshot.jpg`, 222,559 bytes). This is the lowest-latency
+single-frame capture path and avoids the cost of opening an RTSP session and
+decoding a GOP.
+Sample artifact: [`snapshot.jpg`](../tests/fixtures/hikvision/snapshot.jpg).
 
-#### 3.1 List Presets
+## Relationship to the Adapter
 
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/presets`
-
-**Method**: `GET`
-
-**Status**: ✓ Working (200)
-
-**Description**: Lists all configured preset positions
-
-#### 3.2 Go To Preset
-
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/presets/1/goto`
-
-**Method**: `PUT`
-
-**Status**: ✓ Working (200)
-
-**Description**: Moves camera to preset position 1 (change number for other presets)
-
----
-
-### 4. Other Endpoints
-
-#### 4.1 PTZ Capabilities
-
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/capabilities`
-
-**Method**: `GET`
-
-**Status**: ✓ Working (200)
-
-**Description**: Returns camera PTZ capabilities and supported features
-
-#### 4.2 Home Position
-
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/homeposition/goto`
-
-**Method**: `PUT`
-
-**Status**: ✓ Working (200)
-
-**Description**: Returns camera to configured home position
-
-#### 4.3 Auxiliary Controls
-
-**Endpoint**: `/ISAPI/PTZCtrl/channels/1/auxcontrols/1`
-
-**Method**: `PUT`
-
-**Status**: ⚠ Exists (400 - needs proper XML data structure)
-
-**Description**: Controls auxiliary outputs (e.g., wiper, lights)
-
----
-
-## Movement Testing Results
-
-### Camera Movement Characteristics
-
-**Polling Interval**: 0.3 seconds was effective for tracking movement
-
-**Stabilization Time**: Cameras typically stabilize 1-2 seconds after stopping
-
-**Movement Behavior**:
-- Pan movements are responsive and accurate
-- Tilt movements work but may show slight drift
-- Zoom changes are smooth and predictable
-- Position is maintained accurately after stabilization
-
-### Observed Movement Patterns (Camera 1)
-
-| Movement | Speed | Duration | Distance Traveled | Notes |
-|----------|-------|----------|-------------------|-------|
-| Pan Right | 30 | 1.5s | -25.2° | Direction inverted? |
-| Pan Left | -30 | 1.5s | -0.8° | Small movement |
-| Tilt Up | 30 | 1.5s | +0.0° (±0.4°) | Very minimal movement |
-| Tilt Down | -30 | 1.5s | +0.0° (±0.4°) | Very minimal movement |
-| Zoom In | 30 | 1.5s | +21.1 | Good response |
-| Zoom Out | -30 | 1.5s | -25.1 | Good response |
-
-### Observed Movement Patterns (Camera 2)
-
-| Movement | Speed | Duration | Distance Traveled | Notes |
-|----------|-------|----------|-------------------|-------|
-| Pan Right | 30 | 1.5s | +9.4° | Good response |
-| Pan Left | -30 | 1.5s | -7.3° | Good response |
-| Tilt Up | 30 | 1.5s | -3.7° | Direction inverted? |
-| Tilt Down | -30 | 1.5s | +3.9° | Direction inverted? |
-| Zoom In | 30 | 1.5s | +13.5 | Good response |
-| Zoom Out | -30 | 1.5s | -12.0 | Good response |
-
-**Note**: Direction inversions may be due to camera mounting orientation or coordinate system differences.
-
----
-
-## Python Implementation
-
-### Complete Working Example
-
-See `hikvision_ptz_discovery.py` for full implementation including:
-
-1. **HikvisionPTZ Class**: Object-oriented interface to camera
-2. **get_status()**: Get current PTZ position with namespace handling
-3. **move_continuous()**: Control camera movement
-4. **stop_movement()**: Stop all movement
-5. **test_movement_with_polling()**: Test movements and track position changes
-6. **discover_endpoints()**: Automatically discover available API endpoints
-
-### Key Implementation Notes
-
-1. **Authentication**: Use `HTTPDigestAuth` from requests library
-2. **XML Namespace**: Handle Hikvision namespace `http://www.hikvision.com/ver20/XMLSchema`
-3. **Value Conversion**: Divide raw values by 10 for degrees/zoom level
-4. **Stabilization**: Poll status after stopping to detect when movement completes
-5. **Timeout**: Use reasonable timeouts (5-10s) for camera responses
-
-### Quick Start Code
-
-```python
-from requests.auth import HTTPDigestAuth
-import requests
-import xml.etree.ElementTree as ET
-
-class HikvisionPTZ:
-    def __init__(self, ip, username, password):
-        self.base_url = f"http://{ip}"
-        self.auth = HTTPDigestAuth(username, password)
-
-    def get_status(self):
-        """Get current pan, tilt, zoom"""
-        url = f"{self.base_url}/ISAPI/PTZCtrl/channels/1/status"
-        response = requests.get(url, auth=self.auth, timeout=5)
-
-        if response.status_code == 200:
-            root = ET.fromstring(response.text)
-            ns = {'h': 'http://www.hikvision.com/ver20/XMLSchema'}
-
-            azimuth = root.find('.//h:azimuth', ns)
-            elevation = root.find('.//h:elevation', ns)
-            zoom = root.find('.//h:absoluteZoom', ns)
-
-            return {
-                'pan': float(azimuth.text) / 10,
-                'tilt': float(elevation.text) / 10,
-                'zoom': float(zoom.text) / 10
-            }
-        return None
-
-    def move(self, pan=0, tilt=0, zoom=0):
-        """Move camera (values: -100 to +100, 0 to stop)"""
-        url = f"{self.base_url}/ISAPI/PTZCtrl/channels/1/continuous"
-        xml = f'''<?xml version="1.0" encoding="UTF-8"?>
-<PTZData>
-    <pan>{pan}</pan>
-    <tilt>{tilt}</tilt>
-    <zoom>{zoom}</zoom>
-</PTZData>'''
-
-        response = requests.put(url, auth=self.auth, data=xml,
-                               headers={'Content-Type': 'application/xml'})
-        return response.status_code == 200
-
-# Usage
-camera = HikvisionPTZ("10.207.99.178", "admin", "CameraLab01*")
-
-# Get current position
-status = camera.get_status()
-print(f"Pan: {status['pan']:.1f}°, Tilt: {status['tilt']:.1f}°, Zoom: {status['zoom']:.1f}")
-
-# Pan right at 30% speed
-camera.move(pan=30, tilt=0, zoom=0)
-
-# Stop movement
-camera.move(pan=0, tilt=0, zoom=0)
-```
-
----
-
-## Summary of Available Movement Endpoints
-
-| Endpoint | Method | Working | Purpose |
-|----------|--------|---------|---------|
-| `/ISAPI/PTZCtrl/channels/1/continuous` | PUT | ✓ Yes | **Primary movement control** |
-| `/ISAPI/PTZCtrl/channels/1/momentary` | PUT | ⚠ Partial | Timed movements |
-| `/ISAPI/PTZCtrl/channels/1/absolute` | PUT | ⚠ Partial | Absolute positioning |
-| `/ISAPI/PTZCtrl/channels/1/relative` | PUT | ✗ No | Not supported |
-| `/ISAPI/PTZCtrl/channels/1/presets/N/goto` | PUT | ✓ Yes | Go to preset N |
-| `/ISAPI/PTZCtrl/channels/1/homeposition/goto` | PUT | ✓ Yes | Go to home position |
-
-**Recommendation**: Use `/continuous` endpoint for all real-time PTZ control applications.
-
----
-
-## Files Generated
-
-1. **hikvision_ptz_discovery.py** - Main discovery and testing script
-2. **ptz_test_results_Camera_1_[timestamp].json** - Detailed test results for Camera 1
-3. **ptz_test_results_Camera_2_[timestamp].json** - Detailed test results for Camera 2
-4. **ptz_discovery_output.log** - Complete console output from testing
-5. **HIKVISION_PTZ_API_SUMMARY.md** - This summary document
-
----
-
-## Authentication
-
-All endpoints require HTTP Digest Authentication:
-- Username: `admin`
-- Password: `CameraLab01*`
-
-Use the `HTTPDigestAuth` class from Python's `requests` library.
-
----
-
-## Next Steps
-
-To extend this work, you could:
-
-1. Implement proper XML structure for `momentary` and `absolute` endpoints
-2. Add support for multiple camera channels (currently hardcoded to channel 1)
-3. Create a real-time PTZ controller with continuous position monitoring
-4. Implement preset management (create, update, delete presets)
-5. Add support for auxiliary controls (wiper, lights, etc.)
-6. Build a web interface for camera control
-7. Integrate with a tracking system for automated PTZ control
-
----
-
-**Document Generated**: 2025-11-20
-**Testing Duration**: ~60 seconds per camera
-**Total Movements Tested**: 12 (6 per camera)
+| ISAPI document | Value object | Adapter method |
+|----------------|--------------|----------------|
+| `System/deviceInfo` | `DeviceInfo` | `get_device_info()` |
+| `System/status` | `DeviceHealth` + `LensOdometry` | `get_health()` |
+| `PTZCtrl/.../status` | `PTZState` | `get_ptz_status()` |
+| `PTZCtrl/.../absoluteEx/capabilities` | `CameraCapabilities` | `get_capabilities()` |
+| `Image/channels/1/{focusConfiguration,iris,exposure,whiteBalance}` | `ImageOptics` | `get_optics()` |
+| `Streaming/channels/101` | `StreamProfile` | `get_stream_profiles()` |
+| `PTZCtrl/.../presets` | `CameraPreset[]` | `list_presets()` |
+| `Streaming/channels/101/picture` | `bytes` (JPEG) | `capture_snapshot()` |
+</content>
+</invoke>

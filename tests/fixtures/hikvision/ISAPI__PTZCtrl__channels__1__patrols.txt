@@ -1,0 +1,2009 @@
+<?xml version="1.0" ?>
+<PTZPatrolList xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <PTZPatrol xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>1</id>
+
+
+    <patrolName>1</patrolName>
+
+
+    <PatrolSequenceList>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+    </PatrolSequenceList>
+
+
+  </PTZPatrol>
+
+
+  <PTZPatrol xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>2</id>
+
+
+    <patrolName>2</patrolName>
+
+
+    <PatrolSequenceList>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+    </PatrolSequenceList>
+
+
+  </PTZPatrol>
+
+
+  <PTZPatrol xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>3</id>
+
+
+    <patrolName>3</patrolName>
+
+
+    <PatrolSequenceList>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+    </PatrolSequenceList>
+
+
+  </PTZPatrol>
+
+
+  <PTZPatrol xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled>false</enabled>
+
+
+    <id>4</id>
+
+
+    <patrolName>4</patrolName>
+
+
+    <PatrolSequenceList>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+      <PatrolSequence>
+
+
+        <presetID>0</presetID>
+
+
+        <seqSpeed>30</seqSpeed>
+
+
+        <delay>15</delay>
+
+
+      </PatrolSequence>
+
+
+    </PatrolSequenceList>
+
+
+  </PTZPatrol>
+
+
+</PTZPatrolList>

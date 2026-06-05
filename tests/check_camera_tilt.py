@@ -3,33 +3,34 @@
 Quick script to check camera tilt values.
 """
 
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
+from __future__ import annotations
 
 from poc_homography.camera_config import PASSWORD, USERNAME, get_camera_configs
+from poc_homography.infrastructure.clients.hikvision.isapi_client import (
+    HikvisionISAPIClient,
+)
 
 print("Checking camera tilt angles...")
 print("=" * 60)
 
 for cam_info in get_camera_configs():
-    camera = HikvisionPTZ(
-        ip=cam_info["ip"], username=USERNAME, password=PASSWORD, name=cam_info["name"]
-    )
+    camera = HikvisionISAPIClient(cam_info["ip"], USERNAME, PASSWORD)
 
-    status = camera.get_status()
+    status = camera.get_ptz_status()
 
     print(f"\n{cam_info['name']} Camera:")
     print(f"  IP: {cam_info['ip']}")
-    print(f"  Pan:  {status['pan']:.2f}°")
-    print(f"  Tilt: {status['tilt']:.2f}°")
-    print(f"  Zoom: {status['zoom']:.2f}x")
+    print(f"  Pan:  {status.pan_raw:.2f}°")
+    print(f"  Tilt: {status.tilt_deg:.2f}°")
+    print(f"  Zoom: {status.zoom:.2f}x")
 
-    if status["tilt"] > 0:
-        print(f"  ⚠️  WARNING: Tilt is POSITIVE ({status['tilt']:.2f}°)")
+    if status.tilt_deg > 0:
+        print(f"  ⚠️  WARNING: Tilt is POSITIVE ({status.tilt_deg:.2f}°)")
         print("      Camera is pointing UPWARD!")
         print("      For ground plane homography, tilt must be NEGATIVE")
         print("      (camera must point downward)")
-    elif status["tilt"] > -10:
-        print(f"  ⚠️  WARNING: Tilt is nearly horizontal ({status['tilt']:.2f}°)")
+    elif status.tilt_deg > -10:
+        print(f"  ⚠️  WARNING: Tilt is nearly horizontal ({status.tilt_deg:.2f}°)")
         print("      Recommended: tilt < -30° for good homography")
     else:
         print("  ✓  Tilt is negative (camera pointing down)")

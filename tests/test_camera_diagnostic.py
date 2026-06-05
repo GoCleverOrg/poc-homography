@@ -485,38 +485,48 @@ class TestGetScreenshotPath:
 
 
 class TestGetPresetsList:
-    """Tests for the get_presets_list function."""
+    """Tests for the get_presets_list function.
 
-    VALID_PRESETS_XML = """<?xml version="1.0" encoding="UTF-8"?>
-    <PTZPresetList xmlns="http://www.hikvision.com/ver20/XMLSchema">
-        <PTZPreset>
-            <id>1</id>
-            <presetName>Entrance</presetName>
-            <enabled>true</enabled>
-        </PTZPreset>
-        <PTZPreset>
-            <id>2</id>
-            <presetName>Parking</presetName>
-            <enabled>false</enabled>
-        </PTZPreset>
-    </PTZPresetList>"""
+    ``get_presets_list`` now delegates to ``HikvisionISAPIClient.list_presets``
+    (the ISAPI adapter) instead of issuing its own ``requests.get``. These tests
+    drive the function's behavior contract by patching ``list_presets`` to return
+    presets or raise the adapter's typed errors. Transport internals (URL, digest
+    auth, timeout, XML parsing) are now the adapter's responsibility and are
+    covered by ``tests/infrastructure/test_hikvision_isapi.py``.
+    """
 
-    VALID_PRESETS_XML_NO_NAMESPACE = """<?xml version="1.0" encoding="UTF-8"?>
-    <PTZPresetList>
-        <PTZPreset>
-            <id>1</id>
-            <presetName>Entrance</presetName>
-            <enabled>true</enabled>
-        </PTZPreset>
-    </PTZPresetList>"""
+    @staticmethod
+    def _patch_list_presets(monkeypatch, result=None, *, raises=None):
+        from poc_homography.infrastructure.clients.hikvision import HikvisionISAPIClient
+
+        def fake_list_presets(self):
+            if raises is not None:
+                raise raises
+            return result or []
+
+        monkeypatch.setattr(HikvisionISAPIClient, "list_presets", fake_list_presets)
+
+    @staticmethod
+    def _preset(preset_id, name, pan, tilt, zoom):
+        from poc_homography.domain.vo.camera_preset import CameraPreset
+        from poc_homography.domain.vo.ptz_state import PTZState
+        from poc_homography.types import Degrees, Unitless
+
+        return CameraPreset(
+            preset_id=preset_id,
+            name=name,
+            ptz=PTZState(pan_raw=Degrees(pan), tilt_deg=Degrees(tilt), zoom=Unitless(zoom)),
+        )
 
     def test_successful_response_returns_presets(self, monkeypatch):
-        """Successful XML response should return parsed presets."""
-
-        def mock_get(*args, **kwargs):
-            return DummyResponse(200, self.VALID_PRESETS_XML)
-
-        monkeypatch.setattr("requests.get", mock_get)
+        """A successful adapter call should return parsed presets."""
+        self._patch_list_presets(
+            monkeypatch,
+            [
+                self._preset(1, "Entrance", 209.9, 51.1, 1.0),
+                self._preset(2, "Parking", 100.0, 0.0, 2.0),
+            ],
+        )
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
@@ -525,30 +535,12 @@ class TestGetPresetsList:
         assert len(result["presets"]) == 2
         assert result["presets"][0]["id"] == "1"
         assert result["presets"][0]["name"] == "Entrance"
-        assert result["presets"][0]["enabled"] is True
+        assert result["presets"][0]["pan"] == 209.9
         assert result["error"] is None
-
-    def test_successful_response_without_namespace(self, monkeypatch):
-        """Should parse XML without namespace."""
-
-        def mock_get(*args, **kwargs):
-            return DummyResponse(200, self.VALID_PRESETS_XML_NO_NAMESPACE)
-
-        monkeypatch.setattr("requests.get", mock_get)
-
-        result = get_presets_list("192.168.1.100", "admin", "password")
-
-        assert result["success"] is True
-        assert result["count"] == 1
-        assert result["presets"][0]["id"] == "1"
 
     def test_response_time_recorded(self, monkeypatch):
         """Response time should be recorded in milliseconds."""
-
-        def mock_get(*args, **kwargs):
-            return DummyResponse(200, self.VALID_PRESETS_XML)
-
-        monkeypatch.setattr("requests.get", mock_get)
+        self._patch_list_presets(monkeypatch, [self._preset(1, "A", 0.0, 0.0, 1.0)])
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
@@ -556,12 +548,10 @@ class TestGetPresetsList:
         assert isinstance(result["response_time_ms"], float)
 
     def test_401_response_returns_auth_failed(self, monkeypatch):
-        """401 response should return AUTH_FAILED error."""
+        """A 401 from the adapter should return AUTH_FAILED error."""
+        from poc_homography.infrastructure.clients.hikvision import HikvisionHTTPError
 
-        def mock_get(*args, **kwargs):
-            return DummyResponse(401, "Unauthorized")
-
-        monkeypatch.setattr("requests.get", mock_get)
+        self._patch_list_presets(monkeypatch, raises=HikvisionHTTPError(401))
 
         result = get_presets_list("192.168.1.100", "admin", "wrong_password")
 
@@ -570,12 +560,10 @@ class TestGetPresetsList:
         assert result["error_category"] == CameraErrorCategory.AUTH_FAILED.value
 
     def test_non_200_response_returns_api_error(self, monkeypatch):
-        """Non-200/401 response should return API_ERROR."""
+        """A non-200/401 HTTP error should return API_ERROR."""
+        from poc_homography.infrastructure.clients.hikvision import HikvisionHTTPError
 
-        def mock_get(*args, **kwargs):
-            return DummyResponse(500, "Internal Server Error")
-
-        monkeypatch.setattr("requests.get", mock_get)
+        self._patch_list_presets(monkeypatch, raises=HikvisionHTTPError(500))
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
@@ -584,26 +572,23 @@ class TestGetPresetsList:
         assert result["error_category"] == CameraErrorCategory.API_ERROR.value
 
     def test_timeout_returns_timeout_error(self, monkeypatch):
-        """requests.exceptions.Timeout should return TIMEOUT error."""
+        """A transport timeout should classify as TIMEOUT."""
+        from poc_homography.infrastructure.clients.hikvision import HikvisionTransportError
 
-        def mock_get(*args, **kwargs):
-            raise requests.exceptions.Timeout("Connection timed out")
-
-        monkeypatch.setattr("requests.get", mock_get)
+        self._patch_list_presets(
+            monkeypatch, raises=HikvisionTransportError("Connection timed out")
+        )
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
         assert result["success"] is False
-        assert result["error"] == "Network timeout"
         assert result["error_category"] == CameraErrorCategory.TIMEOUT.value
 
     def test_invalid_xml_returns_invalid_xml_error(self, monkeypatch):
-        """Invalid XML response should return INVALID_XML error."""
+        """An XML parse error should return INVALID_XML error."""
+        from poc_homography.infrastructure.clients.hikvision import HikvisionParseError
 
-        def mock_get(*args, **kwargs):
-            return DummyResponse(200, "This is not valid XML <<>>")
-
-        monkeypatch.setattr("requests.get", mock_get)
+        self._patch_list_presets(monkeypatch, raises=HikvisionParseError("bad xml"))
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
@@ -612,12 +597,10 @@ class TestGetPresetsList:
         assert result["error_category"] == CameraErrorCategory.INVALID_XML.value
 
     def test_connection_error_returns_api_error(self, monkeypatch):
-        """requests.exceptions.ConnectionError should return API_ERROR."""
+        """A generic transport failure should classify as API_ERROR."""
+        from poc_homography.infrastructure.clients.hikvision import HikvisionTransportError
 
-        def mock_get(*args, **kwargs):
-            raise requests.exceptions.ConnectionError("Failed to connect")
-
-        monkeypatch.setattr("requests.get", mock_get)
+        self._patch_list_presets(monkeypatch, raises=HikvisionTransportError("Failed to connect"))
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
@@ -625,89 +608,14 @@ class TestGetPresetsList:
         assert result["error_category"] == CameraErrorCategory.API_ERROR.value
 
     def test_empty_presets_list(self, monkeypatch):
-        """Empty presets list should return success with count 0."""
-        empty_xml = """<?xml version="1.0" encoding="UTF-8"?>
-        <PTZPresetList xmlns="http://www.hikvision.com/ver20/XMLSchema">
-        </PTZPresetList>"""
-
-        def mock_get(*args, **kwargs):
-            return DummyResponse(200, empty_xml)
-
-        monkeypatch.setattr("requests.get", mock_get)
+        """An empty presets list should return success with count 0."""
+        self._patch_list_presets(monkeypatch, [])
 
         result = get_presets_list("192.168.1.100", "admin", "password")
 
         assert result["success"] is True
         assert result["count"] == 0
         assert result["presets"] == []
-
-    def test_uses_digest_auth(self, monkeypatch):
-        """Should use HTTPDigestAuth for authentication."""
-        captured = {}
-
-        def mock_get(*args, **kwargs):
-            captured["auth"] = kwargs.get("auth")
-            return DummyResponse(200, self.VALID_PRESETS_XML)
-
-        monkeypatch.setattr("requests.get", mock_get)
-
-        get_presets_list("192.168.1.100", "admin", "password")
-
-        from requests.auth import HTTPDigestAuth
-
-        assert captured["auth"] is not None
-        assert isinstance(captured["auth"], HTTPDigestAuth)
-
-    def test_uses_correct_url(self, monkeypatch):
-        """Should use correct ISAPI URL."""
-        captured = {}
-
-        def mock_get(url, *args, **kwargs):
-            captured["url"] = url
-            return DummyResponse(200, self.VALID_PRESETS_XML)
-
-        monkeypatch.setattr("requests.get", mock_get)
-
-        get_presets_list("192.168.1.100", "admin", "password")
-
-        assert captured["url"] == "http://192.168.1.100/ISAPI/PTZCtrl/channels/1/presets"
-
-    def test_uses_timeout(self, monkeypatch):
-        """Should use timeout for request."""
-        captured = {}
-
-        def mock_get(*args, **kwargs):
-            captured["timeout"] = kwargs.get("timeout")
-            return DummyResponse(200, self.VALID_PRESETS_XML)
-
-        monkeypatch.setattr("requests.get", mock_get)
-
-        get_presets_list("192.168.1.100", "admin", "password")
-
-        assert captured["timeout"] is not None
-        assert captured["timeout"] > 0
-
-    def test_partial_preset_data(self, monkeypatch):
-        """Presets with missing fields should still be parsed."""
-        partial_xml = """<?xml version="1.0" encoding="UTF-8"?>
-        <PTZPresetList xmlns="http://www.hikvision.com/ver20/XMLSchema">
-            <PTZPreset>
-                <id>1</id>
-            </PTZPreset>
-        </PTZPresetList>"""
-
-        def mock_get(*args, **kwargs):
-            return DummyResponse(200, partial_xml)
-
-        monkeypatch.setattr("requests.get", mock_get)
-
-        result = get_presets_list("192.168.1.100", "admin", "password")
-
-        assert result["success"] is True
-        assert result["count"] == 1
-        assert result["presets"][0]["id"] == "1"
-        assert "name" not in result["presets"][0]
-        assert "enabled" not in result["presets"][0]
 
 
 # =============================================================================

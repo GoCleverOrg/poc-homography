@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<userCheck>
+
+
+  <statusValue>200</statusValue>
+
+
+  <statusString>OK</statusString>
+
+
+</userCheck>

@@ -24,10 +24,16 @@ import requests
 from camera_survey.models import PTZPosition
 from camera_survey.ptz import BasePTZCamera, create_ptz_camera
 from django.conf import settings
-from ptz_discovery_and_control.hikvision.hikvision_ptz_discovery import HikvisionPTZ
-from requests.auth import HTTPDigestAuth
 
 from poc_homography.camera_config import get_camera_by_id, get_rtsp_url, get_tenant_credentials
+from poc_homography.domain.vo.ptz_state import PTZState
+from poc_homography.infrastructure.clients.hikvision import (
+    HikvisionError,
+    HikvisionHTTPError,
+    HikvisionISAPIClient,
+    HikvisionParseError,
+    HikvisionTransportError,
+)
 
 from .models import (
     MovementTiming,
@@ -838,7 +844,22 @@ def classify_ptz_error(exception: Exception) -> CameraErrorCategory:
     """
     error_str = str(exception).lower()
 
-    # Network timeout errors
+    # Typed adapter errors (HikvisionISAPIClient wraps all transport/HTTP/parse
+    # failures into this hierarchy, so prefer type checks over string matching).
+    if isinstance(exception, HikvisionHTTPError):
+        if exception.status_code == 401:
+            return CameraErrorCategory.AUTH_FAILED
+        return CameraErrorCategory.API_ERROR
+    if isinstance(exception, HikvisionParseError):
+        return CameraErrorCategory.INVALID_XML
+    if isinstance(exception, HikvisionTransportError):
+        # Transport wraps timeouts and connection failures alike; distinguish
+        # timeouts by message since the original exception type is not retained.
+        if "timeout" in error_str or "timed out" in error_str:
+            return CameraErrorCategory.TIMEOUT
+        return CameraErrorCategory.API_ERROR
+
+    # Network timeout errors (raw requests exceptions, for non-adapter callers)
     if isinstance(exception, requests.exceptions.Timeout):
         return CameraErrorCategory.TIMEOUT
     if "timeout" in error_str or "timed out" in error_str:
@@ -863,8 +884,24 @@ def classify_ptz_error(exception: Exception) -> CameraErrorCategory:
     return CameraErrorCategory.API_ERROR
 
 
+def _ptz_state_to_status_dict(state: PTZState) -> dict[str, float]:
+    """Convert a :class:`PTZState` to the legacy status dict shape.
+
+    Args:
+        state: PTZ state from the adapter.
+
+    Returns:
+        Dict with ``pan``/``tilt``/``zoom`` keys (degrees / zoom factor).
+    """
+    return {
+        "pan": float(state.pan_raw),
+        "tilt": float(state.tilt_deg),
+        "zoom": float(state.zoom),
+    }
+
+
 def wait_for_stabilization(
-    ptz: HikvisionPTZ,
+    ptz: HikvisionISAPIClient,
     max_wait: float = 5.0,
     poll_interval: float = PTZ_STABILIZATION_INTERVAL,
     stable_threshold: float = PTZ_STABILIZATION_THRESHOLD,
@@ -872,7 +909,7 @@ def wait_for_stabilization(
     """Wait for PTZ position to stabilize (no change for threshold duration).
 
     Args:
-        ptz: HikvisionPTZ instance
+        ptz: HikvisionISAPIClient instance
         max_wait: Maximum time to wait for stabilization in seconds
         poll_interval: How often to check status
         stable_threshold: How long position must be unchanged to be considered stable
@@ -885,21 +922,21 @@ def wait_for_stabilization(
     stable_since = None
 
     while time.time() - start_time < max_wait:
-        status = ptz.get_status()
-        if status is None:
+        try:
+            status = _ptz_state_to_status_dict(ptz.get_ptz_status())
+        except HikvisionError:
             time.sleep(poll_interval)
             continue
 
-        current_position = (status.get("pan"), status.get("tilt"), status.get("zoom"))
+        current_position = (status["pan"], status["tilt"], status["zoom"])
 
         if last_position is not None:
             # Check if position has changed
             position_changed = False
-            for i, (curr, last) in enumerate(zip(current_position, last_position)):
-                if curr is not None and last is not None:
-                    if abs(curr - last) > 0.1:  # Tolerance for floating point
-                        position_changed = True
-                        break
+            for curr, last in zip(current_position, last_position):
+                if abs(curr - last) > 0.1:  # Tolerance for floating point
+                    position_changed = True
+                    break
 
             if not position_changed:
                 if stable_since is None:
@@ -914,11 +951,14 @@ def wait_for_stabilization(
         time.sleep(poll_interval)
 
     # Return last known status even if not fully stabilized
-    return ptz.get_status()
+    try:
+        return _ptz_state_to_status_dict(ptz.get_ptz_status())
+    except HikvisionError:
+        return None
 
 
 def execute_movement_test(
-    ptz: HikvisionPTZ,
+    ptz: HikvisionISAPIClient,
     pan: int = 0,
     tilt: int = 0,
     zoom: int = 0,
@@ -927,7 +967,7 @@ def execute_movement_test(
     """Execute a single movement test and return results.
 
     Args:
-        ptz: HikvisionPTZ instance
+        ptz: HikvisionISAPIClient instance
         pan: Pan speed (-100 to 100)
         tilt: Tilt speed (-100 to 100)
         zoom: Zoom speed (-100 to 100)
@@ -948,32 +988,33 @@ def execute_movement_test(
 
     try:
         # Get initial position
-        initial_status = ptz.get_status()
-        if initial_status is None:
+        try:
+            initial_status = _ptz_state_to_status_dict(ptz.get_ptz_status())
+        except HikvisionError:
             result["error"] = "Failed to get initial position"
             return result
 
         result["initial_position"] = {
-            "pan": initial_status.get("pan"),
-            "tilt": initial_status.get("tilt"),
-            "zoom": initial_status.get("zoom"),
+            "pan": initial_status["pan"],
+            "tilt": initial_status["tilt"],
+            "zoom": initial_status["zoom"],
         }
 
         # Start movement and measure response time
         start_time = time.time()
-        move_success = ptz.move_continuous(pan=pan, tilt=tilt, zoom=zoom)
-        response_time = (time.time() - start_time) * 1000
-        result["response_time_ms"] = round(response_time, 2)
-
-        if not move_success:
+        try:
+            ptz.move_continuous(pan_speed=pan, tilt_speed=tilt, zoom_speed=zoom)
+        except HikvisionError:
             result["error"] = "Failed to start movement"
             return result
+        response_time = (time.time() - start_time) * 1000
+        result["response_time_ms"] = round(response_time, 2)
 
         # Let movement run for specified duration
         time.sleep(duration)
 
         # Stop movement
-        ptz.stop_movement()
+        ptz.stop()
 
         # Wait for position to stabilize
         final_status = wait_for_stabilization(ptz)
@@ -1015,7 +1056,7 @@ def execute_movement_test(
 
 
 def get_presets_list(camera_ip: str, username: str, password: str) -> dict:
-    """Get list of presets from camera via ISAPI.
+    """Get list of presets from the camera via the ISAPI adapter.
 
     Args:
         camera_ip: IP address of the camera
@@ -1033,79 +1074,44 @@ def get_presets_list(camera_ip: str, username: str, password: str) -> dict:
         "error": None,
     }
 
+    client = HikvisionISAPIClient(camera_ip, username, password, timeout=PTZ_API_TIMEOUT)
+
     try:
         start_time = time.time()
-        response = requests.get(
-            f"http://{camera_ip}/ISAPI/PTZCtrl/channels/1/presets",
-            auth=HTTPDigestAuth(username, password),
-            timeout=PTZ_API_TIMEOUT,
-        )
+        camera_presets = client.list_presets()
         response_time = (time.time() - start_time) * 1000
         result["response_time_ms"] = round(response_time, 2)
 
-        if response.status_code == 401:
+        presets = [
+            {
+                "id": str(preset.preset_id),
+                "name": preset.name,
+                "pan": float(preset.ptz.pan_raw),
+                "tilt": float(preset.ptz.tilt_deg),
+                "zoom": float(preset.ptz.zoom),
+            }
+            for preset in camera_presets
+        ]
+        result["presets"] = presets
+        result["count"] = len(presets)
+        result["success"] = True
+
+    except HikvisionHTTPError as e:
+        if e.status_code == 401:
             result["error"] = "Authentication failed"
             result["error_category"] = CameraErrorCategory.AUTH_FAILED.value
-            return result
-
-        if response.status_code != 200:
-            result["error"] = f"HTTP {response.status_code}"
+        else:
+            result["error"] = f"HTTP {e.status_code}"
             result["error_category"] = CameraErrorCategory.API_ERROR.value
-            return result
-
-        # Parse XML response
-        try:
-            root = ET.fromstring(response.text)
-            ns = {"h": "http://www.hikvision.com/ver20/XMLSchema"}
-
-            presets = []
-            # Try with namespace first
-            preset_elements = root.findall(".//h:PTZPreset", ns)
-            if not preset_elements:
-                # Fall back to no namespace
-                preset_elements = root.findall(".//PTZPreset")
-
-            for preset_elem in preset_elements:
-                preset_data = {}
-
-                # Try to get preset ID
-                id_elem = preset_elem.find("h:id", ns)
-                if id_elem is None:
-                    id_elem = preset_elem.find("id")
-                if id_elem is not None:
-                    preset_data["id"] = id_elem.text
-
-                # Try to get preset name
-                name_elem = preset_elem.find("h:presetName", ns)
-                if name_elem is None:
-                    name_elem = preset_elem.find("presetName")
-                if name_elem is not None:
-                    preset_data["name"] = name_elem.text
-
-                # Try to get enabled status
-                enabled_elem = preset_elem.find("h:enabled", ns)
-                if enabled_elem is None:
-                    enabled_elem = preset_elem.find("enabled")
-                if enabled_elem is not None:
-                    preset_data["enabled"] = enabled_elem.text.lower() == "true"
-
-                if preset_data:
-                    presets.append(preset_data)
-
-            result["presets"] = presets
-            result["count"] = len(presets)
-            result["success"] = True
-
-        except ET.ParseError as e:
-            result["error"] = f"Invalid XML response: {e}"
-            result["error_category"] = CameraErrorCategory.INVALID_XML.value
-
-    except requests.exceptions.Timeout:
-        result["error"] = "Network timeout"
-        result["error_category"] = CameraErrorCategory.TIMEOUT.value
-    except Exception as e:
+    except HikvisionParseError as e:
+        result["error"] = f"Invalid XML response: {e}"
+        result["error_category"] = CameraErrorCategory.INVALID_XML.value
+    except HikvisionTransportError as e:
         result["error"] = str(e)
         result["error_category"] = classify_ptz_error(e).value
+    except HikvisionError as e:
+        result["error"] = str(e)
+        result["error_category"] = CameraErrorCategory.API_ERROR.value
 
     return result
 

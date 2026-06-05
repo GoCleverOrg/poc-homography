@@ -59,6 +59,10 @@ Millimeters = NewType("Millimeters", float)
 Unitless = NewType("Unitless", float)
 """Dimensionless scalar (e.g., zoom factor, scale factor, confidence, ratios)"""
 
+# Camera optics units
+FocusSteps = NewType("FocusSteps", int)
+"""Hikvision focus position in raw lens steps (e.g., focus_min/focus_max)."""
+
 
 def degrees_to_radians(degrees: Degrees) -> Radians:
     """Convert degrees to radians with proper type annotation."""

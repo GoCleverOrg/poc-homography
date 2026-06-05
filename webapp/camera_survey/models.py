@@ -11,6 +11,28 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from poc_homography.domain.vo.camera_capabilities import CameraCapabilities
+from poc_homography.domain.vo.device_health import DeviceHealth
+from poc_homography.domain.vo.device_info import DeviceInfo as _DDDDeviceInfo
+from poc_homography.domain.vo.stream_profile import StreamProfile
+
+
+class DeviceInfo(_DDDDeviceInfo):
+    """Webapp-facing :class:`DeviceInfo`, aliasing the DDD value object.
+
+    Subclasses the canonical DDD ``DeviceInfo`` so all fields/serialization are
+    reused, and overrides :meth:`from_dict` to tolerate a ``None`` input (the
+    diagnostic app calls ``DeviceInfo.from_dict(data.get("device_info"))``).
+    """
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> DeviceInfo | None:  # type: ignore[override]
+        """Create from a dictionary, returning ``None`` for a ``None`` input."""
+        if data is None:
+            return None
+        base = _DDDDeviceInfo.from_dict(data)
+        return cls(**base.to_dict())
+
 
 class SurveyAxis(str, Enum):
     """Axis for survey sweep."""
@@ -50,59 +72,6 @@ class PTZPosition:
             tilt=data.get("tilt"),
             zoom=data.get("zoom"),
         )
-
-
-@dataclass
-class CameraCapabilities:
-    """Camera PTZ capabilities for validation."""
-
-    pan_min: float = 0.0
-    pan_max: float = 360.0
-    tilt_min: float = -90.0  # Wide range to support various camera models
-    tilt_max: float = 90.0
-    zoom_min: float = 1.0
-    zoom_max: float = 25.0
-
-    def validate_range(self, axis: SurveyAxis, start: float, end: float) -> tuple[bool, str | None]:
-        """Validate that start/end values are within valid range for axis.
-
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        if axis == SurveyAxis.PAN:
-            min_val, max_val = self.pan_min, self.pan_max
-        elif axis == SurveyAxis.TILT:
-            min_val, max_val = self.tilt_min, self.tilt_max
-        else:  # ZOOM
-            min_val, max_val = self.zoom_min, self.zoom_max
-
-        # For pan, values can wrap around (e.g., 350 to 10)
-        if axis == SurveyAxis.PAN:
-            if not (min_val <= start <= max_val):
-                return False, f"Start value {start} outside valid pan range [{min_val}, {max_val}]"
-            if not (min_val <= end <= max_val):
-                return False, f"End value {end} outside valid pan range [{min_val}, {max_val}]"
-        else:
-            if not (min_val <= start <= max_val):
-                return (
-                    False,
-                    f"Start value {start} outside valid {axis.value} range [{min_val}, {max_val}]",
-                )
-            if not (min_val <= end <= max_val):
-                return (
-                    False,
-                    f"End value {end} outside valid {axis.value} range [{min_val}, {max_val}]",
-                )
-
-        return True, None
-
-    def to_dict(self) -> dict[str, dict[str, float]]:
-        """Convert to dictionary."""
-        return {
-            "pan": {"min": self.pan_min, "max": self.pan_max},
-            "tilt": {"min": self.tilt_min, "max": self.tilt_max},
-            "zoom": {"min": self.zoom_min, "max": self.zoom_max},
-        }
 
 
 @dataclass
@@ -194,10 +163,14 @@ class CaptureRecord:
     ptz: PTZPosition
     step_index: int
     errors: list[str] = field(default_factory=list)
+    # Per-frame optics snapshot (best-effort; absent on older manifests).
+    focus: float | None = None
+    iris: int | None = None
+    exposure: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
-        result = {
+        result: dict[str, Any] = {
             "filename": self.filename,
             "timestamp": self.timestamp,
             "ptz": self.ptz.to_dict(),
@@ -205,6 +178,12 @@ class CaptureRecord:
         }
         if self.errors:
             result["errors"] = self.errors
+        if self.focus is not None:
+            result["focus"] = self.focus
+        if self.iris is not None:
+            result["iris"] = self.iris
+        if self.exposure is not None:
+            result["exposure"] = self.exposure
         return result
 
     @classmethod
@@ -216,6 +195,9 @@ class CaptureRecord:
             ptz=PTZPosition.from_dict(data["ptz"]),
             step_index=data["step_index"],
             errors=data.get("errors", []),
+            focus=data.get("focus"),
+            iris=data.get("iris"),
+            exposure=data.get("exposure"),
         )
 
 
@@ -229,47 +211,6 @@ class TenantInfo:
     def to_dict(self) -> dict[str, str]:
         """Convert to dictionary."""
         return {"id": self.id, "name": self.name}
-
-
-@dataclass
-class DeviceInfo:
-    """Device hardware information from camera API.
-
-    Contains identifying information retrieved from the camera's
-    system API (e.g., /ISAPI/System/deviceInfo for Hikvision).
-    """
-
-    model: str | None = None
-    serial_number: str | None = None
-    mac_address: str | None = None
-    firmware_version: str | None = None
-    device_name: str | None = None
-    device_type: str | None = None
-
-    def to_dict(self) -> dict[str, str | None]:
-        """Convert to dictionary."""
-        return {
-            "model": self.model,
-            "serial_number": self.serial_number,
-            "mac_address": self.mac_address,
-            "firmware_version": self.firmware_version,
-            "device_name": self.device_name,
-            "device_type": self.device_type,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> DeviceInfo | None:
-        """Create from dictionary."""
-        if data is None:
-            return None
-        return cls(
-            model=data.get("model"),
-            serial_number=data.get("serial_number"),
-            mac_address=data.get("mac_address"),
-            firmware_version=data.get("firmware_version"),
-            device_name=data.get("device_name"),
-            device_type=data.get("device_type"),
-        )
 
 
 @dataclass
@@ -314,6 +255,12 @@ class SurveySession:
     device_info: DeviceInfo | None = None  # Hardware info from camera API
     capture_metadata: CaptureMetadata | None = None
 
+    # Real camera capability envelope + per-session health/stream snapshot,
+    # captured once at survey start (additive; absent on older manifests).
+    capabilities: CameraCapabilities | None = None
+    device_health: DeviceHealth | None = None
+    stream_profiles: list[StreamProfile] = field(default_factory=list)
+
     # Survey configuration
     survey_parameters: SurveyConfig | None = None
 
@@ -350,6 +297,15 @@ class SurveySession:
 
         if self.capture_metadata:
             result["capture_metadata"] = self.capture_metadata.to_dict()
+
+        if self.capabilities:
+            result["capabilities"] = self.capabilities.to_dict()
+
+        if self.device_health:
+            result["device_health"] = self.device_health.to_dict()
+
+        if self.stream_profiles:
+            result["stream_profiles"] = [p.to_dict() for p in self.stream_profiles]
 
         if self.survey_parameters:
             result["survey_parameters"] = {
@@ -413,6 +369,15 @@ class SurveySession:
 
         if "device_info" in data:
             session.device_info = DeviceInfo.from_dict(data["device_info"])
+
+        if "capabilities" in data:
+            session.capabilities = CameraCapabilities.from_dict(data["capabilities"])
+
+        if "device_health" in data:
+            session.device_health = DeviceHealth.from_dict(data["device_health"])
+
+        if "stream_profiles" in data:
+            session.stream_profiles = [StreamProfile.from_dict(p) for p in data["stream_profiles"]]
 
         if "survey_parameters" in data:
             params = data["survey_parameters"]

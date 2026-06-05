@@ -1,0 +1,20 @@
+<?xml version="1.0" ?>
+<PTZStatus xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <AbsoluteHigh>
+
+
+    <elevation>182</elevation>
+
+
+    <azimuth>3202</azimuth>
+
+
+    <absoluteZoom>172</absoluteZoom>
+
+
+  </AbsoluteHigh>
+
+
+</PTZStatus>

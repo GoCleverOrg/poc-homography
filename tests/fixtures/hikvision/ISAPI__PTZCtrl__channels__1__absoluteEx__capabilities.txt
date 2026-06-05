@@ -1,0 +1,23 @@
+<?xml version="1.0" ?>
+<PTZAbsoluteEx xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <elevation min="-50" max="60">18.2</elevation>
+
+
+  <azimuth min="0" max="360">320.2</azimuth>
+
+
+  <absoluteZoom min="1" max="25">17.2</absoluteZoom>
+
+
+  <focus min="4096" max="2576990208"/>
+
+
+  <horizontalSpeed min="0.2" max="210.8"/>
+
+
+  <verticalSpeed min="0.2" max="151.8"/>
+
+
+</PTZAbsoluteEx>

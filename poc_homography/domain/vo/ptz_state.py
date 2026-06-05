@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from poc_homography.types import Degrees, Unitless
+from poc_homography.types import Degrees, FocusSteps, Unitless
 
 if TYPE_CHECKING:
     from poc_homography.domain.enums import TiltConvention
@@ -21,11 +21,13 @@ class PTZState:
         pan_raw: Pan angle in degrees (from PTZ API, before offset).
         tilt_deg: Tilt angle in degrees.
         zoom: Zoom level (1.0 = no zoom).
+        focus: Focus position in raw lens steps, or None if unknown.
     """
 
     pan_raw: Degrees
     tilt_deg: Degrees
     zoom: Unitless
+    focus: FocusSteps | None = None
 
     def to_orientation(self, tilt_convention: TiltConvention) -> Orientation:
         """Convert PTZ state to orientation delta.
@@ -53,13 +55,16 @@ class PTZState:
             "pan_raw": self.pan_raw,
             "tilt_deg": self.tilt_deg,
             "zoom": self.zoom,
+            "focus": self.focus,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PTZState:
         """Create PTZState from dictionary."""
+        focus = data.get("focus")
         return cls(
             pan_raw=Degrees(float(data["pan_raw"])),
             tilt_deg=Degrees(float(data["tilt_deg"])),
             zoom=Unitless(float(data["zoom"])),
+            focus=FocusSteps(int(focus)) if focus is not None else None,
         )

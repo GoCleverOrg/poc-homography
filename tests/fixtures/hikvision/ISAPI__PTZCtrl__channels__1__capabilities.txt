@@ -1,0 +1,2420 @@
+<?xml version="1.0" ?>
+<PTZChanelCap xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <AbsolutePanTiltPositionSpace>
+
+
+    <XRange>
+
+
+      <Min>0</Min>
+
+
+      <Max>3600</Max>
+
+
+    </XRange>
+
+
+    <YRange>
+
+
+      <Min>-500</Min>
+
+
+      <Max>600</Max>
+
+
+    </YRange>
+
+
+  </AbsolutePanTiltPositionSpace>
+
+
+  <AbsoluteZoomPositionSpace>
+
+
+    <ZRange>
+
+
+      <Min>10</Min>
+
+
+      <Max>250</Max>
+
+
+    </ZRange>
+
+
+  </AbsoluteZoomPositionSpace>
+
+
+  <ContinuousPanTiltSpace>
+
+
+    <XRange>
+
+
+      <Min>-100</Min>
+
+
+      <Max>100</Max>
+
+
+    </XRange>
+
+
+    <YRange>
+
+
+      <Min>-100</Min>
+
+
+      <Max>100</Max>
+
+
+    </YRange>
+
+
+  </ContinuousPanTiltSpace>
+
+
+  <ContinuousZoomSpace>
+
+
+    <ZRange>
+
+
+      <Min>-100</Min>
+
+
+      <Max>100</Max>
+
+
+    </ZRange>
+
+
+  </ContinuousZoomSpace>
+
+
+  <maxPresetNum>300</maxPresetNum>
+
+
+  <maxPatrolNum>8</maxPatrolNum>
+
+
+  <maxPatternNum>4</maxPatternNum>
+
+
+  <maxLimitesNum>1</maxLimitesNum>
+
+
+  <maxTimeTaskNum>10</maxTimeTaskNum>
+
+
+  <controlProtocol opt="HIKVISION,PELCO-P,PELCO-D">PELCO-D</controlProtocol>
+
+
+  <controlAddress>0</controlAddress>
+
+
+  <PTZRs485Para xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <baudRate opt="2400,4800,9600,19200,38400">9600</baudRate>
+
+
+    <dataBits opt="5,6,7,8">8</dataBits>
+
+
+    <parityType opt="none,even,odd">none</parityType>
+
+
+    <stopBits opt="1,2">1</stopBits>
+
+
+    <flowCtrl opt="none,software,hardware">none</flowCtrl>
+
+
+  </PTZRs485Para>
+
+
+  <PresetNameCap xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <presetNameSupport>true</presetNameSupport>
+
+
+    <maxPresetNameLen max="20"/>
+
+
+    <specialNo opt="33,34,35,36,37,38,39,40,41,42,43,44,45,46,90,92,93,94,95,96,97,98,99,100,101,102,103,104,105"/>
+
+
+  </PresetNameCap>
+
+
+  <wiperStatusSupport>false</wiperStatusSupport>
+
+
+  <isSupportPosition3D>true</isSupportPosition3D>
+
+
+  <isSupportManualTrack>true</isSupportManualTrack>
+
+
+  <manualControlSpeed opt="compatible,pedestrian,nonMotorVehicle,motorVehicle,selfadaptive"/>
+
+
+  <isSpportPtzlimiteds>true</isSpportPtzlimiteds>
+
+
+  <oneKeyCruise>true</oneKeyCruise>
+
+
+  <oneKeyParkAction>true</oneKeyParkAction>
+
+
+  <oneKeyMenu>true</oneKeyMenu>
+
+
+  <ParkAction xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled opt="true,false">false</enabled>
+
+
+    <Parktime min="5" max="720">5</Parktime>
+
+
+    <Action>
+
+
+      <ActionType opt="autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan">autoscan</ActionType>
+
+
+      <ActionNum min="0" max="8">0</ActionNum>
+
+
+    </Action>
+
+
+  </ParkAction>
+
+
+  <TimeTaskList xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+    <enabled opt="true,false">true</enabled>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">1</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">2</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">3</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">4</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">5</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">6</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+    <TimeTaskBlock xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+      <dayOfWeek min="1" max="7">7</dayOfWeek>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">0</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">periodadjust</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">1</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">2</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">3</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">4</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">5</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">6</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">7</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">8</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+      <TimeTaskRange>
+
+
+        <TaskID min="0" max="10">9</TaskID>
+
+
+        <Task>
+
+
+          <TaskType opt="disable,autoscan,framescan,randomscan,patrol,pattern,preset,panoramascan,tiltscan,periodreboot,periodadjust,auxoutput">disable</TaskType>
+
+
+          <patrolTaskNum min="0" max="8">0</patrolTaskNum>
+
+
+          <patternTaskNum min="0" max="4">0</patternTaskNum>
+
+
+          <presetTaskNum min="0" max="8">0</presetTaskNum>
+
+
+          <auxoutputTaskNum min="0" max="2">0</auxoutputTaskNum>
+
+
+        </Task>
+
+
+      </TimeTaskRange>
+
+
+    </TimeTaskBlock>
+
+
+  </TimeTaskList>
+
+
+  <TrackInitPosition>
+
+
+    <slaveCameraID min="1" max="1"/>
+
+
+  </TrackInitPosition>
+
+
+  <LockPT>false</LockPT>
+
+
+  <isSupportPTZEagleFocusing>true</isSupportPTZEagleFocusing>
+
+
+  <LFPositionCap>
+
+
+    <elevation min="-900" max="2700">0</elevation>
+
+
+    <azimuth min="0" max="3600">0</azimuth>
+
+
+    <absoluteZoom min="1" max="1000">0</absoluteZoom>
+
+
+  </LFPositionCap>
+
+
+  <isSupportManualWiper>true</isSupportManualWiper>
+
+
+  <PTZAuxType opt="LIGHT,WIPER,FAN,HEATER"/>
+
+
+  <isSupportGPSCtrl>true</isSupportGPSCtrl>
+
+
+  <isSupportGyroVerify>true</isSupportGyroVerify>
+
+
+</PTZChanelCap>

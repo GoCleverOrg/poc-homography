@@ -1,0 +1,197 @@
+<?xml version="1.0" ?>
+<StreamingChannel xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <id opt="1,2,3">101</id>
+
+
+  <channelName>IPdome</channelName>
+
+
+  <enabled opt="true">true</enabled>
+
+
+  <Transport>
+
+
+    <maxPacketSize opt="1000">1000</maxPacketSize>
+
+
+    <ControlProtocolList>
+
+
+      <ControlProtocol>
+
+
+        <streamingTransport opt="RTSP,HTTP">RTSP</streamingTransport>
+
+
+      </ControlProtocol>
+
+
+    </ControlProtocolList>
+
+
+    <Multicast>
+
+
+      <enabled opt="true,false"/>
+
+
+      <videoDestPortNo min="1024" max="65535" default="8860"/>
+
+
+      <audioDestPortNo min="1024" max="65535" default="8862"/>
+
+
+    </Multicast>
+
+
+    <Unicast>
+
+
+      <enabled opt="true">true</enabled>
+
+
+      <rtpTransportType opt="RTP/TCP">RTP/TCP</rtpTransportType>
+
+
+    </Unicast>
+
+
+    <Security>
+
+
+      <enabled opt="true">true</enabled>
+
+
+      <certificateType opt="digest,digest/basic">digest</certificateType>
+
+
+      <SecurityAlgorithm>
+
+
+        <algorithmType opt="MD5,SHA256,MD5/SHA256"/>
+
+
+      </SecurityAlgorithm>
+
+
+    </Security>
+
+
+    <SRTPMulticast>
+
+
+      <SRTPVideoDestPortNo min="1024" max="65535" default="18860"/>
+
+
+      <SRTPAudioDestPortNo min="1024" max="65535" default="18862"/>
+
+
+    </SRTPMulticast>
+
+
+  </Transport>
+
+
+  <Video>
+
+
+    <enabled opt="true">true</enabled>
+
+
+    <videoInputChannelID opt="1">1</videoInputChannelID>
+
+
+    <videoCodecType opt="H.264,H.265">H.264</videoCodecType>
+
+
+    <videoScanType opt="progressive">progressive</videoScanType>
+
+
+    <videoResolutionWidth opt="1280,1280,1920,2560">2560</videoResolutionWidth>
+
+
+    <videoResolutionHeight opt="720,960,1080,1440">1440</videoResolutionHeight>
+
+
+    <videoQualityControlType opt="CBR,VBR">VBR</videoQualityControlType>
+
+
+    <constantBitRate min="32" max="16384">6144</constantBitRate>
+
+
+    <fixedQuality opt="1,20,40,60,80,100">60</fixedQuality>
+
+
+    <vbrUpperCap min="32" max="16384">6144</vbrUpperCap>
+
+
+    <vbrLowerCap>32</vbrLowerCap>
+
+
+    <maxFrameRate opt="2500,2200,2000,1800,1600,1500,1200,1000,800,600,400,200,100,50,25,12,6">2500</maxFrameRate>
+
+
+    <keyFrameInterval min="40" max="16000">2000</keyFrameInterval>
+
+
+    <snapShotImageType opt="JPEG">JPEG</snapShotImageType>
+
+
+    <H264Profile opt="Baseline,Main,High">High</H264Profile>
+
+
+    <GovLength min="1" max="400">50</GovLength>
+
+
+    <SVC>
+
+
+      <enabled opt="ture,false">false</enabled>
+
+
+      <SVCMode opt="manual,auto">manual</SVCMode>
+
+
+    </SVC>
+
+
+    <smoothing min="1" max="100">50</smoothing>
+
+
+    <H265Profile opt="Main">Main</H265Profile>
+
+
+  </Video>
+
+
+  <Audio>
+
+
+    <enabled opt="true,false">false</enabled>
+
+
+    <audioInputChannelID>1</audioInputChannelID>
+
+
+    <audioCompressionType opt="G.722.1,G.711ulaw,G.711alaw,MP2L2,G.726,AAC,PCM">G.711ulaw</audioCompressionType>
+
+
+  </Audio>
+
+
+  <isSpportDynamicCapWithCondition>false</isSpportDynamicCapWithCondition>
+
+
+  <isSupportSmartCodeWithoutReStart>true</isSupportSmartCodeWithoutReStart>
+
+
+  <isSupportRTCPCfg>true</isSupportRTCPCfg>
+
+
+  <isSupportSpecifiedImageQualitySnap>true</isSupportSpecifiedImageQualitySnap>
+
+
+</StreamingChannel>

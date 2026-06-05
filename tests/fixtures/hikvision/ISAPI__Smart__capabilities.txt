@@ -1,0 +1,68 @@
+<?xml version="1.0" ?>
+<SmartCap xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+
+
+  <isSupportROI>true</isSupportROI>
+
+
+  <isSupportAudioDetection>true</isSupportAudioDetection>
+
+
+  <isSupportFaceDetect>false</isSupportFaceDetect>
+
+
+  <isSupportLineDetection>true</isSupportLineDetection>
+
+
+  <isSupportFieldDetection>true</isSupportFieldDetection>
+
+
+  <isSupportRegionEntrance>true</isSupportRegionEntrance>
+
+
+  <isSupportRegionExiting>true</isSupportRegionExiting>
+
+
+  <isSupportLoitering>false</isSupportLoitering>
+
+
+  <isSupportGroup>false</isSupportGroup>
+
+
+  <isSupportRapidMove>false</isSupportRapidMove>
+
+
+  <isSupportParking>false</isSupportParking>
+
+
+  <isSupportUnattendedBaggage>true</isSupportUnattendedBaggage>
+
+
+  <isSupportAttendedBaggage>true</isSupportAttendedBaggage>
+
+
+  <isSupportSmartCalibration>true</isSupportSmartCalibration>
+
+
+  <isSupportIntelliTrace>true</isSupportIntelliTrace>
+
+
+  <isSupportPeopleDetection>false</isSupportPeopleDetection>
+
+
+  <isSupportDefocusDetection>false</isSupportDefocusDetection>
+
+
+  <isSupportSceneChangeDetection>false</isSupportSceneChangeDetection>
+
+
+  <isSupportStorageDetection>false</isSupportStorageDetection>
+
+
+  <isSupportChannelResource>false</isSupportChannelResource>
+
+
+  <isSupportSmartOverlapParams>true</isSupportSmartOverlapParams>
+
+
+</SmartCap>
