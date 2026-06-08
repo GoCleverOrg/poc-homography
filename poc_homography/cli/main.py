@@ -30,6 +30,7 @@ def _register_commands() -> None:
     from poc_homography.cli import (
         calibrate,
         camera,
+        cleanplate,
         interactive,
         line_picker,
         point_picker,
@@ -37,9 +38,12 @@ def _register_commands() -> None:
         test_cmds,
     )
 
+    app.add_typer(cleanplate.cleanplate_app, name="cleanplate")
+
     # Avoid "imported but unused" warnings by explicitly using the module
     _ = calibrate
     _ = camera
+    _ = cleanplate
     _ = interactive
     _ = line_picker
     _ = point_picker
