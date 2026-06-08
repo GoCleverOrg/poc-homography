@@ -68,6 +68,55 @@ def test_invalid_extent_raises() -> None:
         )
 
 
+def test_inverted_y_extent_raises() -> None:
+    """An inverted Y extent is rejected."""
+    with pytest.raises(ValueError):
+        GroundRaster(
+            x_min=Meters(0.0),
+            x_max=Meters(1.0),
+            y_min=Meters(1.0),
+            y_max=Meters(0.0),
+            pixels_per_meter=Unitless(10.0),
+        )
+
+
+def test_non_positive_ppm_raises() -> None:
+    """A non-positive resolution is rejected."""
+    with pytest.raises(ValueError):
+        GroundRaster(
+            x_min=Meters(0.0),
+            x_max=Meters(1.0),
+            y_min=Meters(0.0),
+            y_max=Meters(1.0),
+            pixels_per_meter=Unitless(0.0),
+        )
+
+
+def test_non_integral_product_raises() -> None:
+    """A non-integral extent*ppm product desyncs cell mapping and is rejected."""
+    # 1.5m * 16ppm = 24 (integral, fine) but 1.0m * 1.5ppm = 1.5 (non-integral).
+    with pytest.raises(ValueError, match="integral"):
+        GroundRaster(
+            x_min=Meters(0.0),
+            x_max=Meters(1.0),
+            y_min=Meters(0.0),
+            y_max=Meters(1.0),
+            pixels_per_meter=Unitless(1.5),
+        )
+
+
+def test_integral_product_constructs() -> None:
+    """A valid integral raster constructs and reports the expected shape."""
+    raster = GroundRaster(
+        x_min=Meters(0.0),
+        x_max=Meters(1.5),
+        y_min=Meters(0.0),
+        y_max=Meters(2.0),
+        pixels_per_meter=Unitless(16.0),
+    )
+    assert raster.shape == (32, 24)
+
+
 # ---------------------------------------------------------------------------
 # CellAccumulator unit tests
 # ---------------------------------------------------------------------------
@@ -213,6 +262,39 @@ def test_write_clean_plate_png_and_tiff(
     write_clean_plate(result, ortho_path, cov_path)
     assert ortho_path.exists()
     assert cov_path.exists()
+
+
+def test_photometric_consumes_gain(small_raster: GroundRaster) -> None:
+    """Per-frame gain is consumed: gain-leveled fusion differs from gain-ignored.
+
+    Two frames see the same floor but at different capture gains (one bright,
+    one dark). With gain wired in, both are leveled toward a common reference
+    before fusion, so the reconstruction differs from the path that ignores
+    gain entirely (``photometric=False``).
+    """
+    raster = small_raster
+    homography = raster.world_to_raster_matrix()
+    base = np.random.default_rng(0).integers(40, 200, size=(*raster.shape, 3), dtype=np.uint8)
+    # Frame B is the same scene captured at 2x the gain (twice as bright).
+    bright = np.clip(base.astype(np.float32) * 2.0, 0, 255).astype(np.uint8)
+    full_mask = np.ones(raster.shape, dtype=np.uint8) * 255
+
+    frames = [
+        CleanPlateFrame(
+            image=base, floor_mask=full_mask, ground_homography=homography, gain=Unitless(1.0)
+        ),
+        CleanPlateFrame(
+            image=bright, floor_mask=full_mask, ground_homography=homography, gain=Unitless(2.0)
+        ),
+    ]
+
+    with_gain = reconstruct_clean_plate(frames, raster, method="median", photometric=True)
+    without = reconstruct_clean_plate(frames, raster, method="median", photometric=False)
+
+    covered = with_gain.coverage >= 2
+    assert covered.any()
+    # Gain is actually consumed: the leveled result differs from the raw path.
+    assert not np.array_equal(with_gain.orthophoto[covered], without.orthophoto[covered])
 
 
 @pytest.mark.slow

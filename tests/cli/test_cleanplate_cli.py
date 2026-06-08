@@ -232,6 +232,47 @@ def test_reconstruct_all_groups_uses_suffix(tmp_path: Path) -> None:
     assert suffixed.exists()
 
 
+def test_reconstruct_empty_coverage_warns(tmp_path: Path) -> None:
+    """A raster disjoint from the frame footprint yields 0% coverage + a warning."""
+    frames_root = _build_run(tmp_path)
+    ortho_path = tmp_path / "plate.png"
+
+    # The builder homography maps world -> image with only a small (+3,+4) shift,
+    # so a raster placed far away (world X/Y in [50, 54]) lands entirely outside
+    # the 8x12 image: nothing is observed empty and coverage is 0%.
+    result = runner.invoke(
+        app,
+        [
+            "cleanplate",
+            "reconstruct",
+            "--run-dir",
+            str(frames_root),
+            "--run-id",
+            RUN_ID,
+            "--camera-id",
+            CAMERA_ID,
+            "--pose-id",
+            POSE_A,
+            "--x-min",
+            "50",
+            "--x-max",
+            "54",
+            "--y-min",
+            "50",
+            "--y-max",
+            "54",
+            "--pixels-per-meter",
+            "4",
+            "--output",
+            str(ortho_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "coverage=0.0%" in result.output
+    assert "no floor cells were observed empty" in result.output
+
+
 def test_reconstruct_unknown_run_exits_nonzero(tmp_path: Path) -> None:
     """`cleanplate reconstruct` exits 1 when no groups are found."""
     frames_root = tmp_path / "empty"

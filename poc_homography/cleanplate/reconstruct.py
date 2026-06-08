@@ -30,7 +30,7 @@ from poc_homography.cleanplate.accumulate import (
     CellAccumulator,
 )
 from poc_homography.cleanplate.ortho import ortho_rectify_frame
-from poc_homography.cleanplate.photometric import normalize_median_gray
+from poc_homography.cleanplate.photometric import normalize_by_gain, normalize_median_gray
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -70,7 +70,13 @@ class CleanPlateResult:
     Result of a clean-plate reconstruction over a :class:`GroundRaster`.
 
     Attributes:
-        orthophoto: Empty-floor orthophoto, ``(H, W, 3)`` uint8, hole-free.
+        orthophoto: Empty-floor orthophoto, ``(H, W, 3)`` uint8. Hole-free WHEN
+            at least one cell was observed empty: never-empty cells are filled by
+            inpainting from their observed neighbours. If NO cell was ever
+            observed empty (e.g. an empty group or all-mover frames), inpainting
+            cannot run (a 100% mask is degenerate), so the orthophoto is returned
+            all-zeros and ``coverage`` is all-zero — callers should check
+            ``coverage.any()`` before trusting the output.
         coverage: Per-cell count of floor observations, ``(H, W)`` int32.
         inpainted_mask: ``(H, W)`` bool; True where a cell had coverage == 0 and
             was filled by inpainting.
@@ -81,6 +87,18 @@ class CleanPlateResult:
     coverage: np.ndarray
     inpainted_mask: np.ndarray
     raster: GroundRaster = field(repr=False)
+
+
+def _reference_gain(frames: list[CleanPlateFrame]) -> float | None:
+    """Median of the present (non-None) frame gains, or ``None`` if none exist.
+
+    Used as the common target gain for :func:`normalize_by_gain` so frames
+    captured at differing gains are leveled toward each other deterministically.
+    """
+    gains = [float(frame.gain) for frame in frames if frame.gain is not None]
+    if not gains:
+        return None
+    return float(np.median(gains))
 
 
 def reconstruct_clean_plate(
@@ -100,8 +118,11 @@ def reconstruct_clean_plate(
         frames: Iterable of :class:`CleanPlateFrame` captures.
         raster: Common :class:`GroundRaster` to reconstruct onto.
         method: Per-cell reduction, ``"median"`` or ``"mode"``.
-        photometric: If True, median-gray normalize each frame (floor-masked)
-            toward ``target_gray`` before accumulation.
+        photometric: If True, photometrically normalize each frame (floor-masked)
+            before accumulation. Frames carrying a non-None ``gain`` are first
+            linearly leveled toward a common reference gain (the median of all
+            present gains) via :func:`normalize_by_gain`; every frame is then
+            median-gray normalized toward ``target_gray``.
         target_gray: Target median gray level for photometric normalization.
         max_samples_per_cell: Reservoir cap per raster cell.
         inpaint_radius: Telea inpainting radius for never-empty cells.
@@ -112,9 +133,16 @@ def reconstruct_clean_plate(
     """
     accumulator = CellAccumulator(raster.shape, max_samples_per_cell=max_samples_per_cell)
 
-    for frame in frames:
+    # Materialise frames once so we can derive a shared reference gain (the
+    # median of all present gains) before the per-frame pass below.
+    frame_list = list(frames)
+    reference_gain = _reference_gain(frame_list) if photometric else None
+
+    for frame in frame_list:
         image = frame.image
         if photometric:
+            if reference_gain is not None and frame.gain is not None:
+                image = normalize_by_gain(image, frame.gain, reference_gain)
             image = normalize_median_gray(image, target_gray=target_gray, mask=frame.floor_mask)
 
         ortho = ortho_rectify_frame(

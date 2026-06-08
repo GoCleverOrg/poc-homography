@@ -53,6 +53,20 @@ def _coverage_percent(result: CleanPlateResult) -> float:
     return 100.0 * covered / total
 
 
+def _warn_if_empty(result: CleanPlateResult, *, label: str) -> None:
+    """Warn on stderr when no floor cell was observed empty (0% coverage).
+
+    Such a result's orthophoto is an all-zeros (black) image rather than a
+    hole-free plate, so surface it to the user instead of writing it silently.
+    """
+    if _coverage_percent(result) == 0.0:
+        typer.echo(
+            f"warning: {label}: no floor cells were observed empty; "
+            "orthophoto is empty (all-zeros)",
+            err=True,
+        )
+
+
 def _suffix_path(base: Path, camera_id: str, pose_id: str) -> Path:
     """Insert a ``__{camera_id}__{pose_id}`` suffix before ``base``'s extension."""
     return base.with_name(f"{base.stem}__{camera_id}__{pose_id}{base.suffix}")
@@ -131,6 +145,7 @@ def reconstruct_command(
             continue
 
         result = reconstruct_clean_plate(frames, raster, method=method, photometric=photometric)
+        _warn_if_empty(result, label=f"group ({group_camera_id}, {group_pose_id})")
 
         ortho_path = _suffix_path(output, group_camera_id, group_pose_id) if multi else output
         cov_path = (
@@ -188,6 +203,7 @@ def synth_command(
     )
 
     result = reconstruct_clean_plate(frames, raster, method=method, photometric=True)
+    _warn_if_empty(result, label="synth")
     write_clean_plate(result, output, coverage_output)
 
     if truth_output is not None:

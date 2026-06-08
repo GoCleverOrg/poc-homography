@@ -57,13 +57,38 @@ class GroundRaster:
     pixels_per_meter: Unitless
 
     def __post_init__(self) -> None:
-        """Validate extent ordering and positive resolution."""
+        """Validate extent ordering, positive resolution and integral cell counts.
+
+        The extent times resolution MUST be integral on each axis: ``width`` and
+        ``height`` are ``round(extent * ppm)``, while ``world_to_cell`` /
+        ``world_to_raster_matrix`` map the far edge to the un-rounded product. A
+        non-integral product therefore desyncs the grid by a sub-pixel fraction,
+        so it is rejected here rather than silently producing a skewed raster.
+
+        Raises:
+            ValueError: If an extent is non-positive/inverted, ``ppm`` is
+                non-positive, or an axis' ``extent * ppm`` is not integral.
+        """
         if self.x_max <= self.x_min:
             raise ValueError(f"x_max ({self.x_max}) must exceed x_min ({self.x_min})")
         if self.y_max <= self.y_min:
             raise ValueError(f"y_max ({self.y_max}) must exceed y_min ({self.y_min})")
         if self.pixels_per_meter <= 0:
             raise ValueError(f"pixels_per_meter must be positive, got {self.pixels_per_meter}")
+        ppm = float(self.pixels_per_meter)
+        self._require_integral_product("x", float(self.x_max - self.x_min), ppm)
+        self._require_integral_product("y", float(self.y_max - self.y_min), ppm)
+
+    @staticmethod
+    def _require_integral_product(axis: str, extent: float, ppm: float) -> None:
+        """Raise if ``extent * ppm`` is not integral within tolerance."""
+        product = extent * ppm
+        if abs(product - round(product)) >= 1e-6:
+            raise ValueError(
+                f"{axis}-extent ({extent}) * pixels_per_meter ({ppm}) = {product} "
+                "must be integral (within 1e-6); choose an extent/ppm that divides "
+                "evenly into whole cells."
+            )
 
     @property
     def width(self) -> int:
