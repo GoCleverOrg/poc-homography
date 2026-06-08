@@ -170,7 +170,8 @@ class RepoPostgresSurveyRun(RepoPostgresSession):
         rows = self._session.execute(stmt).scalars().all()
         matches: list[Any] = []
         for row in rows:
-            entries = row.data.get("pose_catalog", {}).get("entries", {})  # type: ignore[attr-defined]
+            catalog = row.data.get("pose_catalog") or {}  # type: ignore[attr-defined]
+            entries = catalog.get("entries", {})
             if pose_id in entries:
                 matches.append(self._row_to_entity(row))
         return matches

@@ -158,12 +158,16 @@ def capture_pose_sequence(
 def _stamp_pose_id(base: SurveyContext | None, pose: Pose) -> SurveyContext:
     """Return ``base`` (or a fresh context) with a stable ``pose_id`` stamped.
 
-    The id is derived purely from the pose geometry via
-    :func:`~poc_homography.survey.planner.poses.canonical_pose_key`, so the same
-    physical ``(pan, tilt, zoom)`` yields the same id on every run regardless of
-    insertion order, randomness, or time.
+    Honours a planner-assigned ``pose.pose_id`` when present (keeping the
+    planner the single source of truth), otherwise derives the id purely from
+    the pose geometry via
+    :func:`~poc_homography.survey.planner.poses.canonical_pose_key`. Either way
+    the same physical ``(pan, tilt, zoom)`` yields the same id on every run
+    regardless of insertion order, randomness, or time.
     """
-    pose_id = canonical_pose_key(float(pose.pan), float(pose.tilt), float(pose.zoom))
+    pose_id = pose.pose_id or canonical_pose_key(
+        float(pose.pan), float(pose.tilt), float(pose.zoom)
+    )
     if base is None:
         return SurveyContext(pose_id=pose_id)
     return replace(base, pose_id=pose_id)
