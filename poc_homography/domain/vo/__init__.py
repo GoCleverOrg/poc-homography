@@ -26,6 +26,7 @@ from poc_homography.domain.vo.ptz_state import PTZState
 from poc_homography.domain.vo.rotation import Rotation
 from poc_homography.domain.vo.stream_profile import StreamProfile
 from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
+from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
 from poc_homography.domain.vo.vector3 import Vector3
 from poc_homography.domain.vo.zoom_calibration_entry import ZoomCalibrationEntry
 
@@ -54,6 +55,7 @@ __all__ = [
     "Rotation",
     "StreamProfile",
     "SurveyPlanConfig",
+    "TiltEnvelope",
     "Vector3",
     "WhiteBalanceState",
     "ZoomCalibrationEntry",

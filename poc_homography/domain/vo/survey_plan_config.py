@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
+
 PLAN_CONFIG_SCHEMA_VERSION = "1"
 """Schema version for :class:`SurveyPlanConfig`.
 
@@ -51,6 +53,10 @@ class SurveyPlanConfig:
         zoom_levels: Zoom factors swept by phases 3, 6 and 8.
         repeat_count: Per-phase repetition count (phases 2 and 7).
         holdout_fraction: Phase 9 validation holdout fraction.
+        tilt_envelope: Optional per-azimuth max-up-useful-tilt envelope from the
+            Phase-0 horizon calibration. ``None`` (the default) reproduces the
+            pre-horizon behaviour exactly; when present the C3 pose generators
+            skip sky tiles above the per-azimuth bound.
     """
 
     schema_version: str = PLAN_CONFIG_SCHEMA_VERSION
@@ -67,6 +73,7 @@ class SurveyPlanConfig:
     zoom_levels: list[float] = field(default_factory=lambda: [1.0, 5.0, 12.0, 25.0])
     repeat_count: dict[int, int] = field(default_factory=lambda: {2: 3, 7: 3})
     holdout_fraction: float = 0.15
+    tilt_envelope: TiltEnvelope | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a JSON-serialisable dictionary.
@@ -90,6 +97,9 @@ class SurveyPlanConfig:
             "zoom_levels": list(self.zoom_levels),
             "repeat_count": {str(k): v for k, v in self.repeat_count.items()},
             "holdout_fraction": self.holdout_fraction,
+            "tilt_envelope": (
+                self.tilt_envelope.to_dict() if self.tilt_envelope is not None else None
+            ),
         }
 
     @classmethod
@@ -142,6 +152,7 @@ class SurveyPlanConfig:
             zoom_levels=_float_list(data.get("zoom_levels"), defaults.zoom_levels),
             repeat_count=_int_keyed(data.get("repeat_count"), int, defaults.repeat_count),
             holdout_fraction=float(data.get("holdout_fraction", defaults.holdout_fraction)),
+            tilt_envelope=_tilt_envelope_from_dict(data.get("tilt_envelope")),
         )
 
 
@@ -171,6 +182,13 @@ def _int_keyed(
     if raw is None:
         return dict(default)
     return {int(k): value_cast(v) for k, v in raw.items()}
+
+
+def _tilt_envelope_from_dict(raw: dict[Any, Any] | None) -> TiltEnvelope | None:
+    """Rebuild the optional tilt envelope; ``None`` preserves legacy behaviour."""
+    if raw is None:
+        return None
+    return TiltEnvelope.from_dict(raw)
 
 
 def _float_list(raw: list[Any] | None, default: list[float]) -> list[float]:

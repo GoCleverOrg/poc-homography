@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from poc_homography.domain.enums.camera_spec import CameraSpec
+    from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
 
 # Tolerance (in axis units) for including the inclusive endpoint of a range.
 _ENDPOINT_TOLERANCE = 1e-9
@@ -174,6 +175,7 @@ def fov_grid(
     overlap_fraction: float,
     *,
     phase: SurveyPhase = SurveyPhase.MAIN_SURVEY,
+    tilt_envelope: TiltEnvelope | None = None,
 ) -> list[Pose]:
     """Generate a FOV-overlapping pan x tilt grid for each zoom level.
 
@@ -182,6 +184,12 @@ def fov_grid(
     ``overlap_fraction``. Both range endpoints are always covered, and no gap
     between consecutive pan (or tilt) values exceeds one step.
 
+    When a ``tilt_envelope`` is supplied, tiles that point above the per-azimuth
+    max-up useful tilt are skipped (sky tiles): a pose is kept only when its
+    ``tilt >= upper_bound(pan)`` (positive tilt = down, so a smaller tilt points
+    further up). With ``tilt_envelope=None`` the output is byte-for-byte
+    identical to the unconstrained grid.
+
     Args:
         spec: Camera specification.
         pan_range: ``(pan_min, pan_max)`` inclusive bounds.
@@ -189,6 +197,8 @@ def fov_grid(
         zoom_levels: Zoom levels to cover, in order.
         overlap_fraction: Desired fractional overlap in ``[0.0, 1.0)``.
         phase: Phase identity (unused for tagging; documents intent).
+        tilt_envelope: Optional per-azimuth tilt envelope; when present, sky
+            tiles above the per-azimuth bound are omitted.
 
     Returns:
         Flat pose list ordered zoom, then tilt rows, then pan columns.
@@ -201,8 +211,22 @@ def fov_grid(
         tilt_values = _inclusive_values(tilt_range[0], tilt_range[1], float(tilt_step))
         for tilt in tilt_values:
             for pan in pan_values:
+                if _is_sky_tile(tilt, pan, tilt_envelope):
+                    continue
                 poses.append(Pose(pan=Degrees(pan), tilt=Degrees(tilt), zoom=Unitless(zoom)))
     return poses
+
+
+def _is_sky_tile(tilt: float, pan: float, tilt_envelope: TiltEnvelope | None) -> bool:
+    """Return whether ``(pan, tilt)`` points above the per-azimuth useful band.
+
+    With no envelope nothing is sky (preserving unconstrained behaviour). With
+    an envelope, a tile is sky when its tilt is strictly above (numerically
+    below, since positive tilt = down) the interpolated per-azimuth bound.
+    """
+    if tilt_envelope is None:
+        return False
+    return tilt < tilt_envelope.upper_bound(pan) - _ENDPOINT_TOLERANCE
 
 
 def nadir_region(

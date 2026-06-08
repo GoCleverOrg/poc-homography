@@ -346,3 +346,6 @@ browse_command  # typer survey command (poc_homography/cli/survey.py)
 _.save_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
 _.load_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
 _.detail  # ValidationOutcome human-readable note; injectable-hook contract (poc_homography/horizon/validation.py)
+
+# -- Phase-0 horizon calibration C3 (#275); step-1 entry point consumed by C5/CLI + tests --
+calibrate_horizon_envelope  # Phase-0 calibration step; invoked by operator/CLI + tests (poc_homography/survey/calibration.py)

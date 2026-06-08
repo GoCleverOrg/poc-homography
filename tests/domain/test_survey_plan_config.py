@@ -11,6 +11,7 @@ from poc_homography.domain.vo.survey_plan_config import (
     PLAN_CONFIG_SCHEMA_VERSION,
     SurveyPlanConfig,
 )
+from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
 
 
 def _populated() -> SurveyPlanConfig:
@@ -120,6 +121,33 @@ class TestSurveyPlanConfigSchemaVersion:
         data["schema_version"] = "0.9"
         with pytest.raises(ValueError, match="schema_version"):
             SurveyPlanConfig.from_dict(data)
+
+
+class TestSurveyPlanConfigTiltEnvelope:
+    def test_default_envelope_is_none(self) -> None:
+        assert SurveyPlanConfig().tilt_envelope is None
+
+    def test_absent_envelope_round_trips_to_none(self) -> None:
+        cfg = SurveyPlanConfig()
+        assert SurveyPlanConfig.from_dict(cfg.to_dict()).tilt_envelope is None
+
+    def test_legacy_payload_without_key_loads_none(self) -> None:
+        # A pre-#275 payload has no "tilt_envelope" key at all.
+        data = SurveyPlanConfig().to_dict()
+        del data["tilt_envelope"]
+        assert SurveyPlanConfig.from_dict(data).tilt_envelope is None
+
+    def test_populated_envelope_round_trips(self) -> None:
+        env = TiltEnvelope(
+            bounds={0.0: -13.0, 180.0: -16.0}, tilt_offset_deg=-31.0, vfov_deg=36.0, zoom=1.0
+        )
+        cfg = SurveyPlanConfig(tilt_envelope=env)
+        assert SurveyPlanConfig.from_dict(cfg.to_dict()) == cfg
+
+    def test_populated_envelope_json_serialisable(self) -> None:
+        env = TiltEnvelope(bounds={0.0: -13.0}, tilt_offset_deg=-31.0, vfov_deg=36.0, zoom=1.0)
+        decoded = json.loads(json.dumps(SurveyPlanConfig(tilt_envelope=env).to_dict()))
+        _assert_all_dict_keys_are_strings(decoded)
 
 
 class TestSurveyPlanConfigYamlReload:
