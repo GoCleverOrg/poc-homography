@@ -203,4 +203,40 @@ dataset or a synthetic one of the same structure.
 > exact same `hom cleanplate reconstruct` command targets a real survey run
 > identically once its data is pulled with `dvc pull`.
 
-<!-- PROTOTYPE COMMAND + OUTPUT PATH: filled in by the prototype step -->
+### 5.1 Shipped prototype artifact
+
+The committed prototype was produced deterministically (fixed `--seed 0`) by the
+self-validating `synth` command, which builds a synthetic multi-visit dataset,
+runs the full reconstruction, and reports the mean absolute error (MAE) of the
+reconstruction against the known clean background over covered cells:
+
+```bash
+mkdir -p docs/assets/cleanplate
+uv run hom cleanplate synth \
+  --output docs/assets/cleanplate/clean_plate.png \
+  --coverage-output docs/assets/cleanplate/coverage.tif \
+  --truth-output docs/assets/cleanplate/truth.png \
+  --n-visits 6 --seed 0 \
+  --x-min 0 --x-max 6 --y-min 0 --y-max 6 --pixels-per-meter 16
+```
+
+Reported result: `visits=6 seed=0 coverage=99.8% MAE=13.0371`.
+
+Output artifacts (committed under `docs/assets/cleanplate/`):
+
+| File | Contents |
+| ---- | -------- |
+| `clean_plate.png` | Reconstructed empty-floor orthophoto (96×96, 6 m × 6 m at 16 px/m). |
+| `truth.png` | Ground-truth clean background (for visual comparison). |
+| `coverage.tif` | Per-cell observed-sample count (int32 raster); `0` = inpainted hole. |
+
+To run against a **real** survey run instead (e.g. once `dvc pull` has fetched a
+dataset), point `reconstruct` at the run directory and id — the pipeline is
+identical:
+
+```bash
+uv run hom cleanplate reconstruct \
+  --run-dir data/survey --run-id <run_id> --camera-id <camera_id> \
+  --x-min <m> --x-max <m> --y-min <m> --y-max <m> --pixels-per-meter <ppm> \
+  --output clean_plate.png --coverage-output coverage.tif
+```
