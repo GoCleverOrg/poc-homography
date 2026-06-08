@@ -127,10 +127,9 @@ def test_frames_for_loads_clean_plate_frames(tmp_path: Path) -> None:
     for frame in frames:
         assert isinstance(frame, CleanPlateFrame)
         assert frame.image.shape == (8, 12, 3)
-        # Mask synthesized as all-floor when no mask_ref present.
-        assert frame.floor_mask is not None
-        assert frame.floor_mask.shape == (8, 12)
-        assert frame.floor_mask.all()
+        # No mask_ref present -> mask is None, the canonical all-floor sentinel
+        # (ortho treats None as all-floor via its cheaper no-mask path).
+        assert frame.floor_mask is None
         assert frame.ground_homography.shape == (3, 3)
         assert frame.gain == 6.0
 
@@ -198,7 +197,9 @@ def test_mask_loaded_from_reference_when_present(tmp_path: Path) -> None:
 
     dataset = CleanPlateDataset.from_survey_run(frames_root, RUN_ID)
     frames = dataset.frames_for(CAMERA_ID, POSE_B)
-    loaded = next(f for f in frames if not f.floor_mask.all())
+    # Frames without a mask_ref now carry None (all-floor); the one with a real
+    # mask_ref carries the loaded array.
+    loaded = next(f for f in frames if f.floor_mask is not None)
     assert loaded.floor_mask.shape == (8, 12)
     assert not loaded.floor_mask[0, 0]
     assert loaded.floor_mask[7, 0]

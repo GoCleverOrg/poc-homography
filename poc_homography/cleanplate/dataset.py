@@ -41,7 +41,7 @@ RELATIVE to the per-camera directory ``{frames_root}/{run_id}/{camera_id}/``
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import cv2
@@ -105,6 +105,29 @@ class CleanPlateDataset:
     frames_root: Path
     run_id: str
     records: tuple[FrameRecord, ...]
+    # Grouping computed ONCE at load time (single O(records) pass) and reused by
+    # both ``groups`` and ``frames_for``; excluded from ``repr`` for brevity.
+    _grouped: dict[GroupKey, list[FrameRecord]] = field(repr=False, compare=False)
+
+    @staticmethod
+    def _group_records(
+        records: tuple[FrameRecord, ...],
+    ) -> dict[GroupKey, list[FrameRecord]]:
+        """Bucket records by ``(camera_id, pose_id)``, skipping pose-less frames.
+
+        Frames whose ``survey_context.pose_id`` is ``None`` are SKIPPED (a
+        clean-plate group is defined by a concrete physical pose) and logged at
+        debug level.
+        """
+        grouped: dict[GroupKey, list[FrameRecord]] = {}
+        for record in records:
+            pose_id = record.survey_context.pose_id
+            if pose_id is None:
+                logger.debug("Skipping frame %s with no pose_id", record.id)
+                continue
+            key = (record.camera.camera_id, pose_id)
+            grouped.setdefault(key, []).append(record)
+        return grouped
 
     @classmethod
     def from_survey_run(
@@ -136,27 +159,26 @@ class CleanPlateDataset:
         records = repo.get_frames_by_run(run_id)
         if camera_id is not None:
             records = [r for r in records if r.camera.camera_id == camera_id]
-        return cls(frames_root=run_dir, run_id=run_id, records=tuple(records))
+        records_tuple = tuple(records)
+        return cls(
+            frames_root=run_dir,
+            run_id=run_id,
+            records=records_tuple,
+            _grouped=cls._group_records(records_tuple),
+        )
 
     def groups(self) -> dict[GroupKey, list[FrameRecord]]:
         """Group frames by ``(camera_id, pose_id)``.
 
-        Frames whose ``survey_context.pose_id`` is ``None`` are SKIPPED (a
+        Returns a shallow copy of the grouping computed once at load time.
+        Frames whose ``survey_context.pose_id`` is ``None`` were SKIPPED (a
         clean-plate group is defined by a concrete physical pose); they are
         logged at debug level and never appear in the returned mapping.
 
         Returns:
             Mapping from ``(camera_id, pose_id)`` to its list of frame records.
         """
-        grouped: dict[GroupKey, list[FrameRecord]] = {}
-        for record in self.records:
-            pose_id = record.survey_context.pose_id
-            if pose_id is None:
-                logger.debug("Skipping frame %s with no pose_id", record.id)
-                continue
-            key = (record.camera.camera_id, pose_id)
-            grouped.setdefault(key, []).append(record)
-        return grouped
+        return {key: list(records) for key, records in self._grouped.items()}
 
     def frames_for(
         self,
@@ -172,11 +194,13 @@ class CleanPlateDataset:
             * reads the image from disk (``cv2.imread`` -> RGB ``(H, W, 3)``);
               records whose image file is missing are SKIPPED with a warning;
             * loads the floor mask from ``floor_mask_reference.mask_ref`` if it
-              points to a readable file; otherwise (when
-              ``synthesize_missing_masks`` is True) synthesizes an all-floor
-              ``(H, W)`` boolean mask (the smoke run lacks a mask slot, so every
-              in-image pixel is treated as floor). With
-              ``synthesize_missing_masks=False`` the mask is left as ``None``;
+              points to a readable file; otherwise the mask is left as ``None``,
+              which ortho-rectification treats as all-floor (every in-image
+              pixel is floor) via its cheaper no-mask footprint path. ``None``
+              is the canonical "all-floor" representation here — equivalent to an
+              all-True mask but cheaper — so ``synthesize_missing_masks`` no
+              longer materialises an array; both flag values yield ``None`` when
+              no readable mask exists (the flag is retained for caller intent);
             * resolves the ground homography from the cached
               ``ground_homography.h_matrix`` (world->image, used directly).
               Records with no cached ``h_matrix`` are SKIPPED with a warning,
@@ -186,14 +210,16 @@ class CleanPlateDataset:
         Args:
             camera_id: Camera identifier of the group.
             pose_id: Pose identifier of the group.
-            synthesize_missing_masks: Synthesize an all-floor mask when no
-                mask reference is available (default True).
+            synthesize_missing_masks: Treat a missing mask reference as
+                all-floor (default True). All-floor is represented by ``None``
+                (handled by ortho's no-mask footprint path), so this no longer
+                materialises an array; retained to signal caller intent.
 
         Returns:
             The group's loaded :class:`CleanPlateFrame` objects (possibly fewer
             than the records when images or homographies are missing).
         """
-        records = self.groups().get((camera_id, pose_id), [])
+        records = self._grouped.get((camera_id, pose_id), [])
         camera_dir = self.frames_root / self.run_id / camera_id
         frames: list[CleanPlateFrame] = []
         for record in records:
@@ -220,9 +246,7 @@ class CleanPlateDataset:
         if image is None:
             return None
 
-        floor_mask = self._load_mask(
-            record, camera_dir, image.shape[:2], synthesize=synthesize_missing_masks
-        )
+        floor_mask = self._load_mask(record, camera_dir, synthesize=synthesize_missing_masks)
         gain = self._resolve_gain(record)
 
         return CleanPlateFrame(
@@ -266,11 +290,19 @@ class CleanPlateDataset:
     def _load_mask(
         record: FrameRecord,
         camera_dir: Path,
-        image_shape: tuple[int, int],
         *,
         synthesize: bool,
     ) -> np.ndarray | None:
-        """Load the floor mask, synthesize an all-floor mask, or return None."""
+        """Load the floor mask, or return ``None`` to mean all-floor.
+
+        When no readable mask reference is available, the mask is returned as
+        ``None``. With ``synthesize`` True this ``None`` is the documented
+        "all-floor" sentinel (every in-image pixel is treated as floor, which
+        ortho-rectification handles via its cheaper no-mask footprint path —
+        identical to an all-True mask). With ``synthesize`` False it likewise
+        means "no mask supplied"; the two are behaviourally equivalent here, but
+        the flag is retained so callers can distinguish the intent.
+        """
         reference = record.floor_mask_reference
         if reference is not None and reference.mask_ref is not None:
             mask_path = camera_dir / reference.mask_ref
@@ -280,9 +312,9 @@ class CleanPlateDataset:
             logger.warning(
                 "Mask file missing or unreadable: %s; falling back to all-floor", mask_path
             )
-        if not synthesize:
-            return None
-        return np.ones(image_shape, dtype=bool)
+        if synthesize:
+            logger.debug("No floor mask for frame %s; treating as all-floor (None)", record.id)
+        return None
 
     @staticmethod
     def _resolve_gain(record: FrameRecord) -> Unitless | None:

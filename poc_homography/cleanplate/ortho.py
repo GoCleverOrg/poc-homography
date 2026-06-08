@@ -87,20 +87,11 @@ def ortho_rectify_frame(
         borderValue=(0, 0, 0),
     )
 
-    # Coverage: warp an all-ones source plane to find raster cells that map
-    # back inside the original image bounds.
-    src_ones = np.ones(image.shape[:2], dtype=np.uint8)
-    coverage = cv2.warpPerspective(
-        src_ones,
-        h_image_to_raster,
-        (out_w, out_h),
-        flags=cv2.INTER_NEAREST,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0,),
-    )
-    valid = coverage > 0
-
     if floor_mask is not None:
+        # The warped mask (nearest, border 0) ALREADY encodes "inside the image
+        # footprint AND floor": pixels mapping outside the source image get the
+        # border value 0, and non-floor pixels are 0. So validity is the warped
+        # mask alone — no separate all-ones footprint warp is needed.
         mask_u8 = (np.asarray(floor_mask) > 0).astype(np.uint8)
         warped_mask = cv2.warpPerspective(
             mask_u8,
@@ -110,6 +101,19 @@ def ortho_rectify_frame(
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(0,),
         )
-        valid = valid & (warped_mask > 0)
+        valid = warped_mask > 0
+    else:
+        # No mask: warp an all-ones source plane to find raster cells that map
+        # back inside the original image bounds (the in-image footprint).
+        src_ones = np.ones(image.shape[:2], dtype=np.uint8)
+        coverage = cv2.warpPerspective(
+            src_ones,
+            h_image_to_raster,
+            (out_w, out_h),
+            flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0,),
+        )
+        valid = coverage > 0
 
     return OrthoResult(color=color, valid=valid)

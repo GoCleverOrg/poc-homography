@@ -173,6 +173,34 @@ def reconstruct_clean_plate(
     )
 
 
+def write_orthophoto(array: np.ndarray, path: str | Path) -> None:
+    """
+    Write an RGB orthophoto array to disk, dispatching on file extension.
+
+    ``.png`` / ``.jpg`` / ``.jpeg`` are written via OpenCV (the RGB input is
+    converted to BGR first); ``.tif`` / ``.tiff`` are written via tifffile
+    preserving the input array as-is.
+
+    Args:
+        array: RGB orthophoto, ``(H, W, 3)`` uint8.
+        path: Output path; its extension selects the writer.
+
+    Raises:
+        ValueError: If the extension is unsupported or the write fails.
+    """
+    out_path = Path(path)
+    suffix = out_path.suffix.lower()
+    if suffix in {".tif", ".tiff"}:
+        tifffile.imwrite(str(out_path), array)
+    elif suffix in {".png", ".jpg", ".jpeg"}:
+        # OpenCV expects BGR for color writes.
+        bgr = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
+        if not cv2.imwrite(str(out_path), bgr):
+            raise ValueError(f"Failed to write orthophoto to {out_path}")
+    else:
+        raise ValueError(f"Unsupported orthophoto extension: {suffix!r}")
+
+
 def write_clean_plate(
     result: CleanPlateResult,
     orthophoto_path: str | Path,
@@ -194,17 +222,7 @@ def write_clean_plate(
     Raises:
         ValueError: If a path has an unsupported extension.
     """
-    ortho_path = Path(orthophoto_path)
-    suffix = ortho_path.suffix.lower()
-    if suffix in {".tif", ".tiff"}:
-        tifffile.imwrite(str(ortho_path), result.orthophoto)
-    elif suffix in {".png", ".jpg", ".jpeg"}:
-        # OpenCV expects BGR for color writes.
-        bgr = cv2.cvtColor(result.orthophoto, cv2.COLOR_RGB2BGR)
-        if not cv2.imwrite(str(ortho_path), bgr):
-            raise ValueError(f"Failed to write orthophoto to {ortho_path}")
-    else:
-        raise ValueError(f"Unsupported orthophoto extension: {suffix!r}")
+    write_orthophoto(result.orthophoto, orthophoto_path)
 
     if coverage_path is not None:
         cov_path = Path(coverage_path)

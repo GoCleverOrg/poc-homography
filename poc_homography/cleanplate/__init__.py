@@ -27,6 +27,7 @@ from poc_homography.cleanplate.reconstruct import (
     CleanPlateResult,
     reconstruct_clean_plate,
     write_clean_plate,
+    write_orthophoto,
 )
 from poc_homography.cleanplate.synthetic import (
     make_clean_background,
@@ -44,6 +45,7 @@ __all__ = [
     "CleanPlateResult",
     "reconstruct_clean_plate",
     "write_clean_plate",
+    "write_orthophoto",
     "make_clean_background",
     "make_synthetic_visits",
     "CleanPlateDataset",

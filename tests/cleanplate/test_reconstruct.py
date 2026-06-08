@@ -189,6 +189,34 @@ def test_ortho_identity_like() -> None:
     assert result.valid.all()
 
 
+def test_ortho_all_floor_mask_equals_no_mask_footprint() -> None:
+    """An all-floor mask yields identical validity to the no-mask footprint path.
+
+    Equivalence pin for the ortho refactor: when the floor mask is all-True the
+    warped mask already encodes the in-image footprint, so passing it must give
+    the same ``valid`` raster as passing no mask at all.
+    """
+    raster = GroundRaster(
+        x_min=Meters(0.0),
+        x_max=Meters(3.0),
+        y_min=Meters(0.0),
+        y_max=Meters(3.0),
+        pixels_per_meter=Unitless(8.0),
+    )
+    # A non-identity world->image homography so the footprint is a real subset.
+    homography = raster.world_to_raster_matrix() @ np.array(
+        [[1.0, 0.2, 1.5], [0.1, 1.0, 1.0], [0.0, 0.0, 1.0]]
+    )
+    image = np.random.default_rng(1).integers(0, 255, size=(40, 50, 3), dtype=np.uint8)
+    all_floor = np.ones(image.shape[:2], dtype=bool)
+
+    with_mask = ortho_rectify_frame(image, homography, raster, floor_mask=all_floor)
+    without_mask = ortho_rectify_frame(image, homography, raster)
+    assert with_mask is not None
+    assert without_mask is not None
+    assert np.array_equal(with_mask.valid, without_mask.valid)
+
+
 def test_ortho_singular_returns_none() -> None:
     """A singular homography is skipped gracefully."""
     raster = GroundRaster(

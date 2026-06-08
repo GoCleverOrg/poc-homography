@@ -14,6 +14,7 @@ from poc_homography.cleanplate import (
     make_synthetic_visits,
     reconstruct_clean_plate,
     write_clean_plate,
+    write_orthophoto,
 )
 from poc_homography.types import Meters, Unitless
 
@@ -119,11 +120,11 @@ def reconstruct_command(
     dataset = CleanPlateDataset.from_survey_run(run_dir, run_id, camera_id=camera_id)
     raster = _build_raster(x_min, x_max, y_min, y_max, pixels_per_meter)
 
+    # ``from_survey_run(..., camera_id=...)`` already restricts records to that
+    # camera, so every group key's camera matches; no camera re-filter needed.
     keys = list(dataset.groups().keys())
     if pose_id is not None:
         keys = [k for k in keys if k[1] == pose_id]
-    if camera_id is not None:
-        keys = [k for k in keys if k[0] == camera_id]
 
     if not keys:
         typer.echo(
@@ -207,7 +208,7 @@ def synth_command(
     write_clean_plate(result, output, coverage_output)
 
     if truth_output is not None:
-        _write_truth(truth, truth_output, result)
+        write_orthophoto(truth, truth_output)
 
     mae = _masked_mae(result.orthophoto, truth, result.coverage > 0)
     typer.echo(
@@ -218,17 +219,6 @@ def synth_command(
         typer.echo(f"  coverage raster -> {coverage_output}")
     if truth_output is not None:
         typer.echo(f"  ground truth -> {truth_output}")
-
-
-def _write_truth(truth: np.ndarray, truth_output: Path, result: CleanPlateResult) -> None:
-    """Persist the ground-truth background by reusing :func:`write_clean_plate`."""
-    truth_result = result.__class__(
-        orthophoto=truth,
-        coverage=result.coverage,
-        inpainted_mask=result.inpainted_mask,
-        raster=result.raster,
-    )
-    write_clean_plate(truth_result, truth_output, None)
 
 
 def _masked_mae(reconstruction: np.ndarray, truth: np.ndarray, mask: np.ndarray) -> float:
