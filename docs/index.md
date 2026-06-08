@@ -19,6 +19,11 @@ ISAPI reference, **Camera intrinsics and pose**, and the **Domain model**.
 - [survey_offline_reprocessing.md](./survey_offline_reprocessing.md) — using a
   dataset without a camera: `dvc pull`, reload the plan config, browse
   groupings, and access images and video bursts.
+- [cleanplate_reconstruction_methods.md](./cleanplate_reconstruction_methods.md)
+  — method comparison for offline clean-plate (empty-floor orthophoto)
+  reconstruction: mask-aware temporal median, RPCA, inpainting, and multi-band
+  blending, with a stated recommendation and the `hom cleanplate reconstruct`
+  pipeline.
 
 ## Hikvision / PTZ
 

@@ -356,3 +356,8 @@ calibrate_horizon_envelope  # Phase-0 calibration step; invoked by operator/CLI 
 _.with_pose  # PoseCatalog immutable pose-record builder (poc_homography/domain/entities/survey/pose_catalog.py)
 _.from_poses  # PoseCatalog deterministic builder from a pose sequence (poc_homography/domain/entities/survey/pose_catalog.py)
 _.from_plan_config  # SurveyPlanConfig->SurveyPlan burst-count bridge; consumed by C5 + tests (poc_homography/survey/phases/runner.py)
+
+# -- Clean-plate reconstruction (#277); GroundRaster public coord API + frame metadata consumed by downstream loader/CLI + tests --
+_.world_to_cell  # GroundRaster public world->cell mapping; exported API (poc_homography/cleanplate/raster.py)
+_.cell_to_world  # GroundRaster public cell->world mapping; exported API (poc_homography/cleanplate/raster.py)
+time_bucket  # CleanPlateFrame exposure metadata field; consumed by photometric/loader (poc_homography/cleanplate/reconstruct.py)
