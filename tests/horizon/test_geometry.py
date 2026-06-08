@@ -119,6 +119,9 @@ class TestAllGroundThreshold:
         # Just above the threshold → all ground; just below → horizon in frame.
         assert _predict(threshold + 1.0).placement is FramePlacement.ABOVE_FRAME
         assert _predict(threshold - 2.0).placement is FramePlacement.IN_FRAME
+        # At the exact threshold the horizon sits on the top edge (row == 0),
+        # which the contract counts as all-ground (reported_tilt >= threshold).
+        assert _predict(threshold).placement is FramePlacement.ABOVE_FRAME
 
     def test_threshold_rises_as_zoom_narrows_vfov(self):
         wide = float(

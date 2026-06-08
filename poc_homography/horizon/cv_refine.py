@@ -79,6 +79,16 @@ def refine_horizon_cv(
         best separates a low-energy band (above) from a high-energy band
         (below) is reported when the contrast is strong enough; otherwise the
         frame is classified all-sky or all-ground from its texture level.
+
+    Caveat:
+        The *uniform-frame* (low-contrast) branch distinguishes all-sky from
+        all-ground purely by absolute texture magnitude, so a genuinely
+        low-texture *ground* frame (calm water, flat tarmac, fog) can be
+        misclassified as all-sky. This detector is a refinement/validation
+        aid only — :func:`poc_homography.horizon.estimate.estimate_horizon`
+        lets it override the geometric prediction solely when both agree the
+        horizon is in frame. Treat a standalone all-sky/all-ground verdict as
+        a coarse hint, not ground truth.
     """
     gray = _to_gray(image)
     height = gray.shape[0]
@@ -169,9 +179,11 @@ def estimate_sky_fraction_from_jpeg_size(
     Returns:
         Estimated sky fraction in ``[0.0, 1.0]`` (higher = more sky).
     """
-    bytes_per_pixel = num_bytes / float(image_width * image_height)
+    if image_width <= 0 or image_height <= 0:
+        raise ValueError(f"image dimensions must be positive; got {image_width}x{image_height}")
     span = full_ground_bytes_per_pixel - full_sky_bytes_per_pixel
     if span <= 0.0:
         raise ValueError("full_ground_bytes_per_pixel must exceed full_sky_bytes_per_pixel")
+    bytes_per_pixel = num_bytes / float(image_width * image_height)
     sky_fraction = (full_ground_bytes_per_pixel - bytes_per_pixel) / span
     return float(min(1.0, max(0.0, sky_fraction)))

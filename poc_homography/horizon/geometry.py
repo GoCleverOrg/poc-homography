@@ -91,8 +91,12 @@ def predict_horizon(
     row = intr.cy + intr.focal_length_px * math.tan(math.radians(elevation_deg))
 
     height = int(image_height)
-    if row < 0.0:
-        # Horizon above the top edge → entire frame is below the horizon.
+    if row <= 0.0:
+        # Horizon at or above the top edge → entire frame is below the horizon.
+        # ``<= 0`` (not ``< 0``) keeps this consistent with
+        # ``all_ground_tilt_threshold``, whose contract is "reported_tilt >=
+        # threshold ⇒ all ground" and which yields row == 0 exactly at the
+        # threshold.
         return HorizonEstimate(
             placement=FramePlacement.ABOVE_FRAME,
             image_height=height,
