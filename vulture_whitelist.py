@@ -349,3 +349,7 @@ _.detail  # ValidationOutcome human-readable note; injectable-hook contract (poc
 
 # -- Phase-0 horizon calibration C3 (#275); step-1 entry point consumed by C5/CLI + tests --
 calibrate_horizon_envelope  # Phase-0 calibration step; invoked by operator/CLI + tests (poc_homography/survey/calibration.py)
+
+# -- Clean-plate capture domain (#276); PoseCatalog public API consumed by C2/C4 + tests --
+_.with_pose  # PoseCatalog immutable pose-record builder (poc_homography/domain/entities/survey/pose_catalog.py)
+_.from_poses  # PoseCatalog deterministic builder from a pose sequence (poc_homography/domain/entities/survey/pose_catalog.py)
