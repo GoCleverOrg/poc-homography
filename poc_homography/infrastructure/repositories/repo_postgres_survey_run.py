@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import select
+
+from poc_homography.domain.entities.survey.pose_catalog import PoseCatalog
 from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
 from poc_homography.infrastructure.models.survey_run import SurveyRunModel
 from poc_homography.infrastructure.repositories.base import RepoPostgresSession
@@ -124,3 +127,50 @@ class RepoPostgresSurveyRun(RepoPostgresSession):
         if row is None or "plan_config" not in row.data:  # type: ignore[attr-defined]
             raise KeyError(run_id)
         return SurveyPlanConfig.from_dict(row.data["plan_config"])  # type: ignore[attr-defined]
+
+    def save_pose_catalog(self, run_id: str, catalog: PoseCatalog) -> bool:
+        """Persist ``catalog`` under the ``pose_catalog`` JSONB key of ``run_id``.
+
+        The run row must already exist; returns ``False`` if it does not.
+        Returns ``True`` on success, ``False`` (logged) on any failure.
+        """
+        try:
+            row = self._session.get(self._model_cls, run_id)
+            if row is None:
+                return False
+            row.data = {**row.data, "pose_catalog": catalog.to_dict()}  # type: ignore[attr-defined]
+            self._session.flush()
+            return True
+        except Exception:
+            logger.exception("Failed to save pose catalog for run %s", run_id)
+            return False
+
+    def load_pose_catalog(self, run_id: str) -> PoseCatalog:
+        """Load the ``pose_catalog`` JSONB payload for ``run_id``.
+
+        Raises:
+            KeyError: If the run row is missing or has no ``pose_catalog`` key.
+        """
+        row = self._session.get(self._model_cls, run_id)
+        if row is None or "pose_catalog" not in row.data:  # type: ignore[attr-defined]
+            raise KeyError(run_id)
+        return PoseCatalog.from_dict(row.data["pose_catalog"])  # type: ignore[attr-defined]
+
+    def get_runs_by_camera_and_pose(self, camera_id: str, pose_id: str) -> list[Any]:
+        """Return every run for ``camera_id`` whose pose catalog holds ``pose_id``.
+
+        The ``camera_id`` filter runs in SQL over the indexed column; the
+        ``pose_id`` membership is checked in Python against each row's
+        ``data["pose_catalog"]["entries"]``. Runs without a pose catalog are
+        skipped. Returns rebuilt :class:`SurveyRun` aggregates.
+        """
+        stmt = select(self._model_cls).where(
+            self._model_cls.camera_id == camera_id  # type: ignore[attr-defined]
+        )
+        rows = self._session.execute(stmt).scalars().all()
+        matches: list[Any] = []
+        for row in rows:
+            entries = row.data.get("pose_catalog", {}).get("entries", {})  # type: ignore[attr-defined]
+            if pose_id in entries:
+                matches.append(self._row_to_entity(row))
+        return matches

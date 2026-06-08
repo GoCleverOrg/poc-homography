@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from poc_homography.domain.entities.survey.frame_record import FrameRecord
+    from poc_homography.domain.entities.survey.pose_catalog import PoseCatalog
+    from poc_homography.domain.entities.survey.survey_run import SurveyRun
     from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
 
 
@@ -36,4 +38,25 @@ class SurveyRunRepository(Protocol):
 
     def get_frames_by_run(self, run_id: str) -> list[FrameRecord]:
         """Return every frame captured in ``run_id``."""
+        ...
+
+    def save_pose_catalog(self, run_id: str, catalog: PoseCatalog) -> bool:
+        """Persist ``catalog`` for ``run_id``; return ``True`` on success."""
+        ...
+
+    def load_pose_catalog(self, run_id: str) -> PoseCatalog:
+        """Load the persisted pose catalog for ``run_id``.
+
+        Raises:
+            KeyError: If no pose catalog is stored for ``run_id``.
+        """
+        ...
+
+    def get_runs_by_camera_and_pose(self, camera_id: str, pose_id: str) -> list[SurveyRun]:
+        """Return every run for ``camera_id`` whose pose catalog holds ``pose_id``.
+
+        Because pose ids are deterministic across runs, multiple multi-visit
+        runs for one camera that visited the same physical pose are returned
+        together — the ``(camera_id, pose_id)`` grouping linkage.
+        """
         ...
