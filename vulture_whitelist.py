@@ -361,3 +361,5 @@ _.from_plan_config  # SurveyPlanConfig->SurveyPlan burst-count bridge; consumed 
 _.world_to_cell  # GroundRaster public world->cell mapping; exported API (poc_homography/cleanplate/raster.py)
 _.cell_to_world  # GroundRaster public cell->world mapping; exported API (poc_homography/cleanplate/raster.py)
 time_bucket  # CleanPlateFrame exposure metadata field; consumed by photometric/loader (poc_homography/cleanplate/reconstruct.py)
+_.from_survey_run  # CleanPlateDataset survey-run loader entry point; consumed by tests + future CLI (poc_homography/cleanplate/dataset.py)
+_.frames_for  # CleanPlateDataset per-group frame materialiser; consumed by tests + reconstruct_clean_plate caller (poc_homography/cleanplate/dataset.py)
