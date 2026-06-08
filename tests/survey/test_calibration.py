@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import io
+import math
 
 import pytest
 from PIL import Image
 
+from poc_homography.camera.intrinsics import compute_intrinsics
 from poc_homography.domain.enums.camera_spec import CameraSpec
 from poc_homography.domain.vo.ptz_state import PTZState
 from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
@@ -14,7 +16,8 @@ from poc_homography.horizon.geometry import (
     DEFAULT_TILT_OFFSET_DEG,
     all_ground_tilt_threshold,
 )
-from poc_homography.survey.calibration import calibrate_horizon_envelope
+from poc_homography.horizon.models import FramePlacement, HorizonEstimate
+from poc_homography.survey.calibration import _bound_from_estimate, calibrate_horizon_envelope
 from poc_homography.types import Degrees, Unitless
 
 SPEC = CameraSpec.HIKVISION_DS_2DF8425IX
@@ -101,3 +104,87 @@ class TestCalibrateHorizonEnvelope:
     def test_pan_reduced_modulo_360(self) -> None:
         env = calibrate_horizon_envelope(_EchoCamera(), pans=[370.0])
         assert set(env.bounds) == {10.0}
+
+    def test_aliasing_azimuths_raise(self) -> None:
+        # 10.0 and 370.0 both reduce to azimuth 10.0 → silent overwrite guarded.
+        with pytest.raises(ValueError, match="duplicate calibration azimuth"):
+            calibrate_horizon_envelope(_EchoCamera(), pans=[10.0, 370.0])
+
+
+class TestBoundFromEstimate:
+    def test_off_center_boundary_is_exact_top_edge_tilt(self) -> None:
+        # The derived bound must place an off-centre detected boundary exactly at
+        # the top edge (row 0), not approximately — exercises the closed form
+        # away from frame centre where a small-angle approximation would drift.
+        zoom = 1.0
+        offset = float(DEFAULT_TILT_OFFSET_DEG)
+        intr = compute_intrinsics(
+            Unitless(zoom),
+            SPEC.image_width,
+            SPEC.image_height,
+            SPEC.sensor_width,
+            SPEC.base_focal_length,
+        )
+        f_px = float(intr.focal_length_px)
+        cy = float(intr.cy)
+        reported_tilt = offset  # aimed at the horizon
+        row = cy - 200.0  # boundary well above centre (terrain/structure)
+        estimate = HorizonEstimate(
+            placement=FramePlacement.IN_FRAME,
+            image_height=int(SPEC.image_height),
+            row=row,
+        )
+
+        bound = _bound_from_estimate(estimate, reported_tilt, zoom, SPEC, offset)
+
+        # The same world boundary's elevation, then its row at the derived tilt.
+        e_feat = (offset - reported_tilt) - math.degrees(math.atan((row - cy) / f_px))
+        row_at_bound = cy + f_px * math.tan(math.radians((offset - bound) - e_feat))
+        assert row_at_bound == pytest.approx(0.0, abs=1e-6)
+
+    def test_centered_boundary_matches_flat_threshold(self) -> None:
+        zoom = 1.0
+        offset = float(DEFAULT_TILT_OFFSET_DEG)
+        intr = compute_intrinsics(
+            Unitless(zoom),
+            SPEC.image_width,
+            SPEC.image_height,
+            SPEC.sensor_width,
+            SPEC.base_focal_length,
+        )
+        cy = float(intr.cy)
+        # Boundary on the flat geometric horizon at the aimed tilt → row == cy.
+        estimate = HorizonEstimate(
+            placement=FramePlacement.IN_FRAME, image_height=int(SPEC.image_height), row=cy
+        )
+        bound = _bound_from_estimate(estimate, offset, zoom, SPEC, offset)
+        flat = float(
+            all_ground_tilt_threshold(
+                Unitless(zoom),
+                SPEC.image_width,
+                SPEC.image_height,
+                SPEC.sensor_width,
+                SPEC.base_focal_length,
+                DEFAULT_TILT_OFFSET_DEG,
+            )
+        )
+        assert bound == pytest.approx(flat, abs=1e-9)
+
+    def test_not_in_frame_falls_back_to_flat_threshold(self) -> None:
+        zoom = 1.0
+        offset = float(DEFAULT_TILT_OFFSET_DEG)
+        estimate = HorizonEstimate(
+            placement=FramePlacement.ABOVE_FRAME, image_height=int(SPEC.image_height), row=None
+        )
+        bound = _bound_from_estimate(estimate, offset, zoom, SPEC, offset)
+        flat = float(
+            all_ground_tilt_threshold(
+                Unitless(zoom),
+                SPEC.image_width,
+                SPEC.image_height,
+                SPEC.sensor_width,
+                SPEC.base_focal_length,
+                DEFAULT_TILT_OFFSET_DEG,
+            )
+        )
+        assert bound == pytest.approx(flat, abs=1e-9)

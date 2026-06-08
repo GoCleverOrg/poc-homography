@@ -92,6 +92,12 @@ def calibrate_horizon_envelope(
 
     bounds: dict[float, float] = {}
     for pan in pans:
+        azimuth = pan % 360.0
+        if azimuth in bounds:
+            raise ValueError(
+                f"duplicate calibration azimuth {azimuth} (pan {pan} aliases an "
+                f"earlier pan modulo 360); pass distinct azimuths"
+            )
         reported = camera.move_absolute(pan=pan, tilt=aim_tilt, zoom=zoom)
         camera.wait_for_stabilization(timeout_s=settle_timeout_s)
         reported_tilt = float(reported.tilt_deg)
@@ -108,9 +114,7 @@ def calibrate_horizon_envelope(
             base_focal_length_mm=spec.base_focal_length,
             tilt_offset_deg=Degrees(tilt_offset_deg),
         )
-        bounds[pan % 360.0] = _bound_from_estimate(
-            estimate, reported_tilt, zoom, spec, tilt_offset_deg
-        )
+        bounds[azimuth] = _bound_from_estimate(estimate, reported_tilt, zoom, spec, tilt_offset_deg)
 
     vfov = float(
         vertical_fov_degrees(
@@ -138,18 +142,19 @@ def _bound_from_estimate(
 ) -> float:
     """Derive the max-up useful tilt from one per-azimuth horizon estimate.
 
-    With the geometric horizon row at the capture tilt being
-    ``H(t0) = cy + f*tan(tilt_offset - t0)``, a detected boundary at row ``r``
-    sits ``d = r - H(t0)`` pixels off the flat horizon (terrain/structures push
-    the boundary above it, so ``d < 0``). The useful bound is the reported tilt
-    that brings that same boundary to the top edge (row 0)::
+    A feature at true elevation ``e`` projects to row
+    ``cy + f*tan((tilt_offset - t) - e)`` at reported tilt ``t``. Inverting that
+    for the detected boundary ``(t0, r)`` and solving for the tilt ``t_b`` that
+    brings the same boundary to the top edge (row 0) gives the exact closed
+    form (the ``e`` and ``t0`` terms cancel)::
 
-        tilt_bound = tilt_offset + degrees(atan((cy + d) / f))
+        t_b = t0 + degrees(atan((r - cy) / f)) + degrees(atan(cy / f))
 
-    which reduces to :func:`all_ground_tilt_threshold` (``tilt_offset + VFOV/2``)
-    when ``d == 0``. When the boundary is not in frame (all-ground or all-sky
-    detections give no row), the flat geometric threshold is used as a safe
-    fallback.
+    This is exact for any boundary row — not a small-angle approximation — and
+    reduces to :func:`all_ground_tilt_threshold` (``tilt_offset + VFOV/2``) when
+    the boundary coincides with the flat geometric horizon. When the boundary is
+    not in frame (all-ground or all-sky detections give no row), the flat
+    geometric threshold is used as a safe fallback.
     """
     if estimate.placement is not FramePlacement.IN_FRAME or estimate.row is None:
         return float(
@@ -172,12 +177,20 @@ def _bound_from_estimate(
     )
     f_px = float(intr.focal_length_px)
     cy = float(intr.cy)
-    horizon_row = cy + f_px * math.tan(math.radians(tilt_offset_deg - reported_tilt))
-    delta = float(estimate.row) - horizon_row
-    return tilt_offset_deg + math.degrees(math.atan((cy + delta) / f_px))
+    return (
+        reported_tilt
+        + math.degrees(math.atan((float(estimate.row) - cy) / f_px))
+        + math.degrees(math.atan(cy / f_px))
+    )
 
 
 def _decode_snapshot(data: bytes) -> np.ndarray:
-    """Decode JPEG snapshot bytes to an RGB ``numpy`` array for CV refinement."""
+    """Decode JPEG snapshot bytes to a **BGR** ``numpy`` array for CV refinement.
+
+    The horizon CV refiner (and the rest of the codebase, via ``cv2.imread`` /
+    ``cv2.VideoCapture``) assumes BGR channel order, so the PIL-decoded RGB
+    frame is reversed to BGR (contiguous) before hand-off.
+    """
     with Image.open(io.BytesIO(data)) as img:
-        return np.asarray(img.convert("RGB"))
+        rgb = np.asarray(img.convert("RGB"))
+    return np.ascontiguousarray(rgb[:, :, ::-1])
