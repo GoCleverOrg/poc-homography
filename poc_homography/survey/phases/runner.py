@@ -29,9 +29,22 @@ if TYPE_CHECKING:
 
     from poc_homography.domain.entities.survey.frame_record import CommandedState
     from poc_homography.domain.protocols.camera_device import CameraDevice
+    from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
     from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
     from poc_homography.survey.phases.common import PhaseResult, PhaseSink
     from poc_homography.survey.planner.poses import Pose
+
+# Clean-plate default snapshot-burst frame count (#276): a stable clean plate
+# needs at least two frames per pose; five is a sensible default. Phases absent
+# from a plan-config's ``burst_frame_count`` fall back to this.
+DEFAULT_BURST_FRAME_COUNT = 5
+
+# Minimum frames per pose for a usable clean-plate burst (#276).
+MIN_BURST_FRAME_COUNT = 2
+
+# Pose-based phases that capture a snapshot burst per pose (phase 8 uses video
+# bursts; phase 1 is inventory and captures no frames).
+_POSE_BURST_PHASES = (2, 3, 4, 5, 6, 7, 9)
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,11 @@ class SurveyPlan:
     """
 
     burst_count: int = 1
+
+    # Optional per-phase override of ``burst_count`` (phase number -> frames),
+    # sourced from :class:`SurveyPlanConfig` via :meth:`from_plan_config`. A
+    # phase absent here falls back to :attr:`burst_count`.
+    phase_burst_counts: dict[int, int] = field(default_factory=dict)
 
     # Phase 2 — PTZ characterization.
     ptz_pan_range: tuple[float, float] = (0.0, 20.0)
@@ -113,6 +131,46 @@ class SurveyPlan:
     # skips sky tiles above the per-azimuth bound; ``None`` reproduces the
     # pre-horizon behaviour exactly.
     tilt_envelope: TiltEnvelope | None = None
+
+    def burst_for(self, phase_number: int) -> int:
+        """Return the per-pose snapshot-burst frame count for ``phase_number``.
+
+        Falls back to :attr:`burst_count` when the phase is not in
+        :attr:`phase_burst_counts`.
+        """
+        return self.phase_burst_counts.get(phase_number, self.burst_count)
+
+    @classmethod
+    def from_plan_config(
+        cls,
+        config: SurveyPlanConfig,
+        *,
+        default_burst_frame_count: int = DEFAULT_BURST_FRAME_COUNT,
+    ) -> SurveyPlan:
+        """Build a :class:`SurveyPlan` whose burst counts come from ``config``.
+
+        Bridges the camera-free :class:`SurveyPlanConfig` sidecar onto the
+        runner's in-memory plan. Each pose-based phase's per-pose snapshot-burst
+        frame count is taken from ``config.burst_frame_count[phase]`` (falling
+        back to ``default_burst_frame_count``) and clamped to at least
+        :data:`MIN_BURST_FRAME_COUNT`, so every clean-plate capture emits two or
+        more frames per pose. Only the burst counts are bridged here; the other
+        plan knobs keep their DoD-satisfying defaults.
+
+        Args:
+            config: The reproducible plan-config sidecar.
+            default_burst_frame_count: Burst frame count for pose-based phases
+                absent from ``config.burst_frame_count``.
+
+        Returns:
+            A :class:`SurveyPlan` with per-phase burst counts populated.
+        """
+        default = max(MIN_BURST_FRAME_COUNT, int(default_burst_frame_count))
+        phase_burst_counts = {
+            phase: max(MIN_BURST_FRAME_COUNT, int(config.burst_frame_count.get(phase, default)))
+            for phase in _POSE_BURST_PHASES
+        }
+        return cls(burst_count=default, phase_burst_counts=phase_burst_counts)
 
 
 @dataclass(frozen=True)
@@ -184,7 +242,7 @@ def execute_survey(
             fixed_pan=plan.ptz_fixed_pan,
             fixed_zoom=plan.ptz_fixed_zoom,
             repeat_count=plan.ptz_repeat_count,
-            burst_count=plan.burst_count,
+            burst_count=plan.burst_for(2),
         )
     )
 
@@ -199,7 +257,7 @@ def execute_survey(
             zoom_step=plan.zoom_step,
             fixed_pan=plan.zoom_fixed_pan,
             fixed_tilt=plan.zoom_fixed_tilt,
-            burst_count=plan.burst_count,
+            burst_count=plan.burst_for(3),
         )
     )
 
@@ -215,7 +273,7 @@ def execute_survey(
         zoom=plan.nadir_zoom,
         overlap_fraction=plan.nadir_overlap_fraction,
         region_id=plan.nadir_region_id,
-        burst_count=plan.burst_count,
+        burst_count=plan.burst_for(4),
     )
     results.append(nadir)
     captured_4_to_7.extend(nadir.commanded_states)
@@ -226,7 +284,7 @@ def execute_survey(
         run_id=run_id,
         camera_id=camera_id,
         output_dir=_phase_dir(base_output_dir, SurveyPhase.MAIN_SURVEY),
-        burst_count=plan.burst_count,
+        burst_count=plan.burst_for(5),
     )
     results.append(main)
     captured_4_to_7.extend(main.commanded_states)
@@ -238,7 +296,7 @@ def execute_survey(
         output_dir=_phase_dir(base_output_dir, SurveyPhase.CROSS_ZOOM),
         anchors=plan.cross_zoom_anchors,
         zoom_levels=plan.cross_zoom_levels,
-        burst_count=plan.burst_count,
+        burst_count=plan.burst_for(6),
     )
     results.append(cross)
     captured_4_to_7.extend(cross.commanded_states)
@@ -252,7 +310,7 @@ def execute_survey(
         target_tilt=plan.repeat_target_tilt,
         target_zoom=plan.repeat_target_zoom,
         approach_deltas=plan.repeat_approach_deltas,
-        burst_count=plan.burst_count,
+        burst_count=plan.burst_for(7),
     )
     results.append(repeat)
     captured_4_to_7.extend(repeat.commanded_states)
@@ -279,7 +337,7 @@ def execute_survey(
             run_id=run_id,
             camera_id=camera_id,
             output_dir=_phase_dir(base_output_dir, SurveyPhase.VALIDATION),
-            burst_count=plan.burst_count,
+            burst_count=plan.burst_for(9),
         )
     )
 

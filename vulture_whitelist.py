@@ -353,3 +353,4 @@ calibrate_horizon_envelope  # Phase-0 calibration step; invoked by operator/CLI 
 # -- Clean-plate capture domain (#276); PoseCatalog public API consumed by C2/C4 + tests --
 _.with_pose  # PoseCatalog immutable pose-record builder (poc_homography/domain/entities/survey/pose_catalog.py)
 _.from_poses  # PoseCatalog deterministic builder from a pose sequence (poc_homography/domain/entities/survey/pose_catalog.py)
+_.from_plan_config  # SurveyPlanConfig->SurveyPlan burst-count bridge; consumed by C5 + tests (poc_homography/survey/phases/runner.py)

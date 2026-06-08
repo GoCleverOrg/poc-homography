@@ -47,13 +47,20 @@ from typing import TYPE_CHECKING, Any
 import cv2
 from PIL import Image
 
+from poc_homography.camera.intrinsics import compute_intrinsics
+from poc_homography.camera_config import (
+    DEFAULT_BASE_FOCAL_LENGTH_MM,
+    DEFAULT_SENSOR_WIDTH_MM,
+)
 from poc_homography.domain.entities.survey.frame_record import (
     CameraIdentity,
     CaptureIdentity,
     CommandedState,
     FrameRecord,
+    FullOptics,
     ImageData,
     ImagePipelineState,
+    Intrinsics,
     MovementContext,
     PanDirection,
     ReportedState,
@@ -64,7 +71,7 @@ from poc_homography.domain.entities.survey.video_burst_record import (
     FrameRef,
     VideoBurstRecord,
 )
-from poc_homography.types import FPS, Degrees, Pixels, Seconds, Unitless
+from poc_homography.types import FPS, Degrees, Millimeters, Pixels, Seconds, Unitless
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -149,6 +156,7 @@ class _BurstScaffold:
     movement: MovementContext
     pipeline: ImagePipelineState
     primary_profile: StreamProfile
+    optics: ImageOptics
     timestamp_before_move: datetime
     timestamp_after_move: datetime
 
@@ -225,6 +233,8 @@ class SurveyCaptureEngine:
         camera: CameraDevice,
         *,
         settle_timeout_s: float = 5.0,
+        sensor_width_mm: float = DEFAULT_SENSOR_WIDTH_MM,
+        base_focal_length_mm: float = DEFAULT_BASE_FOCAL_LENGTH_MM,
         clock: Callable[[], datetime] | None = None,
         uuid_factory: Callable[[], str] | None = None,
     ) -> None:
@@ -233,6 +243,10 @@ class SurveyCaptureEngine:
         Args:
             camera: The device to drive, satisfying :class:`CameraDevice`.
             settle_timeout_s: Max seconds to wait for PTZ stabilisation.
+            sensor_width_mm: Sensor width used to compute per-frame intrinsics;
+                defaults to the DS-2DF8425IX constant.
+            base_focal_length_mm: Base (1x-zoom) focal length used to compute
+                per-frame intrinsics; defaults to the DS-2DF8425IX constant.
             clock: Returns timezone-aware UTC ``datetime``; injectable for
                 deterministic tests. Defaults to :func:`_utcnow`.
             uuid_factory: Returns a fresh id string for ``burst_id``;
@@ -241,6 +255,8 @@ class SurveyCaptureEngine:
         """
         self._camera = camera
         self._settle_timeout_s = settle_timeout_s
+        self._sensor_width_mm = Millimeters(float(sensor_width_mm))
+        self._base_focal_length_mm = Millimeters(float(base_focal_length_mm))
         self._clock = clock or _utcnow
         self._new_id = uuid_factory or _new_uuid
 
@@ -497,6 +513,7 @@ class SurveyCaptureEngine:
             movement=movement,
             pipeline=_build_pipeline_state(primary, optics),
             primary_profile=primary,
+            optics=optics,
             timestamp_before_move=move.timestamp_before_move,
             timestamp_after_move=move.timestamp_after_move,
         )
@@ -566,6 +583,12 @@ class SurveyCaptureEngine:
             timestamp_after_move=scaffold.timestamp_after_move,
             timestamp_at_capture=timestamp_at_capture,
         )
+        intrinsics = self._build_intrinsics(commanded, image_data)
+        # ``ground_homography`` and ``floor_mask_reference`` are deliberately
+        # left ``None`` at survey-capture time: the ground homography needs
+        # deployment-specific extrinsics (camera height, pixels-per-meter, map
+        # origin) a bare survey does not possess, and the floor mask is filled
+        # by an external masker. Both are populated downstream, not here.
         return FrameRecord(
             camera=scaffold.camera_identity,
             capture=capture,
@@ -574,6 +597,34 @@ class SurveyCaptureEngine:
             movement=scaffold.movement,
             pipeline=scaffold.pipeline,
             image_data=image_data,
+            intrinsics=intrinsics,
+            full_optics=_build_full_optics(scaffold.optics),
+        )
+
+    def _build_intrinsics(
+        self,
+        commanded: CommandedState,
+        image_data: ImageData,
+    ) -> Intrinsics:
+        """Compute per-frame intrinsics from commanded zoom + frame dimensions.
+
+        Stores both the recompute inputs and the cached ``k_matrix`` (the matrix
+        is never load-bearing — it can be recomputed from the inputs).
+        """
+        computed = compute_intrinsics(
+            commanded.commanded_zoom,
+            image_data.width,
+            image_data.height,
+            self._sensor_width_mm,
+            self._base_focal_length_mm,
+        )
+        return Intrinsics(
+            zoom=commanded.commanded_zoom,
+            image_width=image_data.width,
+            image_height=image_data.height,
+            sensor_width_mm=self._sensor_width_mm,
+            base_focal_length_mm=self._base_focal_length_mm,
+            k_matrix=[[float(value) for value in row] for row in computed.K.tolist()],
         )
 
 
@@ -610,6 +661,23 @@ def _build_reported_state(reported: PTZState) -> ReportedState:
         reported_focal_length_mm=None,
         reported_focus=int(reported.focus) if reported.focus is not None else None,
         ptz_settled=True,
+    )
+
+
+def _build_full_optics(optics: ImageOptics) -> FullOptics:
+    """Map the per-burst :class:`ImageOptics` onto a per-frame :class:`FullOptics`.
+
+    Only the fields the #256 adapter's ``ImageOptics`` surfaces are mapped
+    (exposure type, iris level, white-balance style, focus limit); the optics
+    fields with no adapter source (``shutter``, ``gain``) are left ``None``.
+    """
+    return FullOptics(
+        exposure_type=optics.exposure.exposure_type or None,
+        shutter=None,
+        gain=None,
+        iris=optics.iris.level,
+        white_balance=optics.white_balance.style or None,
+        focus=optics.focus.focus_limited,
     )
 
 
