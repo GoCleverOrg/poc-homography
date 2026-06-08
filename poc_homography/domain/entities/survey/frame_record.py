@@ -23,11 +23,15 @@ from poc_homography.domain.enums.survey_phase import SurveyPhase
 from poc_homography.types import (
     FPS,
     Degrees,
+    Meters,
     Millimeters,
     Pixels,
     Seconds,
     Unitless,
 )
+
+Matrix3x3List = list[list[float]]
+"""A 3x3 matrix serialised as a nested list of floats (row-major)."""
 
 PanDirection = Literal["cw", "ccw", "none"]
 TiltDirection = Literal["up", "down", "none"]
@@ -344,6 +348,173 @@ class ImageData:
         )
 
 
+def _matrix_from_list(data: Any) -> Matrix3x3List | None:
+    """Coerce a serialised 3x3 nested list into a list-of-lists of floats."""
+    if data is None:
+        return None
+    return [[float(value) for value in row] for row in data]
+
+
+@dataclass(frozen=True)
+class Intrinsics:
+    """Intrinsic matrix K plus the parameters to recompute it deterministically.
+
+    ``k_matrix`` is an optional cached 3x3 matrix (row-major nested list). When
+    absent it can be recomputed from ``zoom``, the image dimensions, the sensor
+    width and the base focal length, so the matrix is never load-bearing.
+    """
+
+    zoom: Unitless
+    image_width: Pixels
+    image_height: Pixels
+    sensor_width_mm: Millimeters
+    base_focal_length_mm: Millimeters
+    k_matrix: Matrix3x3List | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "zoom": float(self.zoom),
+            "image_width": int(self.image_width),
+            "image_height": int(self.image_height),
+            "sensor_width_mm": float(self.sensor_width_mm),
+            "base_focal_length_mm": float(self.base_focal_length_mm),
+            "k_matrix": self.k_matrix,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Intrinsics:
+        """Create :class:`Intrinsics` from a dictionary."""
+        return cls(
+            zoom=Unitless(float(data["zoom"])),
+            image_width=Pixels(int(data["image_width"])),
+            image_height=Pixels(int(data["image_height"])),
+            sensor_width_mm=Millimeters(float(data["sensor_width_mm"])),
+            base_focal_length_mm=Millimeters(float(data["base_focal_length_mm"])),
+            k_matrix=_matrix_from_list(data.get("k_matrix")),
+        )
+
+
+@dataclass(frozen=True)
+class GroundHomography:
+    """Extrinsic inputs that make the ground homography H recomputable.
+
+    Survey stores the geometry (camera height, pan/tilt/roll, ground scale and
+    the map origin) plus an OPTIONAL cached ``h_matrix`` (row-major nested
+    list). The matrix is never load-bearing — it can be recomputed from inputs.
+    """
+
+    camera_height_m: Meters
+    pan_deg: Degrees
+    tilt_deg: Degrees
+    roll_deg: Degrees
+    pixels_per_meter: float
+    map_origin: tuple[float, float]
+    h_matrix: Matrix3x3List | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "camera_height_m": float(self.camera_height_m),
+            "pan_deg": float(self.pan_deg),
+            "tilt_deg": float(self.tilt_deg),
+            "roll_deg": float(self.roll_deg),
+            "pixels_per_meter": float(self.pixels_per_meter),
+            "map_origin": [float(self.map_origin[0]), float(self.map_origin[1])],
+            "h_matrix": self.h_matrix,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GroundHomography:
+        """Create :class:`GroundHomography` from a dictionary."""
+        origin = data["map_origin"]
+        return cls(
+            camera_height_m=Meters(float(data["camera_height_m"])),
+            pan_deg=Degrees(float(data["pan_deg"])),
+            tilt_deg=Degrees(float(data["tilt_deg"])),
+            roll_deg=Degrees(float(data["roll_deg"])),
+            pixels_per_meter=float(data["pixels_per_meter"]),
+            map_origin=(float(origin[0]), float(origin[1])),
+            h_matrix=_matrix_from_list(data.get("h_matrix")),
+        )
+
+
+@dataclass(frozen=True)
+class FullOptics:
+    """Per-frame optics snapshot (exposure, gain, iris, white balance, focus).
+
+    Field naming aligns with
+    :mod:`poc_homography.domain.vo.image_optics` (``exposure_type``,
+    ``white_balance`` style, iris level, focus). All fields are optional so a
+    frame captured without an optics probe round-trips with ``None`` values.
+    """
+
+    exposure_type: str | None = None
+    shutter: str | None = None
+    gain: float | None = None
+    iris: int | None = None
+    white_balance: str | None = None
+    focus: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "exposure_type": self.exposure_type,
+            "shutter": self.shutter,
+            "gain": self.gain,
+            "iris": self.iris,
+            "white_balance": self.white_balance,
+            "focus": self.focus,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FullOptics:
+        """Create :class:`FullOptics` from a dictionary."""
+        exposure_type = data.get("exposure_type")
+        shutter = data.get("shutter")
+        gain = data.get("gain")
+        iris = data.get("iris")
+        white_balance = data.get("white_balance")
+        focus = data.get("focus")
+        return cls(
+            exposure_type=str(exposure_type) if exposure_type is not None else None,
+            shutter=str(shutter) if shutter is not None else None,
+            gain=float(gain) if gain is not None else None,
+            iris=int(iris) if iris is not None else None,
+            white_balance=str(white_balance) if white_balance is not None else None,
+            focus=int(focus) if focus is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class FloorMaskReference:
+    """Reference to an externally-produced floor mask.
+
+    Survey only stores the reference (a path/key the external masker fills) and
+    an optional integrity ``checksum`` — never pixel data.
+    """
+
+    mask_ref: str | None = None
+    checksum: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "mask_ref": self.mask_ref,
+            "checksum": self.checksum,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FloorMaskReference:
+        """Create :class:`FloorMaskReference` from a dictionary."""
+        mask_ref = data.get("mask_ref")
+        checksum = data.get("checksum")
+        return cls(
+            mask_ref=str(mask_ref) if mask_ref is not None else None,
+            checksum=str(checksum) if checksum is not None else None,
+        )
+
+
 @dataclass(frozen=True)
 class SurveyContext:
     """Planner-derived survey context attached to a frame by the phase layer.
@@ -360,6 +531,7 @@ class SurveyContext:
     region_id: str | None = None
     approach_direction: str | None = None
     sequence_index: int | None = None
+    pose_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -367,6 +539,7 @@ class SurveyContext:
             "region_id": self.region_id,
             "approach_direction": self.approach_direction,
             "sequence_index": self.sequence_index,
+            "pose_id": self.pose_id,
         }
 
     @classmethod
@@ -375,12 +548,14 @@ class SurveyContext:
         region_id = data.get("region_id")
         approach_direction = data.get("approach_direction")
         sequence_index = data.get("sequence_index")
+        pose_id = data.get("pose_id")
         return cls(
             region_id=str(region_id) if region_id is not None else None,
             approach_direction=(
                 str(approach_direction) if approach_direction is not None else None
             ),
             sequence_index=int(sequence_index) if sequence_index is not None else None,
+            pose_id=str(pose_id) if pose_id is not None else None,
         )
 
 
@@ -401,6 +576,10 @@ class FrameRecord:
     pipeline: ImagePipelineState
     image_data: ImageData
     survey_context: SurveyContext = field(default_factory=SurveyContext)
+    intrinsics: Intrinsics | None = None
+    ground_homography: GroundHomography | None = None
+    full_optics: FullOptics | None = None
+    floor_mask_reference: FloorMaskReference | None = None
     schema_version: str = field(default=SURVEY_SCHEMA_VERSION)
 
     @property
@@ -428,6 +607,16 @@ class FrameRecord:
             "pipeline": self.pipeline.to_dict(),
             "image_data": self.image_data.to_dict(),
             "survey_context": self.survey_context.to_dict(),
+            "intrinsics": self.intrinsics.to_dict() if self.intrinsics is not None else None,
+            "ground_homography": (
+                self.ground_homography.to_dict() if self.ground_homography is not None else None
+            ),
+            "full_optics": self.full_optics.to_dict() if self.full_optics is not None else None,
+            "floor_mask_reference": (
+                self.floor_mask_reference.to_dict()
+                if self.floor_mask_reference is not None
+                else None
+            ),
         }
 
     @classmethod
@@ -438,6 +627,10 @@ class FrameRecord:
             ValueError: If ``schema_version`` is unrecognised.
         """
         version = check_schema_version(str(data["schema_version"]))
+        intrinsics = data.get("intrinsics")
+        ground_homography = data.get("ground_homography")
+        full_optics = data.get("full_optics")
+        floor_mask_reference = data.get("floor_mask_reference")
         return cls(
             camera=CameraIdentity.from_dict(data["camera"]),
             capture=CaptureIdentity.from_dict(data["capture"]),
@@ -447,5 +640,17 @@ class FrameRecord:
             pipeline=ImagePipelineState.from_dict(data["pipeline"]),
             image_data=ImageData.from_dict(data["image_data"]),
             survey_context=SurveyContext.from_dict(data.get("survey_context") or {}),
+            intrinsics=Intrinsics.from_dict(intrinsics) if intrinsics is not None else None,
+            ground_homography=(
+                GroundHomography.from_dict(ground_homography)
+                if ground_homography is not None
+                else None
+            ),
+            full_optics=FullOptics.from_dict(full_optics) if full_optics is not None else None,
+            floor_mask_reference=(
+                FloorMaskReference.from_dict(floor_mask_reference)
+                if floor_mask_reference is not None
+                else None
+            ),
             schema_version=version,
         )

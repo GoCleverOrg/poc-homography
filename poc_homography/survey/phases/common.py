@@ -18,6 +18,7 @@ from poc_homography.domain.entities.survey.frame_record import (
     SurveyContext,
 )
 from poc_homography.infrastructure.survey.capture_engine import CaptureContext
+from poc_homography.survey.planner.poses import canonical_pose_key
 from poc_homography.types import Degrees, Unitless
 
 if TYPE_CHECKING:
@@ -106,7 +107,10 @@ def capture_pose_sequence(
     :class:`CaptureContext` so the engine can compute per-axis movement
     directions; threading starts fresh (no previous pose) at the first pose so a
     phase's sweep is self-contained and not contaminated by a prior phase. Every
-    frame is tagged with ``phase`` (via the engine) and, when
+    frame is tagged with ``phase`` (via the engine), with a stable
+    ``pose_id`` derived from the pose geometry via
+    :func:`~poc_homography.survey.planner.poses.canonical_pose_key` (so the same
+    physical pose yields the same id across runs), and, when
     ``survey_context_for`` is supplied, enriched with the C3-derived
     :class:`SurveyContext` (region id / approach direction / sequence index).
 
@@ -143,9 +147,27 @@ def capture_pose_sequence(
             burst_count=burst_count,
             output_dir=output_dir,
         )
-        if survey_context_for is not None:
-            survey_context = survey_context_for(pose, index)
-            frames = [replace(frame, survey_context=survey_context) for frame in frames]
+        base_context = survey_context_for(pose, index) if survey_context_for is not None else None
+        survey_context = _stamp_pose_id(base_context, pose)
+        frames = [replace(frame, survey_context=survey_context) for frame in frames]
         records.extend(frames)
         previous = commanded
     return records
+
+
+def _stamp_pose_id(base: SurveyContext | None, pose: Pose) -> SurveyContext:
+    """Return ``base`` (or a fresh context) with a stable ``pose_id`` stamped.
+
+    Honours a planner-assigned ``pose.pose_id`` when present (keeping the
+    planner the single source of truth), otherwise derives the id purely from
+    the pose geometry via
+    :func:`~poc_homography.survey.planner.poses.canonical_pose_key`. Either way
+    the same physical ``(pan, tilt, zoom)`` yields the same id on every run
+    regardless of insertion order, randomness, or time.
+    """
+    pose_id = pose.pose_id or canonical_pose_key(
+        float(pose.pan), float(pose.tilt), float(pose.zoom)
+    )
+    if base is None:
+        return SurveyContext(pose_id=pose_id)
+    return replace(base, pose_id=pose_id)

@@ -12,30 +12,45 @@ constant can be imported by those submodules without a circular import.
 
 from __future__ import annotations
 
-SURVEY_SCHEMA_VERSION: str = "1.0"
+SURVEY_SCHEMA_VERSION: str = "1.1"
 """Current survey schema version, stamped on FrameRecord and SurveyRun."""
+
+SUPPORTED_SURVEY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"1.0", "1.1"})
+"""All schema versions this code can load.
+
+``"1.0"`` records pre-date the #276 clean-plate additive fields; they load with
+the new optional fields defaulting to ``None``. ``"1.1"`` is the current
+version stamped on freshly serialised records.
+"""
 
 
 def check_schema_version(version: str) -> str:
-    """Validate a serialised ``schema_version`` against the current constant.
+    """Validate a serialised ``schema_version`` against the supported set.
 
     Args:
         version: The ``schema_version`` value read from a serialised dict.
 
     Returns:
-        The validated version string (always equal to
-        :data:`SURVEY_SCHEMA_VERSION`).
+        The validated version string (one of
+        :data:`SUPPORTED_SURVEY_SCHEMA_VERSIONS`). The string is returned
+        unchanged so callers may stamp the loaded record with its original
+        version.
 
     Raises:
-        ValueError: If ``version`` does not match the current schema version,
+        ValueError: If ``version`` is not a known/compatible schema version,
             signalling that a migration hook is required before the record can
             be loaded.
     """
-    if version != SURVEY_SCHEMA_VERSION:
+    if version not in SUPPORTED_SURVEY_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_SURVEY_SCHEMA_VERSIONS))
         raise ValueError(
-            f"Unrecognised survey schema_version {version!r}; expected {SURVEY_SCHEMA_VERSION!r}"
+            f"Unrecognised survey schema_version {version!r}; supported versions: {supported}"
         )
     return version
 
 
-__all__ = ["SURVEY_SCHEMA_VERSION", "check_schema_version"]
+__all__ = [
+    "SUPPORTED_SURVEY_SCHEMA_VERSIONS",
+    "SURVEY_SCHEMA_VERSION",
+    "check_schema_version",
+]

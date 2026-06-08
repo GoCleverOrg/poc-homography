@@ -9,12 +9,18 @@ from poc_homography.domain.entities.survey.frame_record import (
     CameraIdentity,
     CaptureIdentity,
     CommandedState,
+    FloorMaskReference,
     FrameRecord,
+    FullOptics,
+    GroundHomography,
     ImageData,
     ImagePipelineState,
+    Intrinsics,
     MovementContext,
     ReportedState,
+    SurveyContext,
 )
+from poc_homography.domain.entities.survey.pose_catalog import PoseCatalog
 from poc_homography.domain.entities.survey.survey_run import SurveyRun
 from poc_homography.domain.entities.survey.video_burst_record import (
     FrameRef,
@@ -22,9 +28,11 @@ from poc_homography.domain.entities.survey.video_burst_record import (
 )
 from poc_homography.domain.enums.survey_phase import SurveyPhase
 from poc_homography.domain.enums.survey_run_status import SurveyRunStatus
+from poc_homography.survey.planner.poses import Pose
 from poc_homography.types import (
     FPS,
     Degrees,
+    Meters,
     Millimeters,
     Pixels,
     Seconds,
@@ -148,6 +156,48 @@ def make_image_data(image_path: str = "frames/cap-0001.jpg") -> ImageData:
     )
 
 
+def make_intrinsics() -> Intrinsics:
+    """Build an :class:`Intrinsics` with a cached K matrix."""
+    return Intrinsics(
+        zoom=Unitless(4.0),
+        image_width=Pixels(2560),
+        image_height=Pixels(1440),
+        sensor_width_mm=Millimeters(6.78),
+        base_focal_length_mm=Millimeters(5.9),
+        k_matrix=[[2200.0, 0.0, 1280.0], [0.0, 2200.0, 720.0], [0.0, 0.0, 1.0]],
+    )
+
+
+def make_ground_homography() -> GroundHomography:
+    """Build a :class:`GroundHomography` with a cached H matrix."""
+    return GroundHomography(
+        camera_height_m=Meters(8.5),
+        pan_deg=Degrees(120.0),
+        tilt_deg=Degrees(-15.0),
+        roll_deg=Degrees(0.0),
+        pixels_per_meter=12.5,
+        map_origin=(100.0, 200.0),
+        h_matrix=[[1.0, 0.0, 3.0], [0.0, 1.0, 4.0], [0.0, 0.0, 1.0]],
+    )
+
+
+def make_full_optics() -> FullOptics:
+    """Build a :class:`FullOptics`."""
+    return FullOptics(
+        exposure_type="auto",
+        shutter="1/1000",
+        gain=6.0,
+        iris=42,
+        white_balance="auto",
+        focus=510,
+    )
+
+
+def make_floor_mask_reference() -> FloorMaskReference:
+    """Build a :class:`FloorMaskReference`."""
+    return FloorMaskReference(mask_ref="masks/cap-0001.png", checksum="b" * 64)
+
+
 def make_frame_record(
     *,
     capture_id: str = "cap-0001",
@@ -158,8 +208,13 @@ def make_frame_record(
     frame_index: int = 0,
     reported_zoom: float = 4.0,
     image_path: str = "frames/cap-0001.jpg",
+    with_clean_plate: bool = False,
 ) -> FrameRecord:
-    """Build a fully-populated :class:`FrameRecord`."""
+    """Build a fully-populated :class:`FrameRecord`.
+
+    When ``with_clean_plate`` is set, the four #276 optional sub-VOs plus
+    ``survey_context.pose_id`` are populated.
+    """
     return FrameRecord(
         camera=make_camera_identity(camera_id=camera_id),
         capture=make_capture_identity(
@@ -174,6 +229,37 @@ def make_frame_record(
         movement=make_movement_context(),
         pipeline=make_pipeline_state(),
         image_data=make_image_data(image_path=image_path),
+        survey_context=(
+            SurveyContext(pose_id="p+0120.0_t-0015.0_z004.00")
+            if with_clean_plate
+            else SurveyContext()
+        ),
+        intrinsics=make_intrinsics() if with_clean_plate else None,
+        ground_homography=make_ground_homography() if with_clean_plate else None,
+        full_optics=make_full_optics() if with_clean_plate else None,
+        floor_mask_reference=make_floor_mask_reference() if with_clean_plate else None,
+    )
+
+
+def make_pose(
+    *,
+    pan: float = 120.0,
+    tilt: float = -15.0,
+    zoom: float = 4.0,
+) -> Pose:
+    """Build a :class:`Pose`."""
+    return Pose(pan=Degrees(pan), tilt=Degrees(tilt), zoom=Unitless(zoom))
+
+
+def make_pose_catalog(catalog_id: str = "cat-0001", camera_id: str = "cam01") -> PoseCatalog:
+    """Build a :class:`PoseCatalog` from a few poses."""
+    return PoseCatalog.from_poses(
+        catalog_id,
+        camera_id,
+        [
+            make_pose(pan=120.0, tilt=-15.0, zoom=4.0),
+            make_pose(pan=90.0, tilt=-10.0, zoom=2.0),
+        ],
     )
 
 
@@ -209,6 +295,7 @@ def make_survey_run(
     camera_id: str = "cam01",
     status: SurveyRunStatus = SurveyRunStatus.RUNNING,
     finished: bool = False,
+    pose_catalog_id: str | None = None,
 ) -> SurveyRun:
     """Build a :class:`SurveyRun`."""
     return SurveyRun(
@@ -218,4 +305,5 @@ def make_survey_run(
         started_at=_TS,
         finished_at=_TS if finished else None,
         status=status,
+        pose_catalog_id=pose_catalog_id,
     )

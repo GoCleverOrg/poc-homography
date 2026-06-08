@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import yaml
 
 from poc_homography.domain.entities.survey.frame_record import FrameRecord
+from poc_homography.domain.entities.survey.pose_catalog import PoseCatalog
 from poc_homography.domain.entities.survey.survey_run import SurveyRun
 from poc_homography.domain.vo.survey_plan_config import SurveyPlanConfig
 from poc_homography.infrastructure.repositories.base.repo_yaml import RepoYaml
@@ -124,3 +125,62 @@ class RepoYamlSurveyRun(RepoYaml[SurveyRun]):
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return SurveyPlanConfig.from_dict(data)
+
+    # ------------------------------------------------------------------
+    # Pose-catalog sidecar
+    # ------------------------------------------------------------------
+
+    def _pose_catalog_path(self, run_id: str) -> Path:
+        return self._frames_dir / run_id / "pose_catalog.yaml"
+
+    def save_pose_catalog(self, run_id: str, catalog: PoseCatalog) -> bool:
+        """Persist ``catalog`` as a ``pose_catalog.yaml`` sidecar for ``run_id``.
+
+        Returns ``True`` on success, ``False`` (logged) on any failure.
+        """
+        path = self._pose_catalog_path(run_id)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.dump(catalog.to_dict(), f, default_flow_style=False, sort_keys=False)
+        except Exception:
+            logger.exception("Failed to save pose catalog for run %s", run_id)
+            return False
+        return True
+
+    def load_pose_catalog(self, run_id: str) -> PoseCatalog:
+        """Load the ``pose_catalog.yaml`` sidecar for ``run_id``.
+
+        Raises:
+            KeyError: If no sidecar exists for ``run_id``.
+        """
+        path = self._pose_catalog_path(run_id)
+        if not path.exists():
+            raise KeyError(run_id)
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return PoseCatalog.from_dict(data)
+
+    # ------------------------------------------------------------------
+    # Multi-visit grouping
+    # ------------------------------------------------------------------
+
+    def get_runs_by_camera_and_pose(self, camera_id: str, pose_id: str) -> list[SurveyRun]:
+        """Return every run for ``camera_id`` whose pose catalog holds ``pose_id``.
+
+        Runs are read from the manifest store; a run is included only when its
+        ``pose_catalog.yaml`` sidecar exists and its ``entries`` contain
+        ``pose_id``. Multiple runs for the same camera that visited the same
+        physical pose are returned together.
+        """
+        matches: list[SurveyRun] = []
+        for run in self.get_all():
+            if run.camera_id != camera_id:
+                continue
+            try:
+                catalog = self.load_pose_catalog(run.id)
+            except KeyError:
+                continue
+            if pose_id in catalog.entries:
+                matches.append(run)
+        return matches

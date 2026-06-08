@@ -346,6 +346,13 @@ browse_command  # typer survey command (poc_homography/cli/survey.py)
 _.save_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
 _.load_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
 _.detail  # ValidationOutcome human-readable note; injectable-hook contract (poc_homography/horizon/validation.py)
+_.save_pose_catalog  # SurveyRunRepository pose-catalog contract (#276); consumed by tests + future C2/C4 (poc_homography/domain/protocols/survey_run_repository.py)
+_.get_runs_by_camera_and_pose  # SurveyRunRepository multi-visit grouping query (#276); consumed by tests (poc_homography/domain/protocols/survey_run_repository.py)
 
 # -- Phase-0 horizon calibration C3 (#275); step-1 entry point consumed by C5/CLI + tests --
 calibrate_horizon_envelope  # Phase-0 calibration step; invoked by operator/CLI + tests (poc_homography/survey/calibration.py)
+
+# -- Clean-plate capture domain (#276); PoseCatalog public API consumed by C2/C4 + tests --
+_.with_pose  # PoseCatalog immutable pose-record builder (poc_homography/domain/entities/survey/pose_catalog.py)
+_.from_poses  # PoseCatalog deterministic builder from a pose sequence (poc_homography/domain/entities/survey/pose_catalog.py)
+_.from_plan_config  # SurveyPlanConfig->SurveyPlan burst-count bridge; consumed by C5 + tests (poc_homography/survey/phases/runner.py)

@@ -15,6 +15,29 @@ from typing import Any
 from poc_homography.types import Degrees, Unitless
 
 
+def canonical_pose_key(pan: float, tilt: float, zoom: float) -> str:
+    """Return a stable, deterministic pose id for a physical PTZ pose.
+
+    Pan and tilt are quantised to 0.1 degrees and zoom to 0.01 before
+    formatting, so two physically-equal poses yield the SAME id on every run
+    regardless of insertion order, randomness, or time. The result is a
+    human-readable fixed-width string, e.g. ``"p+0120.1_t-0015.0_z004.00"``.
+
+    Args:
+        pan: Pan angle in degrees.
+        tilt: Tilt angle in degrees.
+        zoom: Zoom factor (dimensionless).
+
+    Returns:
+        A stable string id derived purely from the quantised geometry.
+    """
+    pan_q = round(float(pan), 1)
+    tilt_q = round(float(tilt), 1)
+    zoom_q = round(float(zoom), 2)
+    # ``+ 0.0`` normalises a possible ``-0.0`` to ``0.0`` for a stable sign.
+    return f"p{pan_q + 0.0:+07.1f}_t{tilt_q + 0.0:+07.1f}_z{zoom_q + 0.0:06.2f}"
+
+
 class ApproachDirection(str, Enum):
     """Direction from which a pose is approached along a sweep axis.
 
@@ -49,6 +72,7 @@ class Pose:
     approach_direction: ApproachDirection | None = None
     is_holdout: bool = False
     region_id: str | None = None
+    pose_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -61,6 +85,7 @@ class Pose:
             ),
             "is_holdout": self.is_holdout,
             "region_id": self.region_id,
+            "pose_id": self.pose_id,
         }
 
     @classmethod
@@ -68,6 +93,7 @@ class Pose:
         """Create :class:`Pose` from a dictionary."""
         approach = data.get("approach_direction")
         region_id = data.get("region_id")
+        pose_id = data.get("pose_id")
         return cls(
             pan=Degrees(float(data["pan"])),
             tilt=Degrees(float(data["tilt"])),
@@ -75,4 +101,5 @@ class Pose:
             approach_direction=(ApproachDirection(approach) if approach is not None else None),
             is_holdout=bool(data["is_holdout"]),
             region_id=str(region_id) if region_id is not None else None,
+            pose_id=str(pose_id) if pose_id is not None else None,
         )

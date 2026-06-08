@@ -32,6 +32,7 @@ class SurveyRun:
     started_at: datetime
     finished_at: datetime | None = None
     status: SurveyRunStatus = SurveyRunStatus.PENDING
+    pose_catalog_id: str | None = None
     schema_version: str = field(default=SURVEY_SCHEMA_VERSION)
 
     @property
@@ -61,6 +62,7 @@ class SurveyRun:
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "status": self.status.value,
+            "pose_catalog_id": self.pose_catalog_id,
         }
 
     @classmethod
@@ -72,6 +74,7 @@ class SurveyRun:
         """
         version = check_schema_version(str(data["schema_version"]))
         finished_raw = data.get("finished_at")
+        pose_catalog_id = data.get("pose_catalog_id")
         return cls(
             run_id=str(data["run_id"]),
             camera_id=str(data["camera_id"]),
@@ -79,5 +82,6 @@ class SurveyRun:
             started_at=datetime.fromisoformat(data["started_at"]),
             finished_at=datetime.fromisoformat(finished_raw) if finished_raw else None,
             status=SurveyRunStatus(data["status"]),
+            pose_catalog_id=str(pose_catalog_id) if pose_catalog_id is not None else None,
             schema_version=version,
         )
