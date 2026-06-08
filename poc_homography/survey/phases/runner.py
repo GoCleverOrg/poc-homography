@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
     from poc_homography.domain.entities.survey.frame_record import CommandedState
     from poc_homography.domain.protocols.camera_device import CameraDevice
+    from poc_homography.domain.vo.tilt_envelope import TiltEnvelope
     from poc_homography.survey.phases.common import PhaseResult, PhaseSink
     from poc_homography.survey.planner.poses import Pose
 
@@ -107,6 +108,11 @@ class SurveyPlan:
     # Phase 9 — validation holdout partition.
     holdout_fraction: float = 0.25
     holdout_seed: int = 261
+
+    # Phase-0 horizon calibration (#275). When set, the main-survey FOV grid
+    # skips sky tiles above the per-azimuth bound; ``None`` reproduces the
+    # pre-horizon behaviour exactly.
+    tilt_envelope: TiltEnvelope | None = None
 
 
 @dataclass(frozen=True)
@@ -305,13 +311,18 @@ def _phase_dir(base: Path, phase: SurveyPhase) -> Path:
 
 
 def _partition_main_grid(spec: CameraSpec, plan: SurveyPlan) -> tuple[list[Pose], list[Pose]]:
-    """Build the main FOV grid and split it into training and holdout sets."""
+    """Build the main FOV grid and split it into training and holdout sets.
+
+    When ``plan.tilt_envelope`` is set (Phase-0 calibration ran), sky tiles
+    above the per-azimuth bound are skipped; otherwise the grid is unchanged.
+    """
     grid = fov_grid(
         spec,
         plan.main_pan_range,
         plan.main_tilt_range,
         plan.main_zoom_levels,
         plan.main_overlap_fraction,
+        tilt_envelope=plan.tilt_envelope,
     )
     training, holdout = partition_holdout(grid, plan.holdout_fraction, plan.holdout_seed)
     return training, holdout
