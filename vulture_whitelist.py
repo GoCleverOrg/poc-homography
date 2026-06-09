@@ -372,3 +372,7 @@ synth_command  # typer cleanplate command (poc_homography/cli/cleanplate.py)
 _.minio_bucket  # CleanPlateFrameModel MinIO bucket column (poc_homography/infrastructure/models/clean_plate_frame.py)
 _.minio_object_key  # CleanPlateFrameModel MinIO object-key column (poc_homography/infrastructure/models/clean_plate_frame.py)
 _.checksum_sha256  # CleanPlateFrameModel image content-hash column (poc_homography/infrastructure/models/clean_plate_frame.py)
+
+# -- MinIO frame store (#284); entry points consumed by capture wiring + gallery (#285) --
+_.from_env  # MinioFrameStore env constructor; used by the maglor capture script (poc_homography/infrastructure/clients/minio_frame_store.py)
+_.presign_get  # MinioFrameStore presigned-GET URL minting; consumed by the gallery API (#285) (poc_homography/infrastructure/clients/minio_frame_store.py)
