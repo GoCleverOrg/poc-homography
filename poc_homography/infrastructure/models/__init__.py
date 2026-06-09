@@ -13,6 +13,7 @@ from poc_homography.infrastructure.models.calibration_line_trace_set import (
 from poc_homography.infrastructure.models.camera_calibration import CameraCalibrationModel
 from poc_homography.infrastructure.models.camera_config import CameraConfigModel
 from poc_homography.infrastructure.models.captured_frame import CapturedFrameModel
+from poc_homography.infrastructure.models.clean_plate_frame import CleanPlateFrameModel
 from poc_homography.infrastructure.models.diagnostic_session import DiagnosticSessionModel
 from poc_homography.infrastructure.models.ground_control_point import GroundControlPointModel
 from poc_homography.infrastructure.models.lens_calibration_table import LensCalibrationTableModel
@@ -31,6 +32,7 @@ __all__ = [
     "CameraCalibrationModel",
     "CameraConfigModel",
     "CapturedFrameModel",
+    "CleanPlateFrameModel",
     "DiagnosticSessionModel",
     "GroundControlPointModel",
     "LensCalibrationTableModel",

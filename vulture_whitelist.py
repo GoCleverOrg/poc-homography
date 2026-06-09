@@ -367,3 +367,8 @@ _.frames_for  # CleanPlateDataset per-group frame materialiser; consumed by test
 # -- Clean-plate CLI (#277); typer commands invoked via `hom cleanplate ...` --
 reconstruct_command  # typer cleanplate command (poc_homography/cli/cleanplate.py)
 synth_command  # typer cleanplate command (poc_homography/cli/cleanplate.py)
+
+# -- Clean-plate frames table (#283); MinIO location columns consumed by PostgresPhaseSink + gallery (#284/#285) --
+_.minio_bucket  # CleanPlateFrameModel MinIO bucket column (poc_homography/infrastructure/models/clean_plate_frame.py)
+_.minio_object_key  # CleanPlateFrameModel MinIO object-key column (poc_homography/infrastructure/models/clean_plate_frame.py)
+_.checksum_sha256  # CleanPlateFrameModel image content-hash column (poc_homography/infrastructure/models/clean_plate_frame.py)
