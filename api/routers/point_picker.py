@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session  # noqa: TC002 - resolved at runtime by FastAPI
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.point_picker import (
@@ -11,13 +13,24 @@ from api.schemas.point_picker import (
     DeletePointResponse,
     GeoCoordsResponse,
     ImageInfoResponse,
+    MapsListResponse,
+    MapSummaryOut,
     NextIdResponse,
     PointListResponse,
     PointOut,
     UpdatePointRequest,
 )
+from api.utils.frame_helpers import map_has_image
 from api.utils.tiles import render_full_image, render_tile
-from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.infrastructure.models.user import (  # noqa: TC001 - resolved at runtime by FastAPI
+    UserModel,
+)
+from poc_homography.infrastructure.repositories import RepoPostgresMap
+
+if TYPE_CHECKING:
+    from webapp.point_picker.state import PointPickerState
+
+    from poc_homography.domain.entities.map import Map
 from webapp.point_picker.state import (
     delete_gcp_from_repo_pg,
     get_state,
@@ -35,6 +48,47 @@ from webapp.point_picker.validation import (
 
 router = APIRouter(prefix="/point-picker", tags=["point-picker"])
 
+
+def _resolve_state(tenant_id: str, session: Session, map_id: str | None) -> PointPickerState:
+    """Resolve point-picker state, mapping resolution failures to clean 404s.
+
+    ``get_state`` raises ``LookupError`` for an unknown ``map_id`` and
+    ``RuntimeError`` when the selected map has no resolvable image asset (e.g.
+    an ``asset_key`` whose object is missing from storage — a case the cheap
+    ``map_has_image`` selector check cannot detect). Surface both as 404 rather
+    than letting them propagate as HTTP 500.
+    """
+    try:
+        return get_state(tenant_id, session, map_id=map_id)
+    except (LookupError, RuntimeError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Map selector
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/maps/", response_model=MapsListResponse)
+def list_maps(
+    tenant_id: str = Query(...),
+    user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> MapsListResponse:
+    """List the maps available for *tenant_id* with image-configured flags."""
+    maps = cast("dict[str, Map]", RepoPostgresMap(session).get_by_tenant(tenant_id))
+    summaries = [
+        MapSummaryOut(
+            id=m.id,
+            label=m.id,
+            image_configured=map_has_image(m),
+        )
+        for m in maps.values()
+    ]
+    summaries.sort(key=lambda s: s.id)
+    return MapsListResponse(maps=summaries)
+
+
 # ---------------------------------------------------------------------------
 # Image endpoints
 # ---------------------------------------------------------------------------
@@ -43,11 +97,12 @@ router = APIRouter(prefix="/point-picker", tags=["point-picker"])
 @router.get("/api/image/info/", response_model=ImageInfoResponse)
 def image_info(
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> ImageInfoResponse:
     """Return image metadata (dimensions, geotransform, CRS, filename)."""
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
     return ImageInfoResponse(
         width=state.width,
         height=state.height,
@@ -60,6 +115,7 @@ def image_info(
 @router.get("/api/image/tile/")
 def image_tile(
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     x: int = Query(0),
     y: int = Query(0),
     z: int = Query(0),
@@ -71,12 +127,15 @@ def image_tile(
 
     At level *z* the image appears at resolution ``original / 2^(max_level - z)``.
     """
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
     png_bytes = render_tile(
         image_path=state.geotiff_path,
         width=state.width,
         height=state.height,
-        x=x, y=y, z=z, size=size,
+        x=x,
+        y=y,
+        z=z,
+        size=size,
     )
     return Response(content=png_bytes, media_type="image/png")
 
@@ -84,12 +143,13 @@ def image_tile(
 @router.get("/api/image/full/")
 def image_full(
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     max_size: int = Query(2048, ge=1, le=8192),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> Response:
     """Return the full image scaled to *max_size* as a PNG."""
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
     png_bytes = render_full_image(image_path=state.geotiff_path, max_size=max_size)
     return Response(content=png_bytes, media_type="image/png")
 
@@ -102,11 +162,12 @@ def image_full(
 @router.get("/api/points/", response_model=PointListResponse)
 def list_points(
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> PointListResponse:
     """List all GCPs for the tenant's map."""
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
     return PointListResponse(
         map_id=state.registry.map_id,
         points=[
@@ -125,6 +186,7 @@ def list_points(
 def add_point(
     body: AddPointRequest,
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> PointOut:
@@ -138,7 +200,7 @@ def add_point(
     if error:
         raise HTTPException(status_code=422, detail=error)
 
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
 
     tag = data.get("tag", "extra")
     pixel_x = float(data["pixel_x"])
@@ -163,6 +225,7 @@ def update_point(
     point_id: str,
     body: UpdatePointRequest,
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> PointOut:
@@ -172,7 +235,7 @@ def update_point(
     if error:
         raise HTTPException(status_code=422, detail=error)
 
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
 
     px = float(data["pixel_x"])
     py = float(data["pixel_y"])
@@ -195,11 +258,12 @@ def update_point(
 def delete_point(
     point_id: str,
     tenant_id: str = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> DeletePointResponse:
     """Delete a GCP."""
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
 
     if point_id not in state.registry.points:
         raise HTTPException(status_code=404, detail=f"Point not found: {point_id}")
@@ -218,11 +282,12 @@ def delete_point(
 def next_id(
     tenant_id: str = Query(...),
     tag: str = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> NextIdResponse:
     """Return the next auto-incremented ID for a tag category."""
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
     try:
         nid = state.get_next_id(tag)
         return NextIdResponse(tag=tag, next_id=nid)
@@ -235,11 +300,12 @@ def geo_coords(
     tenant_id: str = Query(...),
     pixel_x: float = Query(...),
     pixel_y: float = Query(...),
+    map_id: str | None = Query(None),
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> GeoCoordsResponse:
     """Convert pixel coordinates to geographic coordinates."""
-    state = get_state(tenant_id, session)
+    state = _resolve_state(tenant_id, session, map_id)
     coords = state.get_geo_coords(pixel_x, pixel_y)
     if coords:
         return GeoCoordsResponse(

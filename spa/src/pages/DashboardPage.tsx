@@ -22,10 +22,10 @@ const TOOL_CARDS: ToolCardDef[] = [
   },
   {
     to: '/point-picker',
-    title: 'Point Picker',
+    title: 'Map Points Capture Tool',
     badge: 'Primary',
     description:
-      'Pick and annotate points on high-resolution images. Supports tiled image viewing and coordinate export.',
+      'Capture and annotate map points on high-resolution site reference images. Supports per-site selection, tiled image viewing, and coordinate export.',
   },
   {
     to: '/homography-precision',

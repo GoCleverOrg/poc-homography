@@ -173,10 +173,55 @@
   background: #cc0000;
 }
 
+/* --------------------------------------------------------- Site select */
+
+.mapSelect {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Disabled tag buttons (unconfigured map) */
+.tagBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* -------------------------------------------------------------- Viewer */
 
 .viewer {
   flex: 1;
   background: #222;
   min-width: 0;
+}
+
+/* --------------------------------------------------- Not-configured panel */
+
+.notConfigured {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 32px;
+  text-align: center;
+  color: #fff;
+}
+
+.notConfiguredTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffcc66;
+}
+
+.notConfiguredBody {
+  max-width: 480px;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #ccc;
 }

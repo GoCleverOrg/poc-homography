@@ -14,13 +14,15 @@ from homography_web.frame_utils import (
 )
 from PIL import Image
 
-from poc_homography.domain.vo.geotiff import GeoTiff
+from poc_homography.domain.vo.geotiff import GeoTiff  # noqa: TC001 - used at runtime
 from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
 from poc_homography.map_points.gcp_registry import GCPRegistry
 from poc_homography.map_points.map_point import MapPoint
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from poc_homography.domain.entities.map import Map
 
 # Tag abbreviation mapping
 TAG_ABBREVIATIONS = {
@@ -182,53 +184,87 @@ class PointPickerState:
         return None
 
 
-# Per-tenant state (lazily initialized)
-_states: dict[str, PointPickerState] = {}
+# Per-(tenant, map) state (lazily initialized)
+_states: dict[tuple[str, str], PointPickerState] = {}
 
 
-def get_state(tenant_id: str, session: Session | None = None) -> PointPickerState:
-    """Get or lazily initialize state for a tenant.
+def get_state(
+    tenant_id: str,
+    session: Session | None = None,
+    map_id: str | None = None,
+) -> PointPickerState:
+    """Get or lazily initialize state for a tenant's map.
 
     Args:
         tenant_id: Tenant identifier.
         session: Optional SQLAlchemy session. When provided, GCPs are loaded
             from PostgreSQL instead of YAML files.
+        map_id: Optional specific map identifier. When ``None`` the tenant's
+            first configured map is resolved (backward-compatible behavior).
 
     Returns:
-        PointPickerState for the given tenant.
+        PointPickerState for the given (tenant, map).
 
     Raises:
         RuntimeError: If no map is configured for the tenant or map file not found.
+        LookupError: If *map_id* is provided but no such map exists.
     """
-    if tenant_id in _states:
-        return _states[tenant_id]
+    # Fast path: an explicit, previously resolved (tenant, map) entry.
+    if map_id is not None and (tenant_id, map_id) in _states:
+        return _states[(tenant_id, map_id)]
 
-    if session is not None:
-        from api.utils.frame_helpers import resolve_map_for_tenant as resolve_pg
-
-        map_entity, map_file = resolve_pg(tenant_id, session)
-    else:
-        map_entity, map_file = resolve_map_for_tenant(tenant_id)
+    # Resolve the concrete map (a ``map_id=None`` call picks the tenant's
+    # default map), then key the cache by its real id — so the default path
+    # reuses the same cached state as an explicit call for that map.
+    map_entity, map_file = _resolve_map(tenant_id, session, map_id)
+    key = (tenant_id, map_entity.id)
+    if key in _states:
+        return _states[key]
 
     state = PointPickerState(
         map_file,
         width=int(map_entity.photo.width),
         height=int(map_entity.photo.height),
     )
+    # Anchor the state to the resolved map id rather than the image filename
+    # stem, so persistence (add/update/delete) always targets the right map.
+    state.map_id = map_entity.id
 
     if session is not None:
         from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
         state.registry = from_gcp_repo_pg(session, map_entity.id)
-        state.map_id = state.registry.map_id
     elif GCPS_DIR.exists():
         from poc_homography.map_points.gcp_registry import from_gcp_repo
 
         state.registry = from_gcp_repo(GCPS_DIR, map_entity.id)
-        state.map_id = state.registry.map_id
 
-    _states[tenant_id] = state
+    _states[key] = state
     return state
+
+
+def _resolve_map(
+    tenant_id: str,
+    session: Session | None,
+    map_id: str | None,
+) -> tuple[Map, Path]:
+    """Resolve the (Map, image-file) pair for *tenant_id*/*map_id*."""
+    if map_id is not None and session is not None:
+        from api.utils.frame_helpers import resolve_map as resolve_pg_by_id
+
+        return resolve_pg_by_id(map_id, session)
+    if map_id is not None:
+        from homography_web.frame_utils import DATA_MAPS_DIR, get_map_repo
+
+        map_entity = get_map_repo().get(map_id)
+        if map_entity is None:
+            raise LookupError(f"Map not found: {map_id}")
+        return map_entity, DATA_MAPS_DIR / map_entity.photo.path
+    if session is not None:
+        from api.utils.frame_helpers import resolve_map_for_tenant as resolve_pg
+
+        return resolve_pg(tenant_id, session)
+    return resolve_map_for_tenant(tenant_id)
 
 
 def get_tag_from_id(point_id: str) -> str:

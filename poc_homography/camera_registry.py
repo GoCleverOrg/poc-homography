@@ -11,7 +11,7 @@ Design notes
   stores only *registration* data: ``id``, ``tenant_id``, ``map_id``, ``name``,
   ``spec``, ``credential`` (``{username, password}``) and ``ip_address``.  It does
   **not** store the rich calibration parameters (``k1``, ``k2``,
-  ``pan_offset_deg``, ``geotiff_params``, ``sensor_width_mm`` …) that homography
+  ``pan_offset_deg``, ``sensor_width_mm`` …) that homography
   and calibration consumers rely on.  Those still live in the hardcoded
   ``CAMERAS`` list.
 

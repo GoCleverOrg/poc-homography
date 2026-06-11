@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -265,6 +265,121 @@ class TestPointPickerState:
         assert len(yaml_files) == 0
 
 
+class TestMapHasImage:
+    """Tests for ``api.utils.frame_helpers.map_has_image``."""
+
+    def _map_with_path(self, rel: str):
+        from poc_homography.domain.entities.map import Map
+        from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
+        from poc_homography.domain.vo.photo import Photo
+        from poc_homography.types import Easting, Meters, Northing, Pixels, Unitless
+
+        photo = Photo(path=Path(rel), width=Pixels(10), height=Pixels(10))
+        geotiff = GeoTiff(
+            geotransform=GeoTransform(
+                origin_easting=Easting(0.0),
+                pixel_width=Meters(1.0),
+                row_rotation=Unitless(0.0),
+                origin_northing=Northing(0.0),
+                col_rotation=Unitless(0.0),
+                pixel_height=Meters(-1.0),
+            ),
+            crs="EPSG:25830",
+        )
+        return Map(id="m", tenant_id="t", photo=photo, geotiff=geotiff)
+
+    def test_true_when_file_exists(self, tmp_path: Path) -> None:
+        from api.utils import frame_helpers
+
+        img = tmp_path / "configured.tif"
+        img.touch()
+        m = self._map_with_path("configured.tif")
+        with patch.object(frame_helpers, "DATA_MAPS_DIR", tmp_path):
+            assert frame_helpers.map_has_image(m) is True
+
+    def test_false_when_file_missing(self, tmp_path: Path) -> None:
+        from api.utils import frame_helpers
+
+        m = self._map_with_path("absent.tif")
+        with patch.object(frame_helpers, "DATA_MAPS_DIR", tmp_path):
+            assert frame_helpers.map_has_image(m) is False
+
+    def test_false_when_path_empty(self, tmp_path: Path) -> None:
+        from api.utils import frame_helpers
+
+        m = self._map_with_path("")
+        with patch.object(frame_helpers, "DATA_MAPS_DIR", tmp_path):
+            assert frame_helpers.map_has_image(m) is False
+
+
+class TestGetStateMapId:
+    """Tests for the ``map_id`` selection path in ``get_state``."""
+
+    def test_distinct_map_ids_get_distinct_states(self, tmp_path: Path) -> None:
+        import point_picker.state as pp_state
+
+        from poc_homography.domain.entities.map import Map
+        from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
+        from poc_homography.domain.vo.photo import Photo
+        from poc_homography.types import Easting, Meters, Northing, Pixels, Unitless
+
+        def _make(mid: str, rel: str) -> Map:
+            img = tmp_path / rel
+            img.touch()
+            photo = Photo(path=Path(rel), width=Pixels(20), height=Pixels(30))
+            geotiff = GeoTiff(
+                geotransform=GeoTransform(
+                    origin_easting=Easting(0.0),
+                    pixel_width=Meters(1.0),
+                    row_rotation=Unitless(0.0),
+                    origin_northing=Northing(0.0),
+                    col_rotation=Unitless(0.0),
+                    pixel_height=Meters(-1.0),
+                ),
+                crs="EPSG:25830",
+            )
+            return Map(id=mid, tenant_id="t", photo=photo, geotiff=geotiff)
+
+        maps = {"map-a": _make("map-a", "a.tif"), "map-b": _make("map-b", "b.tif")}
+        pp_state._states.clear()
+
+        fake_repo = MagicMock()
+        fake_repo.get.side_effect = lambda mid: maps.get(mid)
+
+        with (
+            patch("homography_web.frame_utils.get_map_repo", return_value=fake_repo),
+            patch("homography_web.frame_utils.DATA_MAPS_DIR", tmp_path),
+            patch("point_picker.state.tifffile.TiffFile") as mock_tif,
+        ):
+            mock_tif.return_value = MockTiffFile()
+            state_a = pp_state.get_state("t", map_id="map-a")
+            state_b = pp_state.get_state("t", map_id="map-b")
+
+        assert state_a is not state_b
+        assert ("t", "map-a") in pp_state._states
+        assert ("t", "map-b") in pp_state._states
+        # Cached fast-path returns the same instance.
+        with patch("point_picker.state.tifffile.TiffFile") as mock_tif:
+            mock_tif.return_value = MockTiffFile()
+            assert pp_state.get_state("t", map_id="map-a") is state_a
+
+        pp_state._states.clear()
+
+    def test_unknown_map_id_raises(self, tmp_path: Path) -> None:
+        import point_picker.state as pp_state
+
+        fake_repo = MagicMock()
+        fake_repo.get.return_value = None
+        pp_state._states.clear()
+        with (
+            patch("homography_web.frame_utils.get_map_repo", return_value=fake_repo),
+            patch("homography_web.frame_utils.DATA_MAPS_DIR", tmp_path),
+            pytest.raises(LookupError),
+        ):
+            pp_state.get_state("t", map_id="missing")
+        pp_state._states.clear()
+
+
 class TestPointPickerStateGeoCoords:
     """Tests for geographic coordinate conversion."""
 
@@ -357,16 +472,26 @@ class TestPointPickerAPI:
             mock_tif.return_value = MockTiffFile(width=1000, height=800)
             state = pp_state.PointPickerState(geotiff_path)
 
-        # Inject state for the test tenant, clean up after test
-        pp_state._states[self.TENANT_ID] = state
+        # Inject state for the test tenant, clean up after test. The cache is
+        # keyed by (tenant_id, map_id); ``get_state(tenant_id)`` (no explicit
+        # map_id) resolves the tenant's default map then hits the cache, so we
+        # stub ``resolve_map_for_tenant`` to return a map whose id matches the
+        # injected key instead of touching a (nonexistent) map repo.
+        pp_state._states[(self.TENANT_ID, state.map_id)] = state
+        default_map = MagicMock()
+        default_map.id = state.map_id
         # Bypass tenant repo validation and YAML persistence (test tenant has no repo dir)
         with (
+            patch(
+                "point_picker.state.resolve_map_for_tenant",
+                return_value=(default_map, geotiff_path),
+            ),
             patch("point_picker.views.get_tenant_id", return_value=self.TENANT_ID),
             patch("point_picker.views.save_gcp_to_repo"),
             patch("point_picker.views.delete_gcp_from_repo"),
         ):
             yield Client()
-        pp_state._states.pop(self.TENANT_ID, None)
+        pp_state._states.pop((self.TENANT_ID, state.map_id), None)
 
     def _url(self, path: str, extra_qs: str = "") -> str:
         """Build URL with tenant_id query parameter."""

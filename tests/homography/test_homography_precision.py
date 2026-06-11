@@ -22,16 +22,19 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
 import yaml
 
-from poc_homography.camera_config import get_camera_by_name
-from poc_homography.homography.map_points import MapPointHomography
-from poc_homography.map_points import GCPRegistry
 from poc_homography.domain.vo import PixelPoint
+from poc_homography.homography.map_points import MapPointHomography
+from poc_homography.infrastructure.repositories import RepoYamlMap
+from poc_homography.map_points import GCPRegistry
+
+if TYPE_CHECKING:
+    from poc_homography.domain.entities.map import Map
 
 # =============================================================================
 # Test Data Paths - Update these to point to your test data
@@ -45,12 +48,25 @@ pytestmark = pytest.mark.skipif(
     reason="DVC test data not available (run 'poe dvc-pull')",
 )
 
-# Valte camera geotransform: 0.15 m/pixel in map space
-# GeoTransform: [origin_easting, pixel_width, row_rotation, origin_northing, col_rotation, pixel_height]
-VALTE_CONFIG = get_camera_by_name("Valte")
-MAP_METERS_PER_PIXEL = (
-    abs(VALTE_CONFIG["geotiff_params"]["geotransform"][1]) if VALTE_CONFIG else 0.15
-)
+# Valte map ground resolution: 0.15 m/pixel in map space.
+# The geotransform now lives on the Map entity (data/maps/*.yaml), not the
+# camera config. Read it from the Valte tenant's Map via RepoYamlMap.
+_DATA_MAPS_DIR = Path(__file__).parents[2] / "data" / "maps"
+
+
+def _valte_meters_per_pixel() -> float:
+    """Return abs(pixel_width) from the Valte Map, falling back to 0.15."""
+    try:
+        maps = RepoYamlMap(_DATA_MAPS_DIR).get_by_tenant("valte")
+    except (OSError, KeyError, ValueError):
+        return 0.15
+    if not maps:
+        return 0.15
+    valte_map = cast("Map", next(iter(maps.values())))
+    return abs(float(valte_map.geotiff.geotransform.pixel_width))
+
+
+MAP_METERS_PER_PIXEL = _valte_meters_per_pixel()
 
 
 # =============================================================================

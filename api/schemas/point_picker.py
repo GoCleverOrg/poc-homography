@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-
 # ---------------------------------------------------------------------------
 # Image info
 # ---------------------------------------------------------------------------
@@ -20,6 +19,25 @@ class ImageInfoResponse(BaseModel):
     geotransform: list[float] | None = None
     crs: str | None = None
     filename: str
+
+
+# ---------------------------------------------------------------------------
+# Maps
+# ---------------------------------------------------------------------------
+
+
+class MapSummaryOut(BaseModel):
+    """Summary of a single map for the map selector."""
+
+    id: str
+    label: str
+    image_configured: bool
+
+
+class MapsListResponse(BaseModel):
+    """Response for ``GET /api/maps/``."""
+
+    maps: list[MapSummaryOut]
 
 
 # ---------------------------------------------------------------------------
