@@ -55,8 +55,6 @@ export default function CameraAnnotatorPage() {
   const [gcpSearchQuery, setGcpSearchQuery] = useState('');
   const [selectedGcpIndex, setSelectedGcpIndex] = useState(-1);
   const [coordsText, setCoordsText] = useState('Move mouse over image');
-  const [saveLabel, setSaveLabel] = useState('Save to Repo');
-  const [saving, setSaving] = useState(false);
 
   /* ---- drag state (ref to avoid re-renders during drag) ---- */
   const dragRef = useRef<DragState | null>(null);
@@ -174,6 +172,44 @@ export default function CameraAnnotatorPage() {
   /* Blob URL cleanup is handled by useImageBlob hook */
 
   /* ================================================================ */
+  /*  Auto-save                                                       */
+  /* ================================================================ */
+
+  /* Persist the given annotation list after every mutation. The list is
+     passed explicitly (rather than read from state) so the save reflects the
+     mutation that just happened, not the stale pre-update render. Failures are
+     logged, never alerted, so an auto-save error never interrupts annotating.
+     An empty list is a valid save: it clears the last annotation server-side. */
+  const autoSave = useCallback(
+    async (anns: Annotation[]) => {
+      if (!selectedTenantId || !currentFilename) return;
+
+      const cleanAnnotations = anns.map((a) => ({
+        gcp_id: a.gcp_id,
+        pixel_x: parseFloat(a.pixel_x.toFixed(1)),
+        pixel_y: parseFloat(a.pixel_y.toFixed(1)),
+      }));
+
+      try {
+        const { error } = await client.POST(
+          '/camera-annotator/api/save-annotations/',
+          {
+            params: { query: { tenant_id: selectedTenantId } },
+            body: {
+              image_filename: currentFilename,
+              annotations: cleanAnnotations,
+            },
+          },
+        );
+        if (error) console.error('Auto-save failed:', error);
+      } catch (err: unknown) {
+        console.error('Auto-save failed:', err);
+      }
+    },
+    [selectedTenantId, currentFilename],
+  );
+
+  /* ================================================================ */
   /*  Image click -> pending point                                    */
   /* ================================================================ */
 
@@ -205,14 +241,16 @@ export default function CameraAnnotatorPage() {
     (gcp: Gcp) => {
       if (!pendingPoint) return;
 
-      setAnnotations((prev) => [
-        ...prev,
+      const next = [
+        ...annotationsRef.current,
         { pixel_x: pendingPoint.x, pixel_y: pendingPoint.y, gcp_id: gcp.id },
-      ]);
+      ];
+      setAnnotations(next);
       setPendingPoint(null);
       setGcpSearchQuery('');
+      void autoSave(next);
     },
-    [pendingPoint],
+    [pendingPoint, autoSave],
   );
 
   const handleGcpKeyDown = useCallback(
@@ -289,6 +327,8 @@ export default function CameraAnnotatorPage() {
         dragRef.current = null;
         // Force re-render to remove dragging class
         setAnnotations((a) => [...a]);
+        // Persist the moved marker's final position.
+        void autoSave(annotationsRef.current);
       }
     };
 
@@ -298,15 +338,20 @@ export default function CameraAnnotatorPage() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, []);
+  }, [autoSave]);
 
   /* ================================================================ */
   /*  Delete annotation                                               */
   /* ================================================================ */
 
-  const deleteAnnotation = useCallback((index: number) => {
-    setAnnotations((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const deleteAnnotation = useCallback(
+    (index: number) => {
+      const next = annotationsRef.current.filter((_, i) => i !== index);
+      setAnnotations(next);
+      void autoSave(next);
+    },
+    [autoSave],
+  );
 
   /* ================================================================ */
   /*  Switch image                                                    */
@@ -334,50 +379,6 @@ export default function CameraAnnotatorPage() {
     },
     [selectedTenantId, loadImage],
   );
-
-  /* ================================================================ */
-  /*  Save annotations                                                */
-  /* ================================================================ */
-
-  const handleSave = useCallback(async () => {
-    if (
-      annotations.length === 0 ||
-      !selectedTenantId ||
-      !currentFilename ||
-      saving
-    )
-      return;
-
-    setSaving(true);
-    const cleanAnnotations = annotations.map((a) => ({
-      gcp_id: a.gcp_id,
-      pixel_x: parseFloat(a.pixel_x.toFixed(1)),
-      pixel_y: parseFloat(a.pixel_y.toFixed(1)),
-    }));
-
-    try {
-      const { data } = await client.POST(
-        '/camera-annotator/api/save-annotations/',
-        {
-          params: { query: { tenant_id: selectedTenantId } },
-          body: {
-            image_filename: currentFilename,
-            annotations: cleanAnnotations,
-          },
-        },
-      );
-
-      if (data?.success) {
-        setSaveLabel(`Saved ${data.saved}!`);
-        setTimeout(() => setSaveLabel('Save to Repo'), 2000);
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      alert(`Save failed: ${message}`);
-    } finally {
-      setSaving(false);
-    }
-  }, [annotations, selectedTenantId, currentFilename, saving]);
 
   /* ================================================================ */
   /*  Render                                                          */
@@ -529,20 +530,6 @@ export default function CameraAnnotatorPage() {
               </button>
             </div>
           ))}
-        </div>
-
-        {/* Save section */}
-        <div className={styles.panelSection}>
-          <div className={styles.saveActions}>
-            <button
-              type="button"
-              className={styles.saveBtn}
-              onClick={handleSave}
-              disabled={annotations.length === 0 || saving}
-            >
-              {saveLabel}
-            </button>
-          </div>
         </div>
       </div>
 

@@ -261,25 +261,6 @@
             background: #d32f2f;
         }
 
-        /* Save section */
-        .save-actions {
-            display: flex;
-            gap: 0;
-        }
-
-        .save-actions button {
-            flex: 1;
-            padding: 12px;
-            color: #fff;
-            border: none;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-        }
-
-        #save-btn { background: #1976d2; }
-        #save-btn:hover { background: #1565c0; }
-
         /* Instructions */
         #instructions {
             padding: 12px;
@@ -355,12 +336,6 @@
             <h2>Annotations (<span id="annotation-count">0</span>)</h2>
         </div>
         <div id="annotations-list"></div>
-
-        <div class="panel-section">
-            <div class="save-actions">
-                <button id="save-btn">Save to Repo</button>
-            </div>
-        </div>
     </div>
 
     <div id="coords-display">Move mouse over image</div>
@@ -487,6 +462,32 @@
             renderMarkers();
             renderAnnotationsList();
             updateYamlPreview();
+            autoSave();
+        }
+
+        // Persist the current annotation list to the repo. Called after every
+        // mutation (add, move, delete). Failures are logged, never alerted, so
+        // an auto-save error does not interrupt the annotation workflow.
+        async function autoSave() {
+            const cleanAnnotations = annotations.map(a => ({
+                gcp_id: a.gcp_id,
+                pixel_x: parseFloat(a.pixel_x.toFixed(1)),
+                pixel_y: parseFloat(a.pixel_y.toFixed(1)),
+            }));
+
+            try {
+                const resp = await fetch('{% url "camera_annotator:api_save_annotations" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ annotations: cleanAnnotations })
+                });
+                const result = await resp.json();
+                if (!result.success) {
+                    console.error('Auto-save failed:', result.error || 'Unknown error');
+                }
+            } catch (err) {
+                console.error('Auto-save failed:', err.message);
+            }
         }
 
         // Render annotations list
@@ -515,6 +516,7 @@
                     renderMarkers();
                     renderAnnotationsList();
                     updateYamlPreview();
+                    autoSave();
                 });
             });
         }
@@ -571,6 +573,7 @@
             renderMarkers();
             renderAnnotationsList();
             updateYamlPreview();
+            autoSave();
         });
 
         // Event: GCP search input
@@ -601,35 +604,6 @@
                 pendingPoint = null;
                 gcpSection.classList.remove('active');
                 renderMarkers();
-            }
-        });
-
-        // Event: Save to Repo button
-        const saveBtn = document.getElementById('save-btn');
-        saveBtn.addEventListener('click', async () => {
-            if (annotations.length === 0) return;
-
-            const cleanAnnotations = annotations.map(a => ({
-                gcp_id: a.gcp_id,
-                pixel_x: parseFloat(a.pixel_x.toFixed(1)),
-                pixel_y: parseFloat(a.pixel_y.toFixed(1)),
-            }));
-
-            try {
-                const resp = await fetch('{% url "camera_annotator:api_save_annotations" %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ annotations: cleanAnnotations })
-                });
-                const result = await resp.json();
-                if (result.success) {
-                    saveBtn.textContent = `Saved ${result.saved}!`;
-                    setTimeout(() => { saveBtn.textContent = 'Save to Repo'; }, 2000);
-                } else {
-                    alert('Save failed: ' + (result.error || 'Unknown error'));
-                }
-            } catch (err) {
-                alert('Save failed: ' + err.message);
             }
         });
 

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import mimetypes
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.camera_annotator import (
@@ -28,8 +28,12 @@ from api.utils.frame_helpers import (
 )
 from poc_homography.domain.entities.annotation import Annotation
 from poc_homography.domain.vo import PixelPoint
-from poc_homography.infrastructure.models.user import UserModel
 from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from poc_homography.infrastructure.models.user import UserModel
 
 # ---------------------------------------------------------------------------
 # Router
@@ -71,8 +75,7 @@ def list_gcps(
         return []
 
     return [
-        GcpOut(id=pid, pixel_x=p.pixel_x, pixel_y=p.pixel_y)
-        for pid, p in registry.points.items()
+        GcpOut(id=pid, pixel_x=p.pixel_x, pixel_y=p.pixel_y) for pid, p in registry.points.items()
     ]
 
 
@@ -142,8 +145,8 @@ def save_annotations(
     if frame is None:
         raise HTTPException(status_code=400, detail="No image selected")
 
-    if not body.annotations:
-        raise HTTPException(status_code=400, detail="No annotations to save")
+    # An empty list is valid: deleting the last annotation must persist as an
+    # empty annotations section rather than leaving a stale entry.
 
     # Build domain entities with rounded coordinates
     ann_entities = [
