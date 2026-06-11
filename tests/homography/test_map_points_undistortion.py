@@ -1,6 +1,6 @@
 """Unit tests for lens undistortion in MapPointHomography.
 
-Self-contained tests using synthetic data -- no DVC test data required.
+Self-contained tests using synthetic data -- no external test data required.
 Validates that MapPointHomography correctly integrates lens undistortion
 into both GCP-based and line-based homography computation.
 """

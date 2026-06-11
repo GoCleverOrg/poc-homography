@@ -71,7 +71,7 @@ def test_uploads_with_tenant_scoped_keys(tmp_path: Path) -> None:
 
 def test_missing_tif_is_skipped(tmp_path: Path) -> None:
     maps_dir = _make_maps_dir(tmp_path)
-    # Only one tif present on disk; the other is absent (DVC not pulled).
+    # Only one tif present on disk; the other is absent (not materialized locally).
     (maps_dir / "icozee-cropped.tif").write_bytes(b"icozee tif")
     store = FakeMapStore()
 

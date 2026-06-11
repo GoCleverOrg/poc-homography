@@ -21,7 +21,8 @@ def upload_command(
     """Upload ``data/maps/*.tif`` GeoTIFFs to the MinIO map-assets bucket.
 
     Each map sidecar yields a tenant-scoped key ``{tenant_id}/{photo.path}``.
-    Tifs absent on disk are skipped (run ``dvc pull`` to materialize them).
+    Tifs absent on disk are skipped (place the ``.tif`` next to its YAML sidecar
+    to upload it).
     """
     try:
         store = MinioMapStore.from_env()
@@ -39,6 +40,6 @@ def upload_command(
             typer.echo(f"uploaded {outcome.key} (sha256={outcome.result.sha256})")
         else:
             missing += 1
-            typer.echo(f"{outcome.key}: SKIP (missing on disk — run 'dvc pull')")
+            typer.echo(f"{outcome.key}: SKIP (missing on disk — place the .tif next to its YAML)")
 
     typer.echo(f"Summary: {uploaded} uploaded, {missing} missing ({len(outcomes)} total)")

@@ -9,16 +9,14 @@ and video-burst assets.
 
 ---
 
-## 1. Pull the dataset
+## 1. Obtain the dataset
 
-Datasets are versioned with DVC. Pull the tracked data into your working tree:
+Survey datasets are local fixtures (no longer version-controlled). Place a run
+directory under `survey/<date>/` in your working tree — see
+[test_fixtures.md](./test_fixtures.md) for how to acquire them.
 
-```bash
-dvc pull
-```
-
-This materializes the run manifests, per-frame records, captured images, and
-Phase 8 video-burst segments referenced by the DVC-tracked pointers.
+The dataset comprises the run manifests, per-frame records, captured images, and
+Phase 8 video-burst segments under that directory.
 
 ---
 
@@ -108,8 +106,8 @@ image endpoint above:
 `GET /camera-evaluation/api/survey/sessions/{session_id}/bursts/{filename}`
 
 > Status: the burst-serve endpoint is **to be added by C2**. Until then, access
-> the segment directly from `VideoBurstRecord.segment_path` after `dvc pull`,
-> for example:
+> the segment directly from `VideoBurstRecord.segment_path` (the local fixture
+> path), for example:
 
 ```python
 from poc_homography.domain.entities.survey.video_burst_record import VideoBurstRecord

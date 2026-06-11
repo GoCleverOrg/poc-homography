@@ -191,17 +191,18 @@ The high-level entry point is the CLI:
 hom cleanplate reconstruct --run-id <run_id>
 ```
 
-It targets a survey run identically whether that run is a real DVC-tracked
+It targets a survey run identically whether that run is a real local-fixture
 dataset or a synthetic one of the same structure.
 
 > **Prototype data caveat — factual accuracy.** The survey run
 > `smoke-37dbd4a0` referenced in the source issue is **not present in this
-> worktree**. Survey datasets are DVC-tracked and are not pulled here, and that
+> worktree**. Survey datasets are local fixtures (see
+> [test_fixtures.md](./test_fixtures.md)) and are not present here, and that
 > run id does not exist locally. The shipped prototype is therefore generated
 > from a **synthetic multi-visit dataset that mimics the same C1 structure**
 > (multiple poses × multiple time buckets, with per-frame floor masks). The
 > exact same `hom cleanplate reconstruct` command targets a real survey run
-> identically once its data is pulled with `dvc pull`.
+> identically once its fixture data is present locally.
 
 ### 5.1 Shipped prototype artifact
 
@@ -230,8 +231,8 @@ Output artifacts (committed under `docs/assets/cleanplate/`):
 | `truth.png` | Ground-truth clean background (for visual comparison). |
 | `coverage.tif` | Per-cell observed-sample count (int32 raster); `0` = inpainted hole. |
 
-To run against a **real** survey run instead (e.g. once `dvc pull` has fetched a
-dataset), point `reconstruct` at the run directory and id — the pipeline is
+To run against a **real** survey run instead (once a fixture dataset is present
+locally), point `reconstruct` at the run directory and id — the pipeline is
 identical:
 
 ```bash

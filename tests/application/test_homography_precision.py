@@ -3,7 +3,7 @@
 
 These tests exercise the framework-agnostic service extracted from the
 ``homography_precision`` Django views.  They use synthetic data and stubs so no
-DVC-backed fixtures are required.
+external fixtures are required.
 
 Run with: python -m pytest tests/application/test_homography_precision.py -v
 """
@@ -262,7 +262,7 @@ class TestComputeGcpPrecision:
         """4 coincident camera/map points yield an identity-like homography.
 
         ``compute_from_gcps`` runs cv2.findHomography on synthetic data, so no
-        DVC fixtures are required.  With camera == map coordinates the result is
+        external fixtures are required.  With camera == map coordinates the result is
         near-identity and all reprojection errors round to zero.
         """
         coords = {

@@ -17,7 +17,7 @@ ISAPI reference, **Camera intrinsics and pose**, and the **Domain model**.
   reference for the C1 dataset schema: `SurveyRun`, `FrameRecord` and its nested
   value objects, `VideoBurstRecord`, and the grouping index fields.
 - [survey_offline_reprocessing.md](./survey_offline_reprocessing.md) — using a
-  dataset without a camera: `dvc pull`, reload the plan config, browse
+  dataset without a camera: obtain the fixtures, reload the plan config, browse
   groupings, and access images and video bursts.
 - [cleanplate_reconstruction_methods.md](./cleanplate_reconstruction_methods.md)
   — method comparison for offline clean-plate (empty-floor orthophoto)
@@ -30,6 +30,8 @@ ISAPI reference, **Camera intrinsics and pose**, and the **Domain model**.
 - [map_asset_storage.md](./map_asset_storage.md) — the S3/MinIO `map-assets`
   bucket and the `hom maps upload` pipeline: env config, tenant-scoped object
   keys (`{tenant}/{map}.tif`), idempotency, and how to add a new map.
+- [test_fixtures.md](./test_fixtures.md) — how CI and local dev obtain test and
+  survey fixtures now that DVC is removed (CI needs none; tests skip when absent).
 
 ## Hikvision / PTZ
 

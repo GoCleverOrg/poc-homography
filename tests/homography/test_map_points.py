@@ -42,8 +42,8 @@ import pytest
 import yaml
 
 from poc_homography.calibration.annotation import Annotation
-from poc_homography.map_points import GCPRegistry, MapPoint
 from poc_homography.domain.vo import PixelPoint
+from poc_homography.map_points import GCPRegistry, MapPoint
 
 # Test data paths
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
@@ -53,10 +53,8 @@ ANNOTATIONS_PATH = TEST_DATA_DIR / "valte_annotations.yaml"
 VALTE_IMAGE_PATH = TEST_DATA_DIR / "valte_30.8_13.1_1_20260112.png"
 
 pytestmark = pytest.mark.skipif(
-    not MAP_POINTS_PATH.exists()
-    or not ANNOTATIONS_PATH.exists()
-    or not VALTE_IMAGE_PATH.exists(),
-    reason="DVC test data not available (run 'poe dvc-pull')",
+    not MAP_POINTS_PATH.exists() or not ANNOTATIONS_PATH.exists() or not VALTE_IMAGE_PATH.exists(),
+    reason="Local test fixtures not available (see docs/test_fixtures.md)",
 )
 
 

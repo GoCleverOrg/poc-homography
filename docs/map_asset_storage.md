@@ -45,18 +45,19 @@ For the committed maps:
 
 ## Upload pipeline
 
-The `.tif` files are DVC-tracked and not normally on disk. Materialize them
-first, then upload:
+The `.tif` files are served from S3/MinIO at runtime and are not normally on
+disk. To (re)populate the bucket, place the `.tif` next to its YAML sidecar in
+`data/maps/`, then upload:
 
 ```bash
-dvc pull           # or: poe dvc-pull — fetch the .tif files
 hom maps upload     # or: poe upload-maps
 ```
 
 `hom maps upload` globs `data/maps/*.yaml`, derives the key for each, and
 uploads the matching `.tif`. A tif that is absent on disk is reported as
-`SKIP (missing on disk — run 'dvc pull')` and the run continues; it is not an
-error. A summary line reports the uploaded/missing counts.
+`SKIP (missing on disk — place the .tif next to its YAML)` and the run
+continues; it is not an error. A summary line reports the uploaded/missing
+counts.
 
 Override the directory with `--maps-dir <path>`.
 
@@ -77,12 +78,8 @@ records a `sha256` of the uploaded bytes.
      path: <name>.tif
    ```
 
-2. Place `data/maps/<name>.tif` and DVC-track it:
-
-   ```bash
-   dvc add data/maps/<name>.tif
-   dvc push          # or: poe dvc-push
-   ```
+2. Place `data/maps/<name>.tif` next to the sidecar (kept locally; the bucket
+   is the durable store of record).
 
 3. Upload it:
 
