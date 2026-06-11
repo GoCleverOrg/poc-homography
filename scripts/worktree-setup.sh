@@ -31,14 +31,8 @@ link_file() {
 # ── .env ──────────────────────────────────────────────────────────────
 link_file "$main_repo/.env" ".env"
 
-# ── .dvc/config.local ────────────────────────────────────────────────
-link_file "$main_repo/.dvc/config.local" ".dvc/config.local"
-
-# ── data/maps/*.tif (individual symlinks, YAMLs may differ per branch) ─
-for tif in "$main_repo"/data/maps/*.tif; do
-    [ -f "$tif" ] || continue
-    link_file "$tif" "data/maps/$(basename "$tif")"
-done
+# Map GeoTIFF assets are served from S3/MinIO (resolved via Map.asset_key),
+# so worktrees need no local .tif materialization. See docs/map_asset_storage.md.
 
 # ── tests/homography/test_data/ (copy for write isolation) ───────────
 test_data_dir="tests/homography/test_data"

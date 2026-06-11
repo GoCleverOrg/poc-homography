@@ -45,7 +45,7 @@ ANNOTATIONS_FILE = TEST_DATA_DIR / "valte_annotations.yaml"
 
 pytestmark = pytest.mark.skipif(
     not MAP_POINTS_FILE.exists() or not ANNOTATIONS_FILE.exists(),
-    reason="DVC test data not available (run 'poe dvc-pull')",
+    reason="Local test fixtures not available (see docs/test_fixtures.md)",
 )
 
 # Valte map ground resolution: 0.15 m/pixel in map space.

@@ -162,7 +162,6 @@ data/**/*
 !data/**/.gitkeep
 !data/**/.gitignore
 !data/**/*.yaml
-!data/**/*.dvc
 !data/**/
 
 # Worktrees
@@ -172,9 +171,6 @@ data/**/*
 ptz_discovery_and_control/hikvision/ptz_test_results_*.json
 .review-context/
 /gen-docs
-
-# DVC local config (may contain credentials)
-.dvc/config.local
 
 # Claude Code local settings
 .claude/settings.local.json

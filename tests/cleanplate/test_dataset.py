@@ -4,7 +4,7 @@ These tests build a TINY on-disk survey run under ``tmp_path`` (a couple of
 :class:`FrameRecord` YAMLs plus generated images / masks), then exercise
 :class:`CleanPlateDataset` grouping and per-group frame loading.
 
-Fast & deterministic: no DVC, no DB, no network.
+Fast & deterministic: no external fixtures, no DB, no network.
 """
 
 from __future__ import annotations

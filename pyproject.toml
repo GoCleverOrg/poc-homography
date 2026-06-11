@@ -39,7 +39,6 @@ dependencies = [
     "typer>=0.9.0",
     "typing_extensions>=4.0",
     "uvicorn>=0.30.0",
-    "dvc[gdrive]>=3.50",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
     "alembic>=1.13",
@@ -239,9 +238,6 @@ deadcode-fix = "deadcode . --only poc_homography/ --fix"
 test = "pytest tests/ -v"
 test-cov = "pytest tests/ -v --cov=poc_homography --cov-report=term-missing"
 pre-commit = "pre-commit run --all-files"
-patch-pydrive2 = {script = "scripts.patch_pydrive2_shared_drive:main", help = "Patch pydrive2 for Shared Drive folder-level access"}
-dvc-pull = {cmd = "dvc pull", help = "Pull DVC-tracked data from remote (test data + map images)"}
-dvc-push = {cmd = "dvc push", help = "Push DVC-tracked data to remote"}
 upload-maps = {cmd = "hom maps upload", help = "Upload data/maps/*.tif to the MinIO map-assets bucket"}
 
 [tool.poe.tasks.validate]

@@ -5,10 +5,11 @@ that carries a ``tenant_id`` and a ``photo.path`` (the GeoTIFF filename). The
 object key is ``{tenant_id}/{photo.path}`` so map assets are tenant-scoped, e.g.
 ``icozee/icozee-cropped.tif``.
 
-The real ``.tif`` files are DVC-tracked and not normally on disk; run
-``dvc pull`` to materialize them. When a tif is absent the pipeline records a
-``missing`` outcome and continues (graceful skip) rather than raising, so a run
-reports clearly which assets still need pulling.
+The real ``.tif`` files are not normally on disk (map assets are served from
+S3/MinIO at runtime); place the ``.tif`` next to its YAML sidecar to upload it.
+When a tif is absent the pipeline records a ``missing`` outcome and continues
+(graceful skip) rather than raising, so a run reports clearly which assets are
+still absent.
 
 This module is deliberately framework-free: it takes any object exposing
 ``ensure_bucket()`` and ``put_map(data, key)`` (see
@@ -68,7 +69,7 @@ def upload_map_assets(
     operation is idempotent: re-running overwrites the same keys.
 
     Args:
-        maps_dir: Directory holding the YAML sidecars and (DVC-pulled) tifs.
+        maps_dir: Directory holding the YAML sidecars and (locally-present) tifs.
         store: Object exposing ``ensure_bucket()`` and ``put_map(data, key)``.
         ensure_bucket: When True, call ``store.ensure_bucket()`` once up front.
 
