@@ -15,7 +15,7 @@ Three sub-scores in [0, 1] are combined into a weighted overall score:
 
     coverage_score = min(coverage_ratio / GOOD_COVERAGE_RATIO, 1.0)
     quadrant_score = quadrant_count / 4.0
-    spread_score   = (min(spread_x, 1.0) + min(spread_y, 1.0)) / 2.0
+    spread_score   = (spread_x + spread_y) / 2.0
 
     score = 0.4 * coverage_score + 0.3 * quadrant_score + 0.3 * spread_score
 
@@ -143,8 +143,12 @@ def _extract_dims(feature_match: dict[str, Any]) -> tuple[int | None, int | None
                 width = ctx.get("image_width")
             if height is None:
                 height = ctx.get("image_height")
-    width_int = int(width) if isinstance(width, (int, float)) else None
-    height_int = int(height) if isinstance(height, (int, float)) else None
+    width_int = (
+        None if isinstance(width, bool) or not isinstance(width, (int, float)) else round(width)
+    )
+    height_int = (
+        None if isinstance(height, bool) or not isinstance(height, (int, float)) else round(height)
+    )
     return width_int, height_int
 
 
@@ -183,21 +187,27 @@ def load_image_points(
             "'feature_match.ground_control_points' structure."
         )
 
-    gcp_list: list[dict[str, Any]]
+    gcp_list: list[dict[str, Any]] = []
     width: int | None = None
     height: int | None = None
 
+    # Prefer a non-empty top-level 'gcps' list; otherwise fall through to a
+    # feature_match block. This is content-aware: an empty/None 'gcps' does not
+    # shadow a valid feature_match.ground_control_points source.
     if "gcps" in data:
         gcp_list = _normalize_gcp_list(data["gcps"])
-    else:
+
+    if not gcp_list:
         feature_match = _find_feature_match(data)
-        if feature_match is None or "ground_control_points" not in feature_match:
-            raise ValueError(
-                "Invalid GCP format. Expected top-level 'gcps' list or a "
-                "'feature_match.ground_control_points' structure."
-            )
-        gcp_list = _normalize_gcp_list(feature_match["ground_control_points"])
-        width, height = _extract_dims(feature_match)
+        if feature_match is not None and "ground_control_points" in feature_match:
+            gcp_list = _normalize_gcp_list(feature_match["ground_control_points"])
+            width, height = _extract_dims(feature_match)
+
+    if not gcp_list:
+        raise ValueError(
+            "Invalid GCP format. Expected top-level 'gcps' list or a "
+            "'feature_match.ground_control_points' structure."
+        )
 
     points: list[tuple[float, float]] = []
     for gcp in gcp_list:
@@ -284,12 +294,15 @@ def calculate_distribution(
     # Sub-scores.
     coverage_score = min(coverage_ratio / GOOD_COVERAGE_RATIO, 1.0)
     quadrant_score = quadrant_count / 4.0
-    spread_score = (min(spread_x, 1.0) + min(spread_y, 1.0)) / 2.0
+    spread_score = (spread_x + spread_y) / 2.0
     score = 0.4 * coverage_score + 0.3 * quadrant_score + 0.3 * spread_score
 
-    if score >= 0.70:
+    # Round to a stable precision before threshold comparison so intended
+    # boundary scores (e.g. 0.45) are not mislabeled due to float error.
+    rounded_score = round(score, 6)
+    if rounded_score >= 0.70:
         quality = "Good"
-    elif score >= 0.45:
+    elif rounded_score >= 0.45:
         quality = "Fair"
     else:
         quality = "Poor"
@@ -412,6 +425,14 @@ def render_text_report(yaml_name: str, metrics: DistributionMetrics) -> str:
     spread_x_pct = round(metrics.spread_x * 100)
     spread_y_pct = round(metrics.spread_y * 100)
 
+    # Coverage-specific verdict (independent of the aggregate quality label).
+    if metrics.coverage_ratio >= GOOD_COVERAGE_RATIO:
+        coverage_label = "GOOD"
+    elif metrics.coverage_ratio >= MIN_COVERAGE_RATIO:
+        coverage_label = "FAIR"
+    else:
+        coverage_label = "POOR"
+
     lines = [
         "GCP Distribution Analysis",
         "=========================",
@@ -420,7 +441,7 @@ def render_text_report(yaml_name: str, metrics: DistributionMetrics) -> str:
         f"Image: {metrics.image_width}x{metrics.image_height}",
         "",
         "Distribution Metrics:",
-        f"  Coverage Ratio: {coverage_pct}% [{metrics.quality.upper()}]",
+        f"  Coverage Ratio: {coverage_pct}% [{coverage_label}]",
         f"  Quadrants: {checks}  ({metrics.quadrant_count}/4 covered)",
         f"  Spread X: {metrics.spread_x:.2f} ({spread_x_pct}% of width)",
         f"  Spread Y: {metrics.spread_y:.2f} ({spread_y_pct}% of height)",

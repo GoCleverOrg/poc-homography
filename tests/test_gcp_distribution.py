@@ -117,6 +117,60 @@ class TestLoadImagePoints(unittest.TestCase):
             path.unlink()
         self.assertIn("image coordinates", str(ctx.exception))
 
+    def test_empty_gcps_falls_through_to_feature_match(self):
+        """Fix #1: empty top-level gcps does not shadow a valid feature_match."""
+        path = _write_yaml(
+            "gcps:\n"
+            "feature_match:\n"
+            "  image_width: 1920\n"
+            "  image_height: 1080\n"
+            "  ground_control_points:\n"
+            "    - map_id: m1\n      image_u: 10\n      image_v: 20\n"
+            "    - map_id: m2\n      image_u: 30\n      image_v: 40\n"
+        )
+        try:
+            points, width, height = load_image_points(path)
+        finally:
+            path.unlink()
+        self.assertEqual(points, [(10.0, 20.0), (30.0, 40.0)])
+        self.assertEqual(width, 1920)
+        self.assertEqual(height, 1080)
+
+    def test_boolean_dims_treated_as_missing(self):
+        """Fix #2: boolean image_width/image_height are treated as missing (not 1/0)."""
+        path = _write_yaml(
+            "feature_match:\n"
+            "  image_width: true\n"
+            "  image_height: false\n"
+            "  ground_control_points:\n"
+            "    - map_id: m1\n      image_u: 10\n      image_v: 20\n"
+            "    - map_id: m2\n      image_u: 30\n      image_v: 40\n"
+        )
+        try:
+            points, width, height = load_image_points(path)
+        finally:
+            path.unlink()
+        self.assertEqual(points, [(10.0, 20.0), (30.0, 40.0)])
+        self.assertIsNone(width)
+        self.assertIsNone(height)
+
+    def test_float_dims_are_rounded(self):
+        """Fix #3: float dims round (1080.9 -> 1081), not truncate."""
+        path = _write_yaml(
+            "feature_match:\n"
+            "  image_width: 1920.4\n"
+            "  image_height: 1080.9\n"
+            "  ground_control_points:\n"
+            "    - map_id: m1\n      image_u: 10\n      image_v: 20\n"
+            "    - map_id: m2\n      image_u: 30\n      image_v: 40\n"
+        )
+        try:
+            _points, width, height = load_image_points(path)
+        finally:
+            path.unlink()
+        self.assertEqual(width, 1920)
+        self.assertEqual(height, 1081)
+
     def test_invalid_format_raises(self):
         """A YAML lacking gcps and feature_match raises ValueError."""
         path = _write_yaml("something_else:\n  foo: bar\n")
@@ -181,8 +235,19 @@ class TestCalculateDistribution(unittest.TestCase):
         self.assertAlmostEqual(metrics.spread_x, 0.5, places=3)
         self.assertAlmostEqual(metrics.spread_y, 0.5, places=3)
 
-    def test_score_formula(self):
-        """score == 0.4*cov + 0.3*quad + 0.3*spread for a constructed case."""
+    def test_score_anchored_from_first_principles(self):
+        """Anchored score: hand-computed from raw points + dims, not from sub-scores.
+
+        Centered square on a 1000x1000 image: corners (250,250)-(750,750).
+        From first principles:
+          * hull area = 500 * 500 = 250_000; total = 1_000_000
+              -> coverage_ratio = 0.25
+              -> coverage_score = 0.25 / 0.35 (GOOD_COVERAGE_RATIO) = 0.714285714...
+          * all 4 quadrants covered -> quadrant_score = 4/4 = 1.0
+          * spread_x = spread_y = 500/1000 = 0.5 -> spread_score = (0.5+0.5)/2 = 0.5
+          * score = 0.4*0.7142857 + 0.3*1.0 + 0.3*0.5
+                  = 0.2857142857 + 0.3 + 0.15 = 0.7357142857...
+        """
         points = [
             (250.0, 250.0),
             (750.0, 250.0),
@@ -190,14 +255,67 @@ class TestCalculateDistribution(unittest.TestCase):
             (750.0, 750.0),
         ]
         m = calculate_distribution(points, 1000, 1000)
-        expected = 0.4 * m.coverage_score + 0.3 * m.quadrant_score + 0.3 * m.spread_score
-        self.assertAlmostEqual(m.score, expected, places=9)
-        # Sanity: coverage_score = coverage_ratio / GOOD_COVERAGE_RATIO (capped).
-        self.assertAlmostEqual(
-            m.coverage_score,
-            min(m.coverage_ratio / GOOD_COVERAGE_RATIO, 1.0),
-            places=9,
-        )
+        # Literal expected value computed by hand (see docstring arithmetic).
+        expected_score = 0.4 * (0.25 / GOOD_COVERAGE_RATIO) + 0.3 * 1.0 + 0.3 * 0.5
+        self.assertAlmostEqual(expected_score, 0.7357142857142858, places=10)
+        self.assertAlmostEqual(m.score, expected_score, places=6)
+
+    def test_quadrant_index_mapping(self):
+        """Quadrant index convention: 0=TL, 1=TR, 2=BL, 3=BR on a known WxH.
+
+        Center of a 1000x600 image is (500, 300). Place one point clearly in
+        each quadrant: TL (100,100), TR (900,100), BL (100,500), BR (900,500).
+        """
+        all_quadrants = [
+            (100.0, 100.0),  # TL -> index 0
+            (900.0, 100.0),  # TR -> index 1
+            (100.0, 500.0),  # BL -> index 2
+            (900.0, 500.0),  # BR -> index 3
+        ]
+        m = calculate_distribution(all_quadrants, 1000, 600)
+        self.assertEqual(m.quadrants_covered, (True, True, True, True))
+
+        # Single-quadrant case: only TR (u >= center_u, v < center_v) -> index 1.
+        tr_only = [(900.0, 50.0), (950.0, 100.0), (800.0, 80.0)]
+        m_tr = calculate_distribution(tr_only, 1000, 600)
+        self.assertEqual(m_tr.quadrants_covered, (False, True, False, False))
+
+    def test_quality_label_thresholds(self):
+        """Quality labels honor the 0.45 (Fair) and 0.70 (Good) thresholds."""
+        # --- Good: well-spread square scores ~0.736 (see anchored test). ---
+        good_pts = [(250.0, 250.0), (750.0, 250.0), (250.0, 750.0), (750.0, 750.0)]
+        self.assertEqual(calculate_distribution(good_pts, 1000, 1000).quality, "Good")
+
+        # --- Poor: tightly clustered, low coverage/spread. ---
+        poor_pts = [(10.0, 10.0), (20.0, 15.0), (15.0, 20.0)]
+        self.assertEqual(calculate_distribution(poor_pts, 1000, 1000).quality, "Poor")
+
+        # --- Just below 0.45 -> Poor. A collinear diagonal over a fraction of
+        # the image: covscore=0 (zero hull area), 2 quadrants (qs=0.5), and
+        # partial spread so 0.3*0.5 + 0.3*ss < 0.45  ->  ss < 0.5.
+        # span 0..600 in u and 0..360 in v on 1000x600 -> spread (0.6, 0.6),
+        # ss=0.6, score = 0.15 + 0.18 = 0.33  -> Poor.
+        below_pts = [(0.0, 0.0), (300.0, 180.0), (600.0, 360.0)]
+        m_below = calculate_distribution(below_pts, 1000, 600)
+        self.assertEqual(m_below.quality, "Poor")
+
+    def test_quality_label_045_float_boundary(self):
+        """Locks in fix #4: a score whose raw float is 0.44999999999999996 -> Fair.
+
+        Collinear diagonal corner-to-corner on a 1000x600 image:
+          * hull area = 0 (degenerate)            -> coverage_score = 0.0
+          * covers TL (0,0) and BR (1000,600)     -> quadrant_count = 2, qs = 0.5
+          * full spread on both axes              -> spread_score = 1.0
+          * score = 0.4*0 + 0.3*0.5 + 0.3*1.0 = 0.45
+        In IEEE-754 this computes to 0.44999999999999996; without the round()
+        guard it would mislabel as Poor. With the fix it is Fair.
+        """
+        diag_pts = [(0.0, 0.0), (500.0, 300.0), (1000.0, 600.0)]
+        m = calculate_distribution(diag_pts, 1000, 600)
+        # Confirm we are exactly on the float-error boundary the fix targets.
+        self.assertEqual(m.score, 0.44999999999999996)
+        self.assertLess(m.score, 0.45)  # raw float is below 0.45
+        self.assertEqual(m.quality, "Fair")  # but rounded comparison -> Fair
 
     def test_coverage_and_quadrant_warnings_trigger(self):
         """Low coverage (<15%) and few quadrants (<2) each trigger a warning."""
@@ -235,6 +353,21 @@ class TestRendering(unittest.TestCase):
         self.assertIn("GCP Distribution Analysis", report)
         self.assertIn(f"GCPs: {metrics.n_gcps}", report)
         self.assertIn(metrics.quality.upper(), report)
+
+    def test_coverage_line_uses_coverage_verdict_not_quality(self):
+        """Fix #5: the Coverage Ratio line uses a coverage-specific verdict.
+
+        A degenerate diagonal has zero hull coverage (POOR coverage) but the
+        overall quality is Fair; the Coverage Ratio line must read POOR while
+        the Quality line reads FAIR.
+        """
+        diag_pts = [(0.0, 0.0), (500.0, 300.0), (1000.0, 600.0)]
+        metrics = calculate_distribution(diag_pts, 1000, 600)
+        self.assertEqual(metrics.quality, "Fair")
+        self.assertEqual(metrics.coverage_ratio, 0.0)
+        report = render_text_report("g.yaml", metrics)
+        self.assertIn("Coverage Ratio: 0% [POOR]", report)
+        self.assertIn("Quality: FAIR", report)
 
     def test_ascii_scatter_robust_to_empty(self):
         """The scatter renderer handles an empty point list."""

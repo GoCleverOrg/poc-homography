@@ -18,16 +18,15 @@ from poc_homography.validation.gcp_distribution import (
 @gcp_app.command("distribution")
 def distribution_command(
     gcps: Path = typer.Option(..., "--gcps", "-g", help="Path to GCP YAML file"),
-    width: int = typer.Option(
+    width: int | None = typer.Option(
         None, "--width", "-w", help="Image width in pixels (overrides YAML metadata)"
     ),
-    # NOTE: --height intentionally has NO `-h` short flag: `-h` collides with
-    # Typer's built-in `--help` alias.
-    height: int = typer.Option(
+    # No -h short flag for --height to avoid ambiguity with the conventional -h/--help.
+    height: int | None = typer.Option(
         None, "--height", help="Image height in pixels (overrides YAML metadata)"
     ),
     html: bool = typer.Option(False, "--html", help="Generate HTML visualization instead of text"),
-    output: Path = typer.Option(
+    output: Path | None = typer.Option(
         None,
         "--output",
         "-o",
