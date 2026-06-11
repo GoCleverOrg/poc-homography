@@ -86,8 +86,17 @@ const ZOOM_STATUS_CLASSES: Record<ZoomStatus, string> = {
   skipped: styles.zoomDotSkipped,
 };
 
-const SESSION_KEY_PREFIX = 'lens_calibration_session_';
 const LAST_SESSION_KEY = 'lens_calibration_session_last';
+
+function readLastSession(): PersistedSession | null {
+  try {
+    const raw = localStorage.getItem(LAST_SESSION_KEY);
+    if (raw) return JSON.parse(raw) as PersistedSession;
+  } catch {
+    // ignore malformed / unavailable session
+  }
+  return null;
+}
 
 function parseZoomList(raw: string): number[] {
   const seen = new Set<number>();
@@ -151,39 +160,26 @@ export default function LensCalibrationPage() {
   // Restore the toggle preference from localStorage via a lazy initializer
   // (avoids a setState-in-effect on mount).
   const [multiZoomMode, setMultiZoomMode] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem(LAST_SESSION_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as PersistedSession;
-        if (typeof parsed.multiZoomMode === 'boolean') return parsed.multiZoomMode;
-      }
-    } catch {
-      // ignore malformed session
-    }
-    return true;
+    const parsed = readLastSession();
+    return typeof parsed?.multiZoomMode === 'boolean' ? parsed.multiZoomMode : true;
   });
   const [zoomLevels, setZoomLevels] = useState<number[]>([1, 5, 10, 15, 20, 25]);
   const [zoomLevelsInput, setZoomLevelsInput] = useState('1, 5, 10, 15, 20, 25');
-  const [addZoomValue, setAddZoomValue] = useState('');
+  const [addZoomValue, setAddZoomValue] = useState(''); // "Add Zoom Level" (configurator)
+  const [addEntryValue, setAddEntryValue] = useState(''); // "Add Zoom Entry" (post-batch)
   const [zoomResults, setZoomResults] = useState<Record<string, ZoomResult>>({});
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; zoom: number } | null>(null);
   // Detect a resumable session at mount-time via a lazy initializer (avoids
   // setState-in-effect). The banner is dismissed/resumed by user action.
   const [resumePrompt, setResumePrompt] = useState<PersistedSession | null>(() => {
-    try {
-      const raw = localStorage.getItem(LAST_SESSION_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as PersistedSession;
-        if (
-          (parsed.zoomLevels && parsed.zoomLevels.length > 0) ||
-          (parsed.results && Object.keys(parsed.results).length > 0)
-        ) {
-          return parsed;
-        }
-      }
-    } catch {
-      // ignore malformed session
+    const parsed = readLastSession();
+    if (
+      parsed &&
+      ((parsed.zoomLevels && parsed.zoomLevels.length > 0) ||
+        (parsed.results && Object.keys(parsed.results).length > 0))
+    ) {
+      return parsed;
     }
     return null;
   });
@@ -434,8 +430,13 @@ export default function LensCalibrationPage() {
   // Calibrate a single zoom: auto-compute intrinsics then calibrate annotated lines.
   // Returns a ZoomResult (success or failed). Pure-ish: does not mutate batch state itself.
   const calibrateSingleZoom = useCallback(
-    async (zoomValue: number): Promise<ZoomResult> => {
-      const lines = collectAnnotationLines();
+    async (
+      zoomValue: number,
+      presetLines?: Array<{ line_id: string; points: number[][] }>,
+    ): Promise<ZoomResult> => {
+      // Reuse already-collected lines when the caller has them (the batch loop
+      // collects once for all zooms); otherwise gather them for a one-off run.
+      const lines = presetLines ?? collectAnnotationLines();
       if (lines.length === 0) {
         return { status: 'failed', message: 'No annotation lines loaded' };
       }
@@ -498,10 +499,7 @@ export default function LensCalibrationPage() {
           return { status: 'failed', message: data.message || 'Solver reported failure' };
         }
 
-        const numLines =
-          typeof data.line_errors === 'object' && Array.isArray(data.line_errors)
-            ? data.line_errors.length
-            : lines.length;
+        const numLines = Array.isArray(data.line_errors) ? data.line_errors.length : lines.length;
 
         return {
           status: 'success',
@@ -549,7 +547,7 @@ export default function LensCalibrationPage() {
       setZoomResults((prev) => ({ ...prev, [String(z)]: { status: 'calibrating' } }));
       showStatus(`Calibrating zoom ${z}x (${i + 1} of ${active.length})`, 'info');
 
-      const result = await calibrateSingleZoom(z);
+      const result = await calibrateSingleZoom(z, lines);
       setZoomResults((prev) => ({ ...prev, [String(z)]: result }));
     }
 
@@ -568,7 +566,7 @@ export default function LensCalibrationPage() {
       }
       setZoomResults((prev) => ({ ...prev, [String(zoomValue)]: { status: 'calibrating' } }));
       showStatus(`Calibrating zoom ${zoomValue}x...`, 'info');
-      const result = await calibrateSingleZoom(zoomValue);
+      const result = await calibrateSingleZoom(zoomValue, lines);
       // preserve loadedRmse so overwrite-confirm can compare against the original
       setZoomResults((prev) => {
         const prior = prev[String(zoomValue)];
@@ -651,7 +649,7 @@ export default function LensCalibrationPage() {
         return;
       }
       applyZoomLevels([...zoomLevels, n]);
-      setAddZoomValue('');
+      setAddEntryValue('');
       await rerunSingleZoom(n);
     },
     [zoomLevels, applyZoomLevels, rerunSingleZoom, showStatus],
@@ -1007,11 +1005,6 @@ export default function LensCalibrationPage() {
 
   // ---------------------------------------------------------------- session persistence
 
-  const sessionKey = useCallback(
-    (id: string) => `${SESSION_KEY_PREFIX}${id || 'unknown_camera'}`,
-    [],
-  );
-
   const persistSession = useCallback(() => {
     try {
       const payload: PersistedSession = {
@@ -1020,13 +1013,11 @@ export default function LensCalibrationPage() {
         results: zoomResults,
         cameraId,
       };
-      const json = JSON.stringify(payload);
-      localStorage.setItem(sessionKey(cameraId), json);
-      localStorage.setItem(LAST_SESSION_KEY, json);
+      localStorage.setItem(LAST_SESSION_KEY, JSON.stringify(payload));
     } catch {
       // localStorage unavailable / quota — non-fatal
     }
-  }, [multiZoomMode, zoomLevels, zoomResults, cameraId, sessionKey]);
+  }, [multiZoomMode, zoomLevels, zoomResults, cameraId]);
 
   const applySession = useCallback(
     (s: PersistedSession) => {
@@ -1040,7 +1031,6 @@ export default function LensCalibrationPage() {
 
   const clearSession = useCallback(() => {
     try {
-      localStorage.removeItem(sessionKey(cameraId));
       localStorage.removeItem(LAST_SESSION_KEY);
     } catch {
       // ignore
@@ -1050,7 +1040,7 @@ export default function LensCalibrationPage() {
     applyZoomLevels([1, 5, 10, 15, 20, 25]);
     setResumePrompt(null);
     showStatus('Session cleared', 'info');
-  }, [cameraId, sessionKey, applyZoomLevels, showStatus]);
+  }, [applyZoomLevels, showStatus]);
 
   // ---------------------------------------------------------------- effects
 
@@ -1466,15 +1456,15 @@ export default function LensCalibrationPage() {
                     type="number"
                     step={0.1}
                     min={0.1}
-                    value={addZoomValue}
+                    value={addEntryValue}
                     placeholder="new zoom"
-                    onChange={(e) => setAddZoomValue(e.target.value)}
+                    onChange={(e) => setAddEntryValue(e.target.value)}
                   />
                   <button
                     className={styles.btnSecondary}
                     type="button"
                     disabled={!hasAnnotationLines || batchRunning}
-                    onClick={() => addZoomEntry(addZoomValue)}
+                    onClick={() => addZoomEntry(addEntryValue)}
                   >
                     Add Zoom Entry
                   </button>

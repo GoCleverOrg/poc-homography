@@ -28,6 +28,7 @@ from api.schemas.lens_calibration import (
     SaveCalibrationResponse,
     ValidateRequest,
     ValidateResponse,
+    ZoomEntryIn,
 )
 from api.utils.frame_helpers import get_map_for_tenant
 from poc_homography.calibration.lens_distortion.ddd_sync import sync_to_ddd_repo_pg
@@ -300,57 +301,41 @@ def save_calibration(
         from poc_homography.domain.vo import LensDistortion
         from poc_homography.types import Unitless
 
-        if body.zoom_entries:
-            table = CameraCalibrationTable(camera_id=body.camera_id)
-            for e in body.zoom_entries:
-                e_coeffs = e.coefficients
-                e_distortion = LensDistortion(
-                    k1=Unitless(e_coeffs.k1),
-                    k2=Unitless(e_coeffs.k2),
-                    k3=Unitless(e_coeffs.k3),
-                    p1=Unitless(e_coeffs.p1),
-                    p2=Unitless(e_coeffs.p2),
-                )
-                table.add_entry(
-                    ZoomCalibrationEntry.from_solver_result(
-                        zoom_factor=e.zoom,
-                        distortion=e_distortion,
-                        validation_rmse=e.validation_rmse,
-                        source_images=[],
-                        num_lines_used=e.num_lines,
-                        fx=float(e.intrinsics.fx) if e.intrinsics else 0.0,
-                        fy=float(e.intrinsics.fy) if e.intrinsics else 0.0,
-                        cx=float(e.intrinsics.cx) if e.intrinsics else 0.0,
-                        cy=float(e.intrinsics.cy) if e.intrinsics else 0.0,
-                    )
-                )
-
-            sync_to_ddd_repo_pg(table, session)
-
-            return SaveCalibrationResponse(success=True, camera_id=body.camera_id)
-
-        coeffs = body.coefficients
-        distortion = LensDistortion(
-            k1=Unitless(coeffs.k1),
-            k2=Unitless(coeffs.k2),
-            k3=Unitless(coeffs.k3),
-            p1=Unitless(coeffs.p1),
-            p2=Unitless(coeffs.p2),
-        )
+        # Normalize the two request shapes into a single list of entries: the
+        # legacy single-entry body is just the 1-element case of a multi-zoom
+        # batch. This keeps the save logic below at one altitude (one loop).
+        entries = body.zoom_entries or [
+            ZoomEntryIn(
+                zoom=body.zoom,
+                coefficients=body.coefficients,
+                intrinsics=body.intrinsics,
+                validation_rmse=body.validation_rmse,
+                num_lines=body.num_lines,
+            )
+        ]
 
         table = CameraCalibrationTable(camera_id=body.camera_id)
-        entry = ZoomCalibrationEntry.from_solver_result(
-            zoom_factor=body.zoom,
-            distortion=distortion,
-            validation_rmse=body.validation_rmse,
-            source_images=[],
-            num_lines_used=body.num_lines,
-            fx=float(body.intrinsics.fx) if body.intrinsics else 0.0,
-            fy=float(body.intrinsics.fy) if body.intrinsics else 0.0,
-            cx=float(body.intrinsics.cx) if body.intrinsics else 0.0,
-            cy=float(body.intrinsics.cy) if body.intrinsics else 0.0,
-        )
-        table.add_entry(entry)
+        for e in entries:
+            distortion = LensDistortion(
+                k1=Unitless(e.coefficients.k1),
+                k2=Unitless(e.coefficients.k2),
+                k3=Unitless(e.coefficients.k3),
+                p1=Unitless(e.coefficients.p1),
+                p2=Unitless(e.coefficients.p2),
+            )
+            table.add_entry(
+                ZoomCalibrationEntry.from_solver_result(
+                    zoom_factor=e.zoom,
+                    distortion=distortion,
+                    validation_rmse=e.validation_rmse,
+                    source_images=[],
+                    num_lines_used=e.num_lines,
+                    fx=float(e.intrinsics.fx) if e.intrinsics else 0.0,
+                    fy=float(e.intrinsics.fy) if e.intrinsics else 0.0,
+                    cx=float(e.intrinsics.cx) if e.intrinsics else 0.0,
+                    cy=float(e.intrinsics.cy) if e.intrinsics else 0.0,
+                )
+            )
 
         sync_to_ddd_repo_pg(table, session)
 
