@@ -66,15 +66,13 @@ MIN_GCPS_FOR_ANALYSIS = 3
 #: Recommended GCP count; below this we suggest capturing more.
 RECOMMENDED_GCP_COUNT = 10
 
-#: Quadrant index -> short code (matches index convention 0=TL,1=TR,2=BL,3=BR).
-_QUADRANT_CODES: tuple[str, str, str, str] = ("TL", "TR", "BL", "BR")
-#: Quadrant short code -> human-readable name.
-_QUADRANT_NAMES: dict[str, str] = {
-    "TL": "top-left",
-    "TR": "top-right",
-    "BL": "bottom-left",
-    "BR": "bottom-right",
-}
+#: Quadrant index -> human-readable name (index convention 0=TL,1=TR,2=BL,3=BR).
+_QUADRANT_NAMES: tuple[str, str, str, str] = (
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
+)
 
 
 @dataclass(frozen=True)
@@ -143,13 +141,14 @@ def _extract_dims(feature_match: dict[str, Any]) -> tuple[int | None, int | None
                 width = ctx.get("image_width")
             if height is None:
                 height = ctx.get("image_height")
-    width_int = (
-        None if isinstance(width, bool) or not isinstance(width, (int, float)) else round(width)
-    )
-    height_int = (
-        None if isinstance(height, bool) or not isinstance(height, (int, float)) else round(height)
-    )
-    return width_int, height_int
+
+    def _as_dim(value: Any) -> int | None:
+        # Reject bool explicitly (bool is an int subclass); round floats.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return round(value)
+
+    return _as_dim(width), _as_dim(height)
 
 
 def load_image_points(
@@ -321,8 +320,7 @@ def calculate_distribution(
     recommendations: list[str] = []
     for index, covered in enumerate(quadrants):
         if not covered:
-            name = _QUADRANT_NAMES[_QUADRANT_CODES[index]]
-            recommendations.append(f"Add GCPs in the {name} quadrant")
+            recommendations.append(f"Add GCPs in the {_QUADRANT_NAMES[index]} quadrant")
     if spread_x < MIN_SPREAD:
         recommendations.append(
             f"Increase horizontal spread (currently {round(spread_x * 100)}% of width)"
@@ -418,8 +416,16 @@ def render_ascii_scatter(
     return "\n".join(lines)
 
 
-def render_text_report(yaml_name: str, metrics: DistributionMetrics) -> str:
-    """Render a plain-text distribution report."""
+def render_text_report(
+    yaml_name: str,
+    metrics: DistributionMetrics,
+    scatter: str | None = None,
+) -> str:
+    """Render a plain-text distribution report.
+
+    If ``scatter`` is provided, it is placed after the ``Quality:`` block and
+    before the ``Warnings:`` section.
+    """
     checks = " ".join("[✓]" if covered else "[✗]" for covered in metrics.quadrants_covered)
     coverage_pct = round(metrics.coverage_ratio * 100)
     spread_x_pct = round(metrics.spread_x * 100)
@@ -451,9 +457,9 @@ def render_text_report(yaml_name: str, metrics: DistributionMetrics) -> str:
         "",
     ]
 
-    # The scatter is rendered from the metrics' dimensions; points themselves
-    # are not stored on the metrics, so the caller passes an empty plot when
-    # unavailable. Here we render a header line and let render() include it.
+    if scatter is not None:
+        lines.extend([scatter, ""])
+
     lines.append("Warnings:")
     if metrics.warnings:
         lines.extend(f"  • {w}" for w in metrics.warnings)
@@ -475,14 +481,8 @@ def render_full_text_report(
     points: list[tuple[float, float]],
 ) -> str:
     """Render the text report including the ASCII scatter plot."""
-    base = render_text_report(yaml_name, metrics)
     scatter = render_ascii_scatter(points, metrics.image_width, metrics.image_height)
-    # Insert the scatter after the "Quality:" block (before "Warnings:").
-    marker = "\nWarnings:"
-    if marker in base:
-        head, tail = base.split(marker, 1)
-        return f"{head}\n{scatter}\n{marker.lstrip(chr(10))}{tail}"
-    return f"{base}\n{scatter}"
+    return render_text_report(yaml_name, metrics, scatter=scatter)
 
 
 def render_html_report(
@@ -522,13 +522,11 @@ def render_html_report(
         f"{circles}</svg>"
     )
 
-    # 2x2 quadrant grid. Layout rows: [TL, TR], [BL, BR].
-    cell_order = [(0, "TL"), (1, "TR"), (2, "BL"), (3, "BR")]
+    # 2x2 quadrant grid. Layout rows: [TL, TR], [BL, BR] (matches index order).
     cells = []
-    for index, code in cell_order:
+    for index, label in enumerate(_QUADRANT_NAMES):
         covered = metrics.quadrants_covered[index]
         color = "#4caf50" if covered else "#bdbdbd"
-        label = _QUADRANT_NAMES[code]
         mark = "✓" if covered else "✗"
         cells.append(
             f'<div style="background:{color};color:#fff;padding:18px;'
