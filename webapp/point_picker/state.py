@@ -187,10 +187,6 @@ class PointPickerState:
 # Per-(tenant, map) state (lazily initialized)
 _states: dict[tuple[str, str], PointPickerState] = {}
 
-# Records, per tenant, which map id a ``map_id=None`` call resolved to, so the
-# default (no explicit map) path can reuse the cached state without re-resolving.
-_default_map_for_tenant: dict[str, str] = {}
-
 
 def get_state(
     tenant_id: str,
@@ -216,13 +212,14 @@ def get_state(
     # Fast path: an explicit, previously resolved (tenant, map) entry.
     if map_id is not None and (tenant_id, map_id) in _states:
         return _states[(tenant_id, map_id)]
-    # Fast path: the tenant's default map was resolved on a prior call.
-    if map_id is None:
-        cached_id = _default_map_for_tenant.get(tenant_id)
-        if cached_id is not None and (tenant_id, cached_id) in _states:
-            return _states[(tenant_id, cached_id)]
 
+    # Resolve the concrete map (a ``map_id=None`` call picks the tenant's
+    # default map), then key the cache by its real id — so the default path
+    # reuses the same cached state as an explicit call for that map.
     map_entity, map_file = _resolve_map(tenant_id, session, map_id)
+    key = (tenant_id, map_entity.id)
+    if key in _states:
+        return _states[key]
 
     state = PointPickerState(
         map_file,
@@ -237,16 +234,12 @@ def get_state(
         from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
         state.registry = from_gcp_repo_pg(session, map_entity.id)
-        state.map_id = state.registry.map_id
     elif GCPS_DIR.exists():
         from poc_homography.map_points.gcp_registry import from_gcp_repo
 
         state.registry = from_gcp_repo(GCPS_DIR, map_entity.id)
-        state.map_id = state.registry.map_id
 
-    _states[(tenant_id, map_entity.id)] = state
-    if map_id is None:
-        _default_map_for_tenant[tenant_id] = map_entity.id
+    _states[key] = state
     return state
 
 
@@ -399,5 +392,4 @@ def delete_gcp_from_repo_pg(point_id: str, map_id: str, session: Session) -> Non
 
 
 register_invalidation_callback(_states.clear)
-register_invalidation_callback(_default_map_for_tenant.clear)
 register_invalidation_callback(_gcp_repo_cache.clear)

@@ -228,7 +228,11 @@ export default function PointPickerPage() {
   // Initial tag fetch
   useEffect(() => {
     if (!selectedTenantId || !selectedMapId || !imageConfigured) return;
-    void (async () => { await fetchNextId(currentTag); })();
+    // Wrapped in an async IIFE so the setState inside fetchNextId runs in a
+    // microtask, not synchronously in the effect body (react-hooks lint).
+    void (async () => {
+      await fetchNextId(currentTag);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTenantId, selectedMapId, imageConfigured]);
 
@@ -405,6 +409,8 @@ export default function PointPickerPage() {
 
   // ------------------------------------ load points when tenant/map ready
   useEffect(() => {
+    // Async IIFE keeps setState out of the synchronous effect body
+    // (react-hooks set-state-in-effect lint).
     void (async () => {
       if (selectedTenantId && selectedMapId && imageConfigured) {
         await loadPoints();

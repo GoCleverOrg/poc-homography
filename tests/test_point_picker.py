@@ -342,7 +342,6 @@ class TestGetStateMapId:
 
         maps = {"map-a": _make("map-a", "a.tif"), "map-b": _make("map-b", "b.tif")}
         pp_state._states.clear()
-        pp_state._default_map_for_tenant.clear()
 
         fake_repo = MagicMock()
         fake_repo.get.side_effect = lambda mid: maps.get(mid)
@@ -365,7 +364,6 @@ class TestGetStateMapId:
             assert pp_state.get_state("t", map_id="map-a") is state_a
 
         pp_state._states.clear()
-        pp_state._default_map_for_tenant.clear()
 
     def test_unknown_map_id_raises(self, tmp_path: Path) -> None:
         import point_picker.state as pp_state
@@ -474,21 +472,26 @@ class TestPointPickerAPI:
             mock_tif.return_value = MockTiffFile(width=1000, height=800)
             state = pp_state.PointPickerState(geotiff_path)
 
-        # Inject state for the test tenant, clean up after test.
-        # The cache is keyed by (tenant_id, map_id); register the default-map
-        # alias so get_state(tenant_id) with no explicit map_id hits this
-        # injected state instead of resolving a (nonexistent) map repo.
+        # Inject state for the test tenant, clean up after test. The cache is
+        # keyed by (tenant_id, map_id); ``get_state(tenant_id)`` (no explicit
+        # map_id) resolves the tenant's default map then hits the cache, so we
+        # stub ``resolve_map_for_tenant`` to return a map whose id matches the
+        # injected key instead of touching a (nonexistent) map repo.
         pp_state._states[(self.TENANT_ID, state.map_id)] = state
-        pp_state._default_map_for_tenant[self.TENANT_ID] = state.map_id
+        default_map = MagicMock()
+        default_map.id = state.map_id
         # Bypass tenant repo validation and YAML persistence (test tenant has no repo dir)
         with (
+            patch(
+                "point_picker.state.resolve_map_for_tenant",
+                return_value=(default_map, geotiff_path),
+            ),
             patch("point_picker.views.get_tenant_id", return_value=self.TENANT_ID),
             patch("point_picker.views.save_gcp_to_repo"),
             patch("point_picker.views.delete_gcp_from_repo"),
         ):
             yield Client()
         pp_state._states.pop((self.TENANT_ID, state.map_id), None)
-        pp_state._default_map_for_tenant.pop(self.TENANT_ID, None)
 
     def _url(self, path: str, extra_qs: str = "") -> str:
         """Build URL with tenant_id query parameter."""
