@@ -20,6 +20,12 @@ interface FrameSummary {
   annotation_count: number;
 }
 
+/** A transient banner message keyed by a monotonic id. */
+interface Toast {
+  text: string;
+  id: number;
+}
+
 interface ClickedPoint {
   /** Pixel coordinates in the camera image (natural resolution). */
   pixelX: number;
@@ -58,12 +64,23 @@ export default function ClickToGpsPage() {
   const [frames, setFrames] = useState<FrameSummary[]>([]);
   const [currentFrame, setCurrentFrame] = useState<FrameSummary | null>(null);
   const [clickedPoints, setClickedPoints] = useState<ClickedPoint[]>([]);
-  const [flash, setFlash] = useState<string | null>(null);
-  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  // Transient banners carry a monotonic id so two identical consecutive
+  // messages still produce a new object — re-arming the 3 s auto-clear timer.
+  const [flash, setFlash] = useState<Toast | null>(null);
+  const [copyStatus, setCopyStatus] = useState<Toast | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
+  const toastSeq = useRef(0);
   const clickedRef = useRef<ClickedPoint[]>([]);
   clickedRef.current = clickedPoints;
+
+  const showFlash = useCallback((text: string) => {
+    setFlash({ text, id: (toastSeq.current += 1) });
+  }, []);
+
+  const showCopyStatus = useCallback((text: string) => {
+    setCopyStatus({ text, id: (toastSeq.current += 1) });
+  }, []);
 
   /* Select a frame and reset the per-frame marker state. */
   const selectFrame = useCallback((frame: FrameSummary | null) => {
@@ -143,12 +160,12 @@ export default function ClickToGpsPage() {
         };
 
         setClickedPoints((prev) => [...prev, point].slice(-MAX_POINTS));
-        setFlash(point.error ? point.error : `GPS: ${gpsLabel(point)}`);
+        showFlash(point.error ? point.error : `GPS: ${gpsLabel(point)}`);
       } catch (err) {
         console.error('Projection request failed:', err);
       }
     },
-    [currentFrame, selectedTenantId],
+    [currentFrame, selectedTenantId, showFlash],
   );
 
   /* ---- Auto-clear the transient flash banner after 3 s ---- */
@@ -172,17 +189,17 @@ export default function ClickToGpsPage() {
     const points = clickedRef.current;
     const last = [...points].reverse().find((p) => p.latitude !== null);
     if (!last || last.latitude === null || last.longitude === null) {
-      setCopyStatus('No GPS coordinate to copy');
+      showCopyStatus('No GPS coordinate to copy');
       return;
     }
     const text = `${last.latitude.toFixed(6)}, ${last.longitude.toFixed(6)}`;
     try {
       await navigator.clipboard.writeText(text);
-      setCopyStatus(`Copied: ${text}`);
+      showCopyStatus(`Copied: ${text}`);
     } catch {
-      setCopyStatus('Clipboard unavailable');
+      showCopyStatus('Clipboard unavailable');
     }
-  }, []);
+  }, [showCopyStatus]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -253,7 +270,7 @@ export default function ClickToGpsPage() {
           </div>
         </div>
 
-        {flash && <div className={styles.flash}>{flash}</div>}
+        {flash && <div className={styles.flash}>{flash.text}</div>}
       </div>
 
       {/* ---- Right: controls ---- */}
@@ -335,7 +352,9 @@ export default function ClickToGpsPage() {
           >
             Clear markers (x)
           </button>
-          {copyStatus && <div className={styles.copyStatus}>{copyStatus}</div>}
+          {copyStatus && (
+            <div className={styles.copyStatus}>{copyStatus.text}</div>
+          )}
         </div>
       </div>
     </div>

@@ -93,11 +93,16 @@ def _load_geotiff(tenant_id: str, session: Session) -> tuple[GeoTiff, int, int] 
     if not geotiff_path.exists():
         return None
 
-    with tifffile.TiffFile(geotiff_path) as tif:
-        page = tif.pages[0]
-        width: int = page.imagewidth  # type: ignore[union-attr]
-        height: int = page.imagelength  # type: ignore[union-attr]
-        geotiff = extract_geotiff(tif)
+    # A corrupt/truncated raster must degrade to "no GPS available" (handled as
+    # a 422 by the caller) rather than bubbling an opaque 500.
+    try:
+        with tifffile.TiffFile(geotiff_path) as tif:
+            page = tif.pages[0]
+            width: int = page.imagewidth  # type: ignore[union-attr]
+            height: int = page.imagelength  # type: ignore[union-attr]
+            geotiff = extract_geotiff(tif)
+    except (OSError, ValueError):
+        return None
 
     if geotiff is None:
         return None
@@ -117,6 +122,10 @@ def list_projectable_frames(
 ) -> list[FrameSummary]:
     """List camera frames with enough GCP annotations to project from."""
     map_id = _resolve_map_id(tenant_id, session)
+    if map_id is None:
+        # No map for this tenant → no projectable frames. Returning here also
+        # avoids ``list_frames(session, None)`` enumerating every tenant's frames.
+        return []
     frames: list[FrameSummary] = []
     for frame in list_frames(session, map_id):
         annotations = load_annotations_for_frame(frame.id, session)
@@ -142,8 +151,9 @@ def project_pixel_to_gps(
     """Project a clicked camera pixel to a WGS84 GPS coordinate."""
     map_id = _resolve_map_id(tenant_id, session)
     if map_id is None:
+        # 404 matches the sibling routers' "no map for tenant" convention.
         raise HTTPException(
-            status_code=422,
+            status_code=404,
             detail="No map configured for the current tenant. Upload a GeoTIFF map first.",
         )
 
@@ -169,7 +179,7 @@ def project_pixel_to_gps(
     try:
         registry = from_gcp_repo_pg(session, map_id)
     except (KeyError, ValueError, OSError) as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load GCP registry: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to load GCP registry") from exc
 
     # Fit the GCP homography for this frame. min_inlier_ratio=0 so we always
     # obtain a transform and report its (possibly low) confidence rather than
@@ -208,8 +218,15 @@ def project_pixel_to_gps(
             error="Point projects beyond the map (likely on or above the horizon).",
         )
 
-    easting, northing = geotiff.pixel_to_geo(map_x, map_y)
-    latitude, longitude = geotiff.pixel_to_latlon(map_x, map_y)
+    try:
+        easting, northing = geotiff.pixel_to_geo(map_x, map_y)
+        latitude, longitude = geotiff.pixel_to_latlon(map_x, map_y)
+    except (ValueError, RuntimeError) as exc:
+        return ProjectResponse(
+            success=False,
+            confidence=round(result.inlier_ratio, 3),
+            error=f"Coordinate reprojection failed: {exc}",
+        )
 
     return ProjectResponse(
         success=True,
@@ -235,7 +252,13 @@ def serve_image(
     if not validate_image_filename(image_filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    frame = image_filename_to_frame(image_filename, session)
+    # Scope the lookup to the tenant's own map so one tenant cannot read another
+    # tenant's frame by guessing its filename.
+    map_id = _resolve_map_id(tenant_id, session)
+    if map_id is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    frame = image_filename_to_frame(image_filename, session, map_id=map_id)
     if frame is None:
         raise HTTPException(status_code=404, detail="Image not found")
 

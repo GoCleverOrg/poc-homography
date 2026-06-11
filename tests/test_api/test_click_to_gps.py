@@ -170,8 +170,8 @@ class TestProject:
         assert resp.status_code == 400
 
     @patch(f"{_MODULE}.get_map_for_tenant")
-    def test_no_map_returns_422(self, mock_map: MagicMock, client: TestClient) -> None:
-        """No configured map → 422 with a helpful message."""
+    def test_no_map_returns_404(self, mock_map: MagicMock, client: TestClient) -> None:
+        """No configured map → 404, matching the sibling routers' convention."""
         mock_map.return_value = None
 
         resp = client.post(
@@ -179,7 +179,7 @@ class TestProject:
             json={"test_case_name": "frame1", "pixel_x": 1.0, "pixel_y": 1.0},
         )
 
-        assert resp.status_code == 422
+        assert resp.status_code == 404
 
 
 class TestListFrames:
