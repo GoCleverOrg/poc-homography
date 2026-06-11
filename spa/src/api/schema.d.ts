@@ -851,6 +851,121 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/camera-evaluation/survey/run/start/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Survey Run Start
+         * @description Launch a multi-camera survey run.
+         *
+         *     SPA-hook: POST /camera-evaluation/survey/run/start/ — body
+         *     ``{"plan_config", "camera_ids"}``; returns ``{"run_id", "session_ids"}``.
+         */
+        post: operations["api_survey_run_start_camera_evaluation_survey_run_start__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/camera-evaluation/survey/run/{run_id}/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Survey Run Status
+         * @description Get per-camera status for a survey run.
+         *
+         *     SPA-hook: GET /camera-evaluation/survey/run/{run_id}/status/ — returns
+         *     ``{"run_id", "cameras": {camera_id: {phase, frame_count, ...}}}``.
+         */
+        get: operations["api_survey_run_status_camera_evaluation_survey_run__run_id__status__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/camera-evaluation/survey/run/{run_id}/abort/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Survey Run Abort
+         * @description Request graceful abort of a survey run.
+         *
+         *     SPA-hook: POST /camera-evaluation/survey/run/{run_id}/abort/ — returns
+         *     ``{"run_id", "message"}``.
+         */
+        post: operations["api_survey_run_abort_camera_evaluation_survey_run__run_id__abort__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/camera-evaluation/survey/runs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Survey Runs
+         * @description List survey-run summaries (newest first).
+         *
+         *     SPA-hook: GET /camera-evaluation/survey/runs/ — returns
+         *     ``{"runs", "limit", "offset"}``.
+         */
+        get: operations["api_survey_runs_camera_evaluation_survey_runs__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/camera-evaluation/survey/runs/{run_id}/groups/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Survey Run Groups
+         * @description Browse dataset grouping keys with frame counts for a survey run.
+         *
+         *     SPA-hook: GET /camera-evaluation/survey/runs/{run_id}/groups/ — optional
+         *     ``phase``/``camera``/``zoom`` filters; returns ``{"groups": [...]}``.
+         */
+        get: operations["api_survey_run_groups_camera_evaluation_survey_runs__run_id__groups__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/camera-line-annotator/api/images/": {
         parameters: {
             query?: never;
@@ -1007,6 +1122,49 @@ export interface paths {
          * @description Get camera PTZ status for a specific image.
          */
         get: operations["camera_status_camera_line_annotator_api_camera_status__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clean-plate/frames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Frames
+         * @description Query clean-plate frames with filters + pagination.
+         *
+         *     Returns metadata plus a presigned MinIO image URL and an imgproxy thumbnail
+         *     URL per frame, newest first.
+         */
+        get: operations["get_frames_clean_plate_frames_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clean-plate/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Runs
+         * @description List distinct capture runs (with frame counts and time spans).
+         */
+        get: operations["get_runs_clean_plate_runs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1752,8 +1910,8 @@ export interface paths {
          * Add Line
          * @description Add a new line.
          *
-         *     Persists to the YAML repo before mutating in-memory state so a failed
-         *     write never leaves state and disk out of sync.
+         *     Persists to the database before mutating in-memory state so a failed
+         *     write never leaves state and DB out of sync.
          */
         post: operations["add_line_line_picker_api_lines__post"];
         delete?: never;
@@ -1907,8 +2065,8 @@ export interface paths {
          * Add Point
          * @description Add a new GCP.
          *
-         *     Persists to the YAML repo before mutating in-memory state so a failed
-         *     write never leaves state and disk out of sync.
+         *     Persists to the database before mutating in-memory state so a failed
+         *     write never leaves state and DB out of sync.
          */
         post: operations["add_point_point_picker_api_points__post"];
         delete?: never;
@@ -2177,6 +2335,59 @@ export interface components {
             tilt?: number | null;
             /** Zoom */
             zoom?: number | null;
+        };
+        /**
+         * CleanPlateFrameListResponse
+         * @description Envelope for ``GET /clean-plate/frames``.
+         */
+        CleanPlateFrameListResponse: {
+            /** Frames */
+            frames: components["schemas"]["CleanPlateFrameOut"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * CleanPlateFrameOut
+         * @description A single clean-plate frame: metadata + presigned image + thumbnail URL.
+         */
+        CleanPlateFrameOut: {
+            /** Id */
+            id: string;
+            /** Run Id */
+            run_id: string;
+            /** Camera Id */
+            camera_id: string;
+            /** Phase */
+            phase: string;
+            /** Pose Id */
+            pose_id: string;
+            /** Commanded Pan */
+            commanded_pan: number;
+            /** Commanded Tilt */
+            commanded_tilt: number;
+            /** Commanded Zoom */
+            commanded_zoom: number;
+            /** Burst Id */
+            burst_id: string | null;
+            /** Frame Index */
+            frame_index: number;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Image Url */
+            image_url: string;
+            /** Thumbnail Url */
+            thumbnail_url: string;
+            /** Record */
+            record: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ComputeHomographyFromLinesRequest
@@ -2488,10 +2699,6 @@ export interface components {
          * @description Response for ``GET /api/geo-coords/``.
          */
         GeoCoordsResponse: {
-            /** Pixel X */
-            pixel_x: number;
-            /** Pixel Y */
-            pixel_y: number;
             /** Easting */
             easting?: number | null;
             /** Northing */
@@ -2683,11 +2890,11 @@ export interface components {
             /** Map Id */
             map_id: string;
             /** Lines */
-            lines: components["schemas"]["LineOut"][];
+            lines: components["schemas"]["api__schemas__line_picker__LineOut"][];
         };
         /**
          * LineOut
-         * @description Single line serialisation.
+         * @description Single line in the registry.
          */
         LineOut: {
             /** Line Id */
@@ -2709,7 +2916,7 @@ export interface components {
             /** Map Id */
             map_id: string | null;
             /** Lines */
-            lines: components["schemas"]["api__schemas__homography_precision__LineOut"][];
+            lines: components["schemas"]["LineOut"][];
         };
         /**
          * LineTestCaseDetailResponse
@@ -2769,7 +2976,7 @@ export interface components {
         };
         /**
          * LoadCalibrationRequest
-         * @description Body for ``POST /api/load-calibration/``.
+         * @description Body for ``POST /api/load/``.
          */
         LoadCalibrationRequest: {
             /** Camera Id */
@@ -2777,7 +2984,7 @@ export interface components {
         };
         /**
          * LoadCalibrationResponse
-         * @description Response for ``POST /api/load-calibration/``.
+         * @description Response for ``POST /api/load/``.
          */
         LoadCalibrationResponse: {
             /** Camera Id */
@@ -2955,6 +3162,34 @@ export interface components {
             camera_ids?: string[] | null;
         };
         /**
+         * RunListResponse
+         * @description Envelope for ``GET /clean-plate/runs``.
+         */
+        RunListResponse: {
+            /** Runs */
+            runs: components["schemas"]["RunOut"][];
+        };
+        /**
+         * RunOut
+         * @description A distinct capture run with its frame count and time span.
+         */
+        RunOut: {
+            /** Run Id */
+            run_id: string;
+            /** Frame Count */
+            frame_count: number;
+            /**
+             * First Captured At
+             * Format: date-time
+             */
+            first_captured_at: string;
+            /**
+             * Last Captured At
+             * Format: date-time
+             */
+            last_captured_at: string;
+        };
+        /**
          * SaveAnnotationsRequest
          * @description Body for ``POST /api/save-annotations/``.
          */
@@ -3001,6 +3236,8 @@ export interface components {
              * @default 0
              */
             num_lines: number;
+            /** Zoom Entries */
+            zoom_entries?: components["schemas"]["ZoomEntryIn"][] | null;
         };
         /**
          * SaveCalibrationResponse
@@ -3070,6 +3307,18 @@ export interface components {
              * @default false
              */
             max_speed: boolean;
+        };
+        /**
+         * SurveyRunStartRequest
+         * @description Body for ``POST /camera-evaluation/survey/run/start/``.
+         */
+        SurveyRunStartRequest: {
+            /** Plan Config */
+            plan_config: {
+                [key: string]: unknown;
+            };
+            /** Camera Ids */
+            camera_ids: string[];
         };
         /**
          * SurveyStartRequest
@@ -3378,6 +3627,26 @@ export interface components {
             points?: number[][] | null;
         };
         /**
+         * ZoomEntryIn
+         * @description Single per-zoom calibration entry for a multi-zoom batch save.
+         */
+        ZoomEntryIn: {
+            /** Zoom */
+            zoom: number;
+            coefficients?: components["schemas"]["DistortionCoefficients"];
+            intrinsics?: components["schemas"]["IntrinsicsOut"] | null;
+            /**
+             * Validation Rmse
+             * @default 0
+             */
+            validation_rmse: number;
+            /**
+             * Num Lines
+             * @default 0
+             */
+            num_lines: number;
+        };
+        /**
          * SwitchImageResponse
          * @description Response for ``POST /api/switch-image/``.
          */
@@ -3391,20 +3660,24 @@ export interface components {
             camera_status: components["schemas"]["CameraStatusOut"];
         };
         /**
-         * LineOut
-         * @description Single line in the registry.
+         * LoadCalibrationRequest
+         * @description Body for ``POST /api/load-calibration/``.
          */
-        api__schemas__homography_precision__LineOut: {
-            /** Line Id */
-            line_id: string;
-            /** Start X */
-            start_x: number;
-            /** Start Y */
-            start_y: number;
-            /** End X */
-            end_x: number;
-            /** End Y */
-            end_y: number;
+        api__schemas__distortion_validator__LoadCalibrationRequest: {
+            /** Camera Id */
+            camera_id: string;
+        };
+        /**
+         * LoadCalibrationResponse
+         * @description Response for ``POST /api/load-calibration/``.
+         */
+        api__schemas__distortion_validator__LoadCalibrationResponse: {
+            /** Camera Id */
+            camera_id: string;
+            /** Entries */
+            entries: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * IntrinsicsIn
@@ -3449,30 +3722,30 @@ export interface components {
             zoom?: number | null;
         };
         /**
-         * LoadCalibrationRequest
-         * @description Body for ``POST /api/load/``.
+         * LineOut
+         * @description Single line serialisation.
          */
-        api__schemas__lens_calibration__LoadCalibrationRequest: {
-            /** Camera Id */
-            camera_id: string;
-        };
-        /**
-         * LoadCalibrationResponse
-         * @description Response for ``POST /api/load/``.
-         */
-        api__schemas__lens_calibration__LoadCalibrationResponse: {
-            /** Camera Id */
-            camera_id: string;
-            /** Entries */
-            entries: {
-                [key: string]: unknown;
-            }[];
+        api__schemas__line_picker__LineOut: {
+            /** Line Id */
+            line_id: string;
+            /** Start X */
+            start_x: number;
+            /** Start Y */
+            start_y: number;
+            /** End X */
+            end_x: number;
+            /** End Y */
+            end_y: number;
         };
         /**
          * GeoCoordsResponse
          * @description Response for ``GET /api/geo-coords/``.
          */
-        api__schemas__line_picker__GeoCoordsResponse: {
+        api__schemas__point_picker__GeoCoordsResponse: {
+            /** Pixel X */
+            pixel_x: number;
+            /** Pixel Y */
+            pixel_y: number;
             /** Easting */
             easting?: number | null;
             /** Northing */
@@ -4769,6 +5042,168 @@ export interface operations {
             };
         };
     };
+    api_survey_run_start_camera_evaluation_survey_run_start__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SurveyRunStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_survey_run_status_camera_evaluation_survey_run__run_id__status__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_survey_run_abort_camera_evaluation_survey_run__run_id__abort__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_survey_runs_camera_evaluation_survey_runs__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_survey_run_groups_camera_evaluation_survey_runs__run_id__groups__get: {
+        parameters: {
+            query?: {
+                phase?: number | null;
+                camera?: string | null;
+                zoom?: number | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_images_camera_line_annotator_api_images__get: {
         parameters: {
             query: {
@@ -5068,6 +5503,64 @@ export interface operations {
             };
         };
     };
+    get_frames_clean_plate_frames_get: {
+        parameters: {
+            query?: {
+                run_id?: string | null;
+                pose_id?: string | null;
+                camera_id?: string | null;
+                phase?: string | null;
+                captured_after?: string | null;
+                captured_before?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanPlateFrameListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_runs_clean_plate_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunListResponse"];
+                };
+            };
+        };
+    };
     calibration_files_distortion_validator_api_calibration_files__get: {
         parameters: {
             query?: never;
@@ -5097,7 +5590,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LoadCalibrationRequest"];
+                "application/json": components["schemas"]["api__schemas__distortion_validator__LoadCalibrationRequest"];
             };
         };
         responses: {
@@ -5107,7 +5600,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoadCalibrationResponse"];
+                    "application/json": components["schemas"]["api__schemas__distortion_validator__LoadCalibrationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5936,7 +6429,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["api__schemas__lens_calibration__LoadCalibrationRequest"];
+                "application/json": components["schemas"]["LoadCalibrationRequest"];
             };
         };
         responses: {
@@ -5946,7 +6439,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["api__schemas__lens_calibration__LoadCalibrationResponse"];
+                    "application/json": components["schemas"]["LoadCalibrationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6226,7 +6719,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LineOut"];
+                    "application/json": components["schemas"]["api__schemas__line_picker__LineOut"];
                 };
             };
             /** @description Validation Error */
@@ -6263,7 +6756,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LineOut"];
+                    "application/json": components["schemas"]["api__schemas__line_picker__LineOut"];
                 };
             };
             /** @description Validation Error */
@@ -6360,7 +6853,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["api__schemas__line_picker__GeoCoordsResponse"];
+                    "application/json": components["schemas"]["GeoCoordsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6659,7 +7152,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GeoCoordsResponse"];
+                    "application/json": components["schemas"]["api__schemas__point_picker__GeoCoordsResponse"];
                 };
             };
             /** @description Validation Error */

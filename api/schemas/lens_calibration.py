@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Shared sub-models
 # ---------------------------------------------------------------------------
@@ -131,6 +130,16 @@ class ValidateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ZoomEntryIn(BaseModel):
+    """Single per-zoom calibration entry for a multi-zoom batch save."""
+
+    zoom: float
+    coefficients: DistortionCoefficients = Field(default_factory=DistortionCoefficients)
+    intrinsics: IntrinsicsOut | None = None
+    validation_rmse: float = 0.0
+    num_lines: int = 0
+
+
 class SaveCalibrationRequest(BaseModel):
     """Body for ``POST /api/save/``."""
 
@@ -140,6 +149,7 @@ class SaveCalibrationRequest(BaseModel):
     validation_rmse: float = 0.0
     intrinsics: IntrinsicsOut | None = None
     num_lines: int = 0
+    zoom_entries: list[ZoomEntryIn] | None = None
 
 
 class SaveCalibrationResponse(BaseModel):
