@@ -24,6 +24,7 @@ def health() -> dict[str, str]:
     """Liveness probe."""
     return {"status": "ok"}
 
+
 # ---------------------------------------------------------------------------
 # CORS configuration
 # ---------------------------------------------------------------------------
@@ -50,11 +51,12 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 
-from api.routers import (
+from api.routers import (  # noqa: E402 — routers imported after app + CORS setup (intentional)
     camera_annotator,
     camera_diagnostic,
     camera_evaluation,
     camera_line_annotator,
+    clean_plate_gallery,
     distortion_validator,
     gcp,
     homography_precision,
@@ -67,6 +69,7 @@ app.include_router(camera_annotator.router)
 app.include_router(camera_diagnostic.router)
 app.include_router(camera_evaluation.router)
 app.include_router(camera_line_annotator.router)
+app.include_router(clean_plate_gallery.router)
 app.include_router(distortion_validator.router)
 app.include_router(gcp.router)
 app.include_router(homography_precision.router)

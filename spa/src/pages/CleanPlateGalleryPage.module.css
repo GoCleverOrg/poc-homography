@@ -1,0 +1,181 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 16px;
+  overflow: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.title {
+  font-size: 1.5rem;
+  color: #333;
+  margin: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label {
+  font-weight: 600;
+  color: #666;
+}
+
+.select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.9rem;
+  min-width: 280px;
+}
+
+.status {
+  color: #666;
+}
+
+.error {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #fdecea;
+  color: #b3261e;
+  border: 1px solid #f5c6c2;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.thumb {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #f8f9fa;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.thumb:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.thumbImg {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #e9ecef;
+  display: block;
+}
+
+.thumbCaption {
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ----- Modal ----- */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal {
+  position: relative;
+  background: #fff;
+  border-radius: 10px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.closeBtn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  border: none;
+  background: transparent;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+}
+
+.closeBtn:hover {
+  color: #000;
+}
+
+.modalImg {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #000;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.meta dt {
+  font-weight: 600;
+  color: #666;
+}
+
+.meta dd {
+  margin: 0;
+  color: #333;
+}
+
+.rawMeta {
+  font-size: 0.8rem;
+}
+
+.rawMeta summary {
+  cursor: pointer;
+  color: #667eea;
+}
+
+.rawMetaPre {
+  margin: 8px 0 0;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 240px;
+  font-size: 0.75rem;
+}

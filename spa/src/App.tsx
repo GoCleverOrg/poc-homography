@@ -15,6 +15,7 @@ import CameraSurveyPage from './pages/CameraSurveyPage';
 import CameraEvaluationPage from './pages/CameraEvaluationPage';
 import LensCalibrationPage from './pages/LensCalibrationPage';
 import DistortionValidatorPage from './pages/DistortionValidatorPage';
+import CleanPlateGalleryPage from './pages/CleanPlateGalleryPage';
 
 export default function App() {
   return (
@@ -61,6 +62,10 @@ export default function App() {
               <Route
                 path="distortion-validator"
                 element={<DistortionValidatorPage />}
+              />
+              <Route
+                path="clean-plate-gallery"
+                element={<CleanPlateGalleryPage />}
               />
             </Route>
           </Route>

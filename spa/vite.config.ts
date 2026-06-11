@@ -16,6 +16,7 @@ export default defineConfig({
       '/homography-precision': 'http://localhost:8000',
       '/lens-calibration': 'http://localhost:8000',
       '/distortion-validator': 'http://localhost:8000',
+      '/clean-plate': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },
   },
