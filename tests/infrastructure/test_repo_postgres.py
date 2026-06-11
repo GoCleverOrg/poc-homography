@@ -8,6 +8,7 @@ fixture which rolls back after each test — no permanent data is written.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -68,6 +69,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Entity construction helpers
 # ---------------------------------------------------------------------------
+
 
 def _uid(prefix: str = "") -> str:
     """Return a short unique id to avoid collisions between tests."""
@@ -209,7 +211,8 @@ def _make_lens_calibration_table(camera_config_id: str) -> LensCalibrationTable:
             ZoomCalibrationEntry(
                 zoom_factor=Unitless(1.0),
                 distortion=LensDistortion(
-                    k1=Unitless(-0.1), k2=Unitless(0.01),
+                    k1=Unitless(-0.1),
+                    k2=Unitless(0.01),
                 ),
                 calibration_date="2024-01-15",
                 source_images=("img1.jpg", "img2.jpg"),
@@ -243,6 +246,7 @@ def _make_calibration_line_trace_set(name: str | None = None) -> CalibrationLine
 # Helpers to persist FK parents
 # ---------------------------------------------------------------------------
 
+
 def _persist_tenant(session: Session, tenant_id: str | None = None) -> Tenant:
     tenant = _make_tenant(tenant_id)
     RepoPostgresTenant(session).save(tenant)
@@ -253,7 +257,6 @@ def _persist_map(session: Session, tenant_id: str, map_id: str | None = None) ->
     m = _make_map(tenant_id, map_id)
     RepoPostgresMap(session).save(m)
     return m
-
 
 
 def _persist_frame(
@@ -389,7 +392,6 @@ class TestRepoPostgresMap:
         assert m1.id in ids
         assert m2.id in ids
 
-
     def test_get_by_tenant(self, db_session: Session) -> None:
         t1 = _persist_tenant(db_session)
         t2 = _persist_tenant(db_session)
@@ -416,12 +418,34 @@ class TestRepoPostgresMap:
         assert float(gt.origin_northing) == 4400000.0
         assert float(gt.pixel_height) == -0.5
 
+    def test_asset_ref_defaults_to_none(self, db_session: Session, test_tenant: Tenant) -> None:
+        repo = RepoPostgresMap(db_session)
+        m = _make_map(test_tenant.id)
+        repo.save(m)
+
+        loaded = repo.get(m.id)
+        assert loaded is not None
+        assert loaded.asset_key is None
+        assert loaded.asset_url is None
+
+    def test_asset_ref_round_trip(self, db_session: Session, test_tenant: Tenant) -> None:
+        repo = RepoPostgresMap(db_session)
+        m = replace(
+            _make_map(test_tenant.id),
+            asset_key="maps/valte.tif",
+            asset_url="https://s3.example.test/cleanplate/maps/valte.tif",
+        )
+        repo.save(m)
+
+        loaded = repo.get(m.id)
+        assert loaded is not None
+        assert loaded.asset_key == "maps/valte.tif"
+        assert loaded.asset_url == "https://s3.example.test/cleanplate/maps/valte.tif"
+
 
 @pytest.mark.integration
 class TestRepoPostgresCameraConfig:
-    def test_save_and_get(
-        self, db_session: Session, test_tenant: Tenant, test_map: Map
-    ) -> None:
+    def test_save_and_get(self, db_session: Session, test_tenant: Tenant, test_map: Map) -> None:
         repo = RepoPostgresCameraConfig(db_session)
         cc = _make_camera_config(test_tenant.id, test_map.id)
         repo.save(cc)
@@ -441,18 +465,14 @@ class TestRepoPostgresCameraConfig:
         repo = RepoPostgresCameraConfig(db_session)
         assert repo.get("nonexistent/cam") is None
 
-    def test_exists(
-        self, db_session: Session, test_tenant: Tenant, test_map: Map
-    ) -> None:
+    def test_exists(self, db_session: Session, test_tenant: Tenant, test_map: Map) -> None:
         repo = RepoPostgresCameraConfig(db_session)
         cc = _make_camera_config(test_tenant.id, test_map.id)
         repo.save(cc)
         assert repo.exists(cc.id) is True
         assert repo.exists("nonexistent/cam") is False
 
-    def test_delete(
-        self, db_session: Session, test_tenant: Tenant, test_map: Map
-    ) -> None:
+    def test_delete(self, db_session: Session, test_tenant: Tenant, test_map: Map) -> None:
         repo = RepoPostgresCameraConfig(db_session)
         cc = _make_camera_config(test_tenant.id, test_map.id)
         repo.save(cc)
@@ -460,9 +480,7 @@ class TestRepoPostgresCameraConfig:
         assert repo.delete(cc.id) is True
         assert repo.get(cc.id) is None
 
-    def test_get_all(
-        self, db_session: Session, test_tenant: Tenant, test_map: Map
-    ) -> None:
+    def test_get_all(self, db_session: Session, test_tenant: Tenant, test_map: Map) -> None:
         repo = RepoPostgresCameraConfig(db_session)
         cc1 = _make_camera_config(test_tenant.id, test_map.id)
         cc2 = _make_camera_config(test_tenant.id, test_map.id)
@@ -473,7 +491,6 @@ class TestRepoPostgresCameraConfig:
         ids = {c.id for c in all_ccs}
         assert cc1.id in ids
         assert cc2.id in ids
-
 
     def test_get_by_tenant(self, db_session: Session) -> None:
         t1 = _persist_tenant(db_session)
@@ -490,7 +507,6 @@ class TestRepoPostgresCameraConfig:
         result = repo.get_by_tenant(t1.id)
         assert cc1.id in result
         assert cc2.id not in result
-
 
     def test_get_by_map(self, db_session: Session) -> None:
         t = _persist_tenant(db_session)
@@ -825,7 +841,6 @@ class TestRepoPostgresGroundControlPoint:
         gcp = _make_gcp(test_map.id, "GCP_X")
         assert gcp.id == f"{test_map.id}/GCP_X"
 
-
     def test_get_by_map(self, db_session: Session) -> None:
         t = _persist_tenant(db_session)
         m1 = _persist_map(db_session, t.id)
@@ -895,7 +910,7 @@ class TestRepoPostgresLine:
         repo.save(l2)
 
         all_lines = repo.get_all()
-        ids = {l.id for l in all_lines}
+        ids = {ln.id for ln in all_lines}
         assert l1.id in ids
         assert l2.id in ids
 
@@ -915,10 +930,9 @@ class TestRepoPostgresLine:
         repo.save(l2)
 
         result = repo.get_by_map_id(m1.id)
-        result_ids = {l.id for l in result}
+        result_ids = {ln.id for ln in result}
         assert l1.id in result_ids
         assert l2.id not in result_ids
-
 
     def test_get_by_map(self, db_session: Session) -> None:
         t = _persist_tenant(db_session)
@@ -1108,7 +1122,7 @@ class TestRepoPostgresLensCalibrationTable:
         repo.save(lct)
 
         all_lcts = repo.get_all()
-        ids = {l.id for l in all_lcts}
+        ids = {ln.id for ln in all_lcts}
         assert lct.id in ids
 
     def test_entries_round_trip(

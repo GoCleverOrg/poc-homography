@@ -28,6 +28,10 @@ class MapModel(Base):
     Value objects stored as JSONB:
       - photo: ``{path, width, height}``
       - geotiff: ``{geotransform: {origin_easting, pixel_width, ...}, crs}``
+
+    Object-storage reference for the GeoTIFF asset (nullable until uploaded):
+      - asset_key: endpoint-agnostic object key (preferred)
+      - asset_url: optional fully-qualified URL
     """
 
     __tablename__ = "maps"
@@ -40,6 +44,10 @@ class MapModel(Base):
     # Value objects serialised as JSONB
     photo: Mapped[dict] = mapped_column(JSONB, nullable=False)
     geotiff: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Object-storage reference for the GeoTIFF asset
+    asset_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    asset_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # -- relationships --
     tenant: Mapped[TenantModel] = relationship("TenantModel", back_populates="maps")
