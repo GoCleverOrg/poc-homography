@@ -19,10 +19,13 @@ import {
 } from '../hooks/useOpenSeadragonDrag';
 import { useTenant } from '../contexts/TenantContext';
 import client from '../api/client';
+import type { components } from '../api/schema';
 
 import styles from './PointPickerPage.module.css';
 
 // ------------------------------------------------------------------ types
+
+type MapSummary = components['schemas']['MapSummaryOut'];
 
 interface PointData {
   id: string;
@@ -66,6 +69,8 @@ const TAG_ACTIVE_STYLE: Record<MarkerTag, string> = {
 export default function PointPickerPage() {
   const { selectedTenantId } = useTenant();
 
+  const [maps, setMaps] = useState<MapSummary[]>([]);
+  const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
   const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
   const [currentTag, setCurrentTag] = useState<MarkerTag>('parking_spot');
   const [nextId, setNextId] = useState<string>('');
@@ -84,6 +89,50 @@ export default function PointPickerPage() {
     selectedPointIdRef.current = selectedPointId;
   }, [selectedPointId]);
 
+  // Keep selectedMapId in a ref so overlay drag callbacks (memoised without
+  // selectedMapId in their deps) always persist against the current map.
+  const selectedMapIdRef = useRef(selectedMapId);
+  useEffect(() => {
+    selectedMapIdRef.current = selectedMapId;
+  }, [selectedMapId]);
+
+  // --------------------------------------------------- selected map state
+  const selectedMap = useMemo(
+    () => maps.find((m) => m.id === selectedMapId) ?? null,
+    [maps, selectedMapId],
+  );
+  const imageConfigured = selectedMap?.image_configured ?? false;
+
+  // ----------------------------------------------------------- load maps
+  // Fetch the maps available for the current tenant and pick a sensible
+  // default (the first image-configured map, else the first map).
+  useEffect(() => {
+    const controller = new AbortController();
+
+    (async () => {
+      if (!selectedTenantId) {
+        setMaps([]);
+        setSelectedMapId(null);
+        return;
+      }
+      const { data } = await client.GET('/point-picker/api/maps/', {
+        params: { query: { tenant_id: '' } },
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted || !data) return;
+      const list = data.maps;
+      setMaps(list);
+      const preferred = list.find((m) => m.image_configured) ?? list[0] ?? null;
+      setSelectedMapId(preferred ? preferred.id : null);
+    })().catch((err: unknown) => {
+      if (!controller.signal.aborted) {
+        console.error('Failed to load maps:', err);
+      }
+    });
+
+    return () => { controller.abort(); };
+  }, [selectedTenantId]);
+
   // ------------------------------------------------- fetch helpers (raw)
   // The openapi-fetch client auto-injects tenant_id and auth. We use it
   // for typed JSON endpoints. Tile URLs are bare strings for OSD.
@@ -91,21 +140,24 @@ export default function PointPickerPage() {
   const fetchNextId = useCallback(
     async (tag: MarkerTag) => {
       const { data } = await client.GET('/point-picker/api/points/next-id/', {
-        params: { query: { tag, tenant_id: '' } },
+        params: { query: { tag, tenant_id: '', map_id: selectedMapId } },
       });
       if (data) setNextId(data.next_id);
     },
-    [],
+    [selectedMapId],
   );
 
   // ----------------------------------------------------- load image info
   useEffect(() => {
-    if (!selectedTenantId) return;
     let cancelled = false;
 
     (async () => {
+      if (!selectedTenantId || !selectedMapId || !imageConfigured) {
+        setImageInfo(null);
+        return;
+      }
       const { data } = await client.GET('/point-picker/api/image/info/', {
-        params: { query: { tenant_id: '' } },
+        params: { query: { tenant_id: '', map_id: selectedMapId } },
       });
       if (cancelled || !data) return;
       setImageInfo({
@@ -117,14 +169,16 @@ export default function PointPickerPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [selectedTenantId]);
+  }, [selectedTenantId, selectedMapId, imageConfigured]);
 
   // --------------------------------------------------------- tile source
   // Memoise so we only hand OSD a new object when tenant or image actually
   // change. The tile URL must embed tenant_id directly because OSD fetches
   // tiles via <img src>, not through the openapi-fetch client.
   const tileSource: TileSourceConfig | null = useMemo(() => {
-    if (!imageInfo || !selectedTenantId) return null;
+    if (!imageInfo || !selectedTenantId || !selectedMapId || !imageConfigured) {
+      return null;
+    }
     return {
       width: imageInfo.width,
       height: imageInfo.height,
@@ -135,11 +189,12 @@ export default function PointPickerPage() {
           y: String(y),
           z: String(level),
           tenant_id: selectedTenantId,
+          map_id: selectedMapId,
         });
         return `/point-picker/api/image/tile/?${params}`;
       },
     };
-  }, [imageInfo, selectedTenantId]);
+  }, [imageInfo, selectedTenantId, selectedMapId, imageConfigured]);
 
   // ------------------------------------------------- image dimensions ref
   const imageDims: ImageDimensions | null = useMemo(() => {
@@ -150,12 +205,12 @@ export default function PointPickerPage() {
   // -------------------------------------------------------- load points
   const loadPoints = useCallback(async () => {
     const { data } = await client.GET('/point-picker/api/points/', {
-      params: { query: { tenant_id: '' } },
+      params: { query: { tenant_id: '', map_id: selectedMapId } },
     });
     if (data) {
       setPoints(data.points as PointData[]);
     }
-  }, []);
+  }, [selectedMapId]);
 
   // -------------------------------------------------------- tag selection
   const handleSelectTag = useCallback(
@@ -168,9 +223,10 @@ export default function PointPickerPage() {
 
   // Initial tag fetch
   useEffect(() => {
-    if (selectedTenantId) fetchNextId(currentTag);
+    if (!selectedTenantId || !selectedMapId || !imageConfigured) return;
+    void (async () => { await fetchNextId(currentTag); })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTenantId]);
+  }, [selectedTenantId, selectedMapId, imageConfigured]);
 
   // ------------------------------------------------ marker management
 
@@ -257,7 +313,7 @@ export default function PointPickerPage() {
           // Persist move to server
           await client.PUT('/point-picker/api/points/{point_id}/', {
             params: {
-              query: { tenant_id: '' },
+              query: { tenant_id: '', map_id: selectedMapIdRef.current },
               path: { point_id: point.id },
             },
             body: { pixel_x: x, pixel_y: y },
@@ -343,22 +399,28 @@ export default function PointPickerPage() {
     }
   }, [points, imageDims, addOverlayMarker, removeOverlayMarker]);
 
-  // ----------------------------------------- load points when tenant ready
+  // ------------------------------------ load points when tenant/map ready
   useEffect(() => {
-    if (selectedTenantId) loadPoints();
-  }, [selectedTenantId, loadPoints]);
+    void (async () => {
+      if (selectedTenantId && selectedMapId && imageConfigured) {
+        await loadPoints();
+      } else {
+        setPoints([]);
+      }
+    })();
+  }, [selectedTenantId, selectedMapId, imageConfigured, loadPoints]);
 
   // --------------------------------------------------- add point on click
   const handleCanvasClick = useCallback(
     async (imageX: number, imageY: number) => {
       if (isDraggingRef.current) return;
-      if (!imageInfo) return;
+      if (!imageInfo || !imageConfigured) return;
       if (imageX < 0 || imageX >= imageInfo.width || imageY < 0 || imageY >= imageInfo.height) {
         return;
       }
 
       const { data } = await client.POST('/point-picker/api/points/', {
-        params: { query: { tenant_id: '' } },
+        params: { query: { tenant_id: '', map_id: selectedMapId } },
         body: { tag: currentTag, pixel_x: imageX, pixel_y: imageY },
       });
       if (data) {
@@ -367,7 +429,7 @@ export default function PointPickerPage() {
         fetchNextId(currentTag);
       }
     },
-    [imageInfo, currentTag, fetchNextId],
+    [imageInfo, imageConfigured, currentTag, fetchNextId, selectedMapId],
   );
 
   // -------------------------------------------- coordinate display on move
@@ -394,7 +456,12 @@ export default function PointPickerPage() {
         coordsTimerRef.current = setTimeout(async () => {
           const { data } = await client.GET('/point-picker/api/geo-coords/', {
             params: {
-              query: { tenant_id: '', pixel_x: imageX, pixel_y: imageY },
+              query: {
+                tenant_id: '',
+                map_id: selectedMapIdRef.current,
+                pixel_x: imageX,
+                pixel_y: imageY,
+              },
             },
           });
           if (data && data.easting != null && data.northing != null) {
@@ -422,7 +489,7 @@ export default function PointPickerPage() {
         '/point-picker/api/points/{point_id}/',
         {
           params: {
-            query: { tenant_id: '' },
+            query: { tenant_id: '', map_id: selectedMapId },
             path: { point_id: pointId },
           },
         },
@@ -433,7 +500,7 @@ export default function PointPickerPage() {
         fetchNextId(currentTag);
       }
     },
-    [selectedPointId, fetchNextId, currentTag],
+    [selectedPointId, fetchNextId, currentTag, selectedMapId],
   );
 
   // ---------------------------------------------------- click point in list
@@ -488,9 +555,28 @@ export default function PointPickerPage() {
         <Link to="/" className={styles.backLink}>
           &larr; Back to Tools
         </Link>
-        <h1 className={styles.title}>Point Picker</h1>
+        <h1 className={styles.title}>Map Points Capture Tool</h1>
 
-        {imageInfo && (
+        {/* Site / map selector */}
+        {maps.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Site</div>
+            <select
+              className={styles.mapSelect}
+              value={selectedMapId ?? ''}
+              onChange={(e) => setSelectedMapId(e.target.value)}
+            >
+              {maps.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                  {m.image_configured ? '' : ' (no image)'}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {imageConfigured && imageInfo && (
           <div className={styles.filename}>{imageInfo.filename}</div>
         )}
 
@@ -511,6 +597,7 @@ export default function PointPickerPage() {
                   key={tag}
                   type="button"
                   className={cls}
+                  disabled={!imageConfigured}
                   onClick={() => handleSelectTag(tag)}
                 >
                   {TAG_LABELS[tag]}
@@ -528,55 +615,72 @@ export default function PointPickerPage() {
         </div>
 
         {/* Point list */}
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Points</div>
-          <div className={styles.pointList}>
-            {points.map((pt) => {
-              const isSelected = pt.id === selectedPointId;
-              const cls = [
-                styles.pointItem,
-                isSelected ? styles.pointItemSelected : '',
-              ]
-                .filter(Boolean)
-                .join(' ');
-              return (
-                <div
-                  key={pt.id}
-                  className={cls}
-                  onClick={() => handlePointListClick(pt)}
-                >
-                  <span>
-                    {pt.id}: ({pt.pixel_x.toFixed(1)}, {pt.pixel_y.toFixed(1)})
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.deleteBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeletePoint(pt.id);
-                    }}
+        {imageConfigured && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Points</div>
+            <div className={styles.pointList}>
+              {points.map((pt) => {
+                const isSelected = pt.id === selectedPointId;
+                const cls = [
+                  styles.pointItem,
+                  isSelected ? styles.pointItemSelected : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ');
+                return (
+                  <div
+                    key={pt.id}
+                    className={cls}
+                    onClick={() => handlePointListClick(pt)}
                   >
-                    X
-                  </button>
-                </div>
-              );
-            })}
+                    <span>
+                      {pt.id}: ({pt.pixel_x.toFixed(1)}, {pt.pixel_y.toFixed(1)})
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.deleteBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeletePoint(pt.id);
+                      }}
+                    >
+                      X
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ----- Viewer ----- */}
-      {tileSource && (
-        <OpenSeadragonViewer
-          tileSource={tileSource}
-          onViewerReady={handleViewerReady}
-          onCanvasClick={handleCanvasClick}
-          onMouseMove={handleMouseMove}
-          className={styles.viewer}
-          showNavigator
-          minZoomLevel={0.5}
-          maxZoomLevel={20}
-        />
+      {/* ----- Viewer / unconfigured panel ----- */}
+      {imageConfigured ? (
+        tileSource && (
+          <OpenSeadragonViewer
+            tileSource={tileSource}
+            onViewerReady={handleViewerReady}
+            onCanvasClick={handleCanvasClick}
+            onMouseMove={handleMouseMove}
+            className={styles.viewer}
+            showNavigator
+            minZoomLevel={0.5}
+            maxZoomLevel={20}
+          />
+        )
+      ) : (
+        <div className={styles.viewer}>
+          <div className={styles.notConfigured}>
+            <div className={styles.notConfiguredTitle}>
+              &#9888; Image not configured for this site
+            </div>
+            <p className={styles.notConfiguredBody}>
+              The site &ldquo;{selectedMap?.label ?? ''}&rdquo; does not have a
+              reference image configured. Map point capture is disabled until an
+              image is added.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

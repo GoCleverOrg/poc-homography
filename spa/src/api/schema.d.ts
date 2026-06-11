@@ -2046,6 +2046,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/point-picker/api/maps/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Maps
+         * @description List the maps available for *tenant_id* with image-configured flags.
+         */
+        get: operations["list_maps_point_picker_api_maps__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/point-picker/api/image/info/": {
         parameters: {
             query?: never;
@@ -2268,7 +2288,7 @@ export interface components {
         CalibrateAnnotatedLinesRequest: {
             /** Camera Line Annotations */
             camera_line_annotations: components["schemas"]["CameraLineAnnotationIn"][];
-            intrinsics: components["schemas"]["IntrinsicsIn"];
+            intrinsics: components["schemas"]["api__schemas__lens_calibration__IntrinsicsIn"];
             /**
              * Auto Intrinsics
              * @default false
@@ -2774,6 +2794,10 @@ export interface components {
          * @description Response for ``GET /api/geo-coords/``.
          */
         GeoCoordsResponse: {
+            /** Pixel X */
+            pixel_x: number;
+            /** Pixel Y */
+            pixel_y: number;
             /** Easting */
             easting?: number | null;
             /** Northing */
@@ -2880,32 +2904,10 @@ export interface components {
              * @default 1000
              */
             fy: number;
-            /**
-             * Cx
-             * @default 960
-             */
-            cx: number;
-            /**
-             * Cy
-             * @default 540
-             */
-            cy: number;
-            /**
-             * Image Width
-             * @default 1920
-             */
-            image_width: number;
-            /**
-             * Image Height
-             * @default 1080
-             */
-            image_height: number;
-            /** Sensor Width Mm */
-            sensor_width_mm?: number | null;
-            /** Base Focal Length Mm */
-            base_focal_length_mm?: number | null;
-            /** Zoom */
-            zoom?: number | null;
+            /** Cx */
+            cx?: number | null;
+            /** Cy */
+            cy?: number | null;
         };
         /**
          * IntrinsicsOut
@@ -2987,11 +2989,11 @@ export interface components {
             /** Map Id */
             map_id: string;
             /** Lines */
-            lines: components["schemas"]["api__schemas__line_picker__LineOut"][];
+            lines: components["schemas"]["LineOut"][];
         };
         /**
          * LineOut
-         * @description Single line in the registry.
+         * @description Single line serialisation.
          */
         LineOut: {
             /** Line Id */
@@ -3013,7 +3015,7 @@ export interface components {
             /** Map Id */
             map_id: string | null;
             /** Lines */
-            lines: components["schemas"]["LineOut"][];
+            lines: components["schemas"]["api__schemas__homography_precision__LineOut"][];
         };
         /**
          * LineTestCaseDetailResponse
@@ -3136,6 +3138,26 @@ export interface components {
             geotiff: components["schemas"]["GeoTiffOut"];
         };
         /**
+         * MapSummaryOut
+         * @description Summary of a single map for the map selector.
+         */
+        MapSummaryOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Image Configured */
+            image_configured: boolean;
+        };
+        /**
+         * MapsListResponse
+         * @description Response for ``GET /api/maps/``.
+         */
+        MapsListResponse: {
+            /** Maps */
+            maps: components["schemas"]["MapSummaryOut"][];
+        };
+        /**
          * MeasureStraightnessRequest
          * @description Body for ``POST /api/measure-straightness/``.
          */
@@ -3148,7 +3170,7 @@ export interface components {
              */
             undistort: boolean;
             coefficients?: components["schemas"]["DistortionCoefficientsIn"];
-            intrinsics?: components["schemas"]["api__schemas__distortion_validator__IntrinsicsIn"];
+            intrinsics?: components["schemas"]["IntrinsicsIn"];
         };
         /**
          * NextIdResponse
@@ -3603,7 +3625,7 @@ export interface components {
              */
             direction: string;
             coefficients?: components["schemas"]["DistortionCoefficientsIn"];
-            intrinsics?: components["schemas"]["api__schemas__distortion_validator__IntrinsicsIn"];
+            intrinsics?: components["schemas"]["IntrinsicsIn"];
         };
         /**
          * TransformPointsResponse
@@ -3623,7 +3645,7 @@ export interface components {
             /** Image Path */
             image_path: string;
             coefficients?: components["schemas"]["DistortionCoefficientsIn"];
-            intrinsics?: components["schemas"]["api__schemas__distortion_validator__IntrinsicsIn"];
+            intrinsics?: components["schemas"]["IntrinsicsIn"];
             /**
              * Use Opencv
              * @default false
@@ -3709,7 +3731,7 @@ export interface components {
          * @description Body for ``POST /api/validate/``.
          */
         ValidateRequest: {
-            intrinsics: components["schemas"]["IntrinsicsIn"];
+            intrinsics: components["schemas"]["api__schemas__lens_calibration__IntrinsicsIn"];
             coefficients?: components["schemas"]["DistortionCoefficients"];
             /** Lines */
             lines?: components["schemas"]["ValidationLineIn"][];
@@ -3809,26 +3831,6 @@ export interface components {
             camera_status: components["schemas"]["CameraStatusOut"];
         };
         /**
-         * IntrinsicsIn
-         * @description Camera intrinsic parameters.
-         */
-        api__schemas__distortion_validator__IntrinsicsIn: {
-            /**
-             * Fx
-             * @default 1000
-             */
-            fx: number;
-            /**
-             * Fy
-             * @default 1000
-             */
-            fy: number;
-            /** Cx */
-            cx?: number | null;
-            /** Cy */
-            cy?: number | null;
-        };
-        /**
          * LoadCalibrationRequest
          * @description Body for ``POST /api/load-calibration/``.
          */
@@ -3850,9 +3852,9 @@ export interface components {
         };
         /**
          * LineOut
-         * @description Single line serialisation.
+         * @description Single line in the registry.
          */
-        api__schemas__line_picker__LineOut: {
+        api__schemas__homography_precision__LineOut: {
             /** Line Id */
             line_id: string;
             /** Start X */
@@ -3865,14 +3867,52 @@ export interface components {
             end_y: number;
         };
         /**
+         * IntrinsicsIn
+         * @description Camera intrinsic parameters.
+         */
+        api__schemas__lens_calibration__IntrinsicsIn: {
+            /**
+             * Fx
+             * @default 1000
+             */
+            fx: number;
+            /**
+             * Fy
+             * @default 1000
+             */
+            fy: number;
+            /**
+             * Cx
+             * @default 960
+             */
+            cx: number;
+            /**
+             * Cy
+             * @default 540
+             */
+            cy: number;
+            /**
+             * Image Width
+             * @default 1920
+             */
+            image_width: number;
+            /**
+             * Image Height
+             * @default 1080
+             */
+            image_height: number;
+            /** Sensor Width Mm */
+            sensor_width_mm?: number | null;
+            /** Base Focal Length Mm */
+            base_focal_length_mm?: number | null;
+            /** Zoom */
+            zoom?: number | null;
+        };
+        /**
          * GeoCoordsResponse
          * @description Response for ``GET /api/geo-coords/``.
          */
-        api__schemas__point_picker__GeoCoordsResponse: {
-            /** Pixel X */
-            pixel_x: number;
-            /** Pixel Y */
-            pixel_y: number;
+        api__schemas__line_picker__GeoCoordsResponse: {
             /** Easting */
             easting?: number | null;
             /** Northing */
@@ -6944,7 +6984,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["api__schemas__line_picker__LineOut"];
+                    "application/json": components["schemas"]["LineOut"];
                 };
             };
             /** @description Validation Error */
@@ -6981,7 +7021,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["api__schemas__line_picker__LineOut"];
+                    "application/json": components["schemas"]["LineOut"];
                 };
             };
             /** @description Validation Error */
@@ -7078,7 +7118,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GeoCoordsResponse"];
+                    "application/json": components["schemas"]["api__schemas__line_picker__GeoCoordsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_maps_point_picker_api_maps__get: {
+        parameters: {
+            query: {
+                tenant_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapsListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7096,6 +7167,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -7127,6 +7199,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
                 x?: number;
                 y?: number;
                 z?: number;
@@ -7162,6 +7235,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
                 max_size?: number;
             };
             header?: never;
@@ -7194,6 +7268,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -7225,6 +7300,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -7260,6 +7336,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
             };
             header?: never;
             path: {
@@ -7297,6 +7374,7 @@ export interface operations {
         parameters: {
             query: {
                 tenant_id: string;
+                map_id?: string | null;
             };
             header?: never;
             path: {
@@ -7331,6 +7409,7 @@ export interface operations {
             query: {
                 tenant_id: string;
                 tag: string;
+                map_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -7364,6 +7443,7 @@ export interface operations {
                 tenant_id: string;
                 pixel_x: number;
                 pixel_y: number;
+                map_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -7377,7 +7457,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["api__schemas__point_picker__GeoCoordsResponse"];
+                    "application/json": components["schemas"]["GeoCoordsResponse"];
                 };
             };
             /** @description Validation Error */
