@@ -11,20 +11,22 @@ from __future__ import annotations
 import io
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
 import numpy as np
+import pytest
 import tifffile
 from api.utils import map_assets
 from api.utils.map_assets import resolve_map_geotiff
 from api.utils.tiles import render_tile
-
-if TYPE_CHECKING:
-    import pytest
+from botocore.exceptions import ClientError
 
 
 class _FakeStore:
-    """Records ``get_map`` calls and serves bytes from an in-memory mapping."""
+    """Records ``get_map`` calls and serves bytes from an in-memory mapping.
+
+    Mirrors :class:`MinioMapStore.get_map`: an absent key raises a boto3
+    ``ClientError`` with code ``NoSuchKey`` (what real S3/MinIO returns).
+    """
 
     def __init__(self, objects: dict[str, bytes]) -> None:
         self.objects = objects
@@ -32,6 +34,8 @@ class _FakeStore:
 
     def get_map(self, key: str) -> bytes:
         self.calls.append(key)
+        if key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return self.objects[key]
 
 
@@ -110,3 +114,22 @@ def test_tile_serving_end_to_end_from_object_storage(
     png = render_tile(image_path=resolved, width=64, height=48, x=0, y=0, z=0, size=256)
 
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_missing_object_resolves_to_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A map whose asset_key is absent in storage resolves to None (-> 404)."""
+    monkeypatch.setattr(map_assets, "_CACHE_DIR", tmp_path / "cache")
+    store = _FakeStore({})  # bucket has no objects
+
+    resolved = resolve_map_geotiff(_map(asset_key="tenant/gone.tif"), store=store)
+
+    assert resolved is None
+
+
+def test_asset_key_traversal_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An asset_key escaping the cache dir raises rather than writing outside it."""
+    monkeypatch.setattr(map_assets, "_CACHE_DIR", tmp_path / "cache")
+    store = _FakeStore({"../../etc/evil.tif": b"x"})
+
+    with pytest.raises(ValueError, match="escapes the cache directory"):
+        resolve_map_geotiff(_map(asset_key="../../etc/evil.tif"), store=store)
