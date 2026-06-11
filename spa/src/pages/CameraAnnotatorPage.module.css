@@ -278,32 +278,6 @@
   background: #d32f2f;
 }
 
-/* ---------- Save section ---------- */
-.saveActions {
-  display: flex;
-  gap: 0;
-}
-
-.saveBtn {
-  flex: 1;
-  padding: 12px;
-  color: #fff;
-  border: none;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  background: #1976d2;
-}
-
-.saveBtn:hover {
-  background: #1565c0;
-}
-
-.saveBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 /* ---------- Coordinates display ---------- */
 .coordsDisplay {
   position: fixed;

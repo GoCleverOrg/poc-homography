@@ -196,9 +196,9 @@ def api_save_annotations(request: HttpRequest) -> JsonResponse:
     if not current_image:
         return JsonResponse({"error": "No image selected"}, status=400)
 
+    # An empty list is valid: deleting the last annotation must persist as an
+    # empty annotations section rather than leaving a stale YAML entry.
     new_annotations = data.get("annotations", [])
-    if not new_annotations:
-        return JsonResponse({"error": "No annotations to save"}, status=400)
 
     # Validate annotation format
     for ann in new_annotations:
