@@ -28,6 +28,8 @@ from poc_homography.infrastructure.models.user import (  # noqa: TC001 - resolve
 from poc_homography.infrastructure.repositories import RepoPostgresMap
 
 if TYPE_CHECKING:
+    from webapp.point_picker.state import PointPickerState
+
     from poc_homography.domain.entities.map import Map
 from webapp.point_picker.state import (
     delete_gcp_from_repo_pg,
@@ -45,6 +47,22 @@ from webapp.point_picker.validation import (
 # ---------------------------------------------------------------------------
 
 router = APIRouter(prefix="/point-picker", tags=["point-picker"])
+
+
+def _resolve_state(tenant_id: str, session: Session, map_id: str | None) -> PointPickerState:
+    """Resolve point-picker state, mapping resolution failures to clean 404s.
+
+    ``get_state`` raises ``LookupError`` for an unknown ``map_id`` and
+    ``RuntimeError`` when the selected map has no resolvable image asset (e.g.
+    an ``asset_key`` whose object is missing from storage — a case the cheap
+    ``map_has_image`` selector check cannot detect). Surface both as 404 rather
+    than letting them propagate as HTTP 500.
+    """
+    try:
+        return get_state(tenant_id, session, map_id=map_id)
+    except (LookupError, RuntimeError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
 
 # ---------------------------------------------------------------------------
 # Map selector
@@ -84,7 +102,7 @@ def image_info(
     session: Session = Depends(get_db_session),
 ) -> ImageInfoResponse:
     """Return image metadata (dimensions, geotransform, CRS, filename)."""
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
     return ImageInfoResponse(
         width=state.width,
         height=state.height,
@@ -109,7 +127,7 @@ def image_tile(
 
     At level *z* the image appears at resolution ``original / 2^(max_level - z)``.
     """
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
     png_bytes = render_tile(
         image_path=state.geotiff_path,
         width=state.width,
@@ -131,7 +149,7 @@ def image_full(
     session: Session = Depends(get_db_session),
 ) -> Response:
     """Return the full image scaled to *max_size* as a PNG."""
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
     png_bytes = render_full_image(image_path=state.geotiff_path, max_size=max_size)
     return Response(content=png_bytes, media_type="image/png")
 
@@ -149,7 +167,7 @@ def list_points(
     session: Session = Depends(get_db_session),
 ) -> PointListResponse:
     """List all GCPs for the tenant's map."""
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
     return PointListResponse(
         map_id=state.registry.map_id,
         points=[
@@ -182,7 +200,7 @@ def add_point(
     if error:
         raise HTTPException(status_code=422, detail=error)
 
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
 
     tag = data.get("tag", "extra")
     pixel_x = float(data["pixel_x"])
@@ -217,7 +235,7 @@ def update_point(
     if error:
         raise HTTPException(status_code=422, detail=error)
 
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
 
     px = float(data["pixel_x"])
     py = float(data["pixel_y"])
@@ -245,7 +263,7 @@ def delete_point(
     session: Session = Depends(get_db_session),
 ) -> DeletePointResponse:
     """Delete a GCP."""
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
 
     if point_id not in state.registry.points:
         raise HTTPException(status_code=404, detail=f"Point not found: {point_id}")
@@ -269,7 +287,7 @@ def next_id(
     session: Session = Depends(get_db_session),
 ) -> NextIdResponse:
     """Return the next auto-incremented ID for a tag category."""
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
     try:
         nid = state.get_next_id(tag)
         return NextIdResponse(tag=tag, next_id=nid)
@@ -287,7 +305,7 @@ def geo_coords(
     session: Session = Depends(get_db_session),
 ) -> GeoCoordsResponse:
     """Convert pixel coordinates to geographic coordinates."""
-    state = get_state(tenant_id, session, map_id=map_id)
+    state = _resolve_state(tenant_id, session, map_id)
     coords = state.get_geo_coords(pixel_x, pixel_y)
     if coords:
         return GeoCoordsResponse(

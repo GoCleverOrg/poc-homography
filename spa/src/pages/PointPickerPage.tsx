@@ -204,9 +204,13 @@ export default function PointPickerPage() {
 
   // -------------------------------------------------------- load points
   const loadPoints = useCallback(async () => {
+    const requestedMapId = selectedMapId;
     const { data } = await client.GET('/point-picker/api/points/', {
-      params: { query: { tenant_id: '', map_id: selectedMapId } },
+      params: { query: { tenant_id: '', map_id: requestedMapId } },
     });
+    // Drop a stale response if the selected map changed mid-flight, so a slow
+    // load for map A cannot overwrite the points already shown for map B.
+    if (requestedMapId !== selectedMapIdRef.current) return;
     if (data) {
       setPoints(data.points as PointData[]);
     }

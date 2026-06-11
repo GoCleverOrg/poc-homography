@@ -229,6 +229,9 @@ def get_state(
         width=int(map_entity.photo.width),
         height=int(map_entity.photo.height),
     )
+    # Anchor the state to the resolved map id rather than the image filename
+    # stem, so persistence (add/update/delete) always targets the right map.
+    state.map_id = map_entity.id
 
     if session is not None:
         from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
