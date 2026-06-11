@@ -45,8 +45,13 @@ from homography_web.frame_utils import (
 from line_picker.state import Line, from_line_repo
 from PIL import Image
 
-from poc_homography.calibration.lens_distortion.calibration_table import load_calibration_for_camera
-from poc_homography.domain.vo import PixelPoint
+from poc_homography.application.homography_precision import (
+    LineNotInRegistryError,
+    build_distortion_params,
+    compute_gcp_precision,
+    compute_line_errors,
+    compute_line_homography,
+)
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
 
@@ -71,12 +76,11 @@ def _require_map_id(tenant_id: str) -> str | None:
 
 
 def _distortion_kwargs(test_case: dict) -> dict[str, float]:
-    """Build distortion kwargs for MapPointHomography from a test case.
+    """Resolve camera_name + zoom from a test case and build distortion kwargs.
 
-    Extracts camera_name and zoom from the test case, loads the calibration
-    table, and returns interpolated distortion + intrinsic parameters as a dict
-    with keys k1,k2,k3,p1,p2,fx,fy,cx,cy.  Returns empty dict if any piece
-    is unavailable.
+    Returns an empty dict if the test case lacks an image, the frame cannot be
+    resolved, or no zoom is present; otherwise delegates to the application-layer
+    ``build_distortion_params`` service.
     """
     image_filename = test_case.get("image")
     if not image_filename:
@@ -87,26 +91,7 @@ def _distortion_kwargs(test_case: dict) -> dict[str, float]:
     zoom = test_case.get("camera_status", {}).get("zoom")
     if zoom is None:
         return {}
-
-    try:
-        table = load_calibration_for_camera(frame.camera_name, CALIBRATIONS_DIR)
-        if table is None:
-            return {}
-        coeffs = table.get_coefficients(zoom)
-        intrinsics = table.get_intrinsics(zoom)
-        if intrinsics is None:
-            return {}
-        return {
-            "k1": float(coeffs.k1),
-            "k2": float(coeffs.k2),
-            "k3": float(coeffs.k3),
-            "p1": float(coeffs.p1),
-            "p2": float(coeffs.p2),
-            **intrinsics,
-        }
-    except Exception:
-        logger.debug("Failed to load distortion params for %s", frame.camera_name, exc_info=True)
-        return {}
+    return build_distortion_params(frame.camera_name, zoom, CALIBRATIONS_DIR)
 
 
 def _get_map_geotiff_file(tenant_id: str) -> Path | None:
@@ -151,36 +136,6 @@ _image_info_cache: dict[str, ImageInfoCache] = {}
 
 register_invalidation_callback(_line_registry_cache.clear)
 register_invalidation_callback(_image_info_cache.clear)
-
-
-def _perpendicular_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
-    """Calculate perpendicular distance from point p to line defined by points a and b.
-
-    Args:
-        p: Point as numpy array [x, y].
-        a: Line start point as numpy array [x, y].
-        b: Line end point as numpy array [x, y].
-
-    Returns:
-        Perpendicular distance in pixels.
-    """
-    # Line vector
-    v = b - a
-    # Point vector from a to p
-    w = p - a
-
-    # Project w onto v
-    c1 = np.dot(w, v)
-    c2 = np.dot(v, v)
-
-    if c2 == 0:
-        # Line has zero length (a and b are the same point)
-        return float(np.linalg.norm(w))
-
-    # Perpendicular distance = |w - proj_v(w)|
-    b_param = c1 / c2
-    proj = a + b_param * v
-    return float(np.linalg.norm(p - proj))
 
 
 def _get_camera_image_path(test_case_name: str, map_id: str | None = None) -> Path | None:
@@ -360,7 +315,7 @@ def _load_test_case_by_name(name: str, map_id: str | None = None) -> dict | None
     for frame in list_frames(map_id):
         if frame.image_path.stem != name:
             continue
-        annotations = load_annotations_for_frame(frame.id)
+        annotations = [a.to_dict() for a in load_annotations_for_frame(frame.id)]
         if not annotations:
             continue
         tc: dict = {
@@ -397,7 +352,7 @@ def _load_line_test_case_by_name(name: str, map_id: str | None = None) -> dict |
     for frame in list_frames(map_id):
         if frame.image_path.stem != stem:
             continue
-        line_anns = load_line_annotations_for_frame(frame.id)
+        line_anns = [a.to_dict() for a in load_line_annotations_for_frame(frame.id)]
         if not line_anns:
             continue
         # Find the point-annotations reference (same frame, for point-based homography)
@@ -476,12 +431,12 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
             status=500,
         )
 
-    # Compute homography
+    # Compute homography + aggregate per-point errors, overlays and metrics
     try:
-        homography = MapPointHomography(map_id=registry.map_id, **_distortion_kwargs(test_case))
-        result = homography.compute_from_gcps(
-            gcps=annotations,
-            map_registry=registry,
+        result = compute_gcp_precision(
+            annotations=annotations,
+            registry=registry,
+            distortion=_distortion_kwargs(test_case),
             ransac_threshold=50.0,
             min_inlier_ratio=0.5,
         )
@@ -491,119 +446,7 @@ def api_compute_homography(request: HttpRequest) -> JsonResponse:
             status=500,
         )
 
-    # Compute per-point errors and overlay data
-    per_point_errors = []
-    camera_annotations = []
-    camera_reprojected = []
-    map_gcps = []
-    map_projected = []
-
-    for annotation in annotations:
-        gcp_id = annotation["gcp_id"]
-
-        # Get original camera pixel (annotation position)
-        camera_x = annotation["pixel_x"]
-        camera_y = annotation["pixel_y"]
-        camera_pixel = PixelPoint.create(camera_x, camera_y)
-
-        # Get GCP map coordinate from registry
-        gcp = registry.points[gcp_id]
-        map_x = gcp.pixel_x
-        map_y = gcp.pixel_y
-
-        # Project annotation to map using camera_to_map()
-        projected_map = homography.camera_to_map(camera_pixel)
-
-        # Reproject GCP back to camera using map_to_camera()
-        gcp_coord = PixelPoint.create(map_x, map_y)
-        reprojected_camera = homography.map_to_camera(gcp_coord)
-
-        # Calculate per-point error (Euclidean distance between original annotation
-        # and reprojected GCP)
-        original = np.array([camera_x, camera_y])
-        reprojected = np.array([reprojected_camera.x, reprojected_camera.y])
-        error_px = float(np.linalg.norm(reprojected - original))
-
-        # Calculate per-axis errors for camera frame
-        camera_dx = reprojected_camera.x - camera_x
-        camera_dy = reprojected_camera.y - camera_y
-
-        # Calculate per-axis errors for map frame
-        map_dx = projected_map.pixel_x - map_x
-        map_dy = projected_map.pixel_y - map_y
-
-        per_point_errors.append(
-            {
-                "gcp_id": gcp_id,
-                "error_px": round(error_px, 2),
-                "camera_dx": round(camera_dx, 2),
-                "camera_dy": round(camera_dy, 2),
-                "map_dx": round(map_dx, 2),
-                "map_dy": round(map_dy, 2),
-                "camera_original": [round(camera_x, 2), round(camera_y, 2)],
-                "camera_reprojected": [
-                    round(reprojected_camera.x, 2),
-                    round(reprojected_camera.y, 2),
-                ],
-                "map_original": [round(map_x, 2), round(map_y, 2)],
-                "map_projected": [round(projected_map.pixel_x, 2), round(projected_map.pixel_y, 2)],
-            }
-        )
-
-        # Collect overlay data
-        camera_annotations.append(
-            {
-                "gcp_id": gcp_id,
-                "x": round(camera_x, 2),
-                "y": round(camera_y, 2),
-            }
-        )
-        camera_reprojected.append(
-            {
-                "gcp_id": gcp_id,
-                "x": round(reprojected_camera.x, 2),
-                "y": round(reprojected_camera.y, 2),
-            }
-        )
-        map_gcps.append(
-            {
-                "gcp_id": gcp_id,
-                "x": round(map_x, 2),
-                "y": round(map_y, 2),
-            }
-        )
-        map_projected.append(
-            {
-                "gcp_id": gcp_id,
-                "x": round(projected_map.pixel_x, 2),
-                "y": round(projected_map.pixel_y, 2),
-            }
-        )
-
-    return JsonResponse(
-        {
-            "success": True,
-            "metrics": {
-                "num_gcps": result.num_gcps,
-                "num_inliers": result.num_inliers,
-                "inlier_ratio": round(result.inlier_ratio, 2),
-                "mean_reproj_error": round(result.mean_reproj_error, 2),
-                "max_reproj_error": round(result.max_reproj_error, 2),
-                "rmse": round(result.rmse, 2),
-            },
-            "per_point_errors": per_point_errors,
-            "overlays": {
-                "camera": {
-                    "annotations": camera_annotations,
-                    "reprojected_gcps": camera_reprojected,
-                },
-                "map": {
-                    "gcps": map_gcps,
-                    "projected_annotations": map_projected,
-                },
-            },
-        }
-    )
+    return JsonResponse(result.to_payload())
 
 
 @require_GET
@@ -807,10 +650,11 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
         return _no_map_error()
     try:
         dist_kw = _distortion_kwargs(line_test_case) if test_case_name else {}
-        homography = MapPointHomography(map_id=map_id, **dist_kw)
-        result = homography.compute_from_lines(
+        result = compute_line_homography(
             line_annotations=line_annotations,
             line_registry=line_registry,
+            distortion=dist_kw,
+            map_id=map_id,
             ransac_threshold=50.0,
             min_inlier_ratio=0.3,
         )
@@ -820,21 +664,7 @@ def api_compute_homography_from_lines(request: HttpRequest) -> JsonResponse:
             status=500,
         )
 
-    return JsonResponse(
-        {
-            "success": True,
-            "homography_source": "lines",
-            "metrics": {
-                "num_lines": result.num_lines,
-                "num_inliers": result.num_inliers,
-                "inlier_ratio": round(result.inlier_ratio, 2),
-                "mean_perp_error": round(result.mean_perp_error, 2),
-                "max_perp_error": round(result.max_perp_error, 2),
-                "rmse": round(result.rmse, 2),
-            },
-            "homography_matrix": result.homography_matrix.tolist(),
-        }
-    )
+    return JsonResponse(result.to_payload())
 
 
 @csrf_exempt
@@ -994,139 +824,19 @@ def api_compute_line_errors(request: HttpRequest) -> JsonResponse:
             )
 
     # Compute per-line errors (line_registry already loaded above)
-    per_line_errors = []
-    camera_annotations = []
-    camera_reprojected_lines = []
-    map_gcp_lines = []
-    map_projected_lines = []
-
-    total_error = 0.0
-    max_error = 0.0
-
-    for line_annotation in line_annotations:
-        line_id = line_annotation["line_id"]
-
-        # Get line definition from registry
-        if line_id not in line_registry:
-            return JsonResponse(
-                {"success": False, "error": f"Line {line_id} not found in line registry"},
-                status=400,
-            )
-
-        line_def = line_registry[line_id]
-
-        # Ground truth line in map coordinates (directly from line registry)
-        map_start = np.array([line_def["start_x"], line_def["start_y"]])
-        map_end = np.array([line_def["end_x"], line_def["end_y"]])
-
-        # Annotated line in camera coordinates
-        camera_start = np.array(
-            [line_annotation["start_pixel_x"], line_annotation["start_pixel_y"]]
+    try:
+        line_errors = compute_line_errors(
+            homography=homography,
+            line_annotations=line_annotations,
+            line_registry=line_registry,
         )
-        camera_end = np.array([line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]])
-
-        # Project camera line endpoints to map
-        projected_start = homography.camera_to_map(
-            PixelPoint.create(camera_start[0], camera_start[1])
-        )
-        projected_end = homography.camera_to_map(PixelPoint.create(camera_end[0], camera_end[1]))
-        projected_start_map = np.array([projected_start.pixel_x, projected_start.pixel_y])
-        projected_end_map = np.array([projected_end.pixel_x, projected_end.pixel_y])
-
-        # Compute errors: perpendicular distance from projected points to ground truth line
-        start_error = _perpendicular_distance(projected_start_map, map_start, map_end)
-        end_error = _perpendicular_distance(projected_end_map, map_start, map_end)
-
-        # Also compute reverse: project GCP line to camera and compare
-        reprojected_start = homography.map_to_camera(PixelPoint.create(map_start[0], map_start[1]))
-        reprojected_end = homography.map_to_camera(PixelPoint.create(map_end[0], map_end[1]))
-        reprojected_start_camera = np.array([reprojected_start.x, reprojected_start.y])
-        reprojected_end_camera = np.array([reprojected_end.x, reprojected_end.y])
-
-        # Compute errors in camera space
-        camera_start_error = _perpendicular_distance(
-            camera_start, reprojected_start_camera, reprojected_end_camera
-        )
-        camera_end_error = _perpendicular_distance(
-            camera_end, reprojected_start_camera, reprojected_end_camera
+    except LineNotInRegistryError as e:
+        return JsonResponse(
+            {"success": False, "error": f"Line {e.line_id} not found in line registry"},
+            status=400,
         )
 
-        # Average error for this line (using camera space errors as primary metric)
-        line_error = (camera_start_error + camera_end_error) / 2.0
-
-        total_error += line_error
-        max_error = max(max_error, line_error)
-
-        per_line_errors.append(
-            {
-                "line_id": line_id,
-                "error_px": round(line_error, 2),
-                "start_error": round(camera_start_error, 2),
-                "end_error": round(camera_end_error, 2),
-                "map_start_error": round(start_error, 2),
-                "map_end_error": round(end_error, 2),
-            }
-        )
-
-        # Collect overlay data for camera frame
-        camera_annotations.append(
-            {
-                "line_id": line_id,
-                "start": [round(camera_start[0], 2), round(camera_start[1], 2)],
-                "end": [round(camera_end[0], 2), round(camera_end[1], 2)],
-            }
-        )
-        camera_reprojected_lines.append(
-            {
-                "line_id": line_id,
-                "start": [
-                    round(reprojected_start_camera[0], 2),
-                    round(reprojected_start_camera[1], 2),
-                ],
-                "end": [round(reprojected_end_camera[0], 2), round(reprojected_end_camera[1], 2)],
-            }
-        )
-
-        # Collect overlay data for map frame
-        map_gcp_lines.append(
-            {
-                "line_id": line_id,
-                "start": [round(map_start[0], 2), round(map_start[1], 2)],
-                "end": [round(map_end[0], 2), round(map_end[1], 2)],
-            }
-        )
-        map_projected_lines.append(
-            {
-                "line_id": line_id,
-                "start": [round(projected_start_map[0], 2), round(projected_start_map[1], 2)],
-                "end": [round(projected_end_map[0], 2), round(projected_end_map[1], 2)],
-            }
-        )
-
-    num_lines = len(line_annotations)
-    mean_line_error = total_error / num_lines if num_lines > 0 else 0.0
-
-    return JsonResponse(
-        {
-            "success": True,
-            "metrics": {
-                "num_lines": num_lines,
-                "mean_line_error": round(mean_line_error, 2),
-                "max_line_error": round(max_error, 2),
-            },
-            "per_line_errors": per_line_errors,
-            "line_overlays": {
-                "camera": {
-                    "annotations": camera_annotations,
-                    "reprojected_lines": camera_reprojected_lines,
-                },
-                "map": {
-                    "gcp_lines": map_gcp_lines,
-                    "projected_lines": map_projected_lines,
-                },
-            },
-        }
-    )
+    return JsonResponse(line_errors.to_payload())
 
 
 @require_GET
