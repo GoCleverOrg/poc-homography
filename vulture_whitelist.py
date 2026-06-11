@@ -258,6 +258,7 @@ _.world_to_cell  # cleanplate-surface (poc_homography/cleanplate/raster.py:129)
 _.cell_to_world  # cleanplate-surface (poc_homography/cleanplate/raster.py:150)
 time_bucket  # cleanplate-surface (poc_homography/cleanplate/reconstruct.py:64)
 _.presign_get  # cleanplate-surface (poc_homography/infrastructure/clients/minio_frame_store.py:129)
+_.get_map  # cleanplate-surface — MinioMapStore GeoTIFF download, consumed by the map tile/info API #292 (poc_homography/infrastructure/clients/minio_map_store.py:136)
 
 # == uncertain-needs-follow-up ==
 # UNCERTAIN — symbol exists but no callers and no test references found; kept to keep vulture green pending a dead-code follow-up (see #226)

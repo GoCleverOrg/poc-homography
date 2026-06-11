@@ -6,7 +6,9 @@ Ported from ``webapp/homography_precision/views.py``.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from pathlib import (
+    Path,  # noqa: TC003 — kept at runtime; FastAPI introspects annotations in this module
+)
 from typing import TypedDict
 
 import numpy as np
@@ -15,7 +17,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from line_picker.state import Line, from_line_repo_pg
 from PIL import Image
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import (
+    Session,  # noqa: TC002 — runtime import; FastAPI resolves Depends() param annotations at runtime
+)
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.homography_precision import (
@@ -45,7 +49,6 @@ from api.schemas.homography_precision import (
 )
 from api.utils.frame_helpers import (
     CALIBRATIONS_DIR,
-    DATA_MAPS_DIR,
     extract_geotiff,
     get_frame_image_path,
     get_map_for_tenant,
@@ -54,11 +57,14 @@ from api.utils.frame_helpers import (
     load_annotations_for_frame,
     load_line_annotations_for_frame,
 )
+from api.utils.map_assets import resolve_map_geotiff
 from api.utils.tiles import render_tile
 from poc_homography.calibration.lens_distortion.calibration_table import load_calibration_for_camera
 from poc_homography.domain.vo import PixelPoint
 from poc_homography.homography.map_points import MapPointHomography
-from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.infrastructure.models.user import (
+    UserModel,  # noqa: TC001 — runtime import; FastAPI resolves Depends() param annotations at runtime
+)
 from poc_homography.map_points.gcp_registry import from_gcp_repo_pg
 
 logger = logging.getLogger(__name__)
@@ -146,14 +152,15 @@ def _distortion_kwargs(test_case: dict, session: Session) -> dict[str, float]:
 
 
 def _get_map_geotiff_file(tenant_id: str, session: Session) -> Path | None:
-    """Return path to the GeoTIFF file for the tenant's map, or None."""
+    """Return a local path to the tenant's map GeoTIFF, or None.
+
+    Materialises the asset from object storage when the map carries an
+    ``asset_key`` (cached under ``/tmp``); falls back to ``data/maps`` otherwise.
+    """
     map_entity = get_map_for_tenant(tenant_id, session)
     if map_entity is None:
         return None
-    resolved = DATA_MAPS_DIR / map_entity.photo.path
-    if not resolved.exists():
-        return None
-    return resolved
+    return resolve_map_geotiff(map_entity)
 
 
 def _load_line_registry(tenant_id: str, session: Session) -> list[Line]:
@@ -220,7 +227,9 @@ def _load_line_test_case_by_name(name: str, map_id: str | None, session: Session
     return None
 
 
-def _get_camera_image_path(test_case_name: str, map_id: str | None, session: Session) -> Path | None:
+def _get_camera_image_path(
+    test_case_name: str, map_id: str | None, session: Session
+) -> Path | None:
     """Get the path to the camera image for a test case."""
     test_case = _load_test_case_by_name(test_case_name, map_id, session)
     if test_case is None:
@@ -359,9 +368,7 @@ def api_compute_homography(
     # Load test case
     test_case = _load_test_case_by_name(test_case_name, map_id, session)
     if test_case is None:
-        raise HTTPException(
-            status_code=404, detail=f"Test case not found: {test_case_name}"
-        )
+        raise HTTPException(status_code=404, detail=f"Test case not found: {test_case_name}")
 
     annotations = test_case.get("annotations", [])
     if len(annotations) < 4:
@@ -374,13 +381,13 @@ def api_compute_homography(
     try:
         registry = from_gcp_repo_pg(session, map_id)
     except (KeyError, ValueError, OSError) as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load GCP registry: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to load GCP registry: {e}")
 
     # Compute homography
     try:
-        homography = MapPointHomography(map_id=registry.map_id, **_distortion_kwargs(test_case, session))
+        homography = MapPointHomography(
+            map_id=registry.map_id, **_distortion_kwargs(test_case, session)
+        )
         result = homography.compute_from_gcps(
             gcps=annotations,
             map_registry=registry,
@@ -388,9 +395,7 @@ def api_compute_homography(
             min_inlier_ratio=0.5,
         )
     except (ValueError, RuntimeError) as e:
-        raise HTTPException(
-            status_code=500, detail=f"Homography computation failed: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Homography computation failed: {e}")
 
     # Compute per-point errors and overlay data
     per_point_errors: list[PerPointError] = []
@@ -453,9 +458,7 @@ def api_compute_homography(
                 "y": round(reprojected_camera.y, 2),
             }
         )
-        map_gcps.append(
-            {"gcp_id": gcp_id, "x": round(map_x, 2), "y": round(map_y, 2)}
-        )
+        map_gcps.append({"gcp_id": gcp_id, "x": round(map_x, 2), "y": round(map_y, 2)})
         map_projected.append(
             {
                 "gcp_id": gcp_id,
@@ -632,7 +635,9 @@ def api_compute_homography_from_lines(
     if map_id is None:
         return _no_map_error()
     try:
-        dist_kw = _distortion_kwargs(line_test_case, session) if test_case_name and line_test_case else {}
+        dist_kw = (
+            _distortion_kwargs(line_test_case, session) if test_case_name and line_test_case else {}
+        )
         homography = MapPointHomography(map_id=map_id, **dist_kw)
         result = homography.compute_from_lines(
             line_annotations=line_annotations,
@@ -680,22 +685,16 @@ def api_compute_line_errors(
     map_id = _require_map_id(tenant_id, session)
     line_test_case = _load_line_test_case_by_name(test_case_name, map_id, session)
     if line_test_case is None:
-        raise HTTPException(
-            status_code=404, detail=f"Line test case not found: {test_case_name}"
-        )
+        raise HTTPException(status_code=404, detail=f"Line test case not found: {test_case_name}")
 
     line_annotations = line_test_case.get("line_annotations", [])
     if not line_annotations:
-        raise HTTPException(
-            status_code=400, detail="No line annotations found in test case"
-        )
+        raise HTTPException(status_code=400, detail="No line annotations found in test case")
 
     # Load line registry (needed for both approaches)
     lines = _load_line_registry(tenant_id, session)
     if not lines:
-        raise HTTPException(
-            status_code=500, detail="No lines found in line registry"
-        )
+        raise HTTPException(status_code=500, detail="No lines found in line registry")
 
     line_registry = {line.line_id: line.to_dict() for line in lines}
 
@@ -752,9 +751,7 @@ def api_compute_line_errors(
         try:
             gcp_registry = from_gcp_repo_pg(session, map_id)
         except (KeyError, ValueError, OSError) as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to load GCP registry: {e}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to load GCP registry: {e}")
 
         try:
             homography = MapPointHomography(
@@ -767,9 +764,7 @@ def api_compute_line_errors(
                 min_inlier_ratio=0.5,
             )
         except (ValueError, RuntimeError) as e:
-            raise HTTPException(
-                status_code=500, detail=f"Homography computation failed: {e}"
-            )
+            raise HTTPException(status_code=500, detail=f"Homography computation failed: {e}")
 
     # Compute per-line errors
     per_line_errors: list[PerLineError] = []
@@ -798,28 +793,20 @@ def api_compute_line_errors(
         camera_start = np.array(
             [line_annotation["start_pixel_x"], line_annotation["start_pixel_y"]]
         )
-        camera_end = np.array(
-            [line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]]
-        )
+        camera_end = np.array([line_annotation["end_pixel_x"], line_annotation["end_pixel_y"]])
 
         projected_start = homography.camera_to_map(
             PixelPoint.create(camera_start[0], camera_start[1])
         )
-        projected_end = homography.camera_to_map(
-            PixelPoint.create(camera_end[0], camera_end[1])
-        )
+        projected_end = homography.camera_to_map(PixelPoint.create(camera_end[0], camera_end[1]))
         projected_start_map = np.array([projected_start.pixel_x, projected_start.pixel_y])
         projected_end_map = np.array([projected_end.pixel_x, projected_end.pixel_y])
 
         start_error = _perpendicular_distance(projected_start_map, map_start, map_end)
         end_error = _perpendicular_distance(projected_end_map, map_start, map_end)
 
-        reprojected_start = homography.map_to_camera(
-            PixelPoint.create(map_start[0], map_start[1])
-        )
-        reprojected_end = homography.map_to_camera(
-            PixelPoint.create(map_end[0], map_end[1])
-        )
+        reprojected_start = homography.map_to_camera(PixelPoint.create(map_start[0], map_start[1]))
+        reprojected_end = homography.map_to_camera(PixelPoint.create(map_end[0], map_end[1]))
         reprojected_start_camera = np.array([reprojected_start.x, reprojected_start.y])
         reprojected_end_camera = np.array([reprojected_end.x, reprojected_end.y])
 
@@ -987,7 +974,10 @@ def api_camera_tile(
         image_path=image_path,
         width=info["width"],
         height=info["height"],
-        x=x, y=y, z=z, size=size,
+        x=x,
+        y=y,
+        z=z,
+        size=size,
     )
     return Response(content=png_bytes, media_type="image/png")
 
@@ -1027,6 +1017,9 @@ def api_map_tile(
         image_path=geotiff_path,
         width=info["width"],
         height=info["height"],
-        x=x, y=y, z=z, size=size,
+        x=x,
+        y=y,
+        z=z,
+        size=size,
     )
     return Response(content=png_bytes, media_type="image/png")
