@@ -242,6 +242,7 @@ pre-commit = "pre-commit run --all-files"
 patch-pydrive2 = {script = "scripts.patch_pydrive2_shared_drive:main", help = "Patch pydrive2 for Shared Drive folder-level access"}
 dvc-pull = {cmd = "dvc pull", help = "Pull DVC-tracked data from remote (test data + map images)"}
 dvc-push = {cmd = "dvc push", help = "Push DVC-tracked data to remote"}
+upload-maps = {cmd = "hom maps upload", help = "Upload data/maps/*.tif to the MinIO map-assets bucket"}
 
 [tool.poe.tasks.validate]
 sequence = ["lint", "format-check", "typecheck", "pylint", "vulture"]

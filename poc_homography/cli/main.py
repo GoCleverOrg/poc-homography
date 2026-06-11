@@ -36,12 +36,14 @@ def _register_commands() -> None:
         gcp,
         interactive,
         line_picker,
+        maps,
         point_picker,
         survey,
         test_cmds,
     )
 
     app.add_typer(cleanplate.cleanplate_app, name="cleanplate")
+    app.add_typer(maps.maps_app, name="maps")
 
     # Avoid "imported but unused" warnings by explicitly using the module
     _ = calibrate
@@ -50,6 +52,7 @@ def _register_commands() -> None:
     _ = gcp
     _ = interactive
     _ = line_picker
+    _ = maps
     _ = point_picker
     _ = survey
     _ = test_cmds
