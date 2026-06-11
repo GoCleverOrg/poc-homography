@@ -605,13 +605,17 @@ export default function LensCalibrationPage() {
     setZoomLevelsInput(sorted.join(', '));
   }, []);
 
-  const onZoomLevelsInputChange = useCallback(
-    (raw: string) => {
-      setZoomLevelsInput(raw);
-      applyZoomLevels(parseZoomList(raw));
-    },
-    [applyZoomLevels],
-  );
+  // While typing, keep the field bound to the RAW keystrokes (so decimals like
+  // "1.5" and unsorted/partial entry remain editable) and only derive the parsed
+  // zoom list. Normalization (sort/dedupe/reformat the text) happens on blur.
+  const onZoomLevelsInputChange = useCallback((raw: string) => {
+    setZoomLevelsInput(raw);
+    setZoomLevels(parseZoomList(raw));
+  }, []);
+
+  const onZoomLevelsInputBlur = useCallback(() => {
+    applyZoomLevels(parseZoomList(zoomLevelsInput));
+  }, [applyZoomLevels, zoomLevelsInput]);
 
   const removeZoomLevel = useCallback(
     (zoomValue: number) => {
@@ -896,7 +900,9 @@ export default function LensCalibrationPage() {
 
       const entries = (data.entries ?? []) as Array<Record<string, unknown>>;
 
-      // Populate the multi-zoom results map from ALL loaded entries (append/merge semantics).
+      // Loading a camera seeds the session with ALL of its stored entries (marked
+      // `loaded`), replacing any prior session state. New zoom levels are then
+      // appended via "Add Zoom Entry"; the unified save writes loaded + new together.
       const loadedResults: Record<string, ZoomResult> = {};
       const loadedZooms: number[] = [];
       for (const entry of entries) {
@@ -1386,6 +1392,7 @@ export default function LensCalibrationPage() {
                   value={zoomLevelsInput}
                   placeholder="1, 5, 10, 15, 20, 25"
                   onChange={(e) => onZoomLevelsInputChange(e.target.value)}
+                  onBlur={onZoomLevelsInputBlur}
                 />
               </div>
 
