@@ -215,6 +215,45 @@ class TestComputeLineErrors:
         assert exc_info.value.line_id == "MISSING"
         assert "MISSING" in str(exc_info.value)
 
+    def test_to_payload_golden_structure(self):
+        """Lock the full nested payload shape (keys + overlay structure) byte-for-byte.
+
+        A single line that matches its registry definition under identity
+        projection yields all-zero errors, so the entire payload is exactly
+        predictable. This guards against silent drift in key names, nesting, or
+        overlay layout that the key-set assertions above would not catch.
+        """
+        registry = {"L1": {"start_x": 0.0, "start_y": 0.0, "end_x": 10.0, "end_y": 0.0}}
+        annotations = [
+            {
+                "line_id": "L1",
+                "start_pixel_x": 0.0,
+                "start_pixel_y": 0.0,
+                "end_pixel_x": 10.0,
+                "end_pixel_y": 0.0,
+            }
+        ]
+        payload = svc.compute_line_errors(_IdentityHomography(), annotations, registry).to_payload()
+        line = {"line_id": "L1", "start": [0.0, 0.0], "end": [10.0, 0.0]}
+        assert payload == {
+            "success": True,
+            "metrics": {"num_lines": 1, "mean_line_error": 0.0, "max_line_error": 0.0},
+            "per_line_errors": [
+                {
+                    "line_id": "L1",
+                    "error_px": 0.0,
+                    "start_error": 0.0,
+                    "end_error": 0.0,
+                    "map_start_error": 0.0,
+                    "map_end_error": 0.0,
+                }
+            ],
+            "line_overlays": {
+                "camera": {"annotations": [line], "reprojected_lines": [line]},
+                "map": {"gcp_lines": [line], "projected_lines": [line]},
+            },
+        }
+
 
 class TestComputeGcpPrecision:
     """Tests for ``compute_gcp_precision`` aggregation over a real homography."""
