@@ -172,5 +172,36 @@ class TestGeotransformEdgeCases:
         assert northing == pytest.approx(4400000, abs=0.01)
 
 
+class TestPixelToLatLon:
+    """Test the pixel -> WGS84 lat/lon reprojection (issue #33)."""
+
+    def test_valte_origin_matches_known_gps(self):
+        """The Valte GeoTIFF origin reprojects to its documented GPS location.
+
+        The Valte camera's GeoTransform origin (EPSG:25830 UTM zone 30N) sits at
+        roughly 39.641 N, -0.231 E — the area the project targets.
+        """
+        geotiff = _make_geotiff([737575.05, 0.15, 0, 4391595.45, 0, -0.15], crs="EPSG:25830")
+
+        lat, lon = geotiff.pixel_to_latlon(0, 0)
+
+        assert lat == pytest.approx(39.6412, abs=1e-3)
+        assert lon == pytest.approx(-0.2314, abs=1e-3)
+
+    def test_roundtrip_consistency_with_pixel_to_geo(self):
+        """lat/lon is the WGS84 reprojection of the same easting/northing."""
+        from pyproj import Transformer
+
+        geotiff = _make_geotiff([737575.05, 0.15, 0, 4391595.45, 0, -0.15], crs="EPSG:25830")
+        easting, northing = geotiff.pixel_to_geo(120, 340)
+        lat, lon = geotiff.pixel_to_latlon(120, 340)
+
+        transformer = Transformer.from_crs("EPSG:25830", "EPSG:4326", always_xy=True)
+        exp_lon, exp_lat = transformer.transform(float(easting), float(northing))
+
+        assert lat == pytest.approx(exp_lat, abs=1e-9)
+        assert lon == pytest.approx(exp_lon, abs=1e-9)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

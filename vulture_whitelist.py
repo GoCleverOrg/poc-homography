@@ -198,6 +198,7 @@ upload_command  # cli-command (poc_homography/cli/maps.py:15)
 
 # == domain-api ==
 # Domain public API (value-object / entity / algorithm methods exercised by tests or exported as public surface)
+_.pixel_to_latlon  # domain-api (poc_homography/domain/vo/geotiff.py:133 — consumed by api/routers/click_to_gps.py)
 _.remove_entry  # domain-api (poc_homography/calibration/lens_distortion/calibration_table.py:202)
 _.get_zoom_levels  # domain-api (poc_homography/calibration/lens_distortion/calibration_table.py:373)
 merge_distance_threshold  # domain-api (poc_homography/calibration/lens_distortion/line_detection.py:61)

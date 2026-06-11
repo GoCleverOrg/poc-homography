@@ -57,6 +57,7 @@ from api.routers import (  # noqa: E402 — routers imported after app + CORS se
     camera_evaluation,
     camera_line_annotator,
     clean_plate_gallery,
+    click_to_gps,
     distortion_validator,
     gcp,
     homography_precision,
@@ -70,6 +71,7 @@ app.include_router(camera_diagnostic.router)
 app.include_router(camera_evaluation.router)
 app.include_router(camera_line_annotator.router)
 app.include_router(clean_plate_gallery.router)
+app.include_router(click_to_gps.router)
 app.include_router(distortion_validator.router)
 app.include_router(gcp.router)
 app.include_router(homography_precision.router)

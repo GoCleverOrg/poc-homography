@@ -3,9 +3,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
-from poc_homography.types import Easting, Meters, Northing, PixelsFloat, Unitless
+from pyproj import Transformer
+
+from poc_homography.types import (
+    Easting,
+    Latitude,
+    Longitude,
+    Meters,
+    Northing,
+    PixelsFloat,
+    Unitless,
+)
+
+# WGS84 geographic CRS — the lat/lon datum used for GPS output.
+_WGS84_CRS = "EPSG:4326"
+
+
+@lru_cache(maxsize=8)
+def _to_wgs84_transformer(source_crs: str) -> Transformer:
+    """Return a cached pyproj transformer from *source_crs* to WGS84 lat/lon.
+
+    Building a :class:`pyproj.Transformer` is comparatively expensive, so
+    instances are memoised per source CRS. ``always_xy=True`` keeps the input
+    in (easting, northing) / (lon, lat) axis order regardless of the CRS's
+    declared axis ordering.
+    """
+    return Transformer.from_crs(source_crs, _WGS84_CRS, always_xy=True)
 
 
 @dataclass(frozen=True)
@@ -100,6 +126,26 @@ class GeoTiff:
             gt.origin_northing + pixel_x * gt.col_rotation + pixel_y * float(gt.pixel_height)
         )
         return (easting, northing)
+
+    def pixel_to_latlon(
+        self, pixel_x: PixelsFloat, pixel_y: PixelsFloat
+    ) -> tuple[Latitude, Longitude]:
+        """Convert map pixel coordinates to WGS84 geographic coordinates.
+
+        Chains :meth:`pixel_to_geo` (pixel → projected easting/northing in this
+        GeoTIFF's CRS) with a pyproj reprojection to WGS84 lat/lon, giving the
+        GPS coordinate of a point identified on the georeferenced map.
+
+        Args:
+            pixel_x: Pixel x-coordinate (column).
+            pixel_y: Pixel y-coordinate (row).
+
+        Returns:
+            Tuple of (latitude, longitude) in decimal degrees (WGS84).
+        """
+        easting, northing = self.pixel_to_geo(pixel_x, pixel_y)
+        lon, lat = _to_wgs84_transformer(self.crs).transform(float(easting), float(northing))
+        return (Latitude(float(lat)), Longitude(float(lon)))
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""

@@ -44,6 +44,12 @@ Easting = NewType("Easting", float)
 Northing = NewType("Northing", float)
 """Y-coordinate in projected CRS (e.g., UTM northing in meters)"""
 
+Latitude = NewType("Latitude", float)
+"""Geographic latitude in decimal degrees (WGS84)"""
+
+Longitude = NewType("Longitude", float)
+"""Geographic longitude in decimal degrees (WGS84)"""
+
 # Image coordinate units
 Pixels = NewType("Pixels", int)
 """Image coordinates or dimensions in pixels (e.g., u, v, width, height)"""

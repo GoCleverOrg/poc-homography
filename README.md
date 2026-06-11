@@ -83,6 +83,45 @@ Open http://localhost:8000/:
 - `/capture/` - GCP capture tool (click map to add ground control points)
 - `/debug/` - Debug map visualization
 
+### Interactive Click-to-GPS
+
+The **Click-to-GPS** tool (SPA page `/click-to-gps`, backed by the FastAPI
+`/click-to-gps` router) is the project's primary user-facing feature: click
+anywhere on a camera frame to estimate the GPS coordinate of that point.
+
+1. Pick a camera frame from the dropdown. Only frames with at least four GCP
+   annotations are listed — four correspondences are the minimum needed to fit
+   a homography.
+2. Click anywhere on the frame. The clicked pixel is projected to a WGS84
+   latitude/longitude and rendered as a crosshair marker with its coordinates.
+3. Markers are colour-coded by the homography's confidence (inlier ratio):
+   **green** > 0.7, **yellow** 0.5–0.7, **red** < 0.5. The last five clicks
+   stay on screen; the newest result is also flashed for three seconds.
+
+Keyboard shortcuts:
+
+| Key | Action                                   |
+| --- | ---------------------------------------- |
+| `c` | Copy the most recent GPS to the clipboard |
+| `x` | Clear all markers                         |
+
+Points that project beyond the georeferenced map (the click-to-GPS analog of a
+point on or above the horizon) are flagged rather than reported as a GPS fix.
+
+Under the hood the projection reuses the existing registration services:
+
+```
+clicked camera pixel
+  → MapPointHomography.camera_to_map()   # GCP homography → map pixel
+  → GeoTiff.pixel_to_geo()               # map pixel → UTM easting/northing
+  → GeoTiff.pixel_to_latlon()            # UTM → WGS84 lat/lon (pyproj)
+```
+
+> The original issue (#33) described a desktop OpenCV `VideoAnnotator` and an
+> RTSP stream. That desktop tool was never part of this stack; the feature was
+> translated onto the live `api/` + `spa/` application, serving a saved camera
+> frame instead of a live RTSP feed (camera access stays read-only/mocked).
+
 ## Development
 
 ### Run Tests

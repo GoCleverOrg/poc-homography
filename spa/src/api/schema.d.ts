@@ -1173,6 +1173,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/click-to-gps/api/frames/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Projectable Frames
+         * @description List camera frames with enough GCP annotations to project from.
+         */
+        get: operations["list_projectable_frames_click_to_gps_api_frames__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/click-to-gps/api/project/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Project Pixel To Gps
+         * @description Project a clicked camera pixel to a WGS84 GPS coordinate.
+         */
+        post: operations["project_pixel_to_gps_click_to_gps_api_project__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/click-to-gps/image/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Image
+         * @description Serve a camera frame image file from disk (read-only).
+         */
+        get: operations["serve_image_click_to_gps_image__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/distortion-validator/api/calibration-files/": {
         parameters: {
             query?: never;
@@ -2208,7 +2268,7 @@ export interface components {
         CalibrateAnnotatedLinesRequest: {
             /** Camera Line Annotations */
             camera_line_annotations: components["schemas"]["CameraLineAnnotationIn"][];
-            intrinsics: components["schemas"]["api__schemas__lens_calibration__IntrinsicsIn"];
+            intrinsics: components["schemas"]["IntrinsicsIn"];
             /**
              * Auto Intrinsics
              * @default false
@@ -2661,6 +2721,21 @@ export interface components {
             p2: number;
         };
         /**
+         * FrameSummary
+         * @description A camera frame usable for click-to-GPS projection.
+         *
+         *     Only frames with at least four GCP annotations can yield a homography, so
+         *     ``annotation_count`` lets the UI flag (or hide) frames that cannot project.
+         */
+        FrameSummary: {
+            /** Name */
+            name: string;
+            /** Image */
+            image: string;
+            /** Annotation Count */
+            annotation_count: number;
+        };
+        /**
          * GCPPointOut
          * @description Single GCP point in the registry.
          */
@@ -2805,10 +2880,32 @@ export interface components {
              * @default 1000
              */
             fy: number;
-            /** Cx */
-            cx?: number | null;
-            /** Cy */
-            cy?: number | null;
+            /**
+             * Cx
+             * @default 960
+             */
+            cx: number;
+            /**
+             * Cy
+             * @default 540
+             */
+            cy: number;
+            /**
+             * Image Width
+             * @default 1920
+             */
+            image_width: number;
+            /**
+             * Image Height
+             * @default 1080
+             */
+            image_height: number;
+            /** Sensor Width Mm */
+            sensor_width_mm?: number | null;
+            /** Base Focal Length Mm */
+            base_focal_length_mm?: number | null;
+            /** Zoom */
+            zoom?: number | null;
         };
         /**
          * IntrinsicsOut
@@ -3051,7 +3148,7 @@ export interface components {
              */
             undistort: boolean;
             coefficients?: components["schemas"]["DistortionCoefficientsIn"];
-            intrinsics?: components["schemas"]["IntrinsicsIn"];
+            intrinsics?: components["schemas"]["api__schemas__distortion_validator__IntrinsicsIn"];
         };
         /**
          * NextIdResponse
@@ -3150,6 +3247,58 @@ export interface components {
             pixel_y: number;
             /** Tag */
             tag: string;
+        };
+        /**
+         * ProjectRequest
+         * @description Body for ``POST /click-to-gps/api/project/``.
+         *
+         *     A single clicked pixel on a camera frame, identified by its test-case name
+         *     (the image stem) plus the pixel coordinates in the camera image.
+         */
+        ProjectRequest: {
+            /** Test Case Name */
+            test_case_name: string;
+            /** Pixel X */
+            pixel_x: number;
+            /** Pixel Y */
+            pixel_y: number;
+        };
+        /**
+         * ProjectResponse
+         * @description Result of projecting a clicked camera pixel to GPS.
+         *
+         *     On success, ``latitude``/``longitude`` carry the WGS84 coordinate and
+         *     ``confidence`` is the homography inlier ratio [0, 1]. On failure (e.g. a
+         *     point that projects beyond the georeferenced map, the click-to-GPS analog
+         *     of a point on/above the horizon), ``success`` is ``False`` and ``error``
+         *     explains why; ``on_horizon`` marks that specific failure class.
+         */
+        ProjectResponse: {
+            /** Success */
+            success: boolean;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Easting */
+            easting?: number | null;
+            /** Northing */
+            northing?: number | null;
+            /** Crs */
+            crs?: string | null;
+            /** Map Pixel X */
+            map_pixel_x?: number | null;
+            /** Map Pixel Y */
+            map_pixel_y?: number | null;
+            /**
+             * On Horizon
+             * @default false
+             */
+            on_horizon: boolean;
+            /** Error */
+            error?: string | null;
         };
         /**
          * RunDiagnosticRequest
@@ -3454,7 +3603,7 @@ export interface components {
              */
             direction: string;
             coefficients?: components["schemas"]["DistortionCoefficientsIn"];
-            intrinsics?: components["schemas"]["IntrinsicsIn"];
+            intrinsics?: components["schemas"]["api__schemas__distortion_validator__IntrinsicsIn"];
         };
         /**
          * TransformPointsResponse
@@ -3474,7 +3623,7 @@ export interface components {
             /** Image Path */
             image_path: string;
             coefficients?: components["schemas"]["DistortionCoefficientsIn"];
-            intrinsics?: components["schemas"]["IntrinsicsIn"];
+            intrinsics?: components["schemas"]["api__schemas__distortion_validator__IntrinsicsIn"];
             /**
              * Use Opencv
              * @default false
@@ -3560,7 +3709,7 @@ export interface components {
          * @description Body for ``POST /api/validate/``.
          */
         ValidateRequest: {
-            intrinsics: components["schemas"]["api__schemas__lens_calibration__IntrinsicsIn"];
+            intrinsics: components["schemas"]["IntrinsicsIn"];
             coefficients?: components["schemas"]["DistortionCoefficients"];
             /** Lines */
             lines?: components["schemas"]["ValidationLineIn"][];
@@ -3660,6 +3809,26 @@ export interface components {
             camera_status: components["schemas"]["CameraStatusOut"];
         };
         /**
+         * IntrinsicsIn
+         * @description Camera intrinsic parameters.
+         */
+        api__schemas__distortion_validator__IntrinsicsIn: {
+            /**
+             * Fx
+             * @default 1000
+             */
+            fx: number;
+            /**
+             * Fy
+             * @default 1000
+             */
+            fy: number;
+            /** Cx */
+            cx?: number | null;
+            /** Cy */
+            cy?: number | null;
+        };
+        /**
          * LoadCalibrationRequest
          * @description Body for ``POST /api/load-calibration/``.
          */
@@ -3678,48 +3847,6 @@ export interface components {
             entries: {
                 [key: string]: unknown;
             }[];
-        };
-        /**
-         * IntrinsicsIn
-         * @description Camera intrinsic parameters.
-         */
-        api__schemas__lens_calibration__IntrinsicsIn: {
-            /**
-             * Fx
-             * @default 1000
-             */
-            fx: number;
-            /**
-             * Fy
-             * @default 1000
-             */
-            fy: number;
-            /**
-             * Cx
-             * @default 960
-             */
-            cx: number;
-            /**
-             * Cy
-             * @default 540
-             */
-            cy: number;
-            /**
-             * Image Width
-             * @default 1920
-             */
-            image_width: number;
-            /**
-             * Image Height
-             * @default 1080
-             */
-            image_height: number;
-            /** Sensor Width Mm */
-            sensor_width_mm?: number | null;
-            /** Base Focal Length Mm */
-            base_focal_length_mm?: number | null;
-            /** Zoom */
-            zoom?: number | null;
         };
         /**
          * LineOut
@@ -5557,6 +5684,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunListResponse"];
+                };
+            };
+        };
+    };
+    list_projectable_frames_click_to_gps_api_frames__get: {
+        parameters: {
+            query: {
+                tenant_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_pixel_to_gps_click_to_gps_api_project__post: {
+        parameters: {
+            query: {
+                tenant_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_image_click_to_gps_image__get: {
+        parameters: {
+            query: {
+                tenant_id: string;
+                image_filename: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

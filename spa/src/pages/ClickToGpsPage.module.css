@@ -1,0 +1,217 @@
+/* ---------- Full-viewport layout ---------- */
+.wrapper {
+  display: flex;
+  height: calc(100vh - 56px); /* below AppLayout header */
+  background: #1a1a1a;
+}
+
+.loading,
+.emptyText {
+  color: #aaa;
+  padding: 16px;
+  font-size: 14px;
+}
+
+/* ---------- Left panel: camera frame ---------- */
+.imagePanel {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #222;
+  overflow: hidden;
+}
+
+.imageContainer {
+  flex: 1;
+  overflow: auto;
+  cursor: crosshair;
+}
+
+.imageWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.frameImage {
+  display: block;
+  max-width: none;
+}
+
+/* ---------- Clicked-point crosshair markers ---------- */
+.marker {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.markerNewest {
+  z-index: 10;
+}
+
+.crosshair {
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #43a047;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: currentColor;
+}
+
+.crosshair::before {
+  left: 50%;
+  top: -6px;
+  width: 1px;
+  height: 32px;
+  margin-left: -0.5px;
+}
+
+.crosshair::after {
+  top: 50%;
+  left: -6px;
+  height: 1px;
+  width: 32px;
+  margin-top: -0.5px;
+}
+
+.markerLabel {
+  position: absolute;
+  left: 14px;
+  top: -8px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow:
+    0 0 3px #000,
+    0 0 3px #000;
+}
+
+.markerNewest .markerLabel {
+  font-size: 13px;
+}
+
+/* ---------- Transient flash banner ---------- */
+.flash {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  z-index: 20;
+}
+
+/* ---------- Right panel: controls ---------- */
+.controlPanel {
+  width: 320px;
+  background: #2a2a2a;
+  color: #eee;
+  overflow-y: auto;
+  border-left: 1px solid #111;
+}
+
+.panelSection {
+  padding: 16px;
+  border-bottom: 1px solid #333;
+}
+
+.panelSection h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #bbb;
+}
+
+.instructions {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ccc;
+}
+
+.instructions kbd {
+  background: #444;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.frameSelector {
+  width: 100%;
+  padding: 8px;
+  background: #1e1e1e;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* ---------- Clicked-point list ---------- */
+.pointList {
+  margin-bottom: 12px;
+}
+
+.pointRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #333;
+  font-size: 13px;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.pointGps {
+  flex: 1;
+  font-family: monospace;
+}
+
+.pointConf {
+  color: #aaa;
+}
+
+.copyButton,
+.clearButton {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.copyButton {
+  background: #1565c0;
+  color: #fff;
+}
+
+.clearButton {
+  background: #444;
+  color: #eee;
+}
+
+.copyStatus {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8bc34a;
+}
