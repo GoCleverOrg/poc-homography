@@ -1,386 +1,287 @@
 # ruff: noqa: B018  # bare-name references are intentional in a vulture whitelist
-DistortionCoefficients  # backward-compat alias (poc_homography/camera_parameters.py:21)
-_.remove_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:202)
-_.get_zoom_levels  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:373)
-_.get_nearest_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:393)
-merge_distance_threshold  # unused variable (poc_homography/calibration/lens_distortion/line_detection.py:61)
-_.length_pixels  # unused property (poc_homography/calibration/lens_distortion/models.py:76)
-_.angle_degrees  # unused property (poc_homography/calibration/lens_distortion/models.py:83)
-_.to_points_array  # unused method (poc_homography/calibration/lens_distortion/models.py:90)
-_.length_meters  # unused property (poc_homography/calibration/lens_distortion/models.py:213)
-_.to_points_array  # unused method (poc_homography/calibration/lens_distortion/models.py:220)
-ground_truth_line  # unused variable (poc_homography/calibration/lens_distortion/models.py:266)
-_.to_world_coordinates  # unused method (poc_homography/calibration/lens_distortion/models.py:288)
-error_pixels  # unused variable (poc_homography/calibration/projection.py:34)
-best_joint_pan_offset  # unused variable (poc_homography/calibration/projection.py:43)
-_.project_image_to_world  # unused method (poc_homography/camera_geometry.py:564)
-_.project_world_to_image  # unused method (poc_homography/camera_geometry.py:595)
-_.world_to_map  # unused method (poc_homography/camera_geometry.py:623)
-_.undistort_point  # unused method (poc_homography/camera_geometry.py:652)
-_.writeable  # unused attribute (poc_homography/camera_parameters.py:162)
-_.writeable  # unused attribute (poc_homography/camera_parameters.py:173)
-_.writeable  # unused attribute (poc_homography/camera_parameters.py:191)
-_.writeable  # unused attribute (poc_homography/camera_parameters.py:338)
-_.writeable  # unused attribute (poc_homography/camera_parameters.py:349)
-projection_command  # unused function (poc_homography/cli/calibrate.py:21)
-comprehensive_command  # unused function (poc_homography/cli/calibrate.py:75)
-YAML  # unused variable (poc_homography/cli/camera.py:30)
-distribution_command  # typer gcp command (poc_homography/cli/gcp.py)
-intrinsics_command  # unused function (poc_homography/cli/camera.py:33)
-validate_command  # unused function (poc_homography/cli/camera.py:210)
-interactive_command  # unused function (poc_homography/cli/interactive.py:14)
-serve  # unused function (poc_homography/cli/line_picker.py:17)
-serve  # unused function (poc_homography/cli/point_picker.py:17)
-sam3_command  # unused function (poc_homography/cli/test_cmds.py:14)
-HIKVISION_DS_2DF8425IX  # unused variable (poc_homography/domain/enums/camera_spec.py:60)
-_.last_ptz_state  # unused property (poc_homography/domain/protocols/camera_controller.py:24)
-_.move_relative  # unused method (poc_homography/domain/protocols/camera_controller.py:67)
-_.writeable  # unused attribute (poc_homography/domain/vo/matrix3x3.py:106)
-_.from_matrix  # unused method (poc_homography/domain/vo/rotation.py:73)
-_.to_matrix  # unused method (poc_homography/domain/vo/rotation.py:88)
-_.writeable  # unused attribute (poc_homography/domain/vo/vector3.py:85)
-_.normalized  # unused method (poc_homography/domain/vo/vector3.py:103)
-_.get_approach_config  # unused method (poc_homography/homography/config.py:270)
-_.save_to_yaml  # unused method (poc_homography/homography/config.py:290)
-FEATURE_MATCH  # unused variable (poc_homography/homography/interface.py:37) - enum value used in tests
-LEARNED  # unused variable (poc_homography/homography/interface.py:38)
-MAP_BASED_ORIGIN  # unused variable (poc_homography/homography/interface.py:45)
-_.identity  # unused method (poc_homography/homography/interface.py:89)
-_.project_point  # unused method (poc_homography/homography/interface.py:205) - abstract interface method
-_.project_points  # unused method (poc_homography/homography/interface.py:218)
-image_points  # unused variable (poc_homography/homography/interface.py:220) - abstract method parameter
-point_id_prefix  # unused variable (poc_homography/homography/interface.py:220) - abstract method parameter
-_.get_confidence  # unused method (poc_homography/homography/interface.py:233)
-EDGE_FACTOR_CENTER  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:119) - class constant
-EDGE_FACTOR_EDGE  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:120) - class constant
-EDGE_FACTOR_CORNER_DECAY  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:121)
-EDGE_FACTOR_MIN  # unused variable (poc_homography/homography/intrinsic_extrinsic.py:122) - class constant
-_.compute_from_config  # unused method (poc_homography/homography/intrinsic_extrinsic.py:481)
-_.project_point  # unused method (poc_homography/homography/intrinsic_extrinsic.py:603) - interface impl
-_.project_points  # unused method (poc_homography/homography/intrinsic_extrinsic.py:626)
-_.get_confidence  # unused method (poc_homography/homography/intrinsic_extrinsic.py:639)
-_.project_point_static  # unused method (poc_homography/homography/intrinsic_extrinsic.py:721)
-_.project_image_to_map  # unused method (poc_homography/homography/intrinsic_extrinsic.py:754)
-_.result_to_homography_result  # unused method (poc_homography/homography/intrinsic_extrinsic.py:804)
-_.load_lens_distortion_calibration  # unused method (poc_homography/homography/intrinsic_extrinsic.py:813)
-_.merge_calibration_tables  # unused method (poc_homography/homography/intrinsic_extrinsic.py:839)
-inverse_matrix  # unused variable (poc_homography/homography/map_points.py:46)
-inverse_matrix  # unused variable (poc_homography/homography/map_points.py:71)
-_._point_counter  # unused attribute (poc_homography/homography/map_points.py:99)
-iteration  # unused variable (poc_homography/homography/map_points.py:336)
-_.camera_to_map_batch  # unused method (poc_homography/homography/map_points.py:618)
-_.map_to_camera_batch  # unused method (poc_homography/homography/map_points.py:652)
-_.get_result  # unused method (poc_homography/homography/map_points.py:676)
-_.get_homography_matrix  # unused method (poc_homography/homography/map_points.py:680)
-_.get_inverse_matrix  # unused method (poc_homography/homography/map_points.py:684)
-_.writeable  # unused attribute (poc_homography/homography/parameters.py:175)
-_.writeable  # unused attribute (poc_homography/homography/parameters.py:186)
-_.from_reference_dict  # unused method (poc_homography/homography/parameters.py:273)
-_.to_reference_dict  # unused method (poc_homography/homography/parameters.py:338)
-_.writeable  # unused attribute (poc_homography/homography/parameters.py:460)
-_.writeable  # unused attribute (poc_homography/homography/parameters.py:471)
-_.writeable  # unused attribute (poc_homography/homography/parameters.py:482)
-_.map_dimensions  # unused property (poc_homography/homography/parameters.py:485)
-_.last_ptz_state  # unused property (poc_homography/infrastructure/clients/hikvision_camera_controller.py:53)
-_.move_relative  # unused method (poc_homography/infrastructure/clients/hikvision_camera_controller.py:119)
-_.get_by_map  # unused method (poc_homography/infrastructure/repositories/base/mixin_repo_map_filter.py:15)
-_.clear_cache  # unused method (poc_homography/infrastructure/repositories/base/repo_yaml.py:98)
-_.get_by_map  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:129)
-_.get_by_camera  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:152)
-_.clear_cache  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:182)
-_.save_annotations  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:233)
-CameraAnnotatorConfig  # unused class (webapp/camera_annotator/apps.py:6)
-default_auto_field  # unused variable (webapp/camera_annotator/apps.py:9)
-verbose_name  # unused variable (webapp/camera_annotator/apps.py:11)
-app_name  # unused variable (webapp/camera_annotator/urls.py:7)
-urlpatterns  # unused variable (webapp/camera_annotator/urls.py:9)
-CameraDiagnosticConfig  # unused class (webapp/camera_diagnostic/apps.py:6)
-default_auto_field  # unused variable (webapp/camera_diagnostic/apps.py:9)
-verbose_name  # unused variable (webapp/camera_diagnostic/apps.py:11)
-_.get_overall_status  # unused method (webapp/camera_diagnostic/models.py:119)
-GOOD  # unused variable (webapp/camera_diagnostic/models.py:248)
-NEEDS_IMPROVEMENT  # unused variable (webapp/camera_diagnostic/models.py:249)
-BAD  # unused variable (webapp/camera_diagnostic/models.py:250)
-app_name  # unused variable (webapp/camera_diagnostic/urls.py:7)
-urlpatterns  # unused variable (webapp/camera_diagnostic/urls.py:9)
-CameraEvaluationConfig  # unused class (webapp/camera_evaluation/apps.py:6)
-default_auto_field  # unused variable (webapp/camera_evaluation/apps.py:9)
-verbose_name  # unused variable (webapp/camera_evaluation/apps.py:11)
-app_name  # unused variable (webapp/camera_evaluation/urls.py:11)
-urlpatterns  # unused variable (webapp/camera_evaluation/urls.py:13)
-CameraLineAnnotatorConfig  # unused class (webapp/camera_line_annotator/apps.py:6)
-default_auto_field  # unused variable (webapp/camera_line_annotator/apps.py:9)
-app_name  # unused variable (webapp/camera_line_annotator/urls.py:7)
-urlpatterns  # unused variable (webapp/camera_line_annotator/urls.py:9)
-_.modified  # unused attribute (webapp/camera_line_annotator/views.py:98)
-CameraSurveyConfig  # unused class (webapp/camera_survey/apps.py:6)
-default_auto_field  # unused variable (webapp/camera_survey/apps.py:9)
-verbose_name  # unused variable (webapp/camera_survey/apps.py:11)
-camera_model  # unused variable (webapp/camera_survey/ptz.py:329)
-app_name  # unused variable (webapp/camera_survey/urls.py:7)
-urlpatterns  # unused variable (webapp/camera_survey/urls.py:9)
-app_name  # unused variable (webapp/distortion_validator/urls.py:7)
-urlpatterns  # unused variable (webapp/distortion_validator/urls.py:9)
-GcpConfig  # unused class (webapp/gcp/apps.py:4)
-default_auto_field  # unused variable (webapp/gcp/apps.py:5)
-VALID_LAYERS  # unused variable (webapp/gcp/templatetags/satellite_layers.py:27)
-satellite_layers_js  # unused function (webapp/gcp/templatetags/satellite_layers.py:39)
-app_name  # unused variable (webapp/gcp/urls.py:11)
-urlpatterns  # unused variable (webapp/gcp/urls.py:24)
-default_app_config  # unused variable (webapp/homography_precision/__init__.py:3)
-HomographyPrecisionConfig  # unused class (webapp/homography_precision/apps.py:6)
-default_auto_field  # unused variable (webapp/homography_precision/apps.py:9)
-verbose_name  # unused variable (webapp/homography_precision/apps.py:11)
-app_name  # unused variable (webapp/homography_precision/urls.py:11)
-urlpatterns  # unused variable (webapp/homography_precision/urls.py:46)
-homography_source  # unused variable (webapp/homography_precision/views.py:795)
-line_result  # unused variable (webapp/homography_precision/views.py:810)
-application  # unused variable (webapp/homography_web/asgi.py:16)
-SECRET_KEY  # unused variable (webapp/homography_web/settings.py:26)
-ALLOWED_HOSTS  # unused variable (webapp/homography_web/settings.py:31)
-INSTALLED_APPS  # unused variable (webapp/homography_web/settings.py:36)
-MIDDLEWARE  # unused variable (webapp/homography_web/settings.py:56)
-ROOT_URLCONF  # unused variable (webapp/homography_web/settings.py:66)
-TEMPLATES  # unused variable (webapp/homography_web/settings.py:68)
-WSGI_APPLICATION  # unused variable (webapp/homography_web/settings.py:83)
-DATABASES  # unused variable (webapp/homography_web/settings.py:89)
-AUTH_PASSWORD_VALIDATORS  # unused variable (webapp/homography_web/settings.py:100)
-LANGUAGE_CODE  # unused variable (webapp/homography_web/settings.py:119)
-TIME_ZONE  # unused variable (webapp/homography_web/settings.py:121)
-USE_I18N  # unused variable (webapp/homography_web/settings.py:123)
-USE_TZ  # unused variable (webapp/homography_web/settings.py:125)
-STATIC_URL  # unused variable (webapp/homography_web/settings.py:131)
-STATICFILES_DIRS  # unused variable (webapp/homography_web/settings.py:132)
-DEFAULT_AUTO_FIELD  # unused variable (webapp/homography_web/settings.py:139)
-urlpatterns  # unused variable (webapp/homography_web/urls.py:21)
-application  # unused variable (webapp/homography_web/wsgi.py:16)
-LensCalibrationConfig  # unused class (webapp/lens_calibration/apps.py:6)
-default_auto_field  # unused variable (webapp/lens_calibration/apps.py:9)
-verbose_name  # unused variable (webapp/lens_calibration/apps.py:11)
-app_name  # unused variable (webapp/lens_calibration/urls.py:7)
-urlpatterns  # unused variable (webapp/lens_calibration/urls.py:9)
-LinePickerConfig  # unused class (webapp/line_picker/apps.py:9)
-default_auto_field  # unused variable (webapp/line_picker/apps.py:12)
-verbose_name  # unused variable (webapp/line_picker/apps.py:14)
-_.ready  # unused method (webapp/line_picker/apps.py:16)
-app_name  # unused variable (webapp/line_picker/urls.py:7)
-urlpatterns  # unused variable (webapp/line_picker/urls.py:9)
-default_app_config  # unused variable (webapp/point_picker/__init__.py:3)
-PointPickerConfig  # unused class (webapp/point_picker/apps.py:9)
-default_auto_field  # unused variable (webapp/point_picker/apps.py:12)
-verbose_name  # unused variable (webapp/point_picker/apps.py:14)
-_.ready  # unused method (webapp/point_picker/apps.py:16)
-app_name  # unused variable (webapp/point_picker/urls.py:7)
-urlpatterns  # unused variable (webapp/point_picker/urls.py:9)
-DATA_DIR  # unused variable (webapp/homography_web/settings.py:19)
-invalidate_cache  # unused function (webapp/homography_web/frame_utils.py) - public API
-_.get_by_frame_id  # unused method (poc_homography/infrastructure/repositories/repo_yaml_annotation.py:15) - repository query API
-_invalidate_line_registry_cache  # unused function (webapp/homography_precision/views.py:88) - cache management
-get_annotation_repo  # unused function (webapp/homography_web/frame_utils.py:220) - public API
-save_to_line_repo  # unused function (webapp/line_picker/state.py) - used by tests
-list_line_map_ids  # unused function (webapp/line_picker/state.py) - used by tests
-TenantIdMiddleware  # unused class (webapp/homography_web/middleware.py) - Django MIDDLEWARE setting
-_.process_exception  # unused method (webapp/homography_web/middleware.py) - Django middleware hook
-_.get_coefficients  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:232) - public API
-_.get_entry  # unused method (poc_homography/calibration/lens_distortion/calibration_table.py:377) - public API
-straightness_rmse  # unused function (poc_homography/calibration/lens_distortion/distortion_solver.py:474) - utility
-get_rtsp_url  # unused function (poc_homography/camera_config.py:525) - used by webapp views
-_.focal_length_at_zoom  # unused method (poc_homography/domain/enums/camera_spec.py:101) - domain API
-_.delete  # unused method (poc_homography/domain/repositories/repo.py:35) - repository protocol
-_.to_list  # unused method (poc_homography/domain/vo/geotiff.py:38) - VO API
-_.pixel_to_geo  # unused method (poc_homography/domain/vo/geotiff.py:85) - VO API
-_.area  # unused property (poc_homography/domain/vo/image_dimensions.py:46) - VO API
-_.center_x  # unused property (poc_homography/domain/vo/image_dimensions.py:51) - VO API
-_.center_y  # unused property (poc_homography/domain/vo/image_dimensions.py:56) - VO API
-_.has_distortion  # unused property (poc_homography/domain/vo/lens_distortion.py:40) - VO API
-_.inverse  # unused method (poc_homography/domain/vo/matrix3x3.py:128) - VO API
-_.to_list  # unused method (poc_homography/domain/vo/matrix3x3.py:171) - VO API
-_.to_orientation  # unused method (poc_homography/domain/vo/ptz_state.py:30) - VO API
-_.inverse  # unused method (poc_homography/homography/interface.py:98) - interface API
-_.transform  # unused method (poc_homography/homography/interface.py:134) - interface API
-num_gcps  # unused variable (poc_homography/homography/map_points.py:47) - NamedTuple field
-num_lines  # unused variable (poc_homography/homography/map_points.py:72) - NamedTuple field
-mean_perp_error  # unused variable (poc_homography/homography/map_points.py:75) - NamedTuple field
-max_perp_error  # unused variable (poc_homography/homography/map_points.py:76) - NamedTuple field
-_.compute_from_gcps  # unused method (poc_homography/homography/map_points.py:118) - core algorithm
-_.compute_from_lines  # unused method (poc_homography/homography/map_points.py:238) - core algorithm
-_.camera_to_map  # unused method (poc_homography/homography/map_points.py:575) - core algorithm
-_.map_to_camera  # unused method (poc_homography/homography/map_points.py:601) - core algorithm
-_.get_by_tenant  # unused method (poc_homography/infrastructure/repositories/base/mixin_repo_tenant_filter.py:15) - mixin API
-_.delete  # unused method (poc_homography/infrastructure/repositories/base/repo_yaml.py:84) - repository CRUD
-_.image_dir_for  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:35) - repo API
-_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:99) - repo CRUD
-_.get_image_path  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:201) - repo API
-_.get_annotations  # unused method (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:226) - repo API
-_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_diagnostic_session.py:101) - repo CRUD
-_.get_by_map_id  # unused method (poc_homography/infrastructure/repositories/repo_yaml_line.py:15) - repo query
-_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_stress_test_session.py:80) - repo CRUD
-_.delete  # unused method (poc_homography/infrastructure/repositories/repo_yaml_survey_session.py:86) - repo CRUD
-_.get_session_dir  # unused method (poc_homography/infrastructure/repositories/repo_yaml_survey_session.py:107) - repo API
-from_gcp_repo  # unused function (poc_homography/map_points/gcp_registry.py:172) - legacy bridge
-save_to_gcp_repo  # unused function (poc_homography/map_points/gcp_registry.py:200) - legacy bridge
-list_map_ids  # unused function (poc_homography/map_points/gcp_registry.py:227) - legacy bridge
-error_px  # unused variable (poc_homography/validation/camera_model.py:65) - NamedTuple field
+#
+# Audited per #295 (workstream C of #226). Every entry below is a name that
+# `vulture poc_homography webapp --min-confidence 60` still flags as unused; each
+# carries a categorizing inline comment. Entries whose symbol vulture no longer
+# flagged (now used in production) or whose symbol was absent have been removed.
 
-# -- PostgreSQL _pg adapter functions (called from api/ routers, not scanned by vulture) --
-sync_to_ddd_repo_pg  # unused function (poc_homography/calibration/lens_distortion/ddd_sync.py) - used by api/routers/lens_calibration.py
-get_tenants_pg  # unused function (poc_homography/camera_config.py) - used by api/routers
-get_tenant_by_id_pg  # unused function (poc_homography/camera_config.py) - used by api/routers
-get_tenant_by_name_pg  # unused function (poc_homography/camera_config.py) - used by api/routers
-save_to_gcp_repo_pg  # unused function (poc_homography/map_points/gcp_registry.py) - used by api/routers/point_picker.py
-list_map_ids_pg  # unused function (poc_homography/map_points/gcp_registry.py) - used by api/routers/point_picker.py
-save_line_to_repo_pg  # unused function (webapp/line_picker/state.py) - used by api/routers/line_picker.py
-delete_line_from_repo_pg  # unused function (webapp/line_picker/state.py) - used by api/routers/line_picker.py
-save_gcp_to_repo_pg  # unused function (webapp/point_picker/state.py) - used by api/routers/point_picker.py
-delete_gcp_from_repo_pg  # unused function (webapp/point_picker/state.py) - used by api/routers/point_picker.py
+# == django-boilerplate ==
+# Django framework boilerplate (AppConfig / urls / settings / asgi-wsgi / middleware / model enums — read by Django, never called directly)
+CameraAnnotatorConfig  # django-boilerplate (webapp/camera_annotator/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/camera_annotator/apps.py:9)
+verbose_name  # django-boilerplate (webapp/camera_annotator/apps.py:11)
+app_name  # django-boilerplate (webapp/camera_annotator/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/camera_annotator/urls.py:9)
+CameraDiagnosticConfig  # django-boilerplate (webapp/camera_diagnostic/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/camera_diagnostic/apps.py:9)
+verbose_name  # django-boilerplate (webapp/camera_diagnostic/apps.py:11)
+_.get_overall_status  # django-boilerplate (webapp/camera_diagnostic/models.py:119)
+GOOD  # django-boilerplate (webapp/camera_diagnostic/models.py:248)
+NEEDS_IMPROVEMENT  # django-boilerplate (webapp/camera_diagnostic/models.py:249)
+BAD  # django-boilerplate (webapp/camera_diagnostic/models.py:250)
+app_name  # django-boilerplate (webapp/camera_diagnostic/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/camera_diagnostic/urls.py:9)
+CameraEvaluationConfig  # django-boilerplate (webapp/camera_evaluation/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/camera_evaluation/apps.py:9)
+verbose_name  # django-boilerplate (webapp/camera_evaluation/apps.py:11)
+app_name  # django-boilerplate (webapp/camera_evaluation/urls.py:11)
+urlpatterns  # django-boilerplate (webapp/camera_evaluation/urls.py:13)
+CameraLineAnnotatorConfig  # django-boilerplate (webapp/camera_line_annotator/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/camera_line_annotator/apps.py:9)
+app_name  # django-boilerplate (webapp/camera_line_annotator/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/camera_line_annotator/urls.py:9)
+CameraSurveyConfig  # django-boilerplate (webapp/camera_survey/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/camera_survey/apps.py:9)
+verbose_name  # django-boilerplate (webapp/camera_survey/apps.py:11)
+app_name  # django-boilerplate (webapp/camera_survey/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/camera_survey/urls.py:9)
+app_name  # django-boilerplate (webapp/distortion_validator/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/distortion_validator/urls.py:9)
+GcpConfig  # django-boilerplate (webapp/gcp/apps.py:4)
+default_auto_field  # django-boilerplate (webapp/gcp/apps.py:5)
+VALID_LAYERS  # django-boilerplate (webapp/gcp/templatetags/satellite_layers.py:29)
+satellite_layers_js  # django-boilerplate (webapp/gcp/templatetags/satellite_layers.py:41)
+app_name  # django-boilerplate (webapp/gcp/urls.py:11)
+urlpatterns  # django-boilerplate (webapp/gcp/urls.py:29)
+default_app_config  # django-boilerplate (webapp/homography_precision/__init__.py:3)
+HomographyPrecisionConfig  # django-boilerplate (webapp/homography_precision/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/homography_precision/apps.py:9)
+verbose_name  # django-boilerplate (webapp/homography_precision/apps.py:11)
+app_name  # django-boilerplate (webapp/homography_precision/urls.py:11)
+urlpatterns  # django-boilerplate (webapp/homography_precision/urls.py:46)
+application  # django-boilerplate (webapp/homography_web/asgi.py:16)
+SECRET_KEY  # django-boilerplate (webapp/homography_web/settings.py:26)
+ALLOWED_HOSTS  # django-boilerplate (webapp/homography_web/settings.py:31)
+INSTALLED_APPS  # django-boilerplate (webapp/homography_web/settings.py:36)
+MIDDLEWARE  # django-boilerplate (webapp/homography_web/settings.py:56)
+ROOT_URLCONF  # django-boilerplate (webapp/homography_web/settings.py:67)
+TEMPLATES  # django-boilerplate (webapp/homography_web/settings.py:69)
+WSGI_APPLICATION  # django-boilerplate (webapp/homography_web/settings.py:84)
+DATABASES  # django-boilerplate (webapp/homography_web/settings.py:90)
+AUTH_PASSWORD_VALIDATORS  # django-boilerplate (webapp/homography_web/settings.py:101)
+LANGUAGE_CODE  # django-boilerplate (webapp/homography_web/settings.py:120)
+TIME_ZONE  # django-boilerplate (webapp/homography_web/settings.py:122)
+USE_I18N  # django-boilerplate (webapp/homography_web/settings.py:124)
+USE_TZ  # django-boilerplate (webapp/homography_web/settings.py:126)
+STATIC_URL  # django-boilerplate (webapp/homography_web/settings.py:132)
+STATICFILES_DIRS  # django-boilerplate (webapp/homography_web/settings.py:133)
+DEFAULT_AUTO_FIELD  # django-boilerplate (webapp/homography_web/settings.py:140)
+urlpatterns  # django-boilerplate (webapp/homography_web/urls.py:21)
+application  # django-boilerplate (webapp/homography_web/wsgi.py:16)
+LensCalibrationConfig  # django-boilerplate (webapp/lens_calibration/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/lens_calibration/apps.py:9)
+verbose_name  # django-boilerplate (webapp/lens_calibration/apps.py:11)
+app_name  # django-boilerplate (webapp/lens_calibration/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/lens_calibration/urls.py:9)
+LinePickerConfig  # django-boilerplate (webapp/line_picker/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/line_picker/apps.py:9)
+verbose_name  # django-boilerplate (webapp/line_picker/apps.py:11)
+app_name  # django-boilerplate (webapp/line_picker/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/line_picker/urls.py:9)
+default_app_config  # django-boilerplate (webapp/point_picker/__init__.py:3)
+PointPickerConfig  # django-boilerplate (webapp/point_picker/apps.py:6)
+default_auto_field  # django-boilerplate (webapp/point_picker/apps.py:9)
+verbose_name  # django-boilerplate (webapp/point_picker/apps.py:11)
+app_name  # django-boilerplate (webapp/point_picker/urls.py:7)
+urlpatterns  # django-boilerplate (webapp/point_picker/urls.py:9)
+DATA_DIR  # django-boilerplate (webapp/homography_web/settings.py:19)
+TenantIdMiddleware  # django-boilerplate (webapp/homography_web/middleware.py:10)
+_.process_exception  # django-boilerplate (webapp/homography_web/middleware.py:19)
 
-# -- PostgreSQL session repository base class (abstract hooks called by base CRUD) --
-_.get_session_dir  # unused method (infrastructure/repositories/repo_postgres_survey_session.py) - YAML compat API
+# == orm-mapping ==
+# SQLAlchemy ORM mapping attributes (relationships & columns — populated by SA, not referenced in Python)
+_.map  # orm-mapping (poc_homography/infrastructure/models/camera_config.py:47)
+_.camera_calibration  # orm-mapping (poc_homography/infrastructure/models/camera_config.py:48)
+_.lens_calibration_table  # orm-mapping (poc_homography/infrastructure/models/camera_config.py:51)
+_.map  # orm-mapping (poc_homography/infrastructure/models/captured_frame.py:47)
+_.map  # orm-mapping (poc_homography/infrastructure/models/ground_control_point.py:43)
+_.map  # orm-mapping (poc_homography/infrastructure/models/line.py:45)
+_.camera_configs  # orm-mapping (poc_homography/infrastructure/models/map.py:46)
+_.captured_frames  # orm-mapping (poc_homography/infrastructure/models/map.py:49)
+_.ground_control_points  # orm-mapping (poc_homography/infrastructure/models/map.py:53)
+_.camera_configs  # orm-mapping (poc_homography/infrastructure/models/tenant.py:34)
+_.users  # orm-mapping (poc_homography/infrastructure/models/tenant.py:37)
+_.hashed_password  # orm-mapping (poc_homography/infrastructure/models/user.py:28)
+_.is_active  # orm-mapping (poc_homography/infrastructure/models/user.py:32)
+_.updated_at  # orm-mapping (poc_homography/infrastructure/models/user.py:36)
 
-# -- SQLAlchemy ORM relationship attributes (used by SA for joins/back_populates) --
-_.map  # unused attribute - SA relationship (infrastructure/models/camera_config.py)
-_.camera_calibration  # unused attribute - SA relationship (infrastructure/models/camera_config.py)
-_.lens_calibration_table  # unused attribute - SA relationship (infrastructure/models/camera_config.py)
-_.map  # unused attribute - SA relationship (infrastructure/models/captured_frame.py)
-_.map  # unused attribute - SA relationship (infrastructure/models/ground_control_point.py)
-_.map  # unused attribute - SA relationship (infrastructure/models/line.py)
-_.camera_configs  # unused attribute - SA relationship (infrastructure/models/map.py)
-_.captured_frames  # unused attribute - SA relationship (infrastructure/models/map.py)
-_.ground_control_points  # unused attribute - SA relationship (infrastructure/models/map.py)
-_.camera_configs  # unused attribute - SA relationship (infrastructure/models/tenant.py)
-_.users  # unused attribute - SA relationship (infrastructure/models/tenant.py)
+# == protocol-compliance ==
+# Protocol / ABC / interface compliance (abstract members, interface impls, numpy writeable flags)
+_.writeable  # protocol-compliance (poc_homography/camera_parameters.py:162)
+_.writeable  # protocol-compliance (poc_homography/camera_parameters.py:173)
+_.writeable  # protocol-compliance (poc_homography/camera_parameters.py:191)
+_.writeable  # protocol-compliance (poc_homography/camera_parameters.py:338)
+_.writeable  # protocol-compliance (poc_homography/camera_parameters.py:349)
+_.last_ptz_state  # protocol-compliance (poc_homography/domain/protocols/camera_controller.py:24)
+_.move_relative  # protocol-compliance (poc_homography/domain/protocols/camera_controller.py:67)
+_.writeable  # protocol-compliance (poc_homography/domain/vo/matrix3x3.py:106)
+_.writeable  # protocol-compliance (poc_homography/domain/vo/vector3.py:85)
+FEATURE_MATCH  # protocol-compliance (poc_homography/homography/interface.py:37)
+LEARNED  # protocol-compliance (poc_homography/homography/interface.py:38)
+_.identity  # protocol-compliance (poc_homography/homography/interface.py:89)
+_.project_point  # protocol-compliance (poc_homography/homography/interface.py:205)
+_.project_points  # protocol-compliance (poc_homography/homography/interface.py:218)
+image_points  # protocol-compliance (poc_homography/homography/interface.py:220)
+point_id_prefix  # protocol-compliance (poc_homography/homography/interface.py:220)
+_.get_confidence  # protocol-compliance (poc_homography/homography/interface.py:233)
+_.project_point  # protocol-compliance (poc_homography/homography/intrinsic_extrinsic.py:535)
+_.project_points  # protocol-compliance (poc_homography/homography/intrinsic_extrinsic.py:558)
+_.get_confidence  # protocol-compliance (poc_homography/homography/intrinsic_extrinsic.py:571)
+_.writeable  # protocol-compliance (poc_homography/homography/parameters.py:175)
+_.writeable  # protocol-compliance (poc_homography/homography/parameters.py:186)
+_.writeable  # protocol-compliance (poc_homography/homography/parameters.py:460)
+_.writeable  # protocol-compliance (poc_homography/homography/parameters.py:471)
+_.writeable  # protocol-compliance (poc_homography/homography/parameters.py:482)
+_.last_ptz_state  # protocol-compliance (poc_homography/domain/protocols/camera_device.py:86)
+_.move_relative  # protocol-compliance (poc_homography/domain/protocols/camera_device.py:153)
+_.inverse  # protocol-compliance (poc_homography/domain/vo/matrix3x3.py:128)
+_.transform  # protocol-compliance (poc_homography/homography/interface.py:134)
+_.save_plan_config  # protocol-compliance (poc_homography/domain/protocols/survey_run_repository.py:27)
+_.load_plan_config  # protocol-compliance (poc_homography/domain/protocols/survey_run_repository.py:31)
+_.save_pose_catalog  # protocol-compliance (poc_homography/domain/protocols/survey_run_repository.py:43)
+_.get_runs_by_camera_and_pose  # protocol-compliance (poc_homography/domain/protocols/survey_run_repository.py:55)
 
-# -- SQLAlchemy ORM column attributes (used by SA for mapping) --
-_.hashed_password  # unused attribute - SA column (infrastructure/models/user.py)
-_.is_active  # unused attribute - SA column (infrastructure/models/user.py)
-_.updated_at  # unused attribute - SA column (infrastructure/models/user.py)
+# == adapter-api ==
+# Hikvision ISAPI adapter public surface (CameraDevice protocol + adapter; consumed by tests / api routers / discover CLI outside vulture scan)
+image_capabilities  # adapter-api (poc_homography/infrastructure/clients/hikvision/isapi_endpoints.py:113)
+_.auth  # adapter-api (poc_homography/infrastructure/clients/hikvision/isapi_transport.py:136)
+_.from_config  # adapter-api (poc_homography/infrastructure/clients/hikvision/isapi_client.py:119)
+_.goto_preset  # adapter-api (poc_homography/domain/protocols/camera_device.py:200)
+_.position3d  # adapter-api (poc_homography/domain/protocols/camera_device.py:211)
+_.set_iris  # adapter-api (poc_homography/domain/protocols/camera_device.py:255)
+_.set_exposure  # adapter-api (poc_homography/domain/protocols/camera_device.py:266)
+_assert_camera_device  # adapter-api (poc_homography/infrastructure/clients/hikvision/isapi_client.py:444)
+_.discover_endpoints  # adapter-api (poc_homography/infrastructure/clients/hikvision/isapi_client.py:397)
+_.get_ptz_state  # adapter-api (webapp/camera_survey/ptz.py:120)
 
+# == pg-adapter ==
+# PostgreSQL _pg adapter functions (called from api/ routers — outside vulture scan paths)
+sync_to_ddd_repo_pg  # pg-adapter (poc_homography/calibration/lens_distortion/ddd_sync.py:95)
+get_tenants_pg  # pg-adapter (poc_homography/camera_config.py:449)
+get_tenant_by_id_pg  # pg-adapter (poc_homography/camera_config.py:461)
+get_tenant_by_name_pg  # pg-adapter (poc_homography/camera_config.py:475)
+save_to_gcp_repo_pg  # pg-adapter (poc_homography/map_points/gcp_registry.py:279)
+list_map_ids_pg  # pg-adapter (poc_homography/map_points/gcp_registry.py:306)
+save_line_to_repo_pg  # pg-adapter (webapp/line_picker/state.py:393)
+delete_line_from_repo_pg  # pg-adapter (webapp/line_picker/state.py:417)
+save_gcp_to_repo_pg  # pg-adapter (webapp/point_picker/state.py:319)
+delete_gcp_from_repo_pg  # pg-adapter (webapp/point_picker/state.py:343)
 
-# -- Hikvision ISAPI adapter Phase A public surface (consumed by Phase C client) --
-# Endpoint path builders (poc_homography/infrastructure/clients/hikvision/isapi_endpoints.py)
-ptz_capabilities  # unused function - ISAPI endpoint builder
-ptz_absolute_ex_capabilities  # unused function - ISAPI endpoint builder
-ptz_absolute  # unused function - ISAPI endpoint builder
-ptz_relative  # unused function - ISAPI endpoint builder
-ptz_continuous  # unused function - ISAPI endpoint builder
-ptz_momentary  # unused function - ISAPI endpoint builder
-ptz_position3d  # unused function - ISAPI endpoint builder
-ptz_presets  # unused function - ISAPI endpoint builder
-ptz_preset_goto  # unused function - ISAPI endpoint builder
-ptz_home_goto  # unused function - ISAPI endpoint builder
-system_status  # unused function - ISAPI endpoint builder
-streaming_channel  # unused function - ISAPI endpoint builder
-streaming_picture  # unused function - ISAPI endpoint builder
-image_focus_configuration  # unused function - ISAPI endpoint builder
-image_iris  # unused function - ISAPI endpoint builder
-image_exposure  # unused function - ISAPI endpoint builder
-image_white_balance  # unused function - ISAPI endpoint builder
-image_capabilities  # unused function - ISAPI endpoint builder
-# Unit conversions (poc_homography/infrastructure/clients/hikvision/isapi_units.py)
-raw_to_degrees  # unused function - PTZ unit conversion
-degrees_to_raw  # unused function - PTZ unit conversion
-raw_to_zoom  # unused function - PTZ unit conversion
-zoom_to_raw  # unused function - PTZ unit conversion
-# Transport public API (poc_homography/infrastructure/clients/hikvision/isapi_transport.py)
-_.get_xml  # unused method - IsapiTransport public API
-_.put_xml  # unused method - IsapiTransport public API
-_.get_bytes  # unused method - IsapiTransport public API
-_.auth  # unused attribute - requests.Session.auth assignment
+# == repo-api ==
+# Repository public / CRUD / query API (consumed across infrastructure layers and tests)
+_.clear_cache  # repo-api (poc_homography/infrastructure/repositories/base/repo_yaml.py:98)
+_.get_by_camera  # repo-api (poc_homography/infrastructure/repositories/repo_postgres_captured_frame.py:68)
+_.clear_cache  # repo-api (poc_homography/infrastructure/repositories/repo_yaml_captured_frame.py:197)
+_.get_by_frame_id  # repo-api (poc_homography/infrastructure/repositories/repo_postgres_annotation.py:37)
+_.query_frames  # repo-api (poc_homography/infrastructure/repositories/repo_postgres_clean_plate_frame.py:78)
 
-# -- Hikvision ISAPI adapter Phase C public surface --
-# CameraDevice protocol (poc_homography/domain/protocols/camera_device.py) +
-# HikvisionISAPIClient adapter (.../hikvision/isapi_client.py); consumed by
-# Phase D tests and Phase E callers.
-_.from_config  # unused method - HikvisionISAPIClient factory
-_.get_health  # unused method - CameraDevice / adapter API
-_.get_stream_profiles  # unused method - CameraDevice / adapter API
-_.stop  # unused method - CameraDevice / adapter API
-_.goto_preset  # unused method - CameraDevice / adapter API
-_.position3d  # unused method - CameraDevice / adapter API
-_.get_optics  # unused method - CameraDevice / adapter API
-_.set_focus  # unused method - CameraDevice / adapter API
-_.set_iris  # unused method - CameraDevice / adapter API
-_.set_exposure  # unused method - CameraDevice / adapter API
-_.list_presets  # unused method - CameraDevice / adapter API
-_.capture_snapshot  # unused method - CameraDevice / adapter API
-_assert_camera_device  # unused function - TYPE_CHECKING structural conformance check
-_.discover_endpoints  # adapter endpoint-probe used by ptz_discovery_and_control/hikvision/discover.py CLI (outside vulture scan paths) [#256]
-_.get_ptz_state  # HikvisionPTZCamera pass-through consumed by api/routers/camera_evaluation.py (outside vulture scan paths) [#256]
+# == cli-command ==
+# Typer CLI command callbacks (registered via decorator, never called directly)
+projection_command  # cli-command (poc_homography/cli/calibrate.py:21)
+comprehensive_command  # cli-command (poc_homography/cli/calibrate.py:75)
+YAML  # cli-command (poc_homography/cli/camera.py:38)
+distribution_command  # cli-command (poc_homography/cli/gcp.py:18)
+intrinsics_command  # cli-command (poc_homography/cli/camera.py:41)
+validate_command  # cli-command (poc_homography/cli/camera.py:257)
+interactive_command  # cli-command (poc_homography/cli/interactive.py:14)
+serve  # cli-command (poc_homography/cli/line_picker.py:17)
+serve  # cli-command (poc_homography/cli/point_picker.py:17)
+sam3_command  # cli-command (poc_homography/cli/test_cmds.py:14)
+run_command  # cli-command (poc_homography/cli/survey.py:19)
+status_command  # cli-command (poc_homography/cli/survey.py:62)
+abort_command  # cli-command (poc_homography/cli/survey.py:81)
+list_command  # cli-command (poc_homography/cli/survey.py:94)
+browse_command  # cli-command (poc_homography/cli/survey.py:108)
+reconstruct_command  # cli-command (poc_homography/cli/cleanplate.py:83)
+synth_command  # cli-command (poc_homography/cli/cleanplate.py:169)
+upload_command  # cli-command (poc_homography/cli/maps.py:15)
 
-# -- Survey dataset schema (#258); consumed by capture/planner/phase issues C2-C5 --
-# SurveyPhase enum members (poc_homography/domain/enums/survey_phase.py)
-CAMERA_INVENTORY  # unused enum member - SurveyPhase value used by planner/phases
-PTZ_CHARACTERIZATION  # unused enum member - SurveyPhase value used by planner/phases
-ZOOM_CHARACTERIZATION  # unused enum member - SurveyPhase value used by planner/phases
-DENSE_NADIR  # unused enum member - SurveyPhase value used by planner/phases
-MAIN_SURVEY  # unused enum member - SurveyPhase value used by planner/phases
-CROSS_ZOOM  # unused enum member - SurveyPhase value used by planner/phases
-REPEATABILITY  # unused enum member - SurveyPhase value used by planner/phases
-STATIC_JITTER  # unused enum member - SurveyPhase value used by planner/phases
-VALIDATION  # unused enum member - SurveyPhase value used by planner/phases
-# VideoBurstRecord + RepoYamlSurveyRun grouping query surface
-_.frame_by_index  # unused method - VideoBurstRecord offline-processing accessor (#258)
-_.get_frames_by_run  # unused method - RepoYamlSurveyRun grouping query (#258)
-_.get_frames_by_phase  # unused method - RepoYamlSurveyRun grouping query (#258)
-_.get_frames_by_camera  # unused method - RepoYamlSurveyRun grouping query (#258)
-_.get_frames_by_zoom_range  # unused method - RepoYamlSurveyRun grouping query (#258)
-_.get_frames_by_burst  # unused method - RepoYamlSurveyRun grouping query (#258)
-SurveyCaptureEngine  # C2 capture engine; consumed by C3/C4 run lifecycle (poc_homography/infrastructure/survey/capture_engine.py)
-_.capture_snapshot_burst  # public capture path; called by C3/C4 (poc_homography/infrastructure/survey/capture_engine.py)
-_.capture_video_burst  # public capture path; called by C3/C4 (poc_homography/infrastructure/survey/capture_engine.py)
-# Multi-phase survey planner public API (#260); consumed by C3/C4 run lifecycle
-PAUSED  # SurveyRunStatus member for RUNNING->PAUSED->RUNNING resume (poc_homography/domain/enums/survey_run_status.py)
-_.remaining_poses  # PlannedSurveyRun resume iterator (poc_homography/survey/planner/run.py)
-_.advance  # PlannedSurveyRun cursor advance (poc_homography/survey/planner/run.py)
-_.with_status  # PlannedSurveyRun status transition helper (poc_homography/survey/planner/run.py)
-_.header  # PlannedSurveyRun -> C1 SurveyRun persistence bridge (poc_homography/survey/planner/run.py)
+# == domain-api ==
+# Domain public API (value-object / entity / algorithm methods exercised by tests or exported as public surface)
+_.remove_entry  # domain-api (poc_homography/calibration/lens_distortion/calibration_table.py:202)
+_.get_zoom_levels  # domain-api (poc_homography/calibration/lens_distortion/calibration_table.py:373)
+merge_distance_threshold  # domain-api (poc_homography/calibration/lens_distortion/line_detection.py:61)
+_.length_pixels  # domain-api (poc_homography/calibration/lens_distortion/models.py:76)
+_.angle_degrees  # domain-api (poc_homography/calibration/lens_distortion/models.py:83)
+_.length_meters  # domain-api (poc_homography/calibration/lens_distortion/models.py:213)
+ground_truth_line  # domain-api (poc_homography/calibration/lens_distortion/models.py:266)
+_.to_world_coordinates  # domain-api (poc_homography/calibration/lens_distortion/models.py:288)
+error_pixels  # domain-api (poc_homography/calibration/projection.py:34)
+best_joint_pan_offset  # domain-api (poc_homography/calibration/projection.py:43)
+_.normalized  # domain-api (poc_homography/domain/vo/vector3.py:103)
+_.get_approach_config  # domain-api (poc_homography/homography/config.py:270)
+_.compute_from_config  # domain-api (poc_homography/homography/intrinsic_extrinsic.py:413)
+_.project_point_static  # domain-api (poc_homography/homography/intrinsic_extrinsic.py:653)
+inverse_matrix  # domain-api (poc_homography/homography/map_points.py:50)
+inverse_matrix  # domain-api (poc_homography/homography/map_points.py:75)
+iteration  # domain-api (poc_homography/homography/map_points.py:413)
+_.camera_to_map_batch  # domain-api (poc_homography/homography/map_points.py:701)
+_.map_to_camera_batch  # domain-api (poc_homography/homography/map_points.py:737)
+_.get_result  # domain-api (poc_homography/homography/map_points.py:760)
+_.get_homography_matrix  # domain-api (poc_homography/homography/map_points.py:764)
+_.get_inverse_matrix  # domain-api (poc_homography/homography/map_points.py:768)
+_.from_reference_dict  # domain-api (poc_homography/homography/parameters.py:273)
+_.map_dimensions  # domain-api (poc_homography/homography/parameters.py:485)
+homography_source  # domain-api (webapp/homography_precision/views.py:905)
+line_result  # domain-api (webapp/homography_precision/views.py:923)
+get_annotation_repo  # domain-api (webapp/homography_web/frame_utils.py:261)
+save_to_line_repo  # domain-api (webapp/line_picker/state.py:329)
+list_line_map_ids  # domain-api (webapp/line_picker/state.py:362)
+_.get_entry  # domain-api (poc_homography/calibration/lens_distortion/calibration_table.py:377)
+_.area  # domain-api (poc_homography/domain/vo/image_dimensions.py:46)
+_.inverse  # domain-api (poc_homography/homography/interface.py:98)
+_.to_orientation  # domain-api (poc_homography/domain/vo/ptz_state.py:32)
+save_to_gcp_repo  # domain-api (poc_homography/map_points/gcp_registry.py:205)
 
-# -- Survey phases C4 (#261); consumed by C5 (CLI/endpoints) + tests (outside vulture scan paths) --
-YamlPhaseSink  # YAML PhaseSink adapter; wired by C5 + survey-phase tests (poc_homography/infrastructure/survey/yaml_phase_sink.py)
+# == survey-surface ==
+# Survey dataset & planner surface (#258/#260/#276) — consumed by sibling capture/phase issues and tests
+_.frame_by_index  # survey-surface (poc_homography/domain/entities/survey/video_burst_record.py:83)
+_.get_frames_by_phase  # survey-surface (poc_homography/infrastructure/repositories/repo_yaml_survey_run.py:78)
+_.get_frames_by_camera  # survey-surface (poc_homography/infrastructure/repositories/repo_yaml_survey_run.py:82)
+_.get_frames_by_zoom_range  # survey-surface (poc_homography/infrastructure/repositories/repo_yaml_survey_run.py:86)
+_.get_frames_by_burst  # survey-surface (poc_homography/infrastructure/repositories/repo_yaml_survey_run.py:90)
+PAUSED  # survey-surface (poc_homography/domain/enums/survey_run_status.py:26)
+_.remaining_poses  # survey-surface (poc_homography/survey/planner/run.py:101)
+_.advance  # survey-surface (poc_homography/survey/planner/run.py:122)
+_.with_status  # survey-surface (poc_homography/survey/planner/run.py:132)
+_.header  # survey-surface (poc_homography/survey/planner/run.py:136)
+YamlPhaseSink  # survey-surface (poc_homography/infrastructure/survey/yaml_phase_sink.py:30)
+_.detail  # survey-surface (poc_homography/horizon/validation.py:34)
+calibrate_horizon_envelope  # survey-surface (poc_homography/survey/calibration.py:49)
+_.with_pose  # survey-surface (poc_homography/domain/entities/survey/pose_catalog.py:70)
+_.from_poses  # survey-surface (poc_homography/domain/entities/survey/pose_catalog.py:82)
+_.from_plan_config  # survey-surface (poc_homography/survey/phases/runner.py:143)
 
-# -- Survey operator surface C5 (#262); typer commands + plan-config repo contract --
-run_command  # typer survey command (poc_homography/cli/survey.py)
-status_command  # typer survey command (poc_homography/cli/survey.py)
-abort_command  # typer survey command (poc_homography/cli/survey.py)
-list_command  # typer survey command (poc_homography/cli/survey.py)
-browse_command  # typer survey command (poc_homography/cli/survey.py)
-_.save_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
-_.load_plan_config  # SurveyRunRepository plan-config contract; consumed by tests + future C3 (poc_homography/domain/protocols/survey_run_repository.py)
-_.detail  # ValidationOutcome human-readable note; injectable-hook contract (poc_homography/horizon/validation.py)
-_.save_pose_catalog  # SurveyRunRepository pose-catalog contract (#276); consumed by tests + future C2/C4 (poc_homography/domain/protocols/survey_run_repository.py)
-_.get_runs_by_camera_and_pose  # SurveyRunRepository multi-visit grouping query (#276); consumed by tests (poc_homography/domain/protocols/survey_run_repository.py)
+# == cleanplate-surface ==
+# Clean-plate reconstruction / gallery / MinIO surface (#276/#277/#283/#284/#285) — consumed by downstream loaders, CLI, gallery API and tests
+_.world_to_cell  # cleanplate-surface (poc_homography/cleanplate/raster.py:129)
+_.cell_to_world  # cleanplate-surface (poc_homography/cleanplate/raster.py:150)
+time_bucket  # cleanplate-surface (poc_homography/cleanplate/reconstruct.py:64)
+_.presign_get  # cleanplate-surface (poc_homography/infrastructure/clients/minio_frame_store.py:129)
 
-# -- Phase-0 horizon calibration C3 (#275); step-1 entry point consumed by C5/CLI + tests --
-calibrate_horizon_envelope  # Phase-0 calibration step; invoked by operator/CLI + tests (poc_homography/survey/calibration.py)
-
-# -- Clean-plate capture domain (#276); PoseCatalog public API consumed by C2/C4 + tests --
-_.with_pose  # PoseCatalog immutable pose-record builder (poc_homography/domain/entities/survey/pose_catalog.py)
-_.from_poses  # PoseCatalog deterministic builder from a pose sequence (poc_homography/domain/entities/survey/pose_catalog.py)
-_.from_plan_config  # SurveyPlanConfig->SurveyPlan burst-count bridge; consumed by C5 + tests (poc_homography/survey/phases/runner.py)
-
-# -- Clean-plate reconstruction (#277); GroundRaster public coord API + frame metadata consumed by downstream loader/CLI + tests --
-_.world_to_cell  # GroundRaster public world->cell mapping; exported API (poc_homography/cleanplate/raster.py)
-_.cell_to_world  # GroundRaster public cell->world mapping; exported API (poc_homography/cleanplate/raster.py)
-time_bucket  # CleanPlateFrame exposure metadata field; consumed by photometric/loader (poc_homography/cleanplate/reconstruct.py)
-_.from_survey_run  # CleanPlateDataset survey-run loader entry point; consumed by tests + future CLI (poc_homography/cleanplate/dataset.py)
-_.frames_for  # CleanPlateDataset per-group frame materialiser; consumed by tests + reconstruct_clean_plate caller (poc_homography/cleanplate/dataset.py)
-
-# -- Clean-plate CLI (#277); typer commands invoked via `hom cleanplate ...` --
-reconstruct_command  # typer cleanplate command (poc_homography/cli/cleanplate.py)
-synth_command  # typer cleanplate command (poc_homography/cli/cleanplate.py)
-
-# -- Map-asset upload CLI (#290); typer command invoked via `hom maps upload` --
-upload_command  # typer maps command (poc_homography/cli/maps.py)
-
-# -- Clean-plate frames table (#283); MinIO location columns consumed by PostgresPhaseSink + gallery (#284/#285) --
-_.minio_bucket  # CleanPlateFrameModel MinIO bucket column (poc_homography/infrastructure/models/clean_plate_frame.py)
-_.minio_object_key  # CleanPlateFrameModel MinIO object-key column (poc_homography/infrastructure/models/clean_plate_frame.py)
-_.checksum_sha256  # CleanPlateFrameModel image content-hash column (poc_homography/infrastructure/models/clean_plate_frame.py)
-
-# -- MinIO frame store (#284); entry points consumed by capture wiring + gallery (#285) --
-_.from_env  # MinioFrameStore env constructor; used by the maglor capture script (poc_homography/infrastructure/clients/minio_frame_store.py)
-_.presign_get  # MinioFrameStore presigned-GET URL minting; consumed by the gallery API (#285) (poc_homography/infrastructure/clients/minio_frame_store.py)
-
-# -- Clean-plate gallery repository reads (#285); consumed by the gallery API router (outside vulture scope) --
-_.query_frames  # RepoPostgresCleanPlateFrame filtered+paginated read (poc_homography/infrastructure/repositories/repo_postgres_clean_plate_frame.py)
-_.list_runs  # RepoPostgresCleanPlateFrame distinct-run aggregation (poc_homography/infrastructure/repositories/repo_postgres_clean_plate_frame.py)
+# == uncertain-needs-follow-up ==
+# UNCERTAIN — symbol exists but no callers and no test references found; kept to keep vulture green pending a dead-code follow-up (see #226)
+_.get_nearest_entry  # uncertain-needs-follow-up (poc_homography/calibration/lens_distortion/calibration_table.py:393)
+_.to_points_array  # uncertain-needs-follow-up (poc_homography/calibration/lens_distortion/models.py:90)
+_.to_points_array  # uncertain-needs-follow-up (poc_homography/calibration/lens_distortion/models.py:220)
+_.project_image_to_world  # uncertain-needs-follow-up (poc_homography/camera_geometry.py:564)
+_.project_world_to_image  # uncertain-needs-follow-up (poc_homography/camera_geometry.py:595)
+_.world_to_map  # uncertain-needs-follow-up (poc_homography/camera_geometry.py:623)
+_.undistort_point  # uncertain-needs-follow-up (poc_homography/camera_geometry.py:652)
+_.from_matrix  # uncertain-needs-follow-up (poc_homography/domain/vo/rotation.py:73)
+_.to_matrix  # uncertain-needs-follow-up (poc_homography/domain/vo/rotation.py:88)
+_.save_to_yaml  # uncertain-needs-follow-up (poc_homography/homography/config.py:290)
+MAP_BASED_ORIGIN  # uncertain-needs-follow-up (poc_homography/homography/interface.py:45)
+EDGE_FACTOR_CENTER  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:119)
+EDGE_FACTOR_EDGE  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:120)
+EDGE_FACTOR_CORNER_DECAY  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:121)
+EDGE_FACTOR_MIN  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:122)
+_.project_image_to_map  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:686)
+_.result_to_homography_result  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:736)
+_.load_lens_distortion_calibration  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:745)
+_.merge_calibration_tables  # uncertain-needs-follow-up (poc_homography/homography/intrinsic_extrinsic.py:771)
+_._point_counter  # uncertain-needs-follow-up (poc_homography/homography/map_points.py:125)
+_.to_reference_dict  # uncertain-needs-follow-up (poc_homography/homography/parameters.py:338)
+_.center_x  # uncertain-needs-follow-up (poc_homography/domain/vo/image_dimensions.py:51)
+_.center_y  # uncertain-needs-follow-up (poc_homography/domain/vo/image_dimensions.py:56)
+_.has_distortion  # uncertain-needs-follow-up (poc_homography/domain/vo/lens_distortion.py:40)
