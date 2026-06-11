@@ -492,13 +492,18 @@ def get_cameras_for_tenant(tenant_id: str) -> list:
     """
     Get all cameras belonging to a tenant.
 
+    Reads from the database-backed :class:`CameraRegistry` cache, falling back
+    to the hardcoded ``CAMERAS`` list when the database is unavailable.
+
     Args:
         tenant_id: ID of the tenant
 
     Returns:
         List of camera configuration dicts for the tenant
     """
-    return [cam for cam in CAMERAS if cam.get("tenant_id") == tenant_id]
+    from poc_homography.camera_registry import get_registry
+
+    return get_registry().get_cameras_for_tenant(tenant_id)
 
 
 def get_tenant_credentials(tenant_id: str) -> tuple[str | None, str | None]:
@@ -534,13 +539,22 @@ def get_camera_configs() -> list:
         List of camera configuration dicts containing camera parameters,
         GPS coordinates, and calibration data. Does not require credentials
         and does not generate RTSP URLs.
+
+    Reads from the database-backed :class:`CameraRegistry` cache, falling back
+    to the hardcoded ``CAMERAS`` list when the database is unavailable.
     """
-    return CAMERAS
+    from poc_homography.camera_registry import get_registry
+
+    return get_registry().get_all_cameras()
 
 
 def get_camera_by_id(camera_id: str) -> dict | None:
     """
     Find camera configuration by ID.
+
+    Reads from the database-backed :class:`CameraRegistry` cache, falling back
+    to the hardcoded ``CAMERAS`` list when the database is unavailable or the
+    camera is absent from the database.
 
     Args:
         camera_id: Full camera ID (e.g., "valte_cam01", "setram_cam01")
@@ -548,7 +562,9 @@ def get_camera_by_id(camera_id: str) -> dict | None:
     Returns:
         Camera configuration dict or None if not found
     """
-    return next((cam for cam in CAMERAS if cam.get("id") == camera_id), None)
+    from poc_homography.camera_registry import get_registry
+
+    return get_registry().get_camera_by_id(camera_id)
 
 
 def get_camera_by_name(camera_name: str) -> dict | None:
@@ -585,8 +601,11 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     """
     Get RTSP URL for a camera.
 
-    Uses tenant-specific credentials if available, otherwise falls back to
-    global CAMERA_USERNAME/CAMERA_PASSWORD environment variables.
+    Prefers per-camera credentials stored in the database (surfaced as
+    ``username`` / ``password`` on the camera dict via :class:`CameraRegistry`).
+    When the camera has no per-camera credentials (fallback mode), uses
+    tenant-specific credentials, otherwise falls back to global
+    CAMERA_USERNAME/CAMERA_PASSWORD environment variables.
 
     Args:
         camera_name: Name or ID of the camera
@@ -602,9 +621,14 @@ def get_rtsp_url(camera_name: str, stream_type: str = "main") -> str | None:
     if not cam:
         return None
 
-    # Get tenant-specific credentials (falls back to global)
     tenant_id = cam.get("tenant_id") or ""
-    username, password = get_tenant_credentials(tenant_id)
+
+    # Prefer per-camera credentials from the database; fall back to
+    # tenant-level credentials (which themselves fall back to the globals).
+    username = cam.get("username")
+    password = cam.get("password")
+    if not username or not password:
+        username, password = get_tenant_credentials(tenant_id)
 
     # Validate that credentials are set
     if not username or not password:
