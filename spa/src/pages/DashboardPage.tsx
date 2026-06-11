@@ -77,6 +77,14 @@ const TOOL_CARDS: ToolCardDef[] = [
     description:
       'Validate lens distortion calibration by viewing undistorted images side-by-side. Draw lines on undistorted images to verify straightness and calibration quality.',
   },
+  {
+    to: '/clean-plate-gallery',
+    title: 'Clean-Plate Gallery',
+    badge: 'New',
+    alwaysEnabled: true,
+    description:
+      "Browse maglor's captured clean-plate floor images by run. Responsive thumbnail grid (imgproxy-served) with per-frame metadata; click a thumbnail for the full image and pose/optics details.",
+  },
 ];
 
 export default function DashboardPage() {

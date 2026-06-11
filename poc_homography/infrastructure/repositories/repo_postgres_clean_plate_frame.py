@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import func, select
+
 from poc_homography.infrastructure.models.clean_plate_frame import CleanPlateFrameModel
 
 if TYPE_CHECKING:
@@ -72,6 +74,81 @@ class RepoPostgresCleanPlateFrame:
         except Exception:
             logger.exception("Failed to upsert clean-plate frame %s", frame_id)
             return False
+
+    def query_frames(
+        self,
+        *,
+        run_id: str | None = None,
+        pose_id: str | None = None,
+        camera_id: str | None = None,
+        phase: str | None = None,
+        captured_after: datetime | None = None,
+        captured_before: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[CleanPlateFrameModel], int]:
+        """Query frame rows by filters, newest first, with pagination.
+
+        Returns the page of rows (ordered by ``captured_at`` descending) and the
+        total count matching the filters (ignoring ``limit``/``offset``), so the
+        gallery can paginate. Consumed by the gallery API (#285).
+        """
+        model = CleanPlateFrameModel
+        conditions = []
+        if run_id is not None:
+            conditions.append(model.run_id == run_id)
+        if pose_id is not None:
+            conditions.append(model.pose_id == pose_id)
+        if camera_id is not None:
+            conditions.append(model.camera_id == camera_id)
+        if phase is not None:
+            conditions.append(model.phase == phase)
+        if captured_after is not None:
+            conditions.append(model.captured_at >= captured_after)
+        if captured_before is not None:
+            conditions.append(model.captured_at <= captured_before)
+
+        total = self._session.execute(
+            select(func.count()).select_from(model).where(*conditions)
+        ).scalar_one()
+
+        stmt = (
+            select(model)
+            .where(*conditions)
+            .order_by(model.captured_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = list(self._session.execute(stmt).scalars().all())
+        return rows, total
+
+    def list_runs(self) -> list[dict[str, Any]]:
+        """List distinct runs with frame count and capture time span.
+
+        One entry per ``run_id`` (newest run first), used by the gallery run
+        picker (#285).
+        """
+        model = CleanPlateFrameModel
+        stmt = (
+            select(
+                model.run_id,
+                func.count().label("frame_count"),
+                func.min(model.captured_at).label("first_captured_at"),
+                func.max(model.captured_at).label("last_captured_at"),
+            )
+            .group_by(model.run_id)
+            .order_by(func.max(model.captured_at).desc())
+        )
+        rows = self._session.execute(stmt).all()
+        return [
+            {
+                "run_id": row.run_id,
+                "frame_count": row.frame_count,
+                "first_captured_at": row.first_captured_at,
+                "last_captured_at": row.last_captured_at,
+            }
+            for row in rows
+        ]
 
 
 __all__ = ["RepoPostgresCleanPlateFrame"]
