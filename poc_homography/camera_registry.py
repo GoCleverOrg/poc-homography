@@ -128,7 +128,12 @@ class CameraRegistry:
         return cls._instance
 
     def _init_state(self) -> None:
+        # ``_lock`` guards the in-memory cache (held only for microseconds).
+        # ``_refresh_lock`` serialises database refreshes so the (slow) DB load
+        # never runs while ``_lock`` is held — readers are not blocked behind a
+        # network round-trip, and at most one thread queries the DB per refresh.
         self._lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
         self._cameras: dict[str, dict[str, Any]] = {}
         self._last_loaded: float | None = None
         self._ttl: int = _resolve_ttl()
@@ -154,10 +159,13 @@ class CameraRegistry:
 
             with get_session() as session:
                 entities = RepoPostgresCameraConfig(session).get_all()
-        except Exception:
+        except Exception as exc:
+            # Log only the exception *type*, never the traceback or message:
+            # SQLAlchemy/psycopg connection errors can embed DATABASE_URL
+            # (user:password@host) in their text.
             logger.warning(
-                "Camera database query failed; falling back to hardcoded CAMERAS",
-                exc_info=True,
+                "Camera database query failed (%s); falling back to hardcoded CAMERAS",
+                type(exc).__name__,
             )
             return None
 
@@ -194,16 +202,32 @@ class CameraRegistry:
             cameras[cam_id] = {**base, **overlay}
         return cameras
 
-    def _refresh_locked(self) -> None:
-        """Reload the cache. Must be called while holding ``self._lock``."""
-        self._ttl = _resolve_ttl()
-        self._cameras = self._build_cameras()
-        self._last_loaded = _now()
-
     def _ensure_fresh(self) -> None:
+        """Refresh the cache if the TTL has lapsed, without blocking readers.
+
+        The database load runs *outside* ``self._lock`` so concurrent reads are
+        never stalled behind a network round-trip. ``self._refresh_lock``
+        ensures only one thread performs the load per refresh; the result is
+        swapped in under ``self._lock`` (a microsecond-scale critical section).
+        """
         with self._lock:
-            if self._is_expired():
-                self._refresh_locked()
+            if not self._is_expired():
+                return
+
+        with self._refresh_lock:
+            # Re-check: another thread may have refreshed while we waited.
+            with self._lock:
+                if not self._is_expired():
+                    return
+
+            ttl = _resolve_ttl()
+            cameras = self._build_cameras()  # DB I/O — no cache lock held
+            now = _now()
+
+            with self._lock:
+                self._ttl = ttl
+                self._cameras = cameras
+                self._last_loaded = now
 
     # -- public API -------------------------------------------------------
 
@@ -216,19 +240,14 @@ class CameraRegistry:
     def get_camera_by_id(self, camera_id: str) -> dict[str, Any] | None:
         """Return a single camera by id, or ``None`` if unknown.
 
-        Falls back to the hardcoded ``CAMERAS`` list for that camera if it is
-        not present in the (database-backed) cache.
+        The cache is always seeded from the hardcoded ``CAMERAS`` list (then
+        overlaid with database data), so a camera absent from the database is
+        still served from its hardcoded entry — no separate fallback is needed.
         """
         self._ensure_fresh()
         with self._lock:
             cam = self._cameras.get(camera_id)
-            if cam is not None:
-                return dict(cam)
-        # Per-camera fallback: camera absent from the cache entirely.
-        for cam in _hardcoded_cameras():
-            if cam.get("id") == camera_id:
-                return dict(cam)
-        return None
+            return dict(cam) if cam is not None else None
 
     def get_cameras_for_tenant(self, tenant_id: str) -> list[dict[str, Any]]:
         """Return all cameras belonging to ``tenant_id``."""
