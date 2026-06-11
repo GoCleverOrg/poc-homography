@@ -44,9 +44,12 @@ def _to_frame_out(
     signer: ImgproxySigner | None,
 ) -> CleanPlateFrameOut:
     """Map a DB row to the API schema, minting image + thumbnail URLs."""
-    image_url = store.presign_get(row.minio_object_key, expires_in=_PRESIGN_TTL)
-    if signer is not None and row.minio_bucket and row.minio_object_key:
-        thumbnail_url = signer.thumbnail_url(f"s3://{row.minio_bucket}/{row.minio_object_key}")
+    # The row records where the image actually lives; treat it as authoritative
+    # (fall back to the store's configured bucket only when the row is blank).
+    bucket = row.minio_bucket or store.bucket
+    image_url = store.presign_get(row.minio_object_key, expires_in=_PRESIGN_TTL, bucket=bucket)
+    if signer is not None and bucket and row.minio_object_key:
+        thumbnail_url = signer.thumbnail_url(f"s3://{bucket}/{row.minio_object_key}")
     else:
         # imgproxy not configured — fall back to the full presigned image.
         thumbnail_url = image_url

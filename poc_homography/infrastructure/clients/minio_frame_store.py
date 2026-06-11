@@ -126,11 +126,16 @@ class MinioFrameStore:
         )
         return PutResult(bucket=self.bucket, key=key, sha256=sha256)
 
-    def presign_get(self, key: str, expires_in: int = 3600) -> str:
-        """Return a presigned GET URL for ``key`` (used by the gallery)."""
+    def presign_get(self, key: str, expires_in: int = 3600, *, bucket: str | None = None) -> str:
+        """Return a presigned GET URL for ``key`` (used by the gallery).
+
+        ``bucket`` overrides the store's configured bucket so callers can presign
+        against the bucket recorded on a frame row (the authoritative location of
+        that image), rather than assuming the store's env-configured bucket.
+        """
         return self._client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket, "Key": key},
+            Params={"Bucket": bucket or self.bucket, "Key": key},
             ExpiresIn=expires_in,
         )
 

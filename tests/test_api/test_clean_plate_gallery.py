@@ -86,6 +86,10 @@ class TestGetFrames:
         mock_signer_cls.from_env.return_value.thumbnail_url.assert_called_once_with(
             "s3://cleanplate-frames/run-1/clean_plate/pose-1/f1.jpg"
         )
+        # Presign uses the bucket recorded on the row (authoritative), not the
+        # store's env-configured default.
+        presign = mock_store_cls.from_env.return_value.presign_get
+        assert presign.call_args.kwargs["bucket"] == "cleanplate-frames"
 
     @patch("api.routers.clean_plate_gallery.ImgproxySigner")
     @patch("api.routers.clean_plate_gallery.MinioFrameStore")
