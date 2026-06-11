@@ -61,6 +61,12 @@ export default function CameraAnnotatorPage() {
   const annotationsRef = useRef(annotations);
   annotationsRef.current = annotations;
 
+  /* ---- auto-save serialization ---- */
+  /* Tail of the in-flight save chain. Each mutation appends its POST so saves
+     are issued strictly in mutation order — a later snapshot can never be
+     overwritten on the server by an earlier one arriving out of order. */
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+
   /* ---- DOM refs ---- */
   const imgRef = useRef<HTMLImageElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -181,8 +187,8 @@ export default function CameraAnnotatorPage() {
      logged, never alerted, so an auto-save error never interrupts annotating.
      An empty list is a valid save: it clears the last annotation server-side. */
   const autoSave = useCallback(
-    async (anns: Annotation[]) => {
-      if (!selectedTenantId || !currentFilename) return;
+    (anns: Annotation[]): Promise<void> => {
+      if (!selectedTenantId || !currentFilename) return Promise.resolve();
 
       const cleanAnnotations = anns.map((a) => ({
         gcp_id: a.gcp_id,
@@ -190,21 +196,28 @@ export default function CameraAnnotatorPage() {
         pixel_y: parseFloat(a.pixel_y.toFixed(1)),
       }));
 
-      try {
-        const { error } = await client.POST(
-          '/camera-annotator/api/save-annotations/',
-          {
-            params: { query: { tenant_id: selectedTenantId } },
-            body: {
-              image_filename: currentFilename,
-              annotations: cleanAnnotations,
+      const doSave = async () => {
+        try {
+          const { error } = await client.POST(
+            '/camera-annotator/api/save-annotations/',
+            {
+              params: { query: { tenant_id: selectedTenantId } },
+              body: {
+                image_filename: currentFilename,
+                annotations: cleanAnnotations,
+              },
             },
-          },
-        );
-        if (error) console.error('Auto-save failed:', error);
-      } catch (err: unknown) {
-        console.error('Auto-save failed:', err);
-      }
+          );
+          if (error) console.error('Auto-save failed:', error);
+        } catch (err: unknown) {
+          console.error('Auto-save failed:', err);
+        }
+      };
+
+      // Append to the chain so POSTs are issued in mutation order. doSave never
+      // rejects (it catches internally), so the chain cannot break.
+      saveChainRef.current = saveChainRef.current.then(doSave);
+      return saveChainRef.current;
     },
     [selectedTenantId, currentFilename],
   );
