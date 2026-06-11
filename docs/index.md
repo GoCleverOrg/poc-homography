@@ -25,6 +25,12 @@ ISAPI reference, **Camera intrinsics and pose**, and the **Domain model**.
   blending, with a stated recommendation and the `hom cleanplate reconstruct`
   pipeline.
 
+## Map assets
+
+- [map_asset_storage.md](./map_asset_storage.md) — the S3/MinIO `map-assets`
+  bucket and the `hom maps upload` pipeline: env config, tenant-scoped object
+  keys (`{tenant}/{map}.tif`), idempotency, and how to add a new map.
+
 ## Hikvision / PTZ
 
 - [HIKVISION_PTZ_API_SUMMARY.md](./HIKVISION_PTZ_API_SUMMARY.md) — ISAPI
