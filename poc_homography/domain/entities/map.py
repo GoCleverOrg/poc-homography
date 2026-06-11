@@ -22,12 +22,19 @@ class Map:
         tenant_id: ID of the tenant this map belongs to (e.g., "valte").
         photo: The map image with its dimensions.
         geotiff: GeoTiff metadata for coordinate transformation.
+        asset_key: Object-storage key (e.g. ``maps/valte.tif``) for the map
+            GeoTIFF asset. Endpoint-agnostic; the API derives URLs at serve
+            time. ``None`` until the asset is uploaded (see #290).
+        asset_url: Optional fully-qualified URL to the map asset. ``None``
+            when the asset is resolved from ``asset_key`` at serve time.
     """
 
     id: str
     tenant_id: str
     photo: Photo
     geotiff: GeoTiff
+    asset_key: str | None = None
+    asset_url: str | None = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, self.__class__):
@@ -44,6 +51,8 @@ class Map:
             "tenant_id": self.tenant_id,
             "photo": self.photo.to_dict(),
             "geotiff": self.geotiff.to_dict(),
+            "asset_key": self.asset_key,
+            "asset_url": self.asset_url,
         }
 
     @classmethod
@@ -57,4 +66,6 @@ class Map:
             tenant_id=data.get("tenant_id", ""),
             photo=Photo.from_dict(data["photo"]),
             geotiff=GeoTiff.from_dict(data["geotiff"]),
+            asset_key=data.get("asset_key"),
+            asset_url=data.get("asset_url"),
         )
