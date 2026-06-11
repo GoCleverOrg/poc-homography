@@ -315,7 +315,7 @@ def _load_test_case_by_name(name: str, map_id: str | None = None) -> dict | None
     for frame in list_frames(map_id):
         if frame.image_path.stem != name:
             continue
-        annotations = load_annotations_for_frame(frame.id)
+        annotations = [a.to_dict() for a in load_annotations_for_frame(frame.id)]
         if not annotations:
             continue
         tc: dict = {
@@ -352,7 +352,7 @@ def _load_line_test_case_by_name(name: str, map_id: str | None = None) -> dict |
     for frame in list_frames(map_id):
         if frame.image_path.stem != stem:
             continue
-        line_anns = load_line_annotations_for_frame(frame.id)
+        line_anns = [a.to_dict() for a in load_line_annotations_for_frame(frame.id)]
         if not line_anns:
             continue
         # Find the point-annotations reference (same frame, for point-based homography)

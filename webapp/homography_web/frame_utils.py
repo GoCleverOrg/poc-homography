@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from django.http import FileResponse, HttpResponse
 
+from homography_web.view_models import FrameAnnotation, LineAnnotationView
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.infrastructure.repositories import (
     RepoYamlAnnotation,
@@ -326,18 +327,20 @@ def image_filename_to_frame(filename: str) -> CapturedFrame | None:
     return _get_image_to_frame().get(filename)
 
 
-def load_annotations_for_frame(frame_id: str) -> list[dict]:
-    """Load point annotations for a frame in legacy dict format.
+def load_annotations_for_frame(frame_id: str) -> list[FrameAnnotation]:
+    """Load point annotations for a frame as presentation DTOs.
 
-    Returns list of ``{gcp_id, pixel_x, pixel_y}`` dicts.
+    Returns a list of :class:`FrameAnnotation` (``gcp_id``, ``pixel_x``,
+    ``pixel_y``); pixel coords rounded to 1 decimal. Call ``.to_dict()`` at the
+    JSON/legacy boundary to recover the prior ``{gcp_id, pixel_x, pixel_y}`` shape.
     """
     annotations = get_frame_repo().get_annotations(frame_id)
     return [
-        {
-            "gcp_id": ann.gcp_id,
-            "pixel_x": round(float(ann.pixel.x), 1),
-            "pixel_y": round(float(ann.pixel.y), 1),
-        }
+        FrameAnnotation(
+            gcp_id=ann.gcp_id,
+            pixel_x=round(float(ann.pixel.x), 1),
+            pixel_y=round(float(ann.pixel.y), 1),
+        )
         for ann in annotations
     ]
 
@@ -353,24 +356,27 @@ def _get_line_anns_by_frame() -> dict[str, list]:
     return _line_anns_by_frame
 
 
-def load_line_annotations_for_frame(frame_id: str) -> list[dict]:
-    """Load line annotations for a frame in legacy dict format.
+def load_line_annotations_for_frame(frame_id: str) -> list[LineAnnotationView]:
+    """Load line annotations for a frame as presentation DTOs.
 
-    Returns list of dicts with ``line_id``, pixel endpoints, and optional
-    ``points`` array for n-point polylines.
+    Returns a list of :class:`LineAnnotationView` with ``line_id``, pixel
+    endpoints, and an optional ``points`` array for n-point polylines (present
+    only when the annotation has points). Call ``.to_dict()`` at the JSON/legacy
+    boundary to recover the prior dict shape.
     """
-    results: list[dict] = []
+    results: list[LineAnnotationView] = []
     for ann in _get_line_anns_by_frame().get(frame_id, []):
-        entry: dict = {
-            "line_id": ann.line_id,
-            "start_pixel_x": float(ann.start_pixel.x),
-            "start_pixel_y": float(ann.start_pixel.y),
-            "end_pixel_x": float(ann.end_pixel.x),
-            "end_pixel_y": float(ann.end_pixel.y),
-        }
-        if ann.points is not None:
-            entry["points"] = [[float(p.x), float(p.y)] for p in ann.points]
-        results.append(entry)
+        points = [[float(p.x), float(p.y)] for p in ann.points] if ann.points is not None else None
+        results.append(
+            LineAnnotationView(
+                line_id=ann.line_id,
+                start_pixel_x=float(ann.start_pixel.x),
+                start_pixel_y=float(ann.start_pixel.y),
+                end_pixel_x=float(ann.end_pixel.x),
+                end_pixel_y=float(ann.end_pixel.y),
+                points=points,
+            )
+        )
     return results
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -28,6 +28,9 @@ from homography_web.frame_utils import (
 from homography_web.frame_utils import (
     get_line_annotation_repo as _get_line_annotation_repo,
 )
+
+if TYPE_CHECKING:
+    from homography_web.view_models import LineAnnotationView
 
 # Session keys
 SESSION_IMAGE_KEY = "camera_line_annotator_image"
@@ -91,8 +94,11 @@ def _validate_line_id(line_id: str) -> bool:
     return bool(line_id and _LINE_ID_RE.fullmatch(line_id))
 
 
-def _load_line_annotations_from_repo(image_filename: str) -> list[dict]:
-    """Load line annotations from the DDD LineAnnotation repository."""
+def _load_line_annotations_from_repo(image_filename: str) -> list[LineAnnotationView]:
+    """Load line annotations from the DDD LineAnnotation repository.
+
+    Returns presentation DTOs; convert via ``.to_dict()`` at the JSON boundary.
+    """
     frame = image_filename_to_frame(image_filename)
     if frame is None:
         return []
@@ -141,8 +147,11 @@ def _save_line_annotations_to_repo(
         repo.save(line_ann)
 
 
-def load_existing_line_annotations(image_filename: str) -> list[dict]:
-    """Load existing line annotations for a specific image from the DDD repo."""
+def load_existing_line_annotations(image_filename: str) -> list[LineAnnotationView]:
+    """Load existing line annotations for a specific image from the DDD repo.
+
+    Returns presentation DTOs; convert via ``.to_dict()`` at the JSON boundary.
+    """
     return _load_line_annotations_from_repo(image_filename)
 
 
@@ -195,7 +204,7 @@ def api_switch_image(request: HttpRequest) -> JsonResponse:
 
     request.session[SESSION_IMAGE_KEY] = filename  # pyright: ignore[reportAttributeAccessIssue]  # session injected by Django SessionMiddleware
 
-    image_annotations = load_existing_line_annotations(filename)
+    image_annotations = [a.to_dict() for a in load_existing_line_annotations(filename)]
 
     camera_status = {
         "pan": float(frame.ptz_state.pan_raw),
@@ -243,7 +252,10 @@ def api_annotations(request: HttpRequest) -> JsonResponse:
     if not current_image:
         return JsonResponse([], safe=False)
 
-    return JsonResponse(load_existing_line_annotations(current_image), safe=False)
+    return JsonResponse(
+        [a.to_dict() for a in load_existing_line_annotations(current_image)],
+        safe=False,
+    )
 
 
 @csrf_exempt
