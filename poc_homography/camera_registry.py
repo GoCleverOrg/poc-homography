@@ -136,7 +136,10 @@ class CameraRegistry:
         self._refresh_lock = threading.Lock()
         self._cameras: dict[str, dict[str, Any]] = {}
         self._last_loaded: float | None = None
-        self._ttl: int = _resolve_ttl()
+        # Placeholder until the first refresh resolves the real TTL; never used
+        # for an expiry decision (the initial cache is always expired because
+        # ``_last_loaded`` is None).
+        self._ttl: int = DEFAULT_CACHE_TTL
 
     # -- internal helpers -------------------------------------------------
 

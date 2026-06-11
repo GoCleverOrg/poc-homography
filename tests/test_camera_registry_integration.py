@@ -65,6 +65,32 @@ def mock_db(monkeypatch):
     return entities
 
 
+@pytest.fixture
+def no_db(monkeypatch):
+    """Make the registry's DB load fail, forcing the hardcoded fallback."""
+
+    def boom():
+        raise RuntimeError("DATABASE_URL not set")
+
+    import poc_homography.infrastructure.database as db
+
+    monkeypatch.setattr(db, "get_session", boom)
+
+
+@pytest.fixture
+def clear_creds(monkeypatch):
+    """Remove all tenant/global credential sources from the environment."""
+    for var in (
+        "VALTE_CAMERA_USERNAME",
+        "VALTE_CAMERA_PASSWORD",
+        "CAMERA_USERNAME",
+        "CAMERA_PASSWORD",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(cc, "USERNAME", None)
+    monkeypatch.setattr(cc, "PASSWORD", None)
+
+
 @pytest.mark.integration
 def test_camera_config_functions_return_db_backed_data(mock_db):
     mock_db.append(_make_entity("valte_cam01", "valte", "9.8.7.6", "dbuser", "dbpass"))
@@ -81,19 +107,8 @@ def test_camera_config_functions_return_db_backed_data(mock_db):
 
 
 @pytest.mark.integration
-def test_get_rtsp_url_uses_per_camera_credentials(mock_db, monkeypatch):
-    # Ensure no tenant/global env credentials are present so the test proves the
-    # per-camera DB credentials are what get used.
-    for var in (
-        "VALTE_CAMERA_USERNAME",
-        "VALTE_CAMERA_PASSWORD",
-        "CAMERA_USERNAME",
-        "CAMERA_PASSWORD",
-    ):
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(cc, "USERNAME", None)
-    monkeypatch.setattr(cc, "PASSWORD", None)
-
+def test_get_rtsp_url_uses_per_camera_credentials(mock_db, clear_creds):
+    # clear_creds proves the per-camera DB credentials are what get used.
     mock_db.append(_make_entity("valte_cam01", "valte", "9.8.7.6", "dbuser", "dbpass"))
 
     url = cc.get_rtsp_url("valte_cam01", stream_type="main")
@@ -101,15 +116,9 @@ def test_get_rtsp_url_uses_per_camera_credentials(mock_db, monkeypatch):
 
 
 @pytest.mark.integration
-def test_fallback_mode_uses_tenant_credentials_when_db_unavailable(monkeypatch):
-    # No DB: get_session raises -> registry falls back to hardcoded cameras,
-    # which carry no per-camera credentials, so tenant env vars are used.
-    def boom():
-        raise RuntimeError("DATABASE_URL not set")
-
-    import poc_homography.infrastructure.database as db
-
-    monkeypatch.setattr(db, "get_session", boom)
+def test_fallback_mode_uses_tenant_credentials_when_db_unavailable(no_db, monkeypatch):
+    # No DB -> registry falls back to hardcoded cameras, which carry no
+    # per-camera credentials, so tenant env vars are used.
     monkeypatch.setenv("VALTE_CAMERA_USERNAME", "tenantuser")
     monkeypatch.setenv("VALTE_CAMERA_PASSWORD", "tenantpass")
 
@@ -121,22 +130,6 @@ def test_fallback_mode_uses_tenant_credentials_when_db_unavailable(monkeypatch):
 
 
 @pytest.mark.integration
-def test_missing_credentials_raise_value_error(monkeypatch):
-    def boom():
-        raise RuntimeError("DATABASE_URL not set")
-
-    import poc_homography.infrastructure.database as db
-
-    monkeypatch.setattr(db, "get_session", boom)
-    for var in (
-        "VALTE_CAMERA_USERNAME",
-        "VALTE_CAMERA_PASSWORD",
-        "CAMERA_USERNAME",
-        "CAMERA_PASSWORD",
-    ):
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(cc, "USERNAME", None)
-    monkeypatch.setattr(cc, "PASSWORD", None)
-
+def test_missing_credentials_raise_value_error(no_db, clear_creds):
     with pytest.raises(ValueError, match="credentials not set"):
         cc.get_rtsp_url("valte_cam01")
