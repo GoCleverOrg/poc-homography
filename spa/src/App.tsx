@@ -10,6 +10,7 @@ import LinePickerPage from './pages/LinePickerPage';
 import CameraAnnotatorPage from './pages/CameraAnnotatorPage';
 import CameraLineAnnotatorPage from './pages/CameraLineAnnotatorPage';
 import HomographyPrecisionPage from './pages/HomographyPrecisionPage';
+import ClickToGpsPage from './pages/ClickToGpsPage';
 import CameraDiagnosticPage from './pages/CameraDiagnosticPage';
 import CameraSurveyPage from './pages/CameraSurveyPage';
 import CameraEvaluationPage from './pages/CameraEvaluationPage';
@@ -46,6 +47,7 @@ export default function App() {
                 path="homography-precision"
                 element={<HomographyPrecisionPage />}
               />
+              <Route path="click-to-gps" element={<ClickToGpsPage />} />
               <Route
                 path="camera-diagnostic"
                 element={<CameraDiagnosticPage />}

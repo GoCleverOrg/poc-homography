@@ -14,6 +14,13 @@ interface ToolCardDef {
 
 const TOOL_CARDS: ToolCardDef[] = [
   {
+    to: '/click-to-gps',
+    title: 'Click-to-GPS',
+    badge: 'Primary',
+    description:
+      'Click anywhere on a camera frame to estimate its GPS coordinate. Confidence-coloured markers, last-5 history, copy-to-clipboard.',
+  },
+  {
     to: '/point-picker',
     title: 'Point Picker',
     badge: 'Primary',
