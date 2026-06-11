@@ -8,11 +8,10 @@ tables, intrinsics computation, and line-trace-set listing/detail.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from homography_web.calibration_utils import serialize_calibration_entry
-from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.lens_calibration import (
@@ -31,12 +30,17 @@ from api.schemas.lens_calibration import (
     ValidateResponse,
 )
 from api.utils.frame_helpers import get_map_for_tenant
-from poc_homography.infrastructure.models.user import UserModel
+from poc_homography.calibration.lens_distortion.ddd_sync import sync_to_ddd_repo_pg
 from poc_homography.infrastructure.repositories import (
     RepoPostgresCalibrationLineTraceSet,
     RepoPostgresLensCalibrationTable,
     RepoPostgresLineAnnotation,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from poc_homography.infrastructure.models.user import UserModel
 
 logger = logging.getLogger(__name__)
 
@@ -158,9 +162,7 @@ def calibrate_annotated_lines(
 
         result = solver.solve(lines, intrinsic_matrix)
 
-        improvement_percent = (
-            (1 - result.improvement_ratio()) * 100 if result.success else 0.0
-        )
+        improvement_percent = (1 - result.improvement_ratio()) * 100 if result.success else 0.0
 
         return CalibrateAnnotatedLinesResponse(
             success=result.success,
@@ -191,9 +193,7 @@ def calibrate_annotated_lines(
 
     except ImportError:
         logger.exception("Annotated line solver module not available")
-        raise HTTPException(
-            status_code=500, detail="Annotated line solver module not available"
-        )
+        raise HTTPException(status_code=500, detail="Annotated line solver module not available")
     except HTTPException:
         raise
     except Exception:
@@ -265,9 +265,7 @@ def validate_calibration(
         corrected_rmse = straightness_rmse(camera_lines, intrinsic_matrix, distortion=distortion)
 
         improvement = (
-            (baseline_rmse - corrected_rmse) / baseline_rmse * 100
-            if baseline_rmse > 0
-            else 0
+            (baseline_rmse - corrected_rmse) / baseline_rmse * 100 if baseline_rmse > 0 else 0
         )
 
         return ValidateResponse(
@@ -299,9 +297,37 @@ def save_calibration(
             CameraCalibrationTable,
             ZoomCalibrationEntry,
         )
-        from poc_homography.calibration.lens_distortion.ddd_sync import sync_to_ddd_repo_pg
         from poc_homography.domain.vo import LensDistortion
         from poc_homography.types import Unitless
+
+        if body.zoom_entries:
+            table = CameraCalibrationTable(camera_id=body.camera_id)
+            for e in body.zoom_entries:
+                e_coeffs = e.coefficients
+                e_distortion = LensDistortion(
+                    k1=Unitless(e_coeffs.k1),
+                    k2=Unitless(e_coeffs.k2),
+                    k3=Unitless(e_coeffs.k3),
+                    p1=Unitless(e_coeffs.p1),
+                    p2=Unitless(e_coeffs.p2),
+                )
+                table.add_entry(
+                    ZoomCalibrationEntry.from_solver_result(
+                        zoom_factor=e.zoom,
+                        distortion=e_distortion,
+                        validation_rmse=e.validation_rmse,
+                        source_images=[],
+                        num_lines_used=e.num_lines,
+                        fx=float(e.intrinsics.fx) if e.intrinsics else 0.0,
+                        fy=float(e.intrinsics.fy) if e.intrinsics else 0.0,
+                        cx=float(e.intrinsics.cx) if e.intrinsics else 0.0,
+                        cy=float(e.intrinsics.cy) if e.intrinsics else 0.0,
+                    )
+                )
+
+            sync_to_ddd_repo_pg(table, session)
+
+            return SaveCalibrationResponse(success=True, camera_id=body.camera_id)
 
         coeffs = body.coefficients
         distortion = LensDistortion(

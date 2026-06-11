@@ -55,6 +55,49 @@ interface ValidationResult {
   num_lines: number;
 }
 
+// -- Multi-zoom batch types --
+// NOTE: multi-zoom mode uses the annotated line-trace sets as its ONLY input,
+// mirroring issue #214's decision that manual lines feed single-zoom only.
+type ZoomStatus = 'pending' | 'calibrating' | 'success' | 'failed' | 'skipped';
+
+interface ZoomResult {
+  status: ZoomStatus;
+  coefficients?: DistortionCoefficients;
+  intrinsics?: Intrinsics;
+  rmse?: number;
+  num_lines?: number;
+  message?: string;
+  loaded?: boolean; // came from a loaded camera (vs freshly calibrated)
+  loadedRmse?: number; // original loaded RMSE, for overwrite confirmation
+}
+
+interface PersistedSession {
+  multiZoomMode: boolean;
+  zoomLevels: number[];
+  results: Record<string, ZoomResult>;
+  cameraId: string;
+}
+
+const ZOOM_STATUS_CLASSES: Record<ZoomStatus, string> = {
+  pending: styles.zoomDotPending,
+  calibrating: styles.zoomDotCalibrating,
+  success: styles.zoomDotSuccess,
+  failed: styles.zoomDotFailed,
+  skipped: styles.zoomDotSkipped,
+};
+
+const SESSION_KEY_PREFIX = 'lens_calibration_session_';
+const LAST_SESSION_KEY = 'lens_calibration_session_last';
+
+function parseZoomList(raw: string): number[] {
+  const seen = new Set<number>();
+  for (const part of raw.split(',')) {
+    const n = parseFloat(part.trim());
+    if (!Number.isNaN(n) && n > 0) seen.add(n);
+  }
+  return Array.from(seen).sort((a, b) => a - b);
+}
+
 // ------------------------------------------------------------------ helpers
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -103,6 +146,48 @@ export default function LensCalibrationPage() {
   // -- Results --
   const [currentResults, setCurrentResults] = useState<CalibrationResult | null>(null);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+
+  // -- Multi-zoom batch state --
+  // Restore the toggle preference from localStorage via a lazy initializer
+  // (avoids a setState-in-effect on mount).
+  const [multiZoomMode, setMultiZoomMode] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(LAST_SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as PersistedSession;
+        if (typeof parsed.multiZoomMode === 'boolean') return parsed.multiZoomMode;
+      }
+    } catch {
+      // ignore malformed session
+    }
+    return true;
+  });
+  const [zoomLevels, setZoomLevels] = useState<number[]>([1, 5, 10, 15, 20, 25]);
+  const [zoomLevelsInput, setZoomLevelsInput] = useState('1, 5, 10, 15, 20, 25');
+  const [addZoomValue, setAddZoomValue] = useState('');
+  const [zoomResults, setZoomResults] = useState<Record<string, ZoomResult>>({});
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; zoom: number } | null>(null);
+  // Detect a resumable session at mount-time via a lazy initializer (avoids
+  // setState-in-effect). The banner is dismissed/resumed by user action.
+  const [resumePrompt, setResumePrompt] = useState<PersistedSession | null>(() => {
+    try {
+      const raw = localStorage.getItem(LAST_SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as PersistedSession;
+        if (
+          (parsed.zoomLevels && parsed.zoomLevels.length > 0) ||
+          (parsed.results && Object.keys(parsed.results).length > 0)
+        ) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore malformed session
+    }
+    return null;
+  });
+  const sessionLoadedRef = useRef(false);
 
   // -- Annotation rows --
   const [lineTraceSetNames, setLineTraceSetNames] = useState<string[]>([]);
@@ -337,6 +422,237 @@ export default function LensCalibrationPage() {
     }, 1000);
   }, [annotationRows, fx, fy, cx, cy, trainSplitRatio, radialOnly, showStatus]);
 
+  // ---------------------------------------------------------------- multi-zoom batch
+
+  // Collect all loaded annotation line traces (the single input method this page has).
+  const collectAnnotationLines = useCallback((): Array<{ line_id: string; points: number[][] }> => {
+    const all: Array<{ line_id: string; points: number[][] }> = [];
+    for (const row of annotationRows) all.push(...row.lineData);
+    return all;
+  }, [annotationRows]);
+
+  // Calibrate a single zoom: auto-compute intrinsics then calibrate annotated lines.
+  // Returns a ZoomResult (success or failed). Pure-ish: does not mutate batch state itself.
+  const calibrateSingleZoom = useCallback(
+    async (zoomValue: number): Promise<ZoomResult> => {
+      const lines = collectAnnotationLines();
+      if (lines.length === 0) {
+        return { status: 'failed', message: 'No annotation lines loaded' };
+      }
+
+      try {
+        // 1. compute intrinsics for this zoom
+        const { data: ci, error: ciErr } = await client.POST(
+          '/lens-calibration/api/compute-intrinsics/',
+          {
+            body: {
+              zoom: zoomValue,
+              image_width: Math.round((cx || 960) * 2),
+              image_height: Math.round((cy || 540) * 2),
+            },
+          },
+        );
+        if (ciErr || !ci) {
+          return {
+            status: 'failed',
+            message: (ciErr as { detail?: string })?.detail ?? 'Failed to compute intrinsics',
+          };
+        }
+        const perZoomIntrinsics: Intrinsics = {
+          fx: ci.fx,
+          fy: ci.fy,
+          cx: ci.cx,
+          cy: ci.cy,
+        };
+
+        // 2. calibrate annotated lines using freshly computed intrinsics
+        const { data, error } = await client.POST(
+          '/lens-calibration/api/calibrate-annotated-lines/',
+          {
+            body: {
+              camera_line_annotations: lines,
+              intrinsics: {
+                fx: perZoomIntrinsics.fx,
+                fy: perZoomIntrinsics.fy,
+                cx: perZoomIntrinsics.cx,
+                cy: perZoomIntrinsics.cy,
+                image_width: Math.round(perZoomIntrinsics.cx * 2),
+                image_height: Math.round(perZoomIntrinsics.cy * 2),
+              },
+              auto_intrinsics: false,
+              config: {
+                train_split_ratio: trainSplitRatio,
+                use_radial_only: radialOnly,
+              },
+            },
+          },
+        );
+
+        if (error || !data) {
+          return {
+            status: 'failed',
+            message: (error as { detail?: string })?.detail ?? 'Calibration request failed',
+          };
+        }
+        if (!data.success) {
+          return { status: 'failed', message: data.message || 'Solver reported failure' };
+        }
+
+        const numLines =
+          typeof data.line_errors === 'object' && Array.isArray(data.line_errors)
+            ? data.line_errors.length
+            : lines.length;
+
+        return {
+          status: 'success',
+          coefficients: data.coefficients,
+          intrinsics: data.intrinsics_used ?? perZoomIntrinsics,
+          rmse: data.overall_rmse,
+          num_lines: numLines,
+          message: data.message,
+        };
+      } catch (e) {
+        return { status: 'failed', message: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    [collectAnnotationLines, cx, cy, trainSplitRatio, radialOnly],
+  );
+
+  // Run the full sequential batch over all configured zoom levels.
+  const runMultiZoomCalibration = useCallback(async () => {
+    const lines = collectAnnotationLines();
+    if (lines.length === 0) {
+      showStatus('Load annotation lines before running multi-zoom calibration', 'warning');
+      return;
+    }
+    // Active zoom levels are those not skipped.
+    const active = zoomLevels.filter((z) => zoomResults[String(z)]?.status !== 'skipped');
+    if (active.length === 0) {
+      showStatus('No active zoom levels to calibrate', 'warning');
+      return;
+    }
+
+    setBatchRunning(true);
+    // mark all active zooms pending up front
+    setZoomResults((prev) => {
+      const next = { ...prev };
+      for (const z of active) {
+        if (next[String(z)]?.status === 'skipped') continue;
+        next[String(z)] = { status: 'pending' };
+      }
+      return next;
+    });
+
+    for (let i = 0; i < active.length; i++) {
+      const z = active[i];
+      setBatchProgress({ current: i + 1, total: active.length, zoom: z });
+      setZoomResults((prev) => ({ ...prev, [String(z)]: { status: 'calibrating' } }));
+      showStatus(`Calibrating zoom ${z}x (${i + 1} of ${active.length})`, 'info');
+
+      const result = await calibrateSingleZoom(z);
+      setZoomResults((prev) => ({ ...prev, [String(z)]: result }));
+    }
+
+    setBatchProgress(null);
+    setBatchRunning(false);
+    showStatus('Multi-zoom calibration batch complete', 'success');
+  }, [collectAnnotationLines, zoomLevels, zoomResults, calibrateSingleZoom, showStatus]);
+
+  // Re-run a single zoom (from progress-table action or "Add Zoom Entry" path).
+  const rerunSingleZoom = useCallback(
+    async (zoomValue: number) => {
+      const lines = collectAnnotationLines();
+      if (lines.length === 0) {
+        showStatus('Load annotation lines before calibrating', 'warning');
+        return;
+      }
+      setZoomResults((prev) => ({ ...prev, [String(zoomValue)]: { status: 'calibrating' } }));
+      showStatus(`Calibrating zoom ${zoomValue}x...`, 'info');
+      const result = await calibrateSingleZoom(zoomValue);
+      // preserve loadedRmse so overwrite-confirm can compare against the original
+      setZoomResults((prev) => {
+        const prior = prev[String(zoomValue)];
+        return {
+          ...prev,
+          [String(zoomValue)]: {
+            ...result,
+            loadedRmse: prior?.loaded ? prior.loadedRmse ?? prior.rmse : prior?.loadedRmse,
+          },
+        };
+      });
+      showStatus(
+        result.status === 'success'
+          ? `Zoom ${zoomValue}x calibrated (RMSE ${result.rmse?.toFixed(3) ?? '---'} px)`
+          : `Zoom ${zoomValue}x failed: ${result.message ?? 'unknown'}`,
+        result.status === 'success' ? 'success' : 'error',
+      );
+    },
+    [collectAnnotationLines, calibrateSingleZoom, showStatus],
+  );
+
+  // Mark a zoom as skipped (removed from the batch).
+  const skipZoom = useCallback((zoomValue: number) => {
+    setZoomResults((prev) => ({ ...prev, [String(zoomValue)]: { status: 'skipped' } }));
+  }, []);
+
+  // ---------------------------------------------------------------- zoom configurator
+
+  const applyZoomLevels = useCallback((levels: number[]) => {
+    const sorted = Array.from(new Set(levels.filter((n) => !Number.isNaN(n) && n > 0))).sort(
+      (a, b) => a - b,
+    );
+    setZoomLevels(sorted);
+    setZoomLevelsInput(sorted.join(', '));
+  }, []);
+
+  const onZoomLevelsInputChange = useCallback(
+    (raw: string) => {
+      setZoomLevelsInput(raw);
+      applyZoomLevels(parseZoomList(raw));
+    },
+    [applyZoomLevels],
+  );
+
+  const removeZoomLevel = useCallback(
+    (zoomValue: number) => {
+      applyZoomLevels(zoomLevels.filter((z) => z !== zoomValue));
+      setZoomResults((prev) => {
+        const next = { ...prev };
+        delete next[String(zoomValue)];
+        return next;
+      });
+    },
+    [zoomLevels, applyZoomLevels],
+  );
+
+  const addZoomLevel = useCallback(
+    (raw: string) => {
+      const n = parseFloat(raw);
+      if (Number.isNaN(n) || n <= 0) {
+        showStatus('Enter a positive zoom value to add', 'warning');
+        return;
+      }
+      applyZoomLevels([...zoomLevels, n]);
+      setAddZoomValue('');
+    },
+    [zoomLevels, applyZoomLevels, showStatus],
+  );
+
+  // "Add Zoom Entry": append a new zoom AND immediately calibrate it (single-zoom path).
+  const addZoomEntry = useCallback(
+    async (raw: string) => {
+      const n = parseFloat(raw);
+      if (Number.isNaN(n) || n <= 0) {
+        showStatus('Enter a positive zoom value to add', 'warning');
+        return;
+      }
+      applyZoomLevels([...zoomLevels, n]);
+      setAddZoomValue('');
+      await rerunSingleZoom(n);
+    },
+    [zoomLevels, applyZoomLevels, rerunSingleZoom, showStatus],
+  );
+
   // ---------------------------------------------------------------- validate
 
   const validateResults = useCallback(async () => {
@@ -456,6 +772,91 @@ export default function LensCalibrationPage() {
     setSaving(false);
   }, [currentResults, cameraId, zoom, getIntrinsics, showStatus]);
 
+  // ---------------------------------------------------------------- unified multi-zoom save
+
+  const saveAllZoomEntries = useCallback(async () => {
+    // Collect all success entries (freshly calibrated + loaded-and-kept).
+    const successZooms = zoomLevels.filter(
+      (z) => zoomResults[String(z)]?.status === 'success',
+    );
+    if (successZooms.length === 0) {
+      showStatus('No successful zoom entries to save', 'warning');
+      return;
+    }
+
+    // Overwrite confirmation: loaded zoom re-calibrated with a different RMSE.
+    const conflicts: Array<{ zoom: number; oldRmse: number; newRmse: number }> = [];
+    for (const z of successZooms) {
+      const r = zoomResults[String(z)];
+      if (
+        r.loadedRmse !== undefined &&
+        r.rmse !== undefined &&
+        Math.abs(r.loadedRmse - r.rmse) > 1e-6
+      ) {
+        conflicts.push({ zoom: z, oldRmse: r.loadedRmse, newRmse: r.rmse });
+      }
+    }
+    if (conflicts.length > 0) {
+      const lines = conflicts
+        .map(
+          (c) =>
+            `  zoom ${c.zoom}x: loaded RMSE ${c.oldRmse.toFixed(3)} -> new RMSE ${c.newRmse.toFixed(3)}`,
+        )
+        .join('\n');
+      const ok = window.confirm(
+        `The following zoom entries already exist and will be overwritten:\n\n${lines}\n\nProceed with save?`,
+      );
+      if (!ok) {
+        showStatus('Save cancelled', 'warning');
+        return;
+      }
+    }
+
+    setSaving(true);
+    showStatus('Saving all zoom entries...', 'info');
+
+    try {
+      const zoom_entries = successZooms.map((z) => {
+        const r = zoomResults[String(z)];
+        return {
+          zoom: z,
+          coefficients: r.coefficients,
+          intrinsics: r.intrinsics ?? null,
+          validation_rmse: r.rmse ?? 0,
+          num_lines: r.num_lines ?? 0,
+        };
+      });
+
+      const { data, error } = await client.POST('/lens-calibration/api/save/', {
+        body: {
+          camera_id: cameraId || 'unknown_camera',
+          // Base single-zoom fields are required by the schema; the server uses
+          // `zoom_entries` for the multi-zoom batch and ignores these placeholders.
+          zoom: zoom_entries[0]?.zoom ?? 1,
+          validation_rmse: 0,
+          num_lines: 0,
+          zoom_entries,
+        },
+      });
+
+      if (error || !data) {
+        throw new Error((error as { detail?: string })?.detail ?? 'Save failed');
+      }
+
+      showStatus(
+        `Saved ${zoom_entries.length} zoom entries for camera "${cameraId}"`,
+        'success',
+      );
+      loadCalibrationIds();
+    } catch (e) {
+      showStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+
+    setSaving(false);
+    // loadCalibrationIds is defined below and stable; mirrors saveCalibration's pattern.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomLevels, zoomResults, cameraId, showStatus]);
+
   // ---------------------------------------------------------------- load calibration IDs
 
   const loadCalibrationIds = useCallback(async () => {
@@ -494,6 +895,34 @@ export default function LensCalibrationPage() {
       setCameraId(data.camera_id);
 
       const entries = (data.entries ?? []) as Array<Record<string, unknown>>;
+
+      // Populate the multi-zoom results map from ALL loaded entries (append/merge semantics).
+      const loadedResults: Record<string, ZoomResult> = {};
+      const loadedZooms: number[] = [];
+      for (const entry of entries) {
+        const zf = (entry.zoom_factor as number) ?? (entry.zoom as number);
+        if (zf === undefined || Number.isNaN(zf)) continue;
+        const coeffs = entry.coefficients as DistortionCoefficients | undefined;
+        const rmse = (entry.validation_rmse as number) ?? 0;
+        const numLines = (entry.num_lines_used as number) ?? (entry.num_lines as number) ?? 0;
+        const intr = entry.intrinsics as Intrinsics | undefined;
+        loadedResults[String(zf)] = {
+          status: 'success',
+          coefficients: coeffs,
+          intrinsics: intr,
+          rmse,
+          num_lines: numLines,
+          message: 'Loaded from repo',
+          loaded: true,
+          loadedRmse: rmse,
+        };
+        loadedZooms.push(zf);
+      }
+      if (loadedZooms.length > 0) {
+        applyZoomLevels(loadedZooms);
+        setZoomResults(loadedResults);
+      }
+
       if (entries.length > 0) {
         const last = entries[entries.length - 1];
         const zoomFactor = (last.zoom_factor as number) ?? 1;
@@ -543,7 +972,7 @@ export default function LensCalibrationPage() {
     }
 
     setLoadingCalibration(false);
-  }, [selectedCameraId, getIntrinsics, showStatus]);
+  }, [selectedCameraId, getIntrinsics, showStatus, applyZoomLevels]);
 
   // ---------------------------------------------------------------- copy coefficients
 
@@ -569,6 +998,53 @@ export default function LensCalibrationPage() {
       showStatus('Optimized intrinsics applied to input fields', 'success');
     }
   }, [currentResults, showStatus]);
+
+  // ---------------------------------------------------------------- session persistence
+
+  const sessionKey = useCallback(
+    (id: string) => `${SESSION_KEY_PREFIX}${id || 'unknown_camera'}`,
+    [],
+  );
+
+  const persistSession = useCallback(() => {
+    try {
+      const payload: PersistedSession = {
+        multiZoomMode,
+        zoomLevels,
+        results: zoomResults,
+        cameraId,
+      };
+      const json = JSON.stringify(payload);
+      localStorage.setItem(sessionKey(cameraId), json);
+      localStorage.setItem(LAST_SESSION_KEY, json);
+    } catch {
+      // localStorage unavailable / quota — non-fatal
+    }
+  }, [multiZoomMode, zoomLevels, zoomResults, cameraId, sessionKey]);
+
+  const applySession = useCallback(
+    (s: PersistedSession) => {
+      setMultiZoomMode(s.multiZoomMode);
+      applyZoomLevels(s.zoomLevels);
+      setZoomResults(s.results ?? {});
+      if (s.cameraId) setCameraId(s.cameraId);
+    },
+    [applyZoomLevels],
+  );
+
+  const clearSession = useCallback(() => {
+    try {
+      localStorage.removeItem(sessionKey(cameraId));
+      localStorage.removeItem(LAST_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+    setZoomResults({});
+    setBatchProgress(null);
+    applyZoomLevels([1, 5, 10, 15, 20, 25]);
+    setResumePrompt(null);
+    showStatus('Session cleared', 'info');
+  }, [cameraId, sessionKey, applyZoomLevels, showStatus]);
 
   // ---------------------------------------------------------------- effects
 
@@ -606,6 +1082,17 @@ export default function LensCalibrationPage() {
     prevZoomRef.current = zoom;
   }, [zoom, intrinsicsInfo, computeIntrinsics]);
 
+  // Auto-save the session whenever zoom levels, results, or the toggle change.
+  // Skip the very first render so we don't immediately re-write the restored
+  // session (and so we never overwrite before the user has interacted).
+  useEffect(() => {
+    if (!sessionLoadedRef.current) {
+      sessionLoadedRef.current = true;
+      return;
+    }
+    persistSession();
+  }, [zoomLevels, zoomResults, multiZoomMode, persistSession]);
+
   // ---------------------------------------------------------------- render helpers
 
   const numLines =
@@ -625,6 +1112,58 @@ export default function LensCalibrationPage() {
           &larr; Back to Tools
         </Link>
       </header>
+
+      {/* Resume previous session banner (non-blocking) */}
+      {resumePrompt && (
+        <div className={styles.resumeBanner}>
+          <span>
+            Resume previous calibration session
+            {resumePrompt.cameraId ? ` for "${resumePrompt.cameraId}"` : ''}?
+          </span>
+          <div className={styles.resumeBannerActions}>
+            <button
+              className={`${styles.btnPrimary} ${styles.btnSmall}`}
+              type="button"
+              onClick={() => {
+                applySession(resumePrompt);
+                setResumePrompt(null);
+                showStatus('Previous session resumed', 'success');
+              }}
+            >
+              Resume
+            </button>
+            <button
+              className={`${styles.btnSecondary} ${styles.btnSmall}`}
+              type="button"
+              onClick={() => setResumePrompt(null)}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Zoom Mode toggle */}
+      <div className={styles.modeToggleBar}>
+        <label className={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={multiZoomMode}
+            onChange={(e) => setMultiZoomMode(e.target.checked)}
+          />
+          <strong>Multi-Zoom Mode</strong>
+          <span className={styles.intrinsicsInfo}>
+            (batch-calibrate multiple zoom levels from the same annotated lines)
+          </span>
+        </label>
+        <button
+          className={`${styles.btnSecondary} ${styles.btnSmall}`}
+          type="button"
+          onClick={clearSession}
+        >
+          Clear Session
+        </button>
+      </div>
 
       <div className={styles.grid}>
         {/* ======================== Camera Intrinsics ======================== */}
@@ -806,15 +1345,18 @@ export default function LensCalibrationPage() {
               </div>
             )}
 
-            <button
-              className={styles.btnPrimary}
-              style={{ marginTop: 12 }}
-              type="button"
-              disabled={!hasAnnotationLines || calibrating}
-              onClick={runCalibration}
-            >
-              {calibrating ? 'Running...' : 'Run Annotated Lines Calibration'}
-            </button>
+            {/* Single-zoom run button only when multi-zoom mode is OFF (fallback path). */}
+            {!multiZoomMode && (
+              <button
+                className={styles.btnPrimary}
+                style={{ marginTop: 12 }}
+                type="button"
+                disabled={!hasAnnotationLines || calibrating}
+                onClick={runCalibration}
+              >
+                {calibrating ? 'Running...' : 'Run Annotated Lines Calibration'}
+              </button>
+            )}
 
             <p className={styles.helpText}>
               Load line annotation files with N-point traces of lines that should be
@@ -825,6 +1367,217 @@ export default function LensCalibrationPage() {
             </p>
           </div>
         </div>
+
+        {/* ======================== Multi-Zoom Batch Wizard ======================== */}
+        {multiZoomMode && (
+          <div className={`${styles.card} ${styles.cardFullwidth}`}>
+            <div className={styles.cardHeader}>Multi-Zoom Batch Calibration</div>
+            <div className={styles.cardBody}>
+              {/* --- Zoom configurator --- */}
+              <h4 className={styles.sectionTitle}>Zoom Levels</h4>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel} htmlFor="lc-zoom-levels">
+                  Comma-separated zoom values
+                </label>
+                <input
+                  className={styles.formInput}
+                  id="lc-zoom-levels"
+                  type="text"
+                  value={zoomLevelsInput}
+                  placeholder="1, 5, 10, 15, 20, 25"
+                  onChange={(e) => onZoomLevelsInputChange(e.target.value)}
+                />
+              </div>
+
+              {/* Chips */}
+              <div className={styles.zoomChips}>
+                {zoomLevels.length === 0 && (
+                  <span className={styles.intrinsicsInfo}>No zoom levels configured</span>
+                )}
+                {zoomLevels.map((z) => (
+                  <span key={z} className={styles.zoomChip}>
+                    {z}x
+                    <button
+                      type="button"
+                      className={styles.zoomChipRemove}
+                      aria-label={`Remove zoom ${z}`}
+                      onClick={() => removeZoomLevel(z)}
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Add zoom level + presets */}
+              <div className={styles.zoomConfigRow}>
+                <input
+                  className={styles.zoomAddInput}
+                  type="number"
+                  step={0.1}
+                  min={0.1}
+                  value={addZoomValue}
+                  placeholder="e.g. 30"
+                  onChange={(e) => setAddZoomValue(e.target.value)}
+                />
+                <button
+                  className={`${styles.btnSecondary} ${styles.btnSmall}`}
+                  type="button"
+                  onClick={() => addZoomLevel(addZoomValue)}
+                >
+                  Add Zoom Level
+                </button>
+                <button
+                  className={`${styles.btnSecondary} ${styles.btnSmall}`}
+                  type="button"
+                  onClick={() => applyZoomLevels([1, 5, 10, 15, 20, 25])}
+                >
+                  1-25x Standard
+                </button>
+                <button
+                  className={`${styles.btnSecondary} ${styles.btnSmall}`}
+                  type="button"
+                  onClick={() => applyZoomLevels([1, 5, 10, 15, 20, 25, 30, 35, 40])}
+                >
+                  1-40x Extended
+                </button>
+              </div>
+
+              {/* --- Run batch --- */}
+              <div className={styles.actions} style={{ marginTop: 16 }}>
+                <button
+                  className={styles.btnPrimary}
+                  type="button"
+                  disabled={!hasAnnotationLines || batchRunning || zoomLevels.length === 0}
+                  onClick={runMultiZoomCalibration}
+                >
+                  {batchRunning ? 'Calibrating...' : 'Run Multi-Zoom Calibration'}
+                </button>
+                <div className={styles.zoomAddEntryRow}>
+                  <input
+                    className={styles.zoomAddInput}
+                    type="number"
+                    step={0.1}
+                    min={0.1}
+                    value={addZoomValue}
+                    placeholder="new zoom"
+                    onChange={(e) => setAddZoomValue(e.target.value)}
+                  />
+                  <button
+                    className={styles.btnSecondary}
+                    type="button"
+                    disabled={!hasAnnotationLines || batchRunning}
+                    onClick={() => addZoomEntry(addZoomValue)}
+                  >
+                    Add Zoom Entry
+                  </button>
+                </div>
+              </div>
+
+              {!hasAnnotationLines && (
+                <div className={styles.statusWarning} style={{ marginTop: 12 }}>
+                  Load annotation lines (above) to enable multi-zoom calibration.
+                </div>
+              )}
+
+              {/* --- Progress header --- */}
+              {batchProgress && (
+                <div className={styles.statusInfo} style={{ marginTop: 12 }}>
+                  Calibrating zoom {batchProgress.zoom}x ({batchProgress.current} of{' '}
+                  {batchProgress.total})
+                </div>
+              )}
+
+              {/* --- Progress table --- */}
+              {zoomLevels.length > 0 && (
+                <div className={styles.linesList} style={{ marginTop: 12, maxHeight: 'none' }}>
+                  <table className={styles.linesTable}>
+                    <thead>
+                      <tr>
+                        <th>Zoom</th>
+                        <th>Status</th>
+                        <th>RMSE</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zoomLevels.map((z) => {
+                        const r = zoomResults[String(z)] ?? { status: 'pending' as ZoomStatus };
+                        const quality =
+                          r.status === 'success' && r.rmse !== undefined
+                            ? qualityFromRmse(r.rmse)
+                            : null;
+                        return (
+                          <tr key={z}>
+                            <td className={styles.mono}>{z}x</td>
+                            <td>
+                              <span
+                                className={`${styles.zoomDot} ${ZOOM_STATUS_CLASSES[r.status]}`}
+                              />
+                              {r.status}
+                              {r.status === 'failed' && r.message ? (
+                                <span className={styles.zoomFailMsg}> — {r.message}</span>
+                              ) : null}
+                            </td>
+                            <td className={styles.mono}>
+                              {r.status === 'success' && r.rmse !== undefined ? (
+                                <>
+                                  {r.rmse.toFixed(3)}{' '}
+                                  {quality && (
+                                    <span className={QUALITY_CLASSES[quality] ?? styles.qualityBadge}>
+                                      {quality}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td>
+                              {(r.status === 'success' || r.status === 'failed') && (
+                                <button
+                                  className={`${styles.btnSecondary} ${styles.btnSmall}`}
+                                  type="button"
+                                  disabled={batchRunning || !hasAnnotationLines}
+                                  onClick={() => rerunSingleZoom(z)}
+                                >
+                                  Re-run
+                                </button>
+                              )}
+                              {(r.status === 'pending' || r.status === 'failed') && (
+                                <button
+                                  className={`${styles.btnSecondary} ${styles.btnSmall}`}
+                                  style={{ marginLeft: 6 }}
+                                  type="button"
+                                  disabled={batchRunning}
+                                  onClick={() => skipZoom(z)}
+                                >
+                                  Skip
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* --- Unified save --- */}
+              <div className={styles.actions} style={{ marginTop: 16 }}>
+                <button
+                  className={styles.btnSuccess}
+                  type="button"
+                  disabled={saving || batchRunning}
+                  onClick={saveAllZoomEntries}
+                >
+                  {saving ? 'Saving...' : 'Save All Zoom Entries'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ======================== Calibration Status ======================== */}
         <div className={`${styles.card} ${styles.cardFullwidth}`}>

@@ -69,6 +69,13 @@ interface StatusMessage {
   type: 'info' | 'success' | 'error';
 }
 
+interface ZoomCompareCell {
+  zoomFactor: number;
+  validationRmse?: number;
+  imageUrl: string | null;
+  error: string | null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -140,6 +147,16 @@ function drawLine(
   }
 }
 
+function rmseQuality(rmse: number | undefined): {
+  label: string;
+  color: string;
+} {
+  if (rmse === undefined) return { label: 'N/A', color: '#78909c' };
+  if (rmse < 2.0) return { label: 'good', color: '#4caf50' };
+  if (rmse < 5.0) return { label: 'acceptable', color: '#ff9800' };
+  return { label: 'poor', color: '#f44336' };
+}
+
 function statClass(value: number): string {
   if (value < 1) return styles.statGood;
   if (value < 3) return styles.statWarning;
@@ -203,6 +220,11 @@ export default function DistortionValidatorPage() {
   const [undistortedDataUrl, setUndistortedDataUrl] = useState<string | null>(
     null,
   );
+
+  // Compare Zoom Levels mode
+  const [compareZoom, setCompareZoom] = useState(false);
+  const [compareCells, setCompareCells] = useState<ZoomCompareCell[]>([]);
+  const [comparing, setComparing] = useState(false);
 
   // Panning state stored in ref to avoid re-renders during drag
   const panRef = useRef({
@@ -380,6 +402,73 @@ export default function DistortionValidatorPage() {
   }, [coefficients, selectedImage, intrinsics, showStatus]);
 
   const loadCountRef = useRef(0);
+
+  /* ---- Compare Zoom Levels ---- */
+  const canCompareZoom = (calibration?.entries.length ?? 0) > 1;
+
+  const runZoomComparison = useCallback(
+    async (imagePath: string) => {
+    if (!calibration || !imagePath) return;
+    setComparing(true);
+    showStatus('Comparing zoom levels...', 'info');
+
+    const entries = calibration.entries;
+    const results = await Promise.all(
+      entries.map(async (entry): Promise<ZoomCompareCell> => {
+        try {
+          const { data, error } = await client.POST(
+            '/distortion-validator/api/undistort/',
+            {
+              body: {
+                image_path: imagePath,
+                coefficients: entry.coefficients,
+                intrinsics: entry.intrinsics ?? intrinsics,
+                use_opencv: false,
+              },
+            },
+          );
+          if (error || !data) {
+            return {
+              zoomFactor: entry.zoom_factor,
+              validationRmse: entry.validation_rmse,
+              imageUrl: null,
+              error: 'Undistort failed',
+            };
+          }
+          const imageUrl =
+            data.undistorted_url ??
+            'data:image/jpeg;base64,' + (data.undistorted ?? '');
+          return {
+            zoomFactor: entry.zoom_factor,
+            validationRmse: entry.validation_rmse,
+            imageUrl,
+            error: null,
+          };
+        } catch {
+          return {
+            zoomFactor: entry.zoom_factor,
+            validationRmse: entry.validation_rmse,
+            imageUrl: null,
+            error: 'Undistort error',
+          };
+        }
+      }),
+    );
+
+    setCompareCells(results);
+    setComparing(false);
+    const failures = results.filter((r) => r.error !== null).length;
+    if (failures > 0) {
+      showStatus(
+        `Compared ${results.length} zoom levels (${failures} failed)`,
+        failures === results.length ? 'error' : 'info',
+      );
+    } else {
+      showStatus(`Compared ${results.length} zoom levels`, 'success');
+    }
+    },
+    [calibration, intrinsics, showStatus],
+  );
 
   const onImageLoaded = useCallback(() => {
     loadCountRef.current += 1;
@@ -1066,9 +1155,13 @@ export default function DistortionValidatorPage() {
           <label>Image:</label>
           <select
             value={selectedImage}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-              setSelectedImage(e.target.value)
-            }
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+              const val = e.target.value;
+              setSelectedImage(val);
+              if (compareZoom && canCompareZoom && val) {
+                runZoomComparison(val);
+              }
+            }}
           >
             <option value="">-- Select image --</option>
             {images.map((img) => (
@@ -1086,6 +1179,25 @@ export default function DistortionValidatorPage() {
         >
           {applying ? 'Applying...' : 'Apply Undistortion'}
         </button>
+
+        {canCompareZoom && (
+          <label className={styles.compareToggle}>
+            <input
+              type="checkbox"
+              checked={compareZoom}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                const on = e.target.checked;
+                setCompareZoom(on);
+                if (on && selectedImage) {
+                  runZoomComparison(selectedImage);
+                } else if (!on) {
+                  setCompareCells([]);
+                }
+              }}
+            />
+            Compare Zoom Levels
+          </label>
+        )}
       </div>
 
       {/* -------- Main content -------- */}
@@ -1145,9 +1257,64 @@ export default function DistortionValidatorPage() {
             </div>
           </div>
 
+          {compareZoom && canCompareZoom ? (
+            <div className={styles.compareWrapper}>
+              {!selectedImage ? (
+                <div className={styles.emptyState}>
+                  Select an image to compare zoom levels
+                </div>
+              ) : comparing ? (
+                <div className={styles.emptyState}>
+                  Comparing zoom levels...
+                </div>
+              ) : (
+                <div className={styles.compareGrid}>
+                  {compareCells.map((cell, i) => {
+                    const q = rmseQuality(cell.validationRmse);
+                    return (
+                      <div key={i} className={styles.compareCell}>
+                        <div className={styles.compareCellHeader}>
+                          <span className={styles.compareCellZoom}>
+                            {cell.zoomFactor}x
+                          </span>
+                          <span
+                            className={styles.compareCellRmse}
+                            style={{ color: q.color }}
+                          >
+                            RMSE:{' '}
+                            {cell.validationRmse !== undefined
+                              ? cell.validationRmse.toFixed(3)
+                              : 'N/A'}{' '}
+                            ({q.label})
+                          </span>
+                        </div>
+                        <div className={styles.compareCellImage}>
+                          {cell.error ? (
+                            <div className={styles.compareCellError}>
+                              {cell.error}
+                            </div>
+                          ) : cell.imageUrl ? (
+                            <img
+                              alt={`Undistorted at ${cell.zoomFactor}x`}
+                              src={cell.imageUrl}
+                            />
+                          ) : (
+                            <div className={styles.compareCellError}>
+                              No image
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
           <div
             ref={wrapperRef}
             className={styles.imageWrapper}
+            style={{ display: compareZoom && canCompareZoom ? 'none' : undefined }}
             onWheel={handleWheel}
             onMouseDown={handleWrapperMouseDown}
           >
