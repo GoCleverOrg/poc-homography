@@ -133,5 +133,15 @@ class MinioMapStore:
             ExpiresIn=expires_in,
         )
 
+    def get_map(self, key: str) -> bytes:
+        """Download and return the raw GeoTIFF bytes stored under ``key``.
+
+        Used by the API to materialise a map asset locally (e.g. under ``/tmp``)
+        before tiling. Propagates whatever the underlying S3 client raises when
+        the object is absent (boto3 ``ClientError`` with code ``NoSuchKey``).
+        """
+        resp = self._client.get_object(Bucket=self.bucket, Key=key)
+        return resp["Body"].read()
+
 
 __all__ = ["DEFAULT_BUCKET", "MinioMapStore", "PutResult"]

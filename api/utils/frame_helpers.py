@@ -7,7 +7,7 @@ constants are re-exported from ``frame_utils`` for convenience.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path  # noqa: TC003 — kept at runtime; re-exported and used by API route modules
 from typing import TYPE_CHECKING
 
 from homography_web.frame_utils import (
@@ -20,6 +20,7 @@ from homography_web.frame_utils import (
     validate_image_filename,
 )
 
+from api.utils.map_assets import resolve_map_geotiff
 from poc_homography.infrastructure.repositories import (
     RepoPostgresCapturedFrame,
     RepoPostgresLineAnnotation,
@@ -72,9 +73,9 @@ def resolve_map_for_tenant(tenant_id: str, session: Session) -> tuple[Map, Path]
     if map_entity is None:
         raise RuntimeError(f"No map configured for tenant: {tenant_id}")
 
-    map_file = DATA_MAPS_DIR / map_entity.photo.path
-    if not map_file.exists():
-        raise RuntimeError(f"Map file not found: {map_file}")
+    map_file = resolve_map_geotiff(map_entity)
+    if map_file is None:
+        raise RuntimeError(f"Map asset not found for tenant: {tenant_id}")
 
     return map_entity, map_file
 

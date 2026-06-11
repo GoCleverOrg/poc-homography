@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 
 import pytest
 from botocore.exceptions import ClientError
@@ -16,11 +17,14 @@ from poc_homography.infrastructure.clients.minio_map_store import (
 class FakeS3:
     """Records boto3 S3 client calls; ``head_missing`` makes head_bucket 404."""
 
-    def __init__(self, *, head_missing: bool = False) -> None:
+    def __init__(self, *, head_missing: bool = False, objects: dict | None = None) -> None:
         self.head_missing = head_missing
         self.puts: list[dict] = []
         self.created: list[str] = []
         self.heads: list[str] = []
+        # key -> bytes, served by get_object.
+        self.objects: dict[str, bytes] = dict(objects or {})
+        self.gets: list[str] = []
 
     def head_bucket(self, Bucket: str) -> None:
         self.heads.append(Bucket)
@@ -35,6 +39,12 @@ class FakeS3:
 
     def generate_presigned_url(self, op: str, Params: dict, ExpiresIn: int) -> str:
         return f"https://minio/{op}/{Params['Bucket']}/{Params['Key']}?e={ExpiresIn}"
+
+    def get_object(self, Bucket: str, Key: str) -> dict:
+        self.gets.append(Key)
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": io.BytesIO(self.objects[Key])}
 
 
 def _store(client: FakeS3, bucket: str = "map-assets") -> MinioMapStore:
@@ -82,6 +92,21 @@ def test_presign_get_delegates_to_client() -> None:
     client = FakeS3()
     url = _store(client).presign_get("valte/Cartografia_valencia.tif", expires_in=120)
     assert url == "https://minio/get_object/map-assets/valte/Cartografia_valencia.tif?e=120"
+
+
+def test_get_map_returns_bytes() -> None:
+    data = b"II*\x00 geotiff bytes"
+    client = FakeS3(objects={"icozee/icozee-cropped.tif": data})
+    store = _store(client)
+
+    assert store.get_map("icozee/icozee-cropped.tif") == data
+    assert client.gets == ["icozee/icozee-cropped.tif"]
+
+
+def test_get_map_propagates_missing_object() -> None:
+    client = FakeS3()
+    with pytest.raises(ClientError):
+        _store(client).get_map("missing/key.tif")
 
 
 def test_from_env_reads_minio_map_bucket() -> None:
