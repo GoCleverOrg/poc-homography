@@ -47,7 +47,9 @@ __all__ = [
     "list_image_filenames",
     "load_annotations_for_frame",
     "load_line_annotations_for_frame",
+    "map_has_image",
     "normalize_array",
+    "resolve_map",
     "resolve_map_for_tenant",
     "save_annotations_for_frame",
     "validate_image_filename",
@@ -78,6 +80,45 @@ def resolve_map_for_tenant(tenant_id: str, session: Session) -> tuple[Map, Path]
         raise RuntimeError(f"Map asset not found for tenant: {tenant_id}")
 
     return map_entity, map_file
+
+
+def resolve_map(map_id: str, session: Session) -> tuple[Map, Path]:
+    """Resolve a specific ``Map`` and its image file by *map_id*.
+
+    The image is resolved via :func:`resolve_map_geotiff`, so object-storage
+    assets (``Map.asset_key``, see #292) are materialised the same way the
+    tile/info endpoints do; local-only maps fall back to ``data/maps``.
+
+    Raises:
+        LookupError: If no map with *map_id* exists.
+        RuntimeError: If the map's image asset is missing.
+    """
+    map_entity = RepoPostgresMap(session).get(map_id)
+    if map_entity is None:
+        raise LookupError(f"Map not found: {map_id}")
+
+    map_file = resolve_map_geotiff(map_entity)
+    if map_file is None:
+        raise RuntimeError(f"Map asset not found: {map_id}")
+
+    return map_entity, map_file
+
+
+def map_has_image(map_entity: Map) -> bool:
+    """Return ``True`` iff *map_entity* has a usable reference image.
+
+    A map is "configured" when it carries an object-storage asset key (#292)
+    or a local file under ``data/maps``. The asset-key branch is intentionally
+    cheap — it does not download the GeoTIFF — so listing many maps for the
+    selector never triggers per-map object-storage fetches.
+    """
+    if map_entity.asset_key:
+        return True
+    path = map_entity.photo.path
+    # An empty path normalises to ``Path(".")``; treat that as unconfigured.
+    if not str(path) or str(path) == ".":
+        return False
+    return (DATA_MAPS_DIR / path).is_file()
 
 
 def _frame_repo(session: Session) -> RepoPostgresCapturedFrame:
