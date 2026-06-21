@@ -21,6 +21,7 @@ import typer
 
 from poc_homography.calibration.lens_distortion.frame_source import iter_survey_frames
 from poc_homography.calibration.lens_distortion.scene_self_calibration import (
+    ScenePerZoomConfig,
     calibrate_scene_self,
 )
 from poc_homography.cli.main import calibrate_app
@@ -48,12 +49,14 @@ if TYPE_CHECKING:
         SceneCalibrationResult,
     )
 
-# Grouping window (in zoom units) the calibrator buckets frames into; mirrors
-# ``ScenePerZoomConfig.zoom_tolerance``. A ``--zoom`` filter value matches a
-# frame iff both round to the *same* group key, so the filter admits exactly the
-# frames the calibrator would route to the requested zoom group -- not the wider
-# neighbouring groups a symmetric +/- tolerance window would also capture.
-_ZOOM_GROUP_TOLERANCE = 0.1
+# Grouping window (in zoom units) the calibrator buckets frames into. Sourced
+# from ``ScenePerZoomConfig`` -- the default config this command hands to
+# :func:`calibrate_scene_self` -- so the filter's group keys can never drift from
+# the calibrator's own grouping. A ``--zoom`` filter value matches a frame iff
+# both round to the *same* group key, so the filter admits exactly the frames the
+# calibrator routes to the requested zoom group, not the wider neighbouring
+# groups a symmetric +/- tolerance window would also capture.
+_ZOOM_GROUP_TOLERANCE = ScenePerZoomConfig().zoom_tolerance
 
 
 @calibrate_app.command("self-calibrate")
@@ -137,19 +140,22 @@ def _run_self_calibration(
         # protocol (extra optional filters, a richer row type); cast at the
         # boundary since it structurally satisfies the reads the loader makes.
         frame_repo = cast("FrameRepo", RepoPostgresCleanPlateFrame(session))
+        # Pre-compute the requested zoom groups once (they are static for the
+        # run) so the per-frame check is a set membership test, not a re-derived
+        # group key per filter value per frame.
+        filter_keys = {_zoom_group_key(z) for z in zoom_filter} if zoom_filter else None
         image_zoom_pairs: list[tuple[np.ndarray, float]] = []
         for frame in iter_survey_frames(
             run_id=run_id, camera_id=camera_id, repo=frame_repo, store=frame_store
         ):
-            if zoom_filter is not None and not _zoom_matches(frame.commanded_zoom, zoom_filter):
+            if filter_keys is not None and _zoom_group_key(frame.commanded_zoom) not in filter_keys:
                 continue
             image_zoom_pairs.append((frame.image, frame.commanded_zoom))
 
         if not image_zoom_pairs:
+            zoom_clause = f" matching zoom(s) {zoom_filter}" if zoom_filter else ""
             typer.echo(
-                f"Error: No frames found for run_id={run_id} camera_id={camera_id}"
-                + (f" matching zoom(s) {zoom_filter}" if zoom_filter else "")
-                + ".",
+                f"Error: No frames found for run_id={run_id} camera_id={camera_id}{zoom_clause}.",
                 err=True,
             )
             raise typer.Exit(1)
@@ -170,17 +176,6 @@ def _run_self_calibration(
 def _zoom_group_key(zoom: float) -> float:
     """Round ``zoom`` to its calibrator group key (mirrors group_images_by_zoom)."""
     return round(round(zoom / _ZOOM_GROUP_TOLERANCE) * _ZOOM_GROUP_TOLERANCE, 10)
-
-
-def _zoom_matches(commanded_zoom: float, zoom_filter: list[float]) -> bool:
-    """Return True if ``commanded_zoom`` shares a zoom group with any filter value.
-
-    Compares rounded group keys (not a symmetric tolerance window) so a
-    ``--zoom`` value admits exactly the frames the calibrator routes to that
-    zoom group, never the adjacent groups a wider window would also capture.
-    """
-    key = _zoom_group_key(commanded_zoom)
-    return any(_zoom_group_key(z) == key for z in zoom_filter)
 
 
 def _print_report(*, camera_id: str, result: SceneCalibrationResult) -> None:
