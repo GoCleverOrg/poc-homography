@@ -31,6 +31,7 @@ def _register_commands() -> None:
     """
     from poc_homography.cli import (
         calibrate,
+        calibrate_capture,
         camera,
         cleanplate,
         gcp,
@@ -47,6 +48,7 @@ def _register_commands() -> None:
 
     # Avoid "imported but unused" warnings by explicitly using the module
     _ = calibrate
+    _ = calibrate_capture
     _ = camera
     _ = cleanplate
     _ = gcp
