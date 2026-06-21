@@ -26,7 +26,6 @@ from homography_web.frame_utils import (
     DATA_MAPS_DIR,
     GCPS_DIR,
     LINES_DIR,
-    extract_geotiff,
     get_frame_image_path,
     get_map_from_tenant_id,
     get_tenant_id,
@@ -54,6 +53,7 @@ from poc_homography.application.homography_precision import (
 )
 from poc_homography.homography.map_points import MapPointHomography
 from poc_homography.map_points.gcp_registry import from_gcp_repo
+from poc_homography.maps.geotiff_io import extract_geotiff
 
 logger = logging.getLogger(__name__)
 

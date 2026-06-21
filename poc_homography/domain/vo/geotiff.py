@@ -127,6 +127,43 @@ class GeoTiff:
         )
         return (easting, northing)
 
+    def geo_to_pixel(self, easting: Easting, northing: Northing) -> tuple[PixelsFloat, PixelsFloat]:
+        """Convert geographic coordinates to pixel coordinates (inverse affine).
+
+        Inverts the 6-parameter affine applied by :meth:`pixel_to_geo` by solving
+        the 2x2 linear system::
+
+            E - origin_easting  = pixel_x * pixel_width + pixel_y * row_rotation
+            N - origin_northing = pixel_x * col_rotation + pixel_y * pixel_height
+
+        Round-trips with :meth:`pixel_to_geo` to sub-pixel precision for any
+        invertible (non-degenerate) geotransform, including rotated rasters.
+
+        Args:
+            easting: X-coordinate (easting) in the CRS units.
+            northing: Y-coordinate (northing) in the CRS units.
+
+        Returns:
+            Tuple of (pixel_x, pixel_y) fractional pixel coordinates.
+
+        Raises:
+            ValueError: If the geotransform is degenerate (zero determinant) and
+                therefore not invertible.
+        """
+        gt = self.geotransform
+        b = float(gt.pixel_width)
+        c = float(gt.row_rotation)
+        e = float(gt.col_rotation)
+        f = float(gt.pixel_height)
+        det = b * f - c * e
+        if det == 0.0:
+            raise ValueError("Degenerate geotransform (zero determinant) is not invertible")
+        de = float(easting) - float(gt.origin_easting)
+        dn = float(northing) - float(gt.origin_northing)
+        pixel_x = (f * de - c * dn) / det
+        pixel_y = (-e * de + b * dn) / det
+        return (PixelsFloat(pixel_x), PixelsFloat(pixel_y))
+
     def pixel_to_latlon(
         self, pixel_x: PixelsFloat, pixel_y: PixelsFloat
     ) -> tuple[Latitude, Longitude]:
