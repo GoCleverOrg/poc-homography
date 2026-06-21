@@ -13,8 +13,59 @@ if TYPE_CHECKING:
     from poc_homography.calibration.lens_distortion.calibration_table import (
         CameraCalibrationTable,
     )
+    from poc_homography.domain.entities.lens_calibration_table import LensCalibrationTable
 
 logger = logging.getLogger(__name__)
+
+
+def lens_table_to_camera_table(lens_table: LensCalibrationTable) -> CameraCalibrationTable:
+    """Convert a DDD :class:`LensCalibrationTable` to the legacy solver table.
+
+    The extrinsic solvers consume the legacy
+    :class:`~poc_homography.calibration.lens_distortion.calibration_table.CameraCalibrationTable`
+    (flat distortion fields, zoom-keyed dict), whereas the calibration repos yield
+    the DDD :class:`~poc_homography.domain.entities.lens_calibration_table.LensCalibrationTable`
+    (nested :class:`LensDistortion` value object). The two ``to_dict`` shapes are
+    NOT interchangeable, so this rebuilds the legacy table field-by-field — the
+    in-memory inverse of :func:`sync_to_ddd_repo`, co-located with it so the
+    bidirectional bridge stays in one place.
+
+    Args:
+        lens_table: The persisted per-zoom DDD lens table.
+
+    Returns:
+        An equivalent :class:`CameraCalibrationTable` the extrinsic solvers accept.
+    """
+    from poc_homography.calibration.lens_distortion.calibration_table import (
+        CameraCalibrationTable,
+        ZoomCalibrationEntry,
+    )
+
+    table = CameraCalibrationTable(
+        camera_id=lens_table.id,
+        created_date=lens_table.created_date,
+        last_modified=lens_table.last_modified,
+    )
+    for entry in lens_table.entries:
+        distortion = entry.distortion
+        table.entries[float(entry.zoom_factor)] = ZoomCalibrationEntry(
+            zoom_factor=float(entry.zoom_factor),
+            k1=float(distortion.k1),
+            k2=float(distortion.k2),
+            k3=float(distortion.k3),
+            p1=float(distortion.p1),
+            p2=float(distortion.p2),
+            calibration_date=entry.calibration_date,
+            source_images=tuple(entry.source_images),
+            validation_rmse=entry.validation_rmse,
+            num_lines_used=entry.num_lines_used,
+            fx=float(entry.fx),
+            fy=float(entry.fy),
+            cx=float(entry.cx),
+            cy=float(entry.cy),
+            reprojection_error_px=entry.reprojection_error_px,
+        )
+    return table
 
 
 def _find_project_root() -> Path:
