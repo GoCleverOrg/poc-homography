@@ -52,8 +52,9 @@ _POSE_BURST_PHASES = (2, 3, 4, 5, 6, 7, 9)
 # pan/tilt extent and zoom levels are sourced from the plan-config sidecar.
 _MAIN_SURVEY_PHASE = 5
 
-# All nine phase numbers, in execution order. A :class:`SurveyPlan` with the
-# default :attr:`~SurveyPlan.enabled_phases` runs every one.
+# Every phase number (1..9). A :class:`SurveyPlan` with the default
+# :attr:`~SurveyPlan.enabled_phases` runs every one; the execution order itself
+# is fixed by the sequence of phase blocks in :func:`execute_survey`.
 _ALL_PHASE_NUMBERS = frozenset(range(1, 10))
 
 _logger = logging.getLogger(__name__)
@@ -300,8 +301,11 @@ def execute_survey(
         per-phase results.
 
     Raises:
-        JitterTargetError: If Phase 8 is below the minimum jitter target.
-        ValueError: If the Phase 9 holdout overlaps a captured training state.
+        JitterTargetError: If Phase 8 runs and is below the minimum jitter
+            target (Phase 8 is skipped — never raising — when it is disabled or
+            its RTSP URL is unresolvable).
+        ValueError: If Phase 9 runs and its holdout overlaps a captured
+            training state.
     """
     plan = plan or SurveyPlan()
     now = clock or _utcnow

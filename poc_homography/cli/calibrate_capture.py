@@ -57,14 +57,16 @@ def make_rtsp_url_resolver(camera_name: str) -> Callable[[], str | None]:
     """Build the Phase 8 jitter RTSP-URL resolver for ``camera_name`` (#372).
 
     Wraps :func:`camera_config.get_rtsp_url` (per-camera/tenant credential
-    resolution) and translates a missing-credentials :class:`ValueError` into
-    ``None`` so the runner skips jitter gracefully rather than crashing.
+    resolution). A config-shape problem — missing credentials (``ValueError``)
+    or a camera row lacking an expected field such as ``ip`` (``KeyError``) —
+    becomes ``None`` so the runner skips jitter gracefully rather than crashing,
+    honouring the resolver contract (return ``None``, do not raise).
     """
 
     def resolve() -> str | None:
         try:
             return get_rtsp_url(camera_name)
-        except ValueError:
+        except (ValueError, KeyError):
             return None
 
     return resolve
