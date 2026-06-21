@@ -48,18 +48,21 @@ if TYPE_CHECKING:
         SceneCalibrationResult,
     )
 
-# Half-window (in zoom units) used to match a frame's commanded zoom against a
-# requested ``--zoom`` filter value. Survey frames record the *commanded* zoom,
-# which may drift slightly from the requested value; this tolerance mirrors the
-# calibrator's own ``ScenePerZoomConfig.zoom_tolerance`` grouping window.
-_ZOOM_MATCH_TOLERANCE = 0.1
+# Grouping window (in zoom units) the calibrator buckets frames into; mirrors
+# ``ScenePerZoomConfig.zoom_tolerance``. A ``--zoom`` filter value matches a
+# frame iff both round to the *same* group key, so the filter admits exactly the
+# frames the calibrator would route to the requested zoom group -- not the wider
+# neighbouring groups a symmetric +/- tolerance window would also capture.
+_ZOOM_GROUP_TOLERANCE = 0.1
 
 
 @calibrate_app.command("self-calibrate")
 def self_calibrate_command(
     run_id: str = typer.Option(..., "--run-id", help="Survey run id to calibrate from"),
     camera: str = typer.Option(..., "--camera", help="Camera id (table id)"),
-    zoom: list[float] = typer.Option(None, "--zoom", help="Optional zoom factor(s) to restrict to"),
+    zoom: list[float] | None = typer.Option(
+        None, "--zoom", help="Optional zoom factor(s) to restrict to"
+    ),
     yaml_dir: Path | None = typer.Option(
         None, "--yaml-dir", help="Optional dir to also write a YAML table for inspection"
     ),
@@ -111,9 +114,9 @@ def _run_self_calibration(
     Extracted from the command body so tests can inject a fake frame store, a
     fake session factory, and monkeypatch the loader/calibrator/repos -- with no
     live MinIO, Neon, or solver access. Opens a session, drains the run's frames
-    via :func:`iter_survey_frames`, optionally filters them by commanded zoom
-    (within :data:`_ZOOM_MATCH_TOLERANCE`), self-calibrates per zoom, and saves
-    the table to Postgres (and YAML when ``yaml_dir`` is given).
+    via :func:`iter_survey_frames`, optionally filters them to the requested
+    zoom group(s), self-calibrates per zoom, and saves the table to Postgres
+    (then, after the DB commit, a YAML copy when ``yaml_dir`` is given).
 
     Args:
         run_id: Survey run to calibrate from.
@@ -154,15 +157,30 @@ def _run_self_calibration(
         result = calibrate_scene_self(image_zoom_pairs, camera_id=camera_id)
 
         RepoPostgresLensCalibrationTable(session).save(result.table)
-        if yaml_dir is not None:
-            RepoYamlLensCalibrationTable(yaml_dir).save(result.table)
+
+    # The YAML copy is an optional diagnostic artifact written only after the DB
+    # session has committed, so a YAML write failure (bad path, permissions,
+    # disk full) cannot roll back the persisted lens table.
+    if yaml_dir is not None:
+        RepoYamlLensCalibrationTable(yaml_dir).save(result.table)
 
     return result
 
 
+def _zoom_group_key(zoom: float) -> float:
+    """Round ``zoom`` to its calibrator group key (mirrors group_images_by_zoom)."""
+    return round(round(zoom / _ZOOM_GROUP_TOLERANCE) * _ZOOM_GROUP_TOLERANCE, 10)
+
+
 def _zoom_matches(commanded_zoom: float, zoom_filter: list[float]) -> bool:
-    """Return True if ``commanded_zoom`` is within tolerance of any filter value."""
-    return any(abs(commanded_zoom - z) <= _ZOOM_MATCH_TOLERANCE for z in zoom_filter)
+    """Return True if ``commanded_zoom`` shares a zoom group with any filter value.
+
+    Compares rounded group keys (not a symmetric tolerance window) so a
+    ``--zoom`` value admits exactly the frames the calibrator routes to that
+    zoom group, never the adjacent groups a wider window would also capture.
+    """
+    key = _zoom_group_key(commanded_zoom)
+    return any(_zoom_group_key(z) == key for z in zoom_filter)
 
 
 def _print_report(*, camera_id: str, result: SceneCalibrationResult) -> None:
