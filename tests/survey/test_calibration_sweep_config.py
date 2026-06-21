@@ -69,6 +69,12 @@ class TestFromPlanConfigBridgesGroundSpan:
         assert plan.main_tilt_range == cfg.phase_tilt_range[5]
         assert plan.main_zoom_levels == tuple(cfg.zoom_levels)
 
+    def test_grid_overlap_pct_bridged_to_fraction(self) -> None:
+        cfg = _load_config()
+        plan = SurveyPlan.from_plan_config(cfg)
+        # The percentage in the sidecar becomes the fov_grid overlap fraction.
+        assert plan.main_overlap_fraction == cfg.grid_overlap_pct[5] / 100.0
+
     def test_tilt_envelope_forwarded(self) -> None:
         env = _constant_envelope(0.0)
         plan = SurveyPlan.from_plan_config(replace(_load_config(), tilt_envelope=env))
@@ -82,6 +88,7 @@ class TestFromPlanConfigBridgesGroundSpan:
         assert plan.main_pan_range == defaults.main_pan_range
         assert plan.main_tilt_range == defaults.main_tilt_range
         assert plan.main_zoom_levels == defaults.main_zoom_levels
+        assert plan.main_overlap_fraction == defaults.main_overlap_fraction
         assert plan.tilt_envelope is None
 
 

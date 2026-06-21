@@ -44,14 +44,9 @@ phase_pan_range:
 phase_tilt_range:
   "5": [-40.0, 60.0]
 
-# Per-phase zoom-factor bounds (lo, hi), keyed by phase number. The zoom
-# characterization phase (3) sweeps the full optical range to feed intrinsic
-# self-calibration (#339).
-phase_zoom_range:
-  "3": [1.0, 25.0]
-
 # Per-phase tile overlap percentage (grid phases 4 and 5). 80% overlap on the
-# main survey gives dense ground coverage for calibration.
+# main survey (phase 5) gives dense ground coverage for calibration; it is
+# adopted as the main-survey FOV-grid overlap fraction at plan time.
 grid_overlap_pct:
   "5": 80.0
 

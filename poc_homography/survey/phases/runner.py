@@ -163,13 +163,17 @@ class SurveyPlan:
           or more frames per pose.
         * **Main-survey ground span** (#343) — when the config configures the
           main survey (phase 5) via ``phase_pan_range``/``phase_tilt_range``,
-          those bounds become :attr:`main_pan_range`/:attr:`main_tilt_range` and
-          ``config.zoom_levels`` becomes :attr:`main_zoom_levels`, so the
-          checked-in calibration-sweep config drives the FOV grid built in
-          :func:`_partition_main_grid` (and thus
+          the full main-survey FOV-grid parameter set is adopted from the
+          sidecar atomically: ``phase_pan_range[5]``/``phase_tilt_range[5]``
+          become :attr:`main_pan_range`/:attr:`main_tilt_range`,
+          ``config.zoom_levels`` becomes :attr:`main_zoom_levels`, and
+          ``grid_overlap_pct[5]`` (a percentage) becomes
+          :attr:`main_overlap_fraction` (a fraction). These drive the FOV grid
+          built in :func:`_partition_main_grid` (and thus
           :func:`~poc_homography.survey.planner.generators.fov_grid`) over the
-          configured visible-ground extent and zoom levels. A config that does
-          not configure phase 5 leaves these knobs at their defaults.
+          configured visible-ground extent, zoom levels, and tile overlap. A
+          config that does not configure phase 5 leaves every main-survey knob
+          at its default.
         * **Tilt envelope** — ``config.tilt_envelope`` (the Phase-0 horizon
           calibration product) is forwarded so the FOV grid skips sky tiles;
           ``None`` (the default) reproduces the unconstrained grid exactly.
@@ -190,20 +194,35 @@ class SurveyPlan:
             for phase in _POSE_BURST_PHASES
         }
         defaults = cls()
-        main_configured = (
+        # The main survey (phase 5) is "configured" when its pan or tilt extent
+        # is pinned by the sidecar; only then do we adopt the sidecar's
+        # ground-span knobs (extent, zoom levels, overlap) as one atomic set, so
+        # a partial config never silently swaps just one of them.
+        if (
             _MAIN_SURVEY_PHASE in config.phase_pan_range
             or _MAIN_SURVEY_PHASE in config.phase_tilt_range
-        )
+        ):
+            main_pan_range = config.phase_pan_range.get(_MAIN_SURVEY_PHASE, defaults.main_pan_range)
+            main_tilt_range = config.phase_tilt_range.get(
+                _MAIN_SURVEY_PHASE, defaults.main_tilt_range
+            )
+            main_zoom_levels = tuple(config.zoom_levels)
+            overlap_pct = config.grid_overlap_pct.get(_MAIN_SURVEY_PHASE)
+            main_overlap_fraction = (
+                overlap_pct / 100.0 if overlap_pct is not None else defaults.main_overlap_fraction
+            )
+        else:
+            main_pan_range = defaults.main_pan_range
+            main_tilt_range = defaults.main_tilt_range
+            main_zoom_levels = defaults.main_zoom_levels
+            main_overlap_fraction = defaults.main_overlap_fraction
         return cls(
             burst_count=default,
             phase_burst_counts=phase_burst_counts,
-            main_pan_range=config.phase_pan_range.get(_MAIN_SURVEY_PHASE, defaults.main_pan_range),
-            main_tilt_range=config.phase_tilt_range.get(
-                _MAIN_SURVEY_PHASE, defaults.main_tilt_range
-            ),
-            main_zoom_levels=(
-                tuple(config.zoom_levels) if main_configured else defaults.main_zoom_levels
-            ),
+            main_pan_range=main_pan_range,
+            main_tilt_range=main_tilt_range,
+            main_zoom_levels=main_zoom_levels,
+            main_overlap_fraction=main_overlap_fraction,
             tilt_envelope=config.tilt_envelope,
         )
 
