@@ -170,10 +170,14 @@ class FakeCamera:
             pan_raw=Degrees(1.0), tilt_deg=Degrees(-1.0), zoom=Unitless(2.0), focus=510
         )
 
+    def get_ptz_status(self) -> PTZState:
+        self.calls.append("get_ptz_status")
+        return self._reported
+
     def move_absolute(
         self, pan: float | None = None, tilt: float | None = None, zoom: float | None = None
     ) -> PTZState:
-        self.calls.append("move_absolute")
+        self.calls.append(f"move_absolute({pan},{tilt},{zoom})")
         return self._reported
 
     def set_focus(self, focus: int) -> None:

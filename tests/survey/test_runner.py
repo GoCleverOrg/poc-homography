@@ -80,6 +80,21 @@ class TestExecuteSurvey:
         assert execution.run.phases == frozenset(_ALL_NINE)
         assert execution.run.status is SurveyRunStatus.COMPLETED
 
+    def test_sweep_restores_original_ptz_position(
+        self,
+        camera: FakeCamera,
+        clock: IncrementingClock,
+        uuid_factory: CountingUuid,
+        tmp_path: Path,
+        patch_rtsp,
+    ) -> None:
+        patch_rtsp(20)
+        _run(camera, clock, uuid_factory, _RecordingSink(), tmp_path)
+        # The sweep snapshots the pre-sweep PTZ once and the final move restores
+        # exactly that (pan, tilt, zoom) — the FakeCamera reports (1.0, -1.0, 2.0).
+        assert camera.calls.count("get_ptz_status") == 1
+        assert camera.calls[-1] == "move_absolute(1.0,-1.0,2.0)"
+
     def test_one_inventory_record(
         self,
         camera: FakeCamera,
