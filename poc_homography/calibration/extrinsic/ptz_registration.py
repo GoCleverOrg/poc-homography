@@ -87,7 +87,7 @@ class PtzRegistrationResult:
     commanded_tilt: float
 
 
-def _intrinsic_kwargs(
+def intrinsic_kwargs(
     calibration_table: CameraCalibrationTable,
     commanded_zoom: float,
 ) -> dict[str, float]:
@@ -123,7 +123,7 @@ def _intrinsic_kwargs(
     }
 
 
-def _build_line_inputs(
+def build_line_inputs(
     frame_lines: Sequence[CandidateLine],
     ortho_lines: Sequence[OrthoLine],
     seed: Mapping[int, str],
@@ -233,9 +233,9 @@ def register_frame_lines(
         ValueError: If the seed is invalid or the fit quality is too poor.
         RuntimeError: If the underlying homography computation fails.
     """
-    line_annotations, line_registry = _build_line_inputs(frame_lines, ortho_lines, seed)
+    line_annotations, line_registry = build_line_inputs(frame_lines, ortho_lines, seed)
 
-    provider = MapPointHomography(map_id, **_intrinsic_kwargs(calibration_table, commanded_zoom))
+    provider = MapPointHomography(map_id, **intrinsic_kwargs(calibration_table, commanded_zoom))
     result = provider.compute_from_lines(
         line_annotations,
         line_registry,
@@ -322,6 +322,8 @@ def register_ptz_state(
 
 __all__ = [
     "PtzRegistrationResult",
+    "build_line_inputs",
+    "intrinsic_kwargs",
     "register_frame_lines",
     "register_ptz_state",
 ]
