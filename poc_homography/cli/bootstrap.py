@@ -26,7 +26,6 @@ from __future__ import annotations
 import dataclasses
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -48,16 +47,16 @@ from poc_homography.infrastructure.repositories import (
     RepoPostgresTenant,
     RepoYamlMap,
 )
+from poc_homography.maps import DEFAULT_MAPS_DIR
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from contextlib import AbstractContextManager
+    from pathlib import Path
 
     from sqlalchemy.orm import Session
 
     from poc_homography.domain.entities.map import Map
-
-_DEFAULT_MAPS_DIR = Path("data/maps")
 
 
 @dataclass(frozen=True)
@@ -220,7 +219,7 @@ def bootstrap_command(
     username, password = get_tenant_credentials(tenant)
     credential = Credential(username or "", password or "")
 
-    tenant_map = _load_tenant_map(tenant, _DEFAULT_MAPS_DIR)
+    tenant_map = _load_tenant_map(tenant, DEFAULT_MAPS_DIR)
 
     summary = _run_bootstrap(
         tenant_id=tenant,
