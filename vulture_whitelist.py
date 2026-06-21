@@ -273,6 +273,7 @@ _.p90_m  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/va
 _.max_m  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:83)
 _.n_points  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:84)
 _.num_frames  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:132)
+_.from_result  # extrinsic-validation-surface (poc_homography/domain/entities/ptz_registration.py:182 — PtzRegistration persistence factory, called by registration writers/tests outside vulture scan, #364)
 
 # == uncertain-needs-follow-up ==
 # UNCERTAIN — symbol exists but no callers and no test references found; kept to keep vulture green pending a dead-code follow-up (see #226)

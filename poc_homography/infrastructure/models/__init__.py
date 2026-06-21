@@ -20,6 +20,7 @@ from poc_homography.infrastructure.models.lens_calibration_table import LensCali
 from poc_homography.infrastructure.models.line import LineModel
 from poc_homography.infrastructure.models.line_annotation import LineAnnotationModel
 from poc_homography.infrastructure.models.map import MapModel
+from poc_homography.infrastructure.models.ptz_registration import PtzRegistrationModel
 from poc_homography.infrastructure.models.stress_test_session import StressTestSessionModel
 from poc_homography.infrastructure.models.survey_run import SurveyRunModel
 from poc_homography.infrastructure.models.survey_session import SurveySessionModel
@@ -39,6 +40,7 @@ __all__ = [
     "LineAnnotationModel",
     "LineModel",
     "MapModel",
+    "PtzRegistrationModel",
     "StressTestSessionModel",
     "SurveyRunModel",
     "SurveySessionModel",
