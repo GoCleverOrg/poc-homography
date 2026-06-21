@@ -93,6 +93,11 @@ def _ortho_lines() -> list[OrthoLine]:
     return lines
 
 
+def _identity_seed(ortho_lines: list[OrthoLine]) -> dict[int, str]:
+    """Seed mapping each frame-line index to the positional ortho id ``ortho_{i}``."""
+    return {i: f"ortho_{i}" for i in range(len(ortho_lines))}
+
+
 def _warp_point(point: tuple[float, float], homography: np.ndarray) -> tuple[float, float]:
     """Apply a homography to a single (x, y) point."""
     pt = np.array([[[point[0], point[1]]]], dtype=np.float64)
@@ -120,7 +125,7 @@ def _frame_lines_from_ortho(
 def test_register_frame_lines_recovers_known_homography() -> None:
     ortho_lines = _ortho_lines()
     frame_lines = _frame_lines_from_ortho(ortho_lines, _H_KNOWN)
-    seed = {i: f"ortho_{i}" for i in range(len(ortho_lines))}
+    seed = _identity_seed(ortho_lines)
 
     result = register_frame_lines(
         frame_lines=frame_lines,
@@ -160,7 +165,7 @@ def test_register_frame_lines_recovers_known_homography() -> None:
 def test_register_frame_lines_provenance_passthrough() -> None:
     ortho_lines = _ortho_lines()
     frame_lines = _frame_lines_from_ortho(ortho_lines, _H_KNOWN)
-    seed = {i: f"ortho_{i}" for i in range(len(ortho_lines))}
+    seed = _identity_seed(ortho_lines)
 
     result = register_frame_lines(
         frame_lines=frame_lines,
@@ -243,7 +248,7 @@ def test_distortion_changes_result_vs_zero_distortion() -> None:
     """A non-zero-distortion table must change the fit vs. zero distortion."""
     ortho_lines = _ortho_lines()
     frame_lines = _frame_lines_from_ortho(ortho_lines, _H_KNOWN)
-    seed = {i: f"ortho_{i}" for i in range(len(ortho_lines))}
+    seed = _identity_seed(ortho_lines)
 
     zero_table = _zero_distortion_table()
 
@@ -447,7 +452,7 @@ def test_offline_survey_frame_registration() -> None:
     # deterministic regardless of Hough behaviour; this test targets the offline
     # plumbing + provenance, not detection.
     frame_lines = _frame_lines_from_ortho(ortho_lines, h_warp)
-    seed = {i: f"ortho_{i}" for i in range(len(ortho_lines))}
+    seed = _identity_seed(ortho_lines)
 
     result = register_frame_lines(
         frame_lines=frame_lines,
