@@ -21,6 +21,7 @@ class FakeS3:
         self.puts: list[dict] = []
         self.created: list[str] = []
         self.heads: list[str] = []
+        self.objects: dict[tuple[str, str], bytes] = {}
 
     def head_bucket(self, Bucket: str) -> None:
         self.heads.append(Bucket)
@@ -32,9 +33,27 @@ class FakeS3:
 
     def put_object(self, **kwargs: object) -> None:
         self.puts.append(kwargs)
+        self.objects[(kwargs["Bucket"], kwargs["Key"])] = kwargs["Body"]
+
+    def get_object(self, Bucket: str, Key: str) -> dict:
+        try:
+            data = self.objects[(Bucket, Key)]
+        except KeyError as exc:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject") from exc
+        return {"Body": _Body(data)}
 
     def generate_presigned_url(self, op: str, Params: dict, ExpiresIn: int) -> str:
         return f"https://minio/{op}/{Params['Bucket']}/{Params['Key']}?e={ExpiresIn}"
+
+
+class _Body:
+    """Minimal stand-in for a boto3 streaming body (``.read()``)."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
 
 
 def _store(client: FakeS3, bucket: str = "cleanplate-frames") -> MinioFrameStore:
@@ -76,6 +95,31 @@ def test_ensure_bucket_noop_when_present() -> None:
     client = FakeS3(head_missing=False)
     _store(client).ensure_bucket()
     assert client.created == []
+
+
+def test_get_frame_round_trips_put_bytes() -> None:
+    client = FakeS3()
+    store = _store(client)
+    data = b"\xff\xd8\xff jpeg bytes"
+    store.put_frame(data, "run1/main/p1/cap1.jpg")
+
+    assert store.get_frame("run1/main/p1/cap1.jpg") == data
+
+
+def test_get_frame_bucket_override_reads_from_named_bucket() -> None:
+    client = FakeS3()
+    # Store configured for one bucket; the frame lives in another.
+    store = _store(client, bucket="store-default")
+    data = b"\x89PNG other-bucket bytes"
+    client.objects[("frame-bucket", "run9/cap9.jpg")] = data
+
+    assert store.get_frame("run9/cap9.jpg", bucket="frame-bucket") == data
+
+
+def test_get_frame_missing_raises_client_error() -> None:
+    store = _store(FakeS3())
+    with pytest.raises(ClientError):
+        store.get_frame("nope.jpg")
 
 
 def test_presign_get_delegates_to_client() -> None:

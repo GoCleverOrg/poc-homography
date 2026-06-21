@@ -115,7 +115,10 @@ class RepoPostgresCleanPlateFrame:
         stmt = (
             select(model)
             .where(*conditions)
-            .order_by(model.captured_at.desc())
+            # ``id`` is a stable secondary key so pagination is deterministic when
+            # rows share a ``captured_at`` (burst frames, multi-camera) — without
+            # it, offset paging can skip or duplicate tied rows across pages.
+            .order_by(model.captured_at.desc(), model.id)
             .limit(limit)
             .offset(offset)
         )
