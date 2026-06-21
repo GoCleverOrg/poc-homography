@@ -11,6 +11,7 @@ the validation set is disjoint from them. It builds and returns the C1
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -51,6 +52,12 @@ _POSE_BURST_PHASES = (2, 3, 4, 5, 6, 7, 9)
 # pan/tilt extent and zoom levels are sourced from the plan-config sidecar.
 _MAIN_SURVEY_PHASE = 5
 
+# All nine phase numbers, in execution order. A :class:`SurveyPlan` with the
+# default :attr:`~SurveyPlan.enabled_phases` runs every one.
+_ALL_PHASE_NUMBERS = frozenset(range(1, 10))
+
+_logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class SurveyPlan:
@@ -63,6 +70,12 @@ class SurveyPlan:
     """
 
     burst_count: int = 1
+
+    # Survey phases (1..9, the :class:`SurveyPhase` numbering) to execute; a
+    # phase absent here is skipped entirely by :func:`execute_survey`. Defaults
+    # to all nine and is sourced from :attr:`SurveyPlanConfig.enabled_phases`
+    # via :meth:`from_plan_config` (#372).
+    enabled_phases: frozenset[int] = _ALL_PHASE_NUMBERS
 
     # Optional per-phase override of ``burst_count`` (phase number -> frames),
     # sourced from :class:`SurveyPlanConfig` via :meth:`from_plan_config`. A
@@ -145,6 +158,10 @@ class SurveyPlan:
         """
         return self.phase_burst_counts.get(phase_number, self.burst_count)
 
+    def is_enabled(self, phase_number: int) -> bool:
+        """Return whether ``phase_number`` (1..9) is in :attr:`enabled_phases`."""
+        return phase_number in self.enabled_phases
+
     @classmethod
     def from_plan_config(
         cls,
@@ -157,6 +174,10 @@ class SurveyPlan:
         Bridges the camera-free :class:`SurveyPlanConfig` sidecar onto the
         runner's in-memory plan:
 
+        * **Enabled phases** (#372) — ``config.enabled_phases`` is forwarded so
+          :func:`execute_survey` runs only the configured subset of phases
+          (e.g. ``{1, 5}`` runs inventory + main survey alone). The default
+          (all nine) reproduces the pre-gating behaviour.
         * **Burst counts** — each pose-based phase's per-pose snapshot-burst
           frame count is taken from ``config.burst_frame_count[phase]`` (falling
           back to ``default_burst_frame_count``) and clamped to at least
@@ -219,6 +240,7 @@ class SurveyPlan:
             main_overlap_fraction = defaults.main_overlap_fraction
         return cls(
             burst_count=default,
+            enabled_phases=frozenset(config.enabled_phases),
             phase_burst_counts=phase_burst_counts,
             main_pan_range=main_pan_range,
             main_tilt_range=main_tilt_range,
@@ -247,8 +269,14 @@ def execute_survey(
     spec: CameraSpec = CameraSpec.HIKVISION_DS_2DF8425IX,
     clock: Callable[[], datetime] | None = None,
     uuid_factory: Callable[[], str] | None = None,
+    rtsp_url_resolver: Callable[[], str | None] | None = None,
 ) -> SurveyExecution:
-    """Run all nine survey phases for one camera, in order.
+    """Run the enabled survey phases for one camera, in order.
+
+    Only the phases in ``plan.enabled_phases`` (the :class:`SurveyPhase`
+    numbering 1..9) execute; the default plan enables all nine (#372). Each
+    phase's records are persisted to ``sink`` as soon as that phase completes,
+    so a later-phase failure never discards the frames already captured (#372).
 
     Args:
         camera: The #256 ``CameraDevice`` to drive.
@@ -261,6 +289,11 @@ def execute_survey(
         spec: Camera specification driving FOV-based pose spacing.
         clock: Returns timezone-aware UTC timestamps; injectable for tests.
         uuid_factory: Returns fresh id strings for bursts; injectable for tests.
+        rtsp_url_resolver: Resolves the Phase 8 jitter RTSP URL for this camera
+            (the live wiring wraps ``camera_config.get_rtsp_url``). Used only
+            when ``plan.jitter_rtsp_url`` is empty; returning ``None`` (or
+            omitting the resolver) makes Phase 8 skip gracefully instead of
+            driving the engine with an empty URL (#372).
 
     Returns:
         A :class:`SurveyExecution` with the C1 :class:`SurveyRun` header and the
@@ -280,127 +313,150 @@ def execute_survey(
     results: list[PhaseResult] = []
     captured_4_to_7: list[CommandedState] = []
 
+    def record(result: PhaseResult) -> None:
+        """Validate, accumulate, and immediately persist one phase's result.
+
+        Emitting per phase (rather than once after the whole sweep) keeps
+        persistence as failure-resilient as the PTZ restore: a later-phase
+        failure cannot discard the frames already captured (#372).
+        """
+        _assert_result_not_cross_tagged(result)
+        results.append(result)
+        _emit_result(result, sink)
+
     # Bracket the whole camera-driving sweep: snapshot the pre-sweep PTZ
     # position and restore it on normal completion, exception, or abort (#342).
     with preserve_ptz_position(camera):
-        inventory = executors.run_inventory(camera, run_id=run_id, camera_id=camera_id, clock=now)
-        results.append(inventory)
+        if plan.is_enabled(1):
+            record(executors.run_inventory(camera, run_id=run_id, camera_id=camera_id, clock=now))
 
-        results.append(
-            executors.run_ptz_characterization(
+        if plan.is_enabled(2):
+            record(
+                executors.run_ptz_characterization(
+                    engine,
+                    run_id=run_id,
+                    camera_id=camera_id,
+                    output_dir=_phase_dir(base_output_dir, SurveyPhase.PTZ_CHARACTERIZATION),
+                    pan_range=plan.ptz_pan_range,
+                    tilt_range=plan.ptz_tilt_range,
+                    small_step=plan.ptz_small_step,
+                    large_step=plan.ptz_large_step,
+                    fixed_tilt=plan.ptz_fixed_tilt,
+                    fixed_pan=plan.ptz_fixed_pan,
+                    fixed_zoom=plan.ptz_fixed_zoom,
+                    repeat_count=plan.ptz_repeat_count,
+                    burst_count=plan.burst_for(2),
+                )
+            )
+
+        if plan.is_enabled(3):
+            record(
+                executors.run_zoom_characterization(
+                    engine,
+                    run_id=run_id,
+                    camera_id=camera_id,
+                    output_dir=_phase_dir(base_output_dir, SurveyPhase.ZOOM_CHARACTERIZATION),
+                    zoom_min=plan.zoom_min,
+                    zoom_max=plan.zoom_max,
+                    zoom_step=plan.zoom_step,
+                    fixed_pan=plan.zoom_fixed_pan,
+                    fixed_tilt=plan.zoom_fixed_tilt,
+                    burst_count=plan.burst_for(3),
+                )
+            )
+
+        if plan.is_enabled(4):
+            nadir = executors.run_dense_nadir(
+                engine,
+                spec,
+                run_id=run_id,
+                camera_id=camera_id,
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.DENSE_NADIR),
+                nadir_pan=plan.nadir_pan,
+                nadir_tilt=plan.nadir_tilt,
+                radius_deg=plan.nadir_radius_deg,
+                zoom=plan.nadir_zoom,
+                overlap_fraction=plan.nadir_overlap_fraction,
+                region_id=plan.nadir_region_id,
+                burst_count=plan.burst_for(4),
+            )
+            record(nadir)
+            captured_4_to_7.extend(nadir.commanded_states)
+
+        if plan.is_enabled(5):
+            main = executors.run_main_survey(
+                engine,
+                training,
+                run_id=run_id,
+                camera_id=camera_id,
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.MAIN_SURVEY),
+                burst_count=plan.burst_for(5),
+            )
+            record(main)
+            captured_4_to_7.extend(main.commanded_states)
+
+        if plan.is_enabled(6):
+            cross = executors.run_cross_zoom(
                 engine,
                 run_id=run_id,
                 camera_id=camera_id,
-                output_dir=_phase_dir(base_output_dir, SurveyPhase.PTZ_CHARACTERIZATION),
-                pan_range=plan.ptz_pan_range,
-                tilt_range=plan.ptz_tilt_range,
-                small_step=plan.ptz_small_step,
-                large_step=plan.ptz_large_step,
-                fixed_tilt=plan.ptz_fixed_tilt,
-                fixed_pan=plan.ptz_fixed_pan,
-                fixed_zoom=plan.ptz_fixed_zoom,
-                repeat_count=plan.ptz_repeat_count,
-                burst_count=plan.burst_for(2),
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.CROSS_ZOOM),
+                anchors=plan.cross_zoom_anchors,
+                zoom_levels=plan.cross_zoom_levels,
+                burst_count=plan.burst_for(6),
             )
-        )
+            record(cross)
+            captured_4_to_7.extend(cross.commanded_states)
 
-        results.append(
-            executors.run_zoom_characterization(
+        if plan.is_enabled(7):
+            repeat = executors.run_repeatability(
                 engine,
                 run_id=run_id,
                 camera_id=camera_id,
-                output_dir=_phase_dir(base_output_dir, SurveyPhase.ZOOM_CHARACTERIZATION),
-                zoom_min=plan.zoom_min,
-                zoom_max=plan.zoom_max,
-                zoom_step=plan.zoom_step,
-                fixed_pan=plan.zoom_fixed_pan,
-                fixed_tilt=plan.zoom_fixed_tilt,
-                burst_count=plan.burst_for(3),
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.REPEATABILITY),
+                target_pan=plan.repeat_target_pan,
+                target_tilt=plan.repeat_target_tilt,
+                target_zoom=plan.repeat_target_zoom,
+                approach_deltas=plan.repeat_approach_deltas,
+                burst_count=plan.burst_for(7),
             )
-        )
+            record(repeat)
+            captured_4_to_7.extend(repeat.commanded_states)
 
-        nadir = executors.run_dense_nadir(
-            engine,
-            spec,
-            run_id=run_id,
-            camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.DENSE_NADIR),
-            nadir_pan=plan.nadir_pan,
-            nadir_tilt=plan.nadir_tilt,
-            radius_deg=plan.nadir_radius_deg,
-            zoom=plan.nadir_zoom,
-            overlap_fraction=plan.nadir_overlap_fraction,
-            region_id=plan.nadir_region_id,
-            burst_count=plan.burst_for(4),
-        )
-        results.append(nadir)
-        captured_4_to_7.extend(nadir.commanded_states)
+        if plan.is_enabled(8):
+            jitter_rtsp_url = _resolve_jitter_rtsp_url(plan, rtsp_url_resolver)
+            if jitter_rtsp_url:
+                record(
+                    executors.run_jitter(
+                        engine,
+                        run_id=run_id,
+                        camera_id=camera_id,
+                        output_dir=_phase_dir(base_output_dir, SurveyPhase.STATIC_JITTER),
+                        rtsp_url=jitter_rtsp_url,
+                        poses=plan.jitter_poses,
+                        zoom_levels=plan.jitter_zoom_levels,
+                        burst_duration_s=plan.jitter_burst_duration_s,
+                        target_fps=plan.jitter_target_fps,
+                    )
+                )
+            else:
+                _logger.warning(
+                    "Phase 8 (static jitter) skipped for camera %s: no RTSP URL resolvable",
+                    camera_id,
+                )
 
-        main = executors.run_main_survey(
-            engine,
-            training,
-            run_id=run_id,
-            camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.MAIN_SURVEY),
-            burst_count=plan.burst_for(5),
-        )
-        results.append(main)
-        captured_4_to_7.extend(main.commanded_states)
-
-        cross = executors.run_cross_zoom(
-            engine,
-            run_id=run_id,
-            camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.CROSS_ZOOM),
-            anchors=plan.cross_zoom_anchors,
-            zoom_levels=plan.cross_zoom_levels,
-            burst_count=plan.burst_for(6),
-        )
-        results.append(cross)
-        captured_4_to_7.extend(cross.commanded_states)
-
-        repeat = executors.run_repeatability(
-            engine,
-            run_id=run_id,
-            camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.REPEATABILITY),
-            target_pan=plan.repeat_target_pan,
-            target_tilt=plan.repeat_target_tilt,
-            target_zoom=plan.repeat_target_zoom,
-            approach_deltas=plan.repeat_approach_deltas,
-            burst_count=plan.burst_for(7),
-        )
-        results.append(repeat)
-        captured_4_to_7.extend(repeat.commanded_states)
-
-        results.append(
-            executors.run_jitter(
-                engine,
-                run_id=run_id,
-                camera_id=camera_id,
-                output_dir=_phase_dir(base_output_dir, SurveyPhase.STATIC_JITTER),
-                rtsp_url=plan.jitter_rtsp_url,
-                poses=plan.jitter_poses,
-                zoom_levels=plan.jitter_zoom_levels,
-                burst_duration_s=plan.jitter_burst_duration_s,
-                target_fps=plan.jitter_target_fps,
+        if plan.is_enabled(9):
+            record(
+                executors.run_validation(
+                    engine,
+                    holdout,
+                    captured_4_to_7,
+                    run_id=run_id,
+                    camera_id=camera_id,
+                    output_dir=_phase_dir(base_output_dir, SurveyPhase.VALIDATION),
+                    burst_count=plan.burst_for(9),
+                )
             )
-        )
-
-        results.append(
-            executors.run_validation(
-                engine,
-                holdout,
-                captured_4_to_7,
-                run_id=run_id,
-                camera_id=camera_id,
-                output_dir=_phase_dir(base_output_dir, SurveyPhase.VALIDATION),
-                burst_count=plan.burst_for(9),
-            )
-        )
-
-    _emit(results, sink)
-    _assert_no_cross_tagging(results)
 
     run = SurveyRun(
         run_id=run_id,
@@ -444,32 +500,48 @@ def _partition_main_grid(spec: CameraSpec, plan: SurveyPlan) -> tuple[list[Pose]
     return training, holdout
 
 
-def _emit(results: list[PhaseResult], sink: PhaseSink) -> None:
-    """Route every record produced by every phase to the sink."""
-    for result in results:
-        if result.inventory is not None:
-            sink.save_inventory(result.inventory)
-        for burst in result.bursts:
-            sink.save_burst(burst)
-        for frame in result.frames:
-            sink.save_frame(frame)
+def _resolve_jitter_rtsp_url(
+    plan: SurveyPlan, resolver: Callable[[], str | None] | None
+) -> str | None:
+    """Resolve the Phase 8 jitter RTSP URL, preferring the plan's explicit one.
+
+    Falls back to ``resolver`` (the live per-camera/tenant credential lookup)
+    when ``plan.jitter_rtsp_url`` is empty. Returns ``None`` when neither
+    yields a usable URL so the caller skips jitter rather than driving the
+    engine with an empty URL (#372). The resolver contract is to return
+    ``None`` (not raise) when no URL is resolvable.
+    """
+    if plan.jitter_rtsp_url:
+        return plan.jitter_rtsp_url
+    if resolver is not None:
+        return resolver()
+    return None
 
 
-def _assert_no_cross_tagging(results: list[PhaseResult]) -> None:
-    """Assert no phase emitted a record tagged with another phase's identifier."""
-    for result in results:
-        for frame in result.frames:
-            if frame.capture.phase is not result.phase:
-                raise ValueError(
-                    f"phase {result.phase.value} emitted a frame tagged {frame.capture.phase.value}"
-                )
-        for burst in result.bursts:
-            if burst.phase is not result.phase:
-                raise ValueError(
-                    f"phase {result.phase.value} emitted a burst tagged {burst.phase.value}"
-                )
-        if result.inventory is not None and result.inventory.phase is not result.phase:
+def _emit_result(result: PhaseResult, sink: PhaseSink) -> None:
+    """Route every record produced by one phase to the sink."""
+    if result.inventory is not None:
+        sink.save_inventory(result.inventory)
+    for burst in result.bursts:
+        sink.save_burst(burst)
+    for frame in result.frames:
+        sink.save_frame(frame)
+
+
+def _assert_result_not_cross_tagged(result: PhaseResult) -> None:
+    """Assert one phase's records are all tagged with its own identifier."""
+    for frame in result.frames:
+        if frame.capture.phase is not result.phase:
             raise ValueError(
-                f"phase {result.phase.value} emitted an inventory record tagged "
-                f"{result.inventory.phase.value}"
+                f"phase {result.phase.value} emitted a frame tagged {frame.capture.phase.value}"
             )
+    for burst in result.bursts:
+        if burst.phase is not result.phase:
+            raise ValueError(
+                f"phase {result.phase.value} emitted a burst tagged {burst.phase.value}"
+            )
+    if result.inventory is not None and result.inventory.phase is not result.phase:
+        raise ValueError(
+            f"phase {result.phase.value} emitted an inventory record tagged "
+            f"{result.inventory.phase.value}"
+        )
