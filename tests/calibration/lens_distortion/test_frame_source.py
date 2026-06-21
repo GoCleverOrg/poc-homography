@@ -22,10 +22,12 @@ class FakeRow:
     minio_object_key: str
     commanded_zoom: float
     commanded_tilt: float
+    run_id: str = "run1"
+    camera_id: str = "cam1"
 
 
 class FakeRepo:
-    """Returns canned rows for the matching run/camera, with pagination."""
+    """Filters canned rows by run/camera and paginates, mirroring the repo."""
 
     def __init__(self, rows: list[FakeRow]) -> None:
         self._rows = rows
@@ -42,7 +44,13 @@ class FakeRepo:
         self.calls.append(
             {"run_id": run_id, "camera_id": camera_id, "limit": limit, "offset": offset}
         )
-        return self._rows[offset : offset + limit], len(self._rows)
+        matched = [
+            r
+            for r in self._rows
+            if (run_id is None or r.run_id == run_id)
+            and (camera_id is None or r.camera_id == camera_id)
+        ]
+        return matched[offset : offset + limit], len(matched)
 
 
 class FakeStore:
@@ -106,12 +114,56 @@ def test_iter_survey_frames_paginates_until_drained() -> None:
     repo = FakeRepo(rows)
 
     frames = list(
-        iter_survey_frames(run_id="r", camera_id="c", repo=repo, store=store, page_size=2)
+        iter_survey_frames(run_id="run1", camera_id="cam1", repo=repo, store=store, page_size=2)
     )
 
     assert [f.commanded_zoom for f in frames] == [0.0, 1.0, 2.0, 3.0, 4.0]
     # 3 pages of size 2 (2 + 2 + 1) drains 5 rows.
     assert [c["offset"] for c in repo.calls] == [0, 2, 4]
+
+
+def test_iter_survey_frames_filters_by_run_and_camera() -> None:
+    rows = [
+        FakeRow(
+            "b", "match.jpg", commanded_zoom=1.0, commanded_tilt=0.0, run_id="r1", camera_id="c1"
+        ),
+        FakeRow(
+            "b",
+            "other-run.jpg",
+            commanded_zoom=2.0,
+            commanded_tilt=0.0,
+            run_id="r2",
+            camera_id="c1",
+        ),
+        FakeRow(
+            "b",
+            "other-cam.jpg",
+            commanded_zoom=3.0,
+            commanded_tilt=0.0,
+            run_id="r1",
+            camera_id="c2",
+        ),
+    ]
+    store = FakeStore({("b", "match.jpg"): _jpeg_bytes((1, 1, 1))})
+    repo = FakeRepo(rows)
+
+    frames = list(iter_survey_frames(run_id="r1", camera_id="c1", repo=repo, store=store))
+
+    # Only the row matching both run_id and camera_id is yielded (and downloaded).
+    assert [f.commanded_zoom for f in frames] == [1.0]
+    assert store.reads == [("match.jpg", "b")]
+
+
+def test_iter_survey_frames_empty_run_yields_nothing() -> None:
+    repo = FakeRepo([])
+    store = FakeStore({})
+
+    frames = list(iter_survey_frames(run_id="absent", camera_id="cam1", repo=repo, store=store))
+
+    assert frames == []
+    # A single query that returns no rows terminates the drain (no store reads).
+    assert len(repo.calls) == 1
+    assert store.reads == []
 
 
 def test_iter_survey_frames_raises_on_undecodable_bytes() -> None:
@@ -120,4 +172,4 @@ def test_iter_survey_frames_raises_on_undecodable_bytes() -> None:
     repo = FakeRepo(rows)
 
     with pytest.raises(ValueError, match="Failed to decode"):
-        list(iter_survey_frames(run_id="r", camera_id="c", repo=repo, store=store))
+        list(iter_survey_frames(run_id="run1", camera_id="cam1", repo=repo, store=store))

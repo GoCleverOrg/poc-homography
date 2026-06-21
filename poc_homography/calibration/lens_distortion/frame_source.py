@@ -6,7 +6,7 @@ MinIO (bucket ``cleanplate-frames``) and the *metadata* rows land in Postgres
 consumes: given a ``run_id``/``camera_id``, it enumerates the frame rows via
 :class:`RepoPostgresCleanPlateFrame`, downloads each image via
 :meth:`MinioFrameStore.get_frame`, decodes it with OpenCV, and yields the
-decoded frame together with the pan/tilt/zoom the camera was commanded to.
+decoded frame together with the zoom and tilt the camera was commanded to.
 
 Both the store and the repo are injected, so the loader runs fully offline in
 tests against fakes (no live MinIO, no live Postgres).
@@ -22,7 +22,7 @@ import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# query_frames caps each page at this many rows; the loader paginates to drain
+# Default rows requested per query_frames page; the loader paginates to drain
 # the full run rather than silently stopping at the first page.
 _DEFAULT_PAGE_SIZE = 100
 
