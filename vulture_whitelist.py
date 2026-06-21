@@ -196,6 +196,7 @@ calibrate_capture_command  # cli-command (poc_homography/cli/calibrate_capture.p
 reconstruct_command  # cli-command (poc_homography/cli/cleanplate.py:83)
 synth_command  # cli-command (poc_homography/cli/cleanplate.py:169)
 upload_command  # cli-command (poc_homography/cli/maps.py:15)
+self_calibrate_command  # cli-command (poc_homography/cli/self_calibrate.py:63)
 
 # == domain-api ==
 # Domain public API (value-object / entity / algorithm methods exercised by tests or exported as public surface)
