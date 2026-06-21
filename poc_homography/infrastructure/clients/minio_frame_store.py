@@ -126,6 +126,19 @@ class MinioFrameStore:
         )
         return PutResult(bucket=self.bucket, key=key, sha256=sha256)
 
+    def get_frame(self, key: str, *, bucket: str | None = None) -> bytes:
+        """Download and return the raw frame-image bytes stored under ``key``.
+
+        ``bucket`` overrides the store's configured bucket so callers can read
+        against the bucket recorded on a frame row (the authoritative location
+        of that image), rather than assuming the store's env-configured bucket.
+        Used by the offline survey-frame loader to materialise frames for lens
+        calibration. Propagates whatever the underlying S3 client raises when
+        the object is absent (boto3 ``ClientError`` with code ``NoSuchKey``).
+        """
+        resp = self._client.get_object(Bucket=bucket or self.bucket, Key=key)
+        return resp["Body"].read()
+
     def presign_get(self, key: str, expires_in: int = 3600, *, bucket: str | None = None) -> str:
         """Return a presigned GET URL for ``key`` (used by the gallery).
 
