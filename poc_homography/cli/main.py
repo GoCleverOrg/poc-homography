@@ -39,6 +39,7 @@ def _register_commands() -> None:
         line_picker,
         maps,
         point_picker,
+        run_camera,
         self_calibrate,
         survey,
         test_cmds,
@@ -57,6 +58,7 @@ def _register_commands() -> None:
     _ = line_picker
     _ = maps
     _ = point_picker
+    _ = run_camera
     _ = self_calibrate
     _ = survey
     _ = test_cmds
