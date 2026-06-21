@@ -1,0 +1,68 @@
+# calibration-sweep.yaml — reproducible PTZ calibration-sweep plan config (#343).
+#
+# A camera-free `SurveyPlanConfig` sidecar (see
+# poc_homography/domain/vo/survey_plan_config.py) that expresses the
+# "programmed pan/tilt/zoom calibration sweep spanning the visible ground" as a
+# checked-in, replayable artifact. It round-trips through
+# `SurveyPlanConfig.from_dict` / `to_dict` and selects the ground-spanning
+# phase subset for a calibration dataset.
+#
+# Run it with:
+#   hom survey run --plan poc_homography/survey/configs/calibration-sweep.yaml \
+#       --cameras cam01
+#
+# This config introduces no new survey phase and no new pose generator: it
+# reuses the existing main-survey FOV-grid sweep
+# (poc_homography/survey/planner/generators.py:fov_grid, run_main_survey) and the
+# Phase-0 horizon `TiltEnvelope` to skip sky tiles.
+
+# Sidecar schema version. Must be the literal "1".
+schema_version: "1"
+
+# Enabled-phase subset for a calibration dataset. We run only the phases a
+# calibration run needs, in 1..9 phase-catalog numbering:
+#   1 — camera inventory      (cheap metadata: model, resolution, capabilities)
+#   3 — zoom characterization (per-zoom intrinsics, feeds self-calibration #339)
+#   5 — main survey           (the ground-spanning FOV-grid sweep)
+# All other phases (PTZ char, dense nadir, cross-zoom, repeatability, jitter,
+# validation) are intentionally disabled for a focused calibration sweep.
+enabled_phases: [1, 3, 5]
+
+# Per-phase pan bounds (lo, hi) in degrees, keyed by phase number. The main
+# survey (phase 5) spans the full azimuth circle so the sweep covers the entire
+# visible ground around the camera.
+phase_pan_range:
+  "5": [-180.0, 180.0]
+
+# Per-phase tilt bounds (lo, hi) in degrees, keyed by phase number.
+# Convention (matching fov_grid / TiltEnvelope): **positive tilt = down**, so a
+# smaller (more negative) tilt points further up. The main survey (phase 5)
+# spans from just above the nominal horizon (-40, a sky margin the per-azimuth
+# tilt envelope clips precisely) down toward the steep-ground / near-nadir band
+# (60). When a Phase-0 `tilt_envelope` is supplied (see below), sky tiles above
+# the per-azimuth max-up useful tilt are skipped.
+phase_tilt_range:
+  "5": [-40.0, 60.0]
+
+# Per-phase zoom-factor bounds (lo, hi), keyed by phase number. The zoom
+# characterization phase (3) sweeps the full optical range to feed intrinsic
+# self-calibration (#339).
+phase_zoom_range:
+  "3": [1.0, 25.0]
+
+# Per-phase tile overlap percentage (grid phases 4 and 5). 80% overlap on the
+# main survey gives dense ground coverage for calibration.
+grid_overlap_pct:
+  "5": 80.0
+
+# Zoom factors the sweep characterizes (wide / mid / high / max). These are the
+# chosen zoom levels the main-survey FOV grid is generated at, and the zoom
+# levels the zoom-characterization phase revisits.
+zoom_levels: [1.0, 5.0, 12.0, 25.0]
+
+# Per-azimuth max-up useful-tilt envelope from the Phase-0 horizon calibration
+# (poc_homography/survey/calibration.py:calibrate_horizon_envelope). It is a
+# camera/site-specific runtime product, so it is left null here and injected at
+# plan time; when present the FOV grid skips sky tiles above the per-azimuth
+# bound. null reproduces the unconstrained (no-sky-skip) grid exactly.
+tilt_envelope: null

@@ -12,6 +12,7 @@ packages = ["poc_homography"]
 include = [
     "poc_homography/**/*.py",
     "poc_homography/**/*.j2",
+    "poc_homography/**/*.yaml",
 ]
 
 [project]

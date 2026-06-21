@@ -46,6 +46,10 @@ MIN_BURST_FRAME_COUNT = 2
 # bursts; phase 1 is inventory and captures no frames).
 _POSE_BURST_PHASES = (2, 3, 4, 5, 6, 7, 9)
 
+# Phase number of the main survey (the ground-spanning FOV-grid sweep). Its
+# pan/tilt extent and zoom levels are sourced from the plan-config sidecar.
+_MAIN_SURVEY_PHASE = 5
+
 
 @dataclass(frozen=True)
 class SurveyPlan:
@@ -147,15 +151,28 @@ class SurveyPlan:
         *,
         default_burst_frame_count: int = DEFAULT_BURST_FRAME_COUNT,
     ) -> SurveyPlan:
-        """Build a :class:`SurveyPlan` whose burst counts come from ``config``.
+        """Build a :class:`SurveyPlan` from the ``config`` sidecar.
 
         Bridges the camera-free :class:`SurveyPlanConfig` sidecar onto the
-        runner's in-memory plan. Each pose-based phase's per-pose snapshot-burst
-        frame count is taken from ``config.burst_frame_count[phase]`` (falling
-        back to ``default_burst_frame_count``) and clamped to at least
-        :data:`MIN_BURST_FRAME_COUNT`, so every clean-plate capture emits two or
-        more frames per pose. Only the burst counts are bridged here; the other
-        plan knobs keep their DoD-satisfying defaults.
+        runner's in-memory plan:
+
+        * **Burst counts** — each pose-based phase's per-pose snapshot-burst
+          frame count is taken from ``config.burst_frame_count[phase]`` (falling
+          back to ``default_burst_frame_count``) and clamped to at least
+          :data:`MIN_BURST_FRAME_COUNT`, so every clean-plate capture emits two
+          or more frames per pose.
+        * **Main-survey ground span** (#343) — when the config configures the
+          main survey (phase 5) via ``phase_pan_range``/``phase_tilt_range``,
+          those bounds become :attr:`main_pan_range`/:attr:`main_tilt_range` and
+          ``config.zoom_levels`` becomes :attr:`main_zoom_levels`, so the
+          checked-in calibration-sweep config drives the FOV grid built in
+          :func:`_partition_main_grid` (and thus
+          :func:`~poc_homography.survey.planner.generators.fov_grid`) over the
+          configured visible-ground extent and zoom levels. A config that does
+          not configure phase 5 leaves these knobs at their defaults.
+        * **Tilt envelope** — ``config.tilt_envelope`` (the Phase-0 horizon
+          calibration product) is forwarded so the FOV grid skips sky tiles;
+          ``None`` (the default) reproduces the unconstrained grid exactly.
 
         Args:
             config: The reproducible plan-config sidecar.
@@ -163,14 +180,32 @@ class SurveyPlan:
                 absent from ``config.burst_frame_count``.
 
         Returns:
-            A :class:`SurveyPlan` with per-phase burst counts populated.
+            A :class:`SurveyPlan` with per-phase burst counts, the main-survey
+            ground span, and the optional tilt envelope populated from
+            ``config``.
         """
         default = max(MIN_BURST_FRAME_COUNT, int(default_burst_frame_count))
         phase_burst_counts = {
             phase: max(MIN_BURST_FRAME_COUNT, int(config.burst_frame_count.get(phase, default)))
             for phase in _POSE_BURST_PHASES
         }
-        return cls(burst_count=default, phase_burst_counts=phase_burst_counts)
+        defaults = cls()
+        main_configured = (
+            _MAIN_SURVEY_PHASE in config.phase_pan_range
+            or _MAIN_SURVEY_PHASE in config.phase_tilt_range
+        )
+        return cls(
+            burst_count=default,
+            phase_burst_counts=phase_burst_counts,
+            main_pan_range=config.phase_pan_range.get(_MAIN_SURVEY_PHASE, defaults.main_pan_range),
+            main_tilt_range=config.phase_tilt_range.get(
+                _MAIN_SURVEY_PHASE, defaults.main_tilt_range
+            ),
+            main_zoom_levels=(
+                tuple(config.zoom_levels) if main_configured else defaults.main_zoom_levels
+            ),
+            tilt_envelope=config.tilt_envelope,
+        )
 
 
 @dataclass(frozen=True)
