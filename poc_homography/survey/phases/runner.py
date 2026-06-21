@@ -22,6 +22,7 @@ from poc_homography.domain.enums.survey_run_status import SurveyRunStatus
 from poc_homography.infrastructure.survey.capture_engine import SurveyCaptureEngine
 from poc_homography.survey.phases import executors
 from poc_homography.survey.planner.generators import fov_grid, partition_holdout
+from poc_homography.survey.ptz_bracketing import preserve_ptz_position
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -225,121 +226,124 @@ def execute_survey(
     results: list[PhaseResult] = []
     captured_4_to_7: list[CommandedState] = []
 
-    inventory = executors.run_inventory(camera, run_id=run_id, camera_id=camera_id, clock=now)
-    results.append(inventory)
+    # Bracket the whole camera-driving sweep: snapshot the pre-sweep PTZ
+    # position and restore it on normal completion, exception, or abort (#342).
+    with preserve_ptz_position(camera):
+        inventory = executors.run_inventory(camera, run_id=run_id, camera_id=camera_id, clock=now)
+        results.append(inventory)
 
-    results.append(
-        executors.run_ptz_characterization(
+        results.append(
+            executors.run_ptz_characterization(
+                engine,
+                run_id=run_id,
+                camera_id=camera_id,
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.PTZ_CHARACTERIZATION),
+                pan_range=plan.ptz_pan_range,
+                tilt_range=plan.ptz_tilt_range,
+                small_step=plan.ptz_small_step,
+                large_step=plan.ptz_large_step,
+                fixed_tilt=plan.ptz_fixed_tilt,
+                fixed_pan=plan.ptz_fixed_pan,
+                fixed_zoom=plan.ptz_fixed_zoom,
+                repeat_count=plan.ptz_repeat_count,
+                burst_count=plan.burst_for(2),
+            )
+        )
+
+        results.append(
+            executors.run_zoom_characterization(
+                engine,
+                run_id=run_id,
+                camera_id=camera_id,
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.ZOOM_CHARACTERIZATION),
+                zoom_min=plan.zoom_min,
+                zoom_max=plan.zoom_max,
+                zoom_step=plan.zoom_step,
+                fixed_pan=plan.zoom_fixed_pan,
+                fixed_tilt=plan.zoom_fixed_tilt,
+                burst_count=plan.burst_for(3),
+            )
+        )
+
+        nadir = executors.run_dense_nadir(
+            engine,
+            spec,
+            run_id=run_id,
+            camera_id=camera_id,
+            output_dir=_phase_dir(base_output_dir, SurveyPhase.DENSE_NADIR),
+            nadir_pan=plan.nadir_pan,
+            nadir_tilt=plan.nadir_tilt,
+            radius_deg=plan.nadir_radius_deg,
+            zoom=plan.nadir_zoom,
+            overlap_fraction=plan.nadir_overlap_fraction,
+            region_id=plan.nadir_region_id,
+            burst_count=plan.burst_for(4),
+        )
+        results.append(nadir)
+        captured_4_to_7.extend(nadir.commanded_states)
+
+        main = executors.run_main_survey(
+            engine,
+            training,
+            run_id=run_id,
+            camera_id=camera_id,
+            output_dir=_phase_dir(base_output_dir, SurveyPhase.MAIN_SURVEY),
+            burst_count=plan.burst_for(5),
+        )
+        results.append(main)
+        captured_4_to_7.extend(main.commanded_states)
+
+        cross = executors.run_cross_zoom(
             engine,
             run_id=run_id,
             camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.PTZ_CHARACTERIZATION),
-            pan_range=plan.ptz_pan_range,
-            tilt_range=plan.ptz_tilt_range,
-            small_step=plan.ptz_small_step,
-            large_step=plan.ptz_large_step,
-            fixed_tilt=plan.ptz_fixed_tilt,
-            fixed_pan=plan.ptz_fixed_pan,
-            fixed_zoom=plan.ptz_fixed_zoom,
-            repeat_count=plan.ptz_repeat_count,
-            burst_count=plan.burst_for(2),
+            output_dir=_phase_dir(base_output_dir, SurveyPhase.CROSS_ZOOM),
+            anchors=plan.cross_zoom_anchors,
+            zoom_levels=plan.cross_zoom_levels,
+            burst_count=plan.burst_for(6),
         )
-    )
+        results.append(cross)
+        captured_4_to_7.extend(cross.commanded_states)
 
-    results.append(
-        executors.run_zoom_characterization(
+        repeat = executors.run_repeatability(
             engine,
             run_id=run_id,
             camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.ZOOM_CHARACTERIZATION),
-            zoom_min=plan.zoom_min,
-            zoom_max=plan.zoom_max,
-            zoom_step=plan.zoom_step,
-            fixed_pan=plan.zoom_fixed_pan,
-            fixed_tilt=plan.zoom_fixed_tilt,
-            burst_count=plan.burst_for(3),
+            output_dir=_phase_dir(base_output_dir, SurveyPhase.REPEATABILITY),
+            target_pan=plan.repeat_target_pan,
+            target_tilt=plan.repeat_target_tilt,
+            target_zoom=plan.repeat_target_zoom,
+            approach_deltas=plan.repeat_approach_deltas,
+            burst_count=plan.burst_for(7),
         )
-    )
+        results.append(repeat)
+        captured_4_to_7.extend(repeat.commanded_states)
 
-    nadir = executors.run_dense_nadir(
-        engine,
-        spec,
-        run_id=run_id,
-        camera_id=camera_id,
-        output_dir=_phase_dir(base_output_dir, SurveyPhase.DENSE_NADIR),
-        nadir_pan=plan.nadir_pan,
-        nadir_tilt=plan.nadir_tilt,
-        radius_deg=plan.nadir_radius_deg,
-        zoom=plan.nadir_zoom,
-        overlap_fraction=plan.nadir_overlap_fraction,
-        region_id=plan.nadir_region_id,
-        burst_count=plan.burst_for(4),
-    )
-    results.append(nadir)
-    captured_4_to_7.extend(nadir.commanded_states)
-
-    main = executors.run_main_survey(
-        engine,
-        training,
-        run_id=run_id,
-        camera_id=camera_id,
-        output_dir=_phase_dir(base_output_dir, SurveyPhase.MAIN_SURVEY),
-        burst_count=plan.burst_for(5),
-    )
-    results.append(main)
-    captured_4_to_7.extend(main.commanded_states)
-
-    cross = executors.run_cross_zoom(
-        engine,
-        run_id=run_id,
-        camera_id=camera_id,
-        output_dir=_phase_dir(base_output_dir, SurveyPhase.CROSS_ZOOM),
-        anchors=plan.cross_zoom_anchors,
-        zoom_levels=plan.cross_zoom_levels,
-        burst_count=plan.burst_for(6),
-    )
-    results.append(cross)
-    captured_4_to_7.extend(cross.commanded_states)
-
-    repeat = executors.run_repeatability(
-        engine,
-        run_id=run_id,
-        camera_id=camera_id,
-        output_dir=_phase_dir(base_output_dir, SurveyPhase.REPEATABILITY),
-        target_pan=plan.repeat_target_pan,
-        target_tilt=plan.repeat_target_tilt,
-        target_zoom=plan.repeat_target_zoom,
-        approach_deltas=plan.repeat_approach_deltas,
-        burst_count=plan.burst_for(7),
-    )
-    results.append(repeat)
-    captured_4_to_7.extend(repeat.commanded_states)
-
-    results.append(
-        executors.run_jitter(
-            engine,
-            run_id=run_id,
-            camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.STATIC_JITTER),
-            rtsp_url=plan.jitter_rtsp_url,
-            poses=plan.jitter_poses,
-            zoom_levels=plan.jitter_zoom_levels,
-            burst_duration_s=plan.jitter_burst_duration_s,
-            target_fps=plan.jitter_target_fps,
+        results.append(
+            executors.run_jitter(
+                engine,
+                run_id=run_id,
+                camera_id=camera_id,
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.STATIC_JITTER),
+                rtsp_url=plan.jitter_rtsp_url,
+                poses=plan.jitter_poses,
+                zoom_levels=plan.jitter_zoom_levels,
+                burst_duration_s=plan.jitter_burst_duration_s,
+                target_fps=plan.jitter_target_fps,
+            )
         )
-    )
 
-    results.append(
-        executors.run_validation(
-            engine,
-            holdout,
-            captured_4_to_7,
-            run_id=run_id,
-            camera_id=camera_id,
-            output_dir=_phase_dir(base_output_dir, SurveyPhase.VALIDATION),
-            burst_count=plan.burst_for(9),
+        results.append(
+            executors.run_validation(
+                engine,
+                holdout,
+                captured_4_to_7,
+                run_id=run_id,
+                camera_id=camera_id,
+                output_dir=_phase_dir(base_output_dir, SurveyPhase.VALIDATION),
+                burst_count=plan.burst_for(9),
+            )
         )
-    )
 
     _emit(results, sink)
     _assert_no_cross_tagging(results)
