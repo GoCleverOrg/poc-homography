@@ -23,8 +23,14 @@ Three independent quality axes are derived from the persisted summaries:
 
   * Intrinsic axis, from the worst per-zoom intrinsic error in pixels. The
     per-zoom error of an entry is ``max(validation_rmse, reprojection_error_px)``.
+    A persisted entry can carry a ``0.0`` error simply because no metric was
+    recorded (both fields default to ``0.0``); a physically-implausible perfect
+    ``0.0`` is therefore treated as *unmeasured* and excluded from the summary,
+    so a camera whose entries carry no positive error is reported
+    ``Uncalibrated`` rather than misreported as perfect.
   * Extrinsic axis, from the worst hold-out reprojection RMS in ground meters.
-  * Inlier axis, from the minimum RANSAC/ICP inlier ratio across registrations.
+  * Inlier axis, from the minimum RANSAC/ICP inlier ratio across the validated
+    registrations (those carrying hold-out reprojection stats).
 
 The overall ``label`` is the WORST band across the three axes (order
 Poor < Fair < Good). The overall ``score`` in [0, 1] is the mean of three
@@ -226,8 +232,15 @@ def _inlier_label(min_inlier_ratio: float) -> str:
     return POOR
 
 
-def _build_intrinsic_summary(lens_table: LensCalibrationTable) -> IntrinsicSummary:
-    """Aggregate a non-empty lens table into an :class:`IntrinsicSummary`."""
+def _build_intrinsic_summary(lens_table: LensCalibrationTable) -> IntrinsicSummary | None:
+    """Aggregate a non-empty lens table into an :class:`IntrinsicSummary`.
+
+    Worst/mean are computed over entries with a *positive* per-zoom error only:
+    a ``0.0`` error means the metric was not recorded (both source fields default
+    to ``0.0``), not a perfect calibration. Returns None when no entry carries a
+    positive error, so the camera is reported as uncalibrated rather than scored
+    as perfect. ``per_zoom`` still carries every entry for display.
+    """
     per_zoom = tuple(
         ZoomIntrinsicPoint(
             zoom_factor=float(entry.zoom_factor),
@@ -236,13 +249,17 @@ def _build_intrinsic_summary(lens_table: LensCalibrationTable) -> IntrinsicSumma
         )
         for entry in lens_table.entries
     )
-    errors = [
-        _entry_error_px(point.validation_rmse, point.reprojection_error_px) for point in per_zoom
+    measured = [
+        error
+        for point in per_zoom
+        if (error := _entry_error_px(point.validation_rmse, point.reprojection_error_px)) > 0.0
     ]
+    if not measured:
+        return None
     return IntrinsicSummary(
         num_zoom_entries=len(per_zoom),
-        worst_rmse_px=max(errors),
-        mean_rmse_px=sum(errors) / len(errors),
+        worst_rmse_px=max(measured),
+        mean_rmse_px=sum(measured) / len(measured),
         per_zoom=per_zoom,
     )
 
@@ -306,7 +323,7 @@ def build_camera_confidence(
     if not calibrated:
         notes: list[str] = []
         if intrinsic is None:
-            notes.append("no persisted intrinsic calibration")
+            notes.append("no persisted intrinsic calibration metric")
         if extrinsic is None:
             notes.append("no persisted extrinsic validation records")
         return CameraConfidenceReport(

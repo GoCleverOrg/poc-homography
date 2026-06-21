@@ -141,6 +141,39 @@ def test_uncalibrated_when_no_validated_registrations() -> None:
     assert any("extrinsic" in note for note in report.notes)
 
 
+def test_uncalibrated_when_intrinsic_metrics_are_all_zero() -> None:
+    """All-zero (unrecorded) intrinsic errors are unmeasured, not perfect."""
+    report = build_camera_confidence(
+        camera_id="cam1",
+        camera_name="Cam 1",
+        lens_table=_lens_table(_entry(validation_rmse=0.0, reprojection_error_px=0.0)),
+        registrations=[_registration(inlier_ratio=0.95, rms_m=0.1)],
+    )
+    assert report.calibrated is False
+    assert report.label == "Uncalibrated"
+    assert report.score == 0.0
+    assert report.intrinsic is None  # zero error is treated as unmeasured
+    assert report.extrinsic is not None  # partial summary still attached
+    assert any("intrinsic" in note for note in report.notes)
+
+
+def test_intrinsic_summary_ignores_zero_metric_entries() -> None:
+    """Worst/mean intrinsic error skip zero-error (unrecorded) entries."""
+    report = build_camera_confidence(
+        camera_id="cam1",
+        camera_name="Cam 1",
+        lens_table=_lens_table(
+            _entry(zoom=1.0, validation_rmse=0.0),  # unrecorded -> excluded
+            _entry(zoom=2.0, validation_rmse=3.0),  # measured
+        ),
+        registrations=[_registration(inlier_ratio=0.95, rms_m=0.1)],
+    )
+    assert report.intrinsic is not None
+    assert report.intrinsic.num_zoom_entries == 2  # both kept for display
+    assert report.intrinsic.worst_rmse_px == 3.0
+    assert report.intrinsic.mean_rmse_px == 3.0
+
+
 def test_uncalibrated_when_no_records_at_all() -> None:
     report = build_camera_confidence(
         camera_id="cam1",
