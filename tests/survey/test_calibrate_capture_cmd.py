@@ -60,6 +60,28 @@ class _FakeRepo:
         return True
 
 
+def test_rtsp_url_resolver_returns_url_when_resolvable(monkeypatch) -> None:
+    monkeypatch.setattr(cmd, "get_rtsp_url", lambda name: f"rtsp://{name}/stream")
+    assert cmd.make_rtsp_url_resolver("cam01")() == "rtsp://cam01/stream"
+
+
+def test_rtsp_url_resolver_swallows_config_shape_errors(monkeypatch) -> None:
+    # get_rtsp_url raises ValueError on missing credentials and KeyError when a
+    # camera row lacks an expected field (e.g. ``ip``); both must resolve to
+    # None so the runner skips jitter rather than crashing (#372).
+    def raise_value_error(_name: str) -> str:
+        raise ValueError("credentials not set")
+
+    def raise_key_error(_name: str) -> str:
+        raise KeyError("ip")
+
+    monkeypatch.setattr(cmd, "get_rtsp_url", raise_value_error)
+    assert cmd.make_rtsp_url_resolver("cam01")() is None
+
+    monkeypatch.setattr(cmd, "get_rtsp_url", raise_key_error)
+    assert cmd.make_rtsp_url_resolver("cam01")() is None
+
+
 def test_run_calibration_capture_routes_frames_and_saves_run(
     camera: FakeCamera,
     clock: IncrementingClock,

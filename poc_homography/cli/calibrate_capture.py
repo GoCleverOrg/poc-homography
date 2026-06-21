@@ -23,6 +23,7 @@ import yaml
 from poc_homography.camera_config import (
     get_camera_by_name,
     get_camera_configs,
+    get_rtsp_url,
     get_tenant_credentials,
 )
 from poc_homography.cli.cleanplate import cleanplate_app
@@ -50,6 +51,25 @@ if TYPE_CHECKING:
     from poc_homography.domain.protocols.camera_device import CameraDevice
     from poc_homography.survey.phases.common import PhaseSink
     from poc_homography.survey.phases.runner import SurveyExecution
+
+
+def make_rtsp_url_resolver(camera_name: str) -> Callable[[], str | None]:
+    """Build the Phase 8 jitter RTSP-URL resolver for ``camera_name`` (#372).
+
+    Wraps :func:`camera_config.get_rtsp_url` (per-camera/tenant credential
+    resolution). A config-shape problem — missing credentials (``ValueError``)
+    or a camera row lacking an expected field such as ``ip`` (``KeyError``) —
+    becomes ``None`` so the runner skips jitter gracefully rather than crashing,
+    honouring the resolver contract (return ``None``, do not raise).
+    """
+
+    def resolve() -> str | None:
+        try:
+            return get_rtsp_url(camera_name)
+        except (ValueError, KeyError):
+            return None
+
+    return resolve
 
 
 @cleanplate_app.command("calibrate-capture")
@@ -148,6 +168,7 @@ def calibrate_capture_command(
             base_output_dir=base_output_dir,
             sink=sink,
             session_factory=get_session,
+            rtsp_url_resolver=make_rtsp_url_resolver(cam_info.get("name", cam_info["id"])),
         )
     finally:
         # The Postgres+MinIO sink is the real destination; the scratch dir we
@@ -171,6 +192,7 @@ def _run_calibration_capture(
     session_factory: Callable[[], AbstractContextManager[Session]],
     clock: Callable[[], datetime] | None = None,
     uuid_factory: Callable[[], str] | None = None,
+    rtsp_url_resolver: Callable[[], str | None] | None = None,
 ) -> SurveyExecution:
     """Run the sweep and persist the run header + plan-config sidecar.
 
@@ -178,6 +200,8 @@ def _run_calibration_capture(
     sink, and a fake session factory without any live network, MinIO, or Neon
     access. ``clock``/``uuid_factory`` are forwarded to :func:`execute_survey`
     (``None`` keeps the runner's wall-clock defaults) purely as test seams.
+    ``rtsp_url_resolver`` resolves the Phase 8 jitter RTSP URL for the camera
+    (the live wiring wraps ``camera_config.get_rtsp_url``).
     ``execute_survey`` already restores PTZ via :func:`preserve_ptz_position`,
     so no PTZ bracketing is added here.
     """
@@ -190,6 +214,7 @@ def _run_calibration_capture(
         plan=runner_plan,
         clock=clock,
         uuid_factory=uuid_factory,
+        rtsp_url_resolver=rtsp_url_resolver,
     )
 
     with session_factory() as session:

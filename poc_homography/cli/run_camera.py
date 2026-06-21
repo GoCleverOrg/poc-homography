@@ -44,7 +44,10 @@ from poc_homography.calibration.extrinsic import (
 from poc_homography.calibration.lens_distortion.ddd_sync import lens_table_to_camera_table
 from poc_homography.calibration.lens_distortion.frame_source import iter_survey_frames
 from poc_homography.calibration.lens_distortion.line_detection import LineDetector
-from poc_homography.cli.calibrate_capture import _run_calibration_capture
+from poc_homography.cli.calibrate_capture import (
+    _run_calibration_capture,
+    make_rtsp_url_resolver,
+)
 from poc_homography.cli.main import calibrate_app
 from poc_homography.cli.self_calibrate import _run_self_calibration
 from poc_homography.domain.entities.ptz_registration import PtzRegistration
@@ -284,6 +287,7 @@ def _live_capture(
             base_output_dir=base_output_dir,
             sink=sink,
             session_factory=get_session,
+            rtsp_url_resolver=make_rtsp_url_resolver(cam_info.get("name", cam_info["id"])),
         )
     finally:
         shutil.rmtree(base_output_dir, ignore_errors=True)
