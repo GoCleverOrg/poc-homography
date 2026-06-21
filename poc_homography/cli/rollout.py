@@ -46,6 +46,12 @@ from poc_homography.cli.main import calibrate_app
 from poc_homography.cli.run_camera import _load_ortho_context, _run_camera_registration
 from poc_homography.infrastructure.clients.minio_frame_store import MinioFrameStore
 from poc_homography.infrastructure.database import get_session
+from poc_homography.infrastructure.repositories.repo_postgres_camera_config import (
+    RepoPostgresCameraConfig,
+)
+from poc_homography.infrastructure.repositories.repo_postgres_map import (
+    RepoPostgresMap,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -380,6 +386,50 @@ def _format_summary(outcomes: Sequence[CameraOutcome]) -> str:
     return "\n".join(lines)
 
 
+def _require_reference_rows(
+    tenant: str,
+    targets: Sequence[RolloutTarget],
+    *,
+    session_factory: Callable[[], AbstractContextManager[Session]],
+) -> None:
+    """Fail fast with a clear fix when a target's FK reference rows are absent.
+
+    Each resolved target persists registrations under an FK chain rooted at the
+    tenant -> map -> camera_config rows. When any target's ``camera_config`` or
+    its ``map`` row is missing, persistence would raise a ForeignKeyViolation
+    inside the loop; this preflight surfaces the missing rows up front and names
+    the bootstrap fix instead of auto-mutating the DB.
+
+    Args:
+        tenant: The tenant id, named in the remediation message.
+        targets: The resolved cameras whose reference rows must exist.
+        session_factory: Database session context-manager factory.
+
+    Raises:
+        typer.Exit: If any target's camera_config or map row is missing.
+    """
+    missing: list[str] = []
+    with session_factory() as session:
+        camera_repo = RepoPostgresCameraConfig(session)
+        map_repo = RepoPostgresMap(session)
+        map_seen: dict[str, bool] = {}
+        for target in targets:
+            if camera_repo.get(target.camera_id) is None:
+                missing.append(target.camera_id)
+                continue
+            if target.map_id and target.map_id not in map_seen:
+                map_seen[target.map_id] = map_repo.get(target.map_id) is not None
+            if target.map_id and not map_seen.get(target.map_id, False):
+                missing.append(target.camera_id)
+    if missing:
+        typer.echo(
+            f"Error: reference rows missing for cameras {sorted(set(missing))}. "
+            f"Run: hom calibrate bootstrap --tenant {tenant} first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+
 def _load_cameras_file(cameras_file: Path) -> dict:
     """Load and parse the ``calib_cameras.json`` file or exit with a clear error.
 
@@ -446,6 +496,7 @@ def rollout_command(
         raise typer.Exit(1)
 
     targets, annotations = _resolve_targets(spec, tenant_cameras)
+    _require_reference_rows(tenant, targets, session_factory=get_session)
     outcomes = _run_rollout(
         targets,
         annotations,

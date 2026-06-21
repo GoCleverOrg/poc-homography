@@ -157,6 +157,7 @@ def _wire_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cmd, "_load_ortho_context", lambda _map_id: ([], object()))
     monkeypatch.setattr(cmd, "get_cameras_for_tenant", lambda _t: list(_TENANT_CAMERAS))
     monkeypatch.setattr(cmd, "get_session", _fake_session_factory)
+    monkeypatch.setattr(cmd, "_require_reference_rows", lambda *_args, **_kwargs: None)
 
 
 # ---------------------------------------------------------------------------
