@@ -15,7 +15,7 @@ import json
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-import pytest  # noqa: TC002  (used only in test-param annotations under future-annotations)
+import pytest
 from typer.testing import CliRunner
 
 from poc_homography.calibration.confidence import CameraConfidenceReport
@@ -119,6 +119,31 @@ def test_resolve_targets_records_unresolved_name() -> None:
     assert len(annotations) == 1
     assert annotations[0].json_name == "cam99"
     assert annotations[0].skipped is False  # unresolved is a failure, not a skip
+    assert "no matching tenant camera" in annotations[0].reason
+
+
+def test_resolve_targets_unparseable_name_distinct_reason() -> None:
+    spec = {"available": [{"name": "cam2b"}], "excluded": []}
+
+    targets, annotations = cmd._resolve_targets(spec, _TENANT_CAMERAS)
+
+    assert targets == []
+    assert len(annotations) == 1
+    assert annotations[0].json_name == "cam2b"
+    assert annotations[0].skipped is False  # still a failure, not a skip
+    assert "cannot parse camera index from 'cam2b'" in annotations[0].reason
+
+
+def test_resolve_targets_dedups_duplicate_available() -> None:
+    spec = {
+        "available": [{"name": "cam02"}, {"name": "cam02"}],
+        "excluded": [],
+    }
+
+    targets, annotations = cmd._resolve_targets(spec, _TENANT_CAMERAS)
+
+    assert annotations == []
+    assert [t.json_name for t in targets] == ["cam02"]  # deduped: runs once
 
 
 # ---------------------------------------------------------------------------
@@ -241,3 +266,139 @@ def test_command_missing_cameras_file(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     assert result.exit_code != 0
     assert "not found" in result.output.lower() or "failed to load" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: nothing-attempted (empty / fully-excluded available) is not success
+# ---------------------------------------------------------------------------
+
+
+def test_command_empty_available_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _wire_cli(monkeypatch)
+    cameras_file = _write_cameras_file(tmp_path, available=[], excluded=[])
+
+    result = CliRunner().invoke(
+        app,
+        ["calibrate", "rollout", "--tenant", "icozee", "--cameras-file", str(cameras_file)],
+    )
+
+    assert result.exit_code != 0
+    assert "no cameras to run" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: a leaf raising typer.Exit(1) FAILs the camera with the code, loop goes on
+# ---------------------------------------------------------------------------
+
+
+def test_command_leaf_typer_exit_fails_camera(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _wire_cli(monkeypatch)
+
+    def runner(**kwargs: object) -> list[str]:
+        if kwargs["camera_id"] == "icozee-camptz-02":
+            raise cmd.typer.Exit(1)
+        return ["rec"]
+
+    monkeypatch.setattr(cmd, "_run_camera_registration", runner)
+    monkeypatch.setattr(
+        cmd,
+        "_collect_confidence",
+        lambda camera_id, camera_name, **_kwargs: _report(camera_id, camera_name),
+    )
+    cameras_file = _write_cameras_file(
+        tmp_path,
+        available=[{"name": "cam02"}, {"name": "cam03"}],
+        excluded=[],
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["calibrate", "rollout", "--tenant", "icozee", "--cameras-file", str(cameras_file)],
+    )
+
+    assert result.exit_code != 0
+    assert "leaf exited with code 1" in result.output
+    # The loop continued: the healthy camera still ran and passed.
+    assert "icozee-camptz-03" in result.output
+    assert "Rollout: 1 passed, 1 failed" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Fix 4: coverage for diff-introduced branches
+# ---------------------------------------------------------------------------
+
+
+def test_command_camera_without_map_id_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _wire_cli(monkeypatch)
+    monkeypatch.setattr(
+        cmd, "get_cameras_for_tenant", lambda _t: [{"id": "icozee-camptz-02", "name": "Cam02"}]
+    )
+    monkeypatch.setattr(cmd, "_run_camera_registration", lambda **_kwargs: ["rec"])
+    monkeypatch.setattr(
+        cmd,
+        "_collect_confidence",
+        lambda camera_id, camera_name, **_kwargs: _report(camera_id, camera_name),
+    )
+    cameras_file = _write_cameras_file(tmp_path, available=[{"name": "cam02"}], excluded=[])
+
+    result = CliRunner().invoke(
+        app,
+        ["calibrate", "rollout", "--tenant", "icozee", "--cameras-file", str(cameras_file)],
+    )
+
+    assert result.exit_code != 0
+    assert "no map_id configured" in result.output
+    assert "Rollout: 0 passed, 1 failed" in result.output
+
+
+def test_load_cameras_file_invalid_json(tmp_path: Path) -> None:
+    path = tmp_path / "calib_cameras.json"
+    path.write_text("{not valid json")
+
+    with pytest.raises(cmd.typer.Exit) as excinfo:
+        cmd._load_cameras_file(path)
+
+    assert excinfo.value.exit_code == 1
+
+
+def test_load_cameras_file_top_level_list(tmp_path: Path) -> None:
+    path = tmp_path / "calib_cameras.json"
+    path.write_text(json.dumps([{"name": "cam02"}]))
+
+    with pytest.raises(cmd.typer.Exit) as excinfo:
+        cmd._load_cameras_file(path)
+
+    assert excinfo.value.exit_code == 1
+
+
+def test_command_unresolved_name_end_to_end(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _wire_cli(monkeypatch)
+    monkeypatch.setattr(cmd, "_run_camera_registration", lambda **_kwargs: ["rec"])
+    monkeypatch.setattr(
+        cmd,
+        "_collect_confidence",
+        lambda camera_id, camera_name, **_kwargs: _report(camera_id, camera_name),
+    )
+    cameras_file = _write_cameras_file(
+        tmp_path,
+        available=[{"name": "cam02"}, {"name": "cam99"}],
+        excluded=[],
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["calibrate", "rollout", "--tenant", "icozee", "--cameras-file", str(cameras_file)],
+    )
+
+    assert result.exit_code != 0
+    assert "cam99" in result.output
+    assert "FAIL" in result.output
+    assert "Rollout: 1 passed, 1 failed" in result.output

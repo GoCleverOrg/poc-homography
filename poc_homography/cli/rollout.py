@@ -162,9 +162,13 @@ def _resolve_targets(
 
     targets: list[RolloutTarget] = []
     annotations: list[RolloutAnnotation] = []
+    seen: set[str] = set()
     for entry in spec.get("available", []):
         json_name = str(entry.get("name", ""))
         lower = json_name.lower()
+        if lower in seen:
+            continue  # duplicate available entry: run the camera only once
+        seen.add(lower)
         if lower in excluded_names:
             annotations.append(
                 RolloutAnnotation(
@@ -176,7 +180,17 @@ def _resolve_targets(
             continue
 
         config_name = _normalize_name(json_name)
-        cam = by_name.get(config_name) if config_name is not None else None
+        if config_name is None:
+            annotations.append(
+                RolloutAnnotation(
+                    json_name=json_name,
+                    skipped=False,
+                    reason=f"unresolved: cannot parse camera index from '{json_name}'",
+                )
+            )
+            continue
+
+        cam = by_name.get(config_name)
         if cam is None:
             annotations.append(
                 RolloutAnnotation(
@@ -289,7 +303,23 @@ def _run_one_camera(target: RolloutTarget, deps: _RolloutDeps) -> CameraOutcome:
         return CameraOutcome(target.json_name, target.camera_id, "FAIL", f"hold-out: {exc}")
     except InsufficientCorrespondenceError as exc:
         return CameraOutcome(target.json_name, target.camera_id, "FAIL", f"matching: {exc}")
-    except (RuntimeError, OSError, ValueError, typer.Exit) as exc:
+    except typer.Exit as exc:
+        # A leaf (e.g. self-calibration finding no frames) signals failure via
+        # typer.Exit; str(exc) is just the code, so render the code explicitly.
+        if exc.exit_code == 0:
+            return CameraOutcome(
+                json_name=target.json_name,
+                camera_id=target.camera_id,
+                status="PASS",
+                detail="leaf exited with code 0",
+            )
+        return CameraOutcome(
+            target.json_name,
+            target.camera_id,
+            "FAIL",
+            f"leaf exited with code {exc.exit_code}",
+        )
+    except (RuntimeError, OSError, ValueError) as exc:
         return CameraOutcome(target.json_name, target.camera_id, "FAIL", f"error: {exc}")
 
     return CameraOutcome(
@@ -443,6 +473,15 @@ def rollout_command(
     )
 
     typer.echo(_format_summary(outcomes))
+
+    if not any(outcome.status in {"PASS", "FAIL"} for outcome in outcomes):
+        # Nothing was actually attempted (available empty or fully
+        # excluded/unresolved): for a rollout driver this is not success.
+        typer.echo(
+            "Error: no cameras to run (available list empty or fully excluded/unresolved).",
+            err=True,
+        )
+        raise typer.Exit(1)
 
     if any(outcome.status == "FAIL" for outcome in outcomes):
         raise typer.Exit(1)
