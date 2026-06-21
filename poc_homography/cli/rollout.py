@@ -41,17 +41,11 @@ from poc_homography.calibration.extrinsic import (
     InsufficientCorrespondenceError,
 )
 from poc_homography.camera_config import get_cameras_for_tenant
-from poc_homography.cli.confidence_report import _collect_reports
+from poc_homography.cli.confidence_report import _run_confidence_report
 from poc_homography.cli.main import calibrate_app
 from poc_homography.cli.run_camera import _load_ortho_context, _run_camera_registration
 from poc_homography.infrastructure.clients.minio_frame_store import MinioFrameStore
 from poc_homography.infrastructure.database import get_session
-from poc_homography.infrastructure.repositories.repo_postgres_lens_calibration_table import (
-    RepoPostgresLensCalibrationTable,
-)
-from poc_homography.infrastructure.repositories.repo_postgres_ptz_registration import (
-    RepoPostgresPtzRegistration,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -151,9 +145,6 @@ def _resolve_targets(
         excluded/unresolved annotations (excluded ones have ``skipped=True``).
     """
     by_name = {str(cam.get("name", "")): cam for cam in tenant_cameras}
-    excluded_names = {
-        str(entry.get("name", "")).lower() for entry in spec.get("excluded", []) if entry
-    }
     excluded_reasons = {
         str(entry.get("name", "")).lower(): str(entry.get("reason", "excluded"))
         for entry in spec.get("excluded", [])
@@ -169,12 +160,12 @@ def _resolve_targets(
         if lower in seen:
             continue  # duplicate available entry: run the camera only once
         seen.add(lower)
-        if lower in excluded_names:
+        if lower in excluded_reasons:
             annotations.append(
                 RolloutAnnotation(
                     json_name=json_name,
                     skipped=True,
-                    reason=f"excluded: {excluded_reasons.get(lower, 'excluded')}",
+                    reason=f"excluded: {excluded_reasons[lower]}",
                 )
             )
             continue
@@ -221,9 +212,9 @@ def _collect_confidence(
 ) -> CameraConfidenceReport:
     """Collect leaf-3's confidence report for a single camera.
 
-    Opens a session and delegates to leaf-3's read-only join
-    (:func:`_collect_reports`) for one ``(camera_id, camera_name)`` spec. Extracted
-    as a module-level seam so tests can swap it for an offline double.
+    Delegates to leaf-3's session-wiring seam
+    (:func:`_run_confidence_report`) for one ``(camera_id, camera_name)`` spec.
+    Extracted as a module-level seam so tests can swap it for an offline double.
 
     Args:
         camera_id: The camera id to report on.
@@ -233,12 +224,9 @@ def _collect_confidence(
     Returns:
         The single :class:`CameraConfidenceReport` for the camera.
     """
-    with session_factory() as session:
-        lens_repo = RepoPostgresLensCalibrationTable(session)
-        ptz_repo = RepoPostgresPtzRegistration(session)
-        reports = _collect_reports(
-            [(camera_id, camera_name)], lens_repo=lens_repo, ptz_repo=ptz_repo
-        )
+    reports = _run_confidence_report(
+        camera_specs=[(camera_id, camera_name)], session_factory=session_factory
+    )
     return reports[0]
 
 
@@ -306,13 +294,7 @@ def _run_one_camera(target: RolloutTarget, deps: _RolloutDeps) -> CameraOutcome:
     except typer.Exit as exc:
         # A leaf (e.g. self-calibration finding no frames) signals failure via
         # typer.Exit; str(exc) is just the code, so render the code explicitly.
-        if exc.exit_code == 0:
-            return CameraOutcome(
-                json_name=target.json_name,
-                camera_id=target.camera_id,
-                status="PASS",
-                detail="leaf exited with code 0",
-            )
+        # Every leaf exits non-zero on failure, so a propagating Exit is a FAIL.
         return CameraOutcome(
             target.json_name,
             target.camera_id,
