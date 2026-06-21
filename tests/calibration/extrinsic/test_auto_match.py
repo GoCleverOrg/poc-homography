@@ -273,6 +273,34 @@ def test_fail_fast_too_few_inliers() -> None:
     assert excinfo.value.num_inliers < 4
 
 
+def test_fail_fast_no_candidates() -> None:
+    """No descriptor-compatible pairs -> distinct too-few-candidates gate."""
+    ortho_lines = _ortho_lines(_ORTHO_SEGMENTS)
+    # Frame lines that match NO ortho line by length: ortho segments are
+    # >=600px, these are ~6px, so the length-ratio gate rejects every pair.
+    frame_lines = [
+        CandidateLine(start=(100.0, 100.0), end=(106.0, 100.0)),
+        CandidateLine(start=(800.0, 600.0), end=(800.0, 606.0)),
+    ]
+
+    with pytest.raises(InsufficientCorrespondenceError) as excinfo:
+        match_and_register(
+            frame_lines=frame_lines,
+            ortho_lines=ortho_lines,
+            calibration_table=_zero_distortion_table(),
+            commanded_zoom=1.0,
+            commanded_tilt=0.0,
+            map_id="map_test",
+            image_width=_IMAGE_WIDTH,
+            image_height=_IMAGE_HEIGHT,
+            rng_seed=0,
+        )
+
+    # Failed before any inlier was scored: zero inliers, fewer than 2 candidates.
+    assert excinfo.value.num_inliers == 0
+    assert excinfo.value.num_candidates < 2
+
+
 # ---------------------------------------------------------------------------
 # DoD: fail-fast — Poor/Insufficient distribution
 # ---------------------------------------------------------------------------
@@ -344,5 +372,15 @@ def test_determinism_same_seed_identical_output() -> None:
     result_a = match_and_register(**kwargs)
     result_b = match_and_register(**kwargs)
 
+    # Same seed -> bit-for-bit identical output.
     assert dict(result_a.seed) == dict(result_b.seed)
     np.testing.assert_array_equal(result_a.homography_matrix, result_b.homography_matrix)
+
+    # ...and the identical output is the CORRECT correspondence, not equal garbage.
+    expected = {i: f"ortho_{i}" for i in range(len(ortho_lines))}
+    assert dict(result_a.seed) == expected
+
+    # A different seed still recovers the correct correspondence: the RNG is
+    # genuinely consumed (this well-determined problem converges regardless).
+    result_c = match_and_register(**{**kwargs, "rng_seed": 123})
+    assert dict(result_c.seed) == expected

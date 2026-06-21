@@ -29,9 +29,10 @@ Algorithm overview
    distance to the ortho *infinite* line — consistent with ``compute_from_lines``).
    Each frame line resolves to at most one ortho line (lowest-error) so the seed
    is a clean, injective mapping.
-3. **Fail-fast** BEFORE the refined solve: too few inliers, a "Poor"/"Insufficient"
-   :func:`calculate_distribution` quality over the inlier frame endpoints, or a
-   too-low inlier count all raise :class:`InsufficientCorrespondenceError`.
+3. **Fail-fast** BEFORE the refined solve: too few gated candidates to even
+   sample a hypothesis, a best inlier set below the inlier-count threshold, or a
+   "Poor"/"Insufficient" :func:`calculate_distribution` quality over the inlier
+   frame endpoints all raise :class:`InsufficientCorrespondenceError`.
 4. **Refined solve.** The discovered seed (``frame_index -> "ortho_{i}"``, with
    ``i`` the positional index of the ortho line in the input sequence, matching
    ``register_frame_lines``' convention) is handed to ``register_frame_lines`` and
@@ -522,9 +523,13 @@ def match_and_register(
 
     num_inliers = len(best_resolved)
 
-    if num_inliers < min_inliers:
+    # Never hand a sub-minimal seed to register_frame_lines (which would raise an
+    # untyped ValueError): the refined solver needs >= 2 lines, so the typed
+    # fail-fast floor is at least _MINIMAL_SAMPLE_LINES regardless of min_inliers.
+    effective_min_inliers = max(min_inliers, _MINIMAL_SAMPLE_LINES)
+    if num_inliers < effective_min_inliers:
         raise InsufficientCorrespondenceError(
-            f"Best inlier set too small: {num_inliers} < min_inliers {min_inliers}",
+            f"Best inlier set too small: {num_inliers} < min_inliers {effective_min_inliers}",
             num_inliers=num_inliers,
             num_candidates=num_candidates,
         )
