@@ -15,7 +15,6 @@ from homography_web.frame_utils import (
     DATA_MAPS_DIR,
     FRAMES_DIR,
     WEBAPP_DIR,
-    extract_geotiff,
     normalize_array,
     validate_image_filename,
 )
@@ -26,6 +25,7 @@ from poc_homography.infrastructure.repositories import (
     RepoPostgresLineAnnotation,
     RepoPostgresMap,
 )
+from poc_homography.maps.geotiff_io import extract_geotiff
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

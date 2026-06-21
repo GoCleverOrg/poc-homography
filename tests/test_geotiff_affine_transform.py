@@ -172,6 +172,58 @@ class TestGeotransformEdgeCases:
         assert northing == pytest.approx(4400000, abs=0.01)
 
 
+class TestGeoToPixel:
+    """Test the GeoTiff.geo_to_pixel inverse affine (world -> map-pixel)."""
+
+    def test_origin_maps_to_zero_pixel(self):
+        """The geotransform origin inverts back to pixel (0, 0)."""
+        geotiff = _make_geotiff([737575.05, 0.15, 0, 4391595.45, 0, -0.15])
+
+        px, py = geotiff.geo_to_pixel(Easting(737575.05), Northing(4391595.45))
+
+        assert px == pytest.approx(0.0, abs=1e-9)
+        assert py == pytest.approx(0.0, abs=1e-9)
+
+    def test_roundtrip_north_up(self):
+        """pixel -> geo -> pixel round-trips under 1e-3 px for a north-up raster."""
+        geotiff = _make_geotiff([737575.05, 0.15, 0, 4391595.45, 0, -0.15])
+
+        for px, py in [(0, 0), (10.5, 20.25), (1000, 2000), (-10, -20), (1680.0, 915.0)]:
+            easting, northing = geotiff.pixel_to_geo(px, py)
+            rx, ry = geotiff.geo_to_pixel(easting, northing)
+
+            assert rx == pytest.approx(px, abs=1e-3)
+            assert ry == pytest.approx(py, abs=1e-3)
+
+    def test_roundtrip_rotated(self):
+        """pixel -> geo -> pixel round-trips under 1e-3 px for a rotated raster."""
+        geotiff = _make_geotiff([500000, 0.1387, 0.0574, 4400000, 0.0574, -0.1387])
+
+        for px, py in [(0, 0), (100, 0), (0, 100), (50, 75), (1234.5, 678.25)]:
+            easting, northing = geotiff.pixel_to_geo(px, py)
+            rx, ry = geotiff.geo_to_pixel(easting, northing)
+
+            assert rx == pytest.approx(px, abs=1e-3)
+            assert ry == pytest.approx(py, abs=1e-3)
+
+    def test_degenerate_geotransform_raises(self):
+        """A zero-determinant (non-invertible) geotransform raises ValueError."""
+        geotiff = _make_geotiff([500000, 0.0, 0.0, 4400000, 0.0, -0.15])
+
+        with pytest.raises(ValueError, match="[Dd]egenerate"):
+            geotiff.geo_to_pixel(Easting(500000), Northing(4400000))
+
+    def test_return_types(self):
+        """geo_to_pixel returns a float tuple of length 2."""
+        geotiff = _make_geotiff([737575.05, 0.15, 0, 4391595.45, 0, -0.15])
+        result = geotiff.geo_to_pixel(Easting(737576.55), Northing(4391592.45))
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], float)
+        assert isinstance(result[1], float)
+
+
 class TestPixelToLatLon:
     """Test the pixel -> WGS84 lat/lon reprojection (issue #33)."""
 

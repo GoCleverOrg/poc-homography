@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import tifffile
 from homography_web.frame_utils import (
     GCPS_DIR,
-    extract_geotiff,
     register_invalidation_callback,
     resolve_map_for_tenant,
 )
@@ -18,6 +17,7 @@ from poc_homography.domain.vo.geotiff import GeoTiff  # noqa: TC001 - used at ru
 from poc_homography.infrastructure.repositories import RepoYamlGroundControlPoint
 from poc_homography.map_points.gcp_registry import GCPRegistry
 from poc_homography.map_points.map_point import MapPoint
+from poc_homography.maps.geotiff_io import extract_geotiff
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

@@ -91,7 +91,7 @@ class LinePickerState:
                 self.width: int = width
                 self.height: int = height
                 if geotiff is None:
-                    from homography_web.frame_utils import extract_geotiff
+                    from poc_homography.maps.geotiff_io import extract_geotiff
 
                     with tifffile.TiffFile(image_path) as tif:
                         geotiff = extract_geotiff(tif)
@@ -103,7 +103,7 @@ class LinePickerState:
                     self.height = page.imagelength  # type: ignore[union-attr]
 
                     if geotiff is None:
-                        from homography_web.frame_utils import extract_geotiff
+                        from poc_homography.maps.geotiff_io import extract_geotiff
 
                         geotiff = extract_geotiff(tif)
         else:
@@ -338,7 +338,9 @@ def save_to_line_repo(lines: list[Line], map_id: str, data_dir: Path) -> None:
         data_dir: Directory for per-Line YAML files.
     """
     for line in lines:
-        save_line_to_repo(line.line_id, line.start_x, line.start_y, line.end_x, line.end_y, map_id, data_dir)
+        save_line_to_repo(
+            line.line_id, line.start_x, line.start_y, line.end_x, line.end_y, map_id, data_dir
+        )
 
 
 def delete_line_from_repo(line_id: str, map_id: str, data_dir: Path) -> None:
