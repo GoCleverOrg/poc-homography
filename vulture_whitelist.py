@@ -267,6 +267,13 @@ time_bucket  # cleanplate-surface (poc_homography/cleanplate/reconstruct.py:64)
 _.presign_get  # cleanplate-surface (poc_homography/infrastructure/clients/minio_frame_store.py:129)
 _.get_map  # cleanplate-surface — MinioMapStore GeoTIFF download, consumed by the map tile/info API #292 (poc_homography/infrastructure/clients/minio_map_store.py:136)
 
+# == extrinsic-validation-surface ==
+# Hold-out validation + multi-frame consolidation emitted-record fields (#359) — read by tests, CLI and downstream registration consumers, not within poc_homography
+_.p90_m  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:82)
+_.max_m  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:83)
+_.n_points  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:84)
+_.num_frames  # extrinsic-validation-surface (poc_homography/calibration/extrinsic/validation.py:132)
+
 # == uncertain-needs-follow-up ==
 # UNCERTAIN — symbol exists but no callers and no test references found; kept to keep vulture green pending a dead-code follow-up (see #226)
 _.get_nearest_entry  # uncertain-needs-follow-up (poc_homography/calibration/lens_distortion/calibration_table.py:393)
