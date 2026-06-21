@@ -33,7 +33,7 @@ seeded/auto leaves.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -48,7 +48,6 @@ from poc_homography.types import PixelsFloat
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from typing import Any
 
     import numpy.typing as npt
 
@@ -213,8 +212,10 @@ def _apply_homography(
     """Apply a 3x3 homography to a single (x, y) point in float64.
 
     Uses an explicit float64 matrix-vector product (not
-    ``cv2.perspectiveTransform``, which casts to float32) to keep meter-scale
-    reprojection errors free of avoidable single-precision noise.
+    ``cv2.perspectiveTransform``, which casts to float32) so this step adds no
+    single-precision noise of its own. Note the dominant precision floor is set
+    upstream by ``compute_from_lines``, whose ICP runs in float32; this keeps the
+    meters conversion from compounding that, it does not recover it.
 
     Args:
         homography: 3x3 homography matrix.
@@ -222,8 +223,14 @@ def _apply_homography(
 
     Returns:
         (x', y') transformed point in the destination frame.
+
+    Raises:
+        ValueError: If the point maps onto the homography's vanishing line
+            (homogeneous w ≈ 0), where no finite Euclidean image exists.
     """
     vec = homography @ np.array([point[0], point[1], 1.0], dtype=np.float64)
+    if abs(vec[2]) < 1e-12:
+        raise ValueError("Point maps onto the homography vanishing line (w ~ 0); no finite image")
     return (float(vec[0] / vec[2]), float(vec[1] / vec[2]))
 
 
@@ -232,7 +239,15 @@ def _correspondence_pairs(
     ortho_lines: Sequence[OrthoLine],
     seed: Mapping[int, str],
 ) -> list[tuple[CandidateLine, OrthoLine]]:
-    """Resolve a seed into (frame_line, ortho_line) pairs.
+    """Resolve a seed into (frame_line, ortho_line) endpoint-pair tuples.
+
+    This is the endpoint-resolution counterpart to
+    :func:`build_line_inputs` (which yields solver dicts). It is a separate path
+    because the hold-out subset is scored here WITHOUT ever passing through the
+    solver, so its indices are validated here rather than in ``build_line_inputs``
+    (and, unlike that function, no >= 2-line floor applies — a single held-out
+    line is valid). Bounds-check wording mirrors ``build_line_inputs`` so the same
+    malformed seed reports consistently regardless of which path catches it.
 
     Args:
         frame_lines: Camera frame lines.
