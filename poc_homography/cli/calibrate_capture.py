@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
+    from poc_homography.domain.protocols.camera_device import CameraDevice
     from poc_homography.survey.phases.common import PhaseSink
     from poc_homography.survey.phases.runner import SurveyExecution
 
@@ -70,7 +71,7 @@ def calibrate_capture_command(
     """
     # 1. Load the plan-config sidecar and build the runner plan.
     try:
-        with Path(plan).open() as f:
+        with plan.open() as f:
             data = yaml.safe_load(f)
         config = SurveyPlanConfig.from_dict(data)
     except (OSError, yaml.YAMLError, ValueError, TypeError) as e:
@@ -107,7 +108,7 @@ def calibrate_capture_command(
     # 3. Build the live client via the required from_config seam.
     camera_config = CameraConfig(
         id=cam_info["id"],
-        tenant_id=cam_info.get("tenant_id", ""),
+        tenant_id=tenant_id,
         map_id=cam_info.get("map_id", ""),
         name=cam_info.get("name", cam_info["id"]),
         spec=CameraSpec.HIKVISION_DS_2DF8425IX,
@@ -133,10 +134,10 @@ def calibrate_capture_command(
         raise typer.Exit(1)
     sink = PostgresPhaseSink(frame_store)
 
-    # 5/6/7. Run the sweep and persist the run header + plan-config sidecar.
+    # 5. Run the sweep and persist the run header + plan-config sidecar.
     run_id = uuid.uuid4().hex
     created_temp_dir = output_dir is None
-    base_output_dir = Path(output_dir) if output_dir is not None else Path(tempfile.mkdtemp())
+    base_output_dir = output_dir if output_dir is not None else Path(tempfile.mkdtemp())
     try:
         execution = _run_calibration_capture(
             camera=client,
@@ -160,7 +161,7 @@ def calibrate_capture_command(
 
 def _run_calibration_capture(
     *,
-    camera: object,
+    camera: CameraDevice,
     plan_config: SurveyPlanConfig,
     runner_plan: SurveyPlan,
     camera_id: str,
@@ -181,7 +182,7 @@ def _run_calibration_capture(
     so no PTZ bracketing is added here.
     """
     execution = execute_survey(
-        camera,  # type: ignore[arg-type]
+        camera,
         run_id=run_id,
         camera_id=camera_id,
         sink=sink,
