@@ -10,6 +10,8 @@ persisting the ``survey_runs`` header and its plan-config sidecar.
 
 from __future__ import annotations
 
+import os
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -89,10 +91,15 @@ def calibrate_capture_command(
     tenant_id = cam_info.get("tenant_id") or ""
     username, password = get_tenant_credentials(tenant_id)
     if not username or not password:
+        if tenant_id:
+            hint = (
+                f"Set {tenant_id.upper()}_CAMERA_USERNAME / {tenant_id.upper()}_CAMERA_PASSWORD "
+                "(or global CAMERA_USERNAME / CAMERA_PASSWORD) environment variables."
+            )
+        else:
+            hint = "Set CAMERA_USERNAME / CAMERA_PASSWORD environment variables."
         typer.echo(
-            f"Error: Camera credentials not set for tenant '{tenant_id}'. "
-            f"Set {tenant_id.upper()}_CAMERA_USERNAME / {tenant_id.upper()}_CAMERA_PASSWORD "
-            "(or global CAMERA_USERNAME / CAMERA_PASSWORD) environment variables.",
+            f"Error: Camera credentials not set for tenant '{tenant_id}'. {hint}",
             err=True,
         )
         raise typer.Exit(1)
@@ -113,27 +120,39 @@ def calibrate_capture_command(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
-    # 4. Build the real Postgres+MinIO sink.
+    # 4. Build the real Postgres+MinIO sink. Pre-flight both the MinIO and the
+    #    database env contracts up front so a misconfiguration fails fast,
+    #    before the live camera sweep is run (and its time consumed).
     try:
         frame_store = MinioFrameStore.from_env()
     except RuntimeError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
+    if not os.environ.get("DATABASE_URL"):
+        typer.echo("Error: DATABASE_URL environment variable is not set.", err=True)
+        raise typer.Exit(1)
     sink = PostgresPhaseSink(frame_store)
 
     # 5/6/7. Run the sweep and persist the run header + plan-config sidecar.
     run_id = uuid.uuid4().hex
+    created_temp_dir = output_dir is None
     base_output_dir = Path(output_dir) if output_dir is not None else Path(tempfile.mkdtemp())
-    execution = _run_calibration_capture(
-        camera=client,
-        plan_config=config,
-        runner_plan=runner_plan,
-        camera_id=cam_info["id"],
-        run_id=run_id,
-        base_output_dir=base_output_dir,
-        sink=sink,
-        session_factory=get_session,
-    )
+    try:
+        execution = _run_calibration_capture(
+            camera=client,
+            plan_config=config,
+            runner_plan=runner_plan,
+            camera_id=cam_info["id"],
+            run_id=run_id,
+            base_output_dir=base_output_dir,
+            sink=sink,
+            session_factory=get_session,
+        )
+    finally:
+        # The Postgres+MinIO sink is the real destination; the scratch dir we
+        # created is disposable. Only remove a dir we own, never the caller's.
+        if created_temp_dir:
+            shutil.rmtree(base_output_dir, ignore_errors=True)
 
     frame_count = sum(len(result.frames) for result in execution.results)
     typer.echo(f"Done: run_id={run_id} camera_id={cam_info['id']} frames={frame_count}")
