@@ -5,8 +5,9 @@ rasterio) so the same code path works fully offline against a saved GeoTIFF or
 against bytes fetched from MinIO (:meth:`MinioMapStore.get_map`).
 
 :func:`extract_geotiff` parses the GeoTIFF affine + CRS from the TIFF tags. It
-is the single source of truth for that tag parsing; the webapp
-``frame_utils.extract_geotiff`` re-exports this function.
+is the single source of truth for that tag parsing; the webapp and API layers
+(``webapp/homography_precision``, ``webapp/point_picker``, ``webapp/line_picker``,
+``api/utils/frame_helpers``) import it from here.
 """
 
 from __future__ import annotations
