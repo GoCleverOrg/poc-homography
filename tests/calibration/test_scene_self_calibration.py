@@ -204,14 +204,23 @@ def test_calibrate_scene_self_one_entry_per_zoom() -> None:
     assert result.skipped_zooms == ()
     assert len(result.table.entries) == 2
 
-    zooms = {float(e.zoom_factor) for e in result.table.entries}
-    assert zooms == {zoom_a, zoom_b}
+    zoom_list = [float(e.zoom_factor) for e in result.table.entries]
+    assert set(zoom_list) == {zoom_a, zoom_b}
+    # The table contract states entries are ordered by zoom_factor.
+    assert zoom_list == sorted(zoom_list)
 
+    cfg = ScenePerZoomConfig()
     for entry in result.table.entries:
-        assert entry.fx > 0.0
-        assert entry.fy > 0.0
-        assert entry.cx > 0.0
-        assert entry.cy > 0.0
+        # Each entry's intrinsics must be the *refined* values: within the
+        # configured solver window of the prior K seeded for that zoom (a bare
+        # `> 0` check would pass regardless of whether refinement ran).
+        prior_k = _prior_k_for_zoom(float(entry.zoom_factor))
+        fx0, fy0 = float(prior_k[0, 0]), float(prior_k[1, 1])
+        cx0, cy0 = float(prior_k[0, 2]), float(prior_k[1, 2])
+        assert abs(entry.fx - fx0) <= fx0 * cfg.fx_refine_frac + 1e-6
+        assert abs(entry.fy - fy0) <= fy0 * cfg.fx_refine_frac + 1e-6
+        assert abs(entry.cx - cx0) <= cfg.cx_window_px + 1e-6
+        assert abs(entry.cy - cy0) <= cfg.cy_window_px + 1e-6
         assert entry.validation_rmse >= 0.0
         assert entry.num_lines_used >= 3
 
@@ -326,3 +335,26 @@ def test_skipped_zoom_does_not_abort_other_zooms() -> None:
     assert float(result.table.entries[0].zoom_factor) == valid_zoom
     assert len(result.skipped_zooms) == 1
     assert result.skipped_zooms[0].zoom_factor == sparse_zoom
+
+
+def test_near_zero_zoom_is_skipped_not_fatal() -> None:
+    """A zoom that rounds to 0.0 is degenerate — skip it, never abort the run."""
+    valid_zoom, tiny_zoom = 1.0, 0.02  # 0.02 rounds to 0.0 at the default tolerance
+    true_k1 = -0.30
+    img = np.zeros((SPEC.image_height, SPEC.image_width, 3), dtype=np.uint8)
+
+    class _SingleZoomDetector:
+        def detect(self, image: np.ndarray) -> list[_FakeCandidate]:
+            # Only the valid (>0) zoom group reaches detection.
+            return _fake_candidates_for_zoom(valid_zoom, true_k1)
+
+    result = calibrate_scene_self(
+        [(img, tiny_zoom), (img, valid_zoom)],
+        camera_id="cam",
+        detector=_SingleZoomDetector(),
+    )
+
+    assert len(result.table.entries) == 1
+    assert float(result.table.entries[0].zoom_factor) == valid_zoom
+    assert len(result.skipped_zooms) == 1
+    assert result.skipped_zooms[0].zoom_factor == 0.0
