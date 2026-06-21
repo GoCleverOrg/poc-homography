@@ -41,10 +41,7 @@ from poc_homography.calibration.extrinsic import (
     match_and_register,
     validate_with_holdout,
 )
-from poc_homography.calibration.lens_distortion.calibration_table import (
-    CameraCalibrationTable,
-    ZoomCalibrationEntry,
-)
+from poc_homography.calibration.lens_distortion.ddd_sync import lens_table_to_camera_table
 from poc_homography.calibration.lens_distortion.frame_source import iter_survey_frames
 from poc_homography.calibration.lens_distortion.line_detection import LineDetector
 from poc_homography.cli.calibrate_capture import _run_calibration_capture
@@ -71,7 +68,6 @@ if TYPE_CHECKING:
 
     from poc_homography.calibration.lens_distortion.frame_source import FrameRepo, FrameStore
     from poc_homography.calibration.lens_distortion.line_detection import CandidateLine
-    from poc_homography.domain.entities.lens_calibration_table import LensCalibrationTable
     from poc_homography.domain.vo.geotiff import GeoTiff
     from poc_homography.domain.vo.ortho_line import OrthoLine
 
@@ -83,51 +79,6 @@ if TYPE_CHECKING:
             ...
 
     PosePriorProvider = Callable[[float, float], npt.NDArray[np.float64] | None]
-
-
-def _to_camera_calibration_table(lens_table: LensCalibrationTable) -> CameraCalibrationTable:
-    """Bridge a persisted :class:`LensCalibrationTable` to the solver's table.
-
-    The extrinsic solvers consume the legacy
-    :class:`~poc_homography.calibration.lens_distortion.calibration_table.CameraCalibrationTable`
-    (flat distortion fields, zoom-keyed dict), whereas
-    :func:`_run_self_calibration` yields the DDD
-    :class:`~poc_homography.domain.entities.lens_calibration_table.LensCalibrationTable`
-    (nested :class:`LensDistortion` value object). The two ``to_dict`` shapes are
-    NOT interchangeable, so this rebuilds the legacy table field-by-field — the
-    inverse of :func:`poc_homography.calibration.lens_distortion.ddd_sync.sync_to_ddd_repo`.
-
-    Args:
-        lens_table: The persisted per-zoom lens table from self-calibration.
-
-    Returns:
-        An equivalent :class:`CameraCalibrationTable` the extrinsic solvers accept.
-    """
-    table = CameraCalibrationTable(
-        camera_id=lens_table.id,
-        created_date=lens_table.created_date,
-        last_modified=lens_table.last_modified,
-    )
-    for entry in lens_table.entries:
-        distortion = entry.distortion
-        table.entries[float(entry.zoom_factor)] = ZoomCalibrationEntry(
-            zoom_factor=float(entry.zoom_factor),
-            k1=float(distortion.k1),
-            k2=float(distortion.k2),
-            k3=float(distortion.k3),
-            p1=float(distortion.p1),
-            p2=float(distortion.p2),
-            calibration_date=entry.calibration_date,
-            source_images=tuple(entry.source_images),
-            validation_rmse=entry.validation_rmse,
-            num_lines_used=entry.num_lines_used,
-            fx=float(entry.fx),
-            fy=float(entry.fy),
-            cx=float(entry.cx),
-            cy=float(entry.cy),
-            reprojection_error_px=entry.reprojection_error_px,
-        )
-    return table
 
 
 def _run_camera_registration(
@@ -142,9 +93,6 @@ def _run_camera_registration(
     rms_threshold_m: float,
     line_detector: _FrameLineDetector | None = None,
     pose_prior_provider: PosePriorProvider | None = None,
-    holdout_fraction: float = 0.3,
-    rng_seed: int = 0,
-    clock: Callable[[], datetime] | None = None,
 ) -> list[PtzRegistration]:
     """Glue calibrate→register→validate→persist for one camera's stored frames.
 
@@ -172,9 +120,6 @@ def _run_camera_registration(
         pose_prior_provider: Optional ``(zoom, tilt) -> 3x3 frame→ortho prior``
             used only to gate AUTO-matcher candidates; ``None`` keeps line-only
             matching.
-        holdout_fraction: Fraction of correspondences held out per frame, in (0, 1).
-        rng_seed: Seed for the reproducible AUTO match + hold-out split.
-        clock: Wall-clock seam for record timestamps (defaults to ``datetime.now``).
 
     Returns:
         The list of persisted :class:`PtzRegistration` records, one per frame.
@@ -185,7 +130,7 @@ def _run_camera_registration(
         typer.Exit: If self-calibration finds no frames for the run.
     """
     detector = line_detector if line_detector is not None else LineDetector()
-    now = (clock() if clock is not None else datetime.now()).isoformat()
+    now = datetime.now().isoformat()
 
     calibration = _run_self_calibration(
         run_id=run_id,
@@ -193,7 +138,7 @@ def _run_camera_registration(
         frame_store=frame_store,
         session_factory=session_factory,
     )
-    calibration_table = _to_camera_calibration_table(calibration.table)
+    calibration_table = lens_table_to_camera_table(calibration.table)
 
     registrations: list[PtzRegistration] = []
     with session_factory() as session:
@@ -225,7 +170,6 @@ def _run_camera_registration(
                 pose_prior=pose_prior,
                 run_id=run_id,
                 camera_id=camera_id,
-                rng_seed=rng_seed,
             )
 
             # Hold-out validation re-solves on a fit subset and checks the held-out
@@ -240,8 +184,6 @@ def _run_camera_registration(
                 map_id=map_id,
                 geotiff=geotiff,
                 rms_threshold_m=rms_threshold_m,
-                holdout_fraction=holdout_fraction,
-                rng_seed=rng_seed,
                 run_id=run_id,
                 camera_id=camera_id,
             )
