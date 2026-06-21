@@ -234,6 +234,7 @@ _.area  # domain-api (poc_homography/domain/vo/image_dimensions.py:46)
 _.inverse  # domain-api (poc_homography/homography/interface.py:98)
 _.to_orientation  # domain-api (poc_homography/domain/vo/ptz_state.py:32)
 save_to_gcp_repo  # domain-api (poc_homography/map_points/gcp_registry.py:205)
+skipped_zooms  # domain-api (poc_homography/calibration/lens_distortion/scene_self_calibration.py:91 — SceneCalibrationResult field consumed by tests/callers, #350)
 
 # == survey-surface ==
 # Survey dataset & planner surface (#258/#260/#276) — consumed by sibling capture/phase issues and tests
