@@ -34,6 +34,7 @@ def _register_commands() -> None:
         calibrate_capture,
         camera,
         cleanplate,
+        confidence_report,
         gcp,
         interactive,
         line_picker,
@@ -53,6 +54,7 @@ def _register_commands() -> None:
     _ = calibrate_capture
     _ = camera
     _ = cleanplate
+    _ = confidence_report
     _ = gcp
     _ = interactive
     _ = line_picker
