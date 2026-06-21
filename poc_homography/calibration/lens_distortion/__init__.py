@@ -51,6 +51,13 @@ from poc_homography.calibration.lens_distortion.models import (
     GroundTruthLine,
     LineCorrespondence,
 )
+from poc_homography.calibration.lens_distortion.scene_self_calibration import (
+    SceneCalibrationResult,
+    ScenePerZoomConfig,
+    SkippedZoom,
+    calibrate_scene_self,
+    calibrate_zoom_from_lines,
+)
 
 __all__ = [
     # Models
@@ -80,4 +87,10 @@ __all__ = [
     "undistort_points",
     "undistort_image",
     "measure_line_straightness",
+    # Scene self-calibration (#350)
+    "SceneCalibrationResult",
+    "ScenePerZoomConfig",
+    "SkippedZoom",
+    "calibrate_scene_self",
+    "calibrate_zoom_from_lines",
 ]
