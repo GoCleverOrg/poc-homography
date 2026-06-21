@@ -53,8 +53,14 @@ from poc_homography.cli.self_calibrate import _run_self_calibration
 from poc_homography.domain.entities.ptz_registration import PtzRegistration
 from poc_homography.infrastructure.clients.minio_frame_store import MinioFrameStore
 from poc_homography.infrastructure.database import get_session
+from poc_homography.infrastructure.repositories.repo_postgres_camera_config import (
+    RepoPostgresCameraConfig,
+)
 from poc_homography.infrastructure.repositories.repo_postgres_clean_plate_frame import (
     RepoPostgresCleanPlateFrame,
+)
+from poc_homography.infrastructure.repositories.repo_postgres_map import (
+    RepoPostgresMap,
 )
 from poc_homography.infrastructure.repositories.repo_postgres_ptz_registration import (
     RepoPostgresPtzRegistration,
@@ -201,6 +207,42 @@ def _run_camera_registration(
             registrations.append(record)
 
     return registrations
+
+
+def _require_reference_rows(
+    camera_id: str,
+    map_id: str,
+    *,
+    tenant_id: str,
+    session_factory: Callable[[], AbstractContextManager[Session]],
+) -> None:
+    """Fail fast with a clear fix when the pipeline's FK reference rows are absent.
+
+    The pipeline persists registrations keyed by ``camera_id`` under an FK chain
+    rooted at the tenant -> map -> camera_config rows. When either the camera's
+    ``camera_config`` or its ``map`` row is missing, persistence would raise a
+    ForeignKeyViolation deep in the run; this preflight surfaces that up front
+    and names the bootstrap fix instead of auto-mutating the DB.
+
+    Args:
+        camera_id: The camera whose ``camera_config`` row must exist.
+        map_id: The map row the camera references.
+        tenant_id: The tenant id, named in the remediation message.
+        session_factory: Database session context-manager factory.
+
+    Raises:
+        typer.Exit: If either reference row is missing.
+    """
+    with session_factory() as session:
+        camera_exists = RepoPostgresCameraConfig(session).get(camera_id) is not None
+        map_exists = RepoPostgresMap(session).get(map_id) is not None
+    if not (camera_exists and map_exists):
+        typer.echo(
+            f"Error: reference rows missing for camera '{camera_id}'. "
+            f"Run: hom calibrate bootstrap --tenant {tenant_id} first.",
+            err=True,
+        )
+        raise typer.Exit(1)
 
 
 def _resolve_camera(camera: str) -> dict:
@@ -366,6 +408,13 @@ def run_camera_command(
     if not os.environ.get("DATABASE_URL"):
         typer.echo("Error: DATABASE_URL environment variable is not set.", err=True)
         raise typer.Exit(1)
+
+    _require_reference_rows(
+        camera_id,
+        map_id,
+        tenant_id=cam_info.get("tenant_id") or "",
+        session_factory=get_session,
+    )
 
     if offline_run_id:
         run_id = offline_run_id

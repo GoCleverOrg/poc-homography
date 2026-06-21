@@ -30,6 +30,7 @@ def _register_commands() -> None:
     themselves when the module is imported.
     """
     from poc_homography.cli import (
+        bootstrap,
         calibrate,
         calibrate_capture,
         camera,
@@ -51,6 +52,7 @@ def _register_commands() -> None:
     app.add_typer(maps.maps_app, name="maps")
 
     # Avoid "imported but unused" warnings by explicitly using the module
+    _ = bootstrap
     _ = calibrate
     _ = calibrate_capture
     _ = camera

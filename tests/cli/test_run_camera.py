@@ -311,6 +311,7 @@ def _wire_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(cmd.MinioFrameStore, "from_env", classmethod(lambda _cls: object()))
     monkeypatch.setattr(cmd, "_load_ortho_context", lambda _map_id: (_ortho_lines(), _geotiff()))
+    monkeypatch.setattr(cmd, "_require_reference_rows", lambda *_args, **_kwargs: None)
 
 
 def test_command_offline_run_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
