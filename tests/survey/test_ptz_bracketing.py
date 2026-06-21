@@ -78,3 +78,44 @@ def test_restores_original_position_on_exception() -> None:
 
     # Restore still ran exactly once despite the propagating exception.
     assert camera.absolute_moves == [(_ORIGINAL.pan_raw, _ORIGINAL.tilt_deg, _ORIGINAL.zoom)]
+
+
+def test_restore_failure_does_not_mask_sweep_error() -> None:
+    class _SweepAborted(RuntimeError):
+        """Stand-in for a mid-sweep failure or operator abort."""
+
+    class _RestoreFailingCamera(_RecordingCamera):
+        """A camera whose restore move also fails (e.g. lost connection)."""
+
+        def move_absolute(
+            self,
+            pan: float | None = None,
+            tilt: float | None = None,
+            zoom: float | None = None,
+        ) -> PTZState:
+            raise ConnectionError("camera unreachable during restore")
+
+    camera = _RestoreFailingCamera(_ORIGINAL)
+
+    # The original sweep error wins; the restore failure is logged, not raised.
+    with pytest.raises(_SweepAborted):
+        with preserve_ptz_position(camera):  # type: ignore[arg-type]
+            raise _SweepAborted("aborted mid-sweep")
+
+
+def test_restore_failure_propagates_on_normal_completion() -> None:
+    class _RestoreFailingCamera(_RecordingCamera):
+        def move_absolute(
+            self,
+            pan: float | None = None,
+            tilt: float | None = None,
+            zoom: float | None = None,
+        ) -> PTZState:
+            raise ConnectionError("camera unreachable during restore")
+
+    camera = _RestoreFailingCamera(_ORIGINAL)
+
+    # No sweep error to preserve, so a restore failure surfaces to the caller.
+    with pytest.raises(ConnectionError):
+        with preserve_ptz_position(camera):  # type: ignore[arg-type]
+            pass
