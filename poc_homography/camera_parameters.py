@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 from poc_homography.types import Degrees, Meters, Pixels, Unitless
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from poc_homography.domain.vo import HeightUncertainty, LensDistortion
 
-# Backward-compatible alias
-DistortionCoefficients = LensDistortion
+logger = logging.getLogger(__name__)
 
 
 def _validate_matrix_shape(matrix: np.ndarray, expected_shape: tuple[int, ...], name: str) -> None:
