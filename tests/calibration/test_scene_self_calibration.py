@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from poc_homography.calibration.lens_distortion.apply_calibration import distort_points
 from poc_homography.calibration.lens_distortion.distortion_solver import (
     straightness_rmse,
 )
@@ -45,25 +46,6 @@ SPEC = CameraSpec.HIKVISION_DS_2DF8425IX
 # ---------------------------------------------------------------------------
 # Synthetic data helpers
 # ---------------------------------------------------------------------------
-
-
-def _forward_distort(
-    points: np.ndarray,
-    k1: float,
-    k2: float,
-    fx: float,
-    fy: float,
-    cx: float,
-    cy: float,
-) -> np.ndarray:
-    """Brown-Conrady forward radial distortion (k1, k2 only)."""
-    x = (points[:, 0] - cx) / fx
-    y = (points[:, 1] - cy) / fy
-    r2 = x * x + y * y
-    radial = 1.0 + k1 * r2 + k2 * r2 * r2
-    x_d = x * radial
-    y_d = y * radial
-    return np.column_stack([x_d * fx + cx, y_d * fy + cy])
 
 
 def _prior_k_for_zoom(zoom: float) -> np.ndarray:
@@ -124,7 +106,9 @@ def _distorted_lines(
 
     lines: list[CameraLine] = []
     for line_id, undist in specs:
-        distorted = _forward_distort(undist, true_k1, true_k2, fx, fy, cx, cy)
+        # Reuse the shipped forward model (k3=p1=p2=0) so recovery is validated
+        # against the production distortion, not a hand-rolled twin.
+        distorted = distort_points(undist, true_k1, true_k2, 0.0, 0.0, 0.0, fx, fy, cx, cy)
         edge_pixels = tuple((float(p[0]), float(p[1])) for p in distorted)
         lines.append(
             CameraLine(
@@ -167,6 +151,20 @@ def _fake_candidates_for_zoom(zoom: float, true_k1: float) -> list[_FakeCandidat
     return [_FakeCandidate(line.edge_pixels) for line in _distorted_lines(zoom, true_k1)]  # type: ignore[arg-type]
 
 
+class _QueueDetector:
+    """Duck-typed LineDetector returning a queued candidate set per detect call.
+
+    The service processes zoom groups in sorted order, so the queue is seeded in
+    that order (one entry per detected image).
+    """
+
+    def __init__(self, queue: list[list[_FakeCandidate]]) -> None:
+        self._queue = queue
+
+    def detect(self, image: np.ndarray) -> list[_FakeCandidate]:
+        return self._queue.pop(0)
+
+
 # ---------------------------------------------------------------------------
 # DoD#1 — full image entrypoint across >=2 zooms via fake detector
 # ---------------------------------------------------------------------------
@@ -177,17 +175,9 @@ def test_calibrate_scene_self_one_entry_per_zoom() -> None:
     true_k1 = -0.30
     img = np.zeros((SPEC.image_height, SPEC.image_width, 3), dtype=np.uint8)
 
-    # Each zoom group needs candidates built off ITS prior K, so the detector
-    # dispatches on the zoom it is asked for. We achieve this by queueing the
-    # per-zoom candidate sets in the (sorted) order the service processes them:
-    # zoom_a (1.0) first, then zoom_b (2.0).
-    class _QueueDetector:
-        def __init__(self, queue: list[list[_FakeCandidate]]) -> None:
-            self._queue = queue
-
-        def detect(self, image: np.ndarray) -> list[_FakeCandidate]:
-            return self._queue.pop(0)
-
+    # Each zoom group needs candidates built off ITS prior K. The service
+    # processes zooms in sorted order, so queue the per-zoom candidate sets in
+    # that order: zoom_a (1.0) first, then zoom_b (2.0).
     detector = _QueueDetector(
         [
             _fake_candidates_for_zoom(zoom_a, true_k1),
@@ -315,16 +305,8 @@ def test_skipped_zoom_does_not_abort_other_zooms() -> None:
     valid_candidates = _fake_candidates_for_zoom(valid_zoom, true_k1)
     sparse_candidates = valid_candidates[:1]  # too few for the sparse zoom
 
-    class _PerZoomDetector:
-        def detect(self, image: np.ndarray) -> list[_FakeCandidate]:
-            # First image (valid zoom) gets full set; mutate on each call.
-            return self._queue.pop(0)
-
-        def __init__(self, queue: list[list[_FakeCandidate]]) -> None:
-            self._queue = queue
-
     # Pairs are processed in sorted-zoom order: valid_zoom (1.0) then sparse (2.0).
-    detector = _PerZoomDetector([valid_candidates, sparse_candidates])
+    detector = _QueueDetector([valid_candidates, sparse_candidates])
     result = calibrate_scene_self(
         [(img, valid_zoom), (img, sparse_zoom)],
         camera_id="cam",
@@ -343,15 +325,13 @@ def test_near_zero_zoom_is_skipped_not_fatal() -> None:
     true_k1 = -0.30
     img = np.zeros((SPEC.image_height, SPEC.image_width, 3), dtype=np.uint8)
 
-    class _SingleZoomDetector:
-        def detect(self, image: np.ndarray) -> list[_FakeCandidate]:
-            # Only the valid (>0) zoom group reaches detection.
-            return _fake_candidates_for_zoom(valid_zoom, true_k1)
-
+    # Only the valid (>0) zoom group reaches detection; the tiny zoom is skipped
+    # before any detect call, so a single-entry queue suffices.
+    detector = _QueueDetector([_fake_candidates_for_zoom(valid_zoom, true_k1)])
     result = calibrate_scene_self(
         [(img, tiny_zoom), (img, valid_zoom)],
         camera_id="cam",
-        detector=_SingleZoomDetector(),
+        detector=detector,
     )
 
     assert len(result.table.entries) == 1

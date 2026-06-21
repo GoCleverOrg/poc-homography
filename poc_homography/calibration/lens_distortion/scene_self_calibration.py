@@ -227,40 +227,43 @@ def calibrate_scene_self(
     skipped: list[SkippedZoom] = []
 
     for zoom in sorted(groups):
-        images = groups[zoom]
         # A non-positive rounded zoom (e.g. an input zoom that rounds to 0.0)
         # is degenerate: PTZPosition / compute_intrinsics reject it. Report it
         # as skipped rather than letting it abort the whole run.
         if zoom <= 0.0:
-            outcome: ZoomCalibrationEntry | SkippedZoom = SkippedZoom(
-                zoom_factor=zoom,
-                num_lines=0,
-                reason="non-positive zoom factor after rounding",
+            logger.warning("Skipping zoom %.3f: non-positive zoom factor after rounding", zoom)
+            skipped.append(
+                SkippedZoom(
+                    zoom_factor=zoom,
+                    num_lines=0,
+                    reason="non-positive zoom factor after rounding",
+                )
             )
-        else:
-            ptz = PTZPosition(pan_deg=Degrees(0.0), tilt_deg=Degrees(0.0), zoom_factor=zoom)
-            lines: list[CameraLine] = []
-            for idx, image in enumerate(images):
-                candidates = line_detector.detect(image)
-                image_path = f"{camera_id}_zoom{zoom}_img{idx}"
-                # Keep up to max_lines_per_image *usable* (curved) lines: the cap
-                # must not discard the curved lines that carry the distortion
-                # signal in favour of straight ones.
-                kept = 0
-                for line_idx, candidate in enumerate(candidates):
-                    if kept >= cfg.max_lines_per_image:
-                        break
-                    camera_line = candidate.to_camera_line(
-                        line_id=f"{image_path}_line{line_idx}",
-                        image_path=image_path,
-                        ptz_position=ptz,
-                    )
-                    if not camera_line.has_edge_curvature():
-                        continue
-                    lines.append(camera_line)
-                    kept += 1
+            continue
 
-            outcome = calibrate_zoom_from_lines(lines, zoom, camera_spec=camera_spec, config=cfg)
+        ptz = PTZPosition(pan_deg=Degrees(0.0), tilt_deg=Degrees(0.0), zoom_factor=zoom)
+        lines: list[CameraLine] = []
+        for idx, image in enumerate(groups[zoom]):
+            candidates = line_detector.detect(image)
+            image_path = f"{camera_id}_zoom{zoom}_img{idx}"
+            # Keep up to max_lines_per_image *usable* (curved) lines: the cap
+            # must not discard the curved lines that carry the distortion
+            # signal in favour of straight ones.
+            kept = 0
+            for line_idx, candidate in enumerate(candidates):
+                if kept >= cfg.max_lines_per_image:
+                    break
+                camera_line = candidate.to_camera_line(
+                    line_id=f"{image_path}_line{line_idx}",
+                    image_path=image_path,
+                    ptz_position=ptz,
+                )
+                if not camera_line.has_edge_curvature():
+                    continue
+                lines.append(camera_line)
+                kept += 1
+
+        outcome = calibrate_zoom_from_lines(lines, zoom, camera_spec=camera_spec, config=cfg)
         if isinstance(outcome, SkippedZoom):
             logger.warning(
                 "Skipping zoom %.3f: %s (%d usable line(s))",
