@@ -38,6 +38,9 @@ from poc_homography.infrastructure.repositories.repo_postgres_line_annotation im
 from poc_homography.infrastructure.repositories.repo_postgres_map import (
     RepoPostgresMap,
 )
+from poc_homography.infrastructure.repositories.repo_postgres_ptz_registration import (
+    RepoPostgresPtzRegistration,
+)
 from poc_homography.infrastructure.repositories.repo_postgres_stress_test_session import (
     RepoPostgresStressTestSession,
 )
@@ -81,6 +84,9 @@ from poc_homography.infrastructure.repositories.repo_yaml_line_annotation import
     RepoYamlLineAnnotation,
 )
 from poc_homography.infrastructure.repositories.repo_yaml_map import RepoYamlMap
+from poc_homography.infrastructure.repositories.repo_yaml_ptz_registration import (
+    RepoYamlPtzRegistration,
+)
 from poc_homography.infrastructure.repositories.repo_yaml_stress_test_session import (
     RepoYamlStressTestSession,
 )
@@ -107,6 +113,7 @@ __all__ = [
     "RepoPostgresLine",
     "RepoPostgresLineAnnotation",
     "RepoPostgresMap",
+    "RepoPostgresPtzRegistration",
     "RepoPostgresTenant",
     # Concrete repositories (Postgres) — session repos
     "RepoPostgresDiagnosticSession",
@@ -125,6 +132,7 @@ __all__ = [
     "RepoYamlLine",
     "RepoYamlLineAnnotation",
     "RepoYamlMap",
+    "RepoYamlPtzRegistration",
     "RepoYamlTenant",
     "RepoYamlStressTestSession",
     "RepoYamlSurveyRun",
