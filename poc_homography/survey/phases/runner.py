@@ -312,7 +312,12 @@ def execute_survey(
     engine = SurveyCaptureEngine(camera, clock=clock, uuid_factory=uuid_factory)
     started_at = now()
 
-    training, holdout = _partition_main_grid(spec, plan)
+    # The FOV-grid partition feeds only the main survey (phase 5, training) and
+    # validation (phase 9, holdout); skip building it when both are disabled.
+    training: list[Pose] = []
+    holdout: list[Pose] = []
+    if plan.is_enabled(5) or plan.is_enabled(9):
+        training, holdout = _partition_main_grid(spec, plan)
 
     results: list[PhaseResult] = []
     captured_4_to_7: list[CommandedState] = []
