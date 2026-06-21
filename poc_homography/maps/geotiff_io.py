@@ -16,18 +16,21 @@ import io
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import tifffile
 
 from poc_homography.domain.vo.geotiff import GeoTiff, GeoTransform
 from poc_homography.types import Easting, Meters, Northing, Unitless
 
 if TYPE_CHECKING:
+    import numpy as np
     from numpy.typing import NDArray
 
 # GeoTIFF tag keys (GeoKeyDirectoryTag) that carry the projected/geographic CRS.
 _PROJECTED_CRS_KEY = 3072
 _GEOGRAPHIC_CRS_KEY = 2048
+
+# Errors a malformed/short GeoTIFF tag value can raise while being parsed.
+_TAG_PARSE_ERRORS = (IndexError, TypeError, ValueError)
 
 
 def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
@@ -67,7 +70,7 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
                 0.0,
                 -float(scale[1]),
             ]
-        except (IndexError, TypeError, ValueError):
+        except _TAG_PARSE_ERRORS:
             pass
 
     elif "ModelTransformationTag" in tags:
@@ -81,7 +84,7 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
                 float(matrix[4]),
                 float(matrix[5]),
             ]
-        except (IndexError, TypeError, ValueError):
+        except _TAG_PARSE_ERRORS:
             pass
 
     if "GeoKeyDirectoryTag" in tags:
@@ -92,7 +95,7 @@ def extract_geotiff(tif: tifffile.TiffFile) -> GeoTiff | None:
                 if key_id in (_PROJECTED_CRS_KEY, _GEOGRAPHIC_CRS_KEY):
                     crs = f"EPSG:{geo_keys[i + 3]}"
                     break
-        except (IndexError, TypeError, ValueError):
+        except _TAG_PARSE_ERRORS:
             pass
 
     if gt_params is None or crs is None:
@@ -132,7 +135,7 @@ def load_ortho_raster_from_bytes(data: bytes) -> tuple[NDArray[np.uint8], GeoTif
         image = tif.asarray()
     if geotiff is None:
         raise ValueError("GeoTIFF has no georeference tags (ModelPixelScale/Tiepoint or CRS)")
-    return np.asarray(image), geotiff
+    return image, geotiff
 
 
 def load_ortho_raster(path: str | Path) -> tuple[NDArray[np.uint8], GeoTiff]:

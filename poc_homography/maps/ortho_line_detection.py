@@ -73,8 +73,8 @@ class OrthoLineDetector:
                 OrthoLine.from_endpoints(
                     start_pixel=c.start,
                     end_pixel=c.end,
-                    start_utm=(float(start_utm[0]), float(start_utm[1])),
-                    end_utm=(float(end_utm[0]), float(end_utm[1])),
+                    start_utm=start_utm,
+                    end_utm=end_utm,
                     confidence=c.confidence,
                     cluster_id=c.cluster_id,
                 )
