@@ -319,6 +319,11 @@ def _minimal_hypothesis(
     best_h: npt.NDArray[np.float64] | None = None
     best_err = float("inf")
 
+    # The frame endpoints are loop-invariant (only the ortho side is flipped), so
+    # build the source array and its cv shape once, outside the orientation loop.
+    src = np.asarray([frame_a.start, frame_a.end, frame_b.start, frame_b.end], dtype=np.float32)
+    src_cv = src.reshape(-1, 1, 2).astype(np.float64)
+
     for flip_a in (False, True):
         for flip_b in (False, True):
             a_o_start, a_o_end = (
@@ -326,9 +331,6 @@ def _minimal_hypothesis(
             )
             b_o_start, b_o_end = (
                 (ortho_b.end, ortho_b.start) if flip_b else (ortho_b.start, ortho_b.end)
-            )
-            src = np.asarray(
-                [frame_a.start, frame_a.end, frame_b.start, frame_b.end], dtype=np.float32
             )
             dst = np.asarray([a_o_start, a_o_end, b_o_start, b_o_end], dtype=np.float32)
             try:
@@ -338,9 +340,7 @@ def _minimal_hypothesis(
             hyp_arr = np.asarray(hyp, dtype=np.float64)
             if abs(float(np.linalg.det(hyp_arr))) < 1e-12:
                 continue
-            projected = cv2.perspectiveTransform(
-                src.reshape(-1, 1, 2).astype(np.float64), hyp_arr
-            ).reshape(-1, 2)
+            projected = cv2.perspectiveTransform(src_cv, hyp_arr).reshape(-1, 2)
             err = float(np.sum(np.linalg.norm(projected - dst.astype(np.float64), axis=1)))
             if err < best_err:
                 best_err = err
@@ -365,13 +365,25 @@ def _score_hypothesis(
     Returns:
         Mapping frame_index → (ortho_index, max_endpoint_error) for inliers.
     """
+    # Project every frame endpoint once (batched), then index per candidate. This
+    # is numerically identical to a per-point transform but avoids two single-point
+    # cv2 calls per candidate inside the RANSAC loop, where the same frame line is
+    # otherwise re-projected once for every ortho line it is paired with.
+    if frame_geoms:
+        endpoints = np.empty((len(frame_geoms) * 2, 1, 2), dtype=np.float64)
+        for i, g in enumerate(frame_geoms):
+            endpoints[2 * i, 0] = g.start
+            endpoints[2 * i + 1, 0] = g.end
+        projected_all = cv2.perspectiveTransform(endpoints, homography).reshape(-1, 2)
+    else:
+        projected_all = np.empty((0, 2), dtype=np.float64)
+
     best_for_frame: dict[int, tuple[int, float]] = {}
 
     for f_idx, o_idx in candidates:
-        f_geom = frame_geoms[f_idx]
         o_geom = ortho_geoms[o_idx]
-        proj_start = _apply_homography(homography, f_geom.start)
-        proj_end = _apply_homography(homography, f_geom.end)
+        proj_start = projected_all[2 * f_idx]
+        proj_end = projected_all[2 * f_idx + 1]
         dist_start = _perp_distance(proj_start, o_geom.start, o_geom.end)
         dist_end = _perp_distance(proj_end, o_geom.start, o_geom.end)
         worst = max(dist_start, dist_end)
