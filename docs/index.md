@@ -25,6 +25,23 @@ ISAPI reference, **Camera intrinsics and pose**, and the **Domain model**.
   blending, with a stated recommendation and the `hom cleanplate reconstruct`
   pipeline.
 
+## Floor extraction & line detection (PoC)
+
+- [ortho_floor_extraction.md](./ortho_floor_extraction.md) — end-to-end PoC
+  notes: tile-cut → Replicate upscale → depth-anything-v2 + SAM auto-mask →
+  per-tile floor PNGs → stitched site-wide JPEG; 19-technique classical-CV
+  line-detection sweep + 10 tophat×Hough fusions; positive parking-row
+  region reconstruction. Records what worked, what didn't, and why (depth
+  alone misses overhead cars; SAM is the winner). Code lives in a sibling
+  worktree of the `mira` repo on branch `poc/ortho-lines-534`.
+- [ortho_floor_extraction_access.md](./ortho_floor_extraction_access.md) —
+  external accounts + credentials the PoC depends on: Replicate
+  (`smartterminal` account, 4 models, ~$0.40/site one-time), Bitwarden
+  Secrets Manager (`GoClever` SM project, the
+  `REPLICATE_API_DEFAULT_TOKEN` secret), GitHub branch, local-only deps.
+  Includes the safe `bws run` invocation shape, the `bash -c` leak
+  warning, and rotation paths.
+
 ## Map assets
 
 - [map_asset_storage.md](./map_asset_storage.md) — the S3/MinIO `map-assets`
