@@ -43,52 +43,6 @@ class DistortionCoefficients(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# calibrate-annotated-lines
-# ---------------------------------------------------------------------------
-
-
-class CameraLineAnnotationIn(BaseModel):
-    """Single annotated line with N-point trace."""
-
-    line_id: str
-    points: list[list[float]]
-
-
-class CalibrationConfigIn(BaseModel):
-    """Optional solver configuration."""
-
-    train_split_ratio: float = 0.7
-    use_radial_only: bool = False
-
-
-class CalibrateAnnotatedLinesRequest(BaseModel):
-    """Body for ``POST /api/calibrate-annotated-lines/``."""
-
-    camera_line_annotations: list[CameraLineAnnotationIn]
-    intrinsics: IntrinsicsIn
-    auto_intrinsics: bool = False
-    zoom: float | None = None
-    config: CalibrationConfigIn = Field(default_factory=CalibrationConfigIn)
-
-
-class CalibrateAnnotatedLinesResponse(BaseModel):
-    """Response for ``POST /api/calibrate-annotated-lines/``."""
-
-    success: bool
-    message: str
-    iterations: int
-    initial_error: float
-    final_error: float
-    overall_rmse: float
-    coefficients: DistortionCoefficients
-    intrinsics_used: IntrinsicsOut
-    quality: str
-    line_errors: list[float]
-    improvement_percent: float
-    intrinsics: dict | None = None
-
-
-# ---------------------------------------------------------------------------
 # validate
 # ---------------------------------------------------------------------------
 

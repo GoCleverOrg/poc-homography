@@ -1,22 +1,22 @@
 """FastAPI router for lens-calibration endpoints.
 
-Ported from ``webapp/lens_calibration/views.py``.  Covers distortion
-calibration from annotated lines, validation, save/load of calibration
-tables, intrinsics computation, and line-trace-set listing/detail.
+Ported from ``webapp/lens_calibration/views.py``.  Covers validation,
+save/load of calibration tables, intrinsics computation, and
+line-trace-set listing/detail.  Lens-distortion calibration itself is
+automatic-only (scene self-calibration); there is no manual
+annotated-line calibration endpoint.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from homography_web.calibration_utils import serialize_calibration_entry
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.lens_calibration import (
-    CalibrateAnnotatedLinesRequest,
-    CalibrateAnnotatedLinesResponse,
     CalibrationIdsResponse,
     ComputeIntrinsicsRequest,
     ComputeIntrinsicsResponse,
@@ -53,153 +53,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lens-calibration", tags=["lens-calibration"])
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-MAX_LINE_ANNOTATIONS = 500  # Prevent DoS via excessive input
-
-
-def _build_intrinsic_matrix(
-    data: CalibrateAnnotatedLinesRequest,
-) -> tuple[Any, dict[str, float]]:
-    """Build intrinsic matrix from request data, computing from specs if requested.
-
-    Returns ``(intrinsic_matrix, intrinsics_dict)``.
-    """
-    import numpy as np
-
-    intrinsics = data.intrinsics
-
-    if data.auto_intrinsics:
-        from poc_homography.camera.intrinsics import compute_intrinsics
-        from poc_homography.camera_config import (
-            DEFAULT_BASE_FOCAL_LENGTH_MM,
-            DEFAULT_SENSOR_WIDTH_MM,
-        )
-
-        zoom = float(data.zoom if data.zoom is not None else (intrinsics.zoom or 1.0))
-        result = compute_intrinsics(
-            zoom=zoom,
-            image_width=intrinsics.image_width,
-            image_height=intrinsics.image_height,
-            sensor_width_mm=float(
-                intrinsics.sensor_width_mm
-                if intrinsics.sensor_width_mm is not None
-                else DEFAULT_SENSOR_WIDTH_MM
-            ),
-            base_focal_length_mm=float(
-                intrinsics.base_focal_length_mm
-                if intrinsics.base_focal_length_mm is not None
-                else DEFAULT_BASE_FOCAL_LENGTH_MM
-            ),
-        )
-        resolved = {
-            "fx": float(result.focal_length_px),
-            "fy": float(result.focal_length_px),
-            "cx": float(result.cx),
-            "cy": float(result.cy),
-        }
-    else:
-        resolved = {
-            "fx": intrinsics.fx,
-            "fy": intrinsics.fy,
-            "cx": intrinsics.cx,
-            "cy": intrinsics.cy,
-        }
-
-    intrinsic_matrix = np.array(
-        [
-            [resolved["fx"], 0.0, resolved["cx"]],
-            [0.0, resolved["fy"], resolved["cy"]],
-            [0.0, 0.0, 1.0],
-        ]
-    )
-
-    return intrinsic_matrix, resolved
-
-
-# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-
-
-@router.post(
-    "/api/calibrate-annotated-lines/",
-    response_model=CalibrateAnnotatedLinesResponse,
-)
-def calibrate_annotated_lines(
-    body: CalibrateAnnotatedLinesRequest,
-    user: UserModel = Depends(get_current_user),
-) -> CalibrateAnnotatedLinesResponse:
-    """Run distortion calibration using manually annotated N-point line traces."""
-    if not body.camera_line_annotations:
-        raise HTTPException(status_code=400, detail="Missing or empty camera_line_annotations")
-
-    if len(body.camera_line_annotations) > MAX_LINE_ANNOTATIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Too many line annotations (max {MAX_LINE_ANNOTATIONS})",
-        )
-
-    try:
-        from poc_homography.calibration.lens_distortion.annotated_line_solver import (
-            AnnotatedLineSolver,
-            AnnotatedLineSolverConfig,
-            build_camera_line_annotations,
-        )
-
-        intrinsic_matrix, intrinsics_used = _build_intrinsic_matrix(body)
-
-        annotations_raw = [
-            {"line_id": a.line_id, "points": a.points} for a in body.camera_line_annotations
-        ]
-        lines = build_camera_line_annotations(annotations_raw)
-
-        solver_config = AnnotatedLineSolverConfig(
-            train_split_ratio=body.config.train_split_ratio,
-            use_radial_only=body.config.use_radial_only,
-        )
-        solver = AnnotatedLineSolver(config=solver_config)
-
-        result = solver.solve(lines, intrinsic_matrix)
-
-        improvement_percent = (1 - result.improvement_ratio()) * 100 if result.success else 0.0
-
-        return CalibrateAnnotatedLinesResponse(
-            success=result.success,
-            message=result.message,
-            iterations=result.iterations,
-            initial_error=result.initial_error,
-            final_error=result.final_error,
-            overall_rmse=result.overall_rmse,
-            coefficients={
-                "k1": float(result.distortion.k1),
-                "k2": float(result.distortion.k2),
-                "k3": float(result.distortion.k3),
-                "p1": float(result.distortion.p1),
-                "p2": float(result.distortion.p2),
-            },
-            intrinsics_used=intrinsics_used,
-            quality=(
-                "good"
-                if result.overall_rmse < 2.0
-                else "acceptable"
-                if result.overall_rmse < 5.0
-                else "poor"
-            ),
-            line_errors=result.line_errors[:20],
-            improvement_percent=improvement_percent,
-            intrinsics=result.intrinsics if result.intrinsics else None,
-        )
-
-    except ImportError:
-        logger.exception("Annotated line solver module not available")
-        raise HTTPException(status_code=500, detail="Annotated line solver module not available")
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Annotated line calibration failed")
-        raise HTTPException(status_code=500, detail="Annotated line calibration failed")
 
 
 @router.post("/api/validate/", response_model=ValidateResponse)

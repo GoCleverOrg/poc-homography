@@ -1109,7 +1109,10 @@ p2: ${currentResults.coefficients.p2}`;
 
                 progressBar.querySelector('.fill').style.width = '60%';
 
-                const resp = await fetch('{% url "lens_calibration:api_calibrate_annotated_lines" %}', {
+                // Manual annotated-line calibration has been removed; lens-distortion
+                // calibration is now automatic-only (scene self-calibration).
+                throw new Error('Manual annotated-line calibration has been removed (automatic-only).');
+                const resp = await fetch('/lens-calibration/api/calibrate-annotated-lines/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
                     body: JSON.stringify(requestBody),

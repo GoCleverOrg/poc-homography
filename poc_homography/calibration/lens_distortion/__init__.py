@@ -13,18 +13,10 @@ Public API modules:
     models: Data structures for lines, calibration entries, and results
     line_detection: Automatic parking line detection using Hough transforms
     distortion_solver: Optimization-based distortion coefficient solver
-    annotated_line_solver: Annotated-line distortion solver using N-point traces
     calibration_table: Zoom-dependent calibration storage with interpolation
     apply_calibration: Undistortion and measurement utilities
 """
 
-from poc_homography.calibration.lens_distortion.annotated_line_solver import (
-    AnnotatedLineSolver,
-    AnnotatedLineSolverConfig,
-    CameraLineAnnotation,
-    build_camera_line_annotations,
-    split_lines,
-)
 from poc_homography.calibration.lens_distortion.apply_calibration import (
     distort_points,
     line_straightness_error,
@@ -75,12 +67,6 @@ __all__ = [
     # Calibration table
     "CameraCalibrationTable",
     "ZoomCalibrationEntry",
-    # Annotated-line solver
-    "AnnotatedLineSolver",
-    "AnnotatedLineSolverConfig",
-    "CameraLineAnnotation",
-    "build_camera_line_annotations",
-    "split_lines",
     # Distortion & measurement utilities
     "distort_points",
     "line_straightness_error",
