@@ -14,7 +14,6 @@ import ClickToGpsPage from './pages/ClickToGpsPage';
 import CameraDiagnosticPage from './pages/CameraDiagnosticPage';
 import CameraSurveyPage from './pages/CameraSurveyPage';
 import CameraEvaluationPage from './pages/CameraEvaluationPage';
-import LensCalibrationPage from './pages/LensCalibrationPage';
 import DistortionValidatorPage from './pages/DistortionValidatorPage';
 import CleanPlateGalleryPage from './pages/CleanPlateGalleryPage';
 
@@ -56,10 +55,6 @@ export default function App() {
               <Route
                 path="camera-evaluation"
                 element={<CameraEvaluationPage />}
-              />
-              <Route
-                path="lens-calibration"
-                element={<LensCalibrationPage />}
               />
               <Route
                 path="distortion-validator"

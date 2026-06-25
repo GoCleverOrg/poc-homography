@@ -69,14 +69,6 @@ const TOOL_CARDS: ToolCardDef[] = [
       'Survey camera surroundings with PTZ control and run stress tests to validate equipment installation. Two tabs: Survey (PTZ sweep with screenshots) and Stress Testing (PTZ reliability tests).',
   },
   {
-    to: '/lens-calibration',
-    title: 'Lens Calibration Tool',
-    badge: 'Calibration',
-    alwaysEnabled: true,
-    description:
-      'Calculate lens distortion coefficients (k1, k2, k3, p1, p2) using detected parking lines. Optimizes for line straightness and saves calibration for homography correction.',
-  },
-  {
     to: '/distortion-validator',
     title: 'Distortion Validator',
     badge: 'Validation',
