@@ -73,6 +73,23 @@ def _load_offline_pairs(offline_dir: Path) -> list[tuple[np.ndarray, float]]:
     return pairs
 
 
+def _build_live_device(ip: str, tenant: str) -> CalibrationDevice:
+    """Build a live Hikvision-backed CalibrationDevice (credentials from env)."""
+    from poc_homography.calibration.lens_distortion.auto_calibration import DeviceFrameCapturer
+    from poc_homography.camera_config import get_tenant_credentials
+    from poc_homography.infrastructure.clients.hikvision.isapi_client import HikvisionISAPIClient
+
+    username, password = get_tenant_credentials(tenant)
+    if not username or not password:
+        typer.echo(
+            f"Error: missing credentials; set {tenant.upper()}_CAMERA_USERNAME / "
+            f"{tenant.upper()}_CAMERA_PASSWORD.",
+            err=True,
+        )
+        raise typer.Exit(2)
+    return DeviceFrameCapturer(HikvisionISAPIClient(ip, username, password))
+
+
 @calibrate_app.command("lens-auto")
 def lens_auto_command(
     camera_id: str = typer.Option(..., "--camera-id", help="Camera id (table id)"),
@@ -95,12 +112,19 @@ def lens_auto_command(
     offline_dir: Path | None = typer.Option(
         None, "--offline-dir", help="Replay pre-captured (image,zoom) frames instead of a camera"
     ),
+    live: bool = typer.Option(False, "--live", help="Drive a live camera (requires --ip)"),
+    ip: str | None = typer.Option(None, "--ip", help="Live camera host/IP (with --live)"),
+    tenant: str = typer.Option(
+        "ico", "--tenant", help="Tenant id for camera credentials (env {TENANT}_CAMERA_*)"
+    ),
 ) -> None:
     """
     Automatically calibrate lens distortion across zoom, restoring PTZ.
 
-    Live mode requires a reachable camera (not yet wired here); use
-    ``--offline-dir`` to calibrate from pre-captured frames. Persists a per-camera
+    Use ``--offline-dir`` to calibrate from pre-captured frames, or
+    ``--live --ip <host>`` to drive a real Hikvision camera (credentials from the
+    ``{TENANT}_CAMERA_USERNAME`` / ``{TENANT}_CAMERA_PASSWORD`` env vars). The
+    camera PTZ is saved first and restored in a ``finally``. Persists a per-camera
     table under ``calibration_results/{camera_id}.yaml`` and a per-model table
     under ``calibration_results/models/{model}.yaml``. Exits non-zero with a clear
     message when no zoom yields a calibratable view.
@@ -119,21 +143,24 @@ def lens_auto_command(
         min_orientations=min_orientations,
     )
 
-    if offline_dir is None:
-        typer.echo(
-            "Error: live camera mode is not wired into this command; pass --offline-dir.",
-            err=True,
-        )
+    device: CalibrationDevice
+    if live:
+        if not ip:
+            typer.echo("Error: --live requires --ip <host>.", err=True)
+            raise typer.Exit(2)
+        device = _build_live_device(ip, tenant)
+    elif offline_dir is not None:
+        if not offline_dir.is_dir():
+            typer.echo(f"Error: offline-dir '{offline_dir}' is not a directory.", err=True)
+            raise typer.Exit(2)
+        pairs = _load_offline_pairs(offline_dir)
+        if not pairs:
+            typer.echo(f"Error: no usable frames found in '{offline_dir}'.", err=True)
+            raise typer.Exit(2)
+        device = OfflineFrameDevice(pairs)
+    else:
+        typer.echo("Error: pass --offline-dir <dir> or --live --ip <host>.", err=True)
         raise typer.Exit(2)
-
-    if not offline_dir.is_dir():
-        typer.echo(f"Error: offline-dir '{offline_dir}' is not a directory.", err=True)
-        raise typer.Exit(2)
-    pairs = _load_offline_pairs(offline_dir)
-    if not pairs:
-        typer.echo(f"Error: no usable frames found in '{offline_dir}'.", err=True)
-        raise typer.Exit(2)
-    device: CalibrationDevice = OfflineFrameDevice(pairs)
 
     try:
         result = run_auto_calibration(
