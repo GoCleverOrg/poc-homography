@@ -38,6 +38,7 @@ def _register_commands() -> None:
         confidence_report,
         gcp,
         interactive,
+        lens_auto_calibrate,
         line_picker,
         maps,
         point_picker,
@@ -60,6 +61,7 @@ def _register_commands() -> None:
     _ = confidence_report
     _ = gcp
     _ = interactive
+    _ = lens_auto_calibrate
     _ = line_picker
     _ = maps
     _ = point_picker
