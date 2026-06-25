@@ -303,3 +303,5 @@ _.center_y  # uncertain-needs-follow-up (poc_homography/domain/vo/image_dimensio
 _.has_distortion  # uncertain-needs-follow-up (poc_homography/domain/vo/lens_distortion.py:40)
 build_model_table  # used by tests + lens-calibration CLI (poc_homography/calibration/lens_distortion/model_aggregation.py)
 fold_camera_table  # used by tests + lens-calibration CLI (poc_homography/calibration/lens_distortion/model_aggregation.py)
+assess_camera_lines  # used by survey + lens-calibration CLI (poc_homography/calibration/lens_distortion/visibility.py)
+require_calibratable_view  # used by survey + tests (poc_homography/calibration/lens_distortion/visibility.py)
