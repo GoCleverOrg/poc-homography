@@ -301,3 +301,5 @@ _.to_reference_dict  # uncertain-needs-follow-up (poc_homography/homography/para
 _.center_x  # uncertain-needs-follow-up (poc_homography/domain/vo/image_dimensions.py:51)
 _.center_y  # uncertain-needs-follow-up (poc_homography/domain/vo/image_dimensions.py:56)
 _.has_distortion  # uncertain-needs-follow-up (poc_homography/domain/vo/lens_distortion.py:40)
+build_model_table  # used by tests + lens-calibration CLI (poc_homography/calibration/lens_distortion/model_aggregation.py)
+fold_camera_table  # used by tests + lens-calibration CLI (poc_homography/calibration/lens_distortion/model_aggregation.py)
