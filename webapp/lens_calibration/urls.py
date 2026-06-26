@@ -10,11 +10,6 @@ urlpatterns = [
     # Main page
     path("", views.index, name="index"),
     # API endpoints
-    path(
-        "api/calibrate-annotated-lines/",
-        views.api_calibrate_annotated_lines,
-        name="api_calibrate_annotated_lines",
-    ),
     path("api/validate/", views.api_validate, name="api_validate"),
     path("api/save/", views.api_save, name="api_save"),
     path("api/load/", views.api_load, name="api_load"),

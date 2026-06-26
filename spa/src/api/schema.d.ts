@@ -1725,26 +1725,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/lens-calibration/api/calibrate-annotated-lines/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Calibrate Annotated Lines
-         * @description Run distortion calibration using manually annotated N-point line traces.
-         */
-        post: operations["calibrate_annotated_lines_lens_calibration_api_calibrate_annotated_lines__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/lens-calibration/api/validate/": {
         parameters: {
             query?: never;
@@ -2282,69 +2262,6 @@ export interface components {
             pixel_y: number;
         };
         /**
-         * CalibrateAnnotatedLinesRequest
-         * @description Body for ``POST /api/calibrate-annotated-lines/``.
-         */
-        CalibrateAnnotatedLinesRequest: {
-            /** Camera Line Annotations */
-            camera_line_annotations: components["schemas"]["CameraLineAnnotationIn"][];
-            intrinsics: components["schemas"]["api__schemas__lens_calibration__IntrinsicsIn"];
-            /**
-             * Auto Intrinsics
-             * @default false
-             */
-            auto_intrinsics: boolean;
-            /** Zoom */
-            zoom?: number | null;
-            config?: components["schemas"]["CalibrationConfigIn"];
-        };
-        /**
-         * CalibrateAnnotatedLinesResponse
-         * @description Response for ``POST /api/calibrate-annotated-lines/``.
-         */
-        CalibrateAnnotatedLinesResponse: {
-            /** Success */
-            success: boolean;
-            /** Message */
-            message: string;
-            /** Iterations */
-            iterations: number;
-            /** Initial Error */
-            initial_error: number;
-            /** Final Error */
-            final_error: number;
-            /** Overall Rmse */
-            overall_rmse: number;
-            coefficients: components["schemas"]["DistortionCoefficients"];
-            intrinsics_used: components["schemas"]["IntrinsicsOut"];
-            /** Quality */
-            quality: string;
-            /** Line Errors */
-            line_errors: number[];
-            /** Improvement Percent */
-            improvement_percent: number;
-            /** Intrinsics */
-            intrinsics?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /**
-         * CalibrationConfigIn
-         * @description Optional solver configuration.
-         */
-        CalibrationConfigIn: {
-            /**
-             * Train Split Ratio
-             * @default 0.7
-             */
-            train_split_ratio: number;
-            /**
-             * Use Radial Only
-             * @default false
-             */
-            use_radial_only: boolean;
-        };
-        /**
          * CalibrationFilesResponse
          * @description Response for ``GET /api/calibration-files/``.
          */
@@ -2371,16 +2288,6 @@ export interface components {
             height: number;
             /** Filename */
             filename: string;
-        };
-        /**
-         * CameraLineAnnotationIn
-         * @description Single annotated line with N-point trace.
-         */
-        CameraLineAnnotationIn: {
-            /** Line Id */
-            line_id: string;
-            /** Points */
-            points: number[][];
         };
         /**
          * CameraResultIn
@@ -6573,39 +6480,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    calibrate_annotated_lines_lens_calibration_api_calibrate_annotated_lines__post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CalibrateAnnotatedLinesRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CalibrateAnnotatedLinesResponse"];
                 };
             };
             /** @description Validation Error */

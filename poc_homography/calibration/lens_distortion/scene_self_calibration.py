@@ -18,11 +18,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from poc_homography.calibration.lens_distortion.distortion_solver import (
-    DistortionSolver,
     SolverConfig,
+)
+from poc_homography.calibration.lens_distortion.floor_line_curation import (
+    curate_floor_lines,
 )
 from poc_homography.calibration.lens_distortion.line_detection import LineDetector
 from poc_homography.calibration.lens_distortion.models import PTZPosition
+from poc_homography.calibration.lens_distortion.robust_distortion import solve_robust
 from poc_homography.camera.intrinsics import compute_intrinsics
 from poc_homography.domain.entities.lens_calibration_table import LensCalibrationTable
 from poc_homography.domain.enums.camera_spec import CameraSpec
@@ -51,6 +54,27 @@ class ScenePerZoomConfig:
         num_samples_per_line: Points sampled along each line by the solver.
         max_iterations: Maximum solver optimisation iterations.
         zoom_tolerance: Rounding tolerance used to group images by zoom.
+        optimize_intrinsics: When False (default) the prior ``K`` is held FIXED
+            during the distortion solve, exactly like the proven plumb-line
+            recipe (``distort_plumb.py``: fixed fx/fy, principal point at the
+            image centre). This is what keeps k1 from pegging: letting fx/fy
+            float on a near-degenerate floor scene lets the optimiser trade
+            distortion against focal length and run to a coefficient rail.
+        k1_bounds: (min, max) bounds for the radial k1 coefficient. Wide and
+            symmetric so a correct barrel solve (~-0.18) sits well inside the
+            range and never pegs; the *fixed K* (above) is what prevents
+            run-away, not a tight box.
+        k2_bounds: (min, max) bounds for the radial k2 coefficient.
+        k3_bounds: (min, max) bounds for the radial k3 coefficient.
+        reject_min_px: Floor for the robust per-line rejection threshold.
+        reject_mad_scale: MAD multiplier added to the median per-line RMSE to
+            form the robust rejection threshold (max(reject_min_px, med+scale*MAD)).
+        robust_min_lines: Minimum lines the robust loop will keep before it
+            stops rejecting (must stay >= min_lines).
+        curation_angle_tol_deg: Chord-angle tolerance for floor-line orientation
+            families during curation.
+        curation_min_family_fraction: Minimum length-weighted fraction a chord
+            angle bucket must hold to count as a dominant family.
     """
 
     min_lines: int = 3
@@ -61,6 +85,22 @@ class ScenePerZoomConfig:
     num_samples_per_line: int = 30
     max_iterations: int = 3000
     zoom_tolerance: float = 0.1
+    # Hold the prior K fixed during the solve (the plumb-line recipe). This,
+    # not a tight coefficient box, is what stops k1 pegging.
+    optimize_intrinsics: bool = False
+    # Wide, symmetric radial bounds: a correct barrel solve (~-0.18) is well
+    # interior, so the optimiser never sits on a rail. With K fixed the solve
+    # is well-posed and stays inside these on real floor lines.
+    k1_bounds: tuple[float, float] = (-0.8, 0.8)
+    k2_bounds: tuple[float, float] = (-0.5, 0.5)
+    k3_bounds: tuple[float, float] = (-0.15, 0.15)
+    # Robust IRLS rejection knobs.
+    reject_min_px: float = 2.0
+    reject_mad_scale: float = 3.0
+    robust_min_lines: int = 6
+    # Floor-line curation knobs.
+    curation_angle_tol_deg: float = 12.0
+    curation_min_family_fraction: float = 0.15
 
 
 @dataclass(frozen=True)
@@ -76,6 +116,10 @@ class SkippedZoom:
     zoom_factor: float
     num_lines: int
     reason: str
+    num_detected: int = 0
+    num_curated: int = 0
+    num_kept: int = 0
+    num_rejected: int = 0
 
 
 @dataclass(frozen=True)
@@ -122,9 +166,23 @@ def calibrate_zoom_from_lines(
         base_focal_length_mm=camera_spec.base_focal_length,
     )
     prior_k = intrinsics.K
+    num_detected = len(lines)
 
-    usable_lines = [line for line in lines if line.has_edge_curvature()]
+    # 1) Curate to dominant floor-line orientation families: strips scattered
+    #    clutter and off-family car edges before any solving.
+    curated = curate_floor_lines(
+        lines,
+        float(camera_spec.image_width),
+        float(camera_spec.image_height),
+        angle_tol_deg=config.curation_angle_tol_deg,
+        min_family_fraction=config.curation_min_family_fraction,
+        min_lines=config.min_lines,
+    )
+
+    # 2) Drop lines that carry no distortion signal (straight by construction).
+    usable_lines = [line for line in curated if line.has_edge_curvature()]
     num_usable = len(usable_lines)
+    num_curated = len(curated)
     if num_usable < config.min_lines:
         return SkippedZoom(
             zoom_factor=zoom,
@@ -132,6 +190,8 @@ def calibrate_zoom_from_lines(
             reason=(
                 f"only {num_usable} usable line(s) with edge curvature; need >= {config.min_lines}"
             ),
+            num_detected=num_detected,
+            num_curated=num_curated,
         )
 
     fx0 = float(prior_k[0, 0])
@@ -142,7 +202,12 @@ def calibrate_zoom_from_lines(
 
     solver_config = SolverConfig(
         use_radial_only=True,
-        optimize_intrinsics=True,
+        # Fixed K (default) mirrors the proven plumb-line recipe and is what
+        # keeps the radial solve from pegging; see ScenePerZoomConfig.
+        optimize_intrinsics=config.optimize_intrinsics,
+        k1_bounds=config.k1_bounds,
+        k2_bounds=config.k2_bounds,
+        k3_bounds=config.k3_bounds,
         fx_bounds=(fx0 * (1.0 - frac), fx0 * (1.0 + frac)),
         fy_bounds=(fy0 * (1.0 - frac), fy0 * (1.0 + frac)),
         cx_bounds=(cx0 - config.cx_window_px, cx0 + config.cx_window_px),
@@ -151,24 +216,56 @@ def calibrate_zoom_from_lines(
         max_iterations=config.max_iterations,
     )
 
+    # 3) Robust IRLS solve: reject distortion-inconsistent lines (car edges).
+    #    Keep the robust floor at <= num_usable so a thin scene still solves.
+    robust_min = min(config.robust_min_lines, num_usable)
+    robust_min = max(robust_min, config.min_lines)
     try:
-        result = DistortionSolver(solver_config).solve(usable_lines, prior_k, LensDistortion())
+        robust = solve_robust(
+            usable_lines,
+            prior_k,
+            solver_config,
+            initial_guess=LensDistortion(),
+            min_lines=robust_min,
+            reject_min_px=config.reject_min_px,
+            reject_mad_scale=config.reject_mad_scale,
+        )
     except ValueError as exc:
         return SkippedZoom(
             zoom_factor=zoom,
             num_lines=num_usable,
             reason=f"solver error: {exc}",
+            num_detected=num_detected,
+            num_curated=num_curated,
         )
+
+    result = robust.result
+    num_kept = len(robust.kept_lines)
+    num_rejected = len(robust.rejected_lines)
 
     if not result.success:
         return SkippedZoom(
             zoom_factor=zoom,
             num_lines=num_usable,
             reason=f"solver did not converge: {result.message}",
+            num_detected=num_detected,
+            num_curated=num_curated,
+            num_kept=num_kept,
+            num_rejected=num_rejected,
         )
 
     refined = result.intrinsics or {"fx": fx0, "fy": fy0, "cx": cx0, "cy": cy0}
-    source_images = tuple(dict.fromkeys(line.image_path for line in usable_lines))
+    source_images = tuple(dict.fromkeys(line.image_path for line in robust.kept_lines))
+
+    logger.info(
+        "zoom %.3f: detected=%d curated=%d kept=%d rejected=%d k1=%.4f",
+        zoom,
+        num_detected,
+        num_curated,
+        num_kept,
+        num_rejected,
+        float(result.distortion.k1),
+    )
 
     return ZoomCalibrationEntry(
         zoom_factor=Unitless(zoom),
@@ -176,7 +273,7 @@ def calibrate_zoom_from_lines(
         calibration_date=datetime.now().isoformat(),
         source_images=source_images,
         validation_rmse=result.overall_rmse,
-        num_lines_used=num_usable,
+        num_lines_used=num_kept,
         fx=PixelsFloat(refined["fx"]),
         fy=PixelsFloat(refined["fy"]),
         cx=PixelsFloat(refined["cx"]),

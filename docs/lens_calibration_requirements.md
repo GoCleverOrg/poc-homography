@@ -173,97 +173,19 @@ An RMSE of 2.0 pixels means that, on average, corrected points deviate from the 
 
 ---
 
-## API Usage Examples
+## Calibration Workflow
 
-### Basic Calibration with Validation Split
+Lens-distortion calibration is **automatic-only**. The manual annotated-line
+calibration API (the legacy `edge_pixels` / `validation_split` POST endpoint)
+has been removed. Distortion coefficients are now solved by the scene
+self-calibration pipeline, which automatically detects straight scene lines and
+optimises the distortion model so they straighten under undistortion.
 
-```python
-import requests
-
-# Prepare calibration request with validation split
-payload = {
-    "image_width": 1920,
-    "image_height": 1080,
-    "lines": [
-        {
-            "line_id": "line_001",
-            "edge_pixels": [[100, 200], [150, 210], [200, 225], ...]  # 15+ points
-        },
-        {
-            "line_id": "line_002",
-            "edge_pixels": [[1800, 100], [1750, 150], [1700, 200], ...]
-        },
-        # ... 10+ lines total
-    ],
-    "validation_split": 0.5  # 50% for validation
-}
-
-response = requests.post(
-    "https://api.example.com/calibrate/lens-distortion",
-    json=payload
-)
-result = response.json()
-```
-
-### Interpreting the Response
-
-```python
-# Extract metrics from response
-training_rmse = result["training_rmse"]
-validation_rmse = result["validation_rmse"]
-baseline_rmse = result["baseline_rmse"]
-coefficients = result["distortion_coefficients"]
-
-# Assess calibration quality
-print(f"Training RMSE: {training_rmse:.2f} pixels")
-print(f"Validation RMSE: {validation_rmse:.2f} pixels")
-print(f"Baseline RMSE: {baseline_rmse:.2f} pixels")
-
-# Check success criteria
-if validation_rmse < baseline_rmse:
-    print("SUCCESS: Calibration improves on baseline")
-    improvement = (baseline_rmse - validation_rmse) / baseline_rmse * 100
-    print(f"Improvement: {improvement:.1f}%")
-else:
-    print("WARNING: Calibration does not improve on baseline")
-    print("Consider collecting more data or checking annotation quality")
-
-# Quality assessment
-if training_rmse < 2.0 and validation_rmse < 5.0:
-    print("Quality: GOOD - calibration is reliable")
-elif training_rmse < 4.0 and validation_rmse < 8.0:
-    print("Quality: ACCEPTABLE - calibration may be used with caution")
-else:
-    print("Quality: POOR - review data collection and annotations")
-
-# Check for overfitting
-overfit_ratio = validation_rmse / training_rmse
-if overfit_ratio > 2.0:
-    print(f"WARNING: Possible overfitting (ratio: {overfit_ratio:.1f})")
-    print("Consider adding more lines or increasing points per line")
-```
-
-### Response Structure
-
-```json
-{
-    "distortion_coefficients": {
-        "k1": -0.0234,
-        "k2": 0.0012,
-        "k3": -0.0001,
-        "p1": 0.0005,
-        "p2": -0.0003
-    },
-    "training_rmse": 1.45,
-    "validation_rmse": 3.21,
-    "baseline_rmse": 8.76,
-    "training_lines": 10,
-    "validation_lines": 10,
-    "total_points": 450,
-    "quadrants_covered": 4,
-    "orientation_buckets": 5
-}
-```
+The data-quality requirements above (points per line, total lines, quadrant
+coverage, orientation diversity, and the RMSE thresholds) still apply: the
+automatic pipeline needs the same spatial and orientation diversity to produce a
+robust, generalizable calibration. Use them as guidance when selecting scenes
+and zoom levels to calibrate.
 
 ---
 

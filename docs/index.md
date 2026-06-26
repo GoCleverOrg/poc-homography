@@ -77,6 +77,14 @@ ISAPI reference, **Camera intrinsics and pose**, and the **Domain model**.
 - [domain-model-refactoring.md](./domain-model-refactoring.md) — domain model
   and refactoring plan for the homography system.
 
+## Productization
+
+- [product_ideas.md](./product_ideas.md) — candidate products carved from the PTZ
+  calibration / ortho-floor work (lens-distortion-per-zoom, 2.5D floor homography,
+  perfect-lines, stitch-QC, survey primitive, clean-plate, drift monitor, …),
+  each with what already exists, the gap to MVP, and the honest cm-scale accuracy
+  ceiling of the single-PTZ-camera flat-ground model.
+
 ## Other
 
 - [README.md](./README.md) — the prior documentation index page.
