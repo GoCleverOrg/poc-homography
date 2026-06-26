@@ -90,6 +90,10 @@ class CalibrationDevice(Protocol):
         """Read the current ``(pan_deg, tilt_deg, zoom_factor)``."""
         ...
 
+    def set_pan_tilt(self, pan: float, tilt: float) -> None:
+        """Aim at ``(pan, tilt)`` (zoom unchanged) and wait for stabilization."""
+        ...
+
     def set_zoom(self, zoom: float) -> None:
         """Move to ``zoom`` (pan/tilt unchanged) and wait for stabilization."""
         ...
@@ -118,6 +122,14 @@ class AutoCalibrationConfig:
         frames_per_zoom: Frames captured (and detected) at each zoom.
         runs: How many times to repeat the whole capture/solve, folding each run
             into the model table (precision grows with runs).
+        survey_enabled: When True, before the zoom sweep the orchestrator scans a
+            small grid of tilt-down (and optional pan) poses at wide zoom and
+            aims at the pose whose view scores best for floor paint. This is the
+            fix for "calibrating whatever the camera happened to point at".
+        survey_tilt_degrees: Candidate tilt angles (positive = down) to probe.
+        survey_pan_offsets: Pan offsets (degrees) from the current pan to probe;
+            ``(0.0,)`` keeps the current pan and surveys tilt only.
+        survey_zoom: Zoom factor used while surveying (wide = most context).
     """
 
     zoom_min: float = 1.0
@@ -127,6 +139,10 @@ class AutoCalibrationConfig:
     max_adaptive_levels: int = 3
     frames_per_zoom: int = 1
     runs: int = 1
+    survey_enabled: bool = True
+    survey_tilt_degrees: tuple[float, ...] = (20.0, 30.0, 40.0, 50.0)
+    survey_pan_offsets: tuple[float, ...] = (0.0,)
+    survey_zoom: float = 1.0
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -138,6 +154,8 @@ class AutoCalibrationConfig:
             raise ValueError(f"coarse_steps must be >= 1, got {self.coarse_steps}")
         if self.runs < 1:
             raise ValueError(f"runs must be >= 1, got {self.runs}")
+        if self.survey_enabled and not self.survey_tilt_degrees:
+            raise ValueError("survey_enabled requires at least one survey_tilt_degrees value")
 
 
 @dataclass(frozen=True)
@@ -182,6 +200,11 @@ class DeviceFrameCapturer:
         """Read ``(pan, tilt, zoom)`` from the device hardware."""
         state = self._device.get_ptz_status()
         return (float(state.pan_raw), float(state.tilt_deg), float(state.zoom))
+
+    def set_pan_tilt(self, pan: float, tilt: float) -> None:
+        """Aim at ``(pan, tilt)`` (zoom unchanged) and wait for stabilization."""
+        self._device.move_absolute(pan=pan, tilt=tilt)
+        self._device.wait_for_stabilization(timeout_s=self._timeout)
 
     def set_zoom(self, zoom: float) -> None:
         """Move to ``zoom`` (pan/tilt unchanged) and wait for stabilization."""
@@ -346,6 +369,93 @@ def _calibrate_once(
     return entries, ctx.skipped
 
 
+@dataclass(frozen=True)
+class _SurveyPose:
+    """A surveyed candidate pose and how well its view scored for floor paint."""
+
+    pan: float
+    tilt: float
+    score: float
+    passed: bool
+    num_curved: int
+
+
+def _survey_for_floor(
+    device: CalibrationDevice,
+    *,
+    config: AutoCalibrationConfig,
+    camera_spec: CameraSpec,
+    criteria: VisibilityCriteria,
+    detector: PaintedLineDetector,
+) -> _SurveyPose | None:
+    """Scan tilt-down (and optional pan) poses and aim at the best floor view.
+
+    At wide zoom, probe each ``(pan_offset, tilt)`` candidate, detect painted
+    lines, and score the view with the visibility report (curved-line count plus
+    quadrant/orientation coverage). The camera is left aimed at the highest
+    scoring pose so the subsequent zoom sweep calibrates on actual floor paint
+    rather than on whatever the camera happened to point at. Returns the chosen
+    pose (``None`` when the survey is disabled).
+    """
+    if not config.survey_enabled:
+        return None
+
+    base_pan, _, _ = device.get_ptz()
+    device.set_zoom(config.survey_zoom)
+    survey_ptz = PTZPosition(
+        pan_deg=Degrees(0.0), tilt_deg=Degrees(0.0), zoom_factor=config.survey_zoom
+    )
+
+    best: _SurveyPose | None = None
+    for pan_offset in config.survey_pan_offsets:
+        pan = base_pan + pan_offset
+        for tilt in config.survey_tilt_degrees:
+            device.set_pan_tilt(pan, tilt)
+            frame = device.capture()
+            lines = [
+                painted.to_camera_line(
+                    line_id=f"survey_p{pan:g}_t{tilt:g}_line{idx}",
+                    image_path=f"survey_p{pan:g}_t{tilt:g}",
+                    ptz_position=survey_ptz,
+                )
+                for idx, painted in enumerate(detector.detect(frame))
+            ]
+            report = assess_camera_lines(
+                lines,
+                float(camera_spec.image_width),
+                float(camera_spec.image_height),
+                criteria,
+            )
+            pose = _SurveyPose(
+                pan=pan,
+                tilt=tilt,
+                score=report.score(),
+                passed=report.passed,
+                num_curved=report.num_curved_lines,
+            )
+            logger.info(
+                "survey pan=%.1f tilt=%.1f -> score=%.1f passed=%s curved=%d",
+                pan,
+                tilt,
+                pose.score,
+                pose.passed,
+                pose.num_curved,
+            )
+            if best is None or pose.score > best.score:
+                best = pose
+
+    if best is not None:
+        device.set_pan_tilt(best.pan, best.tilt)
+        logger.info(
+            "survey chose pan=%.1f tilt=%.1f (score=%.1f passed=%s)",
+            best.pan,
+            best.tilt,
+            best.score,
+            best.passed,
+        )
+    return best
+
+
 def _save_model_table_yaml(model_table: ModelCalibrationTable, path: Path) -> None:
     """Persist a model table as YAML (entity has no ``.id`` for the YAML repo)."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,6 +519,14 @@ def run_auto_calibration(
     last_report: object = None
 
     try:
+        # Aim at a floor view first (fix for "calibrate whatever it points at").
+        _survey_for_floor(
+            device,
+            config=cfg,
+            camera_spec=camera_spec,
+            criteria=crit,
+            detector=line_detector,
+        )
         for run_idx in range(cfg.runs):
             entries, skipped = _calibrate_once(
                 device,
@@ -524,6 +642,9 @@ class OfflineFrameDevice:
     def get_ptz(self) -> PTZTriple:
         """Return a fixed synthetic PTZ state."""
         return (0.0, 0.0, self._current)
+
+    def set_pan_tilt(self, pan: float, tilt: float) -> None:
+        """No-op aim for offline replay (frames are fixed)."""
 
     def set_zoom(self, zoom: float) -> None:
         """Select the nearest stored zoom group to ``zoom``."""

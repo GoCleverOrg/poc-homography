@@ -17,14 +17,16 @@ _H = int(_SPEC.image_height)
 
 
 def _rich_frame(bow: int = 30) -> np.ndarray:
+    # Two non-crossing families (left horizontal, right vertical): intersecting
+    # strokes merge into one low-elongation blob the detector rejects.
     img = np.full((_H, _W, 3), 110, dtype=np.uint8)
     for y in range(120, _H - 120, 140):
-        xs = np.linspace(120, _W - 120, 120)
-        ys = y + bow * np.sin(np.linspace(0, np.pi, 120))
+        xs = np.linspace(120, _W // 2 - 80, 100)
+        ys = y + bow * np.sin(np.linspace(0, np.pi, 100))
         cv2.polylines(img, [np.column_stack([xs, ys]).astype(np.int32)], False, (255, 255, 255), 8)
-    for x in range(200, _W - 200, 240):
-        ys = np.linspace(120, _H - 120, 120)
-        xs = x + bow * np.sin(np.linspace(0, np.pi, 120))
+    for x in range(_W // 2 + 80, _W - 160, 200):
+        ys = np.linspace(120, _H - 120, 100)
+        xs = x + bow * np.sin(np.linspace(0, np.pi, 100))
         cv2.polylines(img, [np.column_stack([xs, ys]).astype(np.int32)], False, (255, 255, 255), 8)
     return img
 

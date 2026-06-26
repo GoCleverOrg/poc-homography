@@ -306,3 +306,5 @@ build_model_table  # used by tests + lens-calibration CLI (poc_homography/calibr
 fold_camera_table  # used by tests + lens-calibration CLI (poc_homography/calibration/lens_distortion/model_aggregation.py)
 assess_camera_lines  # used by survey + lens-calibration CLI (poc_homography/calibration/lens_distortion/visibility.py)
 require_calibratable_view  # used by survey + tests (poc_homography/calibration/lens_distortion/visibility.py)
+image_w  # stable curate_floor_lines signature; reserved for spatial weighting (poc_homography/calibration/lens_distortion/floor_line_curation.py)
+image_h  # stable curate_floor_lines signature; reserved for spatial weighting (poc_homography/calibration/lens_distortion/floor_line_curation.py)

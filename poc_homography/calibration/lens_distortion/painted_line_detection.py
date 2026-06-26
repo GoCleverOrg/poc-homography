@@ -12,12 +12,15 @@ signature directly:
    lights up yellow paint that a plain intensity top-hat would miss.
 2. Threshold at a high percentile (keep only the brightest painted pixels).
 3. Morphologically close to bridge dashes / scuffs.
-4. Thin to a 1px centerline (``cv2.ximgproc.thinning`` when the contrib module
-   is present, otherwise a morphological-skeleton fallback).
-5. Connected components -> keep elongated, line-like components.
-6. Fit each component and sample ``num_edge_samples`` ``edge_pixels`` *along the
-   real painted centerline* (not the chord), so :meth:`CameraLine.has_edge_curvature`
-   sees the genuine distortion signal.
+4. Connected components on the painted mask -> keep only long, strongly
+   elongated, line-like components (rejects blobs, text, scuffs, short clutter).
+5. Extract each component's centerline by *binning its raw pixels along the
+   component's principal axis and taking the mean position per bin*. Averaging
+   across the stripe width yields a smooth sub-pixel centerline whose curvature
+   is the genuine lens-distortion signal -- not the 1px staircase noise a thinned
+   skeleton produces. (A thinned skeleton of a thick painted stripe wanders and
+   branches; its per-point curvature is dominated by detection noise, which makes
+   the distortion solve diverge or peg. Binning is the proven plumb-line recipe.)
 
 The detector matches the output contract of :class:`LineDetector`: ``detect``
 returns objects exposing ``to_camera_line(line_id, image_path, ptz_position)``
@@ -39,12 +42,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# cv2.ximgproc (the contrib thinning) is optional; degrade gracefully when absent.
+# cv2.ximgproc presence is reported for compatibility, but the centerline is now
+# extracted by principal-axis binning (no thinning), so it is not required.
 try:  # pragma: no cover - availability depends on the installed opencv build
-    _XIMGPROC_THINNING = cv2.ximgproc.thinning  # type: ignore[attr-defined]
+    cv2.ximgproc.thinning  # type: ignore[attr-defined]  # noqa: B018
     HAS_XIMGPROC = True
 except AttributeError:  # pragma: no cover
-    _XIMGPROC_THINNING = None
     HAS_XIMGPROC = False
 
 
@@ -58,22 +61,32 @@ class PaintedLineConfig:
         response_percentile: Percentile of the painted response kept as paint.
         close_kernel: Square structuring-element side for the morphological
             close that bridges dashes and small scuffs (pixels).
-        min_component_length: Minimum bounding-box major-axis length (pixels) a
-            component must span to be considered a line.
-        min_elongation: Minimum bounding-box aspect ratio (major / minor) for a
-            component to count as line-like (rejects blobs).
-        min_pixels: Minimum centerline pixel count for a component to be kept.
-        num_edge_samples: Number of ``edge_pixels`` sampled along each centerline.
+        min_component_length: Minimum span (pixels) along the component's
+            principal axis for it to be considered a line. Long lines span much
+            of the frame and carry a measurable distortion bow; short segments
+            (car-panel edges, text, scuffs) carry mostly noise.
+        min_elongation: Minimum principal-axis aspect ratio (major / minor) for a
+            component to count as line-like (rejects blobs and 2-D clutter).
+        min_pixels: Minimum raw pixel count for a component to be kept.
+        centerline_bins: Number of equal bins along the principal axis; the mean
+            pixel position per bin forms the smooth centerline.
+        min_bin_pixels: Minimum raw pixels a bin needs to contribute a centerline
+            point (averages out stripe width and skeleton jaggedness).
+        min_centerline_points: Minimum populated bins (centerline points) a line
+            must have; fewer means the bow cannot be measured reliably.
         max_lines: Cap on the number of returned lines (longest kept first).
     """
 
     tophat_kernel_frac: float = 0.02
     response_percentile: float = 99.0
     close_kernel: int = 5
-    min_component_length: float = 60.0
-    min_elongation: float = 4.0
-    min_pixels: int = 30
-    num_edge_samples: int = 40
+    # Proven plumb-line thresholds: long, strongly elongated ridges only.
+    min_component_length: float = 200.0
+    min_elongation: float = 8.0
+    min_pixels: int = 150
+    centerline_bins: int = 24
+    min_bin_pixels: int = 3
+    min_centerline_points: int = 10
     max_lines: int = 40
 
     def __post_init__(self) -> None:
@@ -84,8 +97,15 @@ class PaintedLineConfig:
             raise ValueError(
                 f"response_percentile must be in (0, 100), got {self.response_percentile}"
             )
-        if self.num_edge_samples < 3:
-            raise ValueError(f"num_edge_samples must be >= 3, got {self.num_edge_samples}")
+        if self.min_centerline_points < 3:
+            raise ValueError(
+                f"min_centerline_points must be >= 3, got {self.min_centerline_points}"
+            )
+        if self.centerline_bins < self.min_centerline_points:
+            raise ValueError(
+                f"centerline_bins ({self.centerline_bins}) must be >= "
+                f"min_centerline_points ({self.min_centerline_points})"
+            )
 
 
 @dataclass(frozen=True)
@@ -154,45 +174,6 @@ class PaintedLine:
         )
 
 
-def _thin(binary: np.ndarray) -> np.ndarray:
-    """Thin a binary mask to a 1px skeleton.
-
-    Uses ``cv2.ximgproc.thinning`` when the contrib module is installed,
-    otherwise a morphological-skeleton fallback (iterated erode/open).
-
-    Args:
-        binary: Non-zero foreground mask (uint8).
-
-    Returns:
-        A uint8 skeleton mask (values 0 / 255).
-    """
-    if HAS_XIMGPROC and _XIMGPROC_THINNING is not None:  # pragma: no cover
-        return _XIMGPROC_THINNING(binary)
-
-    out = np.zeros(binary.shape, dtype=np.uint8)
-    ys, xs = np.where(binary > 0)
-    if len(xs) == 0:
-        return out
-    # Restrict the (iterative, O(thickness)) morphological skeleton to the
-    # foreground bounding box -- thinning a full multi-megapixel frame is
-    # dominated by background; the bbox is typically a thin band.
-    y0, y1 = int(ys.min()), int(ys.max()) + 1
-    x0, x1 = int(xs.min()), int(xs.max()) + 1
-    crop = (binary[y0:y1, x0:x1] > 0).astype(np.uint8) * 255
-
-    skeleton = np.zeros_like(crop)
-    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-    working = crop
-    while cv2.countNonZero(working) > 0:
-        opened = cv2.morphologyEx(working, cv2.MORPH_OPEN, element)
-        temp = cv2.subtract(working, opened)
-        working = cv2.erode(working, element)
-        skeleton = cv2.bitwise_or(skeleton, temp)
-
-    out[y0:y1, x0:x1] = skeleton
-    return out
-
-
 def _painted_response(image: np.ndarray, kernel_size: int) -> np.ndarray:
     """Compute the painted-line response (max of white top-hat and yellow).
 
@@ -217,23 +198,6 @@ def _painted_response(image: np.ndarray, kernel_size: int) -> np.ndarray:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
     white = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel).astype(np.float32)
     return np.maximum(white, np.clip(yellow, 0.0, None))
-
-
-def _order_along_principal_axis(pts: np.ndarray) -> np.ndarray:
-    """Sort centerline points along their dominant (PCA) direction.
-
-    Args:
-        pts: (N, 2) array of (x, y) centerline coordinates.
-
-    Returns:
-        The points ordered monotonically along the principal axis.
-    """
-    centered = pts - pts.mean(axis=0)
-    # Principal direction = eigenvector of the largest covariance eigenvalue.
-    _, _, vt = np.linalg.svd(centered, full_matrices=False)
-    direction = vt[0]
-    t = centered @ direction
-    return pts[np.argsort(t)]
 
 
 class PaintedLineDetector:
@@ -283,12 +247,11 @@ class PaintedLineDetector:
         )
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
 
-        skeleton = _thin(mask)
-
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(skeleton)
-        # Group all skeleton pixels by label in a single linear pass, instead of
-        # an O(num_labels * image_size) per-label ``np.where`` scan.
-        fg_ys, fg_xs = np.where(skeleton > 0)
+        # Connected components on the painted MASK (not a thinned skeleton): we
+        # want each stripe's full set of raw pixels so the centerline can be
+        # recovered by averaging across the stripe width.
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+        fg_ys, fg_xs = np.where(mask > 0)
         fg_labels = labels[fg_ys, fg_xs]
         order = np.argsort(fg_labels, kind="stable")
         fg_ys, fg_xs, fg_labels = fg_ys[order], fg_xs[order], fg_labels[order]
@@ -302,7 +265,7 @@ class PaintedLineDetector:
             pts = np.column_stack([fg_xs[lo:hi], fg_ys[lo:hi]]).astype(np.float64)
             if len(pts) < cfg.min_pixels:
                 continue
-            line = self._fit_component(pts, height, width)
+            line = self._fit_component(pts)
             if line is not None:
                 lines.append(line)
 
@@ -311,45 +274,52 @@ class PaintedLineDetector:
         logger.debug("Detected %d painted line(s)", len(kept))
         return kept
 
-    def _fit_component(self, pts: np.ndarray, height: int, width: int) -> PaintedLine | None:
+    def _fit_component(self, pts: np.ndarray) -> PaintedLine | None:
         """Fit one connected component into a :class:`PaintedLine`.
 
-        Rejects components that are too short or too round (not line-like),
-        orders the centerline along its principal axis, and subsamples it to
-        ``num_edge_samples`` ``edge_pixels``.
+        Rejects components that are too short or too round (not line-like), then
+        extracts a smooth centerline by binning the component's raw pixels along
+        its principal axis and taking the mean position per bin (the proven
+        plumb-line recipe). The mean-per-bin centerline is sub-pixel and free of
+        the staircase noise a thinned skeleton would introduce, so the curvature
+        it carries is the genuine lens-distortion bow.
 
         Args:
-            pts: (N, 2) centerline coordinates of the component.
-            height: Image height (unused bound check placeholder).
-            width: Image width (unused bound check placeholder).
+            pts: (N, 2) raw pixel coordinates of the component.
 
         Returns:
             A :class:`PaintedLine`, or ``None`` if the component is not a line.
         """
-        del height, width  # endpoints already lie within bounds by construction
         cfg = self.config
 
-        ordered = _order_along_principal_axis(pts)
-        centered = ordered - ordered.mean(axis=0)
-        # Spread along major vs minor axis -> elongation.
-        _, sv, _ = np.linalg.svd(centered, full_matrices=False)
+        centered = pts - pts.mean(axis=0)
+        # Principal axis (major direction) and spread along major vs minor axis.
+        _, sv, vt = np.linalg.svd(centered, full_matrices=False)
         major = float(sv[0])
         minor = float(sv[1]) if len(sv) > 1 else 0.0
         elongation = major / minor if minor > 1e-6 else float("inf")
+        direction = vt[0]
+        t = centered @ direction
+        span = float(np.ptp(t))
 
-        start = (float(ordered[0][0]), float(ordered[0][1]))
-        end = (float(ordered[-1][0]), float(ordered[-1][1]))
-        chord = float(np.hypot(end[0] - start[0], end[1] - start[1]))
-
-        if chord < cfg.min_component_length or elongation < cfg.min_elongation:
+        if span < cfg.min_component_length or elongation < cfg.min_elongation:
             return None
 
-        if len(ordered) <= cfg.num_edge_samples:
-            edge_pixels = ordered
-        else:
-            idx = np.linspace(0, len(ordered) - 1, cfg.num_edge_samples).astype(int)
-            edge_pixels = ordered[idx]
+        # Bin along the principal axis; mean raw-pixel position per bin = smooth
+        # centerline. Bins are produced in ascending-t order, so the resulting
+        # centerline is already ordered end-to-end.
+        edges = np.linspace(t.min(), t.max(), cfg.centerline_bins + 1)
+        centerline: list[np.ndarray] = []
+        for k in range(cfg.centerline_bins):
+            in_bin = (t >= edges[k]) & (t < edges[k + 1])
+            if int(in_bin.sum()) >= cfg.min_bin_pixels:
+                centerline.append(pts[in_bin].mean(axis=0))
+        if len(centerline) < cfg.min_centerline_points:
+            return None
 
+        edge_pixels = np.asarray(centerline, dtype=np.float64)
+        start = (float(edge_pixels[0][0]), float(edge_pixels[0][1]))
+        end = (float(edge_pixels[-1][0]), float(edge_pixels[-1][1]))
         confidence = float(min(1.0, elongation / (cfg.min_elongation * 4.0)))
         return PaintedLine(start=start, end=end, edge_pixels=edge_pixels, confidence=confidence)
 

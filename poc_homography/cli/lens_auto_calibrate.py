@@ -101,6 +101,16 @@ def lens_auto_command(
     zoom_min: float = typer.Option(1.0, "--zoom-min", help="Coarse sweep min zoom"),
     zoom_max: float = typer.Option(25.0, "--zoom-max", help="Coarse sweep max zoom"),
     coarse_steps: int = typer.Option(5, "--coarse-steps", help="Coarse zoom levels"),
+    survey: bool = typer.Option(
+        True, "--survey/--no-survey", help="Aim at a floor view before sweeping zoom"
+    ),
+    survey_tilts: str = typer.Option(
+        "20,30,40,50", "--survey-tilts", help="Comma-separated tilt-down angles to probe"
+    ),
+    survey_pan_offsets: str = typer.Option(
+        "0", "--survey-pan-offsets", help="Comma-separated pan offsets (deg) from current pan"
+    ),
+    survey_zoom: float = typer.Option(1.0, "--survey-zoom", help="Zoom used while surveying"),
     min_lines: int = typer.Option(8, "--min-lines", help="Visibility: min lines"),
     min_quadrants: int = typer.Option(2, "--min-quadrants", help="Visibility: min quadrants"),
     min_orientations: int = typer.Option(
@@ -130,12 +140,20 @@ def lens_auto_command(
     message when no zoom yields a calibratable view.
     """
     camera_spec = _camera_spec_from_name(model)
+
+    def _floats(text: str) -> tuple[float, ...]:
+        return tuple(float(p) for p in text.split(",") if p.strip())
+
     config = AutoCalibrationConfig(
         zoom_min=zoom_min,
         zoom_max=zoom_max,
         coarse_steps=coarse_steps,
         zoom_tol=zoom_tol,
         runs=runs,
+        survey_enabled=survey,
+        survey_tilt_degrees=_floats(survey_tilts) or (30.0,),
+        survey_pan_offsets=_floats(survey_pan_offsets) or (0.0,),
+        survey_zoom=survey_zoom,
     )
     criteria = VisibilityCriteria(
         min_lines=min_lines,
